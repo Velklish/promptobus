@@ -96,11 +96,11 @@ check(': there is no report about the dismissed participant',
   after.every((s) => s.address !== REVIEWER), JSON.stringify(after));
 check(': the NOT dismissed one is still reported — the same outcome and the same address',
   after.length === 1 && after[0].address === WORKER && after[0].kind === 'gone'
-  && after[0].reason === 'записи сессии в claude agents нет', JSON.stringify(after));
+  && after[0].reason === 'no session record in claude agents', JSON.stringify(after));
 const workerLine = stallLine(after[0], TASK);
 check(': words and route of the not-dismissed one did not change in anything',
-  /GONE: записи сессии в claude agents нет/.test(workerLine)
-  && /поднимай worker'а заново тем же spawn'ом/.test(workerLine), workerLine);
+  /GONE: no session record in claude agents/.test(workerLine)
+  && /lift the worker again with the same spawn/.test(workerLine), workerLine);
 
 // The warden report channel is the same predicate: `reportStalls` asks `pendingStalls`,
 // and the dismissed one does not reach the journal exactly because they do not reach
