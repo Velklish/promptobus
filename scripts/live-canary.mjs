@@ -3,7 +3,7 @@
 //
 //   node scripts/live-canary.mjs
 //
-// Release gates ([release-gates.mjs](release-gates.mjs)) prove that a tarball is
+// Release gates (`release-gates.mjs`) prove that a tarball is
 // packed and contains what was promised. The canary proves the next thing: the
 // packed package WORKS — in a separate clean workspace, on real Claude, through a
 // full orchestration loop.
@@ -17,7 +17,7 @@
 //
 // **The workspace gets its base as a clone of THIS branch by a local path.** Not
 // from GitLab: base and CLI must be one version (the equality gate in
-// [base.js](../lib/base.js)), and the commit under test is not in the registry
+// `base.js`), and the commit under test is not in the registry
 // yet. The clone is local — the canary goes without the network.
 //
 // **The canary does not touch the person's home at all, and that is its subject,
@@ -65,7 +65,7 @@ const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 // a person running a release.
 const E2E_TASK = 'e2ebus';
 // What has no right to outlive the run. The list is the same as the release
-// gates ([release-gates.mjs](release-gates.mjs)): the live loop raises
+// gates (`release-gates.mjs`): the live loop raises
 // participants, the warden, and bus stdio servers, and stops the last without
 // waiting.
 //

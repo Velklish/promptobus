@@ -43,6 +43,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Publicity audit
+        run: npm run audit
+
       - name: Pack dry-run
         run: npm pack --dry-run
 

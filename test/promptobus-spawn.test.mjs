@@ -528,7 +528,7 @@ for (const id of guardOthers) setStatus(id, 'active');
 // --- : an ambiguous name prints candidates, not [object Object] ------
 //
 // Candidates in `ResolveError` are DATA `{ nsPath, kind, personal }`, not ready
-// strings: `formatCandidate` prints them ([resolve.js](../lib/resolve.js)). Spawn
+// strings: `formatCandidate` prints them (`resolve.js`). Spawn
 // printed them by template substitution, i.e. would have given `[object Object]` —
 // the orchestrator would have nothing to pick. The check looks at the candidate
 // STRING, not at the fact of refusal: the fact of refusal is the same on a broken

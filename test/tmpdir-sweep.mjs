@@ -69,9 +69,9 @@ export { sweptLine };
 // `promptobus-live-cursor-` are created by live runs and release
 // gates — they have their own sweep and their own thresholds —
 // `agents-review-` is created by production code
-// ([headless.js](../lib/headless.js)). **`promptobus-e2e-` is
+// (`headless.js`). **`promptobus-e2e-` is
 // shared**: `promptobus-e2e.test.mjs` creates it, and
-// [release-gates.mjs](../scripts/release-gates.mjs) counts such
+// `release-gates.mjs` counts such
 // directories as live-run sandboxes. The same age cut-off splits
 // them: a going gates run is younger than an hour.
 //

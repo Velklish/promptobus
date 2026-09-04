@@ -2,7 +2,7 @@
 //
 // There are two subjects, and both are directories piling up in a
 // shared `$TMPDIR`. Release gates
-// ([release-gates.mjs](../scripts/release-gates.mjs)) leave a run
+// (`release-gates.mjs`) leave a run
 // directory with a report; the suite leaves a sandbox of a cut-off
 // run — Ctrl-C, taken down at the file timeout, a process crash
 // never reach the exit hook. Both are healed by one

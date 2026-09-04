@@ -6,7 +6,7 @@
 //
 // **Имена вида `a2a-…` в фикстурах оставлены намеренно**: так называл ветки,
 // каталоги worktree и сессии прежний CLI, и на них проверяется, что hard rename не сломал
-// уже заведённое. Разбор — в [promptobus.test.mjs](promptobus.test.mjs), шапка файла.
+// уже заведённое. Разбор — в `promptobus.test.mjs`, шапка файла.
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';

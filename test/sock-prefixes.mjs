@@ -6,7 +6,7 @@
 // the `sun_path` limit ([sandbox.mjs](sandbox.mjs)). The suite sweep
 // does not sweep them — `/tmp` is shared, foreign things must not be
 // removed. A cut-off run's leftover is caught by the
-// [release-gates.mjs](../scripts/release-gates.mjs) verdict "no
+// `release-gates.mjs` verdict "no
 // sockets left after the run": it looks at `/tmp` by this list.
 //
 // The list is hand-built, like `SUITE_PREFIXES`. Completeness is

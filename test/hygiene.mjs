@@ -8,7 +8,7 @@
 // runner at all; and the live scripts —
 // [live-e2e.mjs](../scripts/live-e2e.mjs),
 // [live-canary.mjs](../scripts/live-canary.mjs) and
-// [release-gates.mjs](../scripts/release-gates.mjs) — strip session
+// `release-gates.mjs` — strip session
 // identity from the environment they give their children
 // (`dropSessionLeaks`). While the list lived as a copy in two places,
 // the pair was fixed separately twice: the warden switch and home;

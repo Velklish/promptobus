@@ -2,7 +2,7 @@
 // gate wording. No disk, no store — only the grammar and the strings everyone prints.
 //
 // The home is here, not in either store, because the package has two: production v1
-// ([store.ts](store.ts)) and legacy, kept so migration can still read
+// (`store.ts`) and legacy, kept so migration can still read
 // ([legacy-store.ts](legacy-store.ts)). A value that lived in one of them would be
 // imported by the other across a version boundary — and they would drift in silence.
 import path from 'node:path';
