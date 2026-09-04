@@ -56,7 +56,9 @@ const why = (r) => (r.error ? r.error.message
 const stripComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
-const SPECIFIER = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g;
+// Import/export forms only. A bare `\bfrom` hits `MESSAGE_FROM = ' from '`
+// and `export const … = ' from '` in src/mcp/render.ts.
+const SPECIFIER = /\b(?:import|export)(?:\s+type)?\s+(?:\*\s+(?:as\s+\w+\s+)?|[\w$]+\s+|\{[\s\S]*?\}\s+)from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g;
 
 function tsFiles(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
