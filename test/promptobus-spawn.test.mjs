@@ -536,7 +536,7 @@ for (const id of guardOthers) setStatus(id, 'active');
 const missingRepo = await planSpawn(WS, { repo: 'no-such-repo', brief: BRIEF })
   .then(() => '', (e) => e.message);
 check(': an unknown repository name names the path, not [object Object]',
-  /не найден/.test(missingRepo)
+  /was not found on disk/.test(missingRepo)
   && missingRepo.includes('no-such-repo')
   && !missingRepo.includes('[object Object]'), missingRepo);
 

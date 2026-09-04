@@ -202,7 +202,7 @@ const noFile = thrown(() => store.sendMessage(home, task.id, {
   from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'нет файла',
   artifactPath: path.join(SB, 'ghost.txt'),
 }));
-check('артефакт: несуществующий путь → отказ', noFile.threw && /артефакта нет/.test(noFile.msg), noFile.msg);
+check('артефакт: несуществующий путь → отказ', noFile.threw && /artifact is missing/.test(noFile.msg), noFile.msg);
 store.readInbox(home, task.id, store.ORCHESTRATOR);
 
 // --- жизненный цикл задачи ----------------------------------------------------
@@ -320,7 +320,7 @@ const outOfSpan = thrown(() => {
   store.readTask(bl261, cached.id);
 });
 check(': вне запроса чтение прежнее — снесённый журнал отказывает, как и раньше',
-  outOfSpan.threw && /нет в/.test(outOfSpan.msg), outOfSpan.msg);
+  outOfSpan.threw && /is not in/.test(outOfSpan.msg), outOfSpan.msg);
 
 writeFileSync(cachedFile, cachedRaw);
 const afterWrite = store.withTaskCache(() => {

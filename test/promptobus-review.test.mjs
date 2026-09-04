@@ -190,7 +190,7 @@ check(': флаги вызова уезжают в подсказку — пов
 check(': --dry-run пути не отменяет — гейт стоит раньше плана',
   noTargetDry.threw && /repository path is required/.test(noTargetDry.msg), noTargetDry.msg);
 check(': cwd в корне рабочего места — отказ без готовой команды (toplevel workspace)',
-  outsideRepos.threw && /вне рабочего места/.test(outsideRepos.msg)
+  outsideRepos.threw && /outside the workspace/.test(outsideRepos.msg)
   && !outsideRepos.msg.includes('repeat with it'), outsideRepos.msg);
 check(': клон на диске рабочего места — отказ называет путь и готовую команду',
   shallowClone.threw && /repository path is required/.test(shallowClone.msg)
@@ -325,7 +325,7 @@ check('argv: каждый доставленный сервер пре-аппр�
   && rallowed.length === Object.keys(rsrv).length, rallowed.join(' '));
 // Положение дел по модулю — строкой рядом с перечнем правил.
 check('сигнал модуля: standalone — модуль рабочего места не применяется',
-  plan.module.level === 'info' && /host standalone/.test(plan.module.text),
+  plan.module.level === 'info' && /workspace module does not apply — standalone host/.test(plan.module.text),
   plan.module.text);
 check('argv: модель по умолчанию opus', plan.argv[plan.argv.indexOf('--model') + 1] === 'opus');
 // Правила базы лежат вне ревьюируемой копии, а чтение вне рабочей директории Claude Code
@@ -1218,15 +1218,15 @@ mkdirSync(OUT, { recursive: true });
 g(OUT, 'init', '-b', 'main');
 const outside = expectThrow(() => planReview(WS, { target: OUT, title: 'посторонний каталог' }));
 check('вне рабочего места — отказ, а не ревью без правил',
-  outside.threw && /вне рабочего места/.test(outside.msg), outside.msg);
+  outside.threw && /outside the workspace/.test(outside.msg), outside.msg);
 
 // Папка группы: путь внутри рабочего места, но своего .git нет — toplevel уезжает в корень
 // workspace. Отказ должен звать в конкретный клон, а не врать про «вне рабочего места».
 const GROUP = path.join(WS, 'repos', 'loads_search');
 const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'папка группы' }));
 check('папка группы — отказ про клон, а не «вне рабочего места»',
-  group.threw && /клон не найден/.test(group.msg)
-  && !/вне рабочего места/.test(group.msg), group.msg);
+  group.threw && /clone not found/.test(group.msg)
+  && !/outside the workspace/.test(group.msg), group.msg);
 
 check('standalone: ревью-скилл модуля не резолвится — встроенный формат замечаний',
   plan.skill === null && plan.prompt.includes('[critical|major|minor]'));

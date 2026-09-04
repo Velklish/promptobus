@@ -135,7 +135,7 @@ const refusal = await (async () => {
   }
 })();
 check(': отказ по attached называет режим, а не отсутствие capability',
-  /режим «attached»/.test(refusal) && /не поднимал/.test(refusal), refusal);
+  /mode «attached»/.test(refusal) && /did not launch/.test(refusal), refusal);
 
 // Негодная запись участника обход не роняет — тем же приёмом, что и вся уборка.
 const BAD = 'done-bad-t20260901-230200';
@@ -207,7 +207,7 @@ const junkMode = (mode) => {
   }
 };
 check(': незнакомый режим store не принимает — ни опечатка в регистре, ни мусор',
-  /managed или attached/.test(junkMode('Attached')) && /managed или attached/.test(junkMode('что-то своё')),
+  /expected managed or attached/.test(junkMode('Attached')) && /expected managed or attached/.test(junkMode('что-то своё')),
   `${junkMode('Attached')} · ${junkMode('что-то своё')}`);
 store.upsertParticipant(HOME, STRANGE, store.participantRecord('worker:opechatka', { harness: 'claude', mode: 'attached', sessionRef: 'sess-worker' }));
 const strange = fakeRegistry();
@@ -224,7 +224,7 @@ const strangeRefusal = await (async () => {
   }
 })();
 check(': явный вызов на незнакомом режиме отказывает и называет его дословно',
-  /«что-то своё»/.test(strangeRefusal) && /контракт не знает/.test(strangeRefusal), strangeRefusal);
+  /«что-то своё»/.test(strangeRefusal) && /the contract does not know this mode/.test(strangeRefusal), strangeRefusal);
 
 // --- выключатель необратимого действия ----------------------------------------
 //
