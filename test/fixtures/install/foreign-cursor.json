@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "extra": "keep-me",
+  "hooks": {
+    "sessionStart": [{ "command": "echo foreign-start" }],
+    "stop": [{ "command": "echo foreign-cursor-stop" }]
+  }
+}
