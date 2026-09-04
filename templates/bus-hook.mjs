@@ -1,0 +1,199 @@
+#!/usr/bin/env node
+// Сгенерирован __COMMAND__ sync. Правки перетираются — источник в package Promptobus.
+//
+// PostToolUse на инструментах шины: строка в ленту сессии про обмен, одна на событие —
+//
+//   {маркер }Отправлен {тип} → {читаемое имя сессии получателя} — {выжимка тела}
+//   {маркер }Получен {тип} от {читаемое имя сессии отправителя} — {выжимка тела}
+//
+// Имя — то, под которым участник виден в `claude agents`; адрес и id остаются в ответе. Своя
+// строка с выжимкой достаётся важному, а ВСЕ `status` одного mailbox'а сходятся в перечень —
+//
+//   • {сколько} status: {имя} · {имя} · {имя}
+//
+// — и стоит она после важного, чтобы не отжимать его вниз; одиночный status идёт тем же
+// перечнем из одного. Тип называется всегда, тело пустое — строка без хвоста ` — …`.
+// Молчание — рабочий исход: хук не вправе мешать вызову, поэтому любая неожиданность
+// кончается пустым stdout.
+const SEP = "\n";
+const MAX = 600;
+const LINE = 144;
+const SHOWN = 4;
+// Место под хвост «+ ещё N» держим заранее: он говорит, сколько человек не увидел.
+const TAIL_COST = 12;
+// Хвост идентичности ответа (PROMPTOBUS_HOME, адрес, задача) — диагностика: в ленте он занимает
+// больше места, чем сам факт обмена, и до этой метки сводка обрезается.
+const IDENTITY = ' · PROMPTOBUS_HOME=';
+// Заголовок сообщения в ответе mailbox'а: «### <тип> от <имя> · адрес <адрес> · <ts>».
+const HEAD = '### ';
+// Граница между читаемым именем и машинным хвостом (server.js).
+const ADDR = ' · адрес ';
+// Первая строка ответа отправки: «отправлено <тип> → <имя> · адрес <адрес> · id <id>».
+const SENT = 'отправлено ';
+// Имя и выжимка в одной строке: у пары строк вторая получает свой префикс клиента.
+const DASH = ' — ';
+// Пустой ответ mailbox'а — и ровно он: глушение сверяется со словом ЦЕЛИКОМ, а не по «событий
+// не разобралось». Без разобранных событий приходят ещё два штатных ответа (`ЧУЖОЙ MAILBOX` и
+// `БИТОЕ СООБЩЕНИЕ`) — они говорят, что переписка ушла не туда, и молчать о них дороже.
+const EMPTY = 'пусто';
+// Тип, который своей строки не получает: статусов в run'е большинство, и четыре строки
+// «взял задание в работу» вытесняли из ленты вопрос, который ждёт ответа.
+const ROUTINE = 'status';
+// Зачин строки-перечня статусов и разделитель имён в нём.
+const ROLL = '• ';
+const ROLL_SEP = ' · ';
+// Маркеры важного — те же, что у CLI: вопрос ждёт ответа, итог закрывает track.
+const MARKS = { question: '⚠', result: '✔' };
+
+function text(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('\n');
+  if (value && typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (Array.isArray(value.content)) return text(value.content);
+  }
+  return '';
+}
+
+// Обрезка по границе слова; слова нет рядом с пределом (длинный путь, идентификатор) — режем
+// как есть. Многоточия не ставим: знак стоит места, а обрыв виден и без него.
+function clip(s, max) {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd();
+}
+
+// Метку ` · адрес ` ищем С КОНЦА: в самом имени законен тот же знак ` · `, которым разведены
+// части строки. Метки нет (чужой формат) — берём то, что до первого разделителя.
+function split(raw) {
+  const at = raw.lastIndexOf(ADDR);
+  if (at === -1) return { head: raw.split(' · ')[0].trim(), addr: '' };
+  return { head: raw.slice(0, at).trim(), addr: raw.slice(at + ADDR.length).split(' · ')[0].trim() };
+}
+
+// Марки ищем через hasOwnProperty: `MARKS['constructor']` иначе пришёл бы из прототипа.
+function mark(type) {
+  return Object.prototype.hasOwnProperty.call(MARKS, type) ? MARKS[type] + ' ' : '';
+}
+
+// Имя и выжимка делят потолок строки, иначе длинное имя вытесняло бы чужие сообщения.
+// Заголовок длиннее потолка целиком оставляет строку без выжимки, а не режет её в мусор.
+function compose(head, said) {
+  const room = LINE - head.length - DASH.length;
+  return said && room > 0 ? head + DASH + clip(said, room) : head;
+}
+
+// Первый абзац: хвост ответа отделён пустой строкой и в выжимку не попадает.
+function para(lines) {
+  const body = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line) body.push(line);
+    else if (body.length) break;
+  }
+  return body.join(' ');
+}
+
+// Зачин тела, повторяющий отправителя, срезается: «worker:store взял задание» следом за именем
+// той же сессии читается как имя дважды. Формы — адрес, голое имя и то же с ролью впереди;
+// длинная проверяется раньше короткой, иначе `store` съел бы начало `worker:store`. После
+// имени обязателен разделитель, иначе срезался бы «store.js переписан». Пустой срез откатываем.
+function trimSelf(body, addr, name) {
+  if (!name) return body;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const forms = [addr, name].filter(Boolean).sort((a, b) => b.length - a.length).map(esc).join('|');
+  const re = new RegExp('^(?:(?:воркер|ревьюер|worker|reviewer)\\s+)?(?:' + forms + ')(?::\\s*|\\s+)', 'i');
+  const cut = body.replace(re, '').trim();
+  return cut ? cut : body;
+}
+
+// Сообщения mailbox'а: заголовок плюс первый абзац тела. Важное разбирается построчно, статусы
+// копятся именами на общую строку; имя не повторяется — «• 3 status: store», а не трижды.
+function mailbox(lines) {
+  const out = [];
+  const names = [];
+  let routine = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].indexOf(HEAD) !== 0) continue;
+    const { head, addr } = split(lines[i].slice(HEAD.length));
+    const body = [];
+    for (let j = i + 1; j < lines.length && lines[j].indexOf(HEAD) !== 0; j += 1) body.push(lines[j]);
+    const said = para(body);
+    const m = /^(\S+)\s+от\s+(.+)$/.exec(head);
+    // Заголовок не разобрался — берём его как есть: строка без типа лучше молчания.
+    if (!m) { out.push(compose(head, said)); continue; }
+    if (m[1] === ROUTINE) {
+      routine += 1;
+      if (names.indexOf(m[2]) === -1) names.push(m[2]);
+      continue;
+    }
+    const bare = addr.indexOf('worker:') === 0 ? addr.slice(7) : addr;
+    out.push(compose(mark(m[1]) + 'Получен ' + m[1] + ' от ' + m[2], trimSelf(said, addr, bare)));
+  }
+  // Перечень режется тем же потолком строки. Хвостовой разделитель после обрезки снимается:
+  // `clip` режет по границе слова, и в ленте выходило «• 12 status: A · B ·».
+  const roll = routine
+    ? [clip(ROLL + routine + ' ' + ROUTINE + ': ' + names.join(ROLL_SEP), LINE).replace(/\s*·$/, '')]
+    : [];
+  return { out: out, roll: roll };
+}
+
+// Отправка: имя получателя — из ответа, выжимка — из `tool_input.body`, потому что своего
+// тела ответ отправки не несёт и нести не должен.
+function sent(lines, input) {
+  for (const raw of lines) {
+    const s = raw.trim();
+    if (s.indexOf(SENT) !== 0) continue;
+    const at = s.indexOf(IDENTITY);
+    const { head } = split(at === -1 ? s : s.slice(0, at));
+    const m = /^отправлено\s+(\S+)\s+→\s+(.+)$/.exec(head);
+    if (!m) return [];
+    return [compose(mark(m[1]) + 'Отправлен ' + m[1] + ' → ' + m[2], para(String(input?.body ?? '').split('\n')))];
+  }
+  return [];
+}
+
+let raw = '';
+process.stdin.setEncoding('utf8');
+for await (const chunk of process.stdin) raw += chunk;
+
+let line = '';
+try {
+  const event = JSON.parse(raw);
+  const tool = String(event.tool_name ?? '');
+  const lines = text(event.tool_response).split('\n');
+  const first = lines.map((s) => s.trim()).find(Boolean) ?? '';
+  const at = first.indexOf(IDENTITY);
+  const summary = clip((at === -1 ? first : first.slice(0, at)).trim(), MAX);
+
+  const got = tool.endsWith('mailbox') ? mailbox(lines) : { out: [], roll: [] };
+  const all = tool.endsWith('send') ? sent(lines, event.tool_input) : got.out;
+  // Перечень статусов идёт ПОСЛЕ важного: рутина не отжимает вниз вопрос, который ждёт ответа.
+  const roll = got.roll;
+  // Сводка остаётся там, где она и есть содержание ответа, — у отправки. Пустой mailbox
+  // строки не стоит вовсе: «пусто» не говорит ничего, чего человек не видит рядом (postcard
+  // надзирателя), а место в ленте занимает наравне с сообщением.
+  const bare = all.length + roll.length === 0 && !(tool.endsWith('mailbox') && summary === EMPTY);
+  const parts = bare ? [summary] : [];
+  let used = parts.length ? parts[0].length : 0;
+  // Место под хвост держится при любом числе событий, а не только сверх SHOWN: список обрывает
+  // и общий предел, и тогда хвост дописывался бы за него и его срезала бы финальная обрезка.
+  // Тем же приёмом занято место под перечень — иначе рутина пропала бы молча.
+  const reserve = (all.length ? TAIL_COST : 0) + (roll.length ? SEP.length + roll[0].length : 0);
+  const shown = [];
+  for (const m of all) {
+    if (shown.length >= SHOWN - roll.length) break;
+    const cost = (parts.length + shown.length ? SEP.length : 0) + m.length;
+    if (used + cost + reserve > MAX) break;
+    shown.push(m);
+    used += cost;
+  }
+  parts.push(...shown, ...roll);
+  // Статусы в хвост не идут: их назвало число в перечне, не увидено только важное.
+  if (all.length > shown.length) parts.push('+ ещё ' + (all.length - shown.length));
+  line = clip(parts.filter(Boolean).join(SEP), MAX);
+} catch {
+  line = '';
+}
+if (line) process.stdout.write(JSON.stringify({ systemMessage: line }) + '\n');

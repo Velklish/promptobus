@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:message",
+  "title": "Message",
+  "description": "Каноническое сообщение protocol v1. Неизменяемо: ссылки inbox и history — тот же inode.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "id", "task", "sender", "recipients", "type", "body", "ts"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "id": {
+      "description": "Штамп времени, счётчик отправителя и случайный хвост: сортировка строк — порядок отправки.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
+    },
+    "task": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "sender": {
+      "description": "ID участника-отправителя. Роль из него не выводится.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "recipients": {
+      "description": "Непустой список ID участников без дублей.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+      }
+    },
+    "type": {
+      "enum": ["task", "status", "question", "answer", "artifact", "result", "review"]
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact": {
+      "description": "ID metadata-записи артефакта. Содержимое лежит в blob'е задачи.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
+    },
+    "ts": { "$ref": "urn:promptobus:v1:task#/$defs/timestamp" }
+  }
+}

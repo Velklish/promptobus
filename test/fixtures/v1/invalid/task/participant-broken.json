@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "demo-t20260902-101112",
+  "title": "демо",
+  "status": "active",
+  "owner": "owner",
+  "created": "2026-09-02T10:11:12.345Z",
+  "updated": "2026-09-02T10:11:12.345Z",
+  "participants": [
+    {
+      "id": "owner",
+      "role": "owner",
+      "harness": "fake",
+      "mode": "attached",
+      "sessionRef": "sess-owner",
+      "capabilities": {
+        "spawn": true,
+        "attach": true,
+        "activation": "push",
+        "inspect": true,
+        "stop": true
+      }
+    }
+  ],
+  "adapter": {}
+}

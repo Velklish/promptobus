@@ -1,0 +1,16 @@
+{
+  "id": "owner",
+  "role": "owner",
+  "harness": "fake",
+  "mode": "attached",
+  "sessionRef": "sess-owner",
+  "capabilities": {
+    "spawn": true,
+    "attach": true,
+    "activation": "push",
+    "inspect": true,
+    "stop": true
+  },
+  "metadata": {},
+  "address": "orchestrator"
+}

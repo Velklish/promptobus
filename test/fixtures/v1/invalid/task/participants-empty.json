@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "demo-t20260902-101112",
+  "title": "демо",
+  "status": "active",
+  "owner": "owner",
+  "created": "2026-09-02T10:11:12.345Z",
+  "updated": "2026-09-02T10:11:12.345Z",
+  "participants": [],
+  "adapter": {}
+}

@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "id": "20260902T101112345-0001-a1b2c3",
+  "task": "demo-t20260902-101112",
+  "sender": "owner",
+  "recipients": [
+    "w-api"
+  ],
+  "type": "notify",
+  "body": "сделай",
+  "ts": "2026-09-02T10:11:12.345Z"
+}

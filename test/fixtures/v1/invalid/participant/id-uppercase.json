@@ -1,0 +1,17 @@
+{
+  "id": "W-API",
+  "role": "worker",
+  "harness": "fake",
+  "mode": "managed",
+  "sessionRef": "sess-w-api",
+  "capabilities": {
+    "spawn": true,
+    "attach": true,
+    "activation": "push",
+    "inspect": true,
+    "stop": true
+  },
+  "metadata": {
+    "repo": "ns/repo"
+  }
+}

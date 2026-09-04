@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:participant",
+  "title": "Participant",
+  "description": "Участник задачи protocol v1. ID независим, роль объявлена полем и из ID не выводится.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "role", "harness", "mode", "sessionRef", "capabilities", "metadata"],
+  "properties": {
+    "id": {
+      "description": "Независимый ID участника. Роль из него не выводится нигде.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "role": {
+      "description": "Расширяемый slug роли: core список ролей не держит.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "harness": {
+      "description": "Инструмент, в котором живёт сессия участника. Обязателен: fallback'а в v1 нет.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "mode": {
+      "description": "managed — сессию поднял driver, attached — она подключилась сама.",
+      "enum": ["managed", "attached"]
+    },
+    "sessionRef": {
+      "description": "Opaque session reference driver'а. Явный null, а не отсутствие поля.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "capabilities": {
+      "description": "Снимок capabilities driver'а на момент подъёма. Четыре последних поля необязательны: записи, сделанные до ADR-034, лежат в живых журналах и обязаны читаться.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["spawn", "attach", "activation", "inspect", "stop"],
+      "properties": {
+        "spawn": { "type": "boolean" },
+        "attach": { "type": "boolean" },
+        "activation": { "enum": ["push", "pull"] },
+        "inspect": { "type": "boolean" },
+        "stop": { "type": "boolean" },
+        "denyTools": { "type": "boolean" },
+        "systemPrompt": { "type": "boolean" },
+        "sessionList": { "type": "boolean" },
+        "enter": { "type": "boolean" }
+      }
+    },
+    "metadata": {
+      "description": "Метаданные adapter'а: core в них не заглядывает.",
+      "type": "object"
+    }
+  }
+}

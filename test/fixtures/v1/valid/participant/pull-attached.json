@@ -1,0 +1,9 @@
+{
+  "id": "obs-1",
+  "role": "observer",
+  "harness": "other",
+  "mode": "attached",
+  "sessionRef": null,
+  "capabilities": null,
+  "metadata": {}
+}
