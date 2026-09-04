@@ -3,7 +3,7 @@
 // `tools/call`. Реализация рукопашная — у package зависимостей нет вовсе.
 //
 // Здесь только протокол и диспетчер. Всё, что знает про рабочее место, harness и версию
-// потребителя, приходит callbacks (ADR-032, §2): идентичность процесса, имя и версия
+// потребителя, приходит callbacks: идентичность процесса, имя и версия
 // сервера, сдача contact point'а, строки участника про Git и фоновую сессию, диагностика
 // вставших и человеческий текст ошибок. Callbacks ВОЗВРАЩАЮТ данные и не печатают: канал
 // stdout занят протоколом, и одна посторонняя строка в нём ломает клиента.
@@ -118,7 +118,7 @@ export function createMcpServer(options: McpOptions): {
     onJoin, decorateParticipant, stalls, errorText,
   } = options;
   // Пустой список версий — отказ здесь, при создании, а не `undefined` в ответе на первый
-  // `initialize` (`BL-423`): `negotiateProtocol` берёт `versions[0]` за свою последнюю, и
+  // `initialize`: `negotiateProtocol` берёт `versions[0]` за свою последнюю, и
   // сервер без единой версии объявлял бы клиенту протокол `undefined` — согласие ни на что.
   // Сегодня список — литерал контракта потребителя, пустым его делает только правка руками;
   // гейт стоит там, где ошибку видно до первого соединения.
@@ -143,7 +143,7 @@ export function createMcpServer(options: McpOptions): {
       return `у задачи ${task} владельца нет — гейта нет, и захватывать нечего: она заведена `
         + `прежним CLI. Читай обычным вызовом, без claim · ${service.identityLabel(home, task, addr, session)}`;
     }
-    // Захват — это и перепривязка (ADR-027): пишется и владелец, и объявленная задача.
+    // Захват — это и перепривязка: пишется и владелец, и объявленная задача.
     const mine = own.owner === session;
     if (mine) service.bindSession(home, task, session);
     const previous = mine ? null : service.claimOwnership(home, task, session);
@@ -272,7 +272,7 @@ export function createMcpServer(options: McpOptions): {
     if (id === undefined || id === null) return null;
     switch (method) {
       case 'initialize': {
-        // Contact point сдаётся на РУКОПОЖАТИИ (`BL-427`): идентичность к этому моменту уже
+        // Contact point сдаётся на РУКОПОЖАТИИ: идентичность к этому моменту уже
         // резолвлена, и ждать первого инструмента незачем — сессия, сделавшая handshake и не
         // позвавшая ничего, иначе остаётся для надзирателя глухой, а тот законно откатывается
         // на `self-wake`. Вход на `tools/call` при этом остаётся: инструмент зовут и без

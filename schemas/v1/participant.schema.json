@@ -32,7 +32,7 @@
       "minLength": 1
     },
     "capabilities": {
-      "description": "Снимок capabilities driver'а на момент подъёма. Четыре последних поля необязательны: записи, сделанные до ADR-034, лежат в живых журналах и обязаны читаться.",
+      "description": "Снимок capabilities driver'а на момент подъёма. Четыре последних поля необязательны: более ранние записи без них лежат в живых журналах и обязаны читаться.",
       "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["spawn", "attach", "activation", "inspect", "stop"],

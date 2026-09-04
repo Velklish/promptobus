@@ -1,9 +1,11 @@
-// Миграция `.agents/a2a` → `.promptobus` (ADR-032, §7; постановка `BL-410`).
+// Миграция прежнего store → `.promptobus`.
 //
 // Однонаправленная и одноразовая: backup'а и обратной миграции нет, старый CLI новый store
 // не читает. Отсюда единственное требование, которому подчинён весь порядок шагов —
 // **частично записанного нового store не бывает**: он собирается в соседнем временном
 // каталоге и встаёт на место одним `rename`, а legacy-каталог сносится только после.
+//
+// Откуда мигрировать, объявляет host (`legacyLayout`). Нет раскладки — переносить не из чего.
 //
 // Порядок:
 //
@@ -11,7 +13,7 @@
 // 2. сборка в `<root>/.promptobus.migrating` — соседе цели, чтобы `rename` был атомарным;
 // 3. отметка `migrated.json` внутри собранного каталога — до переключения;
 // 4. `rename` временного каталога в `.promptobus`;
-// 5. снос `.agents/a2a`.
+// 5. снос прежнего каталога.
 //
 // **Отметка закрывает окно между 4 и 5.** Смерть процесса ровно там оставила бы оба root'а,
 // а «оба root'а сразу» — отказ; пользователь получил бы кирпич на ровном месте. Отметка
@@ -42,9 +44,7 @@ import type {
   ArtifactV1, CapabilitiesSnapshot, MessageV1, ParticipantV1, TaskV1,
 } from './v1/model.js';
 import { validate } from './v1/validate.js';
-
-/** Где legacy store лежит внутри рабочего места. Знание adapter'а, но нужно и preflight'у. */
-export const LEGACY_REL = path.join('.agents', 'a2a');
+import type { HostLegacyLayout, PromptobusHost } from './host.js';
 
 /** Имя отметки удавшейся сборки. Лежит внутри нового root'а и переживает `rename`. */
 const MARK = 'migrated.json';
@@ -61,26 +61,9 @@ const MARK = 'migrated.json';
 const MIGRATION_WAIT_MS = 30_000;
 
 /**
- * Команда, которой закрывают активные задачи перед переходом. **Дом значения здесь**: её
- * печатает отказ preflight'а, и её же цитирует проза — справочник, гайд и changelog.
- * Разъедься копии, следующий релиз дал бы пользователю команду закрытия на несуществующей
- * версии; держит их вместе гейт цитат `lint` (ключ `legacy-cli`).
- *
- * Значение — шаблон целиком, а не одна версия: копирует пользователь строку, и сверять
- * прозу надо с тем, что он копирует.
- *
- * **Версия здесь — последний релиз ПЕРЕД тем, который принёс миграцию, и бампается вместе
- * с ним.** Прежний store умеют читать все релизы до миграции, и звать надо последний из
- * них: у обновлявшегося он уже стоит, а сидевшему на релизе постарше переход к нему ничего
- * не ломает — ломающий здесь ровно один, тот самый, что приносит миграцию. Миграция едет в
- * `0.63.0`, значит тут `0.62.0`.
- *
- * **Команда здесь называется `a2a`, и волной переименования её не трогают** (`BL-411`).
- * Строка ведёт человека в ПРЕЖНЮЮ версию CLI, где команда так и зовётся; заменив её на
- * `promptobus`, отказ послал бы закрывать задачи командой, которой в том релизе нет вовсе.
- * Это единственное место действующего кода, где имя эпохи A2A законно.
+ * Команда закрытия активных задач прежнего CLI приходит с host'а (`legacyLayout().done`).
+ * Здесь её нет: у package нет своей раскладки и своего прежнего CLI.
  */
-export const LEGACY_DONE = 'npx @agent-workspace/ati-agents@0.62.0 a2a done --task <id>';
 
 /** Шаги, на которых набор умеет уронить миграцию. В production не подставляется вовсе. */
 export type MigrationStep =
@@ -182,12 +165,44 @@ function markOf(home: string): { from?: string } | null {
 }
 
 /**
- * Нужна ли миграция и можно ли её делать. Ни одного изменения на диске — отказ приходит
- * до мутации по построению.
+ * Разбор `legacyLayout().rel`: ровно два сегмента — внешний каталог и store внутри него.
+ * Форма объявлена, чтобы adapter восстанавливал корень рабочего места из абсолютного пути
+ * store и не получал `undefined` на односегментном пути.
  */
-export function preflight(root: string): MigrationPlan {
-  const legacyHome = path.join(root, LEGACY_REL);
+export function splitLegacyRel(rel: string): [string, string] {
+  const parts = String(rel ?? '').split(/[\\/]/).filter(Boolean);
+  if (parts.length !== 2) {
+    throw new GateError(
+      `legacy layout.rel должен быть ровно из двух сегментов пути `
+      + `(каталог и store внутри него), а не ${JSON.stringify(rel)}`,
+    );
+  }
+  return [parts[0], parts[1]];
+}
+
+function layoutOf(options: MigrationOptions): HostLegacyLayout | null {
+  if (Object.prototype.hasOwnProperty.call(options, 'layout')) return options.layout ?? null;
+  if (options.host) return options.host.legacyLayout();
+  return null;
+}
+
+/**
+ * Нужна ли миграция и можно ли её делать. Ни одного изменения на диске — отказ приходит
+ * до мутации по построению. Без layout (standalone, host без прежнего store) — не из чего.
+ */
+export function preflight(root: string, layout: HostLegacyLayout | null = null): MigrationPlan {
   const target = homeOf(root);
+  const empty: MigrationPlan = { needed: false, refusal: null, legacyHome: '', target, active: [] };
+  if (!layout) return empty;
+  let outer: string;
+  let inner: string;
+  try {
+    [outer, inner] = splitLegacyRel(layout.rel);
+  } catch (e) {
+    empty.refusal = e instanceof GateError ? e.message : String(e);
+    return empty;
+  }
+  const legacyHome = path.join(root, outer, inner);
   const plan: MigrationPlan = { needed: false, refusal: null, legacyHome, target, active: [] };
   if (!existsSync(legacyHome)) return plan;
   if (!isDir(legacyHome)) {
@@ -219,7 +234,7 @@ export function preflight(root: string): MigrationPlan {
     plan.active = active;
     plan.refusal = `переход на новый store требует, чтобы активных задач не осталось, а их ${active.length}: `
       + `${active.join(', ')}.\nЗакрой каждую прежней версией CLI и повтори команду:\n`
-      + active.map((id) => `  ${LEGACY_DONE.replace('<id>', id)}`).join('\n');
+      + active.map((id) => `  ${layout.done.replace('<id>', id)}`).join('\n');
   }
   return plan;
 }
@@ -248,18 +263,19 @@ function activeLegacyTasks(legacyHome: string): string[] {
 }
 
 /** Нужна ли миграция вообще. Отдельным предикатом: его зовут перед каждым обращением. */
-export function migrationNeeded(root: string): boolean {
-  return preflight(root).needed;
+export function migrationNeeded(root: string, layout: HostLegacyLayout | null = null): boolean {
+  return preflight(root, layout).needed;
 }
 
 /**
  * Перенести store. Отказ preflight'а — `GateError` с человеческим текстом: это законный
- * исход, а не поломка механизма.
+ * исход, а не поломка механизма. Без layout — пустой отчёт, диск не трогается.
  */
 export function migrate(root: string, {
-  fault = NO_FAULT, waitMs = MIGRATION_WAIT_MS, session = null, harness = null,
+  fault = NO_FAULT, waitMs = MIGRATION_WAIT_MS, session = null, harness = null, ...rest
 }: MigrationOptions = {}): MigrationReport {
-  const plan = preflight(root);
+  const layout = layoutOf(rest);
+  const plan = preflight(root, layout);
   if (plan.refusal) throw new GateError(plan.refusal);
   const empty = (): MigrationReport => ({
     root, from: plan.legacyHome, to: plan.target, tasks: [], brokenTasks: [], bindings: 0,
@@ -279,7 +295,7 @@ export function migrate(root: string, {
   // видит уже переехавший корень. Отказ на старте сервера значил бы «шина пропала» у второй
   // сессии на ровном месте.
   try {
-    return withDirLock(lockOf(root), () => migrateLocked(root, empty(), fault, harness), {
+    return withDirLock(lockOf(root), () => migrateLocked(root, layout, empty(), fault, harness), {
       waitMs,
       session,
       onMissing: () => new GateError(`рабочего места ${root} нет — переносить из него нечего`),
@@ -289,7 +305,7 @@ export function migrate(root: string, {
     if (!(e instanceof MigrationBusy)) throw e;
     // Лок досидел до конца — но сосед мог доделать переезд ровно в это окно. Спрашиваем
     // ещё раз: переехавший корень для нас исход, а не повод отказать.
-    const after = preflight(root);
+    const after = preflight(root, layout);
     if (after.refusal) throw new GateError(after.refusal);
     if (!after.needed) return empty();
     throw e.refusal;
@@ -297,10 +313,16 @@ export function migrate(root: string, {
 }
 
 /** Сам перенос — уже под локом: соседа здесь нет по построению. */
-function migrateLocked(root: string, report: MigrationReport, fault: MigrationFault, harness: string | null): MigrationReport {
+function migrateLocked(
+  root: string,
+  layout: HostLegacyLayout | null,
+  report: MigrationReport,
+  fault: MigrationFault,
+  harness: string | null,
+): MigrationReport {
   // Пока ждали лок, сосед мог сделать всё. Preflight переспрашивается ЗДЕСЬ, а не только
   // снаружи: снаружи он читался до ожидания, и решение по нему успело устареть.
-  const plan = preflight(root);
+  const plan = preflight(root, layout);
   if (plan.refusal) throw new GateError(plan.refusal);
   if (!plan.needed) return report;
   const { legacyHome, target } = plan;
@@ -384,7 +406,7 @@ const LEGACY_MSG_RE = /^(\d{8}T\d{9})-(\d{4})-/;
  * **Хвост сеется каталогом, а не одним именем файла, и это не украшение.** Имена прежнего
  * store уникальны в пределах ОДНОГО mailbox'а, а не задачи: два отправителя под одним
  * адресом из двух процессов собирали одно имя, и разводил их `link` внутри своего каталога
- * (`BL-249`, [reference/12](../../../docs/reference/12-promptobus.md)). Посев одним именем дал бы
+ * (справочником). Посев одним именем дал бы
  * им один id на всю задачу — канон второго не записался бы (`existsSync`), ссылка проглотила
  * бы `EEXIST`, и сообщение исчезло бы молча. Детерминизм повтора при этом цел: каждый
  * legacy-файл лежит ровно в одном каталоге.
@@ -454,16 +476,21 @@ export interface MigrationOptions {
   waitMs?: number;
   /**
    * Идентичность сессии, затеявшей переезд, — только для диагностики занятого лока.
-   * Окружение читает adapter (ADR-032, §2), поэтому значение приходит аргументом.
+   * Окружение читает adapter, поэтому значение приходит аргументом.
    */
   session?: string | null;
   /**
    * Harness записей прежнего CLI: у них поля `harness` нет вовсе, а v1 требует его в каждой
-   * записи участника. Имён harness'ов в package нет и быть не может — их дом у driver'ов
-   * (ADR-032, §3), поэтому имя даёт adapter: у механизма это `fallback` его registry. Не
-   * назвали — запись говорит «harness не объявлен».
+   * записи участника. Имён harness'ов в package нет и быть не может — их дом у driver'ов,
+   * поэтому имя даёт adapter. Не назвали — запись говорит «harness не объявлен».
    */
   harness?: string | null;
+  /**
+   * Откуда мигрировать. Явный `null` — не из чего, даже если host другой. Не передали —
+   * берётся `host.legacyLayout()`, а без host'а — тоже не из чего.
+   */
+  layout?: HostLegacyLayout | null;
+  host?: Pick<PromptobusHost, 'legacyLayout'>;
 }
 
 function capsOf(value: unknown): CapabilitiesSnapshot | null {
@@ -490,7 +517,7 @@ function participantToV1(p: legacy.Participant, harness: string | null): Partici
   return {
     // Негодный адрес запись НЕ роняет: одна испорченная строка не имеет права стоить
     // остальных, и `promptobus done` по такой записи всё равно приберёт секреты и каталоги
-    // (`BL-374`). Id при этом обязан быть стабильным: тот же адрес даёт то же имя на каждом
+    // Id при этом обязан быть стабильным: тот же адрес даёт то же имя на каждом
     // проходе.
     id: usable ? addrDir(p.address) : `broken-${tail(String(p?.address))}`,
     role: usable ? roleOf(p.address) : UNDECLARED_ROLE,
@@ -513,7 +540,7 @@ function toV1Task(id: string, meta: legacy.TaskMeta, harness: string | null): Ta
     // Перевод — тот же, которым его делает слой совместимости: две редакции одного
     // правила разъехались бы молча. Запись с негодным адресом он не роняет и не теряет —
     // id ей даёт стабильный хвост от самого адреса, а `promptobus done` по ней всё равно
-    // приберёт секреты и каталоги (`BL-374`).
+    // приберёт секреты и каталоги.
     const one = participantToV1(p, harness);
     if (seen.has(one.id)) continue;
     seen.add(one.id);

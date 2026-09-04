@@ -1,4 +1,4 @@
-// Собственные валидаторы protocol v1: production не читает JSON Schemas вовсе (ADR-032, §6).
+// Собственные валидаторы protocol v1: production не читает JSON Schemas вовсе.
 //
 // Схемы лежат в `schemas/v1` и едут в tarball для потребителей, а здесь та же грамматика
 // написана вручную — ровно затем, чтобы у package не было runtime-зависимости. Расхождение
@@ -64,7 +64,7 @@ function version(value: unknown, at: string, expected: number): Verdict | null {
   return bad(at, `ожидается ${expected}`);
 }
 
-// Пять обязательных и четыре необязательных (ADR-034): расширение контракта не имеет права
+// Пять обязательных и четыре необязательных: расширение контракта не имеет права
 // сделать нечитаемой запись, сделанную до него, — такие лежат в живых журналах задач.
 const CAPABILITY_KEYS = [
   'spawn', 'attach', 'activation', 'inspect', 'stop',

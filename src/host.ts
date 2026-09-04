@@ -1,5 +1,5 @@
 // Host contract: знание о рабочем месте, которое потребитель передаёт шине явно
-// на каждый вызов (ADR-038). Process-wide singleton'а нет: два host'а в одном
+// на каждый вызов. Process-wide singleton'а нет: два host'а в одном
 // процессе законны и независимы.
 //
 // Имена полей — про рабочее место вообще, не про раскладку какого-то одного
@@ -72,6 +72,18 @@ export interface HostToolBin {
   reason?: string;
 }
 
+/**
+ * Прежний store, если у этого рабочего места он бывает.
+ * `rel` — от корня рабочего места, ровно два сегмента пути: внешний каталог и store
+ * внутри него. Два сегмента — объявленная форма: adapter по ним восстанавливает корень
+ * рабочего места из абсолютного пути store. Один сегмент или три — ошибка формы, а не
+ * «legacy нет». `done` — команда закрытия активных задач прежнего CLI, плейсхолдер `<id>`.
+ */
+export interface HostLegacyLayout {
+  rel: string;
+  done: string;
+}
+
 export interface PromptobusHost {
   readonly kind: typeof HOST_KIND;
   readonly id: string;
@@ -128,6 +140,11 @@ export interface PromptobusHost {
   extraEnv(): Record<string, string>;
   resolveToolBin(name: string): HostToolBin;
   substituteVars(value: unknown): unknown;
+  /**
+   * Откуда мигрировать и чем закрывать прежние задачи. `null` — мигрировать не из чего;
+   * так у standalone и у любого host'а без истории прежнего store.
+   */
+  legacyLayout(): HostLegacyLayout | null;
 
   formatCommand(args: string[]): string;
   formatNpx(args: string[]): string;

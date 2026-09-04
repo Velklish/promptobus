@@ -1,10 +1,10 @@
-// Protocol и store v1 (`BL-409`, ADR-032 §6) — production store механизма с cutover'а
-// `BL-410` и единственная его поверхность с `BL-430`: слоя с прежними именами над engine
-// больше нет, и потребители зовут эти модели напрямую.
+// Protocol и store v1 — production store механизма с cutover'а
+// и единственная его поверхность: слоя с прежними именами над engine больше нет,
+// и потребители зовут эти модели напрямую.
 //
 // Наружу имена уходят ПЛОСКО, из `../index.ts` (`export * from './v1/index.js'`): поверхность
-// v1 по-прежнему из главного entry point; отдельно уходят `./driver`, `./host` и `./hooks`
-// (ADR-038). Сырые пути store
+// v1 по-прежнему из главного entry point; отдельно уходят `./driver`, `./host` и `./hooks`.
+// Сырые пути store
 // наружу не выходят — снаружи виден protocol, а не диск; исключение объявлено самим
 // engine (`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) и названо там же.
 export { ERROR_CODES, PromptobusError } from './errors.js';
