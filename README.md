@@ -1,9 +1,149 @@
 # Promptobus
 
-[Русский](README.ru.md)
+[Russian](README.ru.md)
 
-Promptobus is a local mailbox and task bus for agent sessions. Workers and an orchestrator exchange typed messages, artifacts, and status through a shared on-disk task, without relying on a single chat transcript.
+Promptobus is a local mailbox and task bus for agent sessions. An orchestrator and workers exchange typed messages, artifacts, and status through an on-disk task. They do not share one chat transcript.
 
-This repository is a **skeleton**. The package manifest, license, tracker layout, and CI frame are in place. The implementation arrives in follow-up work; there is no runtime to install yet.
+The package was extracted from a private agent-workspace tool so the bus can run on its own.
 
-English is canonical. Full documentation is a separate task and is not written ahead of the code here.
+English is canonical. The Russian README is the only other language in this repository.
+
+## Why
+
+A split across sessions loses the assignment, the replies, and the files. Promptobus keeps them on disk under `.promptobus/`. A new session claims the mailbox and continues. Workers do not write to each other. Mail goes through the orchestrator.
+
+The bus does not know your workspace. You pass a [host](docs/adr/adr-002-standalone-host-contract.md) into every call. The CLI builds a standalone host from the current directory, Git, and `promptobus.json`.
+
+## Requirements
+
+- Node.js 20 or newer (`package.json` `engines`)
+- Git, for worktrees and freshness checks
+
+## Install the package
+
+From a clone of this repository:
+
+```bash
+npm install
+npm run build
+node bin/promptobus.js --version
+```
+
+The command prints `promptobus 0.1.0`. After a global or `npx` install the same binary is `promptobus`.
+
+As a library:
+
+```bash
+npm install promptobus
+```
+
+`package.json` exports `.`, `./host`, `./hooks`, `./driver`, `./cli`, and `./schemas/*`.
+
+## Configure a workspace
+
+Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it. The store is `.promptobus/` next to that file.
+
+```json
+{
+  "tools": ["claude", "cursor", "codex"]
+}
+```
+
+`tools` lists harnesses this workspace may spawn. `--harness` must name one of them. Without the flag, spawn and review use `claude` (`lib/drivers.js`).
+
+`promptobus install` writes `harnesses` in the same file: the last installed hook list. That field is not the spawn allow-list.
+
+Optional keys the standalone host reads: `commandName`, `locale`, `version`, `rules` (extra rule files), `mcp` (servers copied to a participant), `skills` (directory of process skills).
+
+## Add the MCP server
+
+The bus is an MCP stdio server:
+
+```bash
+promptobus mcp
+```
+
+Point the harness at that command. Set `PROMPTOBUS_HOME` to the store directory (the `.promptobus` folder). Spawn writes this entry for each worker and reviewer. The orchestrator session needs the same server.
+
+Tools:
+
+- `promptobus_send` — send a typed message (`task`, `status`, `question`, `answer`, `artifact`, `result`, `review`)
+- `promptobus_mailbox` — read unread mail (this marks it read)
+- `promptobus_task` — task metadata, participants, artifact directory
+
+Full names the session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other two (`lib/contract.js`).
+
+## Install project hooks
+
+Hook install is a separate command. It is not npm `postinstall`. See [docs/guides/install.md](docs/guides/install.md).
+
+```text
+promptobus install --harnesses claude,cursor,codex
+promptobus install --check
+promptobus install --dry-run
+promptobus uninstall [--harnesses claude,cursor,codex]
+```
+
+Trust and troubleshooting: [docs/guides/hooks-and-trust.md](docs/guides/hooks-and-trust.md).
+
+## Start
+
+Write a brief file. Then:
+
+```bash
+promptobus spawn --repo ./my-repo --brief ./brief.md
+promptobus status
+```
+
+`--repo` is a path on disk. `--brief` is required. `--new-task` opens a new task. `--task <id>` attaches to an existing one. `--title` names this worker's slice. `--task-title` names the task. `--harness cursor` or `--harness codex` selects the runtime. `--dry-run` prints the plan and writes nothing.
+
+Isolated review:
+
+```bash
+promptobus review ./my-repo --title "Review the change"
+```
+
+The path is required. `--title` is required to open a new review task. Repeat with `--task <id>` to send a new diff to the same reviewer.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `promptobus spawn` | Start a worker in an isolated git worktree |
+| `promptobus review` | Start a read-only reviewer on a path |
+| `promptobus status` | List active tasks, participants, unread counts |
+| `promptobus done` | Close a task. Stops sessions the bus started unless `--keep-sessions` |
+| `promptobus dismiss <address>` | Stop watching a finished participant |
+| `promptobus history` | Print **read** mail, oldest first (default last 50) |
+| `promptobus prune` | Preview or delete journals of old closed tasks (default 14 days) |
+| `promptobus guard` | Loop guard for the Stop hook. Exit 2 returns the turn |
+| `promptobus warden` | Task listener. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start |
+| `promptobus mcp` | MCP stdio server |
+| `promptobus install` | Write project-level hooks (`--harnesses`, `--check`, `--dry-run`) |
+| `promptobus uninstall` | Remove owned project-level hooks |
+
+`promptobus help` and `promptobus --version` work without a host file.
+
+## Library
+
+```js
+import { openEngine } from 'promptobus';
+import { createStandaloneHost } from 'promptobus/host';
+import { planPromptobusHooks } from 'promptobus/hooks';
+```
+
+`openEngine` needs a store location (`root` or `home`) and a routing policy. The engine does not search the disk for a workspace. See [docs/reference/01-overview.md](docs/reference/01-overview.md).
+
+## Documentation
+
+- [Install](docs/guides/install.md)
+- [Hooks, trust, troubleshooting](docs/guides/hooks-and-trust.md)
+- [Contribute (backslop)](docs/guides/contributing.md)
+- [Host contract](docs/adr/adr-002-standalone-host-contract.md)
+- [Glossary](docs/GLOSSARY.md)
+- [Reference](docs/reference/README.md)
+- Process skills: [skills/orchestrate](skills/orchestrate/SKILL.md), [skills/solo-review](skills/solo-review/SKILL.md)
+
+## License
+
+MIT

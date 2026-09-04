@@ -4,4 +4,7 @@ How promptobus works today — from the code, not intention. Intent and rational
 
 | Section | About |
 |---|---|
-| [TODO: 01-overview.md] | [TODO: what it is, what it consists of, entry points] |
+| [01-overview.md](01-overview.md) | Package surface, store home, MCP tools, entry points |
+| [02-host.md](02-host.md) | `PromptobusHost`, standalone host, `legacyLayout()` |
+| [03-cli.md](03-cli.md) | Commands, harness flags, warden and guard |
+| [04-protocol.md](04-protocol.md) | Addresses, message types, engine, artifacts |
