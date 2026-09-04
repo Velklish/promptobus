@@ -4,8 +4,11 @@ Where promptobus is going: goals and their rationale. This is a living document:
 
 ## Goals
 
-[TODO: 3–7 goals. For each: what, why, dependencies, and a link to an ADR or task that traces the goal.]
+1. **Host-neutral bus.** A third party runs the CLI and embeds the library without another product's layout. The host contract in [adr-002-standalone-host-contract.md](adr/adr-002-standalone-host-contract.md) is the boundary. Evidence: `src/host.ts`, `src/standalone.ts`.
+2. **Three harnesses in one CLI.** Claude Code, Cursor, and Codex share the same task store and the same MCP tools. Evidence: `lib/drivers.js`.
+3. **Project-level hook installer.** A person opts in with `promptobus install --harnesses …`. npm `postinstall` does not edit harness files. Evidence: the command form in [guides/install.md](guides/install.md); the CLI in this tree does not yet register `install`.
+4. **English runtime output.** New strings are English. Existing Russian literals in the transferred code are a later pass. Evidence: this documentation; `lib/cli.js` help is still Russian.
 
 ## Prioritisation principle
 
-[TODO: what determines ordering — pain from real work, an owner request, a deadline. A hypothesis yields to a requirement from a live task.]
+A live break or a missing command that a published guide already names comes first. Owner requests next. The backlog order field is the queue, not this list.
