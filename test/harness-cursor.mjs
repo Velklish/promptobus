@@ -198,8 +198,15 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   for (const dir of ['scripts', 'trace', 'turns', 'approvals', 'state', 'queue', 'tmux', 'cursor']) {
     mkdirSync(path.join(home, dir), { recursive: true });
   }
-  stubCommand(binDir, 'agent', `import { agentMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
-    + 'await agentMain(process.argv.slice(2));\n');
+  const agentStub = `import { agentMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
+    + 'await agentMain(process.argv.slice(2));\n';
+  // Dest `cursorDriver.options.tool` is `cursor`. Host resolveToolBin returns
+  // `{ ok: true, bin: name }` with no PATH search, so spawn runs that name.
+  // Stub every dest lookup name; otherwise `cursor` falls through to a real
+  // install dir on PATH and the suite hangs in that binary.
+  stubCommand(binDir, 'agent', agentStub);
+  stubCommand(binDir, 'cursor', agentStub);
+  stubCommand(binDir, 'cursor-agent', agentStub);
   stubCommand(binDir, 'tmux', `import { tmuxMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
     + 'await tmuxMain(process.argv.slice(2));\n');
   const restore = withStubPath(binDir);

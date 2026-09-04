@@ -104,10 +104,11 @@ check(': тишина стенограммы сама по себе не сто�
   && silentIsStall({ silent: false }, [1]) === false
   && silentIsStall({ silent: false }, []) === false);
 
+const wardenCmd = `node ${BUS_MCP_NEEDLE.replace(/\bmcp\b/, 'warden --task t')}`;
 check(': рантайм — worker-server и игла шины; MCP — из конфига',
   isRuntimeCmd('node -e setTimeout(() => {}, 60_000); // worker-server') === true
   && isRuntimeCmd(`node ${BUS_MCP_NEEDLE}`) === true
-  && isRuntimeCmd(`node ${BUS_MCP_NEEDLE.split(' promptobus mcp')[0]} promptobus warden --task t`) === false
+  && isRuntimeCmd(wardenCmd) === false
   && isRuntimeCmd('node index.js --cursor-persist-restore abc sess') === false
   && isRuntimeCmd('foo --stdio', ['foo']) === true
   && isRuntimeCmd('/bin/zsh -c npm test') === false
@@ -119,7 +120,7 @@ check(': голый интерпретатор из mcp.json — не игла',
   && JSON.stringify(mcpRuntimeNeedles({ mcpServers: { x: { command: 'node', args: ['foo'] } } })) === JSON.stringify(['foo']));
 
 {
-  const warden = `node ${BUS_MCP_NEEDLE.replace(/ promptobus mcp$/, ' promptobus warden --task t')}`;
+  const warden = `node ${BUS_MCP_NEEDLE.replace(/\bmcp\b/, 'warden --task t')}`;
   const stdout = [
     '    5     1 node persist-restore',
     `   10     5 node ${BUS_MCP_NEEDLE}`,
@@ -156,7 +157,7 @@ check(': голый интерпретатор из mcp.json — не игла',
   // фикстура с постоянным хвостом краснела в main, проходя у worker'а.
   const busHead = `   10     5 node ${BUS_MCP_NEEDLE} `;
   const busLine = `${busHead}${'z'.repeat(Math.max(40, 221 - busHead.length))}`;
-  const wardenLine = `   20    10 node ${BUS_MCP_NEEDLE.replace(/ promptobus mcp$/, ' promptobus warden --task t')}`;
+  const wardenLine = `   20    10 node ${BUS_MCP_NEEDLE.replace(/\bmcp\b/, 'warden --task t')}`;
   const longTool = `npm test ${'x'.repeat(200)}`;
   const raw = ['    5     1 persist', busLine, wardenLine, `   30     5 ${longTool}`].join('\n');
   let seenArgs;
