@@ -1,39 +1,41 @@
-// Раскладка store v1 на диске.
+// On-disk layout of store v1.
 //
-// Корень даёт вызывающий: package рабочего места не ищет и окружения не читает — это дело
-// adapter'а. Здесь только склейка путей, ни одного обращения к диску.
+// The caller supplies the root: the package does not search the workspace and
+// does not read the environment — that is the adapter's business. Path joining
+// only, no disk access.
 import path from 'node:path';
 import { fail } from './errors.js';
 import { PARTICIPANT_ID_RE, RECORD_ID_RE, TASK_ID_RE } from './model.js';
 
-/** Каталог store внутри рабочего места. */
+/** Store directory inside the workspace. */
 export const ROOT_DIR = '.promptobus';
 
-/** Store v1 внутри корня, который назвал вызывающий. */
+/** Store v1 inside the root the caller named. */
 export function homeOf(root: string): string {
-  if (typeof root !== 'string' || !root) fail('schema-invalid', 'корень store не назван');
+  if (typeof root !== 'string' || !root) fail('schema-invalid', 'store root is not named');
   return path.join(root, ROOT_DIR);
 }
 
-// Грамматика проверяется у КАЖДОГО имени, попадающего в путь: id приходит и от adapter'а,
-// и из чужой записи на диске, а `..` в нём вывел бы запись за пределы задачи.
+// Grammar is checked on EVERY name that enters a path: an id arrives both from
+// the adapter and from a foreign record on disk, and `..` in it would walk the
+// record out of the task.
 function safeTask(id: unknown): string {
   if (typeof id !== 'string' || !TASK_ID_RE.test(id)) {
-    fail('task-not-found', `недопустимый id задачи: «${String(id)}»`, { task: id });
+    fail('task-not-found', `invalid task id: «${String(id)}»`, { task: id });
   }
   return id;
 }
 
 function safeParticipant(id: unknown): string {
   if (typeof id !== 'string' || !PARTICIPANT_ID_RE.test(id)) {
-    fail('participant-not-found', `недопустимый id участника: «${String(id)}»`, { participant: id });
+    fail('participant-not-found', `invalid participant id: «${String(id)}»`, { participant: id });
   }
   return id;
 }
 
 function safeRecord(id: unknown): string {
   if (typeof id !== 'string' || !RECORD_ID_RE.test(id)) {
-    fail('schema-invalid', `недопустимый id записи: «${String(id)}»`, { record: id });
+    fail('schema-invalid', `invalid record id: «${String(id)}»`, { record: id });
   }
   return id;
 }
@@ -54,7 +56,7 @@ export function lockDir(home: string, task: string): string {
   return path.join(taskDir(home, task), '.lock');
 }
 
-/** Канонические сообщения. Неизменяемы: ссылки inbox, history и intent — тот же inode. */
+/** Canonical messages. Immutable: inbox, history, and intent refs are the same inode. */
 export function messagesDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'messages');
 }
@@ -63,7 +65,7 @@ export function messageFile(home: string, task: string, message: string): string
   return path.join(messagesDir(home, task), `${safeRecord(message)}.json`);
 }
 
-/** Незакрытые fan-out'ы. Файл здесь — жёсткая ссылка на каноническое сообщение. */
+/** Unclosed fan-outs. The file here is a hard link to the canonical message. */
 export function intentsDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'intents');
 }
@@ -73,9 +75,10 @@ export function intentFile(home: string, task: string, message: string): string 
 }
 
 /**
- * Лизинг незакрытого fan-out'а: `<id>.owner` рядом с intent'ом. Путь собирается ИЗ пути
- * intent'а, а не из id второй раз: восстановление обходит каталог по именам файлов и
- * лизинг спрашивает до разбора записи — у него на руках путь, а не id.
+ * Lease of an unclosed fan-out: `<id>.owner` next to the intent. The path is
+ * assembled FROM the intent path, not from the id a second time: recovery walks
+ * the directory by file names and asks for the lease before parsing the
+ * record — it has a path in hand, not an id.
  */
 export function ownerOfIntent(intent: string): string {
   return `${intent.slice(0, -'.json'.length)}.owner`;
@@ -89,7 +92,7 @@ export function inboxRef(home: string, task: string, participant: string, messag
   return path.join(inboxDir(home, task, participant), `${safeRecord(message)}.json`);
 }
 
-/** Прочитанное. Имя файла то же — по нему recovery и отличает доставленное от недостающего. */
+/** Read mail. The file name is the same — recovery uses it to tell delivered from missing. */
 export function historyDir(home: string, task: string, participant: string): string {
   return path.join(taskDir(home, task), 'history', safeParticipant(participant));
 }
@@ -99,8 +102,9 @@ export function historyRef(home: string, task: string, participant: string, mess
 }
 
 /**
- * Изолированное. Два подкаталога, а не один: `inbox/<участник>` и `artifacts` — иначе
- * участник с id `artifacts` увёл бы чужие записи к себе.
+ * Isolated. Two subdirectories, not one: `inbox/<participant>` and `artifacts`
+ * — otherwise a participant whose id is `artifacts` would take foreign records
+ * as its own.
  */
 export function brokenInboxDir(home: string, task: string, participant: string): string {
   return path.join(taskDir(home, task), 'broken', 'inbox', safeParticipant(participant));
@@ -110,12 +114,12 @@ export function brokenArtifactsDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'broken', 'artifacts');
 }
 
-/** Оборванный intent: падение внутри точки коммита — единственная форма его порчи. */
+/** A torn intent: a crash inside the commit point is the only form of its corruption. */
 export function brokenMessagesDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'broken', 'messages');
 }
 
-/** Содержимое артефактов, адресуемое SHA-256. Дедуплицируется внутри задачи. */
+/** Artifact payloads, addressed by SHA-256. Deduplicated inside the task. */
 export function blobsDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'blobs');
 }
@@ -124,7 +128,7 @@ export function blobFile(home: string, task: string, sha256: string): string {
   return path.join(blobsDir(home, task), sha256);
 }
 
-/** Metadata артефактов: имя файла живёт здесь, содержимое — в blob'е. */
+/** Artifact metadata: the file name lives here, the payload in the blob. */
 export function artifactsDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'artifacts');
 }
@@ -133,12 +137,12 @@ export function artifactFile(home: string, task: string, artifact: string): stri
   return path.join(artifactsDir(home, task), `${safeRecord(artifact)}.json`);
 }
 
-/** Путь blob'а, как он записан в metadata: относительный, внутри каталога задачи. */
+/** Blob path as written in metadata: relative, inside the task directory. */
 export function blobRef(sha256: string): string {
   return `blobs/${sha256}`;
 }
 
-/** Тот же путь абсолютным. Чтение metadata идёт только через него: `..` в поле отсекает схема. */
+/** The same path, absolute. Metadata is read only through it: `..` in the field is cut by the schema. */
 export function blobOf(home: string, task: string, artifact: { sha256: string }): string {
   return blobFile(home, task, artifact.sha256);
 }

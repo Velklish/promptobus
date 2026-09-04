@@ -1,14 +1,14 @@
-// Host contract: знание о рабочем месте, которое потребитель передаёт шине явно
-// на каждый вызов. Process-wide singleton'а нет: два host'а в одном
-// процессе законны и независимы.
+// Host contract: knowledge of the workspace the consumer passes into the bus
+// explicitly on every call. There is no process-wide singleton: two hosts in
+// one process are lawful and independent.
 //
-// Имена полей — про рабочее место вообще, не про раскладку какого-то одного
-// потребителя. Конкретные пути (каталог правил, манифест инструментов) называет
-// реализация.
+// Field names are about a workspace in general, not about one consumer's
+// layout. Concrete paths (rules directory, tools manifest) are named by the
+// implementation.
 
 import path from 'node:path';
 
-/** Маркер объекта host: им набор отличает host от корня-строки. */
+/** Host object marker: the suite uses it to tell a host from a root string. */
 export const HOST_KIND = 'promptobus-host';
 
 export interface HostRepo {
@@ -67,15 +67,17 @@ export interface HostFreshness {
 export interface HostToolBin {
   ok: boolean;
   /**
-   * Чем запускать инструмент. Это ЕДИНСТВЕННОЕ поле, которое читают потребители —
-   * `liftoffParticipant` и драйверы передают его прямо в запуск процесса.
+   * How to launch the tool. This is the ONLY field consumers read —
+   * `liftoffParticipant` and the drivers pass it straight into the process spawn.
    *
-   * Голое имя (резолв по `PATH`) и абсолютный путь одинаково законны: выбирает host.
-   * Другого имени у этого поля нет. Реализация, вернувшая путь под своим названием —
-   * `path`, `binPath`, — молча сломает подъём участника: `lib/**` написан на JavaScript,
-   * типы там ничего не проверяют, и `run(undefined)` виден только в живом прогоне.
-   * Ровно так и случилось при выносе: ATI-реализация отдавала `path`, потребители читали
-   * `path`, а объявлено было `bin` — расхождение прожило до первого прогона набора.
+   * A bare name (`PATH` resolve) and an absolute path are equally lawful: the
+   * host chooses. The field has no other name. An implementation that returned
+   * the path under its own title — `path`, `binPath` — would silently break
+   * participant lift: `lib/**` is JavaScript, types check nothing there, and
+   * `run(undefined)` is only visible in a live run. That is exactly what
+   * happened at the extract: the ATI implementation returned `path`, consumers
+   * read `path`, and the declared name was `bin` — the drift lived until the
+   * first suite run.
    */
   bin?: string;
   note?: string;
@@ -84,10 +86,11 @@ export interface HostToolBin {
 }
 
 /**
- * Прежний store, если у этого рабочего места он бывает.
- * `rel` — от корня рабочего места, ровно два сегмента через `/`: внешний каталог и store
- * внутри него. Сегменты непустые, не `.` и не `..`; абсолютный путь и `\\` — ошибка формы,
- * а не «legacy нет». `done` — команда закрытия активных задач прежнего CLI, плейсхолдер `<id>`.
+ * Former store, if this workspace ever has one.
+ * `rel` — from the workspace root, exactly two segments joined by `/`: the
+ * outer directory and the store inside it. Segments are non-empty, not `.`
+ * and not `..`; an absolute path and `\\` are a shape error, not "no legacy".
+ * `done` — the former CLI's close-active-tasks command, `<id>` placeholder.
  */
 export interface HostLegacyLayout {
   rel: string;
@@ -106,9 +109,9 @@ export interface PromptobusHost {
   findRoot(cwd: string): string | null;
 
   nodePath(): string;
-  /** Точка входа CLI, которой подняли этот вызов — ею объявлен stdio-сервер шины участника. */
+  /** CLI entry this call was lifted with — it is how the participant bus stdio server is declared. */
   binPath(): string;
-  /** Точка входа, которую пишут на диск (hooks). У standalone совпадает с binPath. */
+  /** Entry written to disk (hooks). For standalone this matches binPath. */
   layoutBinPath(): string;
 
   toolsManifestRel(): string;
@@ -135,8 +138,8 @@ export interface PromptobusHost {
   formatCandidate(candidate: HostRepoCandidate): string;
   inWorkspace(abs: string): boolean;
   /**
-   * Отказ reviewer'а по раскладке клонов. `null` — этот вид отказа у host'а не действует
-   * (standalone не требует пару group/repo).
+   * Reviewer refusal about clone layout. `null` — this kind of refusal does
+   * not apply for this host (standalone does not require a group/repo pair).
    */
   reviewLayoutError(
     kind: 'not-clone' | 'outside' | 'no-clone' | 'need-pair' | 'cwd-outside' | 'cwd-need-pair' | 'ask-path',
@@ -151,8 +154,9 @@ export interface PromptobusHost {
   resolveToolBin(name: string): HostToolBin;
   substituteVars(value: unknown): unknown;
   /**
-   * Откуда мигрировать и чем закрывать прежние задачи. `null` — мигрировать не из чего;
-   * так у standalone и у любого host'а без истории прежнего store.
+   * Where to migrate from and how to close former tasks. `null` — nothing to
+   * migrate from; that is how standalone and any host without a former-store
+   * history look.
    */
   legacyLayout(): HostLegacyLayout | null;
 
@@ -160,13 +164,15 @@ export interface PromptobusHost {
   formatNpx(args: string[]): string;
   busCommand(args: string[]): string;
   /**
-   * Чем ЗАПУСТИТЬ подкоманду шины: argv целиком, без `node` впереди.
+   * How to LAUNCH a bus subcommand: the whole argv, no leading `node`.
    *
-   * `busCommand` рядом — для печати человеку, и на запуск не годится: строку пришлось бы
-   * разбирать обратно. Пакет не вправе собирать argv сам: он не знает, лежат ли его
-   * подкоманды в корне бинаря потребителя или под своим словом. Собранное на этом
-   * предположении `[binPath(), 'mcp']` попадёт в справку потребителя, а не в шину —
-   * молча, потому что чужой CLI на неизвестную подкоманду отвечает справкой с кодом 0.
+   * `busCommand` next to it is for printing to a person, and is no good for
+   * launch: the string would have to be parsed back. The package must not
+   * assemble argv itself: it does not know whether its subcommands live at the
+   * consumer binary root or under their own word. Assembled on that assumption,
+   * `[binPath(), 'mcp']` would land in the consumer help, not on the bus —
+   * silently, because a foreign CLI answers an unknown subcommand with help
+   * and exit 0.
    */
   busArgv(args: string[]): string[];
   cloneHint(nsPath: string): string;

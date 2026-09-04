@@ -1,29 +1,31 @@
-// Публичная поверхность Promptobus, entry point ".". Она **одна** — protocol и store v1:
-// задачи, участники, сообщения, артефакты, восстановимый fan-out и история.
-// Рядом с ней уходят наружу словарь шины, файлы каталога задачи, которых не держит store,
-// миграция прежнего корня, MCP factory, driver contract и машина состояний надзирателя.
+// Public Promptobus surface, the "." entry point. It is **one** — protocol and store v1:
+// tasks, participants, messages, artifacts, recoverable fan-out, and history.
+// Alongside it go out the bus vocabulary, task-directory files the store does not
+// hold, former-root migration, the MCP factory, the driver contract, and the
+// warden state machine.
 //
-// Сырые filesystem-хелперы (атомарная запись файла и JSON) наружу не выходят — они
-// внутренние: экспортированный однажды хелпер становится контрактом, а смысл
-// границы в том, что снаружи виден protocol, а не диск. По той же причине снаружи не видно
-// и путей store v1: все операции идут через `openEngine`.
+// Raw filesystem helpers (atomic file and JSON writes) do not go out — they are
+// internal: a helper exported once becomes a contract, and the point of the
+// boundary is that the outside sees protocol, not disk. For the same reason the
+// store v1 paths are not visible outside: every operation goes through `openEngine`.
 //
-// Ограничение, невидимое из этого файла: исходники package импортируют только Node
-// built-ins и собственные файлы. Ни модулей потребителя, ни Git, ни layout рабочего
-// места, ни harness сюда не попадают — на этом держится standalone-сборка, и это сторожит
-// import-boundary gate. Он же сторожит и обратное направление: `process.env`,
-// `process.stdout`, `process.stderr` и `console.` в исходниках package запрещены.
-// **Диагностика, идентичность сессии и имя harness'а приходят АРГУМЕНТАМИ** — так же, как
-// `home` и `policy` у `openEngine`: окружение и вывод остаются делом adapter'а.
+// A constraint invisible from this file: package sources import only Node
+// built-ins and their own files. No consumer modules, no Git, no workspace
+// layout, no harness land here — standalone builds rest on that, and the
+// import-boundary gate watches it. It also watches the other direction:
+// `process.env`, `process.stdout`, `process.stderr`, and `console.` are forbidden
+// in package sources. **Diagnostics, session identity, and the harness name
+// arrive as ARGUMENTS** — the same way `home` and `policy` do for `openEngine`:
+// the environment and the output stay the adapter's business.
 
-/** Версия протокола и store, которую понимает эта сборка. */
+/** Protocol and store version this build understands. */
 export const PROTOCOL_VERSION = 1;
 
-/** Имя package. Отдаётся наружу, чтобы импорт из собранного dist был проверяем. */
+/** Package name. Exposed so an import from the built dist is checkable. */
 export const PACKAGE_NAME = 'promptobus';
 
-// Словарь шины: типы сообщений, грамматика адресов, идентичность задачи, вокабуляр гейта
-// чужого mailbox'а и accessor'ы полей adapter'а в записи участника.
+// Bus vocabulary: message types, address grammar, task identity, foreign-mailbox
+// gate wording, and accessors for adapter fields on the participant record.
 export {
   addressOf, addrDir, brokenNote, claimRoute, dismissedOf, foreignTaskLine, FOREIGN_MARK,
   FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MECHANISM_VERSION_FIELD,
@@ -36,14 +38,14 @@ export {
 } from './protocol.js';
 export type { Clock as TaskClock, Ownership } from './protocol.js';
 
-// Protocol и store v1 — плоско, а не namespace'ом: namespace `v1`
-// заводился потому, что плоские имена занимал слой совместимости, и с его уходом второго
-// набора имён здесь нет вовсе.
+// Protocol and store v1 — flat, not a namespace: the `v1` namespace existed
+// because the flat names were taken by the compatibility layer, and with that
+// gone there is no second set of names here at all.
 export * from './v1/index.js';
 
-// Файлы каталога задачи, которых не держит store: contact point'ы, health, отметка и журнал
-// надзирателя, отметки стопа и конца хода, привязки сессий, каталог файлов участника и лок
-// журнала.
+// Task-directory files the store does not hold: contact points, health, the
+// warden mark and log, stall and end-of-turn marks, session bindings, the
+// participant files directory, and the journal lock.
 export {
   beatWarden, claimWarden, clearWarden, healthFile, lastTurnAt, liveWarden, lockBusyError,
   logWarden, markTurn, onTaskLock, readBinding, readHealth, readStalls, readWake, sessionFile,
@@ -54,18 +56,18 @@ export {
 export type { Binding, Health, LockHolder, Stalls, Suspend, Wake, WardenMark } from './sidecar.js';
 export { pidAlive } from './fs/proc.js';
 
-// Store `v0.61.0` — namespace'ом, а не россыпью: имена у него и у v1 одни и те же, и в общем
-// пространстве они столкнулись бы. Зовут его двое и только они: миграция и набор,
-// проверяющий чтение legacy-fixture.
+// Store `v0.61.0` — as a namespace, not a scatter: its names and v1's are the
+// same, and in a shared space they would collide. Two callers only: migration
+// and the suite that checks reading a legacy fixture.
 export * as legacy from './legacy-store.js';
 
-// Миграция прежнего store → `.promptobus`. Откуда мигрировать, объявляет host.
+// Former-store migration → `.promptobus`. Where to migrate from is declared by the host.
 export { migrate, migrationNeeded, preflight, splitLegacyRel } from './migrate.js';
 export type { MigrationOptions, MigrationPlan, MigrationReport, TaskReport } from './migrate.js';
 
-// MCP-сервер шины: транспорт, negotiation и диспетчер инструментов. Потребитель
-// подаёт service и callbacks и получает `serve` — рабочее место, Git и harness за эту
-// границу не заходят ([mcp/server.ts](mcp/server.ts)).
+// Bus MCP server: transport, negotiation, and the tool dispatcher. The consumer
+// supplies a service and callbacks and gets `serve` — workspace, Git, and harness
+// do not cross this boundary ([mcp/server.ts](mcp/server.ts)).
 export { createMcpServer, negotiateProtocol } from './mcp/server.js';
 export type {
   McpEvent, McpIdentity, McpInput, McpJoin, McpOptions, McpOutput, McpServerInfo, McpStalls,
@@ -76,15 +78,16 @@ export type {
 export { ADDR_MARK, readableName, senderAddress, summarizeMessages } from './mcp/render.js';
 export type { DecorateParticipant } from './mcp/render.js';
 
-// Driver contract, registry и машина состояний надзирателя. Отдельным блоком:
-// у driver'а есть и свой entry point `./driver` — там объявлен контракт, — а здесь та же
-// поверхность приезжает вместе со store, потому что потребитель берёт их вместе: registry
-// передаётся в машину состояний, а машина состояний читает store задачи.
+// Driver contract, registry, and the warden state machine. A separate block:
+// the driver also has its own `./driver` entry point — the contract is declared
+// there — and here the same surface arrives together with the store, because
+// the consumer takes them together: the registry is passed into the state
+// machine, and the state machine reads the task store.
 export * from './driver.js';
 export * from './supervisor.js';
 
-// Host contract и standalone-реализация. Отдельный entry point
-// `./host` — тот же набор: потребитель, которому нужен только host, не тянет store.
+// Host contract and standalone implementation. A separate `./host` entry
+// point is the same set: a consumer that only needs a host does not pull the store.
 export {
   HOST_KIND, HostResolveError, homeOfRoot, isPromptobusHost,
 } from './host.js';

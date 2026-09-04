@@ -1,14 +1,16 @@
-// Собственные валидаторы protocol v1: production не читает JSON Schemas вовсе.
+// Own protocol v1 validators: production does not read JSON Schemas at all.
 //
-// Схемы лежат в `schemas/v1` и едут в tarball для потребителей, а здесь та же грамматика
-// написана вручную — ровно затем, чтобы у package не было runtime-зависимости. Расхождение
-// двух описаний одного контракта ловится parity-тестом на общем наборе fixtures
-// ([v1-validate.test.mjs](../../test/v1-validate.test.mjs)); правишь одно — правь второе,
-// иначе красный придёт оттуда.
+// The schemas live in `schemas/v1` and ship in the tarball for consumers; here
+// the same grammar is written by hand — so the package has no runtime
+// dependency. Drift between two descriptions of one contract is caught by a
+// parity test on a shared fixture set
+// ([v1-validate.test.mjs](../../test/v1-validate.test.mjs)); edit one — edit
+// the other, or the red will come from there.
 //
-// Порядок проверок внутри модели не случаен: версия схемы идёт ПЕРВОЙ. Запись более новой
-// версии блокируется своим кодом и без изменения store, а разбирать её по остальным полям
-// незачем — полей этой версии мы не знаем.
+// Check order inside a model is not accidental: the schema version comes
+// FIRST. A newer-version record is blocked by its own code without touching
+// the store, and there is no point parsing the rest of its fields — we do not
+// know the fields of that version.
 import { ERROR_CODES, PromptobusError } from './errors.js';
 import type { ErrorCode } from './errors.js';
 import {
@@ -17,17 +19,18 @@ import {
 } from './model.js';
 import type { ModelName } from './model.js';
 
-/** Вердикт валидатора: где отказ и почему. Код обязателен — по нему потребитель ветвится. */
+/** Validator verdict: where the refusal is and why. The code is required — the consumer branches on it. */
 export interface Verdict {
   ok: boolean;
   code: ErrorCode | null;
-  /** Путь до негодного поля: `participants[1].harness`. Пусто у принятого. */
+  /** Path to the bad field: `participants[1].harness`. Empty when accepted. */
   at: string;
   note: string;
   /**
-   * Незнакомые поля, из-за которых отказано. Отдельным полем, а не разбором `note`: по нему
-   * читатель отличает «запись сделана механизмом новее меня» от порчи, а текст отказа —
-   * проза, и матчер по ней разъехался бы с первой же правкой формулировки.
+   * Unfamiliar fields the refusal is about. A separate field, not a parse of
+   * `note`: the reader uses it to tell "a record written by a mechanism newer
+   * than me" from corruption, and the refusal text is prose — a matcher on it
+   * would drift with the first wording change.
    */
   extra: readonly string[];
 }
@@ -42,30 +45,31 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-// Лишнее поле — отказ, а не послабление: `additionalProperties: false` стоит во всех
-// четырёх схемах, и валидатор, пропускающий незнакомое поле, разошёлся бы со схемой молча.
+// An extra field is a refusal, not a loosening: `additionalProperties: false`
+// stands in all four schemas, and a validator that let an unfamiliar field
+// through would drift from the schema in silence.
 function extras(value: Record<string, unknown>, allowed: readonly string[]): string[] {
   return Object.keys(value).filter((k) => !allowed.includes(k));
 }
 
 function text(value: unknown, at: string, re: RegExp): Verdict | null {
-  if (typeof value !== 'string') return bad(at, 'ожидается строка');
-  if (!re.test(value)) return bad(at, `не по грамматике ${re.source}`);
+  if (typeof value !== 'string') return bad(at, 'expected a string');
+  if (!re.test(value)) return bad(at, `does not match grammar ${re.source}`);
   return null;
 }
 
-// Версия записи. Более новая — свой код и отказ до всякой записи; более старая или
-// негодная — обычная невалидность: миграции внутрь v1 нет.
+// Record version. Newer — its own code and a refusal before any write; older
+// or malformed — ordinary invalidity: there is no migration into v1.
 function version(value: unknown, at: string, expected: number): Verdict | null {
   if (value === expected) return null;
   if (typeof value === 'number' && Number.isInteger(value) && value > expected) {
-    return bad(at, `версия ${value} новее поддерживаемой ${expected}`, 'schema-version-unsupported');
+    return bad(at, `version ${value} is newer than supported ${expected}`, 'schema-version-unsupported');
   }
-  return bad(at, `ожидается ${expected}`);
+  return bad(at, `expected ${expected}`);
 }
 
-// Пять обязательных и четыре необязательных: расширение контракта не имеет права
-// сделать нечитаемой запись, сделанную до него, — такие лежат в живых журналах задач.
+// Five required and four optional: a contract extension must not make a
+// record written before it unreadable — those sit in live task journals.
 const CAPABILITY_KEYS = [
   'spawn', 'attach', 'activation', 'inspect', 'stop',
   'denyTools', 'systemPrompt', 'sessionList', 'enter',
@@ -78,67 +82,68 @@ const ARTIFACT_KEYS = ['schemaVersion', 'id', 'sha256', 'filename', 'size', 'blo
 
 function capabilities(value: unknown, at: string): Verdict | null {
   if (value === null) return null;
-  if (!isObject(value)) return bad(at, 'ожидается объект или null');
+  if (!isObject(value)) return bad(at, 'expected an object or null');
   const extra = extras(value, CAPABILITY_KEYS);
-  if (extra.length) return bad(at, `лишние поля: ${extra.join(', ')}`, 'schema-invalid', extra);
+  if (extra.length) return bad(at, `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of ['spawn', 'attach', 'inspect', 'stop']) {
-    if (typeof value[key] !== 'boolean') return bad(`${at}.${key}`, 'ожидается boolean');
+    if (typeof value[key] !== 'boolean') return bad(`${at}.${key}`, 'expected boolean');
   }
   if (value.activation !== 'push' && value.activation !== 'pull') {
-    return bad(`${at}.activation`, 'ожидается push или pull');
+    return bad(`${at}.activation`, 'expected push or pull');
   }
-  // Необязательные — только по наличию: поля нет вовсе (запись прежнего релиза) — законно,
-  // а лежит в нём не boolean — та же порча, что и в обязательном.
+  // Optional — only when present: no field at all (a previous-release record)
+  // is lawful; a non-boolean in it is the same corruption as in a required one.
   for (const key of CAPABILITY_OPTIONAL) {
     if (Object.hasOwn(value, key) && typeof value[key] !== 'boolean') {
-      return bad(`${at}.${key}`, 'ожидается boolean');
+      return bad(`${at}.${key}`, 'expected boolean');
     }
   }
   return null;
 }
 
 function participant(value: unknown, at: string): Verdict | null {
-  if (!isObject(value)) return bad(at, 'ожидается объект');
+  if (!isObject(value)) return bad(at, 'expected an object');
   const extra = extras(value, PARTICIPANT_KEYS);
-  if (extra.length) return bad(at, `лишние поля: ${extra.join(', ')}`, 'schema-invalid', extra);
+  if (extra.length) return bad(at, `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of PARTICIPANT_KEYS) {
-    if (!Object.hasOwn(value, key)) return bad(`${at}.${key}`, 'поле обязательно');
+    if (!Object.hasOwn(value, key)) return bad(`${at}.${key}`, 'field is required');
   }
   const id = text(value.id, `${at}.id`, PARTICIPANT_ID_RE);
   if (id) return id;
   const role = text(value.role, `${at}.role`, ROLE_RE);
   if (role) return role;
-  // Harness обязателен и непуст: fallback'а в v1 нет вовсе. Запись без harness'а — та
-  // самая, ради которой fallback заводился в registry, и в v1 она не создаётся никем.
+  // Harness is required and non-empty: v1 has no fallback at all. A record
+  // without a harness is the one the registry fallback was invented for, and
+  // in v1 nobody creates one.
   const harness = text(value.harness, `${at}.harness`, HARNESS_RE);
   if (harness) return harness;
   if (value.mode !== 'managed' && value.mode !== 'attached') {
-    return bad(`${at}.mode`, 'ожидается managed или attached');
+    return bad(`${at}.mode`, 'expected managed or attached');
   }
   if (value.sessionRef !== null && (typeof value.sessionRef !== 'string' || !value.sessionRef)) {
-    return bad(`${at}.sessionRef`, 'ожидается непустая строка или null');
+    return bad(`${at}.sessionRef`, 'expected a non-empty string or null');
   }
   const caps = capabilities(value.capabilities, `${at}.capabilities`);
   if (caps) return caps;
-  if (!isObject(value.metadata)) return bad(`${at}.metadata`, 'ожидается объект');
+  if (!isObject(value.metadata)) return bad(`${at}.metadata`, 'expected an object');
   return null;
 }
 
 function task(value: unknown): Verdict {
-  if (!isObject(value)) return bad('', 'ожидается объект');
+  if (!isObject(value)) return bad('', 'expected an object');
   const ver = version(value.schemaVersion, 'schemaVersion', SCHEMA_VERSION);
   if (ver) return ver;
   const extra = extras(value, TASK_KEYS);
-  if (extra.length) return bad('', `лишние поля: ${extra.join(', ')}`, 'schema-invalid', extra);
+  if (extra.length) return bad('', `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of TASK_KEYS) {
-    if (!Object.hasOwn(value, key)) return bad(key, 'поле обязательно');
+    if (!Object.hasOwn(value, key)) return bad(key, 'field is required');
   }
   const id = text(value.id, 'id', TASK_ID_RE);
   if (id) return id;
   if (typeof value.title !== 'string' || !value.title || value.title.length > 512) {
-    return bad('title', 'ожидается непустая строка не длиннее 512');
+    return bad('title', 'expected a non-empty string no longer than 512');
   }
-  if (value.status !== 'active' && value.status !== 'done') return bad('status', 'ожидается active или done');
+  if (value.status !== 'active' && value.status !== 'done') return bad('status', 'expected active or done');
   const owner = text(value.owner, 'owner', PARTICIPANT_ID_RE);
   if (owner) return owner;
   for (const key of ['created', 'updated'] as const) {
@@ -146,24 +151,24 @@ function task(value: unknown): Verdict {
     if (ts) return ts;
   }
   if (!Array.isArray(value.participants) || !value.participants.length) {
-    return bad('participants', 'ожидается непустой массив');
+    return bad('participants', 'expected a non-empty array');
   }
   for (let i = 0; i < value.participants.length; i += 1) {
     const p = participant(value.participants[i], `participants[${i}]`);
     if (p) return p;
   }
-  if (!isObject(value.adapter)) return bad('adapter', 'ожидается объект');
+  if (!isObject(value.adapter)) return bad('adapter', 'expected an object');
   return OK;
 }
 
 function message(value: unknown): Verdict {
-  if (!isObject(value)) return bad('', 'ожидается объект');
+  if (!isObject(value)) return bad('', 'expected an object');
   const ver = version(value.protocolVersion, 'protocolVersion', MESSAGE_PROTOCOL_VERSION);
   if (ver) return ver;
   const extra = extras(value, MESSAGE_KEYS);
-  if (extra.length) return bad('', `лишние поля: ${extra.join(', ')}`, 'schema-invalid', extra);
+  if (extra.length) return bad('', `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of MESSAGE_KEYS) {
-    if (key !== 'artifact' && !Object.hasOwn(value, key)) return bad(key, 'поле обязательно');
+    if (key !== 'artifact' && !Object.hasOwn(value, key)) return bad(key, 'field is required');
   }
   const id = text(value.id, 'id', RECORD_ID_RE);
   if (id) return id;
@@ -172,19 +177,19 @@ function message(value: unknown): Verdict {
   const sender = text(value.sender, 'sender', PARTICIPANT_ID_RE);
   if (sender) return sender;
   if (!Array.isArray(value.recipients) || !value.recipients.length) {
-    return bad('recipients', 'ожидается непустой массив');
+    return bad('recipients', 'expected a non-empty array');
   }
   for (let i = 0; i < value.recipients.length; i += 1) {
     const r = text(value.recipients[i], `recipients[${i}]`, PARTICIPANT_ID_RE);
     if (r) return r;
   }
   if (new Set(value.recipients as string[]).size !== value.recipients.length) {
-    return bad('recipients', 'дубли получателей');
+    return bad('recipients', 'duplicate recipients');
   }
   if (typeof value.type !== 'string' || !MESSAGE_TYPES_V1.includes(value.type)) {
-    return bad('type', `не из протокола v1: ${MESSAGE_TYPES_V1.join(', ')}`);
+    return bad('type', `not a v1 protocol type: ${MESSAGE_TYPES_V1.join(', ')}`);
   }
-  if (typeof value.body !== 'string' || !value.body) return bad('body', 'ожидается непустая строка');
+  if (typeof value.body !== 'string' || !value.body) return bad('body', 'expected a non-empty string');
   if (Object.hasOwn(value, 'artifact')) {
     const art = text(value.artifact, 'artifact', RECORD_ID_RE);
     if (art) return art;
@@ -195,13 +200,13 @@ function message(value: unknown): Verdict {
 }
 
 function artifact(value: unknown): Verdict {
-  if (!isObject(value)) return bad('', 'ожидается объект');
+  if (!isObject(value)) return bad('', 'expected an object');
   const ver = version(value.schemaVersion, 'schemaVersion', SCHEMA_VERSION);
   if (ver) return ver;
   const extra = extras(value, ARTIFACT_KEYS);
-  if (extra.length) return bad('', `лишние поля: ${extra.join(', ')}`, 'schema-invalid', extra);
+  if (extra.length) return bad('', `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of ARTIFACT_KEYS) {
-    if (!Object.hasOwn(value, key)) return bad(key, 'поле обязательно');
+    if (!Object.hasOwn(value, key)) return bad(key, 'field is required');
   }
   const id = text(value.id, 'id', RECORD_ID_RE);
   if (id) return id;
@@ -209,11 +214,11 @@ function artifact(value: unknown): Verdict {
   if (sha) return sha;
   const name = text(value.filename, 'filename', FILENAME_RE);
   if (name) return name;
-  // `.` и `..` проходят грамматику имени (разделителя в них нет), а адресуют каталог.
-  if (value.filename === '.' || value.filename === '..') return bad('filename', 'имя каталога, а не файла');
-  if ((value.filename as string).length > 255) return bad('filename', 'длиннее 255');
+  // `.` and `..` pass the name grammar (no separator in them) but address a directory.
+  if (value.filename === '.' || value.filename === '..') return bad('filename', 'a directory name, not a file');
+  if ((value.filename as string).length > 255) return bad('filename', 'longer than 255');
   if (!Number.isInteger(value.size) || (value.size as number) < 0) {
-    return bad('size', 'ожидается целое неотрицательное');
+    return bad('size', 'expected a non-negative integer');
   }
   const blob = text(value.blob, 'blob', BLOB_PATH_RE);
   if (blob) return blob;
@@ -222,8 +227,9 @@ function artifact(value: unknown): Verdict {
 
 const VALIDATORS: Record<ModelName, (value: unknown) => Verdict> = {
   task,
-  // Участник проверяется и сам по себе, и внутри журнала задачи, поэтому путь до поля
-  // приходит префиксом. У отдельной записи префикса нет — точка в начале пути лишняя.
+  // A participant is checked both on its own and inside a task journal, so the
+  // path to the field arrives as a prefix. A standalone record has no prefix —
+  // a leading dot in the path is extra.
   participant: (value) => {
     const verdict = participant(value, '');
     return verdict ? { ...verdict, at: verdict.at.replace(/^\./, '') } : OK;
@@ -232,14 +238,14 @@ const VALIDATORS: Record<ModelName, (value: unknown) => Verdict> = {
   artifact,
 };
 
-/** Проверить запись по модели. Вердикт, а не бросок: читатель изолирует негодное, а не падает. */
+/** Check a record against a model. A verdict, not a throw: the reader isolates the bad, it does not crash. */
 export function validate(model: ModelName, value: unknown): Verdict {
   const check = VALIDATORS[model];
-  if (!check) return bad('', `неизвестная модель «${model}»`);
+  if (!check) return bad('', `unknown model «${model}»`);
   return check(value);
 }
 
-/** То же броском — для записи: негодное в store не попадает вовсе. */
+/** The same as a throw — for writes: the bad never enters the store. */
 export function requireValid(model: ModelName, value: unknown, context: Record<string, unknown> = {}): void {
   const verdict = validate(model, value);
   if (verdict.ok) return;

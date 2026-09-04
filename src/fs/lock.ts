@@ -1,11 +1,14 @@
-// Лок-каталог: read-modify-write журнала задачи под ним, и у legacy store, и у protocol v1.
+// Directory lock: task-journal read-modify-write sits under it, for both the
+// legacy store and protocol v1.
 //
-// Лок — каталог, а не файл: `mkdir` атомарен на всякой ФС и не требует уборки дескриптора,
-// второй процесс получает `EEXIST` вместо тихой перезаписи. Чужой лок снимается только по
-// мёртвому pid и никогда по догадке о возрасте.
+// The lock is a directory, not a file: `mkdir` is atomic on every FS and does
+// not need a descriptor cleaned up; a second process gets `EEXIST` instead of
+// a quiet overwrite. A foreign lock is dropped only on a dead pid, never on a
+// guess about age.
 //
-// Слова отказов сюда не переехали и не переедут: у legacy store они свои (`GateError` с
-// маршрутом человеку), у v1 — свои (типизированный код). Модуль берёт их callback'ами.
+// Refusal wording did not move here and will not: the legacy store has its own
+// (`GateError` with a path for a person), v1 has its own (a typed code). The
+// module takes them as callbacks.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -14,7 +17,7 @@ import { pidAlive, sleepSync } from './proc.js';
 export const LOCK_WAIT_MS = 5000;
 export const LOCK_RETRY_MS = 20;
 
-/** Кто держит лок: без файла владельца совет «удали каталог, если процесса нет» невыполним. */
+/** Who holds the lock: without an owner file the advice "delete the directory if the process is gone" cannot be followed. */
 export interface LockHolder {
   pid: number | null;
   session: string | null;
@@ -22,26 +25,29 @@ export interface LockHolder {
 }
 
 /**
- * Кто держит лок. Лок прежнего CLI держит pid строкой — читается и он: пережить каталог
- * может ровно процесс, умерший внутри записи.
+ * Who holds the lock. A former-CLI lock holds the pid as a string — that is
+ * read too: the only process that can outlive the directory is one that died
+ * mid-write.
  */
 export function lockHolder(lock: string): LockHolder | null {
   let raw;
   try { raw = readFileSync(path.join(lock, 'owner'), 'utf8').trim(); } catch { return null; }
   if (!raw) return null;
   let parsed: unknown = null;
-  try { parsed = JSON.parse(raw); } catch { /* не JSON — лок прежнего CLI */ }
-  // Проверка на объект не формальность: голый pid прежнего формата — валидный JSON, и
-  // `JSON.parse('999999')` отдаёт число, у которого нет поля `pid`.
+  try { parsed = JSON.parse(raw); } catch { /* not JSON — a former-CLI lock */ }
+  // The object check is not a formality: a bare pid of the former format is
+  // valid JSON, and `JSON.parse('999999')` yields a number with no `pid` field.
   if (parsed && typeof parsed === 'object') return parsed as LockHolder;
   return { pid: Number(raw) || null, session: null, since: null };
 }
 
 /**
- * Осиротевший лок — по живости pid: процесс, умерший внутри записи, оставляет каталог
- * навсегда. Каталог уводим `rename`, а не удаляем на месте: между чужим `rm` и своим
- * `mkdir` вклинился бы сосед, и его свежий лок снёс бы второй уборщик. Держателя без pid не
- * трогаем: между `mkdir` и записью файла лок — живой захват, а не сирота.
+ * An orphaned lock — by pid liveness: a process that died mid-write leaves the
+ * directory forever. We take the directory aside with `rename`, not delete it
+ * in place: between a foreign `rm` and our own `mkdir` a neighbour would slip
+ * in, and a second cleaner would wipe its fresh lock. A holder with no pid is
+ * left alone: between `mkdir` and writing the owner file the lock is a live
+ * grab, not an orphan.
  */
 export function dropDeadLock(lock: string): boolean {
   const held = lockHolder(lock);
@@ -52,39 +58,41 @@ export function dropDeadLock(lock: string): boolean {
   return true;
 }
 
-/** Чем отвечает лок на два своих законных отказа. Слова — дело вызывающего. */
+/** How the lock answers its two lawful refusals. The words are the caller's business. */
 export interface DirLockOptions {
   waitMs?: number;
   retryMs?: number;
-  /** Идентичность сессии в файл владельца: pid отвечает «жив ли», сессия — «чей он». */
+  /** Session identity in the owner file: pid answers "is it alive", session answers "whose is it". */
   session?: string | null;
-  /** Каталога, в котором берётся лок, нет вовсе — это не занятый лок, а отсутствие предмета. */
+  /** The directory the lock is taken in does not exist at all — that is not a busy lock, it is a missing subject. */
   onMissing: () => Error;
-  /** Лок занят живым держателем дольше отведённого. */
+  /** The lock is held by a live holder longer than allowed. */
   onBusy: (held: LockHolder | null, waitedMs: number) => Error;
 }
 
 /**
- * Локи, взятые ЭТИМ процессом прямо сейчас. Нужны ради вложенности: read-modify-write
- * adapter'а берёт лок задачи, а операция store внутри него берёт его же — и без учёта
- * своих локов процесс досиживал бы `waitMs` на самом себе и отказывал бы «журнал занят»,
- * назвав держателем собственный pid.
+ * Locks taken by THIS process right now. Needed for nesting: an adapter
+ * read-modify-write takes the task lock, and a store operation inside it takes
+ * the same one — and without accounting for its own locks the process would
+ * sit out `waitMs` on itself and refuse with "journal busy", naming its own
+ * pid as the holder.
  *
- * Вложение законно и безопасно: лок разводит ПРОЦЕССЫ, а внутри процесса участок под ним
- * синхронный, и вложенный вызов — та же критическая секция. Снимает лок только тот вызов,
- * который его взял: внутренний уходит, не тронув каталога.
+ * Nesting is lawful and safe: the lock separates PROCESSES, and inside a
+ * process the stretch under it is synchronous, so the nested call is the same
+ * critical section. Only the call that took the lock drops it: the inner one
+ * leaves without touching the directory.
  */
 const held = new Set<string>();
 
 /**
- * Взять лок-каталог, выполнить и снять. Мёртвый держатель снимается по ходу ожидания;
- * живой досиживает `waitMs` и отказывает словами вызывающего.
+ * Take the lock directory, run, and drop. A dead holder is dropped while
+ * waiting; a live one sits out `waitMs` and refuses in the caller's words.
  */
 export function withDirLock<T>(lock: string, fn: () => T, {
   waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
 }: DirLockOptions): T {
-  // Свой же лок — работаем внутри него. Отсутствие каталога задачи при этом остаётся
-  // отказом внешнего вызова: до сюда он не доходит.
+  // Our own lock — we work inside it. A missing task directory still stays the
+  // outer call's refusal: it does not reach here.
   if (held.has(lock)) return fn();
   const started = Date.now();
   const deadline = started + waitMs;
