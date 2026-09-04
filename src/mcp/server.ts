@@ -20,7 +20,7 @@ import type { Ownership } from '../protocol.js';
 import { MCP_TOOLS } from './tools.js';
 import type { PromptobusService } from './service.js';
 import {
-  ADDR_MARK, foreignNote, readableName, renderMessages, renderTask,
+  ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessages, renderTask,
 } from './render.js';
 import type { DecorateParticipant } from './render.js';
 
@@ -201,7 +201,7 @@ export function createMcpServer(options: McpOptions): {
         // people make without having taken their own mail: the last place
         // where what has piled up can still be named.
         const unread = service.unreadNote(home, task, role, session);
-        return `sent ${message.type} → ${readableName(service.readTask(home, task), to)}${ADDR_MARK}${to}`
+        return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, task), to)}${ADDR_MARK}${to}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`
           + ` · ${service.identityLabel(home, task, role, session)}`
           + (unread ? `\n${unread}` : '');

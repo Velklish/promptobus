@@ -75,7 +75,9 @@ export type {
 export type {
   MailboxRead, OutgoingMessage, PromptobusService, SentMessage,
 } from './mcp/service.js';
-export { ADDR_MARK, readableName, senderAddress, summarizeMessages } from './mcp/render.js';
+export {
+  ADDR_MARK, MAILBOX_EMPTY, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages,
+} from './mcp/render.js';
 export type { DecorateParticipant } from './mcp/render.js';
 
 // Driver contract, registry, and the warden state machine. A separate block:

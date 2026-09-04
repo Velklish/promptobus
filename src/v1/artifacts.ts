@@ -1,11 +1,13 @@
-// Content-addressed артефакты v1.
+// Content-addressed v1 artifacts.
 //
-// Содержимое адресуется SHA-256 и дедуплицируется внутри задачи; имя файла живёт
-// отдельно, в metadata. Одно и то же содержимое под двумя именами даёт две записи
-// metadata и один blob. Blob неизменяем и удаляется только вместе с задачей — `prune`.
+// The payload is addressed by SHA-256 and deduplicated inside the task; the
+// file name lives separately, in metadata. The same payload under two names
+// yields two metadata records and one blob. The blob is immutable and is
+// deleted only with the task — `prune`.
 //
-// Digest считается ПОТОКОВО, на проходе записи: читать файл дважды значило бы хешировать
-// не то, что легло на диск, — между двумя чтениями источник может смениться.
+// The digest is computed as a STREAM, on the write pass: reading the file
+// twice would hash something other than what landed on disk — the source may
+// change between the two reads.
 import { createHash } from 'node:crypto';
 import {
   createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, readFileSync, readdirSync,
@@ -24,8 +26,8 @@ import type { ArtifactV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
 
 /**
- * Источник артефакта: файл на диске либо поток. Больше ничего — «строка как содержимое»
- * приглашала бы класть в шину то, что уже лежит в теле сообщения.
+ * Artifact source: a file on disk or a stream. Nothing else — "a string as
+ * payload" would invite putting on the bus what already sits in the message body.
  */
 export type ArtifactSource =
   | { path: string; filename?: string }
@@ -34,42 +36,44 @@ export type ArtifactSource =
 let tmpSeq = 0;
 
 /**
- * Имя файла артефакта — из источника. Зовётся ДО записи blob'а: негодное имя, пойманное
- * схемой уже после, оставляло бы в задаче содержимое без metadata, то есть orphan blob на
- * ровном месте (замечание ревью).
+ * Artifact file name — from the source. Called BEFORE the blob is written: a
+ * bad name, caught by the schema only after, would leave payload in the task
+ * with no metadata, an orphan blob on a flat path (review remark).
  */
 export function nameOf(source: ArtifactSource): string {
   let name: string;
   if ('stream' in source) {
     if (typeof source.filename !== 'string' || !source.filename) {
-      fail('artifact-source', 'у потока нет имени файла — назвать его некому');
+      fail('artifact-source', 'the stream has no file name — there is no one to name it');
     }
     name = source.filename;
   } else {
-    if (typeof source.path !== 'string' || !source.path) fail('artifact-source', 'путь артефакта не назван');
+    if (typeof source.path !== 'string' || !source.path) fail('artifact-source', 'artifact path is not named');
     name = source.filename || path.basename(source.path);
   }
-  // Та же грамматика, что у схемы: разделитель пути в имени означал бы, что metadata
-  // адресует что-то за пределами задачи. Схема её тоже проверяет — но уже у записи с диска.
+  // The same grammar as the schema: a path separator in the name would mean
+  // metadata addresses something outside the task. The schema checks it too —
+  // but only on a record already on disk.
   if (!FILENAME_RE.test(name) || name === '.' || name === '..' || name.length > 255) {
-    fail('artifact-source', `негодное имя файла артефакта: «${name}»`, { filename: name });
+    fail('artifact-source', `invalid artifact file name: «${name}»`, { filename: name });
   }
   return name;
 }
 
 function inputOf(source: ArtifactSource): NodeJS.ReadableStream {
   if ('stream' in source) return source.stream;
-  if (!existsSync(source.path)) fail('artifact-source', `артефакта нет: ${source.path}`, { path: source.path });
+  if (!existsSync(source.path)) fail('artifact-source', `artifact is missing: ${source.path}`, { path: source.path });
   return createReadStream(source.path);
 }
 
 /**
- * Положить содержимое в blob задачи. Возвращает digest и размер.
+ * Put the payload into a task blob. Returns the digest and the size.
  *
- * Записывается через временного соседа, а на место встаёт `link`: занятое имя даёт `EEXIST`,
- * и это не отказ, а дедупликация — содержимое под этим digest'ом уже лежит. Перезаписывать
- * blob нельзя вовсе: он неизменяем, и вторая запись поверх меняла бы содержимое у всех
- * metadata-записей разом.
+ * Written through a temporary neighbour, and put in place with `link`: a
+ * taken name yields `EEXIST`, and that is not a refusal, it is dedup — the
+ * payload under this digest is already there. A blob must not be overwritten
+ * at all: it is immutable, and a second write on top would change the payload
+ * for every metadata record at once.
  */
 export async function stashBlob(home: string, task: string, source: ArtifactSource): Promise<{ sha256: string; size: number }> {
   const dir = blobsDir(home, task);
@@ -92,7 +96,7 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
       linkSync(tmp, blobFile(home, task, sha256));
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
-      // Тот же digest уже лежит — это и есть дедупликация внутри задачи.
+      // The same digest is already there — that is dedup inside the task.
       if (code !== 'EEXIST') throw linkFailure(e, blobFile(home, task, sha256));
     }
     return { sha256, size };
@@ -102,28 +106,32 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
 }
 
 /**
- * То же синхронно, из файла. Заведено для adapter'а, чей путь отправки синхронен целиком
- * (`sendSync` ниже): MCP-сервер шины отвечает на `tools/call` одним синхронным проходом, и
- * промис в его середине переписал бы диспетчер инструментов ради одного артефакта.
+ * The same, synchronously, from a file. Made for an adapter whose send path
+ * is synchronous whole (`sendSync` below): the bus MCP server answers
+ * `tools/call` in one synchronous pass, and a promise in the middle of it
+ * would rewrite the tool dispatcher for one artifact.
  *
- * Инвариант потоковой ветки при этом держится, а не ослабляется: файл читается ОДИН раз,
- * и digest считается по тем самым байтам, которые лягут в blob. Цена — размер файла в
- * памяти; артефакты шины это дифф и контракт, а не образ диска.
+ * The streaming-branch invariant is held, not loosened: the file is read
+ * ONCE, and the digest is computed over the very bytes that will land in the
+ * blob. The cost is the file size in memory; bus artifacts are a diff and a
+ * contract, not a disk image.
  *
- * **Свойство «один проход» структурное, и гейтом оно не покрыто.** Держится оно тем, что
- * окна между чтением и записью в коде нет вовсе: `readFileSync` один, digest считается по
- * этому же буферу, он же и пишется. Подменить содержимое «между двумя чтениями» негде, и
- * проба двухпроходной редакцией не красит ничего — значит проверки на это свойство нет, а
- * не что она зелёная. Что проверяется реально: digest записи сходится с содержимым blob'а,
- * а чтение отказывает `artifact-integrity` на расхождении.
+ * **The "one pass" property is structural, and no gate covers it.** It holds
+ * because there is no window between read and write in the code at all:
+ * one `readFileSync`, the digest is computed over that same buffer, and that
+ * same buffer is written. There is nowhere to swap the payload "between two
+ * reads", and a two-pass-edit probe paints nothing — so there is no check
+ * for this property, not a green one. What is actually checked: the record
+ * digest matches the blob payload, and a read refuses `artifact-integrity`
+ * on a mismatch.
  */
 export function stashBlobSync(home: string, task: string, file: string): { sha256: string; size: number } {
-  if (typeof file !== 'string' || !file) fail('artifact-source', 'путь артефакта не назван');
+  if (typeof file !== 'string' || !file) fail('artifact-source', 'artifact path is not named');
   let content: Buffer;
   try {
     content = readFileSync(file);
   } catch {
-    fail('artifact-source', `артефакта нет: ${file}`, { path: file });
+    fail('artifact-source', `artifact is missing: ${file}`, { path: file });
   }
   const sha256 = createHash('sha256').update(content).digest('hex');
   const dir = blobsDir(home, task);
@@ -135,7 +143,7 @@ export function stashBlobSync(home: string, task: string, file: string): { sha25
     try {
       linkSync(tmp, blobFile(home, task, sha256));
     } catch (e) {
-      // Тот же digest уже лежит — это и есть дедупликация внутри задачи.
+      // The same digest is already there — that is dedup inside the task.
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw linkFailure(e, blobFile(home, task, sha256));
     }
   } finally {
@@ -144,33 +152,36 @@ export function stashBlobSync(home: string, task: string, file: string): { sha25
   return { sha256, size: content.length };
 }
 
-// Отказы, которыми ФС говорит «жёсткую ссылку сюда поставить нельзя»: чужой том, отсутствие
-// жёстких ссылок вовсе, нет прав на каталог, предел числа ссылок у inode.
+// Refusals with which the FS says "a hard link cannot be put here": a foreign
+// volume, no hard links at all, no rights on the directory, the inode's link
+// limit.
 //
-// `ENOENT` в список попасть не имеет права: `materialize` ([messages.ts](messages.ts)) читает
-// его как «intent унёс сосед, материализовавший сообщение раньше» и сверяет для этого сырой
-// `code` исключения. Попади `ENOENT` сюда — отсюда вернулся бы `PromptobusError` с кодом
-// `link-refused`, сверка его не узнала бы, и терпимость к гонке умерла бы молча.
+// `ENOENT` must not enter this list: `materialize` ([messages.ts](messages.ts))
+// reads it as "a neighbour who materialized the message earlier took the
+// intent" and for that compares the raw exception `code`. If `ENOENT` landed
+// here, this would return a `PromptobusError` with code `link-refused`, the
+// compare would not recognise it, and race tolerance would die in silence.
 const LINK_REFUSALS = ['EXDEV', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EACCES', 'EMLINK'];
 
 /**
- * Отказ жёсткой ссылки — типизированным кодом, а не голым errno.
+ * Hard-link refusal — a typed code, not a bare errno.
  *
- * ФС без жёстких ссылок и ссылка через границу тома — законные условия среды, а не поломка
- * механизма. Отвечает на них код, чтобы adapter сказал человеку словами; половинчатой записи при этом не остаётся —
- * fan-out обрывается на шаге, а intent остаётся открытым, и восстановление доведёт его до
- * конца, когда условие снимут.
+ * A filesystem without hard links and a link across a volume boundary are
+ * lawful environment conditions, not a mechanism crash. The code answers them
+ * so the adapter can tell a person in words; no half-written record is left —
+ * fan-out breaks on the step, the intent stays open, and recovery will take
+ * it to the end when the condition is lifted.
  */
 export function linkFailure(e: unknown, target: string): Error {
   const code = (e as NodeJS.ErrnoException).code ?? '';
   if (LINK_REFUSALS.includes(code)) {
     return new PromptobusError('link-refused',
-      `жёсткая ссылка не поставлена (${code}): ${target}`, { target, errno: code });
+      `hard link was not created (${code}): ${target}`, { target, errno: code });
   }
   return e as Error;
 }
 
-/** Записать metadata артефакта. Валидация до записи: негодное в store не попадает. */
+/** Write artifact metadata. Validation before the write: the bad never enters the store. */
 export function writeArtifact(home: string, task: string, meta: ArtifactV1): ArtifactV1 {
   requireValid('artifact', meta, { task, artifact: meta.id });
   writeJsonAtomic(artifactFile(home, task, meta.id), meta);
@@ -182,8 +193,8 @@ export function newArtifact(id: string, sha256: string, filename: string, size: 
 }
 
 /**
- * Прочитать metadata. Невалидная уезжает в `broken/artifacts` — одна испорченная запись не
- * имеет права стоить задаче остальных.
+ * Read metadata. Invalid metadata goes to `broken/artifacts` — one corrupt
+ * record must not cost the task the rest.
  */
 export function readArtifact(home: string, task: string, id: string): ArtifactV1 {
   const file = artifactFile(home, task, id);
@@ -191,22 +202,22 @@ export function readArtifact(home: string, task: string, id: string): ArtifactV1
   try {
     raw = readFileSync(file, 'utf8');
   } catch {
-    fail('artifact-not-found', `артефакта ${id} нет в задаче ${task}`, { task, artifact: id });
+    fail('artifact-not-found', `artifact ${id} is not in task ${task}`, { task, artifact: id });
   }
   let meta: unknown;
   try {
     meta = JSON.parse(raw);
   } catch (e) {
     isolateArtifact(home, task, `${id}.json`);
-    fail('artifact-not-found', `metadata артефакта ${id} не разобрана (${(e as Error).message}) — отложена в broken`,
+    fail('artifact-not-found', `artifact ${id} metadata did not parse (${(e as Error).message}) — set aside in broken`,
       { task, artifact: id });
   }
   const verdict = validate('artifact', meta);
   if (!verdict.ok) {
-    // Запись из будущего в `broken` не уезжает: она не испорчена, её просто нечем читать.
+    // A record from the future does not go to `broken`: it is not corrupt, there is just nothing to read it with.
     if (verdict.code !== 'schema-version-unsupported') isolateArtifact(home, task, `${id}.json`);
     fail(verdict.code ?? 'schema-invalid',
-      `metadata артефакта ${id} не по схеме: ${verdict.at} ${verdict.note}`,
+      `artifact ${id} metadata does not match the schema: ${verdict.at} ${verdict.note}`,
       { task, artifact: id, at: verdict.at });
   }
   return meta as ArtifactV1;
@@ -218,15 +229,15 @@ function isolateArtifact(home: string, task: string, name: string): void {
     mkdirSync(attic, { recursive: true });
     renameSync(path.join(artifactsDir(home, task), name), path.join(attic, name));
   } catch {
-    // Отложить не вышло — читателя это остановить не имеет права: он и так отказывает
-    // кодом, а файл остаётся на месте под тем же именем.
+    // Setting it aside failed — that must not stop the reader: it already
+    // refuses with a code, and the file stays in place under the same name.
   }
 }
 
 /**
- * Прочитать содержимое артефакта, сверив digest. Расхождение — типизированный отказ, а не
- * тихое чтение: испорченный blob, отданный как содержимое, и есть тот случай, ради которого
- * артефакты адресуются хешем.
+ * Read the artifact payload, checking the digest. A mismatch is a typed
+ * refusal, not a quiet read: a corrupt blob handed over as payload is the
+ * case artifacts are hash-addressed for.
  */
 export function readBlob(home: string, task: string, meta: ArtifactV1): Buffer {
   const file = blobOf(home, task, meta);
@@ -234,24 +245,24 @@ export function readBlob(home: string, task: string, meta: ArtifactV1): Buffer {
   try {
     content = readFileSync(file);
   } catch {
-    fail('artifact-not-found', `blob'а ${meta.sha256} нет в задаче ${task}`,
+    fail('artifact-not-found', `blob ${meta.sha256} is not in task ${task}`,
       { task, artifact: meta.id, sha256: meta.sha256 });
   }
   const actual = createHash('sha256').update(content).digest('hex');
   if (actual !== meta.sha256) {
     fail('artifact-integrity',
-      `blob артефакта ${meta.id} не сходится с digest'ом: объявлено ${meta.sha256}, посчитано ${actual}`,
+      `artifact ${meta.id} blob does not match the digest: declared ${meta.sha256}, computed ${actual}`,
       { task, artifact: meta.id, declared: meta.sha256, actual });
   }
   if (content.length !== meta.size) {
     fail('artifact-integrity',
-      `размер артефакта ${meta.id} не сходится: объявлено ${meta.size}, на диске ${content.length}`,
+      `artifact ${meta.id} size does not match: declared ${meta.size}, on disk ${content.length}`,
       { task, artifact: meta.id, declared: meta.size, actual: content.length });
   }
   return content;
 }
 
-/** Перечислить metadata-записи задачи, пропуская нечитаемые. */
+/** List the task's metadata records, skipping unreadable ones. */
 export function listArtifacts(home: string, task: string): { artifacts: ArtifactV1[]; broken: string[] } {
   const artifacts: ArtifactV1[] = [];
   const broken: string[] = [];
@@ -272,10 +283,11 @@ export function listArtifacts(home: string, task: string): { artifacts: Artifact
 }
 
 /**
- * Blob'ы, на которые не ссылается ни одна metadata-запись. Появляются они законно: падение
- * между записью blob'а и записью metadata оставляет содержимое без имени. Удалять их
- * поштучно нельзя — blob дедуплицирован, и «ничей» он ровно до следующей отправки того же
- * содержимого; уносит их `prune` вместе с задачей.
+ * Blobs no metadata record points at. They appear lawfully: a crash between
+ * writing the blob and writing the metadata leaves payload with no name.
+ * They must not be deleted one by one — a blob is deduplicated, and it is
+ * "nobody's" only until the next send of the same payload; `prune` takes
+ * them with the task.
  */
 export function orphanBlobs(home: string, task: string): string[] {
   let names: string[];
@@ -288,7 +300,7 @@ export function orphanBlobs(home: string, task: string): string[] {
   return names.filter((n) => !n.startsWith('.') && !used.has(n)).sort();
 }
 
-/** Сколько blob'ов и байт лежит у задачи — для отчёта `prune`. */
+/** How many blobs and bytes sit with the task — for the `prune` report. */
 export function blobStats(home: string, task: string): { count: number; bytes: number } {
   let names: string[];
   try {
@@ -301,7 +313,7 @@ export function blobStats(home: string, task: string): { count: number; bytes: n
     try {
       bytes += statSync(path.join(blobsDir(home, task), name)).size;
     } catch {
-      // Унёс сосед между листингом и `stat` — не наша беда: считаем оставшееся.
+      // A neighbour took it between the listing and `stat` — not our problem: we count what remains.
     }
   }
   return { count: names.length, bytes };

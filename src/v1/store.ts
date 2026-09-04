@@ -1,15 +1,16 @@
-// Журнал задачи v1: задача, участники, owner и его явный захват.
+// Task journal v1: the task, participants, the owner, and an explicit claim.
 //
-// Отличия от legacy store не косметические, и оба названы решением:
+// Differences from the legacy store are not cosmetic, and both were named by a decision:
 //
-// 1. **Owner — такой же participant.** У него есть `harness`, `mode`, `sessionRef` и
-//    `capabilities`, как у любого другого, и записывается он при заведении задачи. Fallback'а
-//    по harness'у в v1 нет вовсе: он заводился в registry ровно ради записи владельца,
-//    которую legacy `createTask` клал без этого поля.
-// 2. **Обновление участника — patch по полям, а не замена записи целиком.** У legacy
-//    `upsertParticipant` второй вызов, дописывающий одно поле, обязан класть обратно ТУ ЖЕ
-//    запись — иначе поля первого вызова исчезают молча. Здесь такого
-//    инварианта нет: patch трогает названные поля и проверяет схему после слияния.
+// 1. **The owner is a participant like any other.** It has `harness`, `mode`,
+//    `sessionRef`, and `capabilities`, and it is written when the task is
+//    created. v1 has no harness fallback at all: it was added to the registry
+//    exactly for the owner record that legacy `createTask` wrote without that field.
+// 2. **Updating a participant is a field patch, not a whole-record replace.**
+//    In legacy `upsertParticipant` a second call that adds one field must put
+//    back THE SAME record — otherwise the first call's fields vanish in
+//    silence. There is no such invariant here: the patch touches the named
+//    fields and checks the schema after the merge.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { writeJsonAtomic } from '../fs/atomic.js';
 import { addressOf, mechanismVersionOf } from '../protocol.js';
@@ -20,10 +21,10 @@ import { SCHEMA_VERSION } from './model.js';
 import type { ParticipantV1, TaskV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
 
-/** Часы store: набор подставляет свои, чтобы штампы были предсказуемы. */
+/** Store clock: the suite substitutes its own so stamps are predictable. */
 export type Clock = () => Date;
 
-/** Что кладётся в новую задачу. Owner — полноценная запись участника, а не один id. */
+/** What goes into a new task. The owner is a full participant record, not a lone id. */
 export interface NewTask {
   id: string;
   title: string;
@@ -32,12 +33,14 @@ export interface NewTask {
 }
 
 /**
- * Версия механизма, читающего журнал. Приходит АРГУМЕНТОМ, как home и policy:
- * собственной версии у package нет вовсе (номер журнала — дело того, кто открыл engine), а копилка на
- * уровне модуля была бы мостом для чужого значения — ровно тем, что здесь запрещено.
- * Задаётся при открытии engine и оттуда доходит до каждого чтения.
+ * Version of the mechanism reading the journal. It arrives as an ARGUMENT, like
+ * home and policy: the package has no version of its own (the journal number is
+ * the business of whoever opened the engine), and a module-level pot would be a
+ * bridge for a foreign value — exactly what is forbidden here. It is set when
+ * the engine opens and reaches every read from there.
  *
- * `null` — «сравнить не с чем»: смесь версий не различается, работает прежний путь целиком.
+ * `null` — "nothing to compare": a mix of versions is not distinguished, and
+ * the former path works in full.
  */
 export type ReaderVersion = string | null;
 
@@ -45,9 +48,11 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-// Числовое сравнение версий: 0.10.0 новее 0.9.0, строками — наоборот. Свой, а не общий с
-// CLI: package не импортирует модулей потребителя вовсе, на этом стоит standalone-сборка. `null` —
-// «сравнить нечем»: номер в журнале пишет механизм, но читаем мы его как чужой текст.
+// Numeric version compare: 0.10.0 is newer than 0.9.0; as strings it is the
+// other way around. Our own, not shared with the CLI: the package does not
+// import consumer modules at all, and standalone builds rest on that. `null`
+// — "nothing to compare": the journal number is written by the mechanism, but
+// we read it as foreign text.
 function cmpVersion(a: string, b: string): number | null {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -61,15 +66,18 @@ function cmpVersion(a: string, b: string): number | null {
 }
 
 /**
- * Участник, чью запись сделал механизм НОВЕЕ читателя. Свидетельство — версия механизма в
- * записи: её кладёт adapter при подъёме участника, и по ней «журнал испорчен» отличается от
- * «журнал новее этой сессии».
+ * The participant whose record was written by a mechanism NEWER than the
+ * reader. The evidence is the mechanism version on the record: the adapter
+ * writes it when it lifts the participant, and that is how "the journal is
+ * corrupt" is told from "the journal is newer than this session".
  *
- * Спрашивается СНАЧАЛА тот участник, на чьей записи споткнулся валидатор: `verdict.at`
- * называет его индексом, и назвать вместо него первого попавшегося с маркером значило бы
- * увести человека к чужой записи — новый CLI перезаписывает и владельца, а тот в журнале
- * первый. Путь не участника (лишнее поле у самого журнала) индекса не несёт — тогда годится
- * любой участник с маркером новее: журнал целиком трогал механизм новее этой сессии.
+ * The participant the validator stumbled on is asked FIRST: `verdict.at`
+ * names them by index, and naming the first marker-holder instead would send
+ * a person to a foreign record — a new CLI overwrites the owner too, and the
+ * owner is first in the journal. A path that is not a participant (an extra
+ * field on the journal itself) carries no index — then any participant with a
+ * newer marker will do: the whole journal was touched by a mechanism newer
+ * than this session.
  */
 function writtenByNewer(meta: unknown, at: string, reader: ReaderVersion): { address: string; version: string } | null {
   if (!reader || !isObject(meta) || !Array.isArray(meta.participants)) return null;
@@ -78,8 +86,8 @@ function writtenByNewer(meta: unknown, at: string, reader: ReaderVersion): { add
   for (const p of candidates) {
     const version = mechanismVersionOf(p as { metadata?: Record<string, unknown> });
     if (version === null || cmpVersion(version, reader) !== 1) continue;
-    // Человеку участника называют адресом, а не id каталога mailbox'а: адрес и есть то, что
-    // он видел в отчёте spawn'а.
+    // A person is named the participant by address, not by mailbox-directory
+    // id: the address is what they saw in the spawn report.
     const address = addressOf(p as { metadata?: Record<string, unknown> })
       ?? String((p as { id?: unknown })?.id ?? '?');
     return { address, version };
@@ -87,13 +95,13 @@ function writtenByNewer(meta: unknown, at: string, reader: ReaderVersion): { add
   return null;
 }
 
-/** Read-modify-write журнала под локом задачи. */
+/** Journal read-modify-write under the task lock. */
 export function withTaskLock<T>(home: string, task: string, fn: () => T, { waitMs = 5000 } = {}): T {
   return withDirLock(lockDir(home, task), fn, {
     waitMs,
-    onMissing: () => new PromptobusError('task-not-found', `задачи ${task} нет в ${tasksDir(home)}`, { task }),
+    onMissing: () => new PromptobusError('task-not-found', `task ${task} is not in ${tasksDir(home)}`, { task }),
     onBusy: (held, waitedMs) => new PromptobusError('lock-busy',
-      `журнал задачи ${task} занят: ждали ${waitedMs} мс`,
+      `task ${task} journal is busy: waited ${waitedMs} ms`,
       { task, waitedMs, holder: held }),
   });
 }
@@ -102,15 +110,15 @@ export function taskExists(home: string, task: string): boolean {
   try {
     return existsSync(taskFile(home, task));
   } catch {
-    // Негодный id — не «задачи нет», а отказ грамматики; но спрашивают это и обходом по
-    // диску, где посторонний каталог законен.
+    // A bad id is not "no such task", it is a grammar refusal; but this is
+    // also asked by a disk walk, where a foreign directory is lawful.
     return false;
   }
 }
 
 /**
- * Прочитать журнал. Нечитаемый или невалидный — `task-broken`: повреждённая задача блокирует
- * только себя, остальные работают (`listTasks` её пропускает).
+ * Read the journal. Unreadable or invalid — `task-broken`: a damaged task
+ * blocks only itself, the rest work (`listTasks` skips it).
  */
 export function readTask(home: string, task: string, cli: ReaderVersion = null): TaskV1 {
   const file = taskFile(home, task);
@@ -118,37 +126,40 @@ export function readTask(home: string, task: string, cli: ReaderVersion = null):
   try {
     raw = readFileSync(file, 'utf8');
   } catch {
-    fail('task-not-found', `задачи ${task} нет в ${tasksDir(home)}`, { task, file });
+    fail('task-not-found', `task ${task} is not in ${tasksDir(home)}`, { task, file });
   }
   let meta: unknown;
   try {
     meta = JSON.parse(raw);
   } catch (e) {
-    fail('task-broken', `журнал задачи ${task} не разобран: ${(e as Error).message}`, { task, file });
+    fail('task-broken', `task ${task} journal did not parse: ${(e as Error).message}`, { task, file });
   }
   const verdict = validate('task', meta);
   if (!verdict.ok) {
-    // Незнакомые поля плюс запись, сделанная механизмом новее этой сессии, — не порча
-    // журнала, а смесь версий после `sync`: MCP-сервер шины живой сессии поднят
-    // из прежнего релиза и полей нового не знает. Лечится это новой сессией, и отказ обязан
-    // называть лечение, иначе человек чинит несуществующую поломку журнала.
+    // Unfamiliar fields plus a record written by a mechanism newer than this
+    // session are not journal corruption, they are a mix of versions after
+    // `sync`: the live session's bus MCP server was lifted from the previous
+    // release and does not know the new fields. The cure is a new session, and
+    // the refusal must name the cure, or a person will fix a journal breakage
+    // that is not there.
     const ahead = verdict.extra.length ? writtenByNewer(meta, verdict.at, cli) : null;
     if (ahead) {
       fail('schema-version-unsupported',
-        `журнал задачи ${task}: запись участника ${ahead.address} сделана механизмом ${ahead.version}, `
-        + `эта сессия работает на ${cli} — начни новую сессию, `
-        + 'MCP-сервер шины стартует из установленного релиза',
+        `task ${task} journal: participant ${ahead.address} was written by mechanism ${ahead.version}, `
+        + `this session runs ${cli} — start a new session, `
+        + 'the bus MCP server starts from the installed release',
         { task, file, at: verdict.at, participant: ahead.address, wrote: ahead.version, reader: cli });
     }
-    // Более новая версия схемы — свой код и здесь: такую задачу нельзя ни читать как свою,
-    // ни объявлять испорченной. Чинится она обновлением механизма, а не изоляцией записи.
+    // A newer schema version has its own code here too: such a task must
+    // neither be read as ours nor declared corrupt. It is fixed by updating
+    // the mechanism, not by isolating the record.
     fail(verdict.code === 'schema-version-unsupported' ? 'schema-version-unsupported' : 'task-broken',
-      `журнал задачи ${task} не по схеме: ${verdict.at} ${verdict.note}`, { task, file, at: verdict.at });
+      `task ${task} journal does not match the schema: ${verdict.at} ${verdict.note}`, { task, file, at: verdict.at });
   }
   return meta as TaskV1;
 }
 
-/** Записать журнал целиком. Валидация до записи: негодное в store не попадает вовсе. */
+/** Write the journal whole. Validation before the write: the bad never enters the store. */
 export function writeTask(home: string, meta: TaskV1, now: Clock): TaskV1 {
   const next: TaskV1 = { ...meta, updated: now().toISOString() };
   requireValid('task', next, { task: next.id });
@@ -157,8 +168,8 @@ export function writeTask(home: string, meta: TaskV1, now: Clock): TaskV1 {
 }
 
 /**
- * Завести задачу. «Первым выигрывает»: журнал кладётся флагом `wx`, и опоздавший получает
- * отказ, а не тихо уносит чужих участников.
+ * Create a task. First writer wins: the journal is laid down with the `wx`
+ * flag, and a latecomer gets a refusal, not a quiet theft of foreign participants.
  */
 export function createTask(home: string, { id, title, owner, adapter = {} }: NewTask, now: Clock): TaskV1 {
   requireValid('participant', owner, { task: id, participant: (owner as ParticipantV1)?.id });
@@ -178,24 +189,25 @@ export function createTask(home: string, { id, title, owner, adapter = {} }: New
   const file = taskFile(home, id);
   mkdirSync(taskDir(home, id), { recursive: true });
   try {
-    // Флаг `wx`, а не атомарная подмена: имя занимает сама запись, и второй заход тем же id
-    // получает отказ вместо тихой перезаписи. Проверка `existsSync` перед записью была бы
-    // тем же окном, только шире — между ней и записью помещается сосед.
+    // The `wx` flag, not an atomic replace: the record itself takes the name,
+    // and a second pass with the same id gets a refusal instead of a quiet
+    // overwrite. An `existsSync` check before the write would be the same
+    // window, only wider — a neighbour fits between the check and the write.
     writeFileSync(file, `${JSON.stringify(meta, null, 2)}\n`, { flag: 'wx' });
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') fail('task-exists', `задача ${id} уже есть`, { task: id });
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') fail('task-exists', `task ${id} already exists`, { task: id });
     throw e;
   }
   return meta;
 }
 
-/** Задача, которую не прочитать: её id и причина. Текст человеку собирает adapter. */
+/** A task that cannot be read: its id and the reason. The adapter assembles the text for a person. */
 export interface BrokenTask {
   id: string;
   note: string;
 }
 
-/** Перечислить задачи. Одна порченая не имеет права гасить остальные. */
+/** List tasks. One corrupt task must not extinguish the rest. */
 export function listTasks(home: string, cli: ReaderVersion = null): { tasks: TaskV1[]; broken: BrokenTask[] } {
   const dir = tasksDir(home);
   const tasks: TaskV1[] = [];
@@ -224,20 +236,20 @@ export function participantOf(meta: TaskV1, id: string): ParticipantV1 | null {
 export function requireParticipant(meta: TaskV1, id: string): ParticipantV1 {
   const found = participantOf(meta, id);
   if (!found) {
-    fail('participant-not-found', `в задаче ${meta.id} нет участника «${id}»`,
+    fail('participant-not-found', `task ${meta.id} has no participant «${id}»`,
       { task: meta.id, participant: id, known: meta.participants.map((p) => p.id) });
   }
   return found;
 }
 
-/** Добавить участника. Существующий id — отказ: перезапись стёрла бы его поля молча. */
+/** Add a participant. An existing id is a refusal: an overwrite would erase their fields in silence. */
 export function addParticipant(home: string, task: string, participant: ParticipantV1, now: Clock,
   cli: ReaderVersion = null): ParticipantV1 {
   requireValid('participant', participant, { task, participant: participant?.id });
   return withTaskLock(home, task, () => {
     const meta = readTask(home, task, cli);
     if (participantOf(meta, participant.id)) {
-      fail('participant-exists', `в задаче ${task} участник «${participant.id}» уже есть`,
+      fail('participant-exists', `task ${task} already has participant «${participant.id}»`,
         { task, participant: participant.id });
     }
     writeTask(home, { ...meta, participants: [...meta.participants, participant] }, now);
@@ -246,13 +258,15 @@ export function addParticipant(home: string, task: string, participant: Particip
 }
 
 /**
- * Положить запись участника целиком, заменив прежнюю. Отличие от `patchParticipant` не в
- * удобстве: подъём участника кладёт НОВУЮ запись — новая сессия, новый снимок capabilities —
- * и обязан унести с ней всё, что относилось к прежней, включая отметки adapter'а в
- * `metadata`. Патч по полям оставил бы их от умершей сессии.
+ * Put a participant record whole, replacing the former one. The difference
+ * from `patchParticipant` is not convenience: lifting a participant writes a
+ * NEW record — a new session, a new capabilities snapshot — and must take
+ * with it everything that belonged to the former one, including adapter marks
+ * in `metadata`. A field patch would leave those from the dead session.
  *
- * Возвращается журнал целиком: вызывающему нужен и он — по нему считается заголовок задачи
- * из track'ов, и делать второе чтение сразу после записи было бы чтением из-под соседа.
+ * The whole journal is returned: the caller needs it too — the task title is
+ * computed from tracks off it, and a second read right after the write would
+ * be a read from under a neighbour.
  */
 export function putParticipant(home: string, task: string, participant: ParticipantV1, now: Clock,
   cli: ReaderVersion = null): TaskV1 {
@@ -264,14 +278,15 @@ export function putParticipant(home: string, task: string, participant: Particip
   });
 }
 
-/** Что можно поправить в записи участника. `id` не патчится: он и есть адрес. */
+/** What can be patched on a participant record. `id` is not patched: it is the address. */
 export type ParticipantPatch = Partial<Omit<ParticipantV1, 'id'>>;
 
 /**
- * Поправить участника патчем по полям. Не заменой целиком: у legacy `upsertParticipant`
- * второй вызов, дописывающий поле, обязан класть обратно ту же запись, иначе поля первого
- * исчезают молча. Схема проверяется ПОСЛЕ слияния — патч, ломающий запись,
- * отказывает до записи журнала.
+ * Patch a participant by fields. Not a whole replace: in legacy
+ * `upsertParticipant` a second call that adds a field must put back the same
+ * record, or the first call's fields vanish in silence. The schema is checked
+ * AFTER the merge — a patch that breaks the record refuses before the journal
+ * is written.
  */
 export function patchParticipant(home: string, task: string, id: string, patch: ParticipantPatch, now: Clock,
   cli: ReaderVersion = null): ParticipantV1 {
@@ -289,8 +304,9 @@ export function patchParticipant(home: string, task: string, id: string, patch: 
 }
 
 /**
- * Захват владения задачей. Owner у задачи один, и меняется он только так — молчаливого
- * перехвата не бывает. Возвращается прежний владелец: поле одно, истории нет.
+ * Claim ownership of the task. A task has one owner, and that is the only way
+ * it changes — there is no silent takeover. The previous owner is returned:
+ * there is one field, and no history.
  */
 export function claimOwner(home: string, task: string, id: string, now: Clock,
   cli: ReaderVersion = null): string {
@@ -304,8 +320,9 @@ export function claimOwner(home: string, task: string, id: string, now: Clock,
 }
 
 /**
- * Закрыть задачу. Поля adapter'а ложатся ТЕМ ЖЕ ходом: отметку закрытия пишет он, и второй
- * лок ради одного поля стоил бы задачи, закрытой без неё.
+ * Close the task. Adapter fields are laid down in THE SAME pass: the adapter
+ * writes the close mark, and a second lock for one field would cost a task
+ * closed without it.
  */
 export function closeTask(home: string, task: string, now: Clock, adapter?: Record<string, unknown>,
   cli: ReaderVersion = null): TaskV1 {
@@ -319,10 +336,10 @@ export function closeTask(home: string, task: string, now: Clock, adapter?: Reco
   });
 }
 
-/** Активна ли задача. Отправка в закрытую — отказ: переписку закрытой задачи не ведут. */
+/** Whether the task is active. Send into a closed one is a refusal: a closed task's correspondence is not continued. */
 export function requireActive(meta: TaskV1): TaskV1 {
   if (meta.status !== 'active') {
-    fail('task-closed', `задача ${meta.id} закрыта`, { task: meta.id, status: meta.status });
+    fail('task-closed', `task ${meta.id} is closed`, { task: meta.id, status: meta.status });
   }
   return meta;
 }

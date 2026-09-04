@@ -22,13 +22,25 @@ export type DecorateParticipant = (participant: ParticipantV1) => string[];
 const SUMMARY_GROUPS = 3;
 const SUMMARY_MAX = 120;
 
+// Machine-address mark in bus replies. The consumer feed hook uses it to
+// separate the readable name from the machine tail, and searches FROM THE END
+// of the line: the same ` · ` mark is lawful in a name. The bus-hook template
+// copies these four literals; `test/host.test.mjs` holds them together.
+export const ADDR_MARK = ' · address ';
+/** First word of an empty-mailbox reply. The hook compares it whole, not as a prefix. */
+export const MAILBOX_EMPTY = 'empty';
+/** Prefix of a successful `promptobus_send` reply. The hook matches it at the start of the line. */
+export const SENT_PREFIX = 'sent ';
+/** Word between message type and sender in a mailbox heading (`### status from name`). */
+export const MESSAGE_FROM = ' from ';
+
 // Who sent and what — instead of a bare number: "messages: 3" does not say
 // whether the block is worth expanding. `+ N more` counts MESSAGES, not
 // groups; one group is always shown.
 export function summarizeMessages(msgs: MessageV1[], from: (m: MessageV1) => string = (m) => m.sender): string {
   const groups = new Map<string, number>();
   for (const m of msgs) {
-    const key = `${m.type} from ${from(m)}`;
+    const key = `${m.type}${MESSAGE_FROM}${from(m)}`;
     groups.set(key, (groups.get(key) ?? 0) + 1);
   }
   const ordered = [...groups.entries()]
@@ -48,11 +60,6 @@ export function summarizeMessages(msgs: MessageV1[], from: (m: MessageV1) => str
   const rest = msgs.length - shown.reduce((a, g) => a + g.n, 0);
   return `messages ${msgs.length}: ${shown.map((g) => g.text).join(', ')}${rest ? ` + ${rest} more` : ''}`;
 }
-
-// Machine-address mark in bus replies. The consumer feed hook uses it to
-// separate the readable name from the machine tail, and searches FROM THE END
-// of the line: the same ` · ` mark is lawful in a name.
-export const ADDR_MARK = ' · address ';
 
 // Trailing parenthetical mark of a readable name: `(MMDD-HHMM)` or
 // `(MMDD-HHMM, slug)` (the consumer's `sessionName`). The form is checked
@@ -92,13 +99,13 @@ export function renderMessages(
   session: string | null = null,
 ): string {
   const identity = service.identityLabel(home, task, addr, session);
-  if (!msgs.length) return `empty · ${identity}`;
+  if (!msgs.length) return `${MAILBOX_EMPTY} · ${identity}`;
   const meta = service.readTask(home, task);
   const out = [`${summarizeMessages(msgs, (m) => senderAddress(meta, m))} · ${identity}`];
   for (const m of msgs) {
     const from = senderAddress(meta, m);
     // Sender name first, machine address after: the feed hook lifts the name.
-    out.push('', `### ${m.type} from ${readableName(meta, from, true)}${ADDR_MARK}${from} · ${m.ts}`, m.body);
+    out.push('', `### ${m.type}${MESSAGE_FROM}${readableName(meta, from, true)}${ADDR_MARK}${from} · ${m.ts}`, m.body);
     // A person finds an artifact by FILE NAME in the task folder: the message
     // carries a metadata-record id, and printing that would name a path that
     // is not on disk.
