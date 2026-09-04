@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-04
-**Deciders:** [TODO: project owner]
+**Deciders:** Pavel Kim (project owner)
 
 ## Context
 
