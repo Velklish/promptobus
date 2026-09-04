@@ -1,8 +1,7 @@
 // Тексты ответов инструментов шины. Место здесь, а не у потребителя: это тексты О ПЕРЕПИСКЕ
 // — отправители, типы, участники, счётчики, — и складывать их умеет только тот, кто знает
 // store. Всё, что знает про рабочее место, приходит сюда одним хуком `decorate`: строки
-// участника про репозиторий, worktree и фоновую сессию собирает adapter и отдаёт готовыми
-//.
+// участника про репозиторий, worktree и фоновую сессию собирает adapter и отдаёт готовыми.
 import path from 'node:path';
 import {
   addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, nameOf, ORCHESTRATOR, ownerOf,
@@ -55,7 +54,7 @@ export const ADDR_MARK = ' · адрес ';
 const NAME_STAMP = /\s*\(\d{4}-\d{4}(?:,[^()]*)?\)$/;
 
 // Читаемое имя участника — поле `name` записи журнала, под которым сессия видна в
-// `claude agents`. Имени нет — адрес без префикса роли. `orchestrator` имени не имеет
+// списке сессий harness'а. Имени нет — адрес без префикса роли. `orchestrator` имени не имеет
 // вовсе: зовём словом, в позиции «от кого» — родительным падежом.
 export function readableName(meta: TaskV1 | null | undefined, addr: string, of = false): string {
   if (addr === ORCHESTRATOR) return of ? 'оркестратора' : 'оркестратор';

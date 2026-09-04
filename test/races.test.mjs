@@ -34,8 +34,9 @@ import test from 'node:test';
 
 const store = await import('../dist/index.js');
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать
-// worker'у») живёт в CLI и проверяется там.
+// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
+// adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать worker'у»)
+// живёт в CLI и проверяется там.
 const DIST = new URL('../dist/index.js', import.meta.url).href;
 
 // Adapter'а здесь нет, и его играет набор: перевод адреса в запись участника — его дело.

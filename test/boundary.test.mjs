@@ -76,6 +76,9 @@ test('исходники package не читают окружение и не п
 });
 
 test('в исходниках package нет harness-specific имён', () => {
+  // Предмет — сырой текст файла, включая комментарии и строковые литералы: имя harness'а
+  // в комментарии такое же знание о конкретном инструменте, как в коде. `stripComments`
+  // сюда не идёт — он ещё и вырезал бы литерал, в котором встретились `//` или `/*`.
   const harnessed = [];
   const names = [
     ['claude', /claude/i],
@@ -83,7 +86,7 @@ test('в исходниках package нет harness-specific имён', () => {
     ['anthropic', /anthropic/i],
   ];
   for (const file of tsFiles(SRC)) {
-    const text = stripComments(readFileSync(file, 'utf8'));
+    const text = readFileSync(file, 'utf8');
     for (const [name, re] of names) {
       if (re.test(text)) harnessed.push(`${path.relative(ROOT, file)}: ${name}`);
     }
@@ -128,6 +131,22 @@ test('объявленные exports резолвятся и отдают пов
   const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const load = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 
+  // `./cli` — точка входа runtime-трека (`lib/cli.js`); ядро её не собирает и здесь
+  // не резолвит. Остальные ключи манифеста обязаны открываться.
+  const SKIP = new Set(['./cli']);
+  for (const [key, spec] of Object.entries(pkg.exports)) {
+    if (SKIP.has(key)) continue;
+    if (typeof spec === 'string' && spec.includes('*')) {
+      assert.equal(key, './schemas/*');
+      assert.equal(spec, './schemas/*');
+      continue;
+    }
+    const rel = typeof spec === 'string' ? spec : spec?.default;
+    assert.equal(typeof rel, 'string', `export ${key} без пути`);
+    const mod = await load(rel);
+    assert.equal(typeof mod, 'object', `export ${key} не открылся`);
+  }
+
   const index = await load(pkg.exports['.'].default);
   assert.equal(index.PROTOCOL_VERSION, 1);
   assert.equal(index.PACKAGE_NAME, pkg.name);
@@ -146,8 +165,6 @@ test('объявленные exports резолвятся и отдают пов
   assert.equal(typeof hooks.planPromptobusHooks, 'function');
   assert.equal(typeof hooks.renderBusHook, 'function');
 
-  const schemaGlob = pkg.exports['./schemas/*'];
-  assert.equal(schemaGlob, './schemas/*');
   for (const model of ['task', 'participant', 'message', 'artifact']) {
     const file = path.join(ROOT, 'schemas', 'v1', `${model}.schema.json`);
     JSON.parse(readFileSync(file, 'utf8'));
@@ -160,17 +177,24 @@ test('LEGACY layout приходит с host\'а: без него миграци
   } = await import('../dist/index.js');
   const host = createStandaloneHost({ cwd: '.' });
   assert.equal(host.legacyLayout(), null);
-  assert.equal(migrationNeeded('/no/such/root'), false);
-  assert.equal(preflight('/no/such/root').needed, false);
+  assert.equal(migrationNeeded('/no/such/root', null), false);
+  assert.equal(preflight('/no/such/root', null).needed, false);
 
-  const [outer, inner] = splitLegacyRel('old/bus');
-  assert.deepEqual([outer, inner], ['old', 'bus']);
-  assert.deepEqual(splitLegacyRel('old\\bus'), ['old', 'bus']);
+  let omitted = null;
+  try { migrationNeeded('/no/such/root'); } catch (e) { omitted = e; }
+  assert.ok(omitted instanceof GateError);
+  omitted = null;
+  try { preflight('/no/such/root'); } catch (e) { omitted = e; }
+  assert.ok(omitted instanceof GateError);
 
-  let threw = null;
-  try { splitLegacyRel('only'); } catch (e) { threw = e; }
-  assert.ok(threw instanceof GateError);
-  assert.match(threw.message, /двух сегментов/);
+  assert.deepEqual(splitLegacyRel('old/bus'), ['old', 'bus']);
+
+  const badRel = ['only', '/old/bus', 'old//bus', '../bus', 'old\\bus', 'old/../bus'];
+  for (const rel of badRel) {
+    let threw = null;
+    try { splitLegacyRel(rel); } catch (e) { threw = e; }
+    assert.ok(threw instanceof GateError, `rel ${JSON.stringify(rel)} должен отказать`);
+  }
 
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-legacy-'));
   process.on('exit', () => { rmSync(dir, { recursive: true, force: true }); });
@@ -179,4 +203,11 @@ test('LEGACY layout приходит с host\'а: без него миграци
   assert.equal(migrationNeeded(dir, layout), true);
   assert.equal(preflight(dir, layout).legacyHome, path.join(dir, 'old', 'bus'));
   assert.equal(migrationNeeded(dir, null), false);
+
+  let cfg = null;
+  try { preflight(dir, { rel: '../bus', done: 'x' }); } catch (e) { cfg = e; }
+  assert.ok(cfg instanceof GateError);
+  cfg = null;
+  try { migrationNeeded(dir, { rel: '../bus', done: 'x' }); } catch (e) { cfg = e; }
+  assert.ok(cfg instanceof GateError);
 });

@@ -46,7 +46,7 @@ export function wardenMarkFile(home: string, id: string): string {
 }
 
 // Contact point участника — адрес его messaging-сокета и токен к нему. Сдаёт его сам
-// участник: `CLAUDE_CODE_MESSAGING_SOCKET` и `_TOKEN` Claude Code кладёт в окружение
+// участник: harness кладёт адрес сокета и токен в окружение
 // каждого дочернего процесса сессии — надзирателю не нужны ни реестр сессий, ни pid
 // участника. Токен — секрет, файл кладётся правами `0600`.
 export function wakeFile(home: string, id: string, addr: string): string {
@@ -251,8 +251,8 @@ export function lastTurnAt(home: string, id: string, addr: string): number | nul
 //
 // Привязка кладётся файлом на сессию рядом с `tasks/`: без неё задача сессии выводилась
 // догадкой «единственная активная» — при нескольких активных шина отказывала поднятой
-// сессии, при одной чужая подхватывала её как свою. Гибрид: где идентичности нет (не
-// Claude Code, ручной запуск, тесты, CI), резолв откатывается на ту же догадку. Имя
+// сессии, при одной чужая подхватывала её как свою. Гибрид: где идентичности нет
+// (ручной запуск, тесты, CI), резолв откатывается на ту же догадку. Имя
 // сессии проверяется грамматикой id задачи — не уложилось, привязки нет вовсе.
 export function sessionFile(home: string, session: string | null): string | null {
   if (typeof session !== 'string' || !TASK_ID_RE.test(session)) return null;

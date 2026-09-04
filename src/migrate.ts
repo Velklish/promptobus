@@ -60,11 +60,6 @@ const MARK = 'migrated.json';
  */
 const MIGRATION_WAIT_MS = 30_000;
 
-/**
- * Команда закрытия активных задач прежнего CLI приходит с host'а (`legacyLayout().done`).
- * Здесь её нет: у package нет своей раскладки и своего прежнего CLI.
- */
-
 /** Шаги, на которых набор умеет уронить миграцию. В production не подставляется вовсе. */
 export type MigrationStep =
   | 'scan' | 'temp' | 'task' | 'messages' | 'artifacts' | 'sidecar' | 'sessions'
@@ -165,16 +160,24 @@ function markOf(home: string): { from?: string } | null {
 }
 
 /**
- * Разбор `legacyLayout().rel`: ровно два сегмента — внешний каталог и store внутри него.
- * Форма объявлена, чтобы adapter восстанавливал корень рабочего места из абсолютного пути
- * store и не получал `undefined` на односегментном пути.
+ * Разбор `legacyLayout().rel`: ровно два сегмента через `/` — внешний каталог и store
+ * внутри него. Абсолютный путь, пустые сегменты, `.`, `..` и `\\` — ошибка формы, а не
+ * «legacy нет»: иначе `path.join` уводит выше корня рабочего места, а `split` по обоим
+ * разделителям режет POSIX-имя с обратным слэшем надвое.
  */
 export function splitLegacyRel(rel: string): [string, string] {
-  const parts = String(rel ?? '').split(/[\\/]/).filter(Boolean);
-  if (parts.length !== 2) {
+  const s = String(rel ?? '');
+  if (path.isAbsolute(s) || s.startsWith('/') || s.startsWith('\\') || s.includes('\\')) {
+    throw new GateError(
+      `legacy layout.rel должен быть относительным путём из двух сегментов через '/', `
+      + `а не ${JSON.stringify(rel)}`,
+    );
+  }
+  const parts = s.split('/');
+  if (parts.length !== 2 || parts.some((p) => !p || p === '.' || p === '..')) {
     throw new GateError(
       `legacy layout.rel должен быть ровно из двух сегментов пути `
-      + `(каталог и store внутри него), а не ${JSON.stringify(rel)}`,
+      + `(каталог и store внутри него, через '/', без '..'), а не ${JSON.stringify(rel)}`,
     );
   }
   return [parts[0], parts[1]];
@@ -186,22 +189,31 @@ function layoutOf(options: MigrationOptions): HostLegacyLayout | null {
   return null;
 }
 
+function requireLayout(
+  layout: HostLegacyLayout | null | undefined,
+  fn: string,
+): HostLegacyLayout | null {
+  if (layout === undefined) {
+    throw new GateError(
+      `${fn}: layout обязателен — передай host.legacyLayout() или явный null, `
+      + 'если прежнего store у этого рабочего места нет',
+    );
+  }
+  return layout;
+}
+
 /**
  * Нужна ли миграция и можно ли её делать. Ни одного изменения на диске — отказ приходит
- * до мутации по построению. Без layout (standalone, host без прежнего store) — не из чего.
+ * до мутации по построению. Явный `null` — не из чего (standalone, host без прежнего store).
+ * Второй аргумент без умолчания: забытый call site не должен выглядеть как «мигрировать не
+ * из чего». Негодный `rel` — ошибка конфигурации host'а, не состояние рабочего места.
  */
-export function preflight(root: string, layout: HostLegacyLayout | null = null): MigrationPlan {
+export function preflight(root: string, layout: HostLegacyLayout | null): MigrationPlan {
+  const named = requireLayout(layout, 'preflight');
   const target = homeOf(root);
   const empty: MigrationPlan = { needed: false, refusal: null, legacyHome: '', target, active: [] };
-  if (!layout) return empty;
-  let outer: string;
-  let inner: string;
-  try {
-    [outer, inner] = splitLegacyRel(layout.rel);
-  } catch (e) {
-    empty.refusal = e instanceof GateError ? e.message : String(e);
-    return empty;
-  }
+  if (!named) return empty;
+  const [outer, inner] = splitLegacyRel(named.rel);
   const legacyHome = path.join(root, outer, inner);
   const plan: MigrationPlan = { needed: false, refusal: null, legacyHome, target, active: [] };
   if (!existsSync(legacyHome)) return plan;
@@ -234,7 +246,7 @@ export function preflight(root: string, layout: HostLegacyLayout | null = null):
     plan.active = active;
     plan.refusal = `переход на новый store требует, чтобы активных задач не осталось, а их ${active.length}: `
       + `${active.join(', ')}.\nЗакрой каждую прежней версией CLI и повтори команду:\n`
-      + active.map((id) => `  ${layout.done.replace('<id>', id)}`).join('\n');
+      + active.map((id) => `  ${named.done.replace('<id>', id)}`).join('\n');
   }
   return plan;
 }
@@ -263,7 +275,7 @@ function activeLegacyTasks(legacyHome: string): string[] {
 }
 
 /** Нужна ли миграция вообще. Отдельным предикатом: его зовут перед каждым обращением. */
-export function migrationNeeded(root: string, layout: HostLegacyLayout | null = null): boolean {
+export function migrationNeeded(root: string, layout: HostLegacyLayout | null): boolean {
   return preflight(root, layout).needed;
 }
 

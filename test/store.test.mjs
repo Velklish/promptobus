@@ -27,8 +27,9 @@ const store = await import('../dist/index.js');
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-store-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать
-// worker'у») живёт в CLI и проверяется там.
+// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
+// adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать worker'у»)
+// живёт в CLI и проверяется там.
 const engineAt = (home) => store.openEngine({ home, policy: () => ({ allow: true }) });
 
 // Запись участника, какой её кладёт adapter: id — имя каталога mailbox'а, адрес — поле
@@ -346,8 +347,8 @@ test('peek, glance и lastSentAt — чтения, которые не заби�
 
 // --- жёсткая ссылка на blob под именем adapter'а ---------------------
 //
-// Папка файлов задачи — дело adapter'а , а путь blob'а наружу package не отдаёт. Дверь между ними одна — `linkBlob`,
-// и она же занимает имя: `false` вместо тихой перезаписи.
+// Папка файлов задачи — дело adapter'а, а путь blob'а наружу package не отдаёт.
+// Дверь между ними одна — `linkBlob`, и она же занимает имя: `false` вместо тихой перезаписи.
 test('linkBlob ставит ссылку и не перезаписывает занятое имя', () => {
   const home = path.join(SB, 'link', '.promptobus');
   const engine = engineAt(home);
