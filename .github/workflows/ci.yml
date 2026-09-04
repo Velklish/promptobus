@@ -46,6 +46,12 @@ jobs:
       - name: Pack dry-run
         run: npm pack --dry-run
 
+      # Adapter outputs and the Claude stub are generated, not stored in git, so a
+      # fresh checkout has none of them and the gate would fail on their absence.
+      # Regenerating first is what the tool expects: templates are the only source.
+      - name: backslop init
+        run: npx --yes github:Velklish/backslop#v0.3.0 init --prefix PB --lang en --tools claude,cursor,codex
+
       - name: backslop lint
         run: npm run lint:backslop
 
