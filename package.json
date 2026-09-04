@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "npm run build",
-    "test": "node --test",
+    "test": "node test/run.mjs",
     "lint:backslop": "npx --yes github:Velklish/backslop#v0.3.0 lint"
   },
   "engines": {
