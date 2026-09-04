@@ -1,9 +1,10 @@
-// Engine protocol v1: задача и участники, fan-out с восстановлением, mailbox и
-// history, content-addressed артефакты, изоляция повреждённого.
+// Engine protocol v1: the task and participants, fan-out with recovery, mailbox
+// and history, content-addressed artifacts, isolation of the damaged.
 //
-// Ни CLI, ни рабочего места, ни harness'а здесь нет вовсе — и это предмет проверки наравне
-// с остальным: core обязан работать без них. Всё, что engine знает о внешнем
-// мире, приходит двумя аргументами открытия — корень и routing policy.
+// There is no CLI, no workspace, no harness here at all — and that is the
+// subject of the check on a par with the rest: core must work without them.
+// Everything the engine knows about the outside world arrives as two open
+// arguments — the root and the routing policy.
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
@@ -19,10 +20,11 @@ import test from 'node:test';
 import {
   ERROR_CODES, MECHANISM_VERSION_FIELD, openEngine, PromptobusError, validate,
 } from '../dist/index.js';
-// Единственный глубокий импорт в наборе, и он нужен ровно одной проверке ниже: `commitIntent`
-// принимает готовую запись, то есть даёт назвать id заранее, а через `openEngine` его собирает
-// сам движок со случайным хвостом. Наружу package этот модуль не отдаёт — entry point'ов у
-// него три, и проверка их не расширяет.
+// The only deep import in the suite, and it is needed by exactly one check
+// below: `commitIntent` accepts a ready record, that is it lets the id be
+// named in advance, while through `openEngine` the engine assembles it
+// itself with a random tail. The package does not export this module —
+// it has three entry points, and the check does not extend them.
 import { commitIntent } from '../dist/v1/messages.js';
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-v1-'));
@@ -30,8 +32,9 @@ process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
 const CAPS = { spawn: true, attach: true, activation: 'push', inspect: true, stop: true };
 
-// Роль объявлена ПОЛЕМ, а не выведена из id: `w-api` здесь worker только потому, что так
-// написано в записи. Это и есть то, что v1 разводит по сравнению с адресом `worker:<слаг>`.
+// The role is declared as a FIELD, not derived from the id: `w-api` is a
+// worker here only because that is what the record says. That is what v1
+// separates compared to the `worker:<slug>` address.
 const person = (id, role, extra = {}) => ({
   id,
   role,
@@ -43,18 +46,18 @@ const person = (id, role, extra = {}) => ({
   ...extra,
 });
 
-// Подставная policy: пример policy «worker → worker запрещён» живёт у adapter'а, здесь оно
-// стоит образцом — core своих ролей не знает.
+// Stand-in policy: the sample "worker → worker is forbidden" policy lives at
+// the adapter; here it stands as a specimen — core does not know its own roles.
 const noWorkerToWorker = (sender, recipient) => (
   sender.role === 'worker' && recipient.role === 'worker'
-    ? { deny: true, reason: `worker'ам между собой писать нельзя` }
+    ? { deny: true, reason: 'workers must not write to each other' }
     : { allow: true }
 );
 
 const allowAll = () => ({ allow: true });
 
-// Незакрытые fan-out'ы задачи. Считаются записи intent'ов, а не содержимое каталога: рядом
-// с каждой лежит лизинг владельца `<id>.owner`.
+// Unclosed fan-outs of the task. Intent records are counted, not the
+// directory contents: next to each sits the owner lease `<id>.owner`.
 const openIntents = (dir) => readdirSync(dir).filter((n) => n.endsWith('.json'));
 
 let sandboxes = 0;
@@ -65,8 +68,8 @@ function sandbox() {
   return root;
 }
 
-// Часы шагают на секунду за вызов: id сообщений сортируются порядком отправки, и штампы
-// прогона не зависят от того, насколько быстра машина.
+// The clock steps one second per call: message ids sort by send order, and
+// run stamps do not depend on how fast the machine is.
 function clock(from = '2026-09-02T10:00:00.000Z') {
   let ms = Date.parse(from);
   return () => {
@@ -75,7 +78,7 @@ function clock(from = '2026-09-02T10:00:00.000Z') {
   };
 }
 
-/** Задача с owner'ом и двумя worker'ами. Owner — такой же participant, с harness и режимом. */
+/** A task with an owner and two workers. The owner is a participant too, with a harness and a mode. */
 function taskWith(engine, id = 'demo-t20260902-100000') {
   engine.createTask({ id, title: 'демо', owner: person('owner', 'orchestrator', { mode: 'attached' }) });
   engine.addParticipant(id, person('w-api', 'worker'));
@@ -87,8 +90,9 @@ function open(root, options = {}) {
   return openEngine({ root, policy: allowAll, now: clock(), ...options });
 }
 
-// Отказ engine: код вместо разбора текста. Человеческий текст — дело adapter'а, и сверять
-// его здесь значило бы прибивать к набору то, чего в контракте нет.
+// An engine refusal: the code, not a parse of the text. Human text is the
+// adapter's business, and checking it here would pin the suite to something
+// that is not in the contract.
 function refusal(fn) {
   try {
     fn();
@@ -107,25 +111,25 @@ async function refusalAsync(fn) {
   return null;
 }
 
-// ── Открытие engine ───────────────────────────────────────────────────────────────────
+// ── Opening the engine ───────────────────────────────────────────────────────────────────
 
-test('routing policy обязательна при открытии, а не при первой отправке', () => {
+test('a routing policy is required at open, not at the first send', () => {
   const e = refusal(() => openEngine({ root: sandbox() }));
   assert.ok(e instanceof PromptobusError);
   assert.equal(e.code, 'policy-required');
-  // Отказ до первой отправки — весь смысл: engine, у которого правило появится потом, до
-  // тех пор пропускает всё.
-  assert.equal(refusal(() => openEngine({ root: sandbox(), policy: 'нет' })).code, 'policy-required');
+  // A refusal before the first send is the whole point: an engine whose rule
+  // appears later lets everything through until then.
+  assert.equal(refusal(() => openEngine({ root: sandbox(), policy: 'no' })).code, 'policy-required');
 });
 
-test('store лежит в <root>/.promptobus, и корень package не ищет', () => {
+test('the store sits in <root>/.promptobus, and the package does not search for the root', () => {
   const root = sandbox();
   assert.equal(open(root).home, path.join(root, '.promptobus'));
 });
 
-// ── Задача и участники ────────────────────────────────────────────────────────────────
+// ── The task and participants ────────────────────────────────────────────────────────────────
 
-test('owner задачи — такой же participant: harness, режим, sessionRef и capabilities', () => {
+test('the task owner is a participant too: harness, mode, sessionRef, and capabilities', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const meta = engine.readTask(id);
@@ -137,7 +141,7 @@ test('owner задачи — такой же participant: harness, режим, s
   assert.deepEqual(owner.capabilities, CAPS);
 });
 
-test('участник без harness не заводится: fallback\'а в v1 нет вовсе', () => {
+test('a participant without a harness is not created: v1 has no fallback at all', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const { harness, ...noHarness } = person('w-null', 'worker');
@@ -146,36 +150,38 @@ test('участник без harness не заводится: fallback\'а в v
   assert.deepEqual(engine.readTask(id).participants.map((p) => p.id), ['owner', 'w-api', 'w-docs']);
 });
 
-test('обновление участника — patch по полям, а не замена записи целиком', async (t) => {
-  // Инвариант legacy `upsertParticipant` («второй вызов обязан класть обратно ту же запись»)
-  // в v1 не повторяется: там дописывающий одно поле терял поля первого вызова молча.
+test('updating a participant is a field patch, not a whole-record replace', async (t) => {
+  // The legacy `upsertParticipant` invariant ("the second call must put the
+  // same record back") is not repeated in v1: there, a caller appending one
+  // field silently lost the fields of the first call.
   const engine = open(sandbox());
   const id = taskWith(engine);
   engine.patchParticipant(id, 'w-api', { metadata: { repo: 'ns/repo' } });
   engine.patchParticipant(id, 'w-api', { sessionRef: 'sess-restarted' });
   const p = engine.readTask(id).participants.find((x) => x.id === 'w-api');
-  await t.test('patch: поле первого вызова пережило второй', () => {
+  await t.test('patch: the field of the first call survived the second', () => {
     assert.deepEqual(p.metadata, { repo: 'ns/repo' });
     assert.equal(p.sessionRef, 'sess-restarted');
     assert.equal(p.harness, 'fake');
   });
-  await t.test('patch: ломающий схему отказывает ДО записи журнала', () => {
+  await t.test('patch: a schema-breaking one refuses BEFORE the journal write', () => {
     const before = readFileSync(path.join(engine.home, 'tasks', id, 'task.json'), 'utf8');
     assert.equal(refusal(() => engine.patchParticipant(id, 'w-api', { mode: 'detached' })).code, 'schema-invalid');
     assert.equal(readFileSync(path.join(engine.home, 'tasks', id, 'task.json'), 'utf8'), before);
   });
 });
 
-test('owner меняется только явным claim и возвращает прежнего', () => {
+test('the owner changes only by an explicit claim and returns the previous one', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   assert.equal(engine.claimOwner(id, 'w-api'), 'owner');
   assert.equal(engine.readTask(id).owner, 'w-api');
-  // Захват на участника, которого в задаче нет, — отказ, а не тихая смена владельца.
+  // A claim on a participant who is not in the task is a refusal, not a
+  // quiet change of owner.
   assert.equal(refusal(() => engine.claimOwner(id, 'w-none')).code, 'participant-not-found');
 });
 
-test('задачу с тем же id заводит ровно один', () => {
+test('exactly one creates a task with the same id', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const e = refusal(() => engine.createTask({ id, title: 'вторая', owner: person('owner', 'orchestrator') }));
@@ -183,9 +189,9 @@ test('задачу с тем же id заводит ровно один', () => 
   assert.equal(engine.readTask(id).title, 'демо');
 });
 
-// ── Prevalidation fan-out ─────────────────────────────────────────────────────────────
+// ── Fan-out prevalidation ─────────────────────────────────────────────────────────────
 
-test('prevalidation: пустой список, дубли, незнакомый адресат и чужой тип', async (t) => {
+test('prevalidation: an empty list, duplicates, an unknown addressee, and a foreign type', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const cases = [
@@ -197,19 +203,19 @@ test('prevalidation: пустой список, дубли, незнакомый
     ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'task', body: '' }],
   ];
   for (const [code, input] of cases) {
-    await t.test(`prevalidation: ${code} на ${JSON.stringify(input.to)} ${input.type}`, async () => {
+    await t.test(`prevalidation: ${code} on ${JSON.stringify(input.to)} ${input.type}`, async () => {
       const e = await refusalAsync(() => engine.send(id, input));
       assert.equal(e.code, code);
     });
   }
-  await t.test('prevalidation: ни один отказ не тронул store', () => {
+  await t.test('prevalidation: not one refusal touched the store', () => {
     assert.equal(engine.unread(id, 'w-api'), 0);
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'messages')));
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'intents')));
   });
 });
 
-test('в закрытую задачу не пишут, а читать её законно', async () => {
+test('a closed task is not written to, and reading it is lawful', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'до закрытия' });
@@ -221,7 +227,7 @@ test('в закрытую задачу не пишут, а читать её з�
 
 // ── Routing policy ────────────────────────────────────────────────────────────────────
 
-test('routing denial срабатывает ДО артефактов и сообщений', async (t) => {
+test('a routing denial fires BEFORE artifacts and messages', async (t) => {
   const root = sandbox();
   const engine = openEngine({ root, policy: noWorkerToWorker, now: clock() });
   const id = taskWith(engine);
@@ -230,31 +236,31 @@ test('routing denial срабатывает ДО артефактов и соо�
   const e = await refusalAsync(() => engine.send(id, {
     from: 'w-api', to: ['w-docs'], type: 'artifact', body: 'дифф', artifact: { path: file },
   }));
-  await t.test('routing denial: код и причина policy', () => {
+  await t.test('routing denial: the code and the policy reason', () => {
     assert.equal(e.code, 'policy-denied');
     assert.equal(e.context.sender, 'w-api');
     assert.equal(e.context.recipient, 'w-docs');
     assert.match(e.context.reason, /worker/);
   });
-  await t.test('routing denial: blob\'а в задаче не появилось', () => {
-    // Порядок «policy → blob» и есть предмет: артефакт, положенный до проверки, остался бы
-    // в задаче навсегда — blob'ы уходят только с `prune`.
+  await t.test('routing denial: no blob appeared in the task', () => {
+    // The "policy → blob" order is the subject: an artifact put before the
+    // check would stay in the task forever — blobs leave only with `prune`.
     assert.equal(engine.orphanBlobs(id).length, 0);
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'blobs')));
   });
-  await t.test('routing denial: ни сообщения, ни intent\'а', () => {
+  await t.test('routing denial: neither a message nor an intent', () => {
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'messages')));
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'intents')));
     assert.equal(engine.unread(id, 'w-docs'), 0);
   });
-  await t.test('routing denial: разрешённое направление проходит', async () => {
+  await t.test('routing denial: the allowed direction goes through', async () => {
     const sent = await engine.send(id, { from: 'w-api', to: ['owner'], type: 'result', body: 'готово' });
     assert.equal(sent.message.sender, 'w-api');
     assert.equal(engine.unread(id, 'owner'), 1);
   });
 });
 
-test('policy, вернувшая не решение, читается как отказ', async () => {
+test('a policy that returned not a decision is read as a refusal', async () => {
   const engine = openEngine({ root: sandbox(), policy: () => undefined, now: clock() });
   const id = taskWith(engine);
   const e = await refusalAsync(() => engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'a' }));
@@ -262,37 +268,38 @@ test('policy, вернувшая не решение, читается как о
   assert.equal(engine.unread(id, 'w-api'), 0);
 });
 
-// ── Fan-out: доставка и события ───────────────────────────────────────────────────────
+// ── Fan-out: delivery and events ───────────────────────────────────────────────────────
 
-test('fan-out: одно каноническое сообщение и ссылка каждому получателю', async (t) => {
+test('fan-out: one canonical message and a link for each recipient', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const { message, events } = await engine.send(id, {
     from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'сделай',
   });
   const taskRoot = path.join(engine.home, 'tasks', id);
-  await t.test('fan-out: канон один', () => {
+  await t.test('fan-out: the canon is one', () => {
     assert.deepEqual(readdirSync(path.join(taskRoot, 'messages')), [`${message.id}.json`]);
   });
-  await t.test('fan-out: intent снят после ссылок у всех', () => {
+  await t.test('fan-out: the intent is taken down after the links of all', () => {
     assert.deepEqual(readdirSync(path.join(taskRoot, 'intents')), []);
   });
-  await t.test('fan-out: ссылка у каждого получателя, у отправителя — ничего', () => {
+  await t.test('fan-out: a link at each recipient, nothing at the sender', () => {
     assert.equal(engine.unread(id, 'w-api'), 1);
     assert.equal(engine.unread(id, 'w-docs'), 1);
     assert.equal(engine.unread(id, 'owner'), 0);
   });
-  await t.test('fan-out: ссылки и канон — один inode', () => {
-    // Неизменяемость канона объявлена контрактом, а inode общий: содержимое не копируется,
-    // и «ссылка» здесь — жёсткая ссылка, а не запись рядом.
+  await t.test('fan-out: the links and the canon are one inode', () => {
+    // Canon immutability is declared by the contract, and the inode is
+    // shared: the contents are not copied, and a "link" here is a hard
+    // link, not a record next to it.
     const ino = statSync(path.join(taskRoot, 'messages', `${message.id}.json`)).ino;
     for (const who of ['w-api', 'w-docs']) {
       assert.equal(statSync(path.join(taskRoot, 'inbox', who, `${message.id}.json`)).ino, ino);
     }
   });
-  await t.test('fan-out: события «кого будить» по получателю, с ref и выжимкой', () => {
-    // Форма — та, которую примет `activate(target, notification)` driver'а: `ref` идёт в
-    // target, остальное — в notification.
+  await t.test('fan-out: "whom to wake" events per recipient, with a ref and an excerpt', () => {
+    // The form is the one `activate(target, notification)` of a driver will
+    // take: `ref` goes into target, the rest — into notification.
     assert.deepEqual(events.map((e) => e.address), ['w-api', 'w-docs']);
     assert.deepEqual(events.map((e) => e.ref), ['sess-w-api', 'sess-w-docs']);
     for (const e of events) {
@@ -306,33 +313,36 @@ test('fan-out: одно каноническое сообщение и ссыл�
   });
 });
 
-test('отказ активации одного получателя не трогает fan-out и не мешает другим', async () => {
-  // Активация — дело supervisor'а и driver'а: engine отдаёт список «кого будить». Здесь
-  // проверяется контракт событий — что отказ одного не откатывает доставку и не уносит
-  // остальных.
+test('an activation refusal of one recipient does not touch the fan-out and does not block the others', async () => {
+  // Activation is the supervisor's and the driver's business: the engine
+  // returns the "whom to wake" list. What is checked here is the event
+  // contract — that a refusal of one does not roll back delivery and does
+  // not take the others with it.
   const engine = open(sandbox());
   const id = taskWith(engine);
   const { events } = await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' });
   const woken = [];
   for (const e of events) {
     try {
-      if (e.address === 'w-api') throw new Error('сокет не принял notification');
+      if (e.address === 'w-api') throw new Error('socket did not accept the notification');
       woken.push(e.address);
     } catch {
-      // Ровно то, что делает supervisor: отказ — исход, а не исключение наружу.
+      // Exactly what the supervisor does: a refusal is an outcome, not an
+      // exception outward.
     }
   }
   assert.deepEqual(woken, ['w-docs']);
-  assert.equal(engine.unread(id, 'w-api'), 1, 'отказ активации не откатил доставку');
+  assert.equal(engine.unread(id, 'w-api'), 1, 'an activation refusal did not roll back delivery');
   assert.equal(engine.read(id, 'w-api').messages.length, 1);
 });
 
-// ── Crash в каждой точке fan-out ──────────────────────────────────────────────────────
+// ── A crash at each fan-out point ──────────────────────────────────────────────────────
 
-// Падение изображается броском из шва: настоящее падение процесса набором посреди шага не
-// воспроизводится, а состояние на диске остаётся то же самое. Что это не артефакт броска в
-// одном процессе, проверяет [v1-races.test.mjs](v1-races.test.mjs) — там процесс и правда
-// умирает посреди fan-out'а.
+// A crash is pictured as a throw from the seam: a real process death mid-step
+// is not reproduced by the suite, and the state on disk stays the same. That
+// this is not an artifact of a throw in one process is checked by
+// [v1-races.test.mjs](v1-races.test.mjs) — there the process really dies
+// mid-fan-out.
 function crashAt(root, step, { at = 0 } = {}) {
   let seen = 0;
   return openEngine({
@@ -343,16 +353,16 @@ function crashAt(root, step, { at = 0 } = {}) {
     faults: (which) => {
       if (which !== step) return;
       seen += 1;
-      if (seen > at) throw new Error(`падение в точке ${step}`);
+      if (seen > at) throw new Error(`crash at step ${step}`);
     },
   });
 }
 
 const STEPS = ['validate', 'blob', 'artifact', 'intent', 'canonical', 'ref', 'close'];
 
-test('crash в каждой точке fan-out и идемпотентное восстановление', async (t) => {
+test('a crash at each fan-out point and idempotent recovery', async (t) => {
   for (const step of STEPS) {
-    await t.test(`crash в точке ${step}: восстановление доводит доставку до конца`, async () => {
+    await t.test(`crash at step ${step}: recovery takes delivery to the end`, async () => {
       const root = sandbox();
       const source = path.join(SB, `crash-${step}.patch`);
       writeFileSync(source, `содержимое для ${step}\n`);
@@ -361,37 +371,39 @@ test('crash в каждой точке fan-out и идемпотентное в�
       const e = await refusalAsync(() => broken.send(id, {
         from: 'owner', to: ['w-api', 'w-docs'], type: 'artifact', body: 'дифф', artifact: { path: source },
       }));
-      assert.match(e.message, new RegExp(`падение в точке ${step}`));
+      assert.match(e.message, new RegExp(`crash at step ${step}`));
 
-      // Открытие engine восстанавливает fan-out само — это первый из двух маршрутов
-      // восстановления (второй — вызов `recover()` кругом надзирателя).
+      // Opening the engine recovers the fan-out itself — this is the first
+      // of two recovery routes (the second is a `recover()` call by the
+      // warden round).
       const healed = openEngine({ root, policy: allowAll, now: clock() });
       const committed = ['intent', 'canonical', 'ref', 'close'].includes(step);
       if (committed) {
         assert.equal(healed.unread(id, 'w-api'), 1, `${step}: w-api`);
         assert.equal(healed.unread(id, 'w-docs'), 1, `${step}: w-docs`);
         assert.deepEqual(readdirSync(path.join(healed.home, 'tasks', id, 'intents')), [],
-          `${step}: intent остался незакрытым`);
+          `${step}: the intent stayed unclosed`);
       } else {
-        // До точки коммита сообщения не существует вовсе: отправка не вернулась, и
-        // отправитель о нём не знает.
+        // Before the commit point the message does not exist at all: the
+        // send did not return, and the sender does not know about it.
         assert.equal(healed.unread(id, 'w-api'), 0, `${step}: w-api`);
         assert.equal(healed.unread(id, 'w-docs'), 0, `${step}: w-docs`);
       }
 
-      // Второй проход не делает ничего: восстановление идемпотентно по построению —
-      // и канон, и каждая ссылка ставятся `link`'ом, а `EEXIST` значит «уже есть».
+      // A second pass does nothing: recovery is idempotent by construction
+      // — both the canon and each link are put by `link`, and `EEXIST`
+      // means "already there".
       const again = healed.recover(id);
-      assert.deepEqual(again.repairs, [], `${step}: повторное восстановление что-то починило`);
-      assert.deepEqual(again.events, [], `${step}: повторное восстановление кого-то будит`);
-      assert.equal(healed.unread(id, 'w-api'), committed ? 1 : 0, `${step}: повтор изменил mailbox`);
+      assert.deepEqual(again.repairs, [], `${step}: a second recovery fixed something`);
+      assert.deepEqual(again.events, [], `${step}: a second recovery wakes someone`);
+      assert.equal(healed.unread(id, 'w-api'), committed ? 1 : 0, `${step}: a second pass changed the mailbox`);
     });
   }
 });
 
-test('crash после первой ссылки: вторая дописывается, первая не дублируется', async () => {
+test('a crash after the first link: the second is appended, the first is not duplicated', async () => {
   const root = sandbox();
-  // Падение ПОСЛЕ первой ссылки: у `w-api` она есть, у `w-docs` ещё нет.
+  // A crash AFTER the first link: `w-api` has it, `w-docs` does not yet.
   const broken = crashAt(root, 'ref', { at: 0 });
   const id = taskWith(broken);
   await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' }));
@@ -401,43 +413,46 @@ test('crash после первой ссылки: вторая дописыва�
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   const { repairs, events } = healed.recover(id);
   assert.equal(repairs.length, 1);
-  assert.deepEqual(repairs[0].recipients, ['w-docs'], 'дописывается только недостающая ссылка');
-  assert.deepEqual(events.map((e) => e.address), ['w-docs'], 'будят только того, кому дописали');
-  assert.equal(healed.unread(id, 'w-api'), 1, 'первая ссылка не задвоилась');
+  assert.deepEqual(repairs[0].recipients, ['w-docs'], 'only the missing link is appended');
+  assert.deepEqual(events.map((e) => e.address), ['w-docs'], 'only the one who was appended to is woken');
+  assert.equal(healed.unread(id, 'w-api'), 1, 'the first link was not doubled');
   assert.equal(healed.unread(id, 'w-docs'), 1);
 });
 
-test('crash после чтения: восстановление не возвращает прочитанное', async (t) => {
+test('a crash after a read: recovery does not return what was already read', async (t) => {
   const root = sandbox();
-  // Падение после ссылки ЕДИНСТВЕННОМУ получателю: ссылки у всех есть, а intent снять уже
-  // не успели — ровно то состояние, в котором восстановление могло бы доставить второй раз.
+  // A crash after the link to the ONLY recipient: everyone has a link, and
+  // the intent was not taken down yet — exactly the state in which recovery
+  // could deliver a second time.
   const broken = crashAt(root, 'ref', { at: 0 });
   const id = taskWith(broken);
   await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'один раз' }));
-  assert.equal(openIntents(path.join(broken.home, 'tasks', id, 'intents')).length, 1, 'intent открыт');
+  assert.equal(openIntents(path.join(broken.home, 'tasks', id, 'intents')).length, 1, 'the intent is open');
 
-  // Получатель забирает сообщение ДО восстановления: ссылка уезжает из inbox в history.
+  // The recipient takes the message BEFORE recovery: the link leaves inbox
+  // for history.
   const taken = broken.read(id, 'w-api');
   assert.deepEqual(taken.messages.map((m) => m.body), ['один раз']);
 
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   const { repairs, events } = healed.recover(id);
-  await t.test('восстановление сверило history, а не только inbox', () => {
-    assert.deepEqual(repairs[0].recipients, [], 'ссылка дописана заново');
-    assert.deepEqual(events, [], 'разбудили того, кто уже прочитал');
+  await t.test('recovery checked history, not only inbox', () => {
+    assert.deepEqual(repairs[0].recipients, [], 'the link was appended again');
+    assert.deepEqual(events, [], 'woke the one who had already read');
     assert.equal(healed.unread(id, 'w-api'), 0);
   });
-  await t.test('второе чтение пусто — сообщение не доставлено дважды', () => {
+  await t.test('a second read is empty — the message was not delivered twice', () => {
     assert.deepEqual(healed.read(id, 'w-api').messages, []);
   });
 });
 
-// ── Лизинг незакрытого fan-out'а ─────────────────────────────────────────────
+// ── Lease of an unclosed fan-out ─────────────────────────────────────────────
 
 /**
- * Незакрытый intent на диске: отправка роняется швом сразу после точки коммита. Остаются
- * intent и запись владельца с pid ЭТОГО процесса — ровно то, что оставил бы настоящий
- * отправитель, умерший в этот момент.
+ * An unclosed intent on disk: the send is thrown from the seam right after
+ * the commit point. What remains are the intent and the owner record with
+ * the pid of THIS process — exactly what a real sender who died at that
+ * moment would have left.
  */
 async function inFlight(root, body = 'в полёте') {
   const broken = crashAt(root, 'intent');
@@ -450,47 +465,52 @@ async function inFlight(root, body = 'в полёте') {
 
 const lease = (file, pid, host = os.hostname()) => writeFileSync(file, `${JSON.stringify({ pid, host })}\n`);
 
-// Состарить intent за порог. Час заведомо больше любого порога, поэтому проверка не зависит
-// от самого числа — она про ветку «возраст решает», а не про величину `INTENT_STALE_MS`.
+// Age the intent past the threshold. An hour is well above any threshold, so
+// the check does not depend on the number itself — it is about the "age
+// decides" branch, not about the size of `INTENT_STALE_MS`.
 const backdate = (file) => {
   const long = new Date(Date.now() - 3600_000);
   utimesSync(file, long, long);
 };
 
-// Чужой ЖИВОЙ pid: настоящий процесс. Свой не годится вовсе — свой pid на intent'е
-// восстановление читает как «прошлый процесс с тем же номером» и подбирает.
+// A foreign LIVE pid: a real process. Our own will not do at all — recovery
+// reads our pid on the intent as "a previous process with the same number"
+// and picks it up.
 const liveStranger = () => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
 
-// Чужой МЁРТВЫЙ pid: номер только что вышедшего процесса. Число наугад не годится — оно
-// может оказаться живым, и проверка молча проверяла бы не то.
+// A foreign DEAD pid: the number of a process that has just exited. A
+// number at random will not do — it may turn out to be live, and the check
+// would silently check the wrong thing.
 async function deadStranger() {
   const ch = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   await new Promise((r) => ch.on('exit', r));
   return ch.pid;
 }
 
-test('лизинг: восстановление не трогает intent живого владельца', async (t) => {
-  // Дом с несколькими пишущими процессами — норма, а engine открывается лениво, и открытие
-  // прогоняет восстановление. Без лизинга опоздавший подбирал живой fan-out соседа:
-  // материализовал канон и снимал intent, пока владелец стоял на пути к `link`.
+test('lease: recovery does not touch the intent of a live owner', async (t) => {
+  // A home with several writing processes is normal, and the engine opens
+  // lazily, and open runs recovery. Without a lease a latecomer would pick
+  // up a neighbour's live fan-out: materialise the canon and take the
+  // intent down while the owner stood on the path to `link`.
   const root = sandbox();
   const { id, intent } = await inFlight(root);
   const stranger = liveStranger();
-  // Гасится через `after`, а не последней строкой: красный assert бросает мимо неё, а живой
-  // ребёнок держит цикл событий родителя — набор висел бы минуту после падения.
+  // Killed in `after`, not on the last line: a red assert throws past it,
+  // and a live child holds the parent event loop — the suite would hang a
+  // minute after the fall.
   t.after(() => stranger.kill());
   lease(path.join(path.dirname(intent), `${path.basename(intent, '.json')}.owner`), stranger.pid);
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   const { repairs, events } = healed.recover(id);
-  await t.test('живой intent не подобран и не снят', () => {
-    assert.deepEqual(repairs, [], 'восстановление влезло в чужой идущий fan-out');
+  await t.test('a live intent was not picked up and not taken down', () => {
+    assert.deepEqual(repairs, [], 'recovery stepped into a foreign in-flight fan-out');
     assert.deepEqual(events, []);
-    assert.ok(existsSync(intent), 'intent снят из-под живого владельца');
-    assert.equal(healed.unread(id, 'w-api'), 0, 'ссылка дописана мимо владельца');
+    assert.ok(existsSync(intent), 'the intent was taken down from under a live owner');
+    assert.equal(healed.unread(id, 'w-api'), 0, 'the link was appended past the owner');
   });
 });
 
-test('лизинг: intent мёртвого владельца восстановление подбирает', async () => {
+test('lease: recovery picks up the intent of a dead owner', async () => {
   const root = sandbox();
   const { id, intent, owner } = await inFlight(root, 'дописать');
   lease(owner, await deadStranger());
@@ -498,22 +518,23 @@ test('лизинг: intent мёртвого владельца восстано�
   const { repairs } = healed.recover(id);
   assert.deepEqual(repairs.map((r) => r.recipients), [['w-api']]);
   assert.equal(healed.unread(id, 'w-api'), 1);
-  assert.ok(!existsSync(intent), 'intent остался незакрытым');
-  assert.ok(!existsSync(owner), 'запись владельца пережила закрытие fan-out\'а');
+  assert.ok(!existsSync(intent), 'the intent stayed unclosed');
+  assert.ok(!existsSync(owner), 'the owner record survived the fan-out close');
 });
 
-test('лизинг: intent без записи владельца ждёт порога, а за порогом подбирается', async (t) => {
+test('lease: an intent without an owner record waits for the threshold, and past it is picked up', async (t) => {
   const root = sandbox();
   const { id, intent, owner } = await inFlight(root);
-  // Так выглядит intent, написанный версией, лизинга не знавшей: живость владельца
-  // спросить не у чего, и решает один возраст.
+  // This is what an intent written by a version that did not know the lease
+  // looks like: there is nothing to ask the owner liveness of, and age
+  // alone decides.
   rmSync(owner);
-  await t.test('моложе порога — не тронут', () => {
+  await t.test('younger than the threshold — not touched', () => {
     const young = openEngine({ root, policy: allowAll, now: clock(), recover: false });
     assert.deepEqual(young.recover(id).repairs, []);
     assert.ok(existsSync(intent));
   });
-  await t.test('старше порога — подобран', () => {
+  await t.test('older than the threshold — picked up', () => {
     backdate(intent);
     const stale = openEngine({ root, policy: allowAll, now: clock(), recover: false });
     assert.equal(stale.recover(id).repairs.length, 1);
@@ -521,21 +542,22 @@ test('лизинг: intent без записи владельца ждёт по�
   });
 });
 
-test('лизинг: запись владельца с чужой машины — ждём порога, живость не спрашивается', async () => {
+test('lease: an owner record from a foreign machine — wait for the threshold, liveness is not asked', async () => {
   const root = sandbox();
   const { id, intent, owner } = await inFlight(root);
-  // pid НАШ: на своей машине он означал бы «подбирай», и проверка, не смотрящая на host,
-  // этого не заметила бы вовсе.
+  // The pid is OURS: on our machine it would mean "pick it up", and a check
+  // that does not look at host would not notice that at all.
   lease(owner, process.pid, `${os.hostname()}-drugaya`);
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   assert.deepEqual(healed.recover(id).repairs, []);
   assert.ok(existsSync(intent));
 });
 
-test('лизинг: за порогом подбирается и intent живого владельца', async (t) => {
-  // Возраст — верхний предел лизинга: pid, переиспользованный ОС под чужой живой процесс,
-  // иначе запирал бы intent навсегда. Он же оставляет достижимой гонку, которую терпит
-  // `materialize`, — без него та терпимость была бы мёртвым кодом.
+test('lease: past the threshold even the intent of a live owner is picked up', async (t) => {
+  // Age is the upper bound of the lease: a pid reused by the OS under a
+  // foreign live process would otherwise lock the intent forever. It also
+  // leaves reachable the race that `materialize` tolerates — without it
+  // that tolerance would be dead code.
   const root = sandbox();
   const { id, intent, owner } = await inFlight(root);
   const stranger = liveStranger();
@@ -547,19 +569,21 @@ test('лизинг: за порогом подбирается и intent жив�
   assert.equal(healed.unread(id, 'w-api'), 1);
 });
 
-test('лизинг: intent, брошенный этим же процессом, подбирается', async (t) => {
-  // Жизнь intent'а внутри процесса — ОДИН синхронный блок: `commitIntent` и `completeFanout`
-  // синхронны целиком, а все await'ы отправки стоят до точки коммита. Поэтому свой pid на
-  // intent'е значит «прошлый процесс с тем же номером», а не «пишется прямо сейчас». На этом
-  // инварианте держится весь набор падений выше — он роняет отправку швом и восстанавливает
-  // ТЕМ ЖЕ процессом; появится await между созданием intent'а и его снятием — покраснеют и
-  // они, и эта проверка.
+test('lease: an intent abandoned by this same process is picked up', async (t) => {
+  // The life of an intent inside a process is ONE synchronous block:
+  // `commitIntent` and `completeFanout` are synchronous whole, and all send
+  // awaits sit before the commit point. So our pid on the intent means "a
+  // previous process with the same number", not "it is being written right
+  // now". The whole crash suite above rests on that invariant — it throws
+  // the send from the seam and recovers in THE SAME process; an await
+  // between creating the intent and taking it down would redden both them
+  // and this check.
   const root = sandbox();
   const { id, intent, owner } = await inFlight(root, 'свой же');
-  await t.test('владельцем записан наш pid', () => {
+  await t.test('our pid is written as the owner', () => {
     assert.deepEqual(JSON.parse(readFileSync(owner, 'utf8')), { pid: process.pid, host: os.hostname() });
   });
-  await t.test('восстановление тем же процессом доводит доставку', () => {
+  await t.test('recovery by the same process takes delivery to the end', () => {
     const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
     assert.equal(healed.recover(id).repairs.length, 1);
     assert.equal(healed.unread(id, 'w-api'), 1);
@@ -567,11 +591,13 @@ test('лизинг: intent, брошенный этим же процессом,
   });
 });
 
-test('лизинг: свежий intent не наследует осиротевшую запись владельца', async () => {
-  // Имена записей могут повториться — код считает это достижимым сам: `commitIntent`
-  // пересобирает id по `EEXIST` до шестнадцати раз. Если под тем же именем остался
-  // осиротевший лизинг прежнего fan-out'а, свежий intent обязан переписать его собой: иначе
-  // он несёт чужие pid и host и объявляется брошенным сразу — окно открыто заново.
+test('lease: a fresh intent does not inherit an orphaned owner record', async () => {
+  // Record names can repeat — the code itself counts that reachable:
+  // `commitIntent` rebuilds the id on `EEXIST` up to sixteen times. If an
+  // orphaned lease of a previous fan-out is left under the same name, a
+  // fresh intent must overwrite it with itself: otherwise it carries
+  // foreign pid and host and is declared abandoned at once — the window is
+  // open again.
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
@@ -593,8 +619,9 @@ test('лизинг: свежий intent не наследует осиротев
   assert.deepEqual(JSON.parse(readFileSync(orphan, 'utf8')), { pid: process.pid, host: os.hostname() });
 });
 
-test('лизинг: осиротевшая запись владельца убирается молча', async () => {
-  // Так каталог выглядит после кода прежних версий: intent он снимает, а про лизинг не знает.
+test('lease: an orphaned owner record is removed silently', async () => {
+  // This is what the directory looks like after former-version code: it
+  // takes the intent down and does not know about the lease.
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
@@ -603,14 +630,16 @@ test('лизинг: осиротевшая запись владельца уб�
   mkdirSync(path.dirname(orphan), { recursive: true });
   lease(orphan, process.pid);
   assert.deepEqual(engine.recover(id).repairs, []);
-  assert.ok(!existsSync(orphan), 'осиротевшая запись владельца осталась мусором');
+  assert.ok(!existsSync(orphan), 'the orphaned owner record stayed as junk');
 });
 
-test('сосед унёс intent между проверкой и связыванием — отправка не отказывает', async (t) => {
-  // Гонка целиком, в одном процессе и детерминированно: шов бьёт ровно в окно —
-  // точка коммита пройдена, `completeFanout` ещё не начался, — а соседа играет собственное
-  // восстановление, которому свой pid на intent'е позволяет его подобрать. Оно материализует
-  // канон и снимает intent, и владелец приходит к `link` на исчезнувший источник.
+test('a neighbour took the intent between the check and the link — the send does not refuse', async (t) => {
+  // The race whole, in one process and deterministically: the seam hits
+  // exactly the window — the commit point is passed, `completeFanout` has
+  // not started yet — and the neighbour is played by our own recovery,
+  // which our pid on the intent lets pick it up. It materialises the canon
+  // and takes the intent down, and the owner arrives at `link` on a vanished
+  // source.
   const root = sandbox();
   let stolen = false;
   let id = null;
@@ -627,22 +656,23 @@ test('сосед унёс intent между проверкой и связыва
   });
   id = taskWith(engine);
   const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'один раз' });
-  await t.test('отправка вернулась успехом, а не отказом на доставленном', () => {
-    assert.ok(stolen, 'гонка не воспроизведена — соседа не было');
+  await t.test('the send returned success, not a refusal on what was already delivered', () => {
+    assert.ok(stolen, 'the race was not reproduced — there was no neighbour');
     assert.equal(sent.message.body, 'один раз');
   });
-  await t.test('доставлено ровно один раз', () => {
+  await t.test('delivered exactly once', () => {
     assert.equal(engine.unread(id, 'w-api'), 1);
     assert.deepEqual(engine.read(id, 'w-api').messages.map((m) => m.id), [sent.message.id]);
   });
-  await t.test('intent и запись владельца сняты', () => {
+  await t.test('the intent and the owner record are taken down', () => {
     assert.deepEqual(readdirSync(path.join(engine.home, 'tasks', id, 'intents')), []);
   });
 });
 
-test('intent унесён, а канона нет — отказ остаётся отказом', async () => {
-  // Второй исход того же окна: ни intent'а, ни канона — это не «материализовано другим», а
-  // настоящая потеря, и терпеть её нельзя.
+test('the intent is gone and there is no canon — the refusal stays a refusal', async () => {
+  // The second outcome of the same window: neither an intent nor a canon —
+  // this is not "materialised by another", it is a real loss, and it must
+  // not be tolerated.
   const root = sandbox();
   let taken = false;
   const engine = openEngine({
@@ -664,33 +694,36 @@ test('intent унесён, а канона нет — отказ остаётс�
   assert.equal(engine.unread(id, 'w-api'), 0);
 });
 
-test('оборванный intent изолируется, а задача работает дальше', async () => {
+test('a torn intent is isolated, and the task keeps working', async () => {
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
   const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
-  // Падение внутри точки коммита — единственная форма порчи intent'а: `wx` создаёт файл
-  // атомарно, а содержимое пишется следом.
+  // A crash inside the commit point is the only form of intent spoilage:
+  // `wx` creates the file atomically, and the contents are written after.
   const torn = path.join(engine.home, 'tasks', id, 'intents', '20260902T100500000-0009-abcdef.json');
   mkdirSync(path.dirname(torn), { recursive: true });
   writeFileSync(torn, '{"protocolVersion":1,"id":"2026');
-  // Изолируется она, только когда владелец признан брошенным: у живого соседа половина
-  // записи законна ровно так же — файл создан, содержимое ещё пишется. Записи владельца у
-  // этой половины нет, поэтому брошенной её делает возраст.
+  // It is isolated only when the owner is recognised as abandoned: for a
+  // live neighbour half a record is lawful in exactly the same way — the
+  // file is created, the contents are still being written. There is no
+  // owner record on this half, so age makes it abandoned.
   backdate(torn);
   const healed = openEngine({ root, policy: allowAll, now: clock() });
-  assert.equal(healed.recover(id).broken.length, 0, 'изоляция случилась на открытии, а не позже');
+  assert.equal(healed.recover(id).broken.length, 0, 'isolation happened at open, not later');
   assert.ok(existsSync(path.join(healed.home, 'tasks', id, 'broken', 'messages', path.basename(torn))));
   assert.ok(!existsSync(torn));
   assert.deepEqual(healed.read(id, 'w-api').messages.map((m) => m.id), [message.id]);
 });
 
-test('оборванный intent живого соседа остаётся на месте, пока владелец не брошен', () => {
-  // Половина записи — законное состояние живого соседа: `wx` создал файл атомарно, содержимое
-  // пишется следом, и его половину видно. Гейт лизинга стоит ДО разбора записи именно поэтому;
-  // перенеси его под разбор — свежая половина уедет в `broken`, а владелец придёт к `link` на
-  // унесённый источник. Соседняя проверка выше про то же ловит только СОСТАРЕННУЮ запись, и
-  // оба положения гейта дают на ней одинаковый зелёный.
+test('a torn intent of a live neighbour stays in place until the owner is abandoned', () => {
+  // Half a record is a lawful state of a live neighbour: `wx` created the
+  // file atomically, the contents are written after, and its half is
+  // visible. The lease gate sits BEFORE the record parse for that reason;
+  // move it under the parse — a fresh half would leave for `broken`, and
+  // the owner would arrive at `link` on a vanished source. The neighbouring
+  // check above about the same only catches an AGED record, and both gate
+  // positions give the same green on it.
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
@@ -698,15 +731,15 @@ test('оборванный intent живого соседа остаётся н�
   mkdirSync(path.dirname(torn), { recursive: true });
   writeFileSync(torn, '{"protocolVersion":1,"id":"2026');
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
-  assert.deepEqual(healed.recover(id).broken, [], 'половина записи живого соседа объявлена порчей');
-  assert.ok(existsSync(torn), 'половина записи живого соседа унесена в broken');
+  assert.deepEqual(healed.recover(id).broken, [], 'half a record of a live neighbour was declared spoilage');
+  assert.ok(existsSync(torn), 'half a record of a live neighbour was taken into broken');
   assert.ok(!existsSync(path.join(healed.home, 'tasks', id, 'broken', 'messages')),
-    'каталог изоляции заведён на ровном месте');
+    'the isolation directory was created on a clean slate');
 });
 
-// ── Mailbox и history ─────────────────────────────────────────────────────────────────
+// ── Mailbox and history ─────────────────────────────────────────────────────────────────
 
-test('чтение переносит ссылку в history и не возвращает прочитанное', async () => {
+test('a read moves the link to history and does not return what was already read', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'раз' });
@@ -717,7 +750,7 @@ test('чтение переносит ссылку в history и не возвр
   assert.equal(readdirSync(path.join(engine.home, 'tasks', id, 'history', 'w-api')).length, 2);
 });
 
-test('ссылка в inbox и запись в history читают одно и то же содержимое', async () => {
+test('a link in inbox and a record in history read the same contents', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'то же самое' });
@@ -730,7 +763,7 @@ test('ссылка в inbox и запись в history читают одно и 
   assert.equal(inHistory, canonical);
 });
 
-test('битое сообщение в mailbox\'е уезжает в broken, а остальные доходят', async () => {
+test('a broken message in the mailbox leaves for broken, and the rest arrive', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
@@ -744,9 +777,10 @@ test('битое сообщение в mailbox\'е уезжает в broken, а 
     '20260902T100900000-0009-ffffff.json')));
 });
 
-test('сообщение более новой версии не изолируется, а называется своим кодом', async () => {
-  // Порча и «нечем читать» — разные исходы: запись из будущего чинится обновлением
-  // механизма, а не изоляцией, и уносить её в broken значило бы её потерять.
+test('a message of a newer version is not isolated, it is named by its own code', async () => {
+  // Spoilage and "nothing to read with" are different outcomes: a record
+  // from the future is fixed by updating the mechanism, not by isolation,
+  // and taking it into broken would mean losing it.
   const engine = open(sandbox());
   const id = taskWith(engine);
   await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
@@ -759,10 +793,10 @@ test('сообщение более новой версии не изолиру�
   const { messages, broken } = engine.read(id, 'w-api');
   assert.deepEqual(messages.map((m) => m.body), ['целое']);
   assert.equal(broken[0].code, 'schema-version-unsupported');
-  assert.ok(existsSync(path.join(box, name)), 'запись из будущего осталась на месте');
+  assert.ok(existsSync(path.join(box, name)), 'the record from the future stayed in place');
 });
 
-test('history: постранично, от старых к новым, по умолчанию последние 50', async (t) => {
+test('history: page by page, oldest to newest, last 50 by default', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   for (let i = 0; i < 60; i += 1) {
@@ -770,24 +804,24 @@ test('history: постранично, от старых к новым, по у�
   }
   engine.read(id, 'w-api');
   const page = engine.history({ task: id, participant: 'w-api' });
-  await t.test('history: по умолчанию 50 последних, от старых к новым', () => {
+  await t.test('history: 50 last by default, oldest to newest', () => {
     assert.equal(page.entries.length, 50);
     assert.equal(page.entries[0].message.body, 'п10');
     assert.equal(page.entries.at(-1).message.body, 'п59');
   });
-  await t.test('history: курсор отдаёт страницу старше, без повторов на границе', () => {
+  await t.test('history: the cursor gives the older page, without repeats on the boundary', () => {
     const older = engine.history({ task: id, participant: 'w-api', before: page.cursor, limit: 50 });
     assert.equal(older.entries.length, 10);
     assert.equal(older.entries[0].message.body, 'п00');
     assert.equal(older.entries.at(-1).message.body, 'п09');
-    assert.equal(older.cursor, null, 'страниц старше не осталось');
+    assert.equal(older.cursor, null, 'no older pages left');
     const seen = new Set([...page.entries, ...older.entries].map((e) => e.message.id));
     assert.equal(seen.size, 60);
   });
-  await t.test('history: all снимает лимит целиком', () => {
+  await t.test('history: all lifts the limit entirely', () => {
     assert.equal(engine.history({ task: id, participant: 'w-api', all: true }).entries.length, 60);
   });
-  await t.test('history: непрочитанного в ней нет', async () => {
+  await t.test('history: unread is not in it', async () => {
     await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'непрочитанное' });
     const all = engine.history({ task: id, participant: 'w-api', all: true });
     assert.equal(all.entries.length, 60);
@@ -795,10 +829,11 @@ test('history: постранично, от старых к новым, по у�
   });
 });
 
-test('history: граница страницы не режет группу записей одного сообщения', async (t) => {
-  // Одно сообщение двум получателям — ДВЕ записи истории, а лимит считает записи, а не
-  // сообщения. Курсор по id сообщения отсекал следующую страницу целой группой: записи
-  // того же сообщения, оставшиеся левее среза, не попадали ни в одну страницу вовсе.
+test('history: a page boundary does not cut a group of records of one message', async (t) => {
+  // One message to two recipients is TWO history records, and the limit
+  // counts records, not messages. A cursor by message id cut the next page
+  // by a whole group: records of the same message left of the cut did not
+  // land in any page at all.
   const engine = open(sandbox());
   const id = taskWith(engine);
   for (let i = 0; i < 3; i += 1) {
@@ -809,37 +844,38 @@ test('history: граница страницы не режет группу за
   const page = engine.history({ task: id, limit: 3 });
   const older = engine.history({ task: id, limit: 3, before: page.cursor });
   const seen = (p) => p.entries.map((e) => `${e.message.id} ${e.participant}`);
-  await t.test('граница группы: страницы отдают ровно 3 и 3 записи', () => {
+  await t.test('group boundary: the pages give exactly 3 and 3 records', () => {
     assert.equal(whole.entries.length, 6);
     assert.equal(page.entries.length, 3);
     assert.equal(older.entries.length, 3);
   });
-  await t.test('граница группы: две страницы покрывают историю целиком и без повторов', () => {
+  await t.test('group boundary: two pages cover the history whole and without repeats', () => {
     const both = [...seen(older), ...seen(page)];
-    assert.equal(new Set(both).size, 6, `потеряно или задвоено: ${both.join(' | ')}`);
+    assert.equal(new Set(both).size, 6, `lost or doubled: ${both.join(' | ')}`);
     assert.deepEqual(both, seen(whole));
   });
-  await t.test('граница группы: страниц старше не осталось', () => {
+  await t.test('group boundary: no older pages left', () => {
     assert.equal(older.cursor, null);
   });
 });
 
-test('history без участника собирает всех, без задачи — все задачи', async () => {
+test('history without a participant collects everyone, without a task — all tasks', async () => {
   const engine = open(sandbox());
   const first = taskWith(engine, 'one-t20260902-100000');
   const second = taskWith(engine, 'two-t20260902-100001');
   await engine.send(first, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'первой' });
   await engine.send(second, { from: 'owner', to: ['w-api'], type: 'task', body: 'второй' });
   for (const [task, who] of [[first, 'w-api'], [first, 'w-docs'], [second, 'w-api']]) engine.read(task, who);
-  // Одно сообщение, лежащее у двоих, — две записи истории: адресаты разные.
+  // One message sitting with two is two history records: the addressees
+  // are different.
   assert.equal(engine.history({ task: first, all: true }).entries.length, 2);
   assert.equal(engine.history({ all: true }).entries.length, 3);
   assert.deepEqual(engine.history({ participant: 'w-docs', all: true }).entries.map((e) => e.message.body), ['первой']);
 });
 
-// ── Артефакты ─────────────────────────────────────────────────────────────────────────
+// ── Artifacts ─────────────────────────────────────────────────────────────────────────
 
-test('артефакт: потоковый SHA-256, дедупликация и разные имена на один digest', async (t) => {
+test('artifact: streaming SHA-256, deduplication, and different names on one digest', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(SB, 'artifact-a.patch');
@@ -850,25 +886,26 @@ test('артефакт: потоковый SHA-256, дедупликация и 
   const first = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'раз', artifact: { path: file } });
   const second = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'два', artifact: { path: copy } });
 
-  await t.test('артефакт: два имени, две metadata-записи, один blob', () => {
+  await t.test('artifact: two names, two metadata records, one blob', () => {
     assert.equal(first.artifact.sha256, second.artifact.sha256);
     assert.notEqual(first.artifact.id, second.artifact.id);
     assert.deepEqual([first.artifact.filename, second.artifact.filename], ['artifact-a.patch', 'artifact-b.patch']);
     assert.deepEqual(readdirSync(path.join(engine.home, 'tasks', id, 'blobs')), [first.artifact.sha256]);
     assert.equal(engine.listArtifacts(id).artifacts.length, 2);
   });
-  await t.test('артефакт: сообщение несёт id metadata, содержимое читается по нему', () => {
+  await t.test('artifact: the message carries the metadata id, the contents are read by it', () => {
     assert.equal(first.message.artifact, first.artifact.id);
     assert.equal(engine.readArtifactContent(id, first.artifact.id).toString(), 'одно и то же содержимое\n');
   });
-  await t.test('артефакт: размер записан по прочитанному, а не по заявленному', () => {
+  await t.test('artifact: the size is written from what was read, not from what was declared', () => {
     assert.equal(first.artifact.size, Buffer.byteLength('одно и то же содержимое\n'));
   });
 });
 
-test('артефакт из потока: digest считается на проходе записи', async () => {
-  // Поток читается ровно один раз — второго чтения у него нет вовсе. Непотоковый digest
-  // («прочитать файл и посчитать») этот случай не закрывает никак.
+test('an artifact from a stream: the digest is counted on the write pass', async () => {
+  // The stream is read exactly once — it has no second read at all. A
+  // non-streaming digest ("read the file and count") does not close this
+  // case in any way.
   const engine = open(sandbox());
   const id = taskWith(engine);
   const body = 'кусок один|кусок два|кусок три';
@@ -883,41 +920,42 @@ test('артефакт из потока: digest считается на про�
   assert.equal(engine.readArtifactContent(id, sent.artifact.id).toString(), body.replaceAll('|', ''));
 });
 
-test('негодное имя артефакта отказывает ДО blob\'а', async (t) => {
-  // Имя, пойманное схемой уже после записи blob'а, оставляло бы в задаче содержимое без
-  // metadata — orphan blob на ровном месте, живущий до самого `prune` (замечание ревью).
+test('a bad artifact name refuses BEFORE the blob', async (t) => {
+  // A name caught by the schema only after the blob write would leave
+  // contents in the task without metadata — an orphan blob on a clean
+  // slate, living until `prune` itself (review remark).
   const engine = open(sandbox());
   const id = taskWith(engine);
   const cases = [
-    ['пустое имя у потока', { stream: Readable.from(['данные']), filename: '' }],
-    ['разделитель пути в имени', { stream: Readable.from(['данные']), filename: 'sub/x.txt' }],
-    ['имя каталога', { stream: Readable.from(['данные']), filename: '..' }],
+    ['empty name on a stream', { stream: Readable.from(['данные']), filename: '' }],
+    ['a path separator in the name', { stream: Readable.from(['данные']), filename: 'sub/x.txt' }],
+    ['a directory name', { stream: Readable.from(['данные']), filename: '..' }],
   ];
   for (const [what, artifact] of cases) {
-    await t.test(`имя артефакта: ${what} — код artifact-source`, async () => {
+    await t.test(`artifact name: ${what} — code artifact-source`, async () => {
       const e = await refusalAsync(() => engine.send(id, {
         from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact,
       }));
       assert.equal(e.code, 'artifact-source');
     });
   }
-  await t.test('имя артефакта: ни одного blob\'а в задаче не появилось', () => {
+  await t.test('artifact name: not one blob appeared in the task', () => {
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'blobs')));
     assert.equal(engine.orphanBlobs(id).length, 0);
   });
 });
 
-test('артефакт: расхождение digest\'а при чтении — типизированный отказ', async (t) => {
+test('artifact: a digest mismatch on read is a typed refusal', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(SB, 'integrity.patch');
   writeFileSync(file, 'исходное содержимое\n');
   const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact: { path: file } });
   const blob = path.join(engine.home, 'tasks', id, 'blobs', sent.artifact.sha256);
-  await t.test('артефакт: до порчи читается целиком', () => {
+  await t.test('artifact: before spoilage it is read whole', () => {
     assert.equal(engine.readArtifactContent(id, sent.artifact.id).toString(), 'исходное содержимое\n');
   });
-  await t.test('артефакт: подменённое содержимое не отдаётся молча', () => {
+  await t.test('artifact: substituted contents are not given out silently', () => {
     rmSync(blob);
     writeFileSync(blob, 'подменённое содержимое\n');
     const e = refusal(() => engine.readArtifactContent(id, sent.artifact.id));
@@ -925,13 +963,13 @@ test('артефакт: расхождение digest\'а при чтении �
     assert.equal(e.context.declared, sent.artifact.sha256);
     assert.notEqual(e.context.actual, sent.artifact.sha256);
   });
-  await t.test('артефакт: пропавший blob — свой код, а не integrity', () => {
+  await t.test('artifact: a vanished blob is its own code, not integrity', () => {
     rmSync(blob);
     assert.equal(refusal(() => engine.readArtifactContent(id, sent.artifact.id)).code, 'artifact-not-found');
   });
 });
 
-test('артефакт: битая metadata изолируется, остальные записи задачи читаются', async () => {
+test('artifact: broken metadata is isolated, the other task records are read', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(SB, 'meta.patch');
@@ -946,30 +984,31 @@ test('артефакт: битая metadata изолируется, осталь
     '20260902T101100000-0009-cccccc.json')));
 });
 
-test('orphan blob лежит до prune, а prune уносит задачу целиком', async (t) => {
+test('an orphan blob sits until prune, and prune takes the task whole', async (t) => {
   const root = sandbox();
   const file = path.join(SB, 'orphan.patch');
   writeFileSync(file, 'содержимое без имени\n');
-  // Падение между blob'ом и metadata оставляет содержимое без единой ссылки на него.
+  // A crash between the blob and the metadata leaves the contents without
+  // a single reference to them.
   const broken = crashAt(root, 'blob', { at: 0 });
   const id = taskWith(broken);
   await refusalAsync(() => broken.send(id, {
     from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact: { path: file },
   }));
   const engine = openEngine({ root, policy: allowAll, now: clock() });
-  await t.test('orphan blob: содержимое лежит, metadata на него нет', () => {
+  await t.test('orphan blob: the contents sit, there is no metadata on them', () => {
     assert.equal(engine.orphanBlobs(id).length, 1);
     assert.deepEqual(engine.listArtifacts(id).artifacts, []);
   });
-  await t.test('orphan blob: восстановление его не трогает', () => {
+  await t.test('orphan blob: recovery does not touch it', () => {
     engine.recover(id);
     assert.equal(engine.orphanBlobs(id).length, 1);
   });
-  await t.test('prune активной задачи отказывает', () => {
+  await t.test('prune of an active task refuses', () => {
     assert.equal(refusal(() => engine.prune(id)).code, 'task-active');
     assert.ok(existsSync(path.join(engine.home, 'tasks', id)));
   });
-  await t.test('prune закрытой уносит и blob\'ы, и переписку', () => {
+  await t.test('prune of a closed one takes both the blobs and the correspondence', () => {
     engine.closeTask(id);
     const pruned = engine.prune(id);
     assert.equal(pruned.blobs, 1);
@@ -978,62 +1017,71 @@ test('orphan blob лежит до prune, а prune уносит задачу це
   });
 });
 
-// ── Изоляция повреждённой задачи ──────────────────────────────────────────────────────
+// ── Isolation of a damaged task ──────────────────────────────────────────────────────
 
-test('повреждённая задача блокирует только себя', async (t) => {
+test('a damaged task blocks only itself', async (t) => {
   const engine = open(sandbox());
   const healthy = taskWith(engine, 'zhivaya-t20260902-100000');
   const sick = taskWith(engine, 'bitaya-t20260902-100001');
   await engine.send(healthy, { from: 'owner', to: ['w-api'], type: 'task', body: 'работает' });
   writeFileSync(path.join(engine.home, 'tasks', sick, 'task.json'), '{обрезанный журнал');
 
-  await t.test('перечисление отдаёт исправные и называет порченую', () => {
+  await t.test('the listing returns the healthy and names the spoiled', () => {
     const listed = engine.listTasks();
     assert.deepEqual(listed.tasks.map((t2) => t2.id), [healthy]);
     assert.equal(listed.broken.length, 1);
-    // Порченая задача называется ПАРОЙ, а не готовой строкой: id и причина приезжают
-    // отдельно, потому что текст человеку собирает adapter — ему нужен ещё путь файла.
+    // A spoiled task is named as a PAIR, not as a ready string: id and
+    // reason arrive separately, because the text for a person is assembled
+    // by the adapter — it still needs the file path.
     assert.equal(listed.broken[0].id, sick);
-    assert.match(listed.broken[0].note, /не разобран/);
+    assert.match(listed.broken[0].note, /did not parse/);
   });
-  await t.test('чтение порченой отказывает своим кодом', () => {
+  await t.test('reading the spoiled one refuses with its own code', () => {
     assert.equal(refusal(() => engine.readTask(sick)).code, 'task-broken');
   });
-  await t.test('исправная задача работает дальше', () => {
+  await t.test('the healthy task keeps working', () => {
     assert.deepEqual(engine.read(healthy, 'w-api').messages.map((m) => m.body), ['работает']);
   });
-  await t.test('восстановление по всем задачам не спотыкается о порченую', () => {
+  await t.test('recovery across all tasks does not stumble on the spoiled one', () => {
     assert.deepEqual(engine.recover().repairs, []);
   });
 });
 
-// ── смесь версий механизма ────────────────────────────────────────────────────
+// ── a mix of mechanism versions ────────────────────────────────────────────────────
 //
-// После `sync` живая сессия продолжает работать с MCP-сервером шины, поднятым на её старте
-// из ПРЕЖНЕГО релиза, а worker нового релиза кладёт в журнал запись со снимком capabilities,
-// которого прежний валидатор не знает. Схему это не ослабляет: незнакомое поле — по-прежнему
-// отказ. Различается ТЕКСТ и код — «начни новую сессию» вместо «журнал не по схеме», потому
-// что лечится это новой сессией, а не починкой журнала.
+// After `sync` a live session keeps working with the bus MCP server raised
+// at its start from the PREVIOUS release, and a worker of the new release
+// puts in the journal a record with a capabilities snapshot the former
+// validator does not know. This does not weaken the schema: an unfamiliar
+// field is still a refusal. What differs is the TEXT and the code — "start
+// a new session" instead of "the journal does not match the schema", because
+// it is cured by a new session, not by fixing the journal.
 //
-// Версию читателя называет открывающий engine, и в этом файле его играет набор: копилки на
-// уровне модуля у package нет — чужое значение приходит аргументом, как home и policy.
+// The reader version is named by whoever opens the engine, and in this file
+// the suite plays that part: the package has no module-level piggy bank —
+// a foreign value arrives as an argument, like home and policy.
 
-// Снимок capabilities с полем, которого читатель не знает: так выглядит запись механизма
-// новее — своих полей у него больше, а имена их читателю неизвестны по построению.
+// A capabilities snapshot with a field the reader does not know: that is
+// what a newer-mechanism record looks like — it has more fields of its own,
+// and their names are unknown to the reader by construction.
 const AHEAD_CAPS = { ...CAPS, resume: true };
 
-// Журнал каждый раз собирается из ПЕРВОНАЧАЛЬНОГО снимка, а не из того, что лежит на диске
-// после соседней проверки: поля metadata сливаются, и версия прошлой редакции доехала бы до
-// проверки «версии в записи нет».
+// The journal is assembled each time from the ORIGINAL snapshot, not from
+// what sits on disk after a neighbouring check: metadata fields merge, and
+// the version of the previous edition would reach the "there is no version
+// in the record" check.
 const pristine = new Map();
 
-// Адреса участников фикстуры: человеку отказ называет адрес, а не id каталога mailbox'а.
+// Addresses of the fixture participants: a refusal names the address to a
+// person, not the mailbox-directory id.
 const ADDRESS = { owner: 'orchestrator', 'w-api': 'worker:api', 'w-docs': 'worker:docs' };
 
 /**
- * Журнал, где запись участника `on` сделана механизмом версии `version`, а снимок
- * capabilities у него — `caps`. `marked` помечает версией ещё кого-то, не трогая его снимок:
- * так выглядит журнал после `sync` — новый CLI перезаписывает и владельца тоже.
+ * A journal where the participant record `on` was made by mechanism version
+ * `version`, and its capabilities snapshot is `caps`. `marked` also marks
+ * someone else with a version, without touching their snapshot: that is
+ * what the journal looks like after `sync` — the new CLI rewrites the
+ * owner too.
  */
 function journalFrom(engine, id, { version, caps = AHEAD_CAPS, patch = {}, on = 'w-api', marked = {} }) {
   const file = path.join(engine.home, 'tasks', id, 'task.json');
@@ -1053,82 +1101,86 @@ function journalFrom(engine, id, { version, caps = AHEAD_CAPS, patch = {}, on = 
   return file;
 }
 
-test('запись механизма новее читателя — отказ зовёт в новую сессию, а не чинить журнал', async (t) => {
+test('a record of a mechanism newer than the reader — the refusal calls for a new session, not to fix the journal', async (t) => {
   const engine = open(sandbox(), { cli: '0.63.0' });
   const id = taskWith(engine);
 
-  await t.test('лишние поля плюс версия новее — свой код и честный текст', () => {
+  await t.test('extra fields plus a newer version — its own code and honest text', () => {
     journalFrom(engine, id, { version: '0.64.0' });
     const e = refusal(() => engine.readTask(id));
     assert.equal(e.code, 'schema-version-unsupported');
-    // Текст называет ОБЕ версии, участника и лечение: без лечения человек чинит журнал,
-    // который цел.
-    assert.match(e.message, /запись участника worker:api сделана механизмом 0\.64\.0/);
-    assert.match(e.message, /эта сессия работает на 0\.63\.0/);
-    assert.match(e.message, /начни новую сессию/);
-    assert.match(e.message, /MCP-сервер шины стартует из установленного релиза/);
+    // The text names BOTH versions, the participant, and the cure: without
+    // the cure a person fixes a journal that is whole.
+    assert.match(e.message, /participant worker:api was written by mechanism 0\.64\.0/);
+    assert.match(e.message, /this session runs 0\.63\.0/);
+    assert.match(e.message, /start a new session/);
+    assert.match(e.message, /the bus MCP server starts from the installed release/);
     assert.equal(e.context.participant, 'worker:api');
   });
 
-  await t.test('те же лишние поля без версии в записи — прежний отказ прежним текстом', () => {
+  await t.test('the same extra fields without a version on the record — the former refusal in the former text', () => {
     journalFrom(engine, id, { version: null });
     const e = refusal(() => engine.readTask(id));
     assert.equal(e.code, 'task-broken');
-    assert.match(e.message, /не по схеме/);
-    assert.ok(!/начни новую сессию/.test(e.message), e.message);
+    assert.match(e.message, /does not match the schema/);
+    assert.ok(!/start a new session/.test(e.message), e.message);
   });
 
-  // Второй ход мутационной пробы: наивная редакция «версия ≠ моей — смесь версий» обязана
-  // покрасить обе проверки ниже, потому что обе называют версию, отличную от читателя лишь
-  // в другую сторону либо не отличную вовсе.
-  await t.test('версия в записи СТАРЕЕ читателя — прежний отказ, а не смесь версий', () => {
+  // The second move of the mutation probe: a naive edition "version ≠ mine
+  // — a mix of versions" must redden both checks below, because both name
+  // a version different from the reader only the other way, or not
+  // different at all.
+  await t.test('a version on the record OLDER than the reader — the former refusal, not a mix of versions', () => {
     journalFrom(engine, id, { version: '0.62.0' });
     const e = refusal(() => engine.readTask(id));
     assert.equal(e.code, 'task-broken');
-    assert.ok(!/начни новую сессию/.test(e.message), e.message);
+    assert.ok(!/start a new session/.test(e.message), e.message);
   });
 
-  await t.test('версия в записи РАВНА версии читателя — прежний отказ', () => {
+  await t.test('a version on the record EQUAL to the reader version — the former refusal', () => {
     journalFrom(engine, id, { version: '0.63.0' });
     assert.equal(refusal(() => engine.readTask(id)).code, 'task-broken');
   });
 
-  // Первый ход пробы по условию «лишние поля есть»: журнал новее, но поломка не в них —
-  // это порча, и лечится она изоляцией задачи, а не новой сессией.
-  await t.test('версия новее, а поломка не в лишних полях — прежний task-broken', () => {
+  // The first move of the probe on the "there are extra fields" condition:
+  // the journal is newer, but the breakage is not in them — that is
+  // spoilage, and it is cured by isolating the task, not by a new session.
+  await t.test('a newer version, and the breakage is not in the extra fields — the former task-broken', () => {
     journalFrom(engine, id, { version: '0.64.0', caps: CAPS, patch: { title: '' } });
     const e = refusal(() => engine.readTask(id));
     assert.equal(e.code, 'task-broken');
-    assert.match(e.message, /не по схеме/);
-    assert.ok(!/начни новую сессию/.test(e.message), e.message);
+    assert.match(e.message, /does not match the schema/);
+    assert.ok(!/start a new session/.test(e.message), e.message);
   });
 
-  // Названный участник — тот, на чьей записи споткнулся валидатор, а не первый попавшийся с
-  // маркером: `sync` перезаписывает и владельца, а он в журнале первый.
-  await t.test('назван участник, на чьей записи споткнулся валидатор, а не первый с маркером', () => {
+  // The named participant is the one whose record the validator stumbled
+  // on, not the first one with a marker: `sync` rewrites the owner too,
+  // and they are first in the journal.
+  await t.test('the participant named is the one whose record the validator stumbled on, not the first with a marker', () => {
     journalFrom(engine, id, { version: '0.64.0', on: 'w-docs', marked: { owner: '0.64.0' } });
     const e = refusal(() => engine.readTask(id));
     assert.equal(e.code, 'schema-version-unsupported');
     assert.equal(e.context.participant, 'worker:docs');
-    assert.match(e.message, /запись участника worker:docs/);
+    assert.match(e.message, /participant worker:docs/);
   });
 
-  // Сторож размещения проверки: она живёт ВНУТРИ ветки невалидного вердикта, и годный
-  // журнал не имеет права споткнуться о версию сам по себе.
-  await t.test('версия новее, лишних полей нет — журнал читается как обычно', () => {
+  // A placement guard of the check: it lives INSIDE the invalid-verdict
+  // branch, and a valid journal has no right to stumble on the version
+  // by itself.
+  await t.test('a newer version, no extra fields — the journal is read as usual', () => {
     journalFrom(engine, id, { version: '0.64.0', caps: CAPS });
     assert.equal(engine.readTask(id).id, id);
   });
 });
 
-test('версия читателя не названа при открытии — прежний путь целиком', () => {
+test('the reader version is not named at open — the former path whole', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   journalFrom(engine, id, { version: '99.0.0' });
   assert.equal(refusal(() => engine.readTask(id)).code, 'task-broken');
 });
 
-test('журнал более новой версии не объявляется порченым', () => {
+test('a journal of a newer version is not declared spoiled', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(engine.home, 'tasks', id, 'task.json');
@@ -1138,18 +1190,20 @@ test('журнал более новой версии не объявляетс�
 });
 
 
-// Журнал приезжает на место через `rename`, как сообщение: жёсткая ссылка на прежний файл
-// держит прежнее содержимое. Записанный поверх себя (`writeFileSync`) он менялся бы и по
-// ссылке — а между усечением и записью параллельный читатель видит пустой файл и отвечает
-// «журнал не читается» о живой задаче. Предмет — `writeTask` engine, и мутационная проба
-// на неё — подмена `writeJsonAtomic` на `writeFileSync` в `v1/store.ts`.
-test('журнал не пишется поверх себя — новый файл встаёт через rename', () => {
+// The journal arrives in place through `rename`, like a message: a hard
+// link on the former file holds the former contents. Written over itself
+// (`writeFileSync`) it would change by the link too — and between truncate
+// and write a parallel reader sees an empty file and answers "the journal
+// does not read" about a live task. The subject is the engine `writeTask`,
+// and the mutation probe on it is substituting `writeJsonAtomic` with
+// `writeFileSync` in `v1/store.ts`.
+test('the journal is not written over itself — the new file stands through rename', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(engine.home, 'tasks', id, 'task.json');
   const held = path.join(engine.home, 'held-journal.json');
   linkSync(file, held);
   engine.patchTask(id, { title: 'переименована' });
-  assert.equal(JSON.parse(readFileSync(held, 'utf8')).title, 'демо', 'прежняя ссылка увидела новую запись');
+  assert.equal(JSON.parse(readFileSync(held, 'utf8')).title, 'демо', 'the former link saw the new record');
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).title, 'переименована');
 });

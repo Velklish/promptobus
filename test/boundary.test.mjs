@@ -1,5 +1,5 @@
-// Границы package: импорты, окружение, harness-нейтральность, публичность и exports.
-// Запуск — `npm test`. dist собирает pretest.
+// Package boundaries: imports, environment, harness-neutrality, publicity and exports.
+// Run with `npm test`. dist is built by pretest.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
@@ -38,14 +38,18 @@ function walk(dir, out = []) {
 }
 
 function forbiddenSpec(spec, fileAbs) {
+  // A specifier is one token. English source now has `from` inside a string
+  // (`MESSAGE_FROM = ' from '`), and `\bfrom\s*['"]` would otherwise take the
+  // closing quote as the start of an import and swallow the rest of the file.
+  if (!spec || /[\n\r;]/.test(spec)) return null;
   if (isBuiltin(spec)) return null;
-  if (!spec.startsWith('.')) return 'внешний package';
+  if (!spec.startsWith('.')) return 'external package';
   const target = path.resolve(path.dirname(fileAbs), spec);
   if (target === SRC || target.startsWith(SRC + path.sep)) return null;
-  return 'путь наружу из src';
+  return 'path out of src';
 }
 
-test('исходники package импортируют только Node built-ins и свои файлы', () => {
+test('package sources import only Node built-ins and their own files', () => {
   const breaches = [];
   for (const file of tsFiles(SRC)) {
     const text = stripComments(readFileSync(file, 'utf8'));
@@ -58,7 +62,7 @@ test('исходники package импортируют только Node built-
   assert.deepEqual(breaches, []);
 });
 
-test('исходники package не читают окружение и не пишут в потоки процесса', () => {
+test('package sources do not read the environment and do not write to process streams', () => {
   const ambient = [];
   const checks = [
     ['process.env', /\bprocess\s*\.\s*env\b/],
@@ -75,10 +79,11 @@ test('исходники package не читают окружение и не п
   assert.deepEqual(ambient, []);
 });
 
-test('в исходниках package нет harness-specific имён', () => {
-  // Предмет — сырой текст файла, включая комментарии и строковые литералы: имя harness'а
-  // в комментарии такое же знание о конкретном инструменте, как в коде. `stripComments`
-  // сюда не идёт — он ещё и вырезал бы литерал, в котором встретились `//` или `/*`.
+test('package sources have no harness-specific names', () => {
+  // The subject is the raw file text, including comments and string literals: a
+  // harness name in a comment is the same knowledge of a particular tool as in
+  // the code. `stripComments` is not used here — it would also cut a literal
+  // that happened to contain `//` or `/*`.
   const harnessed = [];
   const names = [
     ['claude', /claude/i],
@@ -102,14 +107,14 @@ const CONTOUR = {
   gitlab: ['gitlab', 'ati'].join('.'),
 };
 
-test('исходник standalone host не содержит раскладки чужого рабочего места', () => {
+test('the standalone host source does not contain another workplace layout', () => {
   const standaloneSrc = readFileSync(path.join(SRC, 'standalone.ts'), 'utf8');
   const forbidden = [CONTOUR.pkg, CONTOUR.layout, CONTOUR.env, CONTOUR.memory, CONTOUR.gitlab]
     .filter((n) => standaloneSrc.includes(n));
   assert.deepEqual(forbidden, []);
 });
 
-test('в src и своём наборе нет имён чужого контура', () => {
+test('src and its own suite have no names of another contour', () => {
   const needles = [CONTOUR.pkg, CONTOUR.layout, CONTOUR.env];
   const hits = [];
   const files = [
@@ -127,12 +132,12 @@ test('в src и своём наборе нет имён чужого конту�
   assert.deepEqual(hits, []);
 });
 
-test('объявленные exports резолвятся и отдают поверхность', async () => {
+test('declared exports resolve and yield a surface', async () => {
   const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const load = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 
-  // `./cli` — точка входа runtime-трека (`lib/cli.js`); ядро её не собирает и здесь
-  // не резолвит. Остальные ключи манифеста обязаны открываться.
+  // `./cli` is the runtime-track entry (`lib/cli.js`); the core does not build
+  // it and does not resolve it here. The other manifest keys must open.
   const SKIP = new Set(['./cli']);
   for (const [key, spec] of Object.entries(pkg.exports)) {
     if (SKIP.has(key)) continue;
@@ -142,9 +147,9 @@ test('объявленные exports резолвятся и отдают пов
       continue;
     }
     const rel = typeof spec === 'string' ? spec : spec?.default;
-    assert.equal(typeof rel, 'string', `export ${key} без пути`);
+    assert.equal(typeof rel, 'string', `export ${key} has no path`);
     const mod = await load(rel);
-    assert.equal(typeof mod, 'object', `export ${key} не открылся`);
+    assert.equal(typeof mod, 'object', `export ${key} did not open`);
   }
 
   const index = await load(pkg.exports['.'].default);
@@ -171,7 +176,7 @@ test('объявленные exports резолвятся и отдают пов
   }
 });
 
-test('LEGACY layout приходит с host\'а: без него миграции нет, два сегмента — форма rel', async () => {
+test('LEGACY layout comes from the host: without it there is no migration, two segments are the rel form', async () => {
   const {
     createStandaloneHost, splitLegacyRel, migrationNeeded, preflight, GateError,
   } = await import('../dist/index.js');
@@ -193,7 +198,7 @@ test('LEGACY layout приходит с host\'а: без него миграци
   for (const rel of badRel) {
     let threw = null;
     try { splitLegacyRel(rel); } catch (e) { threw = e; }
-    assert.ok(threw instanceof GateError, `rel ${JSON.stringify(rel)} должен отказать`);
+    assert.ok(threw instanceof GateError, `rel ${JSON.stringify(rel)} must refuse`);
   }
 
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-legacy-'));
