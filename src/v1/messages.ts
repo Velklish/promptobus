@@ -1,28 +1,32 @@
-// Восстановимый fan-out, mailbox и history protocol v1.
+// Recoverable fan-out, mailbox, and history protocol v1.
 //
-// **Устройство fan-out'а держится на одном inode.** Каноническое сообщение, fan-out intent
-// и каждая ссылка в inbox — жёсткие ссылки на один и тот же файл, и это не экономия места,
-// а способ получить атомарность там, где файловая система её не даёт: двух файлов одним
-// `rename` не создать, а «создать intent» — это ровно один атомарный `open(O_EXCL)`.
+// **The fan-out design rests on a single inode.** The canonical message, the
+// fan-out intent, and every inbox reference are hard links to the same file,
+// and this is not a space saving — it is how atomicity is obtained where the
+// file system does not give it: two files cannot be created with one `rename`,
+// and "create the intent" is exactly one atomic `open(O_EXCL)`.
 //
-// Порядок такой:
+// The order is:
 //
-// 1. Провалидировать получателей и routing policy — до первого side effect.
-// 2. Создать `intents/<id>.json` флагом `wx`. **Это точка коммита**: с неё сообщение
-//    существует, и всё остальное восстановимо, потому что intent и ЕСТЬ каноническое
-//    сообщение целиком — получатели лежат в нём же.
-// 3. Связать канон: `link(intent → messages/<id>.json)`. Идемпотентно.
-// 4. Связать ссылку в inbox каждому получателю. Идемпотентно: `EEXIST` значит «уже есть».
-// 5. Снять intent, когда ссылки есть у всех.
+// 1. Validate recipients and the routing policy — before the first side effect.
+// 2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
+//    point**: from here the message exists, and everything else is recoverable,
+//    because the intent IS the canonical message whole — the recipients sit
+//    in it too.
+// 3. Link the canon: `link(intent → messages/<id>.json)`. Idempotent.
+// 4. Link a reference into each recipient's inbox. Idempotent: `EEXIST` means
+//    "already there".
+// 5. Drop the intent once every recipient has a reference.
 //
-// После падения недостающее дописывает `recoverTask` — при открытии engine и по вызову.
-// Сверяются ПРИ ЭТОМ ДВА места, inbox и history: ссылка, которой нет в inbox, могла быть
-// уже прочитана, и восстановление, смотрящее только в inbox, вернуло бы прочитанное второй
-// раз. Активация идёт независимо и ПОСЛЕ того, как fan-out лёг на диск.
+// After a crash, `recoverTask` writes what is missing — at engine open and on
+// demand. TWO places are checked THEN, inbox and history: a reference that is
+// not in inbox may already have been read, and recovery that looked only at
+// inbox would return the already-read message a second time. Activation runs
+// independently and AFTER the fan-out is on disk.
 //
-// Требование к ФС наследуется целиком: жёсткие ссылки внутри одного тома. Их
-// отсутствие — законное условие среды, и отвечает на него типизированный код
-// `link-refused`, а не половинчатая запись.
+// The FS requirement is inherited whole: hard links inside one volume. Their
+// absence is a lawful environment condition, and the answer is the typed
+// code `link-refused`, not a half-written record.
 import {
   existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
@@ -42,31 +46,32 @@ import { MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import { validate } from './validate.js';
 
-/** Шаги fan-out'а, после каждого из которых набор умеет уронить процесс. */
+/** Fan-out steps, after each of which the suite can crash the process. */
 export type FanoutStep = 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read';
 
 /**
- * Шов fault injection. Зовётся ПОСЛЕ каждого durable-шага; бросок из него — падение ровно
- * в этой точке. В production не подставляется вовсе, и это единственный способ проверить
- * восстановление: настоящее падение процесса посреди шага набором не воспроизводится.
+ * Fault-injection seam. Called AFTER each durable step; a throw from it is
+ * a crash exactly at that point. Not supplied in production at all, and that
+ * is the only way to test recovery: a real process crash mid-step is not
+ * reproduced by the suite.
  */
 export type FaultHook = (step: FanoutStep, info: Record<string, unknown>) => void;
 
 const NO_FAULT: FaultHook = () => {};
 
-/** Событие «кого будить». Форма — та, которую принимает `activate` driver'а. */
+/** "Who to wake" event. The shape is the one the driver `activate` accepts. */
 export interface ActivationEvent {
   kind: 'unread';
   task: string;
-  /** ID участника. В v1 он же адрес доставки: роль из него не выводится. */
+  /** Participant ID. In v1 it is also the delivery address: role is not derived from it. */
   address: string;
-  /** Opaque session reference участника — первый аргумент `activate`. */
+  /** Opaque session reference of the participant — the first argument of `activate`. */
   ref: string | null;
   unread: number;
   messages: NotificationMessage[];
 }
 
-/** Выжимка сообщения для notification: текст собирает driver, рамка принадлежит каналу. */
+/** Message excerpt for a notification: the driver assembles the text, the frame belongs to the channel. */
 export function previewOf(m: MessageV1): NotificationMessage {
   return {
     id: m.id,
@@ -81,10 +86,11 @@ export function previewOf(m: MessageV1): NotificationMessage {
 let seq = 0;
 
 /**
- * Новый id записи: штамп времени, счётчик отправителя и случайный хвост. Сортировка строк
- * равна порядку отправки, поэтому истории вторых часов не нужно. Хвост случайный, а не
- * только счётчик: `seq` живёт в памяти процесса, а под одним адресом ходят и сессия, и её
- * фоновая команда — два процесса в одну миллисекунду собирали бы одно имя.
+ * New record id: a timestamp, a sender counter, and a random tail. String
+ * sort equals send order, so a second clock is not needed. The tail is
+ * random, not just a counter: `seq` lives in process memory, and under one
+ * address both the session and its background command walk — two processes
+ * in the same millisecond would assemble the same name.
  */
 export function newRecordId(now: Date): string {
   seq = (seq + 1) % 10000;
@@ -92,8 +98,9 @@ export function newRecordId(now: Date): string {
   return `${stamp}-${String(seq).padStart(4, '0')}-${randomBytes(3).toString('hex')}`;
 }
 
-// Идемпотентная жёсткая ссылка: `true` — поставили, `false` — она уже была. `EEXIST` здесь
-// не отказ, а весь смысл шага: восстановление дописывает недостающее, не трогая готового.
+// Idempotent hard link: `true` — we put it, `false` — it was already there.
+// `EEXIST` here is not a refusal, it is the whole point of the step:
+// recovery writes what is missing and does not touch what is ready.
 function linkOnce(from: string, to: string): boolean {
   mkdirSync(path.dirname(to), { recursive: true });
   try {
@@ -105,54 +112,62 @@ function linkOnce(from: string, to: string): boolean {
   }
 }
 
-/** Есть ли у получателя ссылка — в inbox'е либо уже в history. */
+/** Whether the recipient has a ref — in the inbox or already in history. */
 function delivered(home: string, task: string, participant: string, message: string): boolean {
   return existsSync(inboxRef(home, task, participant, message))
     || existsSync(historyRef(home, task, participant, message));
 }
 
 /**
- * Порог, после которого незакрытый intent считается брошенным независимо от лизинга.
+ * Threshold after which an unclosed intent is treated as abandoned regardless
+ * of the lease.
  *
- * Он же — верхний предел лизинга: pid, переиспользованный ОС под чужой процесс, иначе запирал
- * бы чужой intent навсегда, и недоставленное лежало бы вечно. Запас взят от стоимости одной
- * отправки: замер 2026-09-02, 500 отправок подряд — 1,4 мс CPU на отправку при медиане
- * 1,3 мс; под нагрузкой (load average 38–44) медиана та же, а хвост растягивает планировщик:
- * p99 35–67 мс, самая долгая из полутора тысяч — 141 мс. Порог больше неё в двести раз, и
- * дольше отправки intent живым не бывает вовсе: от `wx`-создания до снятия идёт синхронный
- * блок.
+ * It is also the upper bound of the lease: a pid the OS reused for a foreign
+ * process would otherwise lock a foreign intent forever, and the undelivered
+ * would sit forever. The slack is taken from the cost of one send: measured
+ * 2026-09-02, 500 sends in a row — 1.4 ms CPU per send at a median of 1.3 ms;
+ * under load (load average 38–44) the median is the same, and the tail is
+ * stretched by the scheduler: p99 35–67 ms, the longest of one and a half
+ * thousand — 141 ms. The threshold is two hundred times that, and a live
+ * intent never lives longer than a send at all: from `wx` creation to drop
+ * it is a synchronous block.
  *
- * Экспортирован ради цитаты контракта: справочник называет порог секундами, и
- * `lint` сверяет то число с этой константой через `dist`; других потребителей снаружи нет.
+ * Exported for a contract quote: the reference names the threshold in
+ * seconds, and `lint` checks that number against this constant through
+ * `dist`; there are no other consumers outside.
  */
 export const INTENT_STALE_MS = 30_000;
 
 /**
- * Лизинг: кто пишет этот fan-out прямо сейчас. Ложится РЯДОМ с intent'ом, отдельным файлом,
- * а не полем в записи: intent и канон — один inode, и поле уехало бы в inbox каждого
- * получателя и в history, а читатель прежней версии отверг бы такое сообщение схемой
- * (`additionalProperties: false`) и увёз бы его в `broken`. Отдельный файл прежним читателям
- * невидим по построению — каталог intents они обходят по маске `.json`.
+ * Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
+ * as a separate file, not as a field on the record: the intent and the canon
+ * are one inode, and the field would travel into every recipient's inbox and
+ * into history, and a reader of the former version would reject such a
+ * message by schema (`additionalProperties: false`) and take it to `broken`.
+ * A separate file is invisible to former readers by construction — they walk
+ * the intents directory by the `.json` mask.
  *
- * Отказ записи отправку не отменяет: точка коммита — intent, а лизинг лишь ускоряет
- * восстановление; без него intent считается брошенным по возрасту.
+ * A write refusal does not cancel the send: the commit point is the intent,
+ * and the lease only speeds up recovery; without it the intent is treated as
+ * abandoned by age.
  *
- * Флаг `w`, а не `wx`: исключительность уже выиграна `wx`-созданием самого intent'а, а `wx`
- * здесь значил бы «осиротевший `<id>.owner` под тем же именем остаётся чужим» — свежий intent
- * нёс бы чужие pid и host и либо объявлялся брошенным сразу, либо ждал порога впустую. Что
- * имена могут повториться, код считает сам: `commitIntent` пересобирает id по `EEXIST` до 16
- * раз.
+ * The `w` flag, not `wx`: exclusivity is already won by the `wx` creation of
+ * the intent itself, and `wx` here would mean "an orphaned `<id>.owner` under
+ * the same name stays foreign" — a fresh intent would carry foreign pid and
+ * host and would either be declared abandoned at once or wait the threshold
+ * in vain. That names may repeat is something the code already counts on:
+ * `commitIntent` reassembles the id on `EEXIST` up to 16 times.
  */
 function leaseIntent(intent: string): void {
   try {
     writeFileSync(ownerOfIntent(intent),
       `${JSON.stringify({ pid: process.pid, host: os.hostname() })}\n`, { flag: 'w' });
   } catch {
-    // Лизинга нет — восстановление подберёт intent по возрасту, а не по живости владельца.
+    // No lease — recovery will pick the intent up by age, not by owner liveness.
   }
 }
 
-/** Запись лизинга; `null` — лизинга нет, он нечитаем или неполон. */
+/** Lease record; `null` — there is no lease, it is unreadable, or it is incomplete. */
 function readLease(file: string): { pid: number; host: string } | null {
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
@@ -165,32 +180,38 @@ function readLease(file: string): { pid: number; host: string } | null {
 }
 
 /**
- * Брошен ли незакрытый intent — то есть вправе ли восстановление его трогать.
+ * Whether an unclosed intent is abandoned — that is, whether recovery may
+ * touch it.
  *
- * Живой fan-out соседа подбирать нельзя: восстановление материализует канон и снимает intent,
- * а владелец в этот момент идёт к своему `link` — и получает `ENOENT` на доставленном
- * сообщении, то есть отказ на успехе.
+ * A neighbour's live fan-out must not be picked up: recovery materializes the
+ * canon and drops the intent, and the owner at that moment is walking to its
+ * own `link` — and gets `ENOENT` on a delivered message, a refusal on success.
  *
- * Ветки, в этом порядке:
- * 1. возраст не меньше `INTENT_STALE_MS` — брошен независимо от лизинга (верхний предел).
- *    Считается он локальными часами по `mtime`, а на разделяемом монтировании `mtime` ставит
- *    машина владельца: ветка допускает, что часы у дома одни. Разъехавшиеся часы двигают сам
- *    порог, но не решение по живому владельцу — того сторожит ветка 2 сверкой host'а;
- * 2. лизинга нет либо он с чужой машины — живость владельца неизвестна, ждём порога;
- * 3. pid наш — брошен. Жизнь intent'а внутри процесса это ОДИН синхронный блок:
- *    `commitIntent` и `completeFanout` синхронны целиком, а все await'ы `send` стоят до точки
- *    коммита, поэтому свой pid на intent'е значит «прошлый процесс с тем же номером», а не
- *    «пишется прямо сейчас». Появится await между созданием intent'а и его снятием — ветка
- *    станет неверной, и краснеют на этом проверки падений в `v1-engine.test.mjs`: они роняют
- *    отправку швом и восстанавливают ТЕМ ЖЕ процессом;
- * 4. иначе решает живость pid'а владельца.
+ * Branches, in this order:
+ * 1. age is at least `INTENT_STALE_MS` — abandoned regardless of the lease
+ *    (the upper bound). Age is computed from local clocks by `mtime`, and on
+ *    a shared mount `mtime` is set by the owner's machine: the branch admits
+ *    that the home has one clock. Drifted clocks move the threshold itself,
+ *    but not the decision about a live owner — that is guarded by branch 2
+ *    by comparing the host;
+ * 2. there is no lease, or it is from a foreign machine — owner liveness is
+ *    unknown, wait for the threshold;
+ * 3. the pid is ours — abandoned. The life of an intent inside a process is
+ *    ONE synchronous block: `commitIntent` and `completeFanout` are
+ *    synchronous whole, and every `await` of `send` stands before the commit
+ *    point, so our own pid on an intent means "a previous process with the
+ *    same number", not "it is being written right now". If an await appears
+ *    between creating the intent and dropping it, the branch becomes wrong,
+ *    and the crash checks in `v1-engine.test.mjs` go red on that: they crash
+ *    the send at the seam and recover in THE SAME process;
+ * 4. otherwise owner pid liveness decides.
  */
 function abandonedIntent(intent: string): boolean {
   let age: number;
   try {
     age = Date.now() - statSync(intent).mtimeMs;
   } catch {
-    // Intent унесли между листингом каталога и проверкой — восстанавливать нечего.
+    // The intent was taken between the directory listing and the check — nothing to recover.
     return false;
   }
   if (age >= INTENT_STALE_MS) return true;
@@ -199,27 +220,31 @@ function abandonedIntent(intent: string): boolean {
   return lease.pid === process.pid || !pidAlive(lease.pid);
 }
 
-/** Шаг 2: создать intent. Атомарный `open(O_EXCL)` — точка коммита всего fan-out'а. */
+/** Step 2: create the intent. Atomic `open(O_EXCL)` — the commit point of the whole fan-out. */
 function openIntent(home: string, task: string, message: MessageV1): void {
   mkdirSync(intentsDir(home, task), { recursive: true });
   const intent = intentFile(home, task, message.id);
   writeFileSync(intent, `${JSON.stringify(message, null, 2)}\n`, { flag: 'wx' });
-  // Лизинг ПОСЛЕ intent'а, а не до: осиротевший лизинг ничей fan-out не описывает, а окно
-  // «intent есть, лизинга ещё нет» закрыто возрастом — такой intent моложе порога.
+  // The lease AFTER the intent, not before: an orphaned lease describes nobody's
+  // fan-out, and the "intent is there, lease is not yet" window is closed by
+  // age — such an intent is younger than the threshold.
   leaseIntent(intent);
 }
 
 /**
- * Шаг 3: связать канон с intent'ом. Идемпотентно — восстановление зовёт то же самое.
+ * Step 3: link the canon to the intent. Idempotent — recovery calls the same
+ * thing.
  *
- * Проверки «канон уже есть» перед ссылкой здесь нет, и это не упрощение: она была тем же
- * окном, только шире — между ней и `link` помещается сосед. `EEXIST` от самой ссылки уже
- * значит «канон на месте», а сообщает об этом `linkOnce` возвратом `false`.
+ * There is no "canon already there" check before the link, and that is not
+ * a simplification: it was the same window, only wider — a neighbour fits
+ * between it and `link`. `EEXIST` from the link itself already means "the
+ * canon is in place", and `linkOnce` reports that by returning `false`.
  *
- * `ENOENT` на источнике — не отказ, а «материализовано другим»: intent унёс сосед, доведший
- * тот же fan-out до конца, и канон уже на месте. Отказ отсюда обрывал цикл отправителя на
- * ДОСТАВЛЕННОМ сообщении. А вот если канона при этом нет — это настоящая потеря,
- * и она остаётся отказом.
+ * `ENOENT` on the source is not a refusal, it is "materialized by another":
+ * a neighbour who took the same fan-out to the end took the intent, and the
+ * canon is already in place. A refusal from here would break the sender's
+ * loop on a DELIVERED message. But if there is no canon then either — that
+ * is a real loss, and it stays a refusal.
  */
 function materialize(home: string, task: string, message: string): boolean {
   const canonical = messageFile(home, task, message);
@@ -228,34 +253,37 @@ function materialize(home: string, task: string, message: string): boolean {
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     if (existsSync(canonical)) return false;
-    return fail('link-refused', `intent унесён, а канона нет: ${canonical}`,
+    return fail('link-refused', `intent is gone and there is no canon: ${canonical}`,
       { task, message, target: canonical, errno: 'ENOENT' });
   }
 }
 
 /**
- * Шаги 3–5 одним проходом: канон, ссылки получателям, снятие intent'а. Зовётся и отправкой,
- * и восстановлением — ровно один код, иначе восстановление чинило бы не то, что ломалось.
+ * Steps 3–5 in one pass: the canon, refs for recipients, drop the intent.
+ * Called by both send and recovery — exactly one code, otherwise recovery
+ * would repair something other than what broke.
  */
 export function completeFanout(home: string, task: string, message: MessageV1, fault: FaultHook = NO_FAULT): string[] {
   materialize(home, task, message.id);
   fault('canonical', { task, message: message.id });
   const fresh: string[] = [];
   for (const [index, recipient] of message.recipients.entries()) {
-    // Свежим — тем, кого надо разбудить, — получатель считается у того процесса, чья ссылка
-    // легла. `linkOnce` отдаёт `false` по `EEXIST`, когда между `delivered()` и `link` ссылку
-    // успел поставить сосед: двое восстановителей иначе назвали бы получателя свежим оба, и
-    // на одно сообщение ушли бы два события активации. Доставка при этом одна —
-    // ссылка одна, — задваивался только доклад о ней.
+    // Fresh — those who must be woken — a recipient is counted for the process
+    // whose ref landed. `linkOnce` returns `false` on `EEXIST` when between
+    // `delivered()` and `link` a neighbour already put the ref: two recoverers
+    // would otherwise both name the recipient as fresh, and two activation
+    // events would go out for one message. Delivery is still one — one ref —
+    // only the report of it was doubled.
     if (!delivered(home, task, recipient, message.id)
       && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id))) {
       fresh.push(recipient);
     }
     fault('ref', { task, message: message.id, recipient, index });
   }
-  // Шаг 5. Только после ссылок у ВСЕХ: снятый раньше intent унёс бы с собой единственный
-  // след недоставленного, и недостающую ссылку не дописал бы никто. Лизинг уходит вместе с
-  // ним: он описывает незакрытый fan-out, а закрытому владелец не нужен.
+  // Step 5. Only after refs for ALL: an intent dropped earlier would take
+  // with it the only trace of the undelivered, and nobody would write the
+  // missing ref. The lease leaves with it: it describes an unclosed fan-out,
+  // and a closed one needs no owner.
   const intent = intentFile(home, task, message.id);
   rmSync(intent, { force: true });
   rmSync(ownerOfIntent(intent), { force: true });
@@ -263,7 +291,7 @@ export function completeFanout(home: string, task: string, message: MessageV1, f
   return fresh;
 }
 
-/** Сколько непрочитанного лежит у участника. */
+/** How much unread sits with the participant. */
 export function countInbox(home: string, task: string, participant: string): number {
   return inboxNames(inboxDir(home, task, participant)).length;
 }
@@ -276,7 +304,7 @@ function inboxNames(dir: string): string[] {
   }
 }
 
-/** Собрать событие активации по участнику: что у него лежит и чем его будить. */
+/** Assemble the activation event for a participant: what sits with them and how to wake them. */
 export function eventFor(home: string, task: string, participant: ParticipantV1, messages: MessageV1[]): ActivationEvent {
   return {
     kind: 'unread',
@@ -288,7 +316,7 @@ export function eventFor(home: string, task: string, participant: ParticipantV1,
   };
 }
 
-/** Собрать каноническое сообщение. Валидация — на стороне вызывающего, до первой записи. */
+/** Assemble a canonical message. Validation is on the caller's side, before the first write. */
 export function newMessage(task: string, sender: string, recipients: string[], type: string, body: string, artifact: string | null, now: Date): MessageV1 {
   return {
     protocolVersion: MESSAGE_PROTOCOL_VERSION,
@@ -303,7 +331,7 @@ export function newMessage(task: string, sender: string, recipients: string[], t
   };
 }
 
-/** Шаг 2 с повтором по занятому имени: id собирается заново, а не подменяется молча. */
+/** Step 2 with a retry on a taken name: the id is assembled again, not replaced in silence. */
 export function commitIntent(home: string, task: string, message: MessageV1, now: Date): MessageV1 {
   let current = message;
   for (let tries = 0; ; tries += 1) {
@@ -312,29 +340,30 @@ export function commitIntent(home: string, task: string, message: MessageV1, now
       return current;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-      if (tries >= 16) fail('schema-invalid', `имя сообщения не удалось занять за ${tries} попыток`, { task });
+      if (tries >= 16) fail('schema-invalid', `could not take a message name in ${tries} attempts`, { task });
       current = { ...current, id: newRecordId(now) };
     }
   }
 }
 
 /**
- * Что нашлось нечитаемого при чтении mailbox'а. Причина и место разведены полями, а не
- * склеены в строку: текст человеку собирает adapter, и склейка заставляла бы его резать
- * её обратно регексом — два канала доклада разъезжались бы на первой же правке слов.
+ * What was found unreadable while reading the mailbox. Reason and place are
+ * split into fields, not glued into a string: the adapter assembles the text
+ * for a person, and a glue would force it to cut the string back with a
+ * regex — the two report channels would drift on the first word edit.
  */
 export interface BrokenNote {
   name: string;
   code: string;
-  /** Почему запись не прочиталась. */
+  /** Why the record did not read. */
   note: string;
-  /** Каталог, куда запись отложена; `null` — осталась на месте. */
+  /** Directory the record was set aside in; `null` — it stayed in place. */
   attic: string | null;
-  /** Почему отложить не вышло; `null` — вышло либо и не пробовали. */
+  /** Why setting it aside failed; `null` — it succeeded, or it was not tried. */
   failure: string | null;
 }
 
-/** Куда уехала запись: каталог либо причина, по которой отложить не вышло. */
+/** Where the record went: the directory, or the reason setting it aside failed. */
 function isolate(from: string, atticDir: string, name: string): { attic: string | null; failure: string | null } {
   try {
     mkdirSync(atticDir, { recursive: true });
@@ -346,11 +375,12 @@ function isolate(from: string, atticDir: string, name: string): { attic: string 
 }
 
 /**
- * Забрать входящие и перенести ссылки в history. Подтверждения обработки и exactly-once
- * нет: mailbox гарантирует сохранность сообщения до чтения, и только это.
+ * Take incoming and move the refs to history. There is no processing ack and
+ * no exactly-once: the mailbox guarantees the message is kept until read,
+ * and only that.
  *
- * Порядок — по имени файла: штамп времени плюс счётчик, поэтому сортировка строк равна
- * порядку отправки.
+ * Order is by file name: timestamp plus counter, so string sort equals send
+ * order.
  */
 export function readInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
@@ -359,8 +389,9 @@ export function readInbox(home: string, task: string, participant: string, fault
   const messages: MessageV1[] = [];
   const broken: BrokenNote[] = [];
   const names = inboxNames(dir);
-  // Каталог history заводится здесь, а не при первой отправке: `rename` ссылки требует
-  // готового родителя, и заводить его пустым у каждого участника незачем.
+  // The history directory is created here, not on the first send: `rename` of
+  // a ref needs a ready parent, and creating it empty for every participant
+  // is unnecessary.
   if (names.length) ensureHistoryDir(home, task, participant);
   for (const name of names) {
     const file = path.join(dir, name);
@@ -368,8 +399,9 @@ export function readInbox(home: string, task: string, participant: string, fault
     try {
       raw = readFileSync(file, 'utf8');
     } catch (e) {
-      // Унёс сосед между листингом и чтением — пропуск, а не отказ: сообщение забрал
-      // второй читатель, он же его и доставит.
+      // A neighbour took it between the listing and the read — a skip, not a
+      // refusal: the second reader took the message, and that reader will
+      // deliver it.
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw e;
     }
@@ -380,17 +412,17 @@ export function readInbox(home: string, task: string, participant: string, fault
       parsed = JSON.parse(raw);
     } catch (e) {
       code = 'schema-invalid';
-      note = `не разобрано (${(e as Error).message})`;
+      note = `did not parse (${(e as Error).message})`;
     }
     if (!code) {
       const verdict = validate('message', parsed);
       if (!verdict.ok) {
         code = verdict.code as string;
-        note = `не по схеме: ${verdict.at} ${verdict.note}`;
+        note = `does not match the schema: ${verdict.at} ${verdict.note}`;
       }
     }
     if (code) {
-      // Запись из будущего в `broken` не уезжает: она не испорчена, читать её нечем.
+      // A record from the future does not go to `broken`: it is not corrupt, there is just nothing to read it with.
       const where = code === 'schema-version-unsupported'
         ? { attic: null, failure: null }
         : isolate(file, brokenInboxDir(home, task, participant), name);
@@ -400,8 +432,9 @@ export function readInbox(home: string, task: string, participant: string, fault
     try {
       renameSync(file, historyRef(home, task, participant, (parsed as MessageV1).id));
     } catch (e) {
-      // ENOENT здесь — тот же унёсший сосед. Отказ отсюда пришёл бы из СЕРЕДИНЫ обхода,
-      // когда часть ссылок уже уехала в history, и вернуть их было бы некому.
+      // ENOENT here is the same neighbour who took it. A refusal from here
+      // would come from the MIDDLE of the walk, when some refs have already
+      // gone to history, and there would be nobody to put them back.
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       continue;
     }
@@ -411,56 +444,58 @@ export function readInbox(home: string, task: string, participant: string, fault
   return { messages, broken };
 }
 
-// history/<участник> заводится лениво, как и inbox: каталог появляется с первым чтением.
+// history/<participant> is created lazily, like inbox: the directory appears with the first read.
 export function ensureHistoryDir(home: string, task: string, participant: string): void {
   mkdirSync(historyDir(home, task, participant), { recursive: true });
 }
 
-/** Запрос истории. `all` снимает лимит целиком; `before` — курсор постраничного чтения. */
+/** History query. `all` lifts the limit whole; `before` — a cursor for paged reading. */
 export interface HistoryQuery {
   task?: string;
   participant?: string;
   limit?: number;
   /**
-   * Курсор прошлой страницы: непрозрачная строка, которую вернул `cursor`. Собирать её
-   * руками не нужно и не следует — форма ключа порядка принадлежит истории.
+   * Cursor of the previous page: an opaque string that `cursor` returned.
+   * There is no need to assemble it by hand, and it should not be — the
+   * order-key form belongs to history.
    */
   before?: string;
   all?: boolean;
 }
 
-/** Запись истории: одно сообщение у одного участника. */
+/** History record: one message for one participant. */
 export interface HistoryEntry {
   task: string;
   participant: string;
   message: MessageV1;
 }
 
-/** Ответ истории: страница от старых к новым и курсор на страницу старше. */
+/** History response: a page from old to new, and a cursor to the older page. */
 export interface HistoryPage {
   entries: HistoryEntry[];
-  /** Что передать в `before` за следующей (более старой) страницей; `null` — старше нет. */
+  /** What to pass as `before` for the next (older) page; `null` — there is nothing older. */
   cursor: string | null;
   broken: BrokenNote[];
 }
 
 /**
- * Ключ порядка: id сообщения, а при равенстве — участник. Одно сообщение лежит у многих, и
- * записей истории у него столько же, сколько получателей.
+ * Order key: the message id, and on a tie — the participant. One message sits
+ * with many, and it has as many history records as recipients.
  *
- * **Курсор — этот ключ целиком, а не id сообщения** (замечание ревью). Лимит считает
- * ЗАПИСИ, поэтому граница страницы законно режет группу записей одного сообщения; курсор по
- * id отсекал следующую страницу всей группой сразу, и записи, оставшиеся левее среза, не
- * попадали ни в одну страницу вовсе.
+ * **The cursor is this key whole, not the message id** (review remark). The
+ * limit counts RECORDS, so a page boundary lawfully cuts a group of records
+ * of one message; a cursor by id would cut the next page by the whole group
+ * at once, and records left of the cut would land on no page at all.
  */
 function orderKey(message: string, participant: string): string {
   return `${message} ${participant}`;
 }
 
 /**
- * Сравнение ключей порядка. Одно на сортировку и на отсечку курсора: два разных сравнения
- * на одних данных дают два разных порядка, и граница страницы перестаёт совпадать сама с
- * собой. `localeCompare` тут не годится вовсе — он зависит от локали, а ключ машинный.
+ * Compare order keys. One comparison for both sort and cursor cut: two
+ * different comparisons on the same data give two different orders, and the
+ * page boundary stops matching itself. `localeCompare` is no good here at
+ * all — it depends on the locale, and the key is machine-made.
  */
 function byKey(a: string, b: string): number {
   if (a < b) return -1;
@@ -468,11 +503,11 @@ function byKey(a: string, b: string): number {
 }
 
 /**
- * История задачи: прочитанное, от старых к новым, по умолчанию последние 50 записей.
+ * Task history: what was read, from old to new, last 50 records by default.
  *
- * Непрочитанного здесь нет вовсе, и это не пробел: непрочитанное лежит в mailbox'е, и
- * попади оно сюда — история перестала бы отличать доставленное от прочитанного, а на этом
- * различии стоит восстановление fan-out'а.
+ * There is no unread here at all, and that is not a gap: unread sits in the
+ * mailbox, and if it landed here the history would stop telling delivered
+ * from read — and fan-out recovery stands on that distinction.
  */
 export function history(home: string, tasks: string[], { participant, limit = 50, before, all = false }: HistoryQuery): HistoryPage {
   const refs: { key: string; task: string; participant: string; file: string }[] = [];
@@ -493,8 +528,9 @@ export function history(home: string, tasks: string[], { participant, limit = 50
     }
   }
   refs.sort((a, b) => byKey(a.key, b.key));
-  // Курсор исключающий: страница отдаёт записи строго СТАРШЕ него, поэтому повторов на
-  // границе страниц не бывает. Сравнение — то же самое, которым отсортированы записи.
+  // Exclusive cursor: the page returns records strictly OLDER than it, so
+  // there are no repeats on the page boundary. The comparison is the same
+  // one the records were sorted with.
   const older = before ? refs.filter((r) => byKey(r.key, before) < 0) : refs;
   const page = all ? older : older.slice(Math.max(0, older.length - Math.max(0, limit)));
   const entries: HistoryEntry[] = [];
@@ -519,21 +555,22 @@ export function history(home: string, tasks: string[], { participant, limit = 50
   return { entries, cursor: hasOlder ? (first as { key: string }).key : null, broken };
 }
 
-/** Что починило восстановление в одной задаче. */
+/** What recovery repaired in one task. */
 export interface Repair {
   task: string;
   message: string;
-  /** Кому дописаны ссылки. Пусто — intent просто не был снят. */
+  /** Who the refs were written for. Empty — the intent was simply not dropped. */
   recipients: string[];
-  /** Пришлось ли связывать канон заново. */
+  /** Whether the canon had to be linked again. */
   canonical: boolean;
 }
 
 /**
- * Восстановление fan-out'а одной задачи: пройти незакрытые intent'ы и дописать недостающее.
+ * Recover fan-out of one task: walk unclosed intents and write what is missing.
  *
- * Идемпотентно по построению: и канон, и каждая ссылка ставятся `link`'ом, а `EEXIST` здесь
- * значит «уже есть». Повторный вызов на здоровом store не делает ничего.
+ * Idempotent by construction: both the canon and every ref are put with
+ * `link`, and `EEXIST` here means "already there". A second call on a
+ * healthy store does nothing.
  */
 export function recoverTask(home: string, task: string, meta: TaskV1, fault: FaultHook = NO_FAULT): {
   repairs: Repair[]; events: ActivationEvent[]; broken: BrokenNote[];
@@ -550,8 +587,9 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
   const names = entries.filter((n) => n.endsWith('.json') && !n.startsWith('.'));
   for (const name of names) {
     const file = path.join(intentsDir(home, task), name);
-    // Гейт лизинга стоит ДО разбора записи: у живого соседа и оборванная запись законна —
-    // `wx` создаёт файл атомарно, а содержимое пишется следом, и его половину видно.
+    // The lease gate stands BEFORE the record is parsed: a live neighbour's
+    // torn record is lawful too — `wx` creates the file atomically, and the
+    // contents are written after, and a half of them is visible.
     if (!abandonedIntent(file)) continue;
     let parsed: unknown = null;
     let code = '';
@@ -561,22 +599,23 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
       code = 'schema-invalid';
-      note = `intent не разобран (${(e as Error).message})`;
+      note = `intent did not parse (${(e as Error).message})`;
     }
     if (!code) {
       const verdict = validate('message', parsed);
       if (!verdict.ok) {
         code = verdict.code as string;
-        note = `intent не по схеме: ${verdict.at} ${verdict.note}`;
+        note = `intent does not match the schema: ${verdict.at} ${verdict.note}`;
       }
     }
     if (code) {
-      // Оборванная запись intent'а — единственная форма порчи, которую даёт падение внутри
-      // точки коммита: отправка при этом не вернулась, и сообщения для отправителя не было.
+      // A torn intent record is the only form of corruption a crash inside
+      // the commit point produces: the send did not return then, and there
+      // was no message for the sender.
       const where = code === 'schema-version-unsupported'
         ? { attic: null, failure: null }
         : isolate(file, brokenMessagesDir(home, task), name);
-      // Лизинг живёт ровно столько, сколько intent: уехал intent — уходит и он.
+      // The lease lives exactly as long as the intent: the intent left — it leaves too.
       if (where.attic) rmSync(ownerOfIntent(file), { force: true });
       broken.push({ name, code, note, ...where });
       continue;
@@ -587,8 +626,9 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     repairs.push({ task, message: message.id, recipients: fresh, canonical: !hadCanonical });
     for (const id of fresh) {
       const who = meta.participants.find((p) => p.id === id);
-      // Получатель, которого в журнале уже нет, ссылку получает всё равно: она лежала бы
-      // там и без падения. Будить его некого — события по нему нет.
+      // A recipient who is no longer in the journal still gets the ref: it
+      // would have sat there without the crash too. There is nobody to wake
+      // — no event for them.
       if (who) events.push(eventFor(home, task, who, [message]));
     }
   }
@@ -597,15 +637,18 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
 }
 
 /**
- * Убрать лизинги, которым нечего описывать. Осиротевший `<id>.owner` остаётся, когда fan-out
- * закрывает код прежних версий: он снимает intent, а про лизинг не знает. Мусор уходит молча
- * — обещания за ним нет никакого.
+ * Remove leases that have nothing to describe. An orphaned `<id>.owner`
+ * remains when a former-version code closes the fan-out: it drops the
+ * intent and does not know about the lease. The garbage leaves in silence
+ * — there is no promise behind it at all.
  *
- * Решение принимается по ОДНОМУ листингу, и атомарным он не бывает: `readdir` может отдать
- * `.owner` из непройденной позиции и не отдать `.json`, легший в уже пройденную, — тогда
- * смахнётся живой лизинг. Цена такой ошибки односторонняя: intent остаётся без лизинга, то
- * есть попадает в ветку «живость неизвестна — ждём порога». Восстановление от этого делается
- * осторожнее, а не смелее, и подобрать чужой идущий fan-out не может.
+ * The decision is taken from ONE listing, and it is never atomic: `readdir`
+ * may return a `.owner` from a position not yet walked and not return a
+ * `.json` that landed in a position already walked — then a live lease is
+ * swept. The cost of that error is one-sided: the intent stays without a
+ * lease, that is, it falls into the "liveness unknown — wait for the
+ * threshold" branch. Recovery becomes more careful from that, not bolder,
+ * and cannot pick up a neighbour's in-flight fan-out.
  */
 function sweepLeases(dir: string, entries: string[]): void {
   const open = new Set(entries.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -'.json'.length)));
@@ -618,11 +661,13 @@ function sweepLeases(dir: string, entries: string[]): void {
 export { messagesDir };
 
 /**
- * Заглянуть в mailbox, ничего в нём не тронув. Отличие от `readInbox` одно и оно всё:
- * ссылки остаются в inbox'е, а не уезжают в history. Битое при этом откладывается так же —
- * иначе одна нечитаемая запись возвращалась бы читателю на каждом заходе.
+ * Look into the mailbox without touching anything in it. The difference from
+ * `readInbox` is one and it is everything: refs stay in the inbox and do not
+ * go to history. Broken ones are set aside the same way — otherwise one
+ * unreadable record would return to the reader on every visit.
  *
- * Зовёт это чужая сессия: ей `mailbox` отдаёт копию, а оригиналы остаются владельцу.
+ * A foreign session calls this: `mailbox` gives it a copy, and the originals
+ * stay with the owner.
  */
 export function peekInbox(home: string, task: string, participant: string): {
   messages: MessageV1[]; broken: BrokenNote[];
@@ -636,7 +681,7 @@ export function peekInbox(home: string, task: string, participant: string): {
     try {
       raw = readFileSync(file, 'utf8');
     } catch {
-      // Унёс владелец между листингом и чтением: сообщение он и доставит.
+      // The owner took it between the listing and the read: they will deliver the message.
       continue;
     }
     let parsed: unknown = null;
@@ -646,17 +691,17 @@ export function peekInbox(home: string, task: string, participant: string): {
       parsed = JSON.parse(raw);
     } catch (e) {
       code = 'schema-invalid';
-      note = `не разобрано (${(e as Error).message})`;
+      note = `did not parse (${(e as Error).message})`;
     }
     if (!code) {
       const verdict = validate('message', parsed);
       if (!verdict.ok) {
         code = verdict.code as string;
-        note = `не по схеме: ${verdict.at} ${verdict.note}`;
+        note = `does not match the schema: ${verdict.at} ${verdict.note}`;
       }
     }
     if (code) {
-      // Запись из будущего в `broken` не уезжает: она не испорчена, читать её нечем.
+      // A record from the future does not go to `broken`: it is not corrupt, there is just nothing to read it with.
       const where = code === 'schema-version-unsupported'
         ? { attic: null, failure: null }
         : isolate(file, brokenInboxDir(home, task, participant), name);
@@ -669,9 +714,9 @@ export function peekInbox(home: string, task: string, participant: string): {
 }
 
 /**
- * Заглянуть в mailbox молча: ни ссылок не трогает, ни битого не откладывает. Нужен
- * надзирателю — его диагностика уходит в `stdio: 'ignore'`, и отложенное исчезло бы без
- * слова кому-либо.
+ * Glance into the mailbox in silence: touches no refs and sets no broken
+ * aside. Needed by the supervisor — its diagnostics go to `stdio: 'ignore'`,
+ * and what was set aside would vanish without a word to anyone.
  */
 export function glanceInbox(home: string, task: string, participant: string): MessageV1[] {
   const dir = inboxDir(home, task, participant);
@@ -680,23 +725,27 @@ export function glanceInbox(home: string, task: string, participant: string): Me
     try {
       messages.push(JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as MessageV1);
     } catch {
-      // Битое или унесённое соседом — не наша беда: mailbox забирает читатель, он и доложит.
+      // Broken, or taken by a neighbour — not our problem: the reader takes the mailbox, and that reader will report.
     }
   }
   return messages;
 }
 
 /**
- * Когда участник в последний раз ОТПРАВЛЯЛ на шину; `null` — не отправлял ещё ничего.
+ * When the participant last SENT on the bus; `null` — they have sent nothing
+ * yet.
  *
- * Имя записи отправителя не несёт (штамп, счётчик и случайный хвост), поэтому ответа без
- * чтения содержимого нет. Спрашивают это на каждом ударе сердца по каждому вставшему, а
- * переписки набегает порядка трёх мегабайт в день, — поэтому разбор идёт **инкрементально**:
- * каждая запись читается ровно один раз за жизнь процесса, а очередной вызов трогает только
- * имена, которых он ещё не видел. Кэш по состоянию каталога здесь не годился: любая отправка
- * меняет его, и обход становился полным заново.
+ * The record name does not carry the sender (a stamp, a counter, and a
+ * random tail), so there is no answer without reading the contents. This is
+ * asked on every heartbeat for every one who has stalled, and correspondence
+ * accumulates on the order of three megabytes a day — so the parse is
+ * **incremental**: each record is read exactly once in the life of the
+ * process, and the next call touches only names it has not seen yet. A cache
+ * keyed on directory state would not do here: any send changes it, and the
+ * walk would become full again.
  *
- * Канон неизменяем и исчезает только вместе с задачей, поэтому увиденное не протухает.
+ * The canon is immutable and disappears only with the task, so what was seen
+ * does not go stale.
  */
 const sentSeen = new Map<string, { seen: Set<string>; last: Map<string, number> }>();
 
@@ -707,7 +756,7 @@ export function lastSentAt(home: string, task: string, participant: string): num
     hit = { seen: new Set<string>(), last: new Map<string, number>() };
     sentSeen.set(dir, hit);
   }
-  // Каталоги заводятся лениво: нет каталога — `inboxNames` отдаёт пустой список.
+  // Directories are created lazily: no directory — `inboxNames` returns an empty list.
   for (const name of inboxNames(dir)) {
     if (hit.seen.has(name)) continue;
     hit.seen.add(name);
@@ -717,7 +766,7 @@ export function lastSentAt(home: string, task: string, participant: string): num
       if (!Number.isFinite(at)) continue;
       if (!hit.last.has(m.sender) || (hit.last.get(m.sender) as number) < at) hit.last.set(m.sender, at);
     } catch {
-      // Битое сообщение своего отправителя не называет — обход идёт дальше.
+      // A broken message does not name its sender — the walk continues.
     }
   }
   return hit.last.get(participant) ?? null;
