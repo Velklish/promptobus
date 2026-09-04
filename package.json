@@ -1,19 +1,54 @@
 {
   "name": "promptobus",
   "version": "0.1.0",
-  "description": "Local mailbox and task bus for agent sessions.",
+  "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
   "license": "MIT",
   "type": "module",
   "files": [
+    "bin",
+    "dist",
+    "lib",
+    "schemas",
+    "templates",
     "LICENSE",
     "README.md",
     "README.ru.md"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
     "test": "node --test",
     "lint:backslop": "npx --yes github:Velklish/backslop#v0.3.0 lint"
   },
   "engines": {
     "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./driver": {
+      "types": "./dist/driver.d.ts",
+      "default": "./dist/driver.js"
+    },
+    "./host": {
+      "types": "./dist/host-index.d.ts",
+      "default": "./dist/host-index.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "default": "./dist/hooks.js"
+    },
+    "./cli": "./lib/cli.js",
+    "./schemas/*": "./schemas/*"
+  },
+  "bin": {
+    "promptobus": "./bin/promptobus.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "ajv": "8.20.0",
+    "typescript": "7.0.2"
   }
 }
