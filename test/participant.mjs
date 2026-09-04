@@ -1,28 +1,32 @@
-// Scripted-участник подставного harness'а. Не `*.test.mjs` — раннер (run.mjs)
-// берёт из каталога только их, и этот файл в прогон не попадает.
+// Scripted participant of the stub harness. Not a `*.test.mjs` — the runner (run.mjs)
+// takes only those from the directory, so this file is never part of the run.
 //
-// Это ПРОЦЕСС, а не заглушка: его поднимает подставной `claude --bg`
-// ([harness.mjs](harness.mjs)), он живёт до `stop` и делает ровно то, что механизм ждёт от
-// сессии участника ([13]):
+// This is a PROCESS, not a stub: the stub `claude --bg` starts it
+// ([harness.mjs](harness.mjs)), it lives until `stop` and does exactly what the
+// mechanism expects of a participant session ([13]):
 //
-//   1. узнаёт себя из `--mcp-config` — адрес, задачу и дом шины spawn кладёт в `env`
-//      записи `promptobus` того файла (spawn.js). В окружении САМОЙ сессии их нет вовсе
-//     : оно приходит от демона и принадлежит чужому spawn'у;
-//   2. поднимает настоящий `promptobus mcp` своим дочерним процессом и разговаривает с ним
-//      построчным JSON-RPC — тем же транспортом, что и Claude Code. Contact point при этом
-//      сдаёт не участник руками, а `onJoin` сервера — на рукопожатии: адрес
-//      сокета и токен приезжают к нему в окружении (`registerWake`);
-//   3. слушает свой messaging-сокет по wire-протоколу driver'а: auth-строка, следом JSON
-//      инъекции (`dial`/`knockSocket` в driver-claude.js);
-//   4. на стуке играет очередной ход своего скрипта — зовёт `promptobus_mailbox`, `promptobus_send`, `promptobus_task`;
-//   5. заканчивает ход: пишет `jobs/<id>/state.json`, зовёт Stop-хук КОМАНДОЙ ИЗ ФАЙЛА
-//      НАСТРОЕК (`--settings`) и метит свою запись в реестре `idle`/`blocked` — так помечает
-//      конец хода настоящий harness.
+//   1. it learns who it is from `--mcp-config` — spawn puts the address, the task and
+//      the bus home in the `env` of the `promptobus` record of that file (spawn.js). They
+//      are not in the session's OWN environment at all
+//     : that environment comes from the daemon and belongs to a foreign spawn;
+//   2. it starts a real `promptobus mcp` as its child process and talks to it with
+//      line-delimited JSON-RPC — the same transport as Claude Code. The contact point is
+//      not handed over by the participant by hand, but by the server's `onJoin` — on the
+//      handshake: the socket address and the token arrive in its environment
+//      (`registerWake`);
+//   3. it listens on its messaging socket by the driver's wire protocol: an auth line,
+//      then the injection JSON (`dial`/`knockSocket` in driver-claude.js);
+//   4. on a knock it plays the next turn of its script — it calls `promptobus_mailbox`,
+//      `promptobus_send`, `promptobus_task`;
+//   5. it ends the turn: writes `jobs/<id>/state.json`, calls the Stop hook with THE
+//      COMMAND FROM THE SETTINGS FILE (`--settings`) and marks its registry record
+//      `idle`/`blocked` — that is how the real harness marks the end of a turn.
 //
-// Скрипт хода приходит файлом от теста, ключ — адрес участника. Молчаливый ход (пустой
-// список действий) — законный сценарий: на нём проверяется доклад о стопе.
-// Ход с полем `block` — сессия, ВСТАВШАЯ на конце хода: `{ waitingFor }` для диалога
-// разрешения, `{ limit }` для исчерпанного лимита.
+// The turn script arrives as a file from the test, keyed by the participant address. A
+// silent turn (an empty action list) is a legal scenario: the stall report is checked
+// on it.
+// A turn with a `block` field is a session that STALLED at the end of the turn:
+// `{ waitingFor }` for a permission dialog, `{ limit }` for an exhausted limit.
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -44,8 +48,9 @@ function argValue(flag) {
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
 }
 
-// Промпт стоит последним аргументом всегда — `--mcp-config` и `--allowedTools` у бинаря
-// вариадические, и после них позиционный аргумент уехал бы в их список (spawnArgv).
+// The prompt is always the last argument — `--mcp-config` and `--allowedTools` on the
+// binary are variadic, and a positional after them would slide into their list
+// (spawnArgv).
 const prompt = argv[argv.length - 1];
 const mcpConfigPath = argValue('--mcp-config');
 const settingsPath = argValue('--settings');
@@ -54,11 +59,12 @@ const bus = cfg.mcpServers?.promptobus;
 const address = bus?.env?.PROMPTOBUS_ROLE;
 const task = bus?.env?.PROMPTOBUS_TASK;
 const busHome = bus?.env?.PROMPTOBUS_HOME;
-// Команда Stop-хука — ИЗ ФАЙЛА НАСТРОЕК участника, того, что уехал флагом `--settings`
-//. Собрать её здесь самому значило бы проверять стенд: настоящий харнес исполняет
-// то, что записано в файле, а с этой задачи в записи стоит идентичность участника
-// аргументами. Записи нет — хука нет, и ход просто кончается: так живёт сессия, которой
-// сторожа не положили.
+// The Stop-hook command is FROM THE PARTICIPANT SETTINGS FILE, the one that went out
+// with the `--settings` flag
+//. Building it here ourselves would mean testing the stand: the real
+// harness runs what is written in the file, and from this task the record carries the
+// participant identity as arguments. No record — no hook, and the turn simply ends:
+// that is how a session lives that was not given a guard.
 function guardCommand() {
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
@@ -73,7 +79,8 @@ let script = { turns: [] };
 try {
   script = JSON.parse(readFileSync(scriptFile(home, address), 'utf8'));
 } catch {
-  // Скрипта нет — участник просто молчит: это законный сценарий, а не поломка стенда.
+  // No script — the participant simply stays silent: that is a legal scenario, not a
+  // stand breakage.
 }
 
 const trace = traceFile(home, address);
@@ -83,22 +90,23 @@ function note(entry) {
   try {
     appendFileSync(trace, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n');
   } catch {
-    // След — диагностика теста, и отказ записи не повод ронять участника.
+    // The trace is test diagnosis, and a write failure is no reason to crash the
+    // participant.
   }
 }
 
-// Занятость сессии в реестре harness'а: `busy` пока идёт ход, `idle` — когда отдан.
-// Отсюда её и берёт driver (`inspect` читает поле `status`), а машина состояний — из
-// снимка (`sessionBusy`).
+// Session busy flag in the harness registry: `busy` while a turn is in progress, `idle`
+// when it has been yielded. That is where the driver takes it from (`inspect` reads the
+// `status` field), and the state machine takes it from the snapshot (`sessionBusy`).
 function mark(patch) {
   const record = readSession(home, id);
   if (record) writeSession(home, { ...record, ...patch });
 }
 
-// --- MCP-клиент ------------------------------------------------------------------
+// --- MCP client ------------------------------------------------------------------
 
-// Сервер поднимается ОДИН на всю жизнь участника, а не на вызов: так с ним разговаривает
-// Claude Code, и идентичность процесса сервер резолвит один раз, при старте.
+// The server is started ONCE for the participant's whole life, not per call: that is
+// how Claude Code talks to it, and the server resolves process identity once, at start.
 const mcp = spawn(bus.command, bus.args, {
   cwd: process.cwd(),
   env: { ...process.env, ...bus.env },
@@ -120,8 +128,9 @@ mcp.stdout.on('data', (chunk) => {
     try {
       msg = JSON.parse(line);
     } catch {
-      // Посторонняя строка в канале протокола — беда сервера, а не участника: называем её
-      // следом и живём дальше, иначе диагноза у теста не останется вовсе.
+      // A stray line on the protocol channel is the server's trouble, not the
+      // participant's: we name it in the trace and live on, otherwise the test would
+      // have no diagnosis at all.
       note({ kind: 'stray', line });
       continue;
     }
@@ -138,7 +147,7 @@ mcp.stderr.on('data', (chunk) => note({ kind: 'mcp-stderr', text: String(chunk).
 function rpc(method, params) {
   const rid = (seq += 1);
   const answer = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`нет ответа на ${method}`)), 30000);
+    const timer = setTimeout(() => reject(new Error(`no reply to ${method}`)), 30000);
     pending.set(rid, (m) => { clearTimeout(timer); resolve(m); });
   });
   mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: rid, method, params }) + '\n');
@@ -149,51 +158,55 @@ function textOf(res) {
   return res?.result?.content?.map((c) => c.text).join('\n') ?? '';
 }
 
-// --- ход --------------------------------------------------------------------------
+// --- turn ------------------------------------------------------------------------
 
-// Ход участника кончается ровно так, как его кончает сессия Claude Code, и порядок здесь
-// не декоративный: сперва причина стопа в `jobs/<id>/state.json` (её читает driver), потом
-// Stop-хук, потом отметка «свободна» в реестре.
+// A participant turn ends exactly the way a Claude Code session ends it, and the order
+// here is not decorative: first the stall reason in `jobs/<id>/state.json` (the driver
+// reads it), then the Stop hook, then the «idle» mark in the registry.
 //
-// Stop-хук зовётся КОМАНДОЙ ИЗ ФАЙЛА НАСТРОЕК и своим окружением участника — ровно так, как
-// его зовёт харнес. Идентичность шины стоит в самой команде аргументами, а
-// окружение сессии её больше не несёт: оно приходит от демона и принадлежит чужому spawn'у.
-// Поэтому сторож работает и здесь: отметку конца хода (`waits/<адрес>.turn.json`) получает и
-// участник, а не один оркестратор. Занятость его при этом по-прежнему берётся из снимка
-// сессий — ветку в `sessionBusy` выбирает род участника, а не наличие отметки.
+// The Stop hook is called with THE COMMAND FROM THE SETTINGS FILE and the participant's
+// own environment — exactly as the harness calls it. Bus identity sits in the command
+// itself as arguments, and the session environment no longer carries it: that
+// environment comes from the daemon and belongs to a foreign spawn.
+// So the guard works here too: the end-of-turn mark (`waits/<address>.turn.json`) is
+// given to the participant as well, not only to the orchestrator. Its busy flag is
+// still taken from the session snapshot — `sessionBusy` picks the branch by the
+// participant kind, not by whether the mark exists.
 //
-// **Ход может кончиться стопом, а не свободой**. Поле `block` хода метит запись
-// в тех формах, которые НАБЛЮДЕНЫ у живого харнеса ([15]),
-// а не в удобных стенду:
+// **A turn may end in a stall, not in idleness.** The turn's `block` field marks the
+// record in the forms OBSERVED on a live harness ([15]),
+// not in ones convenient for the stand:
 //
-//   - `{ waitingFor }` — сессия встала на диалоге. `waitingFor` живой харнес выдаёт только
-//     при `status: "waiting"`, и значением там короткая метка (`permission prompt`,
-//     `sandbox request`, `input needed`), а не текст запроса. Состояние при этом остаётся
-//     `working`: диалог прерывает ход, а не кончает его, — и `sessionStall` смотрит метку
-//     первой, состояния не спрашивая;
-//   - `{ limit }` — исчерпан лимит. Запись тут ничем не отличается от обычного конца хода
-//     (`idle`/`done`, замер ), а лимит виден только строкой, которую сам харнес
-//     пишет в `detail` файла `jobs/<id>/state.json`, — оттуда её и читает разбор.
+//   - `{ waitingFor }` — the session stalled on a dialog. Live harness emits
+//     `waitingFor` only with `status: "waiting"`, and the value there is a short label
+//     (`permission prompt`, `sandbox request`, `input needed`), not the request text.
+//     The state stays `working`: a dialog interrupts the turn, it does not end it —
+//     and `sessionStall` looks at the label first, without asking the state;
+//   - `{ limit }` — the limit is exhausted. The record here is no different from an
+//     ordinary end of turn (`idle`/`done`, measurement ), and the limit is
+//     visible only as the string the harness itself writes into `detail` of
+//     `jobs/<id>/state.json` — that is where the parse reads it from.
 //
-// `state: blocked` стенд не ставит нигде: у фоновых сессий живого харнеса такой пары не
-// встретилось ни разу, и зелёный на ней стенд был бы зелёным ни на чём — ровно беда,
-// снятая . Признак диалога СНИМАЕТСЯ на каждом следующем ходе: живая сессия,
-// которой человек ответил, его не носит.
+// The stand never sets `state: blocked` anywhere: that pair was never seen on live
+// harness background sessions, and a green on it would be a green on nothing — exactly
+// the trouble  removed. The dialog mark is CLEARED on every next turn: a live
+// session a person answered does not carry it.
 function endTurn(detail, block = null) {
   const jobs = path.join(claudeConfigDir(home), 'jobs', String(id));
   mkdirSync(jobs, { recursive: true });
   writeFileSync(path.join(jobs, 'state.json'), JSON.stringify({ detail }, null, 2) + '\n');
   const command = guardCommand();
   if (!command) {
-    note({ kind: 'guard', code: null, stdout: '', stderr: 'записи Stop-хука в файле настроек нет' });
+    note({ kind: 'guard', code: null, stdout: '', stderr: 'no Stop-hook record in the settings file' });
     mark(block?.waitingFor
       ? { status: 'waiting', state: 'working', waitingFor: block.waitingFor }
       : { status: 'idle', state: 'done', waitingFor: null });
     return Promise.resolve(null);
   }
   return new Promise((resolve) => {
-    // `shell: true` — потому что в файле настроек лежит СТРОКА команды, и разбирает её
-    // шелл: так её исполняет настоящий харнес, и кавычки вокруг путей ставятся ради него.
+    // `shell: true` — because the settings file holds a STRING of the command, and the
+    // shell parses it: that is how the real harness runs it, and the quotes around
+    // paths are for it.
     const hook = spawn(command, {
       cwd: process.cwd(),
       env: process.env,
@@ -206,11 +219,11 @@ function endTurn(detail, block = null) {
     hook.stderr.on('data', (c) => { err += c; });
     hook.on('close', (code) => {
       note({ kind: 'guard', code, stdout: out.trim(), stderr: err.trim() });
-      // `idle`/`done` — то, чем настоящий Claude Code метит сессию, отдавшую ход: замер
-      // 2026-09-02 на 2.1.251. Прежде стенд метил её `blocked`, и подставной
-      // прогон был зелёным на состоянии, которого живой harness не выдаёт вовсе. Разбор
-      // такого стопа — предмет : доклад идёт только на МОЛЧАЛИВЫЙ конец хода, а
-      // после отправленного сообщения не идёт.
+      // `idle`/`done` — what real Claude Code marks a session with after it has yielded
+      // the turn: measurement 2026-09-02 on 2.1.251. The stand used to mark it
+      // `blocked`, and the stub run was green on a state a live harness never emits.
+      // Parsing that stall is the subject of : the report goes only on a SILENT
+      // end of turn, and does not go after a message has been sent.
       mark(block?.waitingFor
         ? { status: 'waiting', state: 'working', waitingFor: block.waitingFor }
         : { status: 'idle', state: 'done', waitingFor: null });
@@ -226,19 +239,21 @@ function git(args) {
 }
 
 async function act(action) {
-  // Пауза внутри хода — не украшение. Отметки store ложатся кругами надзирателя: забор
-  // mailbox'а он замечает своим кругом, а отправку видит сразу. Ход живой сессии идёт
-  // секундами и минутами, и порядок отметок там задан с запасом; схлопнутый в миллисекунды
-  // ход этот порядок ломает — `deliveredAt` может лечь ПОЗЖЕ отправки, и штатный конец хода
-  // прочитался бы как молчаливый (`stallStands`). Пауза возвращает стенду масштаб
-  // жизни, а не обходит проверку.
+  // A pause inside the turn is not decoration. Store marks are laid down by warden
+  // ticks: it notices a mailbox fetch on its own tick, and sees a send immediately. A
+  // live session turn runs for seconds and minutes, and the mark order there is set
+  // with slack; a turn collapsed into milliseconds breaks that order — `deliveredAt`
+  // may land AFTER the send, and a normal end of turn would be read as silent
+  // (`stallStands`). The pause gives the stand the scale of life, it does not bypass
+  // the check.
   if (action.wait) {
     await new Promise((r) => { setTimeout(r, action.wait); });
     note({ kind: 'wait', ms: action.wait });
     return;
   }
-  // Правка в рабочем дереве: без неё `promptobus review` возвращается на пустом диффе, не подняв
-  // reviewer'а вовсе, — то есть половина круга оркестрации не проверялась бы.
+  // An edit in the working tree: without it `promptobus review` returns on an empty
+  // diff without starting a reviewer at all — that is, half the orchestration loop
+  // would not be checked.
   if (action.write) {
     const file = path.join(process.cwd(), action.write.path);
     mkdirSync(path.dirname(file), { recursive: true });
@@ -246,8 +261,9 @@ async function act(action) {
     note({ kind: 'write', path: action.write.path });
     return;
   }
-  // Коммит нужен уборке: `promptobus done` снимает только доказанно безлюдный и слитый каталог, а
-  // незакоммиченная правка держит worktree на месте по построению.
+  // The commit is needed for cleanup: `promptobus done` only removes a proven-empty and
+  // merged directory, and an uncommitted edit holds the worktree in place by
+  // construction.
   if (action.commit) {
     const added = git(['add', '-A']);
     const made = git(['commit', '-m', action.commit.message, '-q']);
@@ -273,8 +289,9 @@ async function act(action) {
 }
 
 let turnNo = 0;
-// Ходы играются по одному: стук может прийти посреди хода, и два хода внахлёст перепутали
-// бы порядок сообщений на шине. Очередь — цепочка обещаний, длиной в один ход.
+// Turns are played one at a time: a knock may arrive in the middle of a turn, and two
+// overlapping turns would scramble the order of messages on the bus. The queue is a
+// promise chain, one turn long.
 let queue = Promise.resolve();
 
 function playTurn(reason) {
@@ -291,21 +308,23 @@ function playTurn(reason) {
         note({ kind: 'action-failed', action, error: e.message });
       }
     }
-    // Причина стопа: своя у хода, иначе общая. Строка уезжает в `detail` и оттуда в разбор
-    // стопа — она и есть то, что человек прочитает в докладе надзирателя. У хода с лимитом
-    // причина и есть строка лимита: разбор ловит её шаблоном в том же `detail`.
+    // Stall reason: the turn's own, otherwise the common one. The string goes into
+    // `detail` and from there into the stall parse — that is what a person will read in
+    // the warden report. On a limit turn the reason IS the limit string: the parse
+    // catches it with a template in the same `detail`.
     const block = turn?.block ?? null;
     await endTurn(block?.limit ?? turn?.detail ?? 'turn finished; awaiting next cycle', block);
   }).catch((e) => { note({ kind: 'turn-failed', error: e.message }); });
   return queue;
 }
 
-// --- сокет --------------------------------------------------------------------------
+// --- socket ----------------------------------------------------------------------
 
-// Провод driver'а: одно соединение, две строки построчного JSON — auth и сама инъекция.
-// Токен здесь СВЕРЯЕТСЯ следом, но соединение не рвётся: на macOS настоящий слушатель его
-// не проверяет вовсе (`authRequired` включается только на Windows), и отказ здесь красил
-// бы стенд там, где живой канал работает.
+// Driver wire: one connection, two lines of line-delimited JSON — auth and the
+// injection itself. The token is CHECKED here in the trace, but the connection is not
+// dropped: on macOS the real listener does not check it at all (`authRequired` is on
+// only on Windows), and a refusal here would paint the stand red where the live
+// channel works.
 const server = createServer((conn) => {
   let data = '';
   conn.setEncoding('utf8');
@@ -326,15 +345,16 @@ const server = createServer((conn) => {
       body: injection?.message?.content ?? null,
     });
     conn.destroy();
-    // Соединение без второй строки — смок `doctor`: чужого хода он не трогает.
+    // A connection without a second line is a `doctor` smoke: it does not touch a
+    // foreign turn.
     if (injection) playTurn('knock');
   });
 });
 
 function farewell(code) {
-  try { server.close(); } catch { /* уже закрыт */ }
-  try { rmSync(socketPath, { force: true }); } catch { /* сокета могло не быть */ }
-  try { mcp.kill('SIGTERM'); } catch { /* ребёнок уже мёртв */ }
+  try { server.close(); } catch { /* already closed */ }
+  try { rmSync(socketPath, { force: true }); } catch { /* the socket may not have existed */ }
+  try { mcp.kill('SIGTERM'); } catch { /* the child is already dead */ }
   note({ kind: 'stopped', code });
   process.exit(0);
 }
@@ -343,9 +363,9 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => farewel
 
 server.listen(socketPath, async () => {
   note({ kind: 'up', address, task, home: busHome, socket: socketPath, prompt: (prompt ?? '').length });
-  // Рукопожатие — то же, что делает Claude Code: `initialize`, следом уведомление о
-  // готовности. Им же участник сдаёт свой contact point (`onJoin` сервера), и без
-  // него будить его было бы нечем.
+  // The handshake is the same as Claude Code's: `initialize`, then a ready
+  // notification. With it the participant also hands over its contact point (the
+  // server's `onJoin`), and without it there would be nothing to wake it with.
   const hello = await rpc('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},

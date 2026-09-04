@@ -1,85 +1,104 @@
-// Общие приёмы песочницы тестов. Не `*.test.mjs` — раннер (run.mjs) берёт из каталога
-// только их, и этот файл в прогон не попадает.
+// Shared sandbox helpers for tests. Not `*.test.mjs` — the runner
+// (run.mjs) takes only those from the directory, so this file is not
+// in the run.
 //
-// Подставной бинарь в PATH нужен там, где под тест берётся ветка «внешняя команда
-// найдена»: живой `claude`, `agent` или `ast-grep` тесту не нужен, а задать его ответ
-// нужно. Приём применялся семь раз, и шесть из них были написаны как `#!/bin/sh` без
-// расширения — на Windows такой файл не находится вовсе: `resolveCommand` ищет по
-// PATH × PATHEXT, и файла без `.exe`/`.cmd`/`.bat` в этом переборе нет. То есть тест
-// краснел там при исправном коде и приучал считать красное нормой.
+// A stub binary on PATH is needed where the test takes the "external
+// command found" branch: a live `claude`, `agent`, or `ast-grep` is
+// not needed, and its answer must be set. The helper was used seven
+// times, and six of them were written as `#!/bin/sh` with no
+// extension — on Windows such a file is not found at all:
+// `resolveCommand` searches PATH × PATHEXT, and a file without
+// `.exe`/`.cmd`/`.bat` is not in that walk. So the test went red there
+// on sound code and taught people to treat red as normal.
 //
-// Лечится не переводом сценария на batch: сценарии ветвятся по argv, читают stdin и
-// пишут файлы, а два диалекта разошлись бы при первой же правке. Сценарий пишется один
-// раз на JS и исполняется node'ом; платформенным остаётся запускатель в три строки —
-// `.cmd` на win32, `#!/bin/sh` на POSIX.
+// The fix is not translating the script to batch: the scripts branch
+// on argv, read stdin, and write files, and two dialects would drift
+// on the first edit. The script is written once in JS and run by
+// node; what stays platform-specific is a three-line launcher —
+// `.cmd` on win32, `#!/bin/sh` on POSIX.
 //
-// Цена — запуск node на каждый вызов подставного бинаря, и это не доли секунды.
-// Замер на этой машине 2026-08-30, по 80 вызовов на вариант: вызов стоит около 71 мс, из
-// них 55–66 мс — пустой старт node (`node -e ''`), 3–6 мс — процесс `sh` запускателя,
-// 5–10 мс — ESM-загрузчик против CJS. Подставной бинарь зовут сотни раз за прогон набора;
-// больше всего — `promptobus-review.test.mjs`, самый долгий файл набора (потолок и разброс —
-// [run.mjs](run.mjs)).
+// The cost is a node start on every stub-binary call, and that is not
+// fractions of a second. Measured on this machine 2026-08-30, 80 calls
+// per variant: a call costs about 71 ms, of which 55–66 ms is an empty
+// node start (`node -e ''`), 3–6 ms is the launcher `sh` process,
+// 5–10 ms is the ESM loader versus CJS. Stub binaries are called
+// hundreds of times per suite run; the most —
+// `promptobus-review.test.mjs`, the longest suite file (file timeout
+// and spread — [run.mjs](run.mjs)).
 //
-// Дешевле запускатель сделать можно, но немного, и правка дороже выигрыша. Тем же замером:
-// шебанг node вместо `sh` (`#!<node>`, файл без расширения) снимает только процесс `sh` и
-// ESM-телу не даёт и его — 69 мс против 71; тот же шебанг с телом на `.cjs` снимает ещё и
-// ESM-загрузчик — 61 мс, то есть 10 мс с вызова. За эти 10 мс платить пришлось бы второй
-// формой запускателя на POSIX и разбором тела по синтаксису: `import` есть в 9 вызовах
-// `stubCommand` из 52, остальным `.cjs` годится. Потолок выигрыша — 3,5 с CPU на прогон
-// набора и 0,7 с настенных часов на критическом пути пула, то есть меньше, чем прогон
-// гуляет от соседей по машине. Отсюда решение: не сделано.
+// The launcher can be made cheaper, but only a little, and the edit
+// costs more than the gain. Same measurement: a node shebang instead
+// of `sh` (`#!<node>`, file with no extension) removes only the `sh`
+// process and does not even give it to an ESM body — 69 ms versus 71;
+// the same shebang with a `.cjs` body also drops the ESM loader —
+// 61 ms, i.e. 10 ms per call. Those 10 ms would be paid for with a
+// second launcher form on POSIX and a body split by syntax: `import`
+// is in 9 of 52 `stubCommand` calls, the rest would take `.cjs`. The
+// ceiling of the gain is 3.5 s CPU per suite run and 0.7 s wall-clock
+// on the pool critical path, i.e. less than the run wanders from
+// machine neighbours. Hence the decision: not done.
 //
-// Сам старт node — 55–66 мс из 71 — не снимается ничем, кроме одного долгоживущего стаба.
-// Он запрещён по другой причине, и она к `.cjs` отношения не имеет: клиент к сокету
-// пишется уже не на JS, и `.cmd` с `#!/bin/sh` разошлись бы не в три строки, а в две
-// разные программы — ровно та беда , ради которой сценарий и сведён к одному языку.
+// The node start itself — 55–66 ms of 71 — is not removed by anything
+// except one long-lived stub. That is forbidden for another reason,
+// and it has nothing to do with `.cjs`: the socket client is no longer
+// written in JS, and `.cmd` with `#!/bin/sh` would drift not in three
+// lines but in two different programs — exactly the problem the script
+// was unified onto one language to avoid.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-// Статический импорт CLI — до гигиены HOME в check.mjs и до подмены в файле набора.
-// Модуль, который вычисляет os.homedir() в константу загрузки, увидит настоящий дом
-// (: пути дома считаются в момент вызова; класс ловит homedir-module.test.mjs).
+// Static CLI import — before HOME hygiene in check.mjs and before the
+// swap in the suite file. A module that computes os.homedir() into a
+// load-time constant would see the real home (home paths are computed
+// at call time; the class is caught by homedir-module.test.mjs).
 import { resetBgSessionsCache } from '../lib/liftoff.js';
 import { claudeDriver } from '../lib/driver-claude.js';
 import { addressOf } from '../lib/store.js';
 
-// Сброс процессной памяти CLI: набор подменяет PATH, тело подставного бинаря и
-// маркер «сессия поднялась», а без сброса кэш отдаёт ответ до правки.
+// Reset of CLI process memory: the suite swaps PATH, the stub-binary
+// body, and the "session is up" marker, and without a reset the cache
+// would return the answer from before the edit.
 export function resetCliCaches() {
   resetBgSessionsCache();
 }
 
-// Подставная команда `name` в каталоге `dir`. `body` — тело ESM-скрипта: аргументы
-// приходят в `process.argv.slice(2)`, stdin читается как обычно, код выхода задаётся
-// `process.exitCode` или `process.exit`.
+// Stub command `name` in directory `dir`. `body` is an ESM-script
+// body: arguments arrive in `process.argv.slice(2)`, stdin is read as
+// usual, the exit code is set with `process.exitCode` or
+// `process.exit`.
 //
-// `platform` задаётся явно только затем, чтобы форма win32 проверялась и с POSIX-машины
-// (exec.test.mjs): вся суть починки в том, что на Windows файл обязан иметь расширение
-// из PATHEXT, а прогнать там набор сегодня негде.
+// `platform` is set explicitly only so the win32 form can be checked
+// from a POSIX machine (exec.test.mjs): the whole point of the fix is
+// that on Windows the file must have a PATHEXT extension, and there
+// is nowhere to run the suite there today.
 export function stubCommand(dir, name, body, { platform = process.platform } = {}) {
   mkdirSync(dir, { recursive: true });
   const script = path.join(dir, `${name}.stub.mjs`);
   writeFileSync(script, body.endsWith('\n') ? body : `${body}\n`);
   if (platform === 'win32') {
-    // Перенос строки CRLF и `%*` целиком: cmd.exe разбирает батник построчно, а
-    // аргументы прокидывает как есть — квотирование за него уже сделал вызывающий.
+    // CRLF line endings and `%*` whole: cmd.exe parses a batch file
+    // line by line, and forwards arguments as-is — the caller already
+    // did the quoting.
     writeFileSync(path.join(dir, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
   } else {
     writeFileSync(path.join(dir, name),
       `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
   }
-  // Тело бинаря сменилось: прежний `--version` / `agents --json` больше не правда.
+  // The binary body changed: the former `--version` / `agents --json`
+  // is no longer true.
   resetCliCaches();
   return script;
 }
 
-// PATH песочницы: каталог с подставными бинарями впереди системного. Возвращает функцию
-// возврата — PATH один на весь процесс теста, и оставленный подменённым он утекает в
-// соседние ветки того же файла. `only` отсекает системный PATH целиком: так задаётся
-// ветка «команды в PATH нет», и пустой каталог для неё нужен настоящий — пустая строка
-// в PATH на win32 и на POSIX означает разное.
+// Sandbox PATH: the directory with stub binaries ahead of the system
+// one. Returns a restore function — PATH is one for the whole test
+// process, and left swapped it leaks into neighbouring branches of
+// the same file. `only` cuts the system PATH entirely: that is how
+// the "command is not on PATH" branch is set, and the empty directory
+// for it must be real — an empty string in PATH means different
+// things on win32 and on POSIX.
 export function withStubPath(dir, { only = false } = {}) {
   mkdirSync(dir, { recursive: true });
   const before = process.env.PATH;
@@ -88,41 +107,50 @@ export function withStubPath(dir, { only = false } = {}) {
   return () => { process.env.PATH = before; resetCliCaches(); };
 }
 
-// Снимок сессий по подставному ответу harness'а — вход машины состояний и шов печати
-//. Дом один на весь набор: копии в трёх файлах уже разошлись — у одной
-// была охрана `null`, у двух других нет, — а расходиться им нельзя по тому же доводу, по
-// какому один дом у `participantFileStem`.
+// Session snapshot from a stub harness answer — the state-machine
+// input and the print seam. One home for the whole suite: copies in
+// three files had already drifted — one had a `null` guard, the other
+// two did not — and they must not drift, for the same reason
+// `participantFileStem` has one home.
 //
-// Собирает снимок НАСТОЯЩИЙ driver Claude: сверять машину состояний с самодельной
-// раскладкой значило бы проверять фикстуру, а не разбор, которым живёт продакшен. Живого
-// `claude` при этом не трогает никто — список приходит фикстурой.
+// The snapshot is built by the REAL Claude driver: checking the state
+// machine against a homemade layout would test the fixture, not the
+// parse production lives on. Nobody touches a live `claude` — the
+// list arrives as a fixture.
 //
-// `list === null` гасит снимок ЦЕЛИКОМ, как гасит его `snapshotSessions` на первом `null`
-// (driver.ts): половинчатого снимка у механизма не бывает, и подавать его набору нельзя.
+// `list === null` kills the snapshot ENTIRELY, the way
+// `snapshotSessions` kills it on the first `null` (driver.ts): the
+// mechanism never has a half snapshot, and one must not be fed to
+// the suite.
 export function snapshotOfList(participants, list) {
   if (list === null) return null;
   return Object.fromEntries((participants ?? [])
     .filter((p) => p.sessionRef)
-    // Ключ снимка — АДРЕС участника: по нему же ключуются health, contact point'ы и отметки
-    // стопа, и его читает человек. Адрес пишет adapter, и лежит он полем `metadata`
-    // (`addressOf`); собственные поля записи v1 — роль, harness, режим, session
-    // reference и снимок capabilities.
+    // Snapshot key — the participant ADDRESS: health, contact points,
+    // and stop marks are keyed by it too, and a person reads it. The
+    // address is written by the adapter and lives in the `metadata`
+    // field (`addressOf`); the v1 record's own fields are role,
+    // harness, mode, session reference, and the capabilities snapshot.
     .map((p) => [addressOf(p), claudeDriver.inspect(p.sessionRef, list)]));
 }
 
-// Песочница файла с уборкой на выходе процесса. `mkdtempSync` в хвосте файла
-// парный `rmSync` не спасает: до него не доходит ровно тот прогон, где мусор и остаётся, —
-// упавшая проверка уносит процесс через `process.exit` из `fail()`, а Ctrl+C не доходит
-// и до этого. Хук `exit` срабатывает в обоих случаях, сигналы добираются отдельно.
+// Per-file sandbox with cleanup on process exit. A `mkdtempSync` at
+// the file tail is not saved by a matching `rmSync`: the run that
+// leaves the garbage is exactly the one that never reaches it — a
+// failed check takes the process through `process.exit` from
+// `fail()`, and Ctrl+C does not even get that far. The `exit` hook
+// fires in both cases; signals are covered separately.
 //
-// Под `npm test` каталог и так лежит внутри каталога прогона, который убирает раннер
-// ([run.mjs](run.mjs)); этот помощник нужен запуску одного файла руками — то есть
-// отладке, где падения и прерывания и случаются.
+// Under `npm test` the directory already lives inside the run
+// directory, which the runner removes ([run.mjs](run.mjs)); this
+// helper is for running one file by hand — i.e. debugging, where
+// failures and interrupts actually happen.
 const sandboxes = [];
 let hooked = false;
-// Настоящий выход снимается при загрузке модуля: файлы набора подменяют `process.exit`
-// бросателем, чтобы ловить отказы с `fail()` (install.test.mjs), и хук на сигнале звал бы
-// подменённый — вместо кода 130 получилось бы необработанное исключение.
+// The real exit is captured at module load: suite files swap
+// `process.exit` with a thrower to catch `fail()` refusals
+// (install.test.mjs), and a signal hook would call the swapped one —
+// instead of code 130 there would be an unhandled exception.
 const exit0 = process.exit;
 
 function keepUntilExit(dir) {
@@ -180,34 +208,42 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
   return null;
 }
 
-// Путь тестового сокета — целиком, вместе с выбором корня. Помощник отдаёт
-// строитель `имя → путь`, а не каталог: каталог на Windows бессмыслен — сокет там
-// именованный канал и файловой системы не занимает вовсе, — и помощник, отдающий там
-// временный каталог, закреплял бы ловушку для третьего вызывающего.
+// Test socket path — whole, including the root choice. The helper
+// returns a builder `name → path`, not a directory: a directory is
+// meaningless on Windows — a socket there is a named pipe and does
+// not occupy the filesystem at all — and a helper that returned a
+// temp directory there would lock in a trap for a third caller.
 //
-// Зачем свой корень на POSIX. Полный путь unix-сокета ограничен примерно 104 байтами
-// (`sun_path`), а под `npm test` временный каталог уведён в каталог прогона
-// ([run.mjs](run.mjs)) и сам по себе занимает под семьдесят пять символов. `listen` на
-// длинном пути падает `EINVAL`, и падает не проверкой, а необработанным событием: файл
-// теста умирает целиком. Поодиночке тот же файл проходит — системный `/var/folders/…/T`
-// короче каталога прогона ровно настолько, чтобы уложиться. За один run на это наступили
-// дважды, в `promptobus-warden.test.mjs` и `doctor.test.mjs`, и приём жил копией в обоих.
+// Why a private root on POSIX. A unix-socket full path is limited to
+// about 104 bytes (`sun_path`), and under `npm test` the temp
+// directory is diverted into the run directory ([run.mjs](run.mjs))
+// and itself takes about seventy-five characters. `listen` on a long
+// path fails with `EINVAL`, and it fails not as a check but as an
+// unhandled event: the test file dies whole. Alone the same file
+// passes — system `/var/folders/…/T` is shorter than the run
+// directory by exactly enough to fit. In one run this was stepped on
+// twice, in `promptobus-warden.test.mjs` and `doctor.test.mjs`, and
+// the helper lived as a copy in both.
 //
-// Замер на этой машине 2026-08-29: `/tmp/adoc-XXXXXX/live.sock` — 26 символов, тот же сокет
-// под каталогом прогона — 97, а с прежним именем каталога `ati-a2a-sock-` — 105, то есть за
-// пределом. Короткое имя каталога даёт запас в восемь символов и держится длиной чужого
-// `TMPDIR`; короткий корень даёт семьдесят восемь и от машины не зависит. `TMPDIR` прогона
-// помощник обходит намеренно, поэтому каталог убирает не раннер, а те же хуки выхода, что и
-// песочницу.
+// Measured on this machine 2026-08-29: `/tmp/adoc-XXXXXX/live.sock`
+// is 26 characters, the same socket under the run directory is 97,
+// and with the former directory name `ati-a2a-sock-` — 105, i.e. over
+// the limit. A short directory name gives an eight-character margin
+// and is held by the length of a foreign `TMPDIR`; a short root gives
+// seventy-eight and does not depend on the machine. The helper
+// bypasses the run `TMPDIR` on purpose, so the directory is removed
+// not by the runner but by the same exit hooks as a sandbox.
 export function makeSockPath(prefix) {
   return makeSockDir(prefix).sock;
 }
 
-// То же, но вместе с каталогом: его нужно снести тому, кто убирает за собой сам, — живому
-// прогону в его `finally` ([live-e2e.mjs](../scripts/live-e2e.mjs)). Выводить каталог из
-// строителя пути нельзя: на win32 строитель отдаёт `\\.\pipe\…`, и `rmSync` по такому
-// «каталогу» пошёл бы по пространству именованных каналов (замечание ревью). Поэтому
-// каталог отдаётся отдельным полем, а на win32 его нет вовсе — `null`.
+// The same, but with the directory: whoever cleans up after itself
+// needs to remove it — a live run in its `finally`
+// ([live-e2e.mjs](../scripts/live-e2e.mjs)). The directory must not
+// be derived from the path builder: on win32 the builder returns
+// `\\.\pipe\…`, and `rmSync` on such a "directory" would walk the
+// named-pipe namespace (review note). So the directory is a separate
+// field, and on win32 it is not there at all — `null`.
 export function makeSockDir(prefix) {
   if (process.platform === 'win32') {
     return { dir: null, sock: (name) => `\\\\.\\pipe\\${prefix}${process.pid}-${name}` };

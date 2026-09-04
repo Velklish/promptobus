@@ -1,33 +1,37 @@
-// Подставной harness Cursor: два бинаря — `agent` и `tmux`. Не `*.test.mjs` —
-// раннер (run.mjs) берёт из каталога только их, и этот файл в прогон не попадает.
+// Stub Cursor harness: two binaries — `agent` and `tmux`. Not a `*.test.mjs` —
+// the runner (run.mjs) takes only those from the directory, so this file is never
+// part of the run.
 //
-// Чем он отличается от подставного `claude` ([harness.mjs](harness.mjs)). Тот моделирует
-// ДЕМОН: `--bg` заводит долгоживущую сессию, `agents --json` печатает её реестр, `stop`
-// гасит. У Cursor вместо реестра — tmux: `agent persist` поднимает интерактивный TUI в
-// панели, список сессий отдаёт `tmux list-sessions`, ввод — `paste-buffer` и `send-keys`,
-// гашение — `agent persist stop`. Стенд повторяет именно это, потому что на этом и стоит
-// driver.
+// How it differs from the stub `claude` ([harness.mjs](harness.mjs)). That one models a
+// DAEMON: `--bg` starts a long-lived session, `agents --json` prints its registry, `stop`
+// kills it. Cursor has tmux instead of a registry: `agent persist` starts an interactive
+// TUI in a pane, `tmux list-sessions` gives the session list, input is `paste-buffer` and
+// `send-keys`, teardown is `agent persist stop`. The stand repeats exactly that, because
+// that is what the driver sits on.
 //
-// **Подставных бинаря два, и второй обязателен.** Требовать настоящего tmux от набора
-// нельзя: он есть не на всякой машине, а прогон обязан судить driver, а не окружение. Зато
-// стенд обязан моделировать те свойства tmux и `persist`, на которых driver и держится, — и
-// каждое из них снято живым замером спайка  (REPORT):
+// **There are two stub binaries, and the second is required.** We cannot demand a real
+// tmux of the suite: it is not on every machine, and the run must judge the driver, not
+// the environment. But the stand must model the tmux and `persist` properties the driver
+// actually depends on — and each of them was taken from a live spike measurement
+// (REPORT):
 //
-//   - **пауза перед Enter** (§4.3): `send-keys Enter` раньше `STUB_ENTER_MIN_MS` после
-//     вставки ТЕРЯЕТСЯ, текст остаётся в поле ввода и уезжает вместе со следующим;
-//   - **`persist` внутри чужого `TMUX`** (§4.2) молча не персистит: ход играется, сессии не
-//     появляется вовсе;
-//   - **дети инструментов переживают `persist stop`** (§4.8), а сирота `worker-server`
-//     живёт и после ШТАТНОГО конца хода;
-//   - **неизвестное имя события в `.cursor/hooks.json`** (§4.4) молча убивает весь файл: не
-//     стреляет ни один хук, включая правильно названные;
-//   - **конец хода** — `{"type":"turn_ended","status":"success"}` в стенограмме плюс хук
-//     `stop`; `sessionEnd` под persist не стреляет вовсе;
-//   - **сообщение во время хода** (§4.3) встаёт в очередь и исполняется отдельным ходом
-//     сразу после текущего.
+//   - **pause before Enter** (§4.3): `send-keys Enter` earlier than `STUB_ENTER_MIN_MS`
+//     after a paste is LOST, the text stays in the input field and rides out with the
+//     next one;
+//   - **`persist` inside a foreign `TMUX`** (§4.2) silently does not persist: the turn is
+//     played, no session appears at all;
+//   - **tool children survive `persist stop`** (§4.8), and an orphan `worker-server`
+//     lives on even after a NORMAL end of turn;
+//   - **an unknown event name in `.cursor/hooks.json`** (§4.4) silently kills the whole
+//     file: not a single hook fires, including the correctly named ones;
+//   - **end of turn** — `{"type":"turn_ended","status":"success"}` in the transcript plus
+//     the `stop` hook; `sessionEnd` does not fire under persist at all;
+//   - **a message during a turn** (§4.3) is queued and executed as a separate turn
+//     immediately after the current one.
 //
-// Подмена стоит на границе БИНАРЕЙ, а не driver'а: driver — предмет проверки, и подменённый
-// перестал бы проверять `prepare`, `inspect`, инъекцию, `stop` и разбор стенограммы.
+// The substitution sits on the BINARY boundary, not the driver's: the driver is the
+// subject under test, and a substituted one would stop checking `prepare`, `inspect`,
+// injection, `stop` and transcript parse.
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -42,34 +46,36 @@ import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.j
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** Дом стенда в окружении: его читают оба подставных бинаря и тест. */
+/** Stand home in the environment: both stub binaries and the test read it. */
 export const CURSOR_HOME_VAR = 'PROMPTOBUS_E2E_CURSOR';
 
-/** Зависание хода — тем же флагом, каким его включает проба watchdog'а по тишине. */
+/** Hang a turn — the same flag the watchdog-on-silence probe uses to turn it on. */
 export const HANG_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG';
 
 /**
- * То же зависание, но панель держит живого ребёнка. Тишина стенограммы тогда не стоп:
- * долгий гейт пишет в TUI только по концу вызова, а процессы при этом живы.
+ * The same hang, but the pane holds a live child. Transcript silence is then not a stop:
+ * a long gate writes to the TUI only at the end of the call, and the processes stay
+ * alive.
  */
 export const HANG_CHILD_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG_CHILD';
 
 /**
- * Порог потери Enter. Живой замер: без паузы Enter теряется, с 0,3–0,4 с проходит всегда
- * (REPORT §4.3). Стенд берёт середину: driver со своей паузой 400 мс проходит, driver без
- * паузы — нет, и склейка двух сообщений в одно видна в стенограмме ровно так же, как её
- * увидел спайк.
+ * Enter-loss threshold. Live measurement: without a pause Enter is lost, with 0.3–0.4 s
+ * it always goes through (REPORT §4.3). The stand takes the middle: a driver with its
+ * own 400 ms pause passes, a driver without a pause does not, and two messages glued
+ * into one show up in the transcript exactly as the spike saw them.
  */
 export const STUB_ENTER_MIN_MS = 250;
 
-/** Версия, которой отвечает подставной tmux: та, на которой снят весь протокол спайка. */
+/** Version the stub tmux answers with: the one the whole spike protocol was taken from. */
 export const TMUX_VERSION = 'tmux 3.6b';
 
-/** Версия, которой отвечает подставной бинарь: своя копия числа сделала бы стенд бинарём,
- * которого механизм не поднимает вовсе (`optionRefusal` отказывает всему старше проверенной). */
+/** Version the stub binary answers with: a private copy of the number would make the
+ * stand a binary the mechanism never starts at all (`optionRefusal` refuses everything
+ * newer than the proven one). */
 export const HARNESS_VERSION = `${PROVEN_CURSOR_VERSION}-e2estub`;
 
-// --- раскладка стенда ----------------------------------------------------------------
+// --- stand layout ----------------------------------------------------------------
 
 function serverDir(home, server) {
   return path.join(home, 'tmux', String(server).replace(/[^A-Za-z0-9._-]+/g, '-'));
@@ -115,32 +121,33 @@ function dropSess(home, server, name) {
   rmSync(sessionPath(home, server, name), { force: true });
 }
 
-/** Очередь сообщений сессии: её пишет `send-keys Enter`, читает подставной `agent`. */
+/** Session message queue: `send-keys Enter` writes it, the stub `agent` reads it. */
 function queueFile(home, name) {
   return path.join(home, 'queue', `${String(name).replace(/[^A-Za-z0-9._-]+/g, '-')}.jsonl`);
 }
 
 /**
- * Стенограмма чата в доме Cursor. Каталог проекта у живого бинаря — путь слагом, а длинные
- * пути он обрезает и дописывает к ним хэш; механизм слаг не вычисляет вовсе, а ищет
- * стенограмму по id чата, поэтому стенду довольно любого стабильного имени.
+ * Chat transcript in the Cursor home. The live binary's project directory is the path as
+ * a slug, and long paths are truncated and a hash is appended; the mechanism does not
+ * compute the slug at all and finds the transcript by chat id, so any stable name is
+ * enough for the stand.
  */
 export function transcriptFile(userHome, workspace, chatId) {
   const slug = `${String(workspace).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+/, '').slice(-60)}`;
   return path.join(userHome, 'projects', slug, 'agent-transcripts', chatId, `${chatId}.jsonl`);
 }
 
-/** Скрипт ходов участника: его пишет тест, читает подставной бинарь. Ключ — адрес. */
+/** Participant turn script: the test writes it, the stub binary reads it. The key is the address. */
 export function scriptFile(home, address) {
   return path.join(home, 'scripts', `${addrKey(address)}.json`);
 }
 
-/** След того, что участник делал и что ему ответила шина. По нему сверяет тест. */
+/** Trace of what the participant did and what the bus answered. The test checks against it. */
 export function traceFile(home, address) {
   return path.join(home, 'trace', `${addrKey(address)}.jsonl`);
 }
 
-/** Счётчик сыгранных ходов: ход у стенда — итерация цикла, и помнить номер удобнее файлом. */
+/** Played-turn counter: a turn on the stand is a loop iteration, and remembering the number is easier in a file. */
 export function turnsFile(home, address) {
   return path.join(home, 'turns', `${addrKey(address)}.json`);
 }
@@ -164,12 +171,12 @@ export function planParticipant(home, address, script) {
   return script;
 }
 
-/** Диагноз по следу участника для красного вердикта. */
+/** Diagnosis from the participant trace for a red verdict. */
 export function diagnoseTrace(home, address, tail = 8) {
-  return `след ${address}: ${JSON.stringify(readTrace(home, address).slice(-tail))}`;
+  return `trace for ${address}: ${JSON.stringify(readTrace(home, address).slice(-tail))}`;
 }
 
-/** Жив ли процесс — тем же признаком, каким живость судит весь механизм. */
+/** Whether the process is alive — the same sign the whole mechanism uses to judge liveness. */
 export function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -180,16 +187,17 @@ export function pidAlive(pid) {
   }
 }
 
-// --- установка --------------------------------------------------------------------
+// --- install --------------------------------------------------------------------
 
 /**
- * Разложить стенд и поставить его `agent` и `tmux` первыми в PATH. Оба дома механизма
- * уводятся туда же: реестр сессий (`PROMPTOBUS_CURSOR_HOME`) и дом Cursor со стенограммами
- * (`PROMPTOBUS_CURSOR_USER_HOME`) — без этого прогон писал бы в `~/legacy/cursor` и в
- * `~/.cursor` разработчика.
+ * Lay out the stand and put its `agent` and `tmux` first on PATH. Both mechanism homes
+ * are redirected there too: the session registry (`PROMPTOBUS_CURSOR_HOME`) and the
+ * Cursor home with transcripts (`PROMPTOBUS_CURSOR_USER_HOME`) — without that the run
+ * would write into the developer's `~/legacy/cursor` and `~/.cursor`.
  *
- * Дом стенда заводится ВНЕ песочницы файла — по той же причине, что у подставного `claude`:
- * хук песочницы сносит её каталог раньше, чем стенд успевает убрать за собой.
+ * The stand home is created OUTSIDE the file sandbox — for the same reason as the stub
+ * `claude`: the sandbox hook removes its directory before the stand has a chance to
+ * clean up after itself.
  */
 export async function installHarness({ binDir, env = process.env } = {}) {
   const { stubCommand, withStubPath } = await import('./sandbox.mjs');
@@ -229,9 +237,9 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   };
 }
 
-// Уборка на выходе процесса — та же беда и то же лекарство, что у песочниц: упавшая
-// проверка уносит процесс через `process.exit`, и парный вызов в хвосте файла не
-// выполняется ровно на том прогоне, где мусор и остаётся.
+// Cleanup on process exit — the same trouble and the same remedy as the sandboxes: a
+// failed check takes the process out through `process.exit`, and a paired call at the
+// tail of the file does not run on exactly the run where the garbage is left.
 const armed = new Set();
 let hooked = false;
 const exit0 = process.exit;
@@ -242,7 +250,8 @@ function armCleanup(home) {
   hooked = true;
   const clean = () => {
     for (const dir of armed) {
-      // Живые «панели» стенда — процессы: не сняв их, прогон оставил бы за собой сессию.
+      // Live stand «panes» are processes: without killing them the run would leave a
+      // session behind.
       for (const server of ['cursor-agent', 'promptobus-launch']) {
         for (const s of listSess(dir, server)) killTree(s.panePid);
       }
@@ -261,12 +270,12 @@ function killTree(pid) {
     try {
       process.kill(target, 'SIGKILL');
     } catch {
-      // Группы нет либо процесс уже мёртв — обе ветки законны.
+      // No group, or the process is already dead — both branches are legal.
     }
   }
 }
 
-// --- подставной tmux ------------------------------------------------------------------
+// --- stub tmux ------------------------------------------------------------------
 
 function argValue(argv, flag) {
   const i = argv.indexOf(flag);
@@ -274,27 +283,27 @@ function argValue(argv, flag) {
 }
 
 /**
- * Подставной `tmux`. Разбирает ровно те подкоманды, которыми механизм разговаривает с
- * persist-сессией; всё прочее — отказ ненулевым кодом, потому что молчаливый успех на
- * незнакомой команде спрятал бы расхождение с настоящим бинарём.
+ * Stub `tmux`. Parses exactly the subcommands the mechanism uses to talk to a
+ * persist session; everything else is a refusal with a non-zero code, because a silent
+ * success on an unknown command would hide a divergence from the real binary.
  */
 export async function tmuxMain(argv, env = process.env) {
   const home = env[CURSOR_HOME_VAR];
   if (!home) {
-    process.stderr.write(`подставной tmux: ${CURSOR_HOME_VAR} не задан — дома стенда нет\n`);
+    process.stderr.write(`stub tmux: ${CURSOR_HOME_VAR} is unset — there is no stand home\n`);
     process.exitCode = 1;
     return;
   }
-  // Версию печатает ТОЛЬКО `-V`, и это не придирка стенда: живой tmux на `--version`
-  // отвечает usage'ом и кодом 1 (замер 2026-09-03, 3.6b). Спроси механизм не тем флагом — и
-  // версия «не определена», то есть гейт `minVersion` не срабатывает никогда; стенд обязан
-  // краснеть на этом, а не подыгрывать.
+  // ONLY `-V` prints the version, and that is not a stand nit: live tmux on `--version`
+  // answers with usage and code 1 (measurement 2026-09-03, 3.6b). If the mechanism asks
+  // with the wrong flag — the version is «undefined», that is the `minVersion` gate never
+  // fires; the stand must go red on that, not play along.
   if (argv[0] === '-V') {
     process.stdout.write(`${TMUX_VERSION}\n`);
     return;
   }
-  // Глобальные флаги: `-L <сервер>` разбираем, `-u` и `-f <файл>` глотаем — на поведение
-  // стенда они не влияют, а в argv механизма стоят всегда.
+  // Global flags: we parse `-L <server>`, we swallow `-u` and `-f <file>` — they do not
+  // affect stand behaviour, and they always sit in the mechanism argv.
   const rest = [];
   let server = 'default';
   for (let i = 0; i < argv.length; i += 1) {
@@ -314,7 +323,7 @@ export async function tmuxMain(argv, env = process.env) {
   if (cmd === 'load-buffer') return tmuxLoadBuffer(home, args);
   if (cmd === 'paste-buffer') return tmuxPasteBuffer(home, server, args);
   if (cmd === 'send-keys') return tmuxSendKeys(home, server, args);
-  process.stderr.write(`подставной tmux: подкоманда «${cmd ?? ''}» не поддержана\n`);
+  process.stderr.write(`stub tmux: subcommand «${cmd ?? ''}» is not supported\n`);
   process.exitCode = 1;
   return undefined;
 }
@@ -322,7 +331,7 @@ export async function tmuxMain(argv, env = process.env) {
 function tmuxNewSession(home, server, args, env) {
   const name = argValue(args, '-s') ?? `unnamed-${process.pid}`;
   const cwd = argValue(args, '-c') ?? process.cwd();
-  // Команда панели — всё, что осталось после флагов: механизм зовёт `... -c <cwd> sh <скрипт>`.
+  // The pane command is everything left after the flags: the mechanism calls `... -c <cwd> sh <script>`.
   const flags = new Set(['-s', '-c', '-x', '-y']);
   const command = [];
   for (let i = 0; i < args.length; i += 1) {
@@ -332,13 +341,14 @@ function tmuxNewSession(home, server, args, env) {
     break;
   }
   if (!command.length) {
-    process.stderr.write('подставной tmux: new-session без команды панели\n');
+    process.stderr.write('stub tmux: new-session without a pane command\n');
     process.exitCode = 1;
     return;
   }
-  // `TMUX` в окружении панели — ровно то, ради чего механизм зовёт `env -u TMUX`: живой
-  // `persist` внутри чужой tmux-сессии МОЛЧА не персистит (REPORT §4.2). Сними `-u TMUX` из
-  // скрипта подъёма — и сессия не появится, как не появлялась живьём.
+  // `TMUX` in the pane environment is exactly why the mechanism calls `env -u TMUX`: live
+  // `persist` inside a foreign tmux session SILENTLY does not persist (REPORT §4.2). Drop
+  // `-u TMUX` from the start script — and the session will not appear, as it did not
+  // appear live.
   const child = spawn(command[0], command.slice(1), {
     cwd,
     detached: true,
@@ -360,7 +370,7 @@ function tmuxNewSession(home, server, args, env) {
   });
 }
 
-// Разворот формата `#{...}`: те же поля, что отдаёт живой tmux механизму.
+// Expand a `#{...}` format: the same fields live tmux gives the mechanism.
 function renderFormat(fmt, sess) {
   return String(fmt).replace(/#\{([^}]+)\}/g, (_, key) => {
     if (key.startsWith('@')) return String(sess.options?.[key] ?? '');
@@ -389,7 +399,7 @@ function tmuxSetOption(home, server, args) {
   const tail = args.slice(args.indexOf('-t') + 2);
   const sess = readSess(home, server, name);
   if (!sess) {
-    process.stderr.write(`подставной tmux: сессии ${name} нет\n`);
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
     process.exitCode = 1;
     return;
   }
@@ -401,7 +411,7 @@ function tmuxKillSession(home, server, args) {
   const name = argValue(args, '-t');
   const sess = readSess(home, server, name);
   if (!sess) {
-    process.stderr.write(`подставной tmux: сессии ${name} нет\n`);
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
     process.exitCode = 1;
     return;
   }
@@ -410,24 +420,26 @@ function tmuxKillSession(home, server, args) {
 }
 
 /**
- * Что видно в панели. Две строки, и обе — подписи, на которых стоит протокол ввода driver'а:
- * поле ввода (приглашение либо текст в нём) и признак идущего хода.
+ * What is visible in the pane. Two lines, and both are labels the driver's input
+ * protocol sits on: the input field (the prompt or the text in it) and the in-progress
+ * turn marker.
  */
 function tmuxCapture(home, server, args) {
   const name = argValue(args, '-t');
   const sess = readSess(home, server, name);
   if (!sess) {
-    process.stderr.write(`подставной tmux: сессии ${name} нет\n`);
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
     process.exitCode = 1;
     return;
   }
-  // Подпись идущего хода стоит на ТОЙ ЖЕ строке, что и поле ввода, — так её рисует живой TUI
-  // (замер 2026-09-03: `→ Add a follow-up …пробелы… ctrl+c to stop`). Не повтори стенд этого
-  // — и driver, читающий поле ввода занятым на каждом идущем ходе, прошёл бы набор зелёным:
-  // ровно так первый живой прогон под persist и дал три отказа доставки из трёх.
+  // The in-progress turn marker sits on THE SAME line as the input field — that is how
+  // the live TUI draws it (measurement 2026-09-03: `→ Add a follow-up …spaces… ctrl+c to
+  // stop`). If the stand does not repeat this — a driver that reads the input field as
+  // busy on every in-progress turn would pass the suite green: that is exactly how the
+  // first live run under persist gave three delivery refusals out of three.
   const input = sess.pending ? sess.pending.split('\n')[0] : 'Add a follow-up';
   const lines = [
-    '  Cursor Agent (стенд)',
+    '  Cursor Agent (stand)',
     `  → ${input}${sess.busy ? `${' '.repeat(20)}ctrl+c to stop` : ''}`,
     '  Cursor Model · 1.0%',
   ];
@@ -445,7 +457,7 @@ function tmuxLoadBuffer(home, args) {
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    process.stderr.write(`подставной tmux: буфер не прочитан (${e.message})\n`);
+    process.stderr.write(`stub tmux: buffer not read (${e.message})\n`);
     process.exitCode = 1;
     return;
   }
@@ -454,15 +466,15 @@ function tmuxLoadBuffer(home, args) {
 }
 
 /**
- * Вставка буфера в поле ввода. `-p` (bracketed paste) кладёт многострочный текст ОДНИМ
- * сообщением — построчный ввод разослал бы его несколькими; `-d` снимает буфер.
+ * Paste a buffer into the input field. `-p` (bracketed paste) puts multiline text as ONE
+ * message — line-by-line input would send it as several; `-d` drops the buffer.
  */
 function tmuxPasteBuffer(home, server, args) {
   const buf = argValue(args, '-b') ?? 'default';
   const name = argValue(args, '-t');
   const sess = readSess(home, server, name);
   if (!sess) {
-    process.stderr.write(`подставной tmux: сессии ${name} нет\n`);
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
     process.exitCode = 1;
     return;
   }
@@ -470,7 +482,7 @@ function tmuxPasteBuffer(home, server, args) {
   try {
     text = readFileSync(bufferPath(home, buf), 'utf8');
   } catch {
-    process.stderr.write(`подставной tmux: буфера ${buf} нет\n`);
+    process.stderr.write(`stub tmux: buffer ${buf} does not exist\n`);
     process.exitCode = 1;
     return;
   }
@@ -481,17 +493,18 @@ function tmuxPasteBuffer(home, server, args) {
 }
 
 /**
- * Клавиши в панель. Две формы, обе живые: `Enter` отправляет поле ввода, `C-u` его чистит.
+ * Keys into the pane. Two forms, both live: `Enter` sends the input field, `C-u` clears
+ * it.
  *
- * **Enter теряется, если он пришёл сразу за вставкой** — это и есть тот живой промах, ради
- * которого у driver'а стоит пауза (REPORT §4.3): текст остаётся в поле и уезжает вместе со
- * следующим сообщением одной склейкой.
+ * **Enter is lost if it arrives right after a paste** — that is the live miss the
+ * driver's pause exists for (REPORT §4.3): the text stays in the field and rides out
+ * with the next message as one glue.
  */
 function tmuxSendKeys(home, server, args) {
   const name = argValue(args, '-t');
   const sess = readSess(home, server, name);
   if (!sess) {
-    process.stderr.write(`подставной tmux: сессии ${name} нет\n`);
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
     process.exitCode = 1;
     return;
   }
@@ -502,8 +515,8 @@ function tmuxSendKeys(home, server, args) {
     return;
   }
   if (!keys.includes('Enter')) {
-    // `send-keys -l <текст>` стенд принимает, но в поле ввода кладёт как есть: driver им не
-    // пользуется, а молчаливый отказ спрятал бы его появление.
+    // The stand accepts `send-keys -l <text>`, but puts it into the input field as-is:
+    // the driver does not use it, and a silent refusal would hide its appearance.
     const i = keys.indexOf('-l');
     if (i >= 0) {
       sess.pending = `${sess.pending}${keys.slice(i + 1).join(' ')}`;
@@ -513,7 +526,7 @@ function tmuxSendKeys(home, server, args) {
     return;
   }
   if (Date.now() - Number(sess.pastedAt || 0) < STUB_ENTER_MIN_MS) {
-    // Enter потерян. Поле ввода остаётся с текстом — ровно как в живом случае `LAT-8`/`LAT-9`.
+    // Enter was lost. The input field keeps the text — exactly as in the live `LAT-8`/`LAT-9` case.
     return;
   }
   if (!sess.pending) return;
@@ -524,7 +537,7 @@ function tmuxSendKeys(home, server, args) {
   writeSess(home, server, sess);
 }
 
-// --- подставной agent ------------------------------------------------------------------
+// --- stub agent ------------------------------------------------------------------
 
 function note(home, address, entry) {
   if (!address) return;
@@ -532,16 +545,17 @@ function note(home, address, entry) {
     mkdirSync(path.dirname(traceFile(home, address)), { recursive: true });
     appendFileSync(traceFile(home, address), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
   } catch {
-    // След — диагностика теста, и отказ записи не повод ронять стенд.
+    // The trace is test diagnosis, and a write failure is no reason to crash the stand.
   }
 }
 
 /**
- * Осиротевший `worker-server` — тот самый, что живой `agent` оставляет и после ШТАТНОГО
- * конца хода (REPORT §4.8). Отвязан намеренно: дерево процессов панели его не накрывает, и
- * добрать его можно только по метке в окружении — ровно то, что и проверяет проба.
+ * Orphaned `worker-server` — the one live `agent` leaves even after a NORMAL end of
+ * turn (REPORT §4.8). Detached on purpose: the pane process tree does not cover it, and
+ * the only way to find it is by an environment mark — exactly what the probe checks.
  *
- * Живёт минуту и умирает сам: упавший прогон не имеет права оставить за собой процесс.
+ * It lives a minute and dies on its own: a crashed run has no right to leave a process
+ * behind.
  */
 function spawnWorkerServer(home) {
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000); // worker-server'], {
@@ -554,9 +568,10 @@ function spawnWorkerServer(home) {
 }
 
 /**
- * Ребёнок инструмента: процесс, который ход запустил и который переживает `persist stop`
- * (REPORT §4.8). Не отвязан — он потомок панели, и добирается деревом от её pid'а, а не
- * меткой: окружение потомку собирает инструмент, а не бинарь.
+ * Tool child: a process the turn started and that survives `persist stop` (REPORT
+ * §4.8). Not detached — it is a descendant of the pane, and is found by the tree from
+ * the pane pid, not by a mark: the tool, not the binary, builds the child's
+ * environment.
  */
 function spawnToolChild() {
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000); // tool child'], {
@@ -567,13 +582,14 @@ function spawnToolChild() {
 }
 
 /**
- * Подставной `agent`. Разбирает ровно то, что зовёт механизм: `--version`, `mcp enable
- * <имя>` и подкоманду `persist` во всех четырёх формах. Всё прочее — отказ ненулевым кодом.
+ * Stub `agent`. Parses exactly what the mechanism calls: `--version`, `mcp enable
+ * <name>` and the `persist` subcommand in all four forms. Everything else is a refusal
+ * with a non-zero code.
  */
 export async function agentMain(argv, env = process.env) {
   const home = env[CURSOR_HOME_VAR];
   if (!home) {
-    process.stderr.write(`подставной agent: ${CURSOR_HOME_VAR} не задан — дома стенда нет\n`);
+    process.stderr.write(`stub agent: ${CURSOR_HOME_VAR} is unset — there is no stand home\n`);
     process.exitCode = 1;
     return;
   }
@@ -589,21 +605,22 @@ export async function agentMain(argv, env = process.env) {
     return;
   }
   if (argv[0] !== 'persist') {
-    process.stderr.write(`подставной agent: подкоманда «${argv[0] ?? ''}» не поддержана\n`);
+    process.stderr.write(`stub agent: subcommand «${argv[0] ?? ''}» is not supported\n`);
     process.exitCode = 1;
     return;
   }
   if (argv[1] === 'list') return persistList(home);
   if (argv[1] === 'stop') return persistStop(home, argv[2]);
   if (argv[1] === 'attach') {
-    // Вход человека стенд не рисует: лента — это TUI, а проверяется здесь маршрут, а не
-    // картинка. Успешный код и строка — то, что видит вошедший.
+    // The stand does not draw a human entry: the feed is a TUI, and what is checked here
+    // is the route, not the picture. A successful code and a line — that is what the
+    // person who attached sees.
     process.stdout.write(`attached ${argv[2]}\n`);
     return undefined;
   }
-  // Внутренняя форма: сама persist-сессия. Её поднимает отвязанным потомком клиент `persist`
-  // ниже — так же, как живой: панель сессии живёт на СВОЁМ сервере и переживает клиента,
-  // который её создал.
+  // Internal form: the persist session itself. The `persist` client below starts it as a
+  // detached child — the same way the live one does: the session pane lives on ITS OWN
+  // server and outlives the client that created it.
   if (argv[1] === '__session') return sessionMain(JSON.parse(Buffer.from(argv[2], 'base64').toString('utf8')), env);
   return persistUp(home, argv.slice(1), env);
 }
@@ -626,8 +643,9 @@ function persistList(home) {
 }
 
 /**
- * Гашение сессии. Панель умирает, запись сессии исчезает — а дети инструментов остаются
- * жить: живой `persist stop` их не трогает (REPORT §4.8), и добор их — работа механизма.
+ * Killing a session. The pane dies, the session record disappears — and tool children
+ * stay alive: live `persist stop` does not touch them (REPORT §4.8), and finding them
+ * is the mechanism's job.
  */
 function persistStop(home, name) {
   const sess = readSess(home, STUB_SERVER, name);
@@ -636,54 +654,55 @@ function persistStop(home, name) {
     process.exitCode = 1;
     return;
   }
-  // Бьём ОДИН процесс панели, а не группу: группа накрыла бы и детей инструментов, то есть
-  // стенд убирал бы за механизмом то, что механизм обязан убрать сам.
+  // We hit ONE pane process, not the group: the group would cover tool children too,
+  // that is the stand would clean up after the mechanism what the mechanism is obliged
+  // to clean up itself.
   try {
     process.kill(sess.panePid, 'SIGKILL');
   } catch {
-    // Панель уже мертва — законный исход.
+    // The pane is already dead — a legal outcome.
   }
   dropSess(home, STUB_SERVER, name);
   process.stdout.write(`Stopped persistent session: ${name}\n`);
 }
 
 /**
- * Хэш рабочего каталога — тот же, которым живой `persist` метит свою сессию (REPORT §2), и
- * считается он по РАЗРЕШЁННОМУ пути: живой Cursor хэширует то, во что путь разворачивается
- * (живой замер 2026-09-03, macOS `$TMPDIR` — симлинк). Не повтори стенд этого — и снятие
- * `realpathSync` у механизма оставило бы набор зелёным, хотя подъём из каталога за симлинком
- * перестал бы находить свою сессию.
+ * Workspace hash — the same one live `persist` uses to mark its session (REPORT §2), and
+ * it is computed from the RESOLVED path: live Cursor hashes what the path unfolds into
+ * (live measurement 2026-09-03, macOS `$TMPDIR` is a symlink). If the stand does not
+ * repeat this — dropping `realpathSync` from the mechanism would leave the suite green,
+ * even though a start from a directory behind a symlink would stop finding its session.
  */
 function workspaceHash(cwd) {
   let flat = String(cwd);
   try {
     flat = realpathSync(flat);
   } catch {
-    // Каталога нет — хэшируем как есть: сессия тогда просто не найдётся.
+    // The directory is gone — hash as-is: the session then simply will not be found.
   }
   return createHash('sha256').update(flat).digest('hex').slice(0, 10);
 }
 
-/** Имя сессии — той же формы, что у живого: `cursor-<слаг>-<хэш>-<n>-<rand6>`. */
+/** Session name — the same form as the live one: `cursor-<slug>-<hash>-<n>-<rand6>`. */
 function sessionName(cwd) {
   const slug = path.basename(cwd).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase();
   return `cursor-${slug}-${workspaceHash(cwd)}-1-${randomUUID().slice(0, 6)}`;
 }
 
 /**
- * Клиент `agent persist`: он поднимает СЕССИЮ отвязанным процессом и уходит. Живой ведёт
- * себя так же — панель сессии живёт на сервере `cursor-agent` и переживает и клиента, и
- * панель-поставщик pty, из которой её позвали (REPORT §2).
+ * `agent persist` client: it starts the SESSION as a detached process and leaves. Live
+ * behaves the same way — the session pane lives on the `cursor-agent` server and
+ * outlives both the client and the pty-provider pane it was called from (REPORT §2).
  */
 async function persistUp(home, argv, env) {
   if (argv.includes('--approve-mcps')) {
-    process.stderr.write('подставной agent: --approve-mcps одобряет чужие серверы workspace — driver его не даёт\n');
+    process.stderr.write('stub agent: --approve-mcps approves foreign workspace servers — the driver does not pass it\n');
     process.exitCode = 1;
     return;
   }
   const workspace = argValue(argv, '--workspace');
   if (!workspace) {
-    process.stderr.write('подставной agent: persist без --workspace — стор чатов ключевался бы каталогом запуска\n');
+    process.stderr.write('stub agent: persist without --workspace — the chat store would be keyed by the launch directory\n');
     process.exitCode = 1;
     return;
   }
@@ -697,9 +716,10 @@ async function persistUp(home, argv, env) {
     home, workspace, chatId, model, name, address, prompt,
     userHome: env.PROMPTOBUS_CURSOR_USER_HOME ?? path.join(home, 'cursor'),
   };
-  // **Ловушка `TMUX`** (REPORT §4.2): внутри чужой tmux-сессии `persist` МОЛЧА поднимает
-  // обычный непостоянный `agent` — ни сессии, ни строки в списке, ни слова об этом. Стенд
-  // повторяет это буквально: ход играется здесь же, а сессии не появляется вовсе.
+  // **The `TMUX` trap** (REPORT §4.2): inside a foreign tmux session `persist` SILENTLY
+  // starts an ordinary non-persistent `agent` — no session, no line in the list, not a
+  // word about it. The stand repeats this literally: the turn is played right here, and
+  // no session appears at all.
   if (env.TMUX) {
     note(home, address, { kind: 'not-persistent', chatId, name });
     const transcript = transcriptFile(plan.userHome, workspace, chatId);
@@ -736,7 +756,7 @@ async function persistUp(home, argv, env) {
   process.stdout.write(`Started persistent session ${name}\n`);
 }
 
-/** Сама persist-сессия: первый ход по промпту подъёма, дальше — очередь сообщений. */
+/** The persist session itself: first turn from the start prompt, then the message queue. */
 async function sessionMain(plan, env = process.env) {
   const {
     home, workspace, chatId, model, name, address, prompt, userHome,
@@ -751,7 +771,7 @@ async function sessionMain(plan, env = process.env) {
   await serveQueue(ctx);
 }
 
-/** Круг живой сессии: ждём сообщения в очереди и играем каждое отдельным ходом. */
+/** Live session loop: wait for a message on the queue and play each as a separate turn. */
 async function serveQueue(ctx) {
   const file = queueFile(ctx.home, ctx.name);
   let played = 0;
@@ -786,7 +806,7 @@ function setBusy(home, name, busy) {
   writeSess(home, STUB_SERVER, sess);
 }
 
-/** Ход: сообщение пользователя в стенограмму, действия по скрипту, `turn_ended` и хук. */
+/** Turn: user message into the transcript, actions from the script, `turn_ended` and the hook. */
 async function playTurn({
   home, address, cfg, chatId, workspace, transcript, model, text, name, persistent, env,
 }) {
@@ -797,15 +817,15 @@ async function playTurn({
   })}\n`);
   const turn = nextTurn(home, address);
   note(home, address, { kind: 'turn-start', turn, text: String(text).slice(0, 120) });
-  // Рантайм панели (`worker-server`) жив и на чистом зависании — как `promptobus mcp`
-  // у живой persist-сессии. Стоп тогда всё равно должен ставиться: фильтр его срезает.
-  // Живой ребёнок инструмента (долгий гейт) — отдельный флаг.
+  // The pane runtime (`worker-server`) is alive even on a clean hang — like
+  // `promptobus mcp` on a live persist session. Stop must still be set then: the filter
+  // cuts it. A live tool child (a long gate) is a separate flag.
   spawnWorkerServer(home);
   if (env[HANG_CHILD_VAR] || !env[HANG_VAR]) spawnToolChild();
   const outcome = await runScript({ home, address, cfg, turn, chatId, workspace, transcript, env });
   if (outcome === 'hang') {
-    // Зависание: ход не кончается, стенограмма не растёт. Ровно та подпись, по которой
-    // watchdog судит тишину, — и процесс при этом жив, как жив он и в живом зависании.
+    // Hang: the turn does not end, the transcript does not grow. Exactly the sign the
+    // watchdog uses to judge silence — and the process is alive, as it is in a live hang.
     note(home, address, { kind: 'hang' });
     await new Promise((r) => { setTimeout(r, 600_000); });
     return;
@@ -819,8 +839,9 @@ async function playTurn({
   fireStopHook(workspace, { chatId, model, outcome, transcript });
 }
 
-// Запись шины из проектного `.cursor/mcp.json` рабочего каталога — так участник и узнаёт
-// себя: адрес, задачу и дом шины кладёт туда подъём.
+// Bus record from the project `.cursor/mcp.json` of the working directory — that is how
+// the participant learns who it is: the start puts the address, the task and the bus
+// home there.
 function readBusConfig(workspace) {
   try {
     const cfg = JSON.parse(readFileSync(path.join(workspace, '.cursor', 'mcp.json'), 'utf8'));
@@ -843,21 +864,22 @@ function nextTurn(home, address) {
   return n;
 }
 
-// Ход по скрипту: те же действия, что играет scripted-участник подставного `claude`
-// ([participant.mjs](participant.mjs)).
+// Turn from the script: the same actions the scripted participant of the stub `claude`
+// plays ([participant.mjs](participant.mjs)).
 async function runScript({ home, address, cfg, turn, workspace, env }) {
   if (env[HANG_VAR] || env[HANG_CHILD_VAR]) return 'hang';
   let script = { turns: [] };
   try {
     script = JSON.parse(readFileSync(scriptFile(home, address), 'utf8'));
   } catch {
-    // Скрипта нет — ход молчаливый: законный сценарий, а не поломка стенда.
+    // No script — a silent turn: a legal scenario, not a stand breakage.
   }
   const plan = script.turns?.[turn] ?? null;
   if (!plan) return 'idle';
   if (plan.hang) return 'hang';
-  // Ход, потраченный на вопрос: в сессии участника вопрос получает пропуск, а не ответ
-  // (REPORT §4.15). Ход при этом кончается успешно — различает исходы только содержание.
+  // A turn spent on a question: in the participant session a question gets a skip, not
+  // an answer (REPORT §4.15). The turn still ends successfully — only the content
+  // distinguishes the outcomes.
   if (plan.askQuestion) return 'question';
   if (!cfg) {
     note(home, address, { kind: 'no-bus', workspace });
@@ -871,8 +893,8 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
   return 'done';
 }
 
-// Настоящий `promptobus mcp` дочерним процессом и построчный JSON-RPC — тот же транспорт,
-// каким с ним разговаривает живой Cursor.
+// A real `promptobus mcp` as a child process and line-delimited JSON-RPC — the same
+// transport live Cursor uses to talk to it.
 async function openBus(cfg) {
   const child = spawn(cfg.command, cfg.args, { env: { ...process.env, ...cfg.env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
@@ -895,14 +917,14 @@ async function openBus(cfg) {
           resolve(msg);
         }
       } catch {
-        // Посторонняя строка в канале протокола — беда сервера, а не стенда.
+        // A stray line on the protocol channel is the server's trouble, not the stand's.
       }
     }
   });
   const rpc = (method, params) => {
     const rid = (seq += 1);
     const answer = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`нет ответа на ${method}`)), 30000);
+      const timer = setTimeout(() => reject(new Error(`no reply to ${method}`)), 30000);
       pending.set(rid, (m) => { clearTimeout(timer); resolve(m); });
     });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: rid, method, params })}\n`);
@@ -951,14 +973,15 @@ async function act({
 }
 
 /**
- * Хук `stop` из ПРОЕКТНОГО `.cursor/hooks.json`: под persist стреляет он, а `sessionEnd` не
- * стреляет вовсе (REPORT §4.4). Нагрузка та же — `session_id` (он же `chatId`), `status`,
- * `loop_count`, `cursor_version`, `transcript_path`.
+ * The `stop` hook from the PROJECT `.cursor/hooks.json`: under persist it fires, and
+ * `sessionEnd` does not fire at all (REPORT §4.4). The payload is the same —
+ * `session_id` (also `chatId`), `status`, `loop_count`, `cursor_version`,
+ * `transcript_path`.
  *
- * **Неизвестное имя события убивает весь файл.** Живой бинарь в этом случае не стреляет ни
- * одним хуком, включая правильно названные, и молчит об этом (REPORT §4.4). Стенд повторяет
- * это буквально: driver, дописавший событие с опечаткой, теряет сторож цикла и канал
- * пробуждения разом — и прогон краснеет там же.
+ * **An unknown event name kills the whole file.** The live binary then fires no hook at
+ * all, including the correctly named ones, and stays silent about it (REPORT §4.4). The
+ * stand repeats this literally: a driver that appended a misspelled event loses the
+ * loop guard and the wake channel at once — and the run goes red in the same place.
  */
 function fireStopHook(workspace, { chatId, model, outcome, transcript }) {
   let hooks = null;
@@ -985,8 +1008,8 @@ function fireStopHook(workspace, { chatId, model, outcome, transcript }) {
     workspace_roots: [workspace],
     transcript_path: transcript,
   };
-  // `shell: true` — в файле хуков лежит СТРОКА команды, и разбирает её шелл: так её
-  // исполняет настоящий бинарь, и кавычки вокруг путей ставятся ради него.
+  // `shell: true` — the hooks file holds a STRING of the command, and the shell parses
+  // it: that is how the real binary runs it, and the quotes around paths are for it.
   spawnSync(command, {
     cwd: workspace, env: process.env, shell: true, input: JSON.stringify(payload), encoding: 'utf8',
   });

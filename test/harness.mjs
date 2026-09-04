@@ -1,23 +1,25 @@
-// Подставной harness E2E: `claude`, у которого сессии — настоящие процессы. Не
-// `*.test.mjs` — раннер (run.mjs) берёт из каталога только их, и этот файл в прогон не
-// попадает.
+// Stub E2E harness: a `claude` whose sessions are real processes. Not a
+// `*.test.mjs` — the runner (run.mjs) takes only those from the directory, so this
+// file is never part of the run.
 //
-// Чем он отличается от подставного бинаря соседних файлов ([sandbox.mjs](sandbox.mjs)).
-// Тот печатает заготовленный ответ и выходит: сессии там нет вовсе, и круг «notification →
-// mailbox → ответ» на нём не собирается. Здесь `--bg` поднимает ОТДЕЛЬНЫЙ процесс
-// scripted-участника ([participant.mjs](participant.mjs)), `agents --json` печатает свой
-// реестр этих процессов, а `stop <id>` их гасит. Всё остальное в круге настоящее: driver
-// `claude` из `lib/`, надзиратель, MCP-сервер шины, store задачи.
+// How it differs from the stub binary in the neighbouring files ([sandbox.mjs](sandbox.mjs)).
+// That one prints a prepared reply and exits: there is no session at all, and the
+// «notification → mailbox → reply» loop cannot be assembled on it. Here `--bg` starts a
+// SEPARATE process for the scripted participant ([participant.mjs](participant.mjs)),
+// `agents --json` prints this process registry, and `stop <id>` kills them. Everything
+// else in the loop is real: the `claude` driver from `lib/`, the warden, the bus MCP
+// server, the task store.
 //
-// **Подмена стоит на границе бинаря, а не driver'а.** Driver — предмет проверки: если
-// подменить его, E2E перестанет проверять `activate`, `inspect` и `stop`, ради которых он и
-// заведён. Поэтому подменяется ровно то, что и в жизни лежит за границей механизма, —
-// внешняя команда `claude`.
+// **The substitution sits on the binary boundary, not the driver's.** The driver is
+// the subject under test: if we substituted it, the E2E would stop checking `activate`,
+// `inspect` and `stop`, which is why it exists. So we substitute exactly what in life
+// sits beyond the mechanism — the external `claude` command.
 //
-// Реестр — КАТАЛОГ файлов, по файлу на сессию, а не один JSON. Писателей у него трое:
-// `--bg` заводит запись, сам участник правит свою занятость на каждом ходе, `stop` её
-// сносит. Общий файл потребовал бы лока между тремя процессами; отдельные файлы разводят
-// писателей по разным именам, и лока не нужно вовсе.
+// The registry is a DIRECTORY of files, one file per session, not a single JSON.
+// It has three writers: `--bg` creates a record, the participant itself updates its
+// busy flag on every turn, `stop` removes it. A shared file would need a lock between
+// the three processes; separate files give each writer its own name, and no lock is
+// needed at all.
 import {
   existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync,
 } from 'node:fs';
@@ -29,22 +31,25 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** Дом harness'а в окружении: его читают и подставной бинарь, и участник. */
+/** Harness home in the environment: both the stub binary and the participant read it. */
 export const HARNESS_HOME_VAR = 'PROMPTOBUS_E2E_HARNESS';
-/** Шаблон пути сокета сессии — с `@` вместо имени. Почему шаблон, а не каталог, — ниже. */
+/** Session socket path template — `@` in place of the name. Why a template, not a directory — below. */
 export const SOCK_BASE_VAR = 'PROMPTOBUS_E2E_SOCK';
 
-// Версия, которой отвечает подставной бинарь, — не литерал, а та же константа, на которой
-// стоит весь разбор: форма провода и формат `agents --json` сняты с неё. Своя копия числа
-// разъехалась бы с `contract.js` молча, и стенд притворялся бы сборкой, которой уже нет.
-// Имя у стенда своё: снаружи это «версия harness'а», и зовут её ниже под ним же.
+// The version the stub binary answers with is not a literal, but the same constant the
+// whole parse sits on: the wire form and the `agents --json` format were taken from it.
+// A private copy of the number would silently drift from `contract.js`, and the stand
+// would pretend to be a build that no longer exists.
+// The stand has its own name: from the outside this is «the harness version», and it is
+// called by that name below.
 import { PROVEN_CLAUDE_VERSION } from '../lib/driver-claude.js';
 
 export const HARNESS_VERSION = PROVEN_CLAUDE_VERSION;
 
-// Ключ файла по адресу участника: двоеточие в имени файла законно не везде, а адрес —
-// единственное, чем тест и участник опознают друг друга. Одна функция на обоих, поэтому
-// участник импортирует её отсюда, а не повторяет правило у себя.
+// File key from the participant address: a colon is not legal in a file name everywhere,
+// and the address is the only thing the test and the participant use to recognise each
+// other. One function for both, so the participant imports it from here rather than
+// repeating the rule on its side.
 export function addrKey(address) {
   return String(address).replace(/[^A-Za-z0-9._-]+/g, '-');
 }
@@ -57,17 +62,17 @@ export function sessionFile(home, id) {
   return path.join(sessionsDir(home), `${id}.json`);
 }
 
-/** Скрипт хода участника: его пишет тест, читает участник. */
+/** Participant turn script: the test writes it, the participant reads it. */
 export function scriptFile(home, address) {
   return path.join(home, 'scripts', `${addrKey(address)}.json`);
 }
 
-/** След того, что участник делал и что ему ответила шина. По нему сверяет тест. */
+/** Trace of what the participant did and what the bus answered. The test checks against it. */
 export function traceFile(home, address) {
   return path.join(home, 'trace', `${addrKey(address)}.jsonl`);
 }
 
-/** Каталог конфигурации, который подставной harness выдаёт за `~/.claude`. */
+/** Config directory that the stub harness presents as `~/.claude`. */
 export function claudeConfigDir(home) {
   return path.join(home, 'claude-config');
 }
@@ -90,7 +95,7 @@ export function writeSession(home, record) {
   return record;
 }
 
-/** Реестр целиком — то же, что печатает `agents --json`. */
+/** The registry as a whole — the same thing `agents --json` prints. */
 export function listSessions(home) {
   let names;
   try {
@@ -102,12 +107,12 @@ export function listSessions(home) {
     .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
 }
 
-/** Записи участника по имени сессии — тем же полем, каким его ищет `findSession`. */
+/** Participant records by session name — the same field `findSession` searches by. */
 export function sessionByName(home, name) {
   return listSessions(home).find((s) => s.name === name) ?? null;
 }
 
-/** След участника: по строке на действие. Пусто — участник не сделал ничего. */
+/** Participant trace: one line per action. Empty — the participant did nothing. */
 export function readTrace(home, address) {
   try {
     return readFileSync(traceFile(home, address), 'utf8').split('\n').filter(Boolean)
@@ -117,26 +122,27 @@ export function readTrace(home, address) {
   }
 }
 
-// Ошибки СЦЕНАРИЯ участника, а не механизма: незнакомое действие скрипта, упавшее действие,
-// упавший ход. Участник на них не останавливается — живая сессия на незнакомый инструмент не
-// падает, и стенд её в этом повторяет, — поэтому E2E краснеет шагами позже, а причина лежит в
-// начале следа. Живой случай: старые `{ tool: 'send' }` в сценарии после
-// переименования инструментов — участник писал `unknown-action` и шёл дальше, красным
-// был восьмой шаг, диагноз добывался чтением следа целиком.
+// SCENARIO errors of the participant, not of the mechanism: an unknown script action, a
+// failed action, a failed turn. The participant does not stop on them — a live session
+// does not crash on an unknown tool, and the stand repeats that — so the E2E goes red on
+// later steps, while the cause sits at the start of the trace. Live case: old
+// `{ tool: 'send' }` in the scenario after the tools were renamed — the participant wrote
+// `unknown-action` and carried on, the red was the eighth step, the diagnosis came from
+// reading the whole trace.
 const AUTHOR_ERROR_KINDS = new Set(['unknown-action', 'action-failed', 'turn-failed']);
 export function authorErrors(trace) {
   return trace.filter((e) => AUTHOR_ERROR_KINDS.has(e?.kind));
 }
 
-/** Диагноз по следу участника для красного вердикта: ошибки сценария первыми, потом хвост следа. */
+/** Diagnosis from the participant trace for a red verdict: scenario errors first, then the tail of the trace. */
 export function diagnoseTrace(home, address, tail = 6) {
   const trace = readTrace(home, address);
   const errs = authorErrors(trace);
-  const head = errs.length ? `ошибки сценария ${address} (причина обычно здесь): ${JSON.stringify(errs)} · ` : '';
-  return `${head}след ${address}: ${JSON.stringify(trace.slice(-tail))}`;
+  const head = errs.length ? `scenario errors for ${address} (the cause is usually here): ${JSON.stringify(errs)} · ` : '';
+  return `${head}trace for ${address}: ${JSON.stringify(trace.slice(-tail))}`;
 }
 
-/** Хвост лога участника — его печатает тест на красном вердикте, иначе диагноза нет. */
+/** Tail of the participant log — the test prints it on a red verdict, otherwise there is no diagnosis. */
 export function readLog(home, id, lines = 40) {
   try {
     return readFileSync(logFile(home, id), 'utf8').split('\n').slice(-lines).join('\n');
@@ -145,7 +151,7 @@ export function readLog(home, id, lines = 40) {
   }
 }
 
-/** Жив ли процесс сессии. Судим сигналом 0 — тем же, чем судит о живости весь механизм. */
+/** Whether the session process is alive. We judge by signal 0 — the same way the whole mechanism judges liveness. */
 export function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -156,25 +162,27 @@ export function pidAlive(pid) {
   }
 }
 
-// --- установка ------------------------------------------------------------------
+// --- install --------------------------------------------------------------------
 
 /**
- * Разложить harness и поставить его `claude` первым в PATH. `sock` — строитель пути сокета
- * из [sandbox.mjs](sandbox.mjs) (`makeSockPath`): полный путь unix-сокета ограничен
- * примерно 104 байтами, а песочница файла набора живёт в каталоге прогона и одна съедает
- * под семьдесят пять символов. Подставному бинарю уезжает ШАБЛОН (`@` вместо имени), а не
- * каталог: на Windows сокет — именованный канал, каталога у него нет вовсе, и шаблон
- * остаётся единственной формой, годной обеим платформам.
+ * Lay out the harness and put its `claude` first on PATH. `sock` is the socket path
+ * builder from [sandbox.mjs](sandbox.mjs) (`makeSockPath`): a full unix-socket path is
+ * limited to about 104 bytes, and the suite-file sandbox lives in the run directory and
+ * alone eats about seventy-five characters. The stub binary is given a TEMPLATE (`@` in
+ * place of the name), not a directory: on Windows a socket is a named pipe, it has no
+ * directory at all, and the template remains the only form that works on both platforms.
  *
- * **Дом harness'а заводит он сам и ВНЕ песочницы файла** (замечание ревью). Лежи он внутри,
- * уборка на выходе была бы холостой: хук песочницы ([sandbox.mjs](sandbox.mjs)) регистрируется
- * раньше — её заводят до установки стенда, — и на `process.exit` каталог сносится первым,
- * а `clean()` читает пустой реестр и не гасит никого. Свой `mkdtemp` в `os.tmpdir()` кладёт
- * дом СОСЕДОМ песочницы: под раннером это каталог прогона (его убирает раннер), в одиночном
- * запуске — системный tmp, и оттуда его убирает тот же хук, что гасит сессии.
+ * **The harness home is created by the harness itself and OUTSIDE the file sandbox**
+ * (review note). Had it lived inside, cleanup on exit would be a no-op: the sandbox hook
+ * ([sandbox.mjs](sandbox.mjs)) is registered earlier — the sandbox is created before the
+ * stand is installed — and on `process.exit` that directory is removed first, then
+ * `clean()` reads an empty registry and kills nobody. Its own `mkdtemp` in `os.tmpdir()`
+ * puts the home NEXT TO the sandbox: under the runner that is the run directory (the
+ * runner cleans it), in a solo run it is system tmp, and from there the same hook that
+ * kills sessions removes it.
  *
- * Возвращает дом и функцию возврата PATH: PATH один на процесс теста, и оставленный
- * подменённым утекает в соседние ветки того же файла.
+ * Returns the home and a PATH restore function: PATH is one per test process, and leaving
+ * it substituted leaks into neighbouring branches of the same file.
  */
 export async function installHarness({ binDir, sock, env = process.env }) {
   const { stubCommand, withStubPath } = await import('./sandbox.mjs');
@@ -184,16 +192,17 @@ export async function installHarness({ binDir, sock, env = process.env }) {
     mkdirSync(path.join(home, dir), { recursive: true });
   }
   mkdirSync(claudeConfigDir(home), { recursive: true });
-  // Тело бинаря — вызов `claudeMain` этого же модуля. Своей копией сценария оно быть не
-  // может: реестр, форма записи и раскладка каталогов нужны и тесту, и бинарю, а разъехаться
-  // им негде только пока дом у них один.
+  // The binary body is a call to `claudeMain` of this same module. It cannot be its own
+  // copy of the scenario: the registry, the record form and the directory layout are needed
+  // by both the test and the binary, and they can only stay in sync while they share one
+  // home.
   stubCommand(binDir, 'claude', `import { claudeMain } from ${JSON.stringify(path.join(here, 'harness.mjs'))};\n`
     + 'await claudeMain(process.argv.slice(2));\n');
   const restore = withStubPath(binDir);
   env[HARNESS_HOME_VAR] = home;
   env[SOCK_BASE_VAR] = sock('@');
-  // Дом конфигурации harness'а: отсюда driver читает `jobs/<id>/state.json`, то есть
-  // причину стопа. Без подмены он смотрел бы в настоящий `~/.claude` человека.
+  // Harness config home: from here the driver reads `jobs/<id>/state.json`, that is the
+  // stop reason. Without the substitution it would look in the real person's `~/.claude`.
   env.CLAUDE_CONFIG_DIR = claudeConfigDir(home);
   return {
     home,
@@ -207,10 +216,11 @@ export async function installHarness({ binDir, sock, env = process.env }) {
 }
 
 /**
- * Скрипт хода scripted-участника. Форма — список ходов: ход `0` играется на подъёме
- * сессии (это первый ход по промпту), каждый следующий — на очередном стуке надзирателя.
- * Ходов больше, чем стуков, — лишние не играются; стуков больше, чем ходов, — участник
- * молчит, и это законный сценарий (доклад о молчаливом стопе на нём и проверяется).
+ * Turn script for the scripted participant. The form is a list of turns: turn `0` is
+ * played on session start (that is the first turn from the prompt), each next one on the
+ * next warden knock. More turns than knocks — the extras are not played; more knocks than
+ * turns — the participant stays silent, and that is a legal scenario (the silent-stop
+ * report is checked on it).
  */
 export function planParticipant(home, address, script) {
   mkdirSync(path.dirname(scriptFile(home, address)), { recursive: true });
@@ -218,32 +228,34 @@ export function planParticipant(home, address, script) {
   return script;
 }
 
-// --- сам бинарь -----------------------------------------------------------------
+// --- the binary itself ----------------------------------------------------------
 
 function argValue(argv, flag) {
   const i = argv.indexOf(flag);
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
 }
 
-// Короткий id записи выводится ИЗ uuid сессии, а не заводится отдельным. Замер
-// 2026-09-03 на `claude` 2.1.251: у фоновой записи `id: "e8c5be23"` при
-// `sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"` — то есть ровно первые восемь hex того
-// же uuid.
+// The short record id is DERIVED FROM the session uuid, not created separately.
+// Measurement 2026-09-03 on `claude` 2.1.251: a background record has `id: "e8c5be23"`
+// with `sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"` — that is exactly the first
+// eight hex of the same uuid.
 //
-// Гейт владения адресом на этой связи НЕ стоит: основное правило — равенство полных id, и в
-// E2E работает именно оно, потому что стенд кладёт в запись `sessionId`. Пара держится здесь
-// ради ЗАПАСНОГО правила (`sameSession`), по которому читаются записи без полного id —
-// прежнего релиза и подъёмов с неразобранным списком сессий. Разведи два написания здесь — и
-// стенд проверял бы запасное правило на модели, которой нет.
+// The address-ownership gate does NOT sit on this link: the main rule is equality of
+// full ids, and that is what the E2E uses, because the stand puts `sessionId` on the
+// record. The pair is kept here for the FALLBACK rule (`sameSession`), which reads
+// records without a full id — a previous release, and starts with an unparsed session
+// list. Split the two spellings here and the stand would be checking the fallback rule
+// against a model that does not exist.
 function shortId(sessionId) {
   return sessionId.slice(0, 8);
 }
 
 /**
- * Идентичность шины, которую подставной демон выдаёт КАЖДОЙ своей фоновой сессии. Она
- * заведомо чужая — и это её работа, а не подкрутка стенда: демон на машине поднят посторонним
- * процессом, и сессии достаётся ЕГО окружение. Демон, отдающий окружение того вызова, который
- * его сессию занял, не моделирует ничего — ровно эту неверную предпосылку и снял .
+ * Bus identity that the stub daemon hands to EACH of its background sessions. It is
+ * deliberately foreign — and that is its job, not a stand tweak: the daemon on the
+ * machine was started by an unrelated process, and the session gets ITS environment. A
+ * daemon that hands back the environment of the call that claimed the session models
+ * nothing — that is exactly the false premise  removed.
  */
 export const DAEMON_IDENTITY = {
   PROMPTOBUS_ROLE: 'worker:demon',
@@ -252,19 +264,21 @@ export const DAEMON_IDENTITY = {
 };
 
 /**
- * Окружение фоновой сессии — то, что выдаёт ей ДЕМОН, а не то, с которым её позвали
- *. Замер 2026-09-03 (`ps eww`, `claude` 2.1.251): фоновые сессии берутся из
- * заранее заведённых `claude bg-spare` под `claude bg-pty-host … /tmp/cc-daemon-501/…`, и
- * окружение им достаётся от процесса, поднявшего демон, — у всех сессий run'а стояла одна
- * тройка `PROMPTOBUS_*`, включая сессию в другом рабочем месте.
+ * Background-session environment — what the DAEMON hands it, not what it was called
+ * with . Measurement 2026-09-03 (`ps eww`, `claude` 2.1.251): background
+ * sessions are taken from pre-created `claude bg-spare` under
+ * `claude bg-pty-host … /tmp/cc-daemon-501/…`, and they get their environment from the
+ * process that started the daemon — every session in the run had the same
+ * `PROMPTOBUS_*` triple, including a session in another workspace.
  *
- * Стенд моделирует это в двух половинах, и обе нужны. Первая: окружение первого `--bg` за
- * прогон ложится файлом в дом harness'а и достаётся каждой следующей сессии — своими у неё
- * остаются лишь те переменные, которые харнес кладёт ей сам (идентичность сессии и её contact
- * point). Вторая: поверх ложится `DAEMON_IDENTITY` — тройка ЧУЖОГО процесса, поднявшего
- * демон. Без второй половины стенд был бы зелёным при любом порядке источников в стороже:
- * окружение сессии совпадало бы с тем, что и так знает подъём. Дом свой у каждого файла
- * набора, поэтому демон здесь тоже свой на файл.
+ * The stand models this in two halves, and both are needed. First: the environment of
+ * the first `--bg` in the run is written to a file in the harness home and given to
+ * every later session — the only variables that stay its own are those the harness
+ * itself puts there (the session identity and its contact point). Second: `DAEMON_IDENTITY`
+ * is laid on top — the triple of the FOREIGN process that started the daemon. Without
+ * the second half the stand would be green for any order of sources in the guard: the
+ * session environment would match what the start already knows. Each suite file has its
+ * own home, so the daemon here is also per-file.
  */
 function daemonEnv(home, env) {
   const file = path.join(home, 'daemon-env.json');
@@ -273,19 +287,21 @@ function daemonEnv(home, env) {
   } catch {
     const first = { ...env, ...DAEMON_IDENTITY };
     mkdirSync(home, { recursive: true });
-    // Права `0600`: в окружении разработчика ходят токены, и снимок его целиком — файл того
-    // же класса, что mcp-конфиг участника (`writeSecret` в spawn.js). Дом harness'а живёт
-    // один прогон, но читаемым для всей машины он быть не обязан ни секунды.
+    // Mode `0600`: developer environment carries tokens, and a full snapshot of it is a
+    // file of the same class as the participant mcp-config (`writeSecret` in spawn.js).
+    // The harness home lives for one run, but it does not have to be readable by the
+    // whole machine for even a second.
     writeFileSync(file, JSON.stringify(first, null, 2) + '\n', { mode: 0o600 });
     return first;
   }
 }
 
-// Гашение сессии. Бьём по ГРУППЕ процессов, а не по одному pid: участник поднимает своим
-// дочерним процессом настоящий `promptobus mcp`, и снятый в одиночку родитель оставил бы его
-// сиротой — а вердикт E2E говорит «после done процессов участников нет». Группа своя у
-// каждой сессии, потому что участник поднят `detached`. Группы нет (Windows) — бьём по pid,
-// и участник снимает своего ребёнка сам, по SIGTERM.
+// Killing a session. We hit the PROCESS GROUP, not a single pid: the participant starts
+// a real `promptobus mcp` as its child, and killing the parent alone would leave that
+// child orphaned — while the E2E verdict says «after done there are no participant
+// processes». Each session has its own group because the participant was started
+// `detached`. No group (Windows) — we hit the pid, and the participant reaps its own
+// child on SIGTERM.
 function killSession(record) {
   const pid = Number(record?.pid);
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -294,7 +310,7 @@ function killSession(record) {
       process.kill(target, 'SIGTERM');
       return true;
     } catch {
-      // Группы нет либо процесс уже мёртв — пробуем следующую форму.
+      // No group, or the process is already dead — try the next form.
     }
   }
   return false;
@@ -304,8 +320,9 @@ async function settle(ms) {
   await new Promise((r) => { setTimeout(r, ms); });
 }
 
-// Ждём смерти процесса, прежде чем снести запись: снос под живым участником дал бы ему
-// переписать свой файл на конце хода, и `agents --json` показал бы погашенную сессию живой.
+// Wait for the process to die before removing the record: removing it under a live
+// participant would let that participant rewrite its file at the end of the turn, and
+// `agents --json` would show a killed session as alive.
 async function awaitDeath(pid, { tries = 40, delayMs = 25 } = {}) {
   for (let i = 0; i < tries; i += 1) {
     if (!pidAlive(pid)) return true;
@@ -315,25 +332,26 @@ async function awaitDeath(pid, { tries = 40, delayMs = 25 } = {}) {
 }
 
 /**
- * Насколько запись сессии переживает свою команду гашения.
+ * How long a session record outlives its kill command.
  *
- * **Число замерено у живого harness'а**, а не выбрано: 2026-09-03, `claude` 2.1.251, три
- * прогона — `claude stop <id>` возвращается за 677, 801 и 898 мс, а запись исчезает из
- * `claude agents --json` через 1070, 1145 и 1218 мс от начала вызова, то есть спустя
- * 270–390 мс ПОСЛЕ возврата команды. Стенд, сносивший запись синхронно, был зелен на
- * гонке, которой у него не было вовсе: живой прогон E2E краснел на шагах 13–14, а
- * подставной шёл 51/51 стабильно.
+ * **The number was measured on a live harness**, not chosen: 2026-09-03, `claude`
+ * 2.1.251, three runs — `claude stop <id>` returns in 677, 801 and 898 ms, and the
+ * record disappears from `claude agents --json` 1070, 1145 and 1218 ms from the start
+ * of the call, that is 270–390 ms AFTER the command returns. A stand that removed the
+ * record synchronously was green on a race it did not have at all: the live E2E run
+ * went red on steps 13–14, while the stub went 51/51 stably.
  */
 export const REAP_DELAY_MS = 300;
 
 /**
- * Снос записи сессии ДЕМОНОМ, а не командой: отдельный отвязанный процесс дожидается
- * смерти участника, выдерживает задержку и убирает файл. Команда `stop` к этому моменту
- * давно вернулась — ровно так и ведёт себя живой harness.
+ * Removal of the session record by the DAEMON, not by the command: a separate detached
+ * process waits for the participant to die, holds the delay, and removes the file. The
+ * `stop` command has long since returned by then — that is exactly how a live harness
+ * behaves.
  *
- * Отвязанным он обязан быть по той же причине, по которой отвязан надзиратель: процесс
- * подставного `claude` живёт доли секунды, и ребёнок, привязанный к нему, умер бы вместе с
- * ним, не дождавшись ничего.
+ * It has to be detached for the same reason the warden is detached: the stub `claude`
+ * process lives a fraction of a second, and a child bound to it would die with it
+ * without waiting for anything.
  */
 function reapSession(home, record) {
   const file = sessionFile(home, record.id);
@@ -348,15 +366,15 @@ function reapSession(home, record) {
 }
 
 /**
- * Подставной `claude`. Разбирает ровно те подкоманды, которые зовёт механизм: `--version`
- * (резолв бинаря), `agents --json` (реестр сессий), `stop <id>` (гашение) и `--bg …`
- * (подъём участника). Всё прочее — отказ с ненулевым кодом: молчаливый успех на незнакомой
- * команде спрятал бы расхождение с настоящим бинарём.
+ * Stub `claude`. Parses exactly the subcommands the mechanism calls: `--version`
+ * (binary resolve), `agents --json` (session registry), `stop <id>` (kill) and `--bg …`
+ * (participant start). Everything else is a refusal with a non-zero code: a silent
+ * success on an unknown command would hide a divergence from the real binary.
  */
 export async function claudeMain(argv, env = process.env) {
   const home = env[HARNESS_HOME_VAR];
   if (!home) {
-    process.stderr.write(`подставной claude: ${HARNESS_HOME_VAR} не задан — дома harness'а нет\n`);
+    process.stderr.write(`stub claude: ${HARNESS_HOME_VAR} is unset — there is no harness home\n`);
     process.exitCode = 1;
     return;
   }
@@ -375,24 +393,25 @@ export async function claudeMain(argv, env = process.env) {
       process.exitCode = 1;
       return;
     }
-    // Команда возвращается СРАЗУ, а запись сносит демон — асинхронно, после смерти
-    // процесса (`reapSession`). Так ведёт себя живой `claude stop`, и стенд
-    // обязан повторять его именно в этом: синхронный снос делал зелёной уборку, которая на
-    // живом harness'е законно оставляла каталог worktree.
+    // The command returns IMMEDIATELY, and the daemon removes the record —
+    // asynchronously, after the process dies (`reapSession`). That is how live
+    // `claude stop` behaves, and the stand must repeat it in exactly this: a
+    // synchronous removal made cleanup green that on a live harness lawfully left
+    // the worktree directory in place.
     killSession(record);
     reapSession(home, record);
     process.stdout.write(`stopped ${record.id}\n`);
     return;
   }
   if (!argv.includes('--bg')) {
-    process.stderr.write(`подставной claude: подкоманда «${argv[0] ?? ''}» не поддержана\n`);
+    process.stderr.write(`stub claude: subcommand «${argv[0] ?? ''}» is not supported\n`);
     process.exitCode = 1;
     return;
   }
 
   const name = argValue(argv, '--name');
   if (!name) {
-    process.stderr.write('подставной claude: --bg без --name — сессию нечем назвать\n');
+    process.stderr.write('stub claude: --bg without --name — there is nothing to name the session\n');
     process.exitCode = 1;
     return;
   }
@@ -402,11 +421,12 @@ export async function claudeMain(argv, env = process.env) {
   const token = randomUUID();
   mkdirSync(path.join(home, 'logs'), { recursive: true });
   const fd = openSync(logFile(home, id), 'a');
-  // Окружение сессии — ДЕМОНА, а не этого вызова (`daemonEnv` выше). Своим у
-  // сессии остаётся ровно то, что настоящий Claude Code кладёт ей сам: идентичность сессии
-  // и её contact point. Свой источник участник берёт из `--mcp-config`
-  // ([13]), а его Stop-хук — из аргументов команды,
-  // которую ему вписал в файл настроек подъём: окружению сессии тут верить нечему.
+  // Session environment is the DAEMON's, not this call's (`daemonEnv` above). What
+  // stays the session's own is exactly what real Claude Code puts there itself: the
+  // session identity and its contact point. The participant takes its own source from
+  // `--mcp-config` ([13]), and its Stop hook from the arguments of the
+  // command that the start wrote into its settings file: there is nothing to trust in
+  // the session environment here.
   const child = spawn(process.execPath, [path.join(here, 'participant.mjs'), ...argv], {
     cwd: process.cwd(),
     detached: true,
@@ -420,10 +440,11 @@ export async function claudeMain(argv, env = process.env) {
     },
   });
   child.unref();
-  // Форма записи снята с `claude agents --json` 2.1.251 (замер в
-  // [12], «Граница покрытия тестами»): голый массив, поля
-  // `pid, cwd, kind, startedAt, sessionId, name, id, status, state`. `id` и `state` есть
-  // только у фоновых — интерактивных записей harness не заводит вовсе.
+  // Record form taken from `claude agents --json` 2.1.251 (measurement in
+  // [12], «Test coverage boundary»): a bare array, fields
+  // `pid, cwd, kind, startedAt, sessionId, name, id, status, state`. `id` and `state`
+  // exist only on background records — the harness does not create interactive ones at
+  // all.
   writeSession(home, {
     pid: child.pid,
     cwd: process.cwd(),
@@ -435,25 +456,28 @@ export async function claudeMain(argv, env = process.env) {
     status: 'busy',
     state: 'working',
   });
-  // Формат вывода — наблюдённый у 2.1.221 («backgrounded · <id> · <имя>»): его разбирает
-  // `parseSessionId`, и подъём обязан проверяться на той форме, которую механизм и читает.
+  // Output format — observed on 2.1.221 («backgrounded · <id> · <name>»): `parseSessionId`
+  // parses it, and the start must be checked against the form the mechanism actually
+  // reads.
   process.stdout.write(`backgrounded · ${id} · ${name}\n`);
 }
 
-// Уборка на выходе процесса — та же беда и то же лекарство, что у песочниц
-// ([sandbox.mjs](sandbox.mjs)): парный `stopAll` в хвосте файла не выполняется ровно на том
-// прогоне, где мусор и остаётся, — упавшая проверка уносит процесс через `process.exit` из
-// `fail()`, а Ctrl+C не доходит и до этого. Цена промаха здесь выше, чем у каталога: за
-// записью реестра стоит живой процесс участника, и он переживёт весь прогон. Живой след:
-// оборванный на первой красной проверке юнит harness'а оставил участника работать до конца
-// сессии разработчика.
+// Cleanup on process exit — the same trouble and the same remedy as the sandboxes
+// ([sandbox.mjs](sandbox.mjs)): a paired `stopAll` at the tail of the file does not run
+// on exactly the run where the garbage is left — a failed check takes the process out
+// through `process.exit` from `fail()`, and Ctrl+C never even gets that far. The cost of
+// a miss here is higher than for a directory: behind the registry record stands a live
+// participant process, and it will outlive the whole run. Live trace: a harness unit
+// cut off on the first red check left the participant running until the end of the
+// developer's session.
 //
-// Хук синхронный и смерти не ждёт: у обработчика `exit` тактов событийного цикла нет вовсе,
-// а сигнал процессу уходит сразу — большего от страховки и не нужно.
+// The hook is synchronous and does not wait for death: an `exit` handler has no event
+// loop ticks at all, and the signal goes to the process immediately — that is all the
+// safety net needs.
 const armed = new Set();
 let hooked = false;
-// Настоящий выход снимается при загрузке модуля: файлы набора подменяют `process.exit`
-// бросателем, и хук на сигнале звал бы подменённый.
+// The real exit is captured at module load: suite files replace `process.exit` with a
+// thrower, and a signal hook would call the replacement.
 const exit0 = process.exit;
 
 function armCleanup(home) {
@@ -463,8 +487,9 @@ function armCleanup(home) {
   const clean = () => {
     for (const dir of armed) {
       for (const record of listSessions(dir)) killSession(record);
-      // Дом сносится целиком: реестр, скрипты, следы и логи живут только на время файла, а
-      // каталог заведён вне песочницы — своей уборки у него больше нет ниоткуда.
+      // The home is removed wholesale: registry, scripts, traces and logs live only for
+      // the life of the file, and the directory was created outside the sandbox — it
+      // has no cleanup of its own from anywhere else.
       rmSync(dir, { recursive: true, force: true });
     }
   };
@@ -474,7 +499,7 @@ function armCleanup(home) {
   }
 }
 
-/** Погасить всё, что осталось: страховка теста в `finally`, а не часть сценария. */
+/** Kill everything that is left: a test safety net in `finally`, not part of the scenario. */
 export async function stopAll(home) {
   const left = [];
   for (const record of listSessions(home)) {
@@ -485,17 +510,19 @@ export async function stopAll(home) {
   return left;
 }
 
-/** Есть ли дом harness'а — им отличается разложенный стенд от несуществующего. */
+/** Whether the harness home exists — that is what distinguishes a laid-out stand from a missing one. */
 export function harnessReady(home) {
   return existsSync(sessionsDir(home));
 }
 
 /**
- * Ждать условия до потолка. Возвращает ЗНАЧЕНИЕ последней пробы, а не бросает по таймауту:
- * вердикт о недождавшемся шаге обязан быть красным вердиктом, а не обрывом файла — иначе
- * проверки ниже не выполнятся вовсе, и число вердиктов у прогонов разойдётся.
+ * Wait for a condition up to a ceiling. Returns the VALUE of the last probe, and does
+ * not throw on timeout: the verdict on a step that did not arrive must be a red verdict,
+ * not a file abort — otherwise the checks below would not run at all, and the verdict
+ * count would diverge across runs.
  *
- * Потолок задаётся вызывающим: у подставного harness'а он секунды, у живого — минуты.
+ * The ceiling is set by the caller: seconds for the stub harness, minutes for the live
+ * one.
  */
 export async function waitFor(probe, { timeoutMs, stepMs = 100 } = {}) {
   const edge = Date.now() + timeoutMs;

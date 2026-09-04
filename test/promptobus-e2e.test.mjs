@@ -1,21 +1,22 @@
-// E2E шины на подставном harness'е. Запуск: npm test
+// E2E of the bus on a stub harness. Run: npm test
 //
-// Здесь собирается ПОЛНЫЙ круг оркестрации — тот, которого до этой задачи не было ни в
-// одном файле набора: spawn, первый `status`, ответ оркестратора, стук надзирателя в сокет
-// участника, `result`, ревью с замечаниями, второй `result`, доклад о молчаливом конце
-// хода, `promptobus done` с гашением сессий и уборкой, `promptobus prune`. Сам сценарий и все его сверки
-// живут в [scenario.mjs](scenario.mjs) — он же общий с живым прогоном
-// ([live-e2e.mjs](../scripts/live-e2e.mjs)); здесь остаётся ровно подмена harness'а.
+// This file assembles the FULL orchestration loop — the one no earlier suite file had:
+// spawn, the first `status`, the orchestrator reply, the warden knock on the participant
+// socket, `result`, a review with remarks, a second `result`, a report of a silent end of
+// turn, `promptobus done` with session teardown and cleanup, `promptobus prune`. The
+// scenario itself and all of its checks live in [scenario.mjs](scenario.mjs) — the same
+// module as the live run ([live-e2e.mjs](../scripts/live-e2e.mjs)); what remains here is
+// exactly the harness substitution.
 //
-// **Файл идёт серийной группой раннера.** Он меряет настенные часы дважды и оба раза
-// по-настоящему: круг стука идёт через unix-сокет между четырьмя процессами, а доклад о
-// стопе — ударом сердца надзирателя раз в `WARDEN_BEAT_SEC`. Под нагрузкой пула эти пороги
-// либо краснеют на исправном коде, либо, что хуже, зеленеют ни на чём.
+// **The file runs in a serial runner group.** It measures wall-clock time twice and both
+// times for real: the knock loop goes through a unix socket between four processes, and
+// the stall report is a warden heartbeat every `WARDEN_BEAT_SEC`. Under pool load those
+// thresholds either go red on working code or, worse, go green on nothing.
 //
-// Своё ожидание в файле одно и названо прямо: доклад о молчаливом конце хода приходит на
-// первом ударе сердца надзирателя после самого хода, а удар идёт раз в 30 с. Надзиратель
-// поэтому поднимается ПЕРВЫМ шагом, до spawn'а, — всё, что сценарий успевает сделать до
-// молчаливого хода, вычитается из этого ожидания.
+// The file has one wait of its own and names it outright: the silent-end-of-turn report
+// arrives on the first warden heartbeat after the turn itself, and the beat is every 30 s.
+// The warden is therefore lifted as the FIRST step, before spawn — everything the scenario
+// manages to do before the silent turn is subtracted from that wait.
 import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox, makeSockPath } from './sandbox.mjs';
@@ -26,53 +27,57 @@ import { runScenario } from './scenario.mjs';
 
 const SB = makeSandbox('promptobus-e2e-');
 const sock = makeSockPath('a2e-');
-// Дом harness'а заводит он сам и вне песочницы: иначе уборка на выходе холостая — хук
-// песочницы сносит каталог раньше, чем стенд успевает погасить свои процессы.
+// The harness home is created by the stand itself and outside the sandbox: otherwise
+// cleanup on exit is a no-op — the sandbox hook removes the directory before the stand
+// has time to kill its processes.
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin'), sock });
 
-// Подставной harness сценарию: подмена бинаря уже стоит, остаётся ответить на три вопроса —
-// чем задаются ходы ролей, какие сессии живы и что показать на красном вердикте.
+// Stub harness for the scenario: the binary substitution is already in place; what remains
+// is answering three questions — how the role turns are scripted, which sessions are
+// alive, and what to show on a red verdict.
 const harness = {
-  label: 'подставной',
-  // Ходы ролей задаёт файл скрипта, а не бриф: сценарию это разрешает шаги, которые живой
-  // сессии не сыграть по команде — стоп на permission-запросе и на исчерпанном лимите
-  //, и сторож цикла, которого подставной участник зовёт сам.
+  label: 'stub',
+  // Role turns are set by the script file, not the brief: that lets the scenario take
+  // steps a live session cannot play on command — a stop on a permission prompt and on
+  // an exhausted limit
+  //, and the loop guard the stub participant calls itself.
   scripted: true,
   sock,
-  // Модель и эффорт подставной бинарь не читает вовсе: у него нет модели. Живой прогон
-  // ставит здесь свои флаги — в этом вся разница между двумя harness'ами.
+  // The stub binary does not read the model or the effort at all: it has no model. The
+  // live run puts its own flags here — that is the whole difference between the two
+  // harnesses.
   spawnFlags: [],
   reviewFlags: [],
   plan: (address, script) => planParticipant(HARNESS, address, script),
   sessions: () => listSessions(HARNESS),
   liveSessions: (refs) => listSessions(HARNESS)
     .filter((s) => refs.includes(s.name) && pidAlive(s.pid)),
-  // Номера процессов сессий — их снимают ДО гашения: реестр после `stop` пуст, и вердикт
-  // «процессов не осталось» по нему был бы зелёным по построению (замечание ревью).
+  // Session pids are taken BEFORE teardown: the registry is empty after `stop`, and a
+  // "no processes left" verdict from it would be green by construction (review note).
   pidsOf: (refs) => listSessions(HARNESS).filter((s) => refs.includes(s.name)).map((s) => s.pid),
   pidAlive,
-  // Красный вердикт без следа участника не диагноз, а загадка: сюда уходит его журнал
-  // действий — ошибки сценария первыми — и хвост лога процесса.
+  // A red verdict with no participant trail is a riddle, not a diagnosis: this is where
+  // its action journal goes — scenario errors first — and the process log tail.
   diagnose: (address) => `${diagnoseTrace(HARNESS, address)}`
-    + ` · логи: ${listSessions(HARNESS).map((s) => readLog(HARNESS, s.id, 6)).join(' | ')}`,
+    + ` · logs: ${listSessions(HARNESS).map((s) => readLog(HARNESS, s.id, 6)).join(' | ')}`,
   cleanup: () => {},
 };
 
 const report = await runScenario({ check, harness, sandbox: SB, timeouts: { step: 30000, stall: 75000 } });
 
-// Длительность шагов печатается всегда: по ней видно, что именно в файле ждёт, и она же
-// уезжает в замер задачи. Это не вердикт — цифра, а не приговор.
-process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} с`).join(' · ')}`
-  + ` · всего ${(report.totalMs / 1000).toFixed(1)} с\n`);
+// Step durations are always printed: they show what in the file is waiting, and they also
+// go into the task measurement. This is not a verdict — a number, not a sentence.
+process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}`
+  + ` · total ${(report.totalMs / 1000).toFixed(1)} s\n`);
 
-// Страховка, а не проверка: вердикт о том, что процессов не осталось, стоит в сценарии, а
-// это — уборка за упавшим прогоном, чтобы красный файл не оставил за собой живых детей.
-// Страховка обязана проверять ОБЕ половины: что гасить было нечего (реестр пуст) и что
-// пережившего kill не осталось. `stopAll` возвращает только вторых, и вердикт по одному
-// его ответу зеленел бы и на полном реестре живых сессий (замечание ревью).
+// Insurance, not a check: the "no processes left" verdict lives in the scenario; this is
+// cleanup after a fallen run, so a red file does not leave live children behind.
+// The insurance must check BOTH halves: that there was nothing to kill (registry empty)
+// and that nothing survived kill. `stopAll` returns only the latter, and a verdict from
+// that answer alone would go green even on a full registry of live sessions (review note).
 const before = listSessions(HARNESS);
 const left = await stopAll(HARNESS);
-check('за прогоном не осталось процессов участников — гасить было нечего',
+check('no participant processes left after the run — there was nothing to kill',
   before.length === 0 && left.length === 0,
-  `в реестре осталось ${JSON.stringify(before.map((s) => s.name))} · пережили kill ${JSON.stringify(left)}`);
+  `left in the registry ${JSON.stringify(before.map((s) => s.name))} · survived kill ${JSON.stringify(left)}`);
 restore();

@@ -1,128 +1,166 @@
-// Перечень «что набор обязан не трогать» — одно место на все применения. Не
-// `*.test.mjs` — раннер (run.mjs) берёт из каталога только их, и этот файл в прогон не
-// попадает.
+// The list of "what the suite must not touch" — one place for every
+// use. Not `*.test.mjs` — the runner (run.mjs) takes only those from
+// the directory, so this file is not in the run.
 //
-// Читают перечень четверо. Раннер [run.mjs](run.mjs) собирает окружение каждому файлу
-// прогона; общий помощник [check.mjs](check.mjs) страхует запуск одного файла руками — то
-// есть отладку, где раннера нет вовсе; и живые скрипты — [live-e2e.mjs](../scripts/live-e2e.mjs),
-// [live-canary.mjs](../scripts/live-canary.mjs) и [release-gates.mjs](../scripts/release-gates.mjs)
-// — снимают идентичность сессии у окружения, которое отдают детям (`dropSessionLeaks`).
-// Пока перечень жил копией в двоих, пара чинилась порознь дважды: выключатель надзирателя
-// и дом; а живые скрипты не чинились вовсе — гнали их как раз из
-// сессий, у которых все пять переменных стоят. Сверять копии гейтом дороже, чем
-// не заводить вторую: список короткий, всем применениям нужен один и тот же, и различаются
-// они не составом, а способом наложения — раннер строит окружение ребёнку, помощник правит
-// своё, скрипты снимают пять имён и дом не трогают (живому прогону нужен настоящий).
+// Four readers. The runner [run.mjs](run.mjs) builds the environment
+// for each file of the run; the shared helper [check.mjs](check.mjs)
+// covers running one file by hand — i.e. debugging, where there is no
+// runner at all; and the live scripts —
+// [live-e2e.mjs](../scripts/live-e2e.mjs),
+// [live-canary.mjs](../scripts/live-canary.mjs) and
+// [release-gates.mjs](../scripts/release-gates.mjs) — strip session
+// identity from the environment they give their children
+// (`dropSessionLeaks`). While the list lived as a copy in two places,
+// the pair was fixed separately twice: the warden switch and home;
+// and the live scripts were not fixed at all — they were run exactly
+// from sessions that have all five variables set. Checking copies
+// with a gate costs more than not making a second one: the list is
+// short, every use needs the same one, and they differ not in
+// membership but in how it is applied — the runner builds a child
+// environment, the helper edits its own, the scripts drop five names
+// and do not touch home (a live run needs the real one).
 //
-// Что в перечне и почему:
+// What is on the list and why:
 //
-// - **автоподъём надзирателя** (`PROMPTOBUS_WARDEN=off`). Набор гоняет настоящие
-//   команды шины, а те поднимают слушателя задачи отвязанным процессом — он переживает и
-//   файл теста, и весь прогон. Живой замер 2026-08-29: один прогон оставил шесть таких
-//   процессов, и они принялись будить сессию разработчика по адресам из фикстур. Уборкой в
-//   тесте это не лечится: процесс отвязан по построению;
-// - **contact point собственной сессии** (`CLAUDE_CODE_MESSAGING_SOCKET`/`_TOKEN`,
-//   ). Команда шины сдаёт в стор задачи адрес сокета своей сессии, а под тестом её
-//   сессия — это сессия разработчика, запустившего `npm test`. Фикстура получала бы
-//   настоящий сокет живого человека;
-// - **дом пользователя** (`HOME`/`USERPROFILE`). Набор запускает настоящий CLI
-//   дочерним процессом, а `sync` в хвосте ставит хуки памяти в дом — не в проект
-//   ([]). Разошёлся layout в доме с
-//   поставляемым (а он расходится при любой правке `cli/memory-hooks`) — и зелёный прогон
-//   переписывает человеку `~/legacy/memory-hooks` и `~/.claude/settings.json`. Живой след
-//   2026-08-29: бэкап `settings.json.bak.20260829224155` после прогона worker'а, в
-//   результатах прогона утечка невидима. Подмена общая, а не в отдельных файлах:
-//   `root.test.mjs` спавнит CLI намеренно, а `cli-flags.test.mjs` и `setup.test.mjs`
-//   держатся лишь на том, что отказывают раньше хвоста `sync`, — точечная заплатка закрыла
-//   бы один файл из трёх и молчала бы о четвёртом;
-// - **рычаг хука памяти** (`CONTEXT_STORE_*`). `extraEnv` ATI-host'а ставит
-//   `CONTEXT_STORE_STOP_GATE=0` каждому участнику шины — под worker'ом и
-//   reviewer'ом переменная стоит в окружении сессии ещё до `npm test`. Набор зовёт
-//   настоящие хуки `spawnSync`'ом, а не подставным бинарём, и утёкшая переменная гасит
-//   гейт в дочернем процессе хука тем же штатным рычагом, а не обходом теста;
-// - **идентичность шины** (`PROMPTOBUS_ROLE`/`PROMPTOBUS_TASK`/`PROMPTOBUS_HOME`).
-//   Тот же класс, что рычаг памяти, и та же причина: `sessionEnv` в spawn.js кладёт эту
-//   тройку каждому участнику шины, то есть под worker'ом и reviewer'ом она стоит в окружении
-//   сессии ещё до `npm test`. Набор зовёт настоящие команды шины `spawnSync`'ом, а
-//   `PROMPTOBUS_HOME` сильнее поиска дома от cwd (`resolveIdentity`) — утёкшая переменная
-//   увела бы прогон в БОЕВОЙ журнал шины рабочего места, а `PROMPTOBUS_ROLE` и
-//   `PROMPTOBUS_TASK` дали бы командам чужую идентичность. Замер 2026-09-02: файлов набора,
-//   спавнящих CLI с `...process.env` и своего `PROMPTOBUS_HOME` не ставящих, четыре —
-//   `doctor`, `promptobus-review`, `tools`, `util`;
-// - **каталог конфига Claude Code** (`CLAUDE_CONFIG_DIR`). Разбор стопа участника
-//   (`sessionStall` → `sessionDetail` в driver-claude.js) читает `<CLAUDE_CONFIG_DIR>/jobs/<id>/state.json`,
-//   а без переменной — `~/.claude` от дома. Дом набору уведён, но переменная стоит в окружении
-//   сессии worker'а механизма (её кладёт харнес), и утёкшая она увела бы разбор в состояние
-//   живых сессий человека — там, где файл набора не подставил каталог сам. Уводится туда же,
-//   куда дом: `<дом прогона>/.claude`; без дома — снимается.
+// - **warden auto-lift** (`PROMPTOBUS_WARDEN=off`). The suite runs
+//   real bus commands, and those raise a task listener as a detached
+//   process — it outlives both the test file and the whole run. Live
+//   measure 2026-08-29: one run left six such processes, and they
+//   started waking the developer's session at addresses from fixtures.
+//   Cleanup in the test does not fix this: the process is detached by
+//   construction;
+// - **contact point of this session** (`CLAUDE_CODE_MESSAGING_SOCKET`/
+//   `_TOKEN`). A bus command hands the task store the socket address
+//   of its session, and under a test its session is the session of the
+//   developer who started `npm test`. A fixture would get a live
+//   person's real socket;
+// - **user home** (`HOME`/`USERPROFILE`). The suite starts the real
+//   CLI as a child process, and `sync` at the tail installs memory
+//   hooks into home — not into the project. If the home layout
+//   diverges from the shipped one (and it diverges on any edit of
+//   `cli/memory-hooks`) — a green run rewrites the person's
+//   `~/legacy/memory-hooks` and `~/.claude/settings.json`. Live trace
+//   2026-08-29: a `settings.json.bak.20260829224155` backup after a
+//   worker run, invisible as a leak in the run results. The swap is
+//   shared, not in individual files: `root.test.mjs` spawns the CLI
+//   on purpose, and `cli-flags.test.mjs` and `setup.test.mjs` only
+//   hold because they refuse before the `sync` tail — a point patch
+//   would close one file of three and stay silent about a fourth;
+// - **memory-hook lever** (`CONTEXT_STORE_*`). The ATI-host
+//   `extraEnv` sets `CONTEXT_STORE_STOP_GATE=0` on every bus
+//   participant — under a worker and a reviewer the variable is in
+//   the session environment before `npm test`. The suite calls real
+//   hooks with `spawnSync`, not a stub binary, and a leaked variable
+//   kills the gate in the hook child process by the same official
+//   lever, not by a test bypass;
+// - **bus identity** (`PROMPTOBUS_ROLE`/`PROMPTOBUS_TASK`/
+//   `PROMPTOBUS_HOME`). The same class as the memory lever, and the
+//   same reason: `sessionEnv` in spawn.js puts this triple on every
+//   bus participant, so under a worker and a reviewer it is in the
+//   session environment before `npm test`. The suite calls real bus
+//   commands with `spawnSync`, and `PROMPTOBUS_HOME` beats a home
+//   search from cwd (`resolveIdentity`) — a leaked variable would
+//   send the run into the LIVE bus journal of the workspace, and
+//   `PROMPTOBUS_ROLE` and `PROMPTOBUS_TASK` would give the commands
+//   a foreign identity. Measured 2026-09-02: suite files that spawn
+//   the CLI with `...process.env` and do not set their own
+//   `PROMPTOBUS_HOME` — four: `doctor`, `promptobus-review`, `tools`,
+//   `util`;
+// - **Claude Code config directory** (`CLAUDE_CONFIG_DIR`). Participant
+//   stall parse (`sessionStall` → `sessionDetail` in driver-claude.js)
+//   reads `<CLAUDE_CONFIG_DIR>/jobs/<id>/state.json`, and without the
+//   variable — `~/.claude` from home. Home is diverted for the suite,
+//   but the variable stands in the mechanism worker session
+//   environment (the harness puts it there), and leaked it would send
+//   the parse into the state of a person's live sessions — where the
+//   suite file did not plant a directory itself. It is diverted to
+//   the same place as home: `<run home>/.claude`; without a home —
+//   dropped.
 
 import path from 'node:path';
 
-// Выключатель автоподъёма: имя переменной и её значение под набором.
+// Auto-lift switch: the variable name and its value under the suite.
 const WARDEN_SWITCH = 'PROMPTOBUS_WARDEN';
 const WARDEN_OFF = 'off';
-// Contact point своей сессии: эти переменные снимаются, а не подменяются, — подставного
-// сокета у набора нет, и пустой адрес честнее чужого.
+// Contact point of this session: these variables are dropped, not
+// swapped — the suite has no stub socket, and an empty address is
+// more honest than a foreign one.
 const MESSAGING_VARS = ['CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN'];
-// Дом: POSIX смотрит в `HOME`, Windows — в `USERPROFILE`, и подмена одного из двух
-// оставляла бы дыру на другой платформе целиком.
+// Home: POSIX looks at `HOME`, Windows at `USERPROFILE`, and swapping
+// only one of the two would leave a hole on the other platform
+// entirely.
 export const HOME_VARS = ['HOME', 'USERPROFILE'];
-// Рычаг хука памяти (`CONTEXT_STORE_STOP_GATE=0` и соседи): `extraEnv` ATI-host'а
-// ставит его каждому участнику шины, и под worker'ом или reviewer'ом он утекает
-// в дочерний процесс хука — набор зовёт настоящие хуки `spawnSync`'ом, а не подставным
-// бинарём. Префикс, а не одна переменная: семейство одно (URL, HOME, DISABLE),
-// и утечёт тем же путём любая из них.
+// Memory-hook lever (`CONTEXT_STORE_STOP_GATE=0` and neighbours):
+// the ATI-host `extraEnv` sets it on every bus participant, and under
+// a worker or a reviewer it leaks into the hook child process — the
+// suite calls real hooks with `spawnSync`, not a stub binary. A
+// prefix, not one variable: the family is one (URL, HOME, DISABLE),
+// and any of them leaks the same way.
 const CONTEXT_STORE_PREFIX = 'CONTEXT_STORE_';
-// Идентичность шины участника: снимается, а не подменяется, — свой дом и свою
-// задачу файлы набора объявляют сами, а тем, кто их не объявляет, честнее остаться без дома и
-// резолвить его от cwd песочницы. Перечень поимённый, а не префиксом `PROMPTOBUS_`: под тот же
-// префикс попадают выключатель надзирателя и корни канарейки, у которых свои правила.
+// Participant bus identity: dropped, not swapped — suite files that
+// declare their own home and task do so themselves, and those that
+// do not are more honest without a home, resolving it from the
+// sandbox cwd. A named list, not a `PROMPTOBUS_` prefix: that prefix
+// also covers the warden switch and the canary roots, which have
+// their own rules.
 //
-// Дом у списка теперь один — этот. Вторая копия жила в `spawn.js` (`IDENTITY_VARS`),
-// пока `sessionEnv` клал тройку в окружение поднимаемой сессии; держал их вместе гейт
-// равенства. Идентичность уехала в аргументы команды Stop-хука, класть её в окружение
-// перестали, и копии не стало — вместе с гейтом. Сниматься тройка обязана по-прежнему: в
-// окружение сессии её кладёт ДЕМОН harness'а, от чужого прогона.
+// The list now has one home — this one. A second copy lived in
+// `spawn.js` (`IDENTITY_VARS`) while `sessionEnv` put the triple into
+// the environment of the raised session; a gate of equality held them
+// together. Identity moved into Stop-hook command arguments, putting
+// it in the environment stopped, and the copy went — with the gate.
+// The triple must still be dropped: the harness DAEMON puts it into
+// the session environment, from a foreign run.
 export const IDENTITY_VARS = ['PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK', 'PROMPTOBUS_HOME'];
-// Каталог конфига Claude Code: уводится вместе с домом, а не снимается только —
-// явный путь виден подставному файлу набора, и вердикт сверяет его с домом прогона.
+// Claude Code config directory: diverted with home, not only dropped
+// — an explicit path is visible to a stub suite file, and the verdict
+// checks it against the run home.
 const CONFIG_DIR_VAR = 'CLAUDE_CONFIG_DIR';
-// Корень проверяемого механизма и готовое рабочее место. Их задаёт канарейка
-// релиза, и только она; оставшись в окружении разработчика после ручного прогона, они молча
-// уводят весь набор на ЧУЖОЕ дерево — сценарий резолвит от них и бинарь, и store, и driver.
-// Красное оттуда говорило бы о постороннем каталоге, а зелёное не значило бы ничего про
-// чекаут. Тот же класс утечки, ради которого перечень и заведён.
+// Root of the mechanism under test and a ready workspace. Only the
+// release canary sets them; left in a developer's environment after a
+// manual run, they silently send the whole suite onto a FOREIGN tree
+// — the script resolves the binary, the store, and the driver from
+// them. Red from there would talk about a stranger's directory, and
+// green would mean nothing about the checkout. The same leak class
+// the list was created for.
 const E2E_PREFIX = 'PROMPTOBUS_E2E_';
 
 /**
- * Идентичность СЕССИИ в окружении: тройка шины и contact point. Пять имён, и снимать их
- * обязан всякий, кто поднимает механизм дочерним процессом.
+ * SESSION identity in the environment: the bus triple and the contact
+ * point. Five names, and anyone who raises the mechanism as a child
+ * process must drop them.
  *
- * Почему именно эти пять и почему одним перечнем: `PROMPTOBUS_HOME` сильнее поиска дома от
- * cwd (`resolveIdentity`) и уводит прогон в БОЕВОЙ журнал шины рабочего места; `PROMPTOBUS_ROLE`
- * и `PROMPTOBUS_TASK` дают командам чужую идентичность; `CLAUDE_CODE_MESSAGING_SOCKET` и
- * `_TOKEN` — contact point живой сессии человека, и сданный в чужой store он зовёт стучаться
- * в неё.
+ * Why these five and why one list: `PROMPTOBUS_HOME` beats a home
+ * search from cwd (`resolveIdentity`) and sends the run into the LIVE
+ * bus journal of the workspace; `PROMPTOBUS_ROLE` and
+ * `PROMPTOBUS_TASK` give the commands a foreign identity;
+ * `CLAUDE_CODE_MESSAGING_SOCKET` and `_TOKEN` are the contact point
+ * of a person's live session, and handed into a foreign store they
+ * call knocking on it.
  *
- * Три имени в перечень не входят, и каждое по своей причине. Дом (`HOME`) и
- * `CLAUDE_CONFIG_DIR` живому прогону нужны настоящие: он зовёт настоящий `claude`, а тому
- * нужен его дом. **`CLAUDE_CODE_SESSION_ID` не снимается тоже** (замечание ревью): это
- * идентичность самой сессии, а не чужая — сценарий объявляет свою поверх неё, а с 
- * она ещё и материал гейта владения адресом (`foreignSession`), то есть снятая она сделала
- * бы прогон слепым к тому, что он проверяет.
+ * Three names are not on the list, each for its own reason. Home
+ * (`HOME`) and `CLAUDE_CONFIG_DIR` a live run needs real: it calls
+ * a real `claude`, and that needs its home. **`CLAUDE_CODE_SESSION_ID`
+ * is not dropped either** (review note): this is the identity of the
+ * session itself, not a foreign one — the script declares its own on
+ * top of it, and it is also material for the address-ownership gate
+ * (`foreignSession`), so dropping it would make the run blind to what
+ * it checks.
  */
 export const SESSION_LEAK_VARS = [...MESSAGING_VARS, ...IDENTITY_VARS];
 
-/** Снять эти пять у набора переменных. `env` правится на месте и возвращается. */
+/** Drop these five from a set of variables. `env` is edited in place and returned. */
 export function dropSessionLeaks(env) {
   for (const name of SESSION_LEAK_VARS) delete env[name];
   return env;
 }
 
-// Наложить перечень на набор переменных. `env` правится на месте и возвращается — раннеру
-// это копия `process.env` для ребёнка, помощнику сам `process.env`. Дом задаётся отдельным
-// аргументом: путь к нему у каждого свой (каталог прогона у раннера, песочница у
-// помощника), общим остаётся перечень имён.
+// Apply the list to a set of variables. `env` is edited in place and
+// returned — for the runner this is a `process.env` copy for the
+// child, for the helper `process.env` itself. Home is a separate
+// argument: its path is different for each (the run directory for
+// the runner, a sandbox for the helper); what is shared is the list
+// of names.
 export function applyHygiene(env, { home } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
   dropSessionLeaks(env);
