@@ -403,8 +403,7 @@ check(`закрытая задача: сторож молчит, хотя в mai
 
 // Рабочего места нет и PROMPTOBUS_HOME не задан — сторож молчит, а не падает: он стоит у каждого
 // завершения хода, и запуск из чужого каталога не повод мешать сессии.
-const NOWHERE = path.join(ROOT, 'nowhere');
-mkdirSync(NOWHERE, { recursive: true });
+const NOWHERE = makeSandbox('promptobus-promptobus-guard-nowhere-');
 const homeless = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: NOWHERE,
   env: Object.fromEntries(Object.entries({ ...process.env, CLAUDE_CODE_SESSION_ID: SESSION })

@@ -40,6 +40,7 @@ import { check } from './check.mjs';
 // проверка уносит процесс через `process.exit`, и хвостовой `rmSync` до неё не доходит.
 const SB = realpathSync(makeSandbox('promptobus-promptobus-ladder-'));
 const { planReview } = await import(new URL('../lib/review.js', import.meta.url).href);
+const { createStandaloneHost } = await import(new URL('../lib/host.js', import.meta.url).href);
 
 const g = (cwd, ...args) => {
   const r = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
@@ -87,7 +88,12 @@ check('фикстура: ветку завели от master, и точка ве
   && g(WT, 'merge-base', 'main', 'HEAD') === OLD, `master=${FORK} main=${OLD}`);
 
 // --- сама проверка ------------------------------------------------------------
-const plan = planReview(WS, { target: WT, title: 'лесенка' });
+// Standalone defaultBranch falls back to HEAD when origin refs are absent, which would
+// name the worktree branch itself and skip review.js's local ['master','main'] ladder.
+// This file pins that ladder, so the host here reports no named default.
+const host = createStandaloneHost({ cwd: WS });
+host.defaultBranch = () => null;
+const plan = planReview(host, { target: WT, title: 'лесенка' });
 check(': база ревью — коммит, от которого worktree add завёл ветку',
   plan.baseRef === FORK, `${plan.baseRef} · ветвились от ${FORK}, у main ${OLD}`);
 check(': при перестановке лесенки в дифф вернулась бы работа оркестратора — её там нет',
