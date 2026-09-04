@@ -1,0 +1,9 @@
+{
+  "id": "20260831T095000000-0008-orchestrator",
+  "task": "t20260831-090000",
+  "from": "orchestrator",
+  "to": "worker:demo",
+  "type": "review",
+  "ts": "2026-08-31T09:50:00.000Z",
+  "body": "демо-замечания worker-у"
+}

@@ -1,0 +1,36 @@
+{
+  "orchestrator": {
+    "since": "2026-08-31T09:43:00.000Z",
+    "knocks": 3,
+    "knockedAt": "2026-08-31T10:01:00.000Z",
+    "triedAt": "2026-08-31T10:01:00.000Z",
+    "escalatedAt": "2026-08-31T10:01:00.000Z",
+    "unread": 1,
+    "wake": "/tmp/promptobus-demo/orchestrator.sock#2026-08-31T09:42:30.000Z",
+    "channel": "socket",
+    "knockError": null
+  },
+  "worker:demo": {
+    "since": "2026-08-31T09:43:00.000Z",
+    "knocks": 2,
+    "knockedAt": "2026-08-31T09:46:00.000Z",
+    "triedAt": "2026-08-31T10:01:00.000Z",
+    "escalatedAt": "2026-08-31T10:01:00.000Z",
+    "unread": 3,
+    "wake": "/tmp/promptobus-demo/worker-demo.sock#2026-08-31T09:42:30.000Z",
+    "channel": "self-wake",
+    "knockError": "ENOENT"
+  },
+  "reviewer:demo": {
+    "since": null,
+    "knocks": 0,
+    "knockedAt": null,
+    "triedAt": null,
+    "escalatedAt": null,
+    "unread": 0,
+    "wake": "/tmp/promptobus-demo/reviewer-demo.sock#2026-08-31T09:42:30.000Z",
+    "channel": "socket",
+    "knockError": null,
+    "deliveredAt": "2026-08-31T09:46:00.000Z"
+  }
+}
