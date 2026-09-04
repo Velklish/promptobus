@@ -44,12 +44,21 @@ export function renderBusHook(host: Pick<PromptobusHost, 'commandName'>): string
   return readFileSync(file, 'utf8').replaceAll('__COMMAND__', host.commandName);
 }
 
-export function busHookSettings(host: Pick<PromptobusHost, 'nodePath' | 'workspaceRoot' | 'busHookRel'>): Record<string, unknown> {
+export function busHookCommand(
+  host: Pick<PromptobusHost, 'nodePath' | 'workspaceRoot' | 'busHookRel'>,
+  extraArgs: readonly string[] = [],
+  platform = 'posix',
+): string {
   const script = path.join(host.workspaceRoot(), host.busHookRel());
+  const extra = extraArgs.map((arg) => quoteFlag(arg, platform)).join(' ');
+  return `"${host.nodePath()}" "${script}"${extra ? ` ${extra}` : ''}`;
+}
+
+export function busHookSettings(host: Pick<PromptobusHost, 'nodePath' | 'workspaceRoot' | 'busHookRel'>): Record<string, unknown> {
   return {
     [BUS_HOOK_EVENT]: [{
       matcher: BUS_HOOK_MATCHER,
-      hooks: [{ type: 'command', command: `"${host.nodePath()}" "${script}"` }],
+      hooks: [{ type: 'command', command: busHookCommand(host) }],
     }],
   };
 }

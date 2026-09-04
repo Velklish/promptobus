@@ -1,0 +1,17 @@
+{
+  "permissions": { "allow": ["Bash"] },
+  "customField": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "echo foreign-claude-bus" }]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [{ "type": "command", "command": "echo foreign-note" }]
+      }
+    ]
+  }
+}

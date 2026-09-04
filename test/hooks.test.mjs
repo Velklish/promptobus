@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { createStandaloneHost } from '../dist/host-index.js';
+import { renderBusHook } from '../dist/hooks.js';
+import { GUARD_BLOCK_LIMIT } from '../lib/guard.js';
+import { CURSOR_HOOK_EVENTS, HOME_HOOK_DIRS, install } from '../lib/install.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(here, '..');
+const BIN = path.join(ROOT, 'bin', 'promptobus.js');
+const EVENT = readFileSync(path.join(here, 'fixtures', 'install', 'send-event.json'), 'utf8');
+const temps = [];
+process.on('exit', () => {
+  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
+});
+
+function sandbox() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pb-hooks-'));
+  const home = mkdtempSync(path.join(tmpdir(), 'pb-hooks-home-'));
+  temps.push(dir, home);
+  return { dir, home };
+}
+
+function hostOf(dir) {
+  return createStandaloneHost({
+    cwd: dir,
+    commandName: 'promptobus',
+    version: '0.1.0',
+    binPath: BIN,
+    nodePath: process.execPath,
+  });
+}
+
+function envOf(home) {
+  return { ...process.env, HOME: home, USERPROFILE: home };
+}
+
+function runCommand(command, { cwd, home, input }) {
+  return spawnSync(command, {
+    shell: true,
+    cwd,
+    env: envOf(home),
+    input,
+    encoding: 'utf8',
+  });
+}
+
+function listRel(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  const walk = (base, rel = '') => {
+    for (const entry of readdirSync(base, { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path.join(base, entry.name), next);
+      else out.push(next);
+    }
+  };
+  walk(dir);
+  return out.sort();
+}
+
+test('renderBusHook emits systemMessage and has no --output switch', () => {
+  const text = renderBusHook({ commandName: 'promptobus' });
+  assert.match(text, /Сгенерирован promptobus sync/);
+  assert.match(text, /systemMessage/);
+  assert.doesNotMatch(text, /--output/);
+  assert.doesNotMatch(text, /additional_context/);
+});
+
+test('bus feedback is Claude and Codex JSON; Cursor is stop-only from a known event name', () => {
+  const { dir, home } = sandbox();
+  assert.equal(install(hostOf(dir), { harnesses: 'claude,cursor,codex', cwd: dir, env: envOf(home) }), 0);
+  const claude = JSON.parse(readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  const cursor = JSON.parse(readFileSync(path.join(dir, '.cursor', 'hooks.json'), 'utf8'));
+  const codex = JSON.parse(readFileSync(path.join(dir, '.codex', 'hooks.json'), 'utf8'));
+  const claudeCmd = claude.hooks.PostToolUse[0].hooks[0].command;
+  const codexCmd = codex.hooks.PostToolUse[0].hooks[0].command;
+  assert.equal(Object.hasOwn(cursor.hooks, 'postToolUse'), false);
+  for (const event of Object.keys(cursor.hooks)) {
+    assert.ok(CURSOR_HOOK_EVENTS.includes(event), event);
+  }
+  assert.ok(cursor.hooks.stop[0].command.includes('promptobus guard'));
+  assert.match(codex.hooks.PostToolUse[0].matcher, /promptobus_send/);
+
+  const sub = path.join(dir, 'src', 'pkg');
+  mkdirSync(sub, { recursive: true });
+  for (const cwd of [dir, sub]) {
+    const claudeOut = JSON.parse(runCommand(claudeCmd, { cwd, home, input: EVENT }).stdout);
+    const codexOut = JSON.parse(runCommand(codexCmd, { cwd, home, input: EVENT }).stdout);
+    assert.equal(typeof claudeOut.systemMessage, 'string');
+    assert.ok(claudeOut.systemMessage.length > 0);
+    assert.equal(typeof codexOut.systemMessage, 'string');
+    assert.ok(codexOut.systemMessage.length > 0);
+  }
+  assert.deepEqual(listRel(home), []);
+  assert.deepEqual(HOME_HOOK_DIRS.filter((name) => existsSync(path.join(home, name))), []);
+});
+
+test('Stop guard command is promptobus guard and a clean mailbox does not loop', () => {
+  const { dir, home } = sandbox();
+  assert.equal(install(hostOf(dir), { harnesses: 'claude', cwd: dir, env: envOf(home) }), 0);
+  const claude = JSON.parse(readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  const stopCmd = claude.hooks.Stop[0].hooks[0].command;
+  assert.match(stopCmd, /promptobus guard/);
+  assert.doesNotMatch(stopCmd, /promptobus install/);
+  assert.ok(Number.isFinite(GUARD_BLOCK_LIMIT) && GUARD_BLOCK_LIMIT >= 1);
+  const event = `${JSON.stringify({ hook_event_name: 'Stop', cwd: dir })}\n`;
+  const first = runCommand(stopCmd, { cwd: dir, home, input: event });
+  const second = runCommand(stopCmd, { cwd: dir, home, input: event });
+  assert.equal(first.status, 0);
+  assert.equal(second.status, 0);
+  assert.equal(first.stdout.trim(), '');
+  assert.equal(second.stdout.trim(), '');
+  assert.deepEqual(listRel(home), []);
+});
+
+test('generated runner itself does not create user-level hook directories', () => {
+  const { dir, home } = sandbox();
+  const script = path.join(dir, 'bus.mjs');
+  writeFileSync(script, renderBusHook({ commandName: 'promptobus' }));
+  const ran = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    env: envOf(home),
+    input: EVENT,
+    encoding: 'utf8',
+  });
+  assert.equal(ran.status, 0);
+  const out = JSON.parse(ran.stdout);
+  assert.equal(typeof out.systemMessage, 'string');
+  assert.deepEqual(listRel(home), []);
+});

@@ -1,0 +1,11 @@
+{
+  "keep": 1,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "ApplyPatch",
+        "hooks": [{ "type": "command", "command": "echo foreign-codex-bus" }]
+      }
+    ]
+  }
+}
