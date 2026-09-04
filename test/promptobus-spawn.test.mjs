@@ -644,7 +644,7 @@ const ultraRun = spawnRun({
 const ultraText = `${ultraRun.stdout}${ultraRun.stderr}`;
 check(`: ultracode on ${CLAUDE_MIN} — a refusal, not a silent lift on default effort`,
   ultraRun.status === 1 && ultraText.includes(CLAUDE_MIN) && ultraText.includes(ULTRACODE_MIN_VERSION)
-  && /ДЕФОЛТНОМ эффорте/.test(ultraText), `status=${ultraRun.status} ${ultraText}`);
+  && /DEFAULT effort/.test(ultraText), `status=${ultraRun.status} ${ultraText}`);
 check(': the refusal leaves nothing on disk — neither a participant nor a worktree',
   !store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra')
   && worktreesWithStamp('t20260828-170000').length === 0,

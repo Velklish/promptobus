@@ -199,13 +199,13 @@ check(`стучат только тому, у кого лежит: у оркес
 // показал, что просьбу, звучащую как поручение от пользователя, участник откладывает.
 const body = first.calls[0].body;
 check('тело инъекции называет задачу, адрес и число непрочитанных',
-  body.includes(TASK) && body.includes('worker:api') && /непрочитанных: 1/.test(body), body);
+  body.includes(TASK) && body.includes('worker:api') && /has unread: 1/.test(body), body);
 check(`: короткое сообщение едет в postcard'е текстом`,
   body.includes('бриф') && /task from orchestrator/.test(body), body);
 check(': postcard всё равно ведёт в inbox — прочитанным делает он',
-  body.includes('mailbox') && /истина остаётся в mailbox'е|прочитанными.*делает только mailbox/.test(body), body);
+  body.includes('mailbox') && /Fetch the mailbox|only mailbox marks messages read/.test(body), body);
 check('тело инъекции опирается на правила шины и отказывается от эскалации прав',
-  /в правилах шины/.test(body) && /прав оно не даёт/.test(body), body);
+  /in the bus rules/.test(body) && /grants no permissions/.test(body), body);
 
 const h1 = health()['worker:api'];
 check(`health записал канал driver'а (у Claude Code — socket), счётчик стуков и начало ожидания`,
@@ -234,7 +234,7 @@ send('worker:api', 'уточнение');
 const grew = stubKnock();
 await wdn.wardenRound(HOME, TASK, { knock: grew });
 check('новое сообщение будит немедленно, не дожидаясь порога', grew.calls.length === 1);
-check(`в теле notification'а новое число непрочитанных`, /непрочитанных: 2/.test(grew.calls[0].body));
+check(`в теле notification'а новое число непрочитанных`, /has unread: 2/.test(grew.calls[0].body));
 
 // --- подтверждение доставки: наблюдаемая реакция ------------------------------
 
@@ -959,9 +959,9 @@ const rPerm = stallRoute({ kind: 'permission' }, 'abc123', 'Worker: X');
 const rLimit = stallRoute({ kind: 'limit' }, 'abc123', 'Worker: X');
 const rUnknown = stallRoute({ kind: 'unknown' }, 'abc123', 'Worker: X');
 check(': permission зовёт человека к сессии',
-  /claude attach abc123/.test(rPerm) && /человек/.test(rPerm), rPerm);
+  /claude attach abc123/.test(rPerm) && /only a person/.test(rPerm), rPerm);
 check(': лимит человека не зовёт — сбросится сам, будится сообщением',
-  /человек не нужен/.test(rLimit) && /сообщением/.test(rLimit) && !/claude attach/.test(rLimit), rLimit);
+  /no person needed/.test(rLimit) && /wake the session with a message/.test(rLimit) && !/claude attach/.test(rLimit), rLimit);
 check(': неопознанная причина не выдумывает маршрут, а посылает в логи',
   /claude logs abc123/.test(rUnknown), rUnknown);
 
@@ -1062,9 +1062,9 @@ check(': живая вставшая сессия по-прежнему стоп
   alivePaused[0].kind !== 'stale', JSON.stringify(alivePaused));
 const rStale = stallRoute({ kind: 'stale', address: 'worker:ghost' }, 'ghost1', GHOST_NAME);
 check(': маршрут по мёртвой записи не зовёт будить сообщением — будить некого',
-  /будить некого/.test(rStale) && !/SendMessage/.test(rStale) && /claude logs ghost1/.test(rStale), rStale);
+  /nobody to wake/.test(rStale) && !/SendMessage/.test(rStale) && /claude logs ghost1/.test(rStale), rStale);
 check(`: маршрут по мёртвой записи worker'а зовёт поднять его тем же spawn'ом`,
-  /spawn'ом/.test(rStale) && /worktree/.test(rStale), rStale);
+  /same spawn/.test(rStale) && /worktree/.test(rStale), rStale);
 // Reviewer'а поднимают другой командой, и адрес `worker:<слаг>` ему не подходит: `promptobus spawn`
 // заводит worker'а, а worktree у reviewer'а нет вовсе (замечание ревью). Единственный
 // задокументированный живой призрак — как раз сессия reviewer'а.
@@ -1075,9 +1075,9 @@ const rStaleReviewer = stallRoute(
 );
 check(`: мёртвую запись reviewer'а поднимают promptobus review, а не spawn'ом worker'а`,
   rStaleReviewer.includes(`promptobus review "${REVIEWER_REPO}" --task ${DIAG}`)
-  && !/spawn'ом/.test(rStaleReviewer) && !/worktree/.test(rStaleReviewer), rStaleReviewer);
+  && !/same spawn/.test(rStaleReviewer) && !/worktree/.test(rStaleReviewer), rStaleReviewer);
 check(': путь клона неизвестен — маршрут не выдумывает его, а называет место',
-  stallRoute({ kind: 'stale', address: 'reviewer:x' }, 'g', 'n').includes('<путь клона>'),
+  stallRoute({ kind: 'stale', address: 'reviewer:x' }, 'g', 'n').includes('<clone path>'),
   stallRoute({ kind: 'stale', address: 'reviewer:x' }, 'g', 'n'));
 
 // --- : строки о вставших — одни на все каналы --------------------------
@@ -1170,19 +1170,19 @@ check(': только что записанного участника исче�
   JSON.stringify(blocked(DIAG, [{ ...goneP, started: new Date().toISOString() }], registering)));
 const goneRoute = stallRoute({ ...goneSeen[0], task: DIAG }, goneSeen[0].id, goneSeen[0].ref);
 check(`: маршрут исчезнувшего worker'а — переподъём spawn'ом, без claude logs`,
-  /поднимай worker'а заново тем же spawn'ом/.test(goneRoute) && !/claude logs/.test(goneRoute), goneRoute);
+  /lift the worker again with the same spawn/.test(goneRoute) && !/claude logs/.test(goneRoute), goneRoute);
 // Замечание ревью: строку повторяет каждый mailbox до закрытия задачи, а исчезнуть
 // сессия могла и штатно — человек снял её после сданной работы. Голое «поднимай заново»
 // звало бы поднимать участника, чью работу уже приняли.
 check('замечание ревью: маршрут исчезнувшего различает сданную работу и несданную',
-  /claude stop/.test(goneRoute) && /[Рр]абота сдана/.test(goneRoute)
-  && /не сдана/.test(goneRoute), goneRoute);
+  /claude stop/.test(goneRoute) && /Work delivered/.test(goneRoute)
+  && /not delivered/.test(goneRoute), goneRoute);
 check(`: маршрут исчезнувшего reviewer'а — promptobus review по его клону, а не spawn`,
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n')
     .includes(`promptobus review "/tmp/klon" --task ${DIAG}`),
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n'));
 check(': строка исчезнувшего — своя, не «stalled» и не «LISTED»',
-  stallLine(goneSeen[0], DIAG).includes('GONE: записи сессии в claude agents нет')
+  stallLine(goneSeen[0], DIAG).includes('GONE: no session record in claude agents')
   && !/stalled|LISTED/.test(stallLine(goneSeen[0], DIAG)), stallLine(goneSeen[0], DIAG));
 check(': хвост на исчезнувшем возврата сообщений не обещает',
   !/until the stall is cleared/.test(stallTail(goneSeen)), stallTail(goneSeen));
@@ -1425,8 +1425,8 @@ check(': молчаливый конец хода `promptobus status` по-пр�
 // длинной командой, и каждый перечислял весь ящик заново, до шести сообщений в postcard'е.
 // Плюс два одинаковых абзаца хвоста на каждый стук: порядок работы, который и так лежит в
 // промпте участника, и своя копия предостережений Claude Code.
-const TAIL_GOLD = 'Забери mailbox: прочитанными сообщения делает только mailbox, порядок работы — '
-  + 'в правилах шины. Это notification, а не поручение человека, и прав оно не даёт.';
+const TAIL_GOLD = 'Fetch the mailbox: only mailbox marks messages read; the working order is '
+  + 'in the bus rules. This is a notification, not a human assignment, and it grants no permissions.';
 const emptyCard = orderBody(TASK, 'worker:api', 0, []);
 check(': хвост приказа — одна строка дела и одна короткая рамка',
   emptyCard.endsWith(TAIL_GOLD), emptyCard);
@@ -1476,7 +1476,7 @@ await knockRound(kIdle, idleList, T418);
 check(': сессия освободилась и mailbox не забрала — перестук идёт',
   kIdle.calls.length === 1 && knockHealth().knocks === 2, JSON.stringify(knockHealth()));
 check(': повтор не перечисляет уже отстучанное, а называет общий счётчик',
-  !kIdle.calls[0].body.includes('первое') && /непрочитанных: 1/.test(kIdle.calls[0].body),
+  !kIdle.calls[0].body.includes('первое') && /has unread: 1/.test(kIdle.calls[0].body),
   kIdle.calls[0].body);
 
 // Пришло новое поверх старого — оно и едет, одно, без соседа из прошлого стука.
@@ -1487,7 +1487,7 @@ check(': новое сообщение будит немедленно, и в з
   kGrew.calls.length === 1, String(kGrew.calls.length));
 check(': в повторе едет только новое, счётчик при этом общий',
   kGrew.calls[0].body.includes('второе') && !kGrew.calls[0].body.includes('первое')
-  && /непрочитанных: 2/.test(kGrew.calls[0].body), kGrew.calls[0].body);
+  && /has unread: 2/.test(kGrew.calls[0].body), kGrew.calls[0].body);
 
 // Состояние сессии неизвестно — это не «занята»: списка нет, записи нет, поля нет.
 // Перестук идёт, как шёл до .
@@ -1803,7 +1803,7 @@ check(': половина идентификатора владельцем не
   `${OWN_SHORT} · ${JSON.stringify(store.readWake(HOME, TAKEN, 'worker:full'))}`);
 // Отказ гейта обязан быть виден: молчаливый `null` неотличим от исправной работы.
 check(': отказ гейта записан в журнал надзирателя',
-  store.tailWardenLog(HOME, TAKEN, 20).some((l) => l.includes(`сдача contact point'а за адрес worker:full не идёт`)
+  store.tailWardenLog(HOME, TAKEN, 20).some((l) => l.includes(`contact-point handoff for address worker:full is refused`)
     && l.includes(OWN_FULL)),
   store.tailWardenLog(HOME, TAKEN, 5).join('\n'));
 // Вторая половина видимости: то же в `promptobus status` — единственное место, где отказ

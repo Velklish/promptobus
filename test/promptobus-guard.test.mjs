@@ -337,7 +337,7 @@ check(': чужая сессия за этот адрес не пишет ни c
 // молчи он здесь, самый частый вход в беду — чужой Stop-хук — прошёл бы неотличимо от
 // чистого прохода (второй раунд ревью).
 check(': сторож записал свой отказ в журнал надзирателя',
-  store.tailWardenLog(HOME, CHUZHOY, 10).some((l) => l.includes('turn-end mark за адрес worker:api не идёт')
+  store.tailWardenLog(HOME, CHUZHOY, 10).some((l) => l.includes('turn-end mark for address worker:api is refused')
     && l.includes(ALIEN_SESSION)),
   store.tailWardenLog(HOME, CHUZHOY, 5).join('\n') || '(журнал пуст)');
 // Своя сессия тем же вызовом пишет обе записи: гейт отличает чужого от владельца, а не
