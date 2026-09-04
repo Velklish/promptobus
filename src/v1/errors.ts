@@ -1,52 +1,53 @@
-// Отказы protocol v1: типизированный код плюс контекст.
+// Protocol v1 refusals: a typed code plus context.
 //
-// Человеческий текст — дело adapter'а, и это не стилистика: package обязан собираться и
-// проверяться без CLI, а пользовательский вывод остаётся в CLI целиком. Поэтому наружу
-// уходит `code` из перечня ниже и `context` с фактами отказа; `message` внутри исключения
-// оставлен для отладки — читать его потребителю незачем, разбирать отказ он обязан по коду.
+// Human wording is the adapter's job, and that is not style: the package must
+// compile and be tested without the CLI, and user output stays in the CLI
+// entirely. So what goes out is a `code` from the list below and `context`
+// with the facts of the refusal; `message` inside the exception is left for
+// debugging — a consumer has no need to read it, and must branch on the code.
 
 /**
- * Перечень кодов отказа. Константой, а не строками по месту: потребитель ветвится по коду,
- * и незаявленный код читается им как неизвестный отказ.
+ * Refusal-code list. A constant, not in-place strings: the consumer branches
+ * on the code, and an undeclared code is read as an unknown refusal.
  */
 export const ERROR_CODES = [
   // routing policy
   'policy-required',
   'policy-denied',
-  // задача
+  // task
   'task-not-found',
   'task-exists',
   'task-closed',
   'task-active',
   'task-broken',
-  // участники
+  // participants
   'participant-not-found',
   'participant-exists',
-  // отправка
+  // send
   'recipients-empty',
   'recipients-duplicate',
   'message-type-unknown',
-  // валидация
+  // validation
   'schema-invalid',
   'schema-version-unsupported',
-  // артефакты
+  // artifacts
   'artifact-source',
   'artifact-not-found',
   'artifact-integrity',
-  // диск
+  // disk
   'lock-busy',
   'link-refused',
 ] as const;
 
-/** Код отказа v1. */
+/** v1 refusal code. */
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
-/** Факты отказа: что за задача, участник, файл. Читается потребителем, а не человеком. */
+/** Facts of the refusal: which task, participant, file. Read by the consumer, not by a person. */
 export type ErrorContext = Record<string, unknown>;
 
 /**
- * Отказ protocol v1. Класс, а не голый `Error`: потребитель отличает отказ шины от поломки
- * `instanceof`, а ветвится по `code`.
+ * Protocol v1 refusal. A class, not a bare `Error`: the consumer tells a bus
+ * refusal from a crash with `instanceof`, and branches on `code`.
  */
 export class PromptobusError extends Error {
   readonly code: ErrorCode;
@@ -61,7 +62,7 @@ export class PromptobusError extends Error {
   }
 }
 
-/** Короткая форма броска: у отказов v1 нет ни одного места, где нужен голый `Error`. */
+/** Short throw form: no v1 refusal has a place that needs a bare `Error`. */
 export function fail(code: ErrorCode, message: string, context: ErrorContext = {}): never {
   throw new PromptobusError(code, message, context);
 }

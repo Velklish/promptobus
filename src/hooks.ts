@@ -1,9 +1,9 @@
-// Генерация project-level hooks шины. Форма записи — контракт harness'а, команда —
-// host: абсолютные node и bin, путь скрипта из host.busHookRel(). Раскладка потребителя
-// сюда не зашита.
+// Generation of project-level bus hooks. The record shape is the harness
+// contract; the command is the host: absolute node and bin, script path from
+// host.busHookRel(). A consumer layout is not baked in here.
 //
-// Скрипт хука лежит шаблоном рядом с исходниками (`templates/bus-hook.mjs`), а не
-// строковым литералом: правки генерата отделены от TypeScript-ядра.
+// The hook script lives as a template next to the sources (`templates/bus-hook.mjs`),
+// not as a string literal: generated edits stay apart from the TypeScript core.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -11,9 +11,9 @@ import type { PromptobusHost } from './host.js';
 
 export const BUS_HOOK_EVENT = 'PostToolUse';
 export const BUS_HOOK_SEP = '\n';
-// Имя сервера шины. Своего `contract.js` у package нет, и литерал здесь — не копия
-// константы потребителя, а объявление package. Расхождение с именем сервера ломает
-// матчер стейдженного хука: группа не находится.
+// Bus server name. The package has no `contract.js` of its own, and the literal
+// here is not a copy of a consumer constant, it is a package declaration. Drift
+// from the server name breaks the staged-hook matcher: the group is not found.
 export const BUS_SERVER = 'promptobus';
 export const BUS_HOOK_MATCHER = `mcp__${BUS_SERVER}__(promptobus_send|promptobus_mailbox)`;
 
@@ -91,8 +91,8 @@ export interface HookPlan {
   settings: Record<string, unknown>;
 }
 
-// Не полный PromptobusHost: тип объявляет, какие члены спрашивает план, и sync
-// передаёт ровно их.
+// Not a full PromptobusHost: the type declares which members the plan asks for,
+// and sync passes exactly those.
 export type PromptobusHookHost = Pick<PromptobusHost,
   'commandName' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'layoutBinPath'>;
 

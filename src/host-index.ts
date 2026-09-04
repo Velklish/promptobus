@@ -1,4 +1,4 @@
-// Entry point `./host`: контракт и standalone-реализация одним импортом.
+// `./host` entry point: contract and standalone implementation in one import.
 export {
   HOST_KIND, HostResolveError, homeOfRoot, isPromptobusHost,
 } from './host.js';

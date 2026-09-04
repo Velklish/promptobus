@@ -1,11 +1,13 @@
-// Contract suite driver'ов и машины состояний надзирателя. Запуск — `npm test`.
+// Contract suite of the drivers and the warden state machine. Run with `npm test`.
 //
-// Driver'ы здесь ПОДСТАВНЫЕ, и это не экономия, а предмет проверки: контракт обязан
-// держаться на harness'е, которого не существует. Настоящие driver'ы живут в `lib/`,
-// их собственные ветки — сокет, реестр сессий, отказ бинаря — проверяются отдельно.
+// The drivers here are STAND-INS, and that is not a saving, it is the subject
+// of the check: the contract must hold on a harness that does not exist. Real
+// drivers live in `lib/`, and their own branches — the socket, the session
+// registry, a binary refusal — are checked separately.
 //
-// Четыре рода driver'а покрыты подставными: push (будит сам), pull (организует свой
-// polling), managed (сессию поднял он) и attached (сессия подключилась сама).
+// Four kinds of driver are covered by stand-ins: push (wakes on its own),
+// pull (organises its own polling), managed (it raised the session) and
+// attached (the session attached itself).
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -15,28 +17,31 @@ import test from 'node:test';
 
 const bus = await import('../dist/index.js');
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
-// adapter'а нет, и его играет набор. Правило «worker'у нельзя писать worker'у»
-// живёт у потребителя и проверяется там.
+// A routing policy is required when the engine is opened, and its rule is the
+// adapter's business: there is no adapter here, and a stand-in set plays its
+// part. The rule "a worker must not write to a worker" lives at the consumer
+// and is checked there.
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-driver-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
 const home = path.join(SB, 'ws', '.promptobus');
 const engine = bus.openEngine({ home, policy: () => ({ allow: true }) });
 
-// Adapter'а здесь нет, и его играет набор: перевод адреса в запись участника v1 — его дело,
-// и делает он его теми же правилами, что дверь механизма (`lib/store.js`).
-// Адрес лежит полем `metadata`: по нему участника называет notification и по нему ключуются
-// health, contact point'ы и отметки стопа.
+// There is no adapter here, and a stand-in set plays its part: translating an
+// address into a v1 participant record is its job, and it does it by the same
+// rules as the mechanism door (`lib/store.js`).
+// The address lives in the `metadata` field: the notification names the
+// participant by it, and health, contact points, and stop marks are keyed by it.
 function rec(address, { harness = 'fake', mode, sessionRef = null, ...fields } = {}) {
   return {
     id: bus.addrDir(address),
     role: bus.roleOf(address),
     harness: (typeof harness === 'string' && harness.trim()) || 'fake',
-    // Режим отдаётся КАК ЕСТЬ: контракт driver'а обязан пережить и опечатку, и мусор в
-    // поле — запись правят руками, а «раз не attached, значит managed» гасило бы сессию,
-    // которую driver не поднимал. Схема store такую запись не примет, и здесь она в store
-    // не кладётся: предикат спрашивают о записи, которую подал вызывающий.
+    // The mode is given AS IS: the driver contract must survive both a typo
+    // and junk in the field — the record is edited by hand, and "if not
+    // attached, then managed" would stop a session the driver did not launch.
+    // The store schema will not accept such a record, and here it is not put
+    // in the store: the predicate is asked about a record the caller supplied.
     mode: mode === undefined ? (sessionRef ? 'managed' : 'attached') : mode,
     sessionRef,
     capabilities: null,
@@ -59,9 +64,9 @@ function newTask(title = 'contract') {
   return id;
 }
 
-// Подставной driver: capabilities объявляются, операции считают вызовы. `activate`
-// возвращает то, что положили в `reply`, — им и проверяется, что отказ одного участника
-// круг не уносит.
+// Stand-in driver: capabilities are declared, operations count calls. `activate`
+// returns whatever was put in `reply` — that is how a refusal of one participant
+// is checked not to take the whole round with it.
 function fakeDriver(id, {
   activation = 'push', spawn = true, attach = false, inspect = true, stop = false,
   features = null,
@@ -72,9 +77,10 @@ function fakeDriver(id, {
   const calls = { spawn: [], attach: [], inspect: [], activate: [], stop: [] };
   const d = {
     id,
-    // Свойства harness'а объявляются ОТДЕЛЬНО от операций и по умолчанию их нет
-    // вовсе: driver прежней редакции контракта их не знает, и читаться он обязан как
-    // «не умеет», а не как «наверное, умеет».
+    // Harness properties are declared SEPARATELY from operations and by
+    // default they are not there at all: a driver of the previous contract
+    // edition does not know them, and it must be read as "cannot", not as
+    // "it probably can".
     capabilities: { spawn, attach, activation, inspect, stop, ...(features ?? {}) },
     options: { knockChannel },
     calls,
@@ -88,12 +94,13 @@ function fakeDriver(id, {
       return reply(target, notification);
     };
   }
-  if (!omit.includes('stop')) d.stop = (ref) => { calls.stop.push(ref); return { ok: true, stopped: true, note: 'закрыта' }; };
+  if (!omit.includes('stop')) d.stop = (ref) => { calls.stop.push(ref); return { ok: true, stopped: true, note: 'closed' }; };
   return d;
 }
 
-// Отказ асинхронной операции: `stopParticipant` отдаёт обещание, и синхронный
-// `try` прошёл бы мимо отказа с исходом «не бросило».
+// Refusal of an async operation: `stopParticipant` returns a promise, and a
+// synchronous `try` would walk past the refusal with the outcome "it did not
+// throw".
 const rejected = async (fn) => {
   try {
     await fn();
@@ -112,70 +119,75 @@ const thrown = (fn) => {
   }
 };
 
-// --- registry: карта harness → driver ----------------------------------------
+// --- registry: harness → driver map ----------------------------------------
 
-test('registry собирается только из driver’ов, выполняющих контракт', () => {
+test('the registry is assembled only from drivers that meet the contract', () => {
   const bad = thrown(() => bus.createRegistry({ drivers: { fake: { id: 'fake' } } }));
   assert.equal(bad.name, 'GateError');
-  assert.match(bad.msg, /без id или capabilities/);
+  assert.match(bad.msg, /no id or capabilities/);
   const noFallback = thrown(() => bus.createRegistry({ drivers: { fake: fakeDriver('fake') }, fallback: 'other' }));
   assert.equal(noFallback.name, 'GateError');
   assert.match(noFallback.msg, /fallback/);
 });
 
-test('неизвестный harness отказывает и называет известные', () => {
+test('an unknown harness refuses and names the known ones', () => {
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake') } });
   const r = thrown(() => bus.driverFor(registry, 'cursor'));
   assert.equal(r.name, 'GateError');
-  assert.match(r.msg, /«cursor» неизвестен/);
-  assert.match(r.msg, /известные: fake/);
+  assert.match(r.msg, /«cursor» is unknown/);
+  assert.match(r.msg, /known: fake/);
 });
 
-test('harness записи прежнего CLI берётся из fallback, а непустой незнакомый — нет', () => {
+test('a former-CLI record harness is taken from fallback, and a non-empty unknown one is not', () => {
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake') }, fallback: 'fake' });
-  // Поля `harness` нет вовсе — это запись, сделанная до того, как поле появилось.
+  // The `harness` field is not there at all — this is a record made before the
+  // field appeared.
   assert.equal(bus.harnessOf(rec('worker:a'), registry), 'fake');
   assert.equal(bus.driverFor(registry, bus.harnessOf(rec('worker:a'), registry)).id, 'fake');
-  // Пустая строка — тоже «не назван»: пробелы не делают harness именем.
+  // An empty string is also "not named": spaces do not make a harness a name.
   assert.equal(bus.harnessOf(rec('worker:a', { harness: '  ' }), registry), 'fake');
-  // А вот непустое незнакомое имя fallback не спасает: это заявленный harness, и он чужой.
+  // A non-empty unknown name is not saved by fallback: this is a declared
+  // harness, and it is foreign.
   assert.equal(thrown(() => bus.driverFor(registry, bus.harnessOf({ harness: 'cursor' }, registry))).name, 'GateError');
-  // Без fallback запись без harness тоже отказывает — молча её никому не приписывают.
+  // Without fallback a record without a harness also refuses — it is not
+  // silently attributed to anyone.
   const strict = bus.createRegistry({ drivers: { fake: fakeDriver('fake') } });
-  assert.match(thrown(() => bus.driverFor(strict, bus.harnessOf({}, strict))).msg, /не назван/);
+  assert.match(thrown(() => bus.driverFor(strict, bus.harnessOf({}, strict))).msg, /not named/);
 });
 
-test('capability спрашивается и как объявление, и как операция', () => {
+test('a capability is asked both as a declaration and as an operation', () => {
   const declared = fakeDriver('fake', { stop: false });
-  assert.match(thrown(() => bus.requireCapability(declared, 'stop')).msg, /не умеет stop/);
-  // Объявил, а операции нет — тот же отказ: для вызывающего они неразличимы.
+  assert.match(thrown(() => bus.requireCapability(declared, 'stop')).msg, /cannot stop/);
+  // Declared, but there is no operation — the same refusal: they are
+  // indistinguishable to the caller.
   const lying = fakeDriver('fake', { stop: true, omit: ['stop'] });
-  assert.match(thrown(() => bus.requireCapability(lying, 'stop')).msg, /объявил stop, но операции/);
+  assert.match(thrown(() => bus.requireCapability(lying, 'stop')).msg, /declared stop but has no such operation/);
 });
 
-// --- свойства harness'а: флаги без своей операции -------------------
+// --- harness properties: flags without their own operation -------------------
 
-test('свойство harness\'а спрашивается флагом, а не наличием операции', () => {
+test('a harness property is asked by the flag, not by operation presence', () => {
   const full = fakeDriver('fake', {
     features: { denyTools: true, systemPrompt: true, sessionList: true, enter: true },
   });
   for (const feature of ['denyTools', 'systemPrompt', 'sessionList', 'enter']) {
     assert.equal(bus.hasFeature(full, feature), true, feature);
   }
-  // Объявлено ложью — «не умеет», и это тот случай, ради которого флаг заведён: read-only
-  // участника у такого harness'а не бывает вовсе.
+  // Declared as false — "cannot", and that is the case the flag was introduced
+  // for: a read-only participant does not exist on such a harness at all.
   const half = fakeDriver('fake', { features: { denyTools: false, sessionList: true } });
   assert.equal(bus.hasFeature(half, 'denyTools'), false);
   assert.equal(bus.hasFeature(half, 'sessionList'), true);
-  // Флага нет ВОВСЕ — driver прежней редакции контракта. Читается как «не умеет»:
-  // молчаливое «наверное, умеет» и есть то, от чего флаг сторожит.
+  // The flag is not there AT ALL — a driver of the previous contract edition.
+  // It is read as "cannot": the silent "it probably can" is exactly what the
+  // flag guards against.
   const old = fakeDriver('fake');
   for (const feature of ['denyTools', 'systemPrompt', 'sessionList', 'enter']) {
     assert.equal(bus.hasFeature(old, feature), false, feature);
   }
 });
 
-test('снимок capabilities несёт новые флаги, а запись прежней редакции читается без них', () => {
+test('the capabilities snapshot carries the new flags, and a former-edition record is read without them', () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
     features: { denyTools: true, systemPrompt: false, sessionList: true, enter: false },
@@ -188,9 +200,10 @@ test('снимок capabilities несёт новые флаги, а запис�
     spawn: true, attach: false, activation: 'push', inspect: true, stop: false,
     denyTools: true, systemPrompt: false, sessionList: true, enter: false,
   });
-  // Запись, сделанную ДО расширения контракта, схема обязана принимать как есть: такие
-  // лежат в живых журналах, и потребуй она новых полей, задача прошлого релиза перестала
-  // бы читаться целиком — вместе с участниками, mailbox'ами и уборкой за ней.
+  // A record made BEFORE the contract extension must be accepted by the schema
+  // as-is: such records sit in live journals, and were it to require the new
+  // fields, a task of the previous release would stop reading entirely —
+  // together with its participants, mailboxes, and the cleanup after it.
   const { meta: old } = bus.openParticipant(home, task,
     rec('worker:b', { harness: 'fake', sessionRef: 'sess-b' }), bus.createRegistry({
       drivers: { fake: fakeDriver('fake') },
@@ -198,13 +211,13 @@ test('снимок capabilities несёт новые флаги, а запис�
   const q = old.participants.find((x) => bus.addressOf(x) === 'worker:b');
   assert.deepEqual(Object.keys(q.capabilities).sort(),
     ['activation', 'attach', 'inspect', 'spawn', 'stop']);
-  // И прочитан такой журнал целиком, а не «кроме этого участника».
+  // And such a journal is read whole, not "except this participant".
   assert.equal(engine.readTask(task).participants.length, old.participants.length);
 });
 
-// --- managed и attached: запись участника ------------------------------------
+// --- managed and attached: the participant record ------------------------------------
 
-test('managed: запись участника несёт harness, режим, ref и снимок capabilities', () => {
+test('managed: the participant record carries harness, mode, ref, and the capabilities snapshot', () => {
   const task = newTask();
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake') } });
   const { driver, meta } = bus.openParticipant(home, task,
@@ -217,39 +230,39 @@ test('managed: запись участника несёт harness, режим, r
   assert.deepEqual(p.capabilities, { spawn: true, attach: false, activation: 'push', inspect: true, stop: false });
 });
 
-test('attached: сессия подключилась сама, и требуется своя capability', () => {
+test('attached: the session attached itself, and its own capability is required', () => {
   const task = newTask();
   const pushOnly = bus.createRegistry({ drivers: { fake: fakeDriver('fake', { attach: false }) } });
   const refused = thrown(() => bus.openParticipant(home, task,
     rec('worker:a', { harness: 'fake', sessionRef: 'sess-a' }), pushOnly, { mode: 'attached' }));
-  assert.match(refused.msg, /не умеет attach/);
+  assert.match(refused.msg, /cannot attach/);
   const withAttach = bus.createRegistry({ drivers: { fake: fakeDriver('fake', { attach: true }) } });
   const { meta } = bus.openParticipant(home, task,
     rec('worker:a', { harness: 'fake', sessionRef: 'sess-a' }), withAttach, { mode: 'attached' });
   assert.equal(meta.participants.find((x) => bus.addressOf(x) === 'worker:a').mode, 'attached');
 });
 
-test('неизвестный harness отказывает ДО записи participant', () => {
+test('an unknown harness refuses BEFORE the participant write', () => {
   const task = newTask();
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake') } });
   const before = readFileSync(engine.taskFile(task), 'utf8');
   const r = thrown(() => bus.openParticipant(home, task,
     rec('worker:a', { harness: 'cursor', sessionRef: 'sess-a' }), registry));
   assert.equal(r.name, 'GateError');
-  assert.equal(readFileSync(engine.taskFile(task), 'utf8'), before, 'журнал задачи не тронут');
+  assert.equal(readFileSync(engine.taskFile(task), 'utf8'), before, 'the task journal was not touched');
   assert.equal(engine.readTask(task).participants.some((p) => bus.addressOf(p) === 'worker:a'), false);
 });
 
-test('необъявленная capability отказывает ДО записи participant', () => {
+test('an undeclared capability refuses BEFORE the participant write', () => {
   const task = newTask();
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake', { spawn: false }) } });
   const before = readFileSync(engine.taskFile(task), 'utf8');
   assert.match(thrown(() => bus.openParticipant(home, task,
-    rec('worker:a', { harness: 'fake', sessionRef: 'sess-a' }), registry)).msg, /не умеет spawn/);
-  assert.equal(readFileSync(engine.taskFile(task), 'utf8'), before, 'журнал задачи не тронут');
+    rec('worker:a', { harness: 'fake', sessionRef: 'sess-a' }), registry)).msg, /cannot spawn/);
+  assert.equal(readFileSync(engine.taskFile(task), 'utf8'), before, 'the task journal was not touched');
 });
 
-test('участник без session reference отказывает тем же порядком', () => {
+test('a participant without a session reference refuses in the same order', () => {
   const task = newTask();
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake') } });
   const before = readFileSync(engine.taskFile(task), 'utf8');
@@ -258,34 +271,37 @@ test('участник без session reference отказывает тем же
   assert.equal(readFileSync(engine.taskFile(task), 'utf8'), before);
 });
 
-test('stop гасит только managed: attached отказывает режимом, а не capability', async () => {
+test('stop only kills managed: attached refuses by mode, not by capability', async () => {
   const driver = fakeDriver('fake', { attach: true, stop: true });
   const registry = bus.createRegistry({ drivers: { fake: driver } });
   const managed = rec('worker:a', { harness: 'fake', mode: 'managed', sessionRef: 'sess-a' });
   const attached = rec('worker:b', { harness: 'fake', mode: 'attached', sessionRef: 'sess-b' });
-  // Исход гашения `await`'ится: driver вправе дождаться, пока сессии у harness'а не станет,
-  // и синхронное чтение поля прошло бы мимо обещания.
+  // The stop outcome is `await`ed: the driver may wait until the harness no
+  // longer has the session, and a synchronous field read would walk past the
+  // promise.
   assert.equal((await bus.stopParticipant(managed, registry)).ok, true);
   assert.deepEqual(driver.calls.stop, ['sess-a']);
   const refused = await rejected(() => bus.stopParticipant(attached, registry));
   assert.equal(refused.name, 'GateError');
-  assert.match(refused.msg, /режим «attached»/);
-  assert.match(refused.msg, /не поднимал/);
-  assert.deepEqual(driver.calls.stop, ['sess-a'], 'до driver’а attached не дошёл');
-  // Запись прежнего CLI режима не несёт вовсе — её сессию поднимал подъём, и она managed.
+  assert.match(refused.msg, /mode «attached»/);
+  assert.match(refused.msg, /did not launch/);
+  assert.deepEqual(driver.calls.stop, ['sess-a'], 'attached did not reach the driver');
+  // A former-CLI record does not carry a mode at all — spawn raised its
+  // session, and it is managed.
   assert.equal(bus.modeOf(rec('worker:c', { sessionRef: 'sess-c' })), 'managed');
   assert.equal(bus.isManaged(rec('worker:c', { sessionRef: 'sess-c' })), true);
-  // Owner задачи session reference не несёт: режима у него нет, гасить нечего.
+  // The task owner carries no session reference: it has no mode, there is
+  // nothing to stop.
   assert.equal(bus.modeOf(rec(bus.ORCHESTRATOR)), null);
   assert.equal(bus.isManaged(rec(bus.ORCHESTRATOR)), false);
-  assert.equal((await bus.stopParticipant(managed, registry)).stopped, true, 'исход «погасил» отличим от «гасить нечего»');
+  assert.equal((await bus.stopParticipant(managed, registry)).stopped, true, 'the "stopped" outcome is distinct from "nothing to stop"');
 });
 
-test('незнакомый режим за managed не считается — ни опечатка в регистре, ни мусор', async () => {
+test('an unfamiliar mode is not counted as managed — neither a case typo nor junk', async () => {
   const driver = fakeDriver('fake', { stop: true });
   const registry = bus.createRegistry({ drivers: { fake: driver } });
-  // «Раз не attached, значит managed» гасило бы сессию, которую driver не поднимал: у поля,
-  // правленного руками, значение бывает и опечаткой, и мусором.
+  // "If not attached, then managed" would stop a session the driver did not
+  // launch: a hand-edited field can be a typo or junk.
   for (const mode of ['Attached', 'MANAGED', 'что-то своё', 'managed ']) {
     const p = rec('worker:a', { harness: 'fake', mode, sessionRef: 'sess-a' });
     const known = mode.trim() === 'managed';
@@ -293,26 +309,27 @@ test('незнакомый режим за managed не считается — �
     if (known) continue;
     const r = await rejected(() => bus.stopParticipant(p, registry));
     assert.equal(r.name, 'GateError', `mode=${JSON.stringify(mode)}`);
-    assert.match(r.msg, /контракт не знает|режим «attached»/);
+    assert.match(r.msg, /does not know this mode|mode «attached»/);
   }
-  assert.deepEqual(driver.calls.stop, [], 'до driver’а незнакомый режим не дошёл');
-  // Поля нет вовсе — законное умолчание: так писал участников прежний CLI.
+  assert.deepEqual(driver.calls.stop, [], 'an unfamiliar mode did not reach the driver');
+  // The field is not there at all — a lawful default: that is how the former
+  // CLI wrote participants.
   assert.equal(bus.isManaged(rec('worker:a', { sessionRef: 'sess-a' })), true);
   assert.equal(bus.isManaged(rec('worker:a', { mode: '  ', sessionRef: 'sess-a' })), true);
 });
 
-test('driver без capability stop отказывает до вызова, даже managed-участнику', async () => {
+test('a driver without the stop capability refuses before the call, even for a managed participant', async () => {
   const driver = fakeDriver('fake', { stop: false, omit: ['stop'] });
   const registry = bus.createRegistry({ drivers: { fake: driver } });
   const r = await rejected(() => bus.stopParticipant(
     rec('worker:a', { harness: 'fake', mode: 'managed', sessionRef: 'sess-a' }), registry));
   assert.equal(r.name, 'GateError');
-  assert.match(r.msg, /не умеет stop/);
+  assert.match(r.msg, /cannot stop/);
 });
 
-// --- inspect: снимок сессий --------------------------------------------------
+// --- inspect: the session snapshot --------------------------------------------------
 
-test('снимок собирается через registry и ключуется адресом участника', () => {
+test('the snapshot is assembled through the registry and keyed by participant address', () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
     view: (ref) => (ref === 'sess-b'
@@ -326,28 +343,30 @@ test('снимок собирается через registry и ключуетс�
   assert.deepEqual(Object.keys(snap).sort(), ['worker:a', 'worker:b']);
   assert.equal(snap['worker:a'].busy, true);
   assert.equal(snap['worker:b'].state, 'stale');
-  // Owner задачи session reference не несёт — в снимке его нет вовсе, и это не «исчез».
+  // The task owner carries no session reference — it is not in the snapshot
+  // at all, and that is not "vanished".
   assert.equal(Object.hasOwn(snap, bus.ORCHESTRATOR), false);
   assert.equal(bus.liveParticipant(rec(bus.ORCHESTRATOR), snap), 'unknown');
 });
 
-test('driver не разобрал состояние — снимка нет целиком', () => {
+test('the driver did not parse the state — there is no snapshot at all', () => {
   const task = newTask();
   const registry = bus.createRegistry({ drivers: { fake: fakeDriver('fake', { view: () => null }) } });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   assert.equal(bus.snapshotSessions(engine.readTask(task).participants, registry), null);
-  // Неизвестность — не смерть: перечень вставших её не выдумывает.
+  // Unknown is not death: the stalled list does not invent it.
   assert.equal(bus.blockedParticipants(home, task, engine.readTask(task).participants, null), null);
 });
 
-// --- неизвестность: спросить некого ------------------------------------------
+// --- unknown: there is no one to ask ------------------------------------------
 //
-// Два рода участника, о котором спросить нечем: driver'а по его harness'у в карте нет и
-// driver есть, но `inspect` не объявлен. Оба обязаны читаться как НЕИЗВЕСТНОСТЬ, а не как
-// смерть: приняв их за мёртвых, механизм гасит слушателя живой задачи, докладывает «ИСЧЕЗ»
-// о работающей сессии и сносит её конфиг уборкой.
+// Two kinds of participant there is nothing to ask about: there is no driver
+// for its harness in the map, and there is a driver but `inspect` is not
+// declared. Both must be read as UNKNOWN, not as death: taking them for dead,
+// the mechanism would stop a live task's listener, report "GONE" about a
+// working session, and wipe its config in cleanup.
 
-test('чужой harness не роняет снимок, а даёт этому участнику неизвестность', () => {
+test('a foreign harness does not bring the snapshot down, it gives that participant unknown', () => {
   const task = newTask();
   const driver = fakeDriver('fake');
   const registry = bus.createRegistry({ drivers: { fake: driver } });
@@ -355,15 +374,15 @@ test('чужой harness не роняет снимок, а даёт этому 
   put(task, 'worker:b', { harness: 'fake', sessionRef: 'sess-b', started: '2020-01-01T00:00:00.000Z' });
   const ps = engine.readTask(task).participants;
   const snap = bus.snapshotSessions(ps, registry);
-  assert.equal(snap['worker:a'].state, 'unknown', 'снимок собрался, а не бросил');
+  assert.equal(snap['worker:a'].state, 'unknown', 'the snapshot assembled, it did not throw');
   assert.equal(snap['worker:b'].state, 'alive');
   assert.equal(bus.liveParticipant(ps.find((p) => bus.addressOf(p) === 'worker:a'), snap), 'unknown');
-  // Неизвестного не гасят и о нём не докладывают.
+  // The unknown is not stopped and is not reported.
   assert.ok(bus.liveWatched(home, task, snap).includes('worker:a'));
   assert.deepEqual(bus.blockedParticipants(home, task, ps, snap), []);
 });
 
-test('driver без inspect — тоже неизвестность: живую сессию за мёртвую не выдают', (t) => {
+test('a driver without inspect is also unknown: a live session is not given out as dead', (t) => {
   const task = newTask();
   const blind = fakeDriver('blind', { inspect: false, omit: ['inspect'] });
   const registry = bus.createRegistry({ drivers: { blind }, fallback: 'blind' });
@@ -372,23 +391,25 @@ test('driver без inspect — тоже неизвестность: живую 
   const snap = bus.snapshotSessions(ps, registry);
   assert.equal(snap['worker:a'].state, 'unknown');
   assert.equal(bus.liveParticipant(ps[0], snap), 'unknown');
-  assert.deepEqual(bus.blockedParticipants(home, task, ps, snap), [], 'доклада «ИСЧЕЗ» нет');
-  assert.deepEqual(bus.liveWatched(home, task, snap), ['worker:a'], 'из живых не выброшен');
-  return t.test('надзиратель живой задачи не гаснет', () => {
-    // Место надзирателя занимается по-настоящему: `beatRound` первым делом продлевает свою
-    // отметку, и без неё он вышел бы по «место занял другой процесс», а не по пустоте.
+  assert.deepEqual(bus.blockedParticipants(home, task, ps, snap), [], 'there is no GONE report');
+  assert.deepEqual(bus.liveWatched(home, task, snap), ['worker:a'], 'not dropped from the live set');
+  return t.test('the warden of a live task does not go out', () => {
+    // The warden seat is taken for real: `beatRound` first of all extends its
+    // own mark, and without it it would exit on "another process took the
+    // seat", not on emptiness.
     bus.claimWarden(home, task);
     assert.equal(bus.beatRound(home, task, Date.now(), { sessions: snap }), null);
   });
 });
 
-// --- доклад о стопе несёт harness записи ----------------------------
+// --- the stall report carries the record harness ----------------------------
 //
-// Маршрут по стопу — команда КОНКРЕТНОГО harness'а, и спрашивать её надо у того driver'а,
-// который состояние и разобрал. Снимок к этому моменту уже собран, registry в разбор не
-// подаётся вовсе, поэтому harness едет полем самой записи о стопе.
+// The stall route is a command of a SPECIFIC harness, and it must be asked of
+// the driver that parsed the state. By this point the snapshot is already
+// assembled, the registry is not passed into the parse at all, so the harness
+// travels as a field of the stall record itself.
 
-test('запись о стопе называет harness участника — по нему потребитель берёт driver маршрута', () => {
+test('the stall record names the participant harness — the consumer takes the route driver by it', () => {
   const task = newTask();
   const stall = { state: 'alive', busy: false, stall: { kind: 'permission', reason: 'диалог' }, id: 'id-a' };
   const registry = bus.createRegistry({
@@ -401,17 +422,18 @@ test('запись о стопе называет harness участника —
   const stalled = bus.blockedParticipants(home, task, ps, snap);
   assert.equal(stalled.length, 1);
   assert.equal(stalled[0].harness, 'fake');
-  // Записи прежнего CLI поля `harness` не несут вовсе — тогда `null`, и потребитель берёт
-  // `fallback` своего registry. Выдумывать за них имя нельзя: чужое повело бы маршрут к
-  // driver'у, который эту сессию не поднимал.
+  // Former-CLI records do not carry a `harness` field at all — then `null`,
+  // and the consumer takes the `fallback` of its registry. Inventing a name
+  // for them is not allowed: a foreign one would send the route to a driver
+  // that did not raise this session.
   const legacy = [{ ...ps.find((x) => bus.addressOf(x) === 'worker:a'), harness: undefined }];
   const legacySnap = { 'worker:a': stall };
   assert.equal(bus.blockedParticipants(home, task, legacy, legacySnap)[0].harness, null);
 });
 
-// --- push: активация через driver --------------------------------------------
+// --- push: activation through the driver --------------------------------------------
 
-test('push-driver будит адресата непрочитанного, и notification несёт выжимки', async (t) => {
+test('a push-driver wakes the addressee of the unread, and the notification carries excerpts', async (t) => {
   const task = newTask();
   const driver = fakeDriver('fake');
   const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
@@ -420,12 +442,12 @@ test('push-driver будит адресата непрочитанного, и n
   send(task, 'worker:a', 'task', 'первое');
 
   const r = await bus.supervisorRound(home, task, { registry });
-  await t.test('стук ушёл один и адресату', () => {
+  await t.test('the knock went once and to the addressee', () => {
     assert.equal(driver.calls.activate.length, 1);
     assert.equal(driver.calls.activate[0].target.ref, 'sess-a');
     assert.equal(driver.calls.activate[0].target.endpoint.socket, path.join(SB, 'a.sock'));
   });
-  await t.test('notification несёт задачу, адрес, счётчик и тела сообщений', () => {
+  await t.test('the notification carries the task, the address, the count, and the message bodies', () => {
     const n = driver.calls.activate[0].notification;
     assert.equal(n.kind, 'unread');
     assert.equal(n.task, task);
@@ -435,14 +457,14 @@ test('push-driver будит адресата непрочитанного, и n
     assert.equal(n.messages[0].body, 'первое');
     assert.equal(n.messages[0].type, 'task');
     assert.equal(n.messages[0].from, bus.ORCHESTRATOR);
-    assert.ok(n.messages[0].id, 'у выжимки есть id — по нему идёт отсечка повтора');
+    assert.ok(n.messages[0].id, 'the excerpt has an id — the repeat cutoff goes by it');
   });
-  await t.test('событие круга названо', () => {
+  await t.test('the round event is named', () => {
     assert.ok(r.events.some((e) => /notification worker:a/.test(e)), r.events.join('\n'));
   });
 });
 
-test('pull-driver не будит вовсе, но непрочитанное у него видно', async () => {
+test('a pull-driver does not wake at all, but its unread is visible', async () => {
   const task = newTask();
   const driver = fakeDriver('fake', { activation: 'pull' });
   const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
@@ -451,17 +473,18 @@ test('pull-driver не будит вовсе, но непрочитанное у
   send(task, 'worker:a', 'task', 'лежит');
 
   await bus.supervisorRound(home, task, { registry });
-  assert.equal(driver.calls.activate.length, 0, 'pull-driver сессию не будит');
+  assert.equal(driver.calls.activate.length, 0, 'a pull-driver does not wake the session');
   const h = bus.readHealth(home, task)['worker:a'];
   assert.equal(h.unread, 1);
   assert.equal(h.channel, 'pull');
-  // Молчание такого участника видно тем же порогом, что и у push: канал ни при чём.
+  // Silence of such a participant is visible by the same threshold as for
+  // push: the channel has nothing to do with it.
   const late = Date.now() + (bus.SILENCE_SEC + 60) * 1000;
   const r = await bus.supervisorRound(home, task, { registry, now: late });
-  assert.ok(r.events.some((e) => /МОЛЧИТ worker:a/.test(e)), r.events.join('\n'));
+  assert.ok(r.events.some((e) => /SILENT worker:a/.test(e)), r.events.join('\n'));
 });
 
-test('отказ активации одного участника не мешает остальным', async (t) => {
+test('an activation refusal of one participant does not block the others', async (t) => {
   const task = newTask();
   const driver = fakeDriver('fake', {
     reply: (target) => {
@@ -476,25 +499,26 @@ test('отказ активации одного участника не меш�
     send(task, addr, 'task', `для ${addr}`);
   }
   const r = await bus.supervisorRound(home, task, { registry });
-  await t.test('оба участника обойдены, круг не оборван', () => {
+  await t.test('both participants were walked, the round was not cut short', () => {
     assert.equal(driver.calls.activate.length, 2);
     assert.equal(r.stop, null);
   });
-  await t.test('упавшему записан откат канала с причиной', () => {
+  await t.test('the fallen one got a channel fallback with the reason', () => {
     const h = bus.readHealth(home, task);
     assert.equal(h['worker:a'].channel, 'self-wake');
     assert.equal(h['worker:a'].knockError, 'канал оборван');
-    // Удавшийся стук пишет `options.knockChannel`; у подставного driver'а по умолчанию
-    // это `socket`, как у Claude Code.
+    // A successful knock writes `options.knockChannel`; on the stand-in
+    // driver the default is `socket`, as on Claude Code.
     assert.equal(h['worker:b'].channel, 'socket');
     assert.equal(h['worker:b'].knocks, 1);
-    // Журнал отказа для канала `socket` по-прежнему слово «сокет» — форма Claude Code.
-    assert.ok(r.events.some((e) => /сокет не принял notification \(канал оборван\)/.test(e)),
+    // The refusal journal for channel `socket` is still the word "socket" —
+    // the Claude Code form.
+    assert.ok(r.events.some((e) => /socket did not accept the notification \(канал оборван\)/.test(e)),
       r.events.join('\n'));
   });
 });
 
-test('удавшийся стук пишет knockChannel driver’а, а не литерал socket', async () => {
+test('a successful knock writes the driver knockChannel, not the socket literal', async () => {
   const task = newTask();
   const inject = fakeDriver('cursor-like', { knockChannel: 'inject' });
   const rpc = fakeDriver('codex-like', { knockChannel: 'rpc' });
@@ -513,7 +537,7 @@ test('удавшийся стук пишет knockChannel driver’а, а не �
   assert.equal(h['worker:b'].channel, 'rpc');
 });
 
-test('отказ стука пишет knockChannel driver’а, а не литерал «сокет»', async () => {
+test('a failed knock writes the driver knockChannel, not the socket literal', async () => {
   const task = newTask();
   const inject = fakeDriver('cursor-like', {
     knockChannel: 'inject',
@@ -536,14 +560,14 @@ test('отказ стука пишет knockChannel driver’а, а не лит�
   const h = bus.readHealth(home, task);
   assert.equal(h['worker:a'].channel, 'self-wake');
   assert.equal(h['worker:b'].channel, 'self-wake');
-  assert.ok(r.events.some((e) => /worker:a: inject не принял notification \(канал оборван\)/.test(e)),
+  assert.ok(r.events.some((e) => /worker:a: inject did not accept the notification \(канал оборван\)/.test(e)),
     r.events.join('\n'));
-  assert.ok(r.events.some((e) => /worker:b: rpc не принял notification \(holder gone\)/.test(e)),
+  assert.ok(r.events.some((e) => /worker:b: rpc did not accept the notification \(holder gone\)/.test(e)),
     r.events.join('\n'));
-  assert.ok(!r.events.some((e) => /сокет не принял/.test(e)), r.events.join('\n'));
+  assert.ok(!r.events.some((e) => /socket did not accept/.test(e)), r.events.join('\n'));
 });
 
-test('участник с неизвестным harness не уносит круг, а остаётся строкой в журнале', async () => {
+test('a participant with an unknown harness does not take the round, it stays a journal line', async () => {
   const task = newTask();
   const driver = fakeDriver('fake');
   const registry = bus.createRegistry({ drivers: { fake: driver } });
@@ -555,16 +579,16 @@ test('участник с неизвестным harness не уносит кр�
   }
   const r = await bus.supervisorRound(home, task, { registry });
   assert.equal(r.stop, null);
-  assert.equal(driver.calls.activate.length, 1, 'знакомый harness разбужен');
+  assert.equal(driver.calls.activate.length, 1, 'the known harness was woken');
   const h = bus.readHealth(home, task);
   assert.equal(h['worker:a'].channel, 'no-driver');
-  assert.match(String(h['worker:a'].knockError), /«cursor» неизвестен/);
-  assert.ok(r.events.some((e) => /будить нечем worker:a/.test(e)), r.events.join('\n'));
+  assert.match(String(h['worker:a'].knockError), /«cursor» is unknown/);
+  assert.ok(r.events.some((e) => /nothing to wake with worker:a/.test(e)), r.events.join('\n'));
 });
 
-// --- состояние переживает смерть процесса ------------------------------------
+// --- state survives process death ------------------------------------
 
-test('надзиратель упал и поднялся заново — состояние на месте, второго стука нет', async (t) => {
+test('the warden fell and came back — the state is in place, there is no second knock', async (t) => {
   const task = newTask();
   const sock = path.join(SB, 'restart.sock');
   const first = fakeDriver('fake');
@@ -575,11 +599,12 @@ test('надзиратель упал и поднялся заново — со�
   await bus.supervisorRound(home, task, { registry: registry(first) });
   const knockedTo = bus.readHealth(home, task)['worker:a'].knockedTo;
 
-  // «Перезапуск»: свежий driver и свежий registry, как после смерти процесса. Своего
-  // состояния у надзирателя нет — всё, что он знал, лежит в store задачи.
+  // "Restart": a fresh driver and a fresh registry, as after process death.
+  // The warden has no state of its own — everything it knew sits in the
+  // task store.
   const second = fakeDriver('fake');
   await bus.supervisorRound(home, task, { registry: registry(second) });
-  await t.test('порог перестука пережил перезапуск — второго стука нет', () => {
+  await t.test('the re-knock threshold survived the restart — there is no second knock', () => {
     assert.equal(second.calls.activate.length, 0);
     assert.equal(bus.readHealth(home, task)['worker:a'].knocks, 1);
   });
@@ -587,16 +612,16 @@ test('надзиратель упал и поднялся заново — со�
   send(task, 'worker:a', 'status', 'второе');
   const third = fakeDriver('fake');
   await bus.supervisorRound(home, task, { registry: registry(third) });
-  await t.test('отсечка повтора тоже пережила: в notification только новое', () => {
+  await t.test('the repeat cutoff survived too: the notification has only the new', () => {
     assert.equal(third.calls.activate.length, 1);
     const msgs = third.calls.activate[0].notification.messages;
     assert.equal(msgs.length, 1);
     assert.equal(msgs[0].body, 'второе');
-    assert.ok(String(msgs[0].id) > String(knockedTo), 'показано то, что пришло после прошлого стука');
+    assert.ok(String(msgs[0].id) > String(knockedTo), 'shown is what arrived after the previous knock');
   });
 });
 
-test('стоп пишется в журнал и не активирует owner’а', async (t) => {
+test('a stall is written to the journal and does not activate the owner', async (t) => {
   const task = newTask();
   const stall = { state: 'alive', busy: false, stall: { kind: 'permission', reason: 'permission prompt' }, id: 'id-a' };
   const driver = fakeDriver('fake', { view: (ref) => (ref === 'sess-a' ? stall : { state: 'alive', busy: false, stall: null, id: null }) });
@@ -607,7 +632,7 @@ test('стоп пишется в журнал и не активирует owner
   const snap = bus.snapshotSessions(engine.readTask(task).participants, registry);
 
   const first = await bus.stallRound(home, task, { sessions: snap });
-  await t.test('стоп не рождает activate, а запись несёт участника', () => {
+  await t.test('a stall does not spawn activate, and the record names the participant', () => {
     assert.equal(driver.calls.activate.length, 0);
     assert.equal(first.length, 1);
     assert.equal(first[0].address, 'worker:a');
@@ -617,13 +642,13 @@ test('стоп пишется в журнал и не активирует owner
   });
   const wasCalls = driver.calls.activate.length;
   await bus.stallRound(home, task, { sessions: snap });
-  await t.test('тот же стоп второй раз не пишется', () => {
+  await t.test('the same stall is not written a second time', () => {
     assert.equal(driver.calls.activate.length, wasCalls);
     assert.match(readFileSync(bus.stallsFile(home, task), 'utf8'), /permission prompt/);
   });
 });
 
-test('без contact point отметка ставится сразу — доставлять нечего', async () => {
+test('without a contact point the mark is set at once — there is nothing to deliver', async () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
     reply: () => ({ ok: false, error: 'сокет не ответил' }),
@@ -643,7 +668,7 @@ test('без contact point отметка ставится сразу — дос
   assert.match(readFileSync(bus.stallsFile(home, task), 'utf8'), /permission prompt/);
 });
 
-test('pull-driver на адресе owner’а: стоп тоже без activate', async () => {
+test('a pull-driver on the owner address: the stall is also without activate', async () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
     activation: 'pull',
@@ -657,15 +682,15 @@ test('pull-driver на адресе owner’а: стоп тоже без activat
   bus.writeWake(home, task, bus.ORCHESTRATOR, { socket: path.join(SB, 'pull-orch.sock') });
   const snap = bus.snapshotSessions(engine.readTask(task).participants, registry);
   const events = await bus.stallRound(home, task, { sessions: snap });
-  assert.equal(driver.calls.activate.length, 0, 'стоп не будит');
+  assert.equal(driver.calls.activate.length, 0, 'a stall does not wake');
   assert.equal(events.length, 1);
   assert.equal(events[0].address, 'worker:a');
   assert.match(readFileSync(bus.stallsFile(home, task), 'utf8'), /permission prompt/);
 });
 
-// --- измеренные константы ----------------------------------------------------
+// --- measured constants ----------------------------------------------------
 
-test('интервалы машины состояний — те же числа, что были в надзирателе CLI', () => {
+test('the state-machine intervals are the same numbers that were in the CLI warden', () => {
   assert.equal(bus.TICK_MS, 1000);
   assert.equal(bus.KNOCK_RETRY_SEC, 120);
   assert.equal(bus.SILENCE_SEC, 900);

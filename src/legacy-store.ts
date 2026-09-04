@@ -16,45 +16,51 @@ import {
 import type { Binding } from './sidecar.js';
 
 /**
- * Диагностика человеку. Приходит аргументом и только там, где reader сообщает о порче:
- * package в потоки процесса не пишет, а окружение и вывод — дело adapter'а.
- * Не назвали — reader молчит, а список `broken` возвращается вызывающему как и раньше.
+ * Diagnostics for a person. Arrives as an argument and only where the reader
+ * reports corruption: the package writes nothing to process streams, and the
+ * environment and output are the adapter business.
+ * Unnamed — the reader stays silent, and the `broken` list is returned to
+ * the caller as before.
  */
 export type Warn = (msg: string) => void;
 
 const SILENT: Warn = () => {};
 
-// Store шины `v0.61.0` — maildir-хранилище задачи. **Production store'ом он
-// быть перестал**: cutover перевёл механизм на protocol v1 ([v1/](v1/)), и здесь
-// остаётся тот единственный читатель, ради которого этот код живёт дальше, — миграция
-// прежнего store → `.promptobus` ([migrate.ts](migrate.ts)). Второй вызывающий — набор:
-// legacy-срез читается своим reader'ом, а недостающие файлы adapter'а дописываются в его
-// копию тем же store API.
+// Bus store `v0.61.0` — a maildir store of a task. **It is no longer the
+// production store**: cutover moved the mechanism to protocol v1
+// ([v1/](v1/)), and what remains here is the one reader this code still
+// lives for — migration of the former store → `.promptobus`
+// ([migrate.ts](migrate.ts)). The second caller is the suite: a legacy
+// slice is read by its own reader, and missing adapter files are written
+// into its copy through the same store API.
 //
-// Наружу поверхность уходит namespace'ом `legacy` из [index.ts](index.ts). Плоским
-// экспортом ей нельзя: имена у обоих store одни и те же, и в общем пространстве они
-// столкнулись бы. Дом остаётся, пока читается вход миграции: reader прежней раскладки —
-// её предмет, и снять его можно только вместе с самой миграцией.
+// The surface goes out as the `legacy` namespace from [index.ts](index.ts).
+// It cannot be a flat export: both stores share the same names, and in a
+// common space they would collide. The home stays as long as the migration
+// input is read: the former-layout reader is its subject, and it can be
+// removed only together with the migration itself.
 //
-// Демона нет: у каждой сессии свой stdio-процесс MCP-сервера, общее состояние на диске.
-// Одно сообщение = один JSON-файл в mailbox адресата, попадающий на место атомарным
-// rename; у mailbox ровно один потребитель (адрес = процесс), поэтому «прочитано» —
-// перемещение файла в read/.
+// There is no daemon: each session has its own MCP-server stdio process,
+// shared state is on disk. One message = one JSON file in the addressee
+// mailbox, landing in place by an atomic rename; a mailbox has exactly one
+// consumer (address = process), so "read" is moving the file into read/.
 //
-// Путь store приходит аргументом `home`. Где он лежит, package не знает вовсе: корень
-// рабочего места ищет adapter, он же подставляет диагностику и идентичность сессии
+// The store path arrives as the `home` argument. Where it lives, the
+// package does not know at all: the workspace root is found by the adapter,
+// which also supplies diagnostics and session identity
 // ([host.ts](host.ts)).
 
 let seq = 0;
-// Счётчик временных имён — свой: номер `seq` уезжает в имя файла и держит порядок отправки.
+// Temporary-name counter of its own: the `seq` number goes into the file name and keeps send order.
 let tmpSeq = 0;
 
-// Код ошибки файловой операции. `strict` отдаёт пойманное как `unknown`, а разбор кодов
-// (`EEXIST`, `ENOENT`) — то же самое условие, что и в JS-редакции этого файла.
+// File-operation error code. `strict` yields the caught value as `unknown`, and
+// reading codes (`EEXIST`, `ENOENT`) is the same condition as in the JS
+// edition of this file.
 type Errno = NodeJS.ErrnoException;
 const errno = (e: unknown): Errno => e as Errno;
 
-/** Запись участника задачи. Поля сверх адреса пишет adapter — они его, а не store. */
+/** Task participant record. Fields beyond the address are written by the adapter — they are its, not the store. */
 export interface Participant {
   address: string;
   owner?: string | null;
@@ -63,7 +69,7 @@ export interface Participant {
   [key: string]: unknown;
 }
 
-/** Журнал задачи: `task.json` как он есть сегодня. */
+/** Task journal: `task.json` as it is today. */
 export interface TaskMeta {
   id: string;
   title?: string;
@@ -77,7 +83,7 @@ export interface TaskMeta {
   [key: string]: unknown;
 }
 
-/** Сообщение протокола v1 — один атомарно созданный файл в mailbox'е адресата. */
+/** Protocol v1 message — one atomically created file in the addressee mailbox. */
 export interface Message {
   id: string;
   task: string;
@@ -97,7 +103,7 @@ export function readDir(home: string, id: string, addr: string): string {
   return path.join(taskDir(home, id), 'read', addrDir(addr));
 }
 
-// Куда откладывается нечитаемое: каталог соседний с `read/`, файл остаётся под своим именем.
+// Where the unreadable is set aside: a directory next to `read/`, the file stays under its own name.
 export function brokenDir(home: string, id: string, addr: string): string {
   return path.join(taskDir(home, id), 'broken', addrDir(addr));
 }
@@ -106,7 +112,7 @@ export function artifactsDir(home: string, id: string): string {
   return path.join(taskDir(home, id), 'artifacts');
 }
 
-// --- задачи ------------------------------------------------------------------
+// --- tasks ------------------------------------------------------------------
 
 export function taskFile(home: string, id: string): string {
   return path.join(taskDir(home, id), 'task.json');
@@ -116,16 +122,18 @@ export function taskExists(home: string, id: unknown): boolean {
   return TASK_ID_RE.test((id ?? '') as string) && existsSync(taskFile(home, id as string));
 }
 
-// Владелец адреса `orchestrator` — сессия, при которой задача завелась: `promptobus spawn` и
-// `promptobus review` запускаются Bash'ем из неё и наследуют её идентичность.
+// Owner of the `orchestrator` address — the session the task was born in:
+// `promptobus spawn` and `promptobus review` are launched by Bash from it and
+// inherit its identity.
 export function taskOwner(home: string, id: string): string | null {
   const meta = readTask(home, id);
   return (meta.participants ?? []).find((p) => p.address === ORCHESTRATOR)?.owner ?? null;
 }
 
-// Свой mailbox или чужой — единственное условие на всю шину. Сравнивать нечем (нет
-// идентичности или владельца) — механизм молчит целиком: совместимость назад важнее
-// защиты. Адреса worker'ов и reviewer'ов не гейтуются: адрес объявлен в их mcp-config.
+// Own mailbox or a foreign one — the only condition on the whole bus. Nothing
+// to compare (no identity or no owner) — the mechanism stays silent entirely:
+// backward compatibility outranks the guard. Worker and reviewer addresses are
+// not gated: the address is declared in their mcp-config.
 export function ownership(home: string, id: string, addr: string, session: string | null): Ownership {
   if (addr !== ORCHESTRATOR) return { gated: false, owner: null, session };
   const owner = taskOwner(home, id);
@@ -133,8 +141,9 @@ export function ownership(home: string, id: string, addr: string, session: strin
   return { gated: owner !== session, owner, session };
 }
 
-// Захват mailbox'а сессией-преемником. Возвращает прежнего владельца: поле `owner` одно,
-// истории нет. Захват — ещё и перепривязка: владелец объявляет и свою текущую задачу.
+// Claim of the mailbox by a successor session. Returns the previous owner:
+// there is one `owner` field, and no history. A claim is also a rebind: the
+// owner declares its current task too.
 export function claimOwnership(home: string, id: string, owner: string): string | null {
   const previous = withTaskLock(home, id, () => {
     const meta = readTask(home, id);
@@ -147,15 +156,17 @@ export function claimOwnership(home: string, id: string, owner: string): string 
   return previous;
 }
 
-// --- объявленная привязка «сессия → задача» ------------------------
+// --- declared session→task binding ------------------------
 //
-// Привязка кладётся файлом на сессию рядом с `tasks/`: без неё задача сессии выводилась
-// догадкой «единственная активная» — при нескольких активных шина отказывала поднятой
-// сессии, при одной чужая подхватывала её как свою. Гибрид: где идентичности нет
-// (ручной запуск, тесты, CI), резолв откатывается на ту же догадку. Имя
-// сессии проверяется грамматикой id задачи — не уложилось, привязки нет вовсе.
-// Привязывается только АКТИВНАЯ задача: закрытую `liveBinding` не отдаст никогда. Захват
-// mailbox'а закрытой задачи при этом законен — читать её переписку никто не запрещал.
+// The binding is laid as a per-session file next to `tasks/`: without it the
+// session task was inferred by the "only active one" guess — with several
+// active the bus refused the lifted session, with one a foreign session
+// picked it up as its own. Hybrid: where there is no identity (manual
+// launch, tests, CI), resolve falls back to the same guess. The session
+// name is checked by task-id grammar — if it does not fit, there is no
+// binding at all. Only an ACTIVE task is bound: `liveBinding` never yields
+// a closed one. Claiming the mailbox of a closed task is still lawful —
+// nobody forbade reading its correspondence.
 export function bindSession(home: string, id: string, session: string | null): Binding | null {
   const file = sessionFile(home, session);
   if (!file || !taskExists(home, id) || readTask(home, id).status !== 'active') return null;
@@ -163,9 +174,10 @@ export function bindSession(home: string, id: string, session: string | null): B
   return writeJsonAtomic(file, mark);
 }
 
-// Привязка этой сессии или `null`. Читается ПО ЖИВОСТИ, а не по наличию файла: сессия,
-// продолжившая работать после `promptobus done`, обязана снова попасть на запасной путь. Под
-// одним `try` и отметка, и журнал: обрезанный `task.json` ронял бы `resolveTaskId`.
+// Binding of this session or `null`. Read by LIVENESS, not by file presence:
+// a session that kept working after `promptobus done` must fall back to the
+// spare path again. Under one `try` both the mark and the journal: a
+// truncated `task.json` would drop `resolveTaskId`.
 export function liveBinding(home: string, session: string | null): Binding | null {
   const file = sessionFile(home, session);
   if (!file) return null;
@@ -182,15 +194,15 @@ export function boundTaskId(home: string, session: string | null): string | null
   return liveBinding(home, session)?.task ?? null;
 }
 
-// Привязать сессию к задаче, которой она владеет. Spawn и ревью зовут её, а не
-// `bindSession`: у сессии, вошедшей в чужой run явным `--task`, вызовы без аргумента
-// уехали бы в чужой журнал.
+// Bind a session to the task it owns. Spawn and review call this, not
+// `bindSession`: a session that entered a foreign run with an explicit
+// `--task` would send argument-less calls into a foreign journal.
 export function bindIfOwner(home: string, id: string, session: string | null): Binding | null {
   if (!session || taskOwner(home, id) !== session) return null;
   return bindSession(home, id, session);
 }
 
-// Уборка привязок, потерявших живость: механизму не нужна, каталогу — да.
+// Sweep bindings that have lost liveness: the mechanism does not need it, the directory does.
 export function sweepBindings(home: string): number {
   const dir = sessionsDir(home);
   if (!existsSync(dir)) return 0;
@@ -204,7 +216,7 @@ export function sweepBindings(home: string): number {
   return dropped;
 }
 
-/** Что кладётся в новую задачу. Всё, кроме `id`, необязательно. */
+/** What goes into a new task. Everything except `id` is optional. */
 export interface NewTask {
   id?: string;
   title?: string;
@@ -218,40 +230,41 @@ export function createTask(home: string, {
   id = newTaskIdentity().id, title, slug, stamp, titleExplicit = false, owner = null,
 }: NewTask): TaskMeta {
   requireTaskId(id);
-  if (taskExists(home, id)) throw new Error(`задача ${id} уже есть`);
+  if (taskExists(home, id)) throw new Error(`task ${id} already exists`);
   const taskStamp = stamp ?? stampOfId(id);
   const meta: TaskMeta = {
     id,
     title: title ?? id,
-    // Штамп пишется всегда: без него `readableTail` откатывается на полный id —
-    // человек читает `(t20260827-175756)` вместо `(0827-1757)`.
+    // The stamp is written always: without it `readableTail` falls back to
+    // the full id — a person reads `(t20260827-175756)` instead of `(0827-1757)`.
     ...(slug ? { slug } : {}),
     ...(taskStamp ? { stamp: taskStamp } : {}),
-    // Заголовок задан человеком явно — сборка из track'ов его не трогает.
+    // The title was set by a person explicitly — assembly from tracks does not touch it.
     ...(titleExplicit ? { titleExplicit: true } : {}),
     created: new Date().toISOString(),
     status: 'active',
-    // Владельца пишем, только если окружение его дало — иначе механизм владельца выключен.
+    // Write the owner only if the environment supplied one — otherwise the owner mechanism is off.
     participants: [{ address: ORCHESTRATOR, ...(owner ? { owner } : {}) }],
   };
   mkdirSync(inboxDir(home, id, ORCHESTRATOR), { recursive: true });
   mkdirSync(artifactsDir(home, id), { recursive: true });
-  // Флаг `wx`: между проверкой `taskExists` и записью помещается второй первый spawn того
-  // же run'а, и опоздавший через `rename` молча перетёр бы участников ушедшего вперёд.
+  // The `wx` flag: between the `taskExists` check and the write a second
+  // first spawn of the same run fits, and a latecomer through `rename` would
+  // silently overwrite the participants of the one that went first.
   try {
     writeFileSync(taskFile(home, id), JSON.stringify(meta, null, 2) + '\n', { flag: 'wx' });
   } catch (e) {
-    if (errno(e).code === 'EEXIST') throw new Error(`задача ${id} уже есть`);
+    if (errno(e).code === 'EEXIST') throw new Error(`task ${id} already exists`);
     throw e;
   }
   return meta;
 }
 
-// Кэш журнала на один запрос: один вызов инструмента шины читает task.json по
-// четыре-шесть раз из мест, которые друг о друге не знают. Живёт ровно столько, сколько
-// обёрнутый синхронный участок: за его пределами сосед правит журнал законно. Гасят его
-// `writeTask` и `withTaskLock`. Инвариант читателя: результат `readTask` под кэшем не
-// мутировать.
+// Journal cache for one request: one bus-tool call reads task.json four to
+// six times from places that do not know about each other. It lives exactly
+// as long as the wrapped synchronous stretch: outside it a neighbour edits
+// the journal lawfully. `writeTask` and `withTaskLock` extinguish it.
+// Reader invariant: do not mutate a `readTask` result under the cache.
 let taskCache: Map<string, TaskMeta> | null = null;
 
 export function withTaskCache<T>(fn: () => T): T {
@@ -264,9 +277,10 @@ export function withTaskCache<T>(fn: () => T): T {
   }
 }
 
-// Кэш журнала снимается на время лока: под ним журнал меняется и своей записью, и чужой,
-// которую лок дождался. Регистрация здесь, у владельца кэша, — сам лок живёт в
-// [sidecar.ts](sidecar.ts) и о кэшах не знает.
+// The journal cache is lifted for the lock: under it the journal changes
+// both by our write and by a foreign one the lock waited for. Registration
+// is here, at the cache owner — the lock itself lives in
+// [sidecar.ts](sidecar.ts) and knows nothing of caches.
 onTaskLock((fn) => withoutTaskCache(fn));
 
 function withoutTaskCache<T>(fn: () => T): T {
@@ -276,7 +290,8 @@ function withoutTaskCache<T>(fn: () => T): T {
     return fn();
   } finally {
     taskCache = outer;
-    // Под локом журнал мог измениться — и своей записью, и чужой, которую лок дождался.
+    // Under the lock the journal may have changed — both by our write and
+    // by a foreign one the lock waited for.
     outer?.clear();
   }
 }
@@ -285,24 +300,26 @@ export function readTask(home: string, id: string): TaskMeta {
   const f = taskFile(home, id);
   const hit = taskCache?.get(f);
   if (hit) return hit;
-  if (!existsSync(f)) throw new GateError(`задачи ${id} нет в ${tasksDir(home)}`);
+  if (!existsSync(f)) throw new GateError(`task ${id} is not in ${tasksDir(home)}`);
   const meta = JSON.parse(readFileSync(f, 'utf8')) as TaskMeta;
   taskCache?.set(f, meta);
   return meta;
 }
 
-// Журнал пишется тем же приёмом, что и сообщение: временный файл в той же директории и
-// `rename` поверх. `writeFileSync` усекает файл до нуля — параллельный читатель застаёт
-// его пустым, а умерший посреди записи процесс оставляет обрезанный журнал навсегда.
+// The journal is written the same way as a message: a temporary file in the
+// same directory and `rename` over it. `writeFileSync` truncates the file
+// to zero — a parallel reader finds it empty, and a process that died
+// mid-write leaves a truncated journal forever.
 export function writeTask(home: string, meta: TaskMeta): TaskMeta {
   writeJsonAtomic(taskFile(home, meta.id), meta);
-  // Записанное перечитывают тем же ходом — снимок до записи врал бы.
+  // What was written is reread the same way — a snapshot from before the write would lie.
   taskCache?.clear();
   return meta;
 }
 
-// Перечисление переживает и посторонний каталог, и битый журнал: одна порченая задача
-// иначе гасила бы каждую команду шины — `listTasks` кормит `resolveTaskId`.
+// The listing survives both a foreign directory and a broken journal: one
+// corrupt task would otherwise extinguish every bus command — `listTasks`
+// feeds `resolveTaskId`.
 export function listTasks(home: string, warn: Warn = SILENT): TaskMeta[] {
   const dir = tasksDir(home);
   if (!existsSync(dir)) return [];
@@ -313,7 +330,7 @@ export function listTasks(home: string, warn: Warn = SILENT): TaskMeta[] {
     try {
       out.push(readTask(home, e.name));
     } catch (err) {
-      warn(`задача ${e.name} пропущена: ${taskFile(home, e.name)} не читается (${(err as Error).message})`);
+      warn(`task ${e.name} skipped: ${taskFile(home, e.name)} is unreadable (${(err as Error).message})`);
     }
   }
   return out.sort((a, b) => String(a.created).localeCompare(String(b.created)));
@@ -323,16 +340,18 @@ export function activeTasks(home: string, warn: Warn = SILENT): TaskMeta[] {
   return listTasks(home, warn).filter((t) => t.status === 'active');
 }
 
-// Активная задача процесса. Три источника, по убыванию силы: явное объявление
-// (аргумент инструмента, `--task`, `A2A_TASK`), привязка сессии, вывод «единственной
-// активной» — запасной путь для тех, у кого идентичности нет; его гейты и сторожат.
+// Active task of the process. Three sources, in descending strength: an
+// explicit declaration (a tool argument, `--task`, `A2A_TASK`), the session
+// binding, the "only active one" inference — a spare path for those who
+// have no identity; its gates watch it.
 //
-// Все три отказа адресованы человеку — опечатка в id, пустой журнал, несколько активных
-// задач разом, — поэтому бросаются `GateError`'ом: голый `Error` верхний catch CLI
-// печатает со стеком, и законный отказ читается как поломка самого механизма.
+// All three refusals are addressed to a person — a typo in the id, an empty
+// journal, several active tasks at once — so they are thrown as
+// `GateError`: a bare `Error` is printed with a stack by the CLI top-level
+// catch, and a lawful refusal reads as a breakage of the mechanism itself.
 export function resolveTaskId(home: string, declared: string | null | undefined, session: string | null, warn: Warn = SILENT): string {
   if (declared) {
-    if (!taskExists(home, declared)) throw new GateError(`задачи ${declared} нет в ${tasksDir(home)}`);
+    if (!taskExists(home, declared)) throw new GateError(`task ${declared} is not in ${tasksDir(home)}`);
     return declared;
   }
   const bound = boundTaskId(home, session);
@@ -340,31 +359,32 @@ export function resolveTaskId(home: string, declared: string | null | undefined,
   const active = activeTasks(home, warn);
   if (active.length === 1) return active[0].id;
   if (active.length === 0) {
-    throw new GateError(`активной задачи нет: ${tasksDir(home)} пуст или все задачи закрыты. `
-      + `Задача заводится при spawn'е первого worker'а: promptobus spawn --repo <имя> --brief <файл>`);
+    throw new GateError(`no active task: ${tasksDir(home)} is empty or every task is closed. `
+      + `A task is created when the first worker is spawned: promptobus spawn --repo <name> --brief <file>`);
   }
-  throw new GateError(`активных задач несколько (${active.map((t) => t.id).join(', ')}), `
-    + `а привязки у этой сессии нет${session ? '' : ' — окружение не дало её идентичности'} — `
-    + 'укажи нужную (A2A_TASK для сессии, --task для команды). '
-    + 'Задача твоя, а сессия новая — забери mailbox себе: mailbox {claim: true, task: <id>}, '
-    + 'дальше она резолвится сама. Нужен новый run — заведи его через promptobus spawn --new-task.');
+  throw new GateError(`several active tasks (${active.map((t) => t.id).join(', ')}), `
+    + `and this session has no binding${session ? '' : ' — the environment gave it no identity'} — `
+    + 'name the one you need (A2A_TASK for the session, --task for the command). '
+    + 'The task is yours and this is a new session — claim the mailbox: mailbox {claim: true, task: <id>}, '
+    + 'then it resolves on its own. Need a new run — start it with promptobus spawn --new-task.');
 }
 
-// Mailbox, из которого читали и в который писали, называется в каждом ответе шины: home,
-// задача, адрес. Задачу зовём и по имени: чужую задачу выдаёт тема, id не выдаёт. Тут же
-// называется расхождение «сессия привязана к A, журнал говорит B» — оно законно.
+// The mailbox that was read from and written to is named in every bus reply:
+// home, task, address. The task is named by title too: a foreign task is
+// given away by the subject, the id is not. The same place names the drift
+// "session is bound to A, the journal says B" — it is lawful.
 export function identityLabel(home: string, task: string, addr: string, session: string | null = null): string {
   const { title } = readTask(home, task);
   const named = title && title !== task ? `${task} «${title}»` : task;
   const bound = session ? boundTaskId(home, session) : null;
-  const drift = bound && bound !== task ? ` · привязка сессии ${session}: задача ${bound}` : '';
-  return `A2A_HOME=${home} · задача=${named} · адрес=${addr}${drift}`;
+  const drift = bound && bound !== task ? ` · session binding ${session}: task ${bound}` : '';
+  return `A2A_HOME=${home} · task=${named} · address=${addr}${drift}`;
 }
 
 function applyParticipant(meta: TaskMeta, participant: Participant): TaskMeta {
   if (!isAddress(participant?.address)) {
-    throw new GateError(`недопустимый адрес участника «${participant?.address}» — `
-      + 'ожидается orchestrator, worker:<slug> или reviewer:<slug>');
+    throw new GateError(`invalid participant address «${participant?.address}» — `
+      + 'expected orchestrator, worker:<slug> or reviewer:<slug>');
   }
   const rest = (meta.participants ?? []).filter((p) => p.address !== participant.address);
   meta.participants = [...rest, participant];
@@ -375,22 +395,27 @@ export function upsertParticipant(home: string, id: string, participant: Partici
   return withTaskLock(home, id, () => writeTask(home, applyParticipant(readTask(home, id), participant)));
 }
 
-// Снятие участника с наблюдения: сессию закрыл сам оркестратор, а надзирателю неоткуда об
-// этом знать — без отметки он докладывал бы «ИСЧЕЗ» о закрытом. Дом отметки — запись
-// участника в журнале: держи её процесс, его смерть возвращала бы доклады. Возвращается
-// `{ found, was }`: «участника нет» и «отметка уже стояла» — два разных ответа.
+// Dismiss a participant from watch: the orchestrator closed the session
+// itself, and the warden has nowhere to learn that — without the mark it
+// would report "GONE" about a closed one. The mark lives on the participant
+// record in the journal: keep it on the process, and its death would bring
+// the reports back. Returns `{ found, was }`: "no such participant" and
+// "the mark was already there" are two different answers.
 function setDismissed(home: string, id: string, address: string, at: string | null): { found: boolean; was: string | null } {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = (meta.participants ?? []).find((x) => x.address === address);
     if (!p) return { found: false, was: null };
     const was = p.dismissed ?? null;
-    // Состояние уже такое, каким его просят сделать, — журнал не трогаем: повторный
-    // dismiss не переписывает время снятия, а возврат под наблюдение не пишет журнал у не
-    // снятого — самый частый случай на переревью, и он стоил бы лока задачи.
+    // The state is already what they ask to make it — do not touch the
+    // journal: a repeat dismiss does not rewrite the dismiss time, and a
+    // return to watch does not write the journal for one that was not
+    // dismissed — the most common case on a re-review, and it would cost a
+    // task lock.
     if (Boolean(was) === Boolean(at)) return { found: true, was };
-    // Возврат — УДАЛЕНИЕ поля, а не `null` в нём: `dismissed: null` пришлось бы
-    // отличать от снятия каждому читателю журнала, а поле проверяется на истинность.
+    // A return is DELETION of the field, not `null` in it: every journal
+    // reader would have to tell `dismissed: null` from a dismiss, and the
+    // field is checked for truthiness.
     const { dismissed, ...rest } = p;
     writeTask(home, applyParticipant(meta, at ? { ...rest, dismissed: at } : rest));
     return { found: true, was };
@@ -403,16 +428,18 @@ export function dismissParticipant(home: string, id: string, address: string, at
   return setDismissed(home, id, address, at);
 }
 
-// Возврат под наблюдение — там, где участнику даётся новая работа. Подъём заново снимает
-// отметку сам (запись кладётся целиком), переревью живой сессии — этим вызовом.
+// Return to watch — where the participant is given new work. A lift again
+// clears the mark itself (the record is laid whole); a re-review of a live
+// session — this call.
 export function watchParticipant(home: string, id: string, address: string): { found: boolean; was: string | null } {
   return setDismissed(home, id, address, null);
 }
 
-// Заголовок задачи из заголовков её track'ов: иначе run из трёх track'ов читался бы работой
-// одной. Считается по ВСЕМУ журналу и зовётся ПОСЛЕ записи участника — два spawn'а от
-// одного пре-имиджа дали бы «A · B» и «A · C», и победитель потерял бы чужой track.
-// Пустой список — не повод переименовывать: у задачи прежнего CLI поля `title` нет.
+// Task title from the titles of its tracks: otherwise a run of three tracks
+// would read as the work of one. Computed over the WHOLE journal and called
+// AFTER the participant write — two spawns from one pre-image would yield
+// "A · B" and "A · C", and the winner would lose the foreign track.
+// An empty list is not a reason to rename: a former-CLI task has no `title` field.
 export function titleFromLines(meta?: TaskMeta | null): string | null {
   const lines = [...new Set((meta?.participants ?? [])
     .filter((p) => String(p.address ?? '').startsWith('worker:') && p.title)
@@ -420,7 +447,7 @@ export function titleFromLines(meta?: TaskMeta | null): string | null {
   return lines.length ? lines.join(TASK_TITLE_SEP) : null;
 }
 
-/** Что просят сделать с заголовком задачи. */
+/** What is asked of the task title. */
 export interface Retitle {
   title?: string | null;
   fromLines?: boolean;
@@ -429,23 +456,26 @@ export interface Retitle {
   session?: string | null;
 }
 
-// Заголовок задачи пишется задним числом: подсадка нового track'а его дописывает, а
-// `--task-title` пришпиливает насмерть (`titleExplicit`). Одна дверь есть —
-// перештамповка: `restamp` ставит план по двойной явности (`--task-title` плюс явный
-// `--task`), а право проверяется здесь тем же `ownership`, что у всей шины — под локом, а
-// не в плане: mailbox мог сменить владельца после сборки плана.
+// The task title is written after the fact: grafting a new track appends to
+// it, and `--task-title` pins it for good (`titleExplicit`). One door
+// remains — restamping: `restamp` sets the plan by double explicitness
+// (`--task-title` plus an explicit `--task`), and the right is checked here
+// by the same `ownership` as the rest of the bus — under the lock, not in
+// the plan: the mailbox may have changed owner after the plan was built.
 export function retitleTask(home: string, id: string, {
   title = null, fromLines = false, explicit = false, restamp = false, session = null,
 }: Retitle = {}): string | null {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     if (meta.titleExplicit && !(restamp && !ownership(home, id, ORCHESTRATOR, session).gated)) return null;
-    // `fromLines` считает ЗДЕСЬ и только здесь: предсказание для `--dry-run` живёт
-    // отдельным полем намерения (`preview`), которого эта функция не читает.
+    // `fromLines` is computed HERE and only here: the `--dry-run` prediction
+    // lives in a separate intent field (`preview`) that this function does
+    // not read.
     const next = fromLines ? titleFromLines(meta) : title;
     if (!next || next === meta.title) {
-      // Пометка ставится и тогда, когда заголовок уже такой: иначе явно названный
-      // человеком заголовок остался бы незащищённым от следующей подсадки.
+      // The mark is set even when the title is already that: otherwise a
+      // title a person named explicitly would stay unprotected from the
+      // next graft.
       if (explicit) {
         meta.titleExplicit = true;
         writeTask(home, meta);
@@ -468,22 +498,23 @@ export function closeTask(home: string, id: string): TaskMeta {
   });
 }
 
-// --- сообщения ---------------------------------------------------------------
+// --- messages ---------------------------------------------------------------
 
 function stamp(now: Date = new Date()): string {
   return now.toISOString().replace(/[-:.]/g, '').replace('Z', '');
 }
 
-// Артефакт кладётся в общую папку задачи под своим именем; занятое имя не перетирается.
+// The artifact is laid in the shared task folder under its own name; a taken name is not overwritten.
 function storeArtifact(home: string, id: string, srcAbs: string): string {
   const src = path.resolve(srcAbs);
-  if (!existsSync(src)) throw new Error(`артефакта нет: ${src}`);
+  if (!existsSync(src)) throw new Error(`artifact is missing: ${src}`);
   const dir = artifactsDir(home, id);
   mkdirSync(dir, { recursive: true });
   const ext = path.extname(src);
   const stem = path.basename(src, ext);
-  // Имя занимает сама копия, а не проверка перед ней: `existsSync` в цикле — TOCTOU.
-  // `COPYFILE_EXCL` отдаёт имя ровно одному, опоздавший берёт следующий номер.
+  // The copy itself takes the name, not a check before it: `existsSync` in a
+  // loop is TOCTOU. `COPYFILE_EXCL` gives the name to exactly one, a
+  // latecomer takes the next number.
   for (let i = 1; ; i += 1) {
     const name = i === 1 ? `${stem}${ext}` : `${stem}-${i}${ext}`;
     try {
@@ -495,7 +526,7 @@ function storeArtifact(home: string, id: string, srcAbs: string): string {
   }
 }
 
-/** Что отправляется на шину. */
+/** What is sent on the bus. */
 export interface Outgoing {
   from: string;
   to: string;
@@ -505,29 +536,31 @@ export interface Outgoing {
 }
 
 export function sendMessage(home: string, id: string, { from, to, type, body, artifactPath }: Outgoing): Message {
-  if (!isAddress(from)) throw new Error(`неизвестный адрес отправителя «${from}»`);
-  if (!isAddress(to)) throw new Error(`неизвестный адрес получателя «${to}» — orchestrator, worker:<slug> или reviewer:<slug>`);
+  if (!isAddress(from)) throw new Error(`unknown sender address «${from}»`);
+  if (!isAddress(to)) throw new Error(`unknown recipient address «${to}» — orchestrator, worker:<slug> or reviewer:<slug>`);
   if (!MESSAGE_TYPES.includes(type)) {
-    throw new Error(`тип «${type}» не из протокола v1: ${MESSAGE_TYPES.join(', ')}`);
+    throw new Error(`type «${type}» is not a v1 protocol type: ${MESSAGE_TYPES.join(', ')}`);
   }
-  if (typeof body !== 'string' || !body.trim()) throw new Error('body пуст — сообщение без текста не отправляется');
-  // Адресат обязан числиться участником задачи: опечатка в слаге прошла бы грамматику,
-  // каталог mailbox'а функция заводит сама, и отправка вернула бы успех. Законного
-  // отправления на незарегистрированный адрес нет — spawn пишет участника ДО запуска.
+  if (typeof body !== 'string' || !body.trim()) throw new Error('body is empty — a message with no text is not sent');
+  // The addressee must be listed as a task participant: a typo in the slug
+  // would pass grammar, the function opens the mailbox directory itself, and
+  // send would return success. There is no lawful send to an unregistered
+  // address — spawn writes the participant BEFORE launch.
   const known = (readTask(home, id).participants ?? []).map((p) => p.address);
   if (!known.includes(to)) {
-    throw new Error(`в задаче ${id} нет участника «${to}» — сообщение некому забрать, `
-      + `и заведённый под него mailbox не увидит ни promptobus status, ни task. Участники задачи: ${known.join(', ')}`);
+    throw new Error(`task ${id} has no participant «${to}» — there is nobody to pick the message up, `
+      + `and a mailbox opened for them will be seen by neither promptobus status nor task. Task participants: ${known.join(', ')}`);
   }
 
   const artifact = artifactPath ? storeArtifact(home, id, artifactPath) : undefined;
   const now = new Date();
   const dir = inboxDir(home, id, to);
   mkdirSync(dir, { recursive: true });
-  // Уникальность имени держит диск, а не память процесса: счётчик `seq` свой у каждого
-  // процесса. Временный файл — в той же директории (rename и link атомарны только внутри
-  // одной ФС; читатель отбирает по `.json` и точку в начале не берёт). Кладём `link`, а не
-  // `rename`: он отказывает на занятом имени вместо тихой перезаписи.
+  // Name uniqueness is held by the disk, not by process memory: each process
+  // has its own `seq` counter. The temporary file is in the same directory
+  // (rename and link are atomic only inside one FS; the reader picks `.json`
+  // and does not take a leading dot). We `link`, not `rename`: it refuses
+  // on a taken name instead of a quiet overwrite.
   tmpSeq += 1;
   const tmp = path.join(dir, `.tmp-msg-${process.pid}-${tmpSeq}`);
   const ts = stamp(now);
@@ -556,16 +589,17 @@ function inboxNames(dir: string): string[] {
   return readdirSync(dir).filter((n) => n.endsWith('.json') && !n.startsWith('.')).sort();
 }
 
-// Одно сообщение из mailbox'а: разобранное, `null` на унесённом соседом и `null` на
-// битом — битое уезжает в `broken/` с докладом. Брось оно SyntaxError наружу, mailbox
-// затыкался бы навсегда, а с ним весь run.
+// One message from the mailbox: parsed, `null` if a neighbour took it, and
+// `null` if broken — the broken one goes to `broken/` with a report. Were it
+// to throw SyntaxError outward, the mailbox would jam forever, and the whole
+// run with it.
 function takeMessage(dir: string, name: string, attic: string, broken: string[], warn: Warn): Message | null {
   const file = path.join(dir, name);
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
   } catch (e) {
-    // Унёс сосед между листингом и чтением — пропуск, а не отказ.
+    // A neighbour took it between the listing and the read — a skip, not a refusal.
     if (errno(e).code === 'ENOENT') return null;
     throw e;
   }
@@ -576,21 +610,23 @@ function takeMessage(dir: string, name: string, attic: string, broken: string[],
     try {
       mkdirSync(attic, { recursive: true });
       renameSync(file, path.join(attic, name));
-      note = `БИТОЕ СООБЩЕНИЕ ${name}: не разобрано (${(e as Error).message}) — отложено в ${attic}, mailbox работает дальше`;
+      note = `BROKEN MESSAGE ${name}: did not parse (${(e as Error).message}) — set aside in ${attic}, the mailbox keeps working`;
     } catch (moveErr) {
-      // Отложить не вышло — тем более не роняем mailbox: называем и порчу, и то, что файл остался.
-      note = `БИТОЕ СООБЩЕНИЕ ${name}: не разобрано (${(e as Error).message}) и не отложено (${(moveErr as Error).message}) — пропущено`;
+      // Setting aside failed — still do not drop the mailbox: name both the
+      // damage and that the file stayed.
+      note = `BROKEN MESSAGE ${name}: did not parse (${(e as Error).message}) and was not set aside (${(moveErr as Error).message}) — skipped`;
     }
-    // Доклад в два канала: диагностика — человеку, список `broken` — агенту (у MCP-пути
-    // stderr читает harness, а не сессия, и без списка сообщение исчезало бы молча).
+    // Report on two channels: diagnostics for a person, the `broken` list
+    // for the agent (on the MCP path stderr is read by the harness, not the
+    // session, and without the list the message would vanish in silence).
     warn(note);
     broken.push(note);
     return null;
   }
 }
 
-// Забрать входящие и пометить прочитанными. Порядок — по имени файла: метка времени с
-// миллисекундами плюс счётчик отправителя, поэтому сортировка строк — порядок отправки.
+// Take incoming and mark them read. Order is by file name: a timestamp with
+// milliseconds plus the sender counter, so string sort is send order.
 export function readInbox(home: string, id: string, addr: string, warn: Warn = SILENT): { msgs: Message[]; broken: string[] } {
   const dir = inboxDir(home, id, addr);
   const names = inboxNames(dir);
@@ -606,9 +642,10 @@ export function readInbox(home: string, id: string, addr: string, warn: Warn = S
     try {
       renameSync(path.join(dir, n), path.join(done, n));
     } catch (e) {
-      // Унёс сосед между чтением и переносом — пропуск, а не отказ: отказ пришёл бы из
-      // середины обхода, когда часть сообщений уже уехала в `read/`. Сообщение не
-      // теряется — его забрал сосед, он и доставит.
+      // A neighbour took it between the read and the move — a skip, not a
+      // refusal: a refusal would come from the middle of the walk, when
+      // some messages have already gone to `read/`. The message is not
+      // lost — the neighbour took it, and that neighbour will deliver it.
       if (errno(e).code !== 'ENOENT') throw e;
       continue;
     }
@@ -621,22 +658,25 @@ export function countInbox(home: string, id: string, addr: string): number {
   return inboxNames(inboxDir(home, id, addr)).length;
 }
 
-// Накопившееся непрочитанное само о себе не говорит: notification — best-effort, не
-// дошла — сообщение лежит, а сессия считает, что ей не писали. Счётчик идёт хвостом в
-// ответах, где сессия mailbox не забирает (`send`, `task`, вывод `promptobus review`); ноль не
-// называем. Чужому mailbox'у строка говорит другое: оригиналы ему не отдадут.
+// Accumulated unread does not speak for itself: notification is best-effort,
+// if it did not arrive the message sits and the session thinks nobody wrote.
+// The counter rides as a tail on replies where the session does not take
+// the mailbox (`send`, `task`, `promptobus review` output); zero is not
+// named. To a foreign mailbox the line says something else: the originals
+// will not be given to it.
 export function unreadNote(home: string, id: string, addr: string, session: string | null = null): string | null {
   const n = countInbox(home, id, addr);
   if (!n) return null;
   const own = ownership(home, id, addr, session);
-  if (!own.gated) return `твой mailbox: непрочитано ${n} — забери инструментом mailbox`;
-  return `${FOREIGN_MARK}: непрочитано ${n} у orchestrator этой задачи, но mailbox закреплён за сессией `
-    + `${own.owner}, эта — ${own.session}. ${FOREIGN_ROUTE}`;
+  if (!own.gated) return `your mailbox: ${n} unread — pick them up with the mailbox tool`;
+  return `${FOREIGN_MARK}: ${n} unread at the orchestrator of this task, but the mailbox is bound to session `
+    + `${own.owner}, this one is ${own.session}. ${FOREIGN_ROUTE}`;
 }
 
-// Заглянуть в mailbox, не тронув в нём ничего, — нужен надзирателю. Отличие от
-// `peekInbox`: тот откладывает нечитаемое в `broken/` и называет вслух, а диагностика
-// надзирателя уходит в `stdio: 'ignore'` — отложенное исчезло бы без слова кому-либо.
+// Glance into the mailbox without touching anything in it — needed by the
+// warden. Unlike `peekInbox`, that one sets the unreadable aside in
+// `broken/` and names it aloud, and warden diagnostics go to
+// `stdio: 'ignore'` — what was set aside would vanish without a word to anyone.
 export function glanceInbox(home: string, id: string, addr: string): Message[] {
   const dir = inboxDir(home, id, addr);
   const msgs: Message[] = [];
@@ -644,15 +684,17 @@ export function glanceInbox(home: string, id: string, addr: string): Message[] {
     try {
       msgs.push(JSON.parse(readFileSync(path.join(dir, n), 'utf8')) as Message);
     } catch {
-      // Битое или унесённое соседом — не наша беда: mailbox забирает читатель, он и доложит.
+      // Broken or taken by a neighbour — not our trouble: the reader takes
+      // the mailbox, and that reader will report it.
     }
   }
   return msgs;
 }
 
-// Посмотреть входящие не забирая — нужен чужой сессии: ей `mailbox` отдаёт копию, а
-// оригиналы остаются владельцу. Забирает сообщения `mailbox` сессии-владельца, он же мог
-// унести файл между листингом и чтением.
+// Look at incoming without taking them — needed by a foreign session: `mailbox`
+// gives it a copy, and the originals stay with the owner. Messages are taken
+// by the owner-session `mailbox`, which may also have taken the file between
+// the listing and the read.
 export function peekInbox(home: string, id: string, addr: string, warn: Warn = SILENT): { msgs: Message[]; broken: string[] } {
   const dir = inboxDir(home, id, addr);
   const attic = brokenDir(home, id, addr);
@@ -666,15 +708,16 @@ export function peekInbox(home: string, id: string, addr: string, warn: Warn = S
 }
 
 
-// --- вставка при слиянии track'а stalls в store.ts ------------------------
+// --- insert when merging the stalls track into store.ts ------------------------
 
-// Штамп и отправитель в имени файла сообщения — форма, которую задаёт `sendMessage`.
+// Stamp and sender in the message file name — the shape `sendMessage` sets.
 const MSG_NAME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})-\d{4}-(.+)\.json$/;
 
-// Когда адрес в последний раз ОТПРАВЛЯЛ на шину; `null` — не отправлял ещё ничего.
-// Содержимое сообщений не читается вовсе: имя файла несёт и метку времени, и отправителя,
-// а спрашивают это на каждом ударе сердца по каждому вставшему. Смотрим оба места, где
-// сообщение законно лежит, — непрочитанное в mailbox'е получателя и прочитанное в `read/`.
+// When the address last SENT on the bus; `null` — has not sent anything yet.
+// Message bodies are not read at all: the file name carries both the
+// timestamp and the sender, and this is asked on every heartbeat for every
+// stalled one. We look at both places a message lawfully lives — unread in
+// the recipient mailbox and read in `read/`.
 export function lastSentAt(home: string, id: string, address: string): number | null {
   const from = addrDir(address);
   let last: number | null = null;
@@ -684,7 +727,7 @@ export function lastSentAt(home: string, id: string, address: string): number | 
     try {
       boxes = readdirSync(root);
     } catch {
-      // Каталоги заводятся лениво: нет каталога — нет и сообщений в нём.
+      // Directories are created lazily: no directory — no messages in it.
       continue;
     }
     for (const dir of boxes) {
@@ -696,8 +739,9 @@ export function lastSentAt(home: string, id: string, address: string): number | 
       }
       for (const n of names) {
         const m = MSG_NAME_RE.exec(n);
-        // Отправитель сверяется целиком, а не хвостом имени: у слага `x-worker-api` хвост
-        // тот же `-worker-api.json`, и его сообщения сошли бы за сообщения `worker:api`.
+        // The sender is checked whole, not by the name tail: the slug
+        // `x-worker-api` has the same tail `-worker-api.json`, and its
+        // messages would pass as messages of `worker:api`.
         if (!m || m[8] !== from) continue;
         const at = Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!, +m[7]!);
         if (last === null || at > last) last = at;
@@ -708,11 +752,12 @@ export function lastSentAt(home: string, id: string, address: string): number | 
 }
 
 
-// --- реэкспорт словаря и файлов adapter'а ------------------------------------
+// --- re-export of the dictionary and adapter files ------------------------------------
 //
-// Поверхность модуля остаётся той, какой её знали миграция и генератор fixture: словарь
-// шины и файлы каталога задачи разъехались по соседним модулям, но звать их через два
-// импорта потребителю legacy-среза незачем.
+// The module surface stays as migration and the fixture generator knew it:
+// the bus dictionary and the task-directory files moved to neighbouring
+// modules, but a consumer of the legacy slice has no reason to call them
+// through two imports.
 export {
   addrDir, brokenNote, claimRoute, FOREIGN_MARK, FOREIGN_ROUTE, GateError, isAddress,
   MAILBOX_CLAIMED_MARK, MESSAGE_TYPES, newTaskIdentity, ORCHESTRATOR, participantFileStem,
@@ -729,7 +774,7 @@ export {
 export type { Binding, Health, LockHolder, Stalls, Wake, WardenMark } from './sidecar.js';
 export { pidAlive } from './fs/proc.js';
 
-// Пути файлов участника в `workers/`: склейка имени — в словаре, каталог — в sidecar.
+// Participant file paths in `workers/`: name joining is in the dictionary, the directory is in sidecar.
 export function participantMcpPath(home: string, taskId: string, address: string): string {
   return path.join(workersDir(home, taskId), `${participantFileStem(address)}.mcp.json`);
 }
