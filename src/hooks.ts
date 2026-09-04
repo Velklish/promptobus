@@ -39,8 +39,6 @@ export interface GuardIdentity {
   home: string;
 }
 
-export const BUS_HOOK_OUTPUT_DEFAULT = 'systemMessage';
-
 export function renderBusHook(host: Pick<PromptobusHost, 'commandName'>): string {
   const file = new URL('../templates/bus-hook.mjs', import.meta.url);
   return readFileSync(file, 'utf8').replaceAll('__COMMAND__', host.commandName);

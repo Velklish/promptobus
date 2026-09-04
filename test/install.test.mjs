@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { runPromptobus } from '../lib/cli.js';
 import {
-  HOME_HOOK_DIRS, install, parseHarnessList, uninstall,
+  CURSOR_HOOK_EVENTS, HOME_HOOK_DIRS, assertCursorHookEvents, install, parseHarnessList, uninstall,
 } from '../lib/install.js';
 import { GateError } from '../lib/store.js';
 import { prune } from '../lib/prune.js';
@@ -120,9 +120,11 @@ test('install each harness alone and all three together; HOME stays empty', () =
     }
     if (name === 'cursor') {
       const hooks = readJson(dir, path.join('.cursor', 'hooks.json')).hooks;
-      assert.ok(hooks.postToolUse[0].command.includes('--output'));
-      assert.ok(hooks.postToolUse[0].command.includes('additional_context'));
+      assert.equal(Object.hasOwn(hooks, 'postToolUse'), false);
       assert.ok(hooks.stop[0].command.includes('promptobus guard'));
+      for (const event of Object.keys(hooks)) {
+        assert.ok(CURSOR_HOOK_EVENTS.includes(event), event);
+      }
     }
     if (name === 'codex') {
       const hooks = readJson(dir, path.join('.codex', 'hooks.json')).hooks;
@@ -265,6 +267,52 @@ test('install from a subdirectory writes the project root; prune keeps the runne
   prune(hostOf(dir), { yes: true });
   assert.equal(statSync(hooksDir).isDirectory(), true);
   assert.ok(existsSync(path.join(hooksDir, 'bus.mjs')));
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('cursor event-name gate matches the driver list and rejects any other name', async () => {
+  const { KNOWN_HOOK_EVENTS } = await import('../lib/driver-cursor.js');
+  assert.deepEqual(CURSOR_HOOK_EVENTS, KNOWN_HOOK_EVENTS);
+  assert.throws(() => assertCursorHookEvents({ postToolUse: [{}] }), (e) => (
+    e instanceof GateError && /unknown Cursor hook event "postToolUse"/.test(e.message)
+  ));
+  assert.throws(() => assertCursorHookEvents({ invented: [{}] }), (e) => e instanceof GateError);
+  assert.doesNotThrow(() => assertCursorHookEvents({ stop: [{}] }));
+});
+
+test('cursor install writes only known hook event names and no bus-feedback group', () => {
+  const { dir, home } = sandbox();
+  doInstall(dir, home, { harnesses: 'cursor' });
+  const hooks = readJson(dir, path.join('.cursor', 'hooks.json')).hooks;
+  assert.deepEqual(Object.keys(hooks), ['stop']);
+  assert.equal(Object.hasOwn(hooks, 'postToolUse'), false);
+  for (const event of Object.keys(hooks)) {
+    assert.ok(CURSOR_HOOK_EVENTS.includes(event), event);
+  }
+  const text = fileText(dir, path.join('.cursor', 'hooks.json'));
+  assert.doesNotMatch(text, /additional_context/);
+  assert.doesNotMatch(text, /postToolUse/);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('reinstall strips a leftover Cursor bus-feedback group and keeps foreign stop', () => {
+  const { dir, home } = sandbox();
+  const runner = path.join(dir, '.promptobus', 'hooks', 'bus.mjs');
+  mkdirSync(path.dirname(runner), { recursive: true });
+  writeFileSync(runner, 'export {}\n');
+  mkdirSync(path.join(dir, '.cursor'), { recursive: true });
+  writeFileSync(path.join(dir, '.cursor', 'hooks.json'), `${JSON.stringify({
+    version: 1,
+    hooks: {
+      postToolUse: [{ command: `"${process.execPath}" "${runner}"`, matcher: 'mcp__promptobus__(promptobus_send|promptobus_mailbox)' }],
+      stop: [{ command: 'echo foreign-cursor-stop' }],
+    },
+  }, null, 2)}\n`);
+  doInstall(dir, home, { harnesses: 'cursor' });
+  const hooks = readJson(dir, path.join('.cursor', 'hooks.json')).hooks;
+  assert.equal(Object.hasOwn(hooks, 'postToolUse'), false);
+  assert.equal(hooks.stop.some((g) => g.command === 'echo foreign-cursor-stop'), true);
+  assert.equal(hooks.stop.some((g) => String(g.command).includes('promptobus guard')), true);
   assert.deepEqual(homeHits(home), []);
 });
 

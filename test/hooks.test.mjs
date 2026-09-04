@@ -6,9 +6,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
-import { BUS_HOOK_OUTPUT_DEFAULT, renderBusHook } from '../dist/hooks.js';
+import { renderBusHook } from '../dist/hooks.js';
 import { GUARD_BLOCK_LIMIT } from '../lib/guard.js';
-import { HOME_HOOK_DIRS, install } from '../lib/install.js';
+import { CURSOR_HOOK_EVENTS, HOME_HOOK_DIRS, install } from '../lib/install.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -64,38 +64,36 @@ function listRel(dir) {
   return out.sort();
 }
 
-test('renderBusHook keeps the default output field name without a harness id', () => {
-  assert.equal(BUS_HOOK_OUTPUT_DEFAULT, 'systemMessage');
+test('renderBusHook emits systemMessage and has no --output switch', () => {
   const text = renderBusHook({ commandName: 'promptobus' });
   assert.match(text, /Сгенерирован promptobus sync/);
-  assert.match(text, /--output/);
+  assert.match(text, /systemMessage/);
+  assert.doesNotMatch(text, /--output/);
+  assert.doesNotMatch(text, /additional_context/);
 });
 
-test('bus feedback uses three JSON contracts; the runner works from root and a subdirectory', () => {
+test('bus feedback is Claude and Codex JSON; Cursor is stop-only from a known event name', () => {
   const { dir, home } = sandbox();
   assert.equal(install(hostOf(dir), { harnesses: 'claude,cursor,codex', cwd: dir, env: envOf(home) }), 0);
   const claude = JSON.parse(readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
   const cursor = JSON.parse(readFileSync(path.join(dir, '.cursor', 'hooks.json'), 'utf8'));
   const codex = JSON.parse(readFileSync(path.join(dir, '.codex', 'hooks.json'), 'utf8'));
   const claudeCmd = claude.hooks.PostToolUse[0].hooks[0].command;
-  const cursorCmd = cursor.hooks.postToolUse[0].command;
   const codexCmd = codex.hooks.PostToolUse[0].hooks[0].command;
-  assert.doesNotMatch(claudeCmd, /additional_context/);
-  assert.match(cursorCmd, /additional_context/);
-  assert.doesNotMatch(codexCmd, /additional_context/);
+  assert.equal(Object.hasOwn(cursor.hooks, 'postToolUse'), false);
+  for (const event of Object.keys(cursor.hooks)) {
+    assert.ok(CURSOR_HOOK_EVENTS.includes(event), event);
+  }
+  assert.ok(cursor.hooks.stop[0].command.includes('promptobus guard'));
   assert.match(codex.hooks.PostToolUse[0].matcher, /promptobus_send/);
 
   const sub = path.join(dir, 'src', 'pkg');
   mkdirSync(sub, { recursive: true });
   for (const cwd of [dir, sub]) {
     const claudeOut = JSON.parse(runCommand(claudeCmd, { cwd, home, input: EVENT }).stdout);
-    const cursorOut = JSON.parse(runCommand(cursorCmd, { cwd, home, input: EVENT }).stdout);
     const codexOut = JSON.parse(runCommand(codexCmd, { cwd, home, input: EVENT }).stdout);
     assert.equal(typeof claudeOut.systemMessage, 'string');
     assert.ok(claudeOut.systemMessage.length > 0);
-    assert.equal(typeof cursorOut.additional_context, 'string');
-    assert.ok(cursorOut.additional_context.length > 0);
-    assert.equal(cursorOut.systemMessage, undefined);
     assert.equal(typeof codexOut.systemMessage, 'string');
     assert.ok(codexOut.systemMessage.length > 0);
   }
