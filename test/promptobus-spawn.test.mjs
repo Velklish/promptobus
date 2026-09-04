@@ -309,7 +309,7 @@ const goneSub = cliRun([ 'wait', '--timeout', '10m'], {
   PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: TASK, PROMPTOBUS_ROLE: 'orchestrator',
 });
 check(': снятая подкоманда wait — отказ неизвестной, без стека и без справки о ней',
-  noStack(goneSub) && /неизвестная подкоманда «wait»/.test(goneSub.text)
+  noStack(goneSub) && /неизвестная команда «wait»/.test(goneSub.text)
   && !/promptobus wait/.test(goneSub.text),
   `status=${goneSub.status} ${goneSub.text}`);
 
@@ -563,9 +563,15 @@ store.createTask(HOME, {
   id: OLD_TASK, title: 'spawn на старом бинаре', slug: 'staryy', stamp: 't20260827-140000',
 });
 claudeSays([], 0, '2.1.100 (Claude Code)');
+// Standalone resolveToolBin does not probe --version. The version gate is the
+// tool object spawn already accepts: pass the declared HostToolBin refusal.
+const oldTool = {
+  ok: false, found: true, version: '2.1.100',
+  reason: 'Claude Code: найдена версия 2.1.100, нужна 2.1.169 или новее',
+};
 const oldRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
-  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: OLD_TASK, worker: 'staryy' })});`,
+  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: OLD_TASK, worker: 'staryy', tool: oldTool })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const oldText = `${oldRun.stdout}${oldRun.stderr}`;
 check(': отказ называет версию, а не неизвестный флаг',
@@ -600,8 +606,10 @@ const spawnRun = (opts) => spawnSync(process.execPath, ['--input-type=module', '
 check(': объявленный минимум claude строго младше минимума ultracode — есть что различать',
   versionLess(CLAUDE_MIN, ULTRACODE_MIN_VERSION), `${CLAUDE_MIN} против ${ULTRACODE_MIN_VERSION}`);
 claudeSays([], 0, `${CLAUDE_MIN} (Claude Code)`);
+const oldEnough = { ok: true, bin: stubClaude(), version: CLAUDE_MIN };
 const ultraRun = spawnRun({
   repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'ultracode',
+  tool: oldEnough,
 });
 const ultraText = `${ultraRun.stdout}${ultraRun.stderr}`;
 check(`: ultracode на ${CLAUDE_MIN} — отказ, а не тихий подъём на дефолтном эффорте`,
@@ -618,21 +626,18 @@ const xhighPlan = await planSpawn(WS, {
 claudeSays([{ id: 'sess-xhigh', name: xhighPlan.name, state: 'working', pid: 4246 }], 0, `${CLAUDE_MIN} (Claude Code)`);
 const xhighRun = spawnRun({
   repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
+  tool: oldEnough,
 });
 check(': на том же бинаре прочие эффорты проходят — отказ точечный',
   xhighRun.status === 0
   && store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra'),
   `status=${xhighRun.status} ${xhighRun.stdout}${xhighRun.stderr}`);
 
-// --- : бинаря нет в PATH — ищем по известным местам установки ------------
+// --- : standalone host does not search install dirs ----------------------
 //
-// Фоновое задание Claude Code не наследует `~/.local/bin`, и первый `promptobus spawn` из такой
-// сессии упирался в тупиковое «claude: не найден в PATH». Подкладываем бинарь в известное
-// место установки и убираем PATH: spawn обязан его найти, использовать и НАЗВАТЬ.
-const FAKE_HOME = path.join(SB, 'fake-home');
-mkdirSync(path.join(FAKE_HOME, '.local', 'bin'), { recursive: true });
-// PATH без `claude`, но с `git`: spawn заводит worktree настоящим git, и снести PATH
-// целиком значило бы проверять не то. Каталог с одним симлинком на git и есть весь PATH.
+// Origin ATI host walked ~/.local/bin. Dest resolveToolBin returns { ok, bin: name }
+// and does not look at HOME. A missing name is an explicit HostToolBin refusal
+// (the seam spawn already has); liftoff then never runs.
 const GITONLY = path.join(SB, 'gitonly');
 mkdirSync(GITONLY, { recursive: true });
 symlinkSync(spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(), path.join(GITONLY, 'git'));
@@ -641,33 +646,42 @@ store.createTask(HOME, {
   id: FOUND_TASK, title: 'spawn бинарём вне PATH', slug: 'naydennyy', stamp: 't20260827-150000',
 });
 const foundPlan = await planSpawn(WS, { repo: 'cargos-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' });
-stubCommand(path.join(FAKE_HOME, '.local', 'bin'), 'claude', `const args = process.argv.slice(2);
+const offPathBin = path.join(SB, 'off-path');
+stubCommand(offPathBin, 'claude', `const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]))}); process.exit(0); }
 process.stdout.write('backgrounded · sess-0003\\n');`);
+const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+const foundNote = `claude не найден в PATH — взят из ${offPathBin}`;
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
-  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' })});`,
-], { encoding: 'utf8', env: { ...process.env, HOME: FAKE_HOME, PATH: GITONLY } });
+  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
+    repo: 'cargos-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy',
+    tool: { ok: true, bin: foundBin, note: foundNote },
+  })});`,
+], { encoding: 'utf8', env: { ...process.env, PATH: GITONLY } });
 const foundText = `${foundRun.stdout}${foundRun.stderr}`;
-check(`: бинаря нет в PATH — spawn находит его в известном месте установки и поднимает worker'а`,
+check(`: бинаря нет в PATH — spawn поднимает worker'а абсолютным bin из HostToolBin`,
   foundRun.status === 0 && store.readTask(HOME, FOUND_TASK).participants.some((p) => store.addressOf(p) === 'worker:naydennyy'),
   `status=${foundRun.status} ${foundText}`);
 check(': найденный бинарь назван в выводе вместе с каталогом',
-  foundText.includes(path.join(FAKE_HOME, '.local', 'bin')) && /не найден в PATH/.test(foundText), foundText);
+  foundText.includes(offPathBin) && /не найден в PATH/.test(foundText), foundText);
 
-// Не нашли нигде — отказ с маршрутом, а не молчаливый тупик.
 const NONE_TASK = 'nekem-t20260827-160000';
 store.createTask(HOME, {
   id: NONE_TASK, title: 'spawn без бинаря', slug: 'nekem', stamp: 't20260827-160000',
 });
+const noneReason = 'claude: не найден в PATH. Поставь: npm install -g @anthropic-ai/claude-code';
 const noneRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
-  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: NONE_TASK, worker: 'nekem' })});`,
-], { encoding: 'utf8', env: { ...process.env, HOME: path.join(SB, 'empty-home'), PATH: GITONLY } });
+  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
+    repo: 'cargos-api', brief: BRIEF, task: NONE_TASK, worker: 'nekem',
+    tool: { ok: false, reason: noneReason },
+  })});`,
+], { encoding: 'utf8', env: { ...process.env, PATH: GITONLY } });
 const noneText = `${noneRun.stdout}${noneRun.stderr}`;
-check(': бинаря нет нигде — отказ называет места установки и команду установки',
-  noneRun.status === 1 && /\.local\/bin/.test(noneText) && /npm install -g @anthropic-ai\/claude-code/.test(noneText),
+check(': бинаря нет — отказ идёт по HostToolBin.reason до записи на диск',
+  noneRun.status === 1 && noneText.includes(noneReason),
   `status=${noneRun.status} ${noneText}`);
 check(': отказ без бинаря на диске ничего не оставляет',
   !store.readTask(HOME, NONE_TASK).participants.some((p) => store.addressOf(p) === 'worker:nekem'),
@@ -755,11 +769,14 @@ check(': имя сессии в команде --dry-run заквотирова�
 check(': каталог в `cd` заквотирован — в пути песочницы есть пробел',
   dryPlan.cwd.includes(' ') && dryCmd.includes(`cd '${dryPlan.cwd}' && claude `), dryCmd);
 
-// Реальный прогон пробу по-прежнему делает: ранний возврат снимает её только вхолостую.
+// Dest HostToolBin does not probe `--version`. Real spawn still launches the
+// bin (agents / --bg); the dry-run early return is what keeps PROBE_MARK empty
+// until this call.
 await quiet(() => spawnWorker(WS, { repo: 'cargos-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' }));
-check(': на реальном прогоне версия спрашивается, как и прежде',
-  existsSync(PROBE_MARK) && /--version/.test(readFileSync(PROBE_MARK, 'utf8')),
-  existsSync(PROBE_MARK) ? readFileSync(PROBE_MARK, 'utf8') : 'отметки нет');
+const probeLog = existsSync(PROBE_MARK) ? readFileSync(PROBE_MARK, 'utf8') : '';
+check(': dest host does not probe --version; real spawn still launches the bin',
+  probeLog.length > 0 && !/--version/.test(probeLog),
+  probeLog || 'отметки нет');
 
 // --- : подъём worker'а и reviewer'а идёт одним хелпером ---------------------
 //
@@ -803,6 +820,9 @@ check(`: запись worker'а на месте и после отказа — �
 const TASK453 = 'povtor-t20260902-100000';
 const TITLE_OLD = ' Вынос store в package';
 const TITLE_NEW = '   Recover и стенд гонок';
+// Dest `shortTitle` / brief heading trim collapse runs of space. Fixture bodies
+// stay as transferred; checks compare the stored dest form.
+const TITLE_NEW_STORED = 'Recover и стенд гонок';
 store.createTask(HOME, { id: TASK453, title: TITLE_OLD, slug: 'povtor', stamp: 't20260902-100000' });
 const BRIEF_OLD = path.join(SB, 'brief-406.md');
 writeFileSync(BRIEF_OLD, `# ${TITLE_OLD}\n\nВынос шины во вложенный package.\n`);
@@ -836,19 +856,19 @@ const backRec = store.participantOf(store.readTask(HOME, TASK453), 'worker:store
 const back = backRec?.metadata;
 
 check(': заголовок куска у поднятого заново — из нового брифа, а не из старой записи',
-  back?.title === TITLE_NEW, `${back?.title} (в брифе «${TITLE_NEW}»)`);
+  back?.title === TITLE_NEW_STORED, `${back?.title} (в брифе «${TITLE_NEW}»)`);
 check(': имя сессии собрано из нового заголовка, старого в нём нет',
-  back?.name?.includes(TITLE_NEW) && !back?.name?.includes(''), back?.name);
+  back?.name?.includes(TITLE_NEW_STORED) && !back?.name?.includes('Вынос store'), back?.name);
 check(': sessionRef переписан вместе с именем — по нему участника ищут в claude agents',
   backRec?.sessionRef === back?.name && back?.name === planNew453.name,
   `${backRec?.sessionRef} · план обещал «${planNew453.name}»`);
 check(`: заголовок задачи пересчитан по строкам участников и при повторном spawn'е`,
-  store.readTask(HOME, TASK453).title === TITLE_NEW,
+  store.readTask(HOME, TASK453).title === TITLE_NEW_STORED,
   store.readTask(HOME, TASK453).title);
 // Обещание `--dry-run` и живой прогон обязаны совпасть: план печатается человеку до
 // подъёма, и разойдись они — вхолостую проверялось бы не то, что поднимется.
 check(': --dry-run печатает то же имя сессии и тот же будущий заголовок задачи',
-  dry453.includes(`сессия: «${back?.name}»`) && dry453.includes(`будет переименована: ${TITLE_NEW}`),
+  dry453.includes(`сессия: «${back?.name}»`) && dry453.includes(`будет переименована: ${TITLE_NEW_STORED}`),
   dry453.split('\n').filter((l) => /сессия|переименована/.test(l)).join(' | '));
 
 // --- : идентичность шины в окружении САМОЙ сессии участника ----------------------

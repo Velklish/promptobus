@@ -493,14 +493,14 @@ store.claimWarden(HOME, TASK, { cli: '0.45.0' });
 let launches = 0;
 const launch = () => { launches += 1; return 4242; };
 check('живого надзирателя никто не поднимает заново',
-  wdn.ensureWarden(HOME, TASK, { env: {}, launch }) === null && launches === 0);
+  wdn.ensureWarden(HOME, TASK, { env: {}, launch, host: HOST }) === null && launches === 0);
 
 store.clearWarden(HOME, TASK);
 check('мёртвого поднимает любая команда, и подъём называет pid',
-  wdn.ensureWarden(HOME, TASK, { env: {}, launch }) === 4242 && launches === 1);
+  wdn.ensureWarden(HOME, TASK, { env: {}, launch, host: HOST }) === 4242 && launches === 1);
 
 check('выключатель PROMPTOBUS_WARDEN=off гасит автоподъём',
-  wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN: 'off' }, launch }) === null && launches === 1);
+  wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN: 'off' }, launch, host: HOST }) === null && launches === 1);
 check('выключатель нечувствителен к регистру и пробелам',
   wdn.wardenOff({ PROMPTOBUS_WARDEN: ' OFF ' }) === true && wdn.wardenOff({}) === false);
 
@@ -508,7 +508,7 @@ const CLOSED = 'sup-closed-t20260829-150001';
 store.createTask(HOME, { id: CLOSED, title: 'закрытая', owner: SESSION });
 store.closeTask(HOME, CLOSED);
 check('закрытую задачу не стережёт никто',
-  wdn.ensureWarden(HOME, CLOSED, { env: {}, launch }) === null && launches === 1);
+  wdn.ensureWarden(HOME, CLOSED, { env: {}, launch, host: HOST }) === null && launches === 1);
 const stopped = await wdn.wardenRound(HOME, CLOSED, { knock: stubKnock() });
 check('круг присмотра по закрытой задаче выходит с причиной', stopped.stop === 'задача закрыта', stopped.stop);
 
@@ -528,13 +528,13 @@ const traceLines = () => {
   }
 };
 store.clearWarden(HOME, TASK);
-wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN_TRACE: TRACE }, launch });
+wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN_TRACE: TRACE }, launch, host: HOST });
 const trace1 = traceLines();
 check(': автоподъём оставляет след с задачей и pid',
   trace1.length === 1 && trace1[0].includes(`задача ${TASK}`) && trace1[0].includes('pid 4242'),
   JSON.stringify(trace1));
 
-wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_WARDEN_TRACE: TRACE }, launch });
+wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_WARDEN_TRACE: TRACE }, launch, host: HOST });
 check(': погашенный выключателем автоподъём следа не оставляет',
   traceLines().length === 1, JSON.stringify(traceLines()));
 
@@ -799,14 +799,14 @@ check('секунды до потолка не хватило — сидим д�
 const BUSY = 'sup-busy-t20260829-150004';
 store.createTask(HOME, { id: BUSY, title: 'занятое место', owner: SESSION });
 store.claimWarden(HOME, BUSY, { cli: '0.45.0' });
-const busyOut = await capture(() => wdn.warden({ task: BUSY }, { PROMPTOBUS_HOME: HOME }, SB));
+const busyOut = await capture(() => wdn.warden({ host: HOST, task: BUSY }, { PROMPTOBUS_HOME: HOME }, SB));
 check('место занято живым — процесс уходит, назвав держателя',
   /уже работает/.test(busyOut) && busyOut.includes(String(process.pid))
   && !store.tailWardenLog(HOME, BUSY, 20).some((l) => /надзиратель поднят/.test(l)),
   busyOut);
 
 // Задача закрылась — процесс кончается сам, первым же кругом, и снимает свою отметку.
-const closedOut = await capture(() => wdn.warden({ task: CLOSED }, { PROMPTOBUS_HOME: HOME }, SB));
+const closedOut = await capture(() => wdn.warden({ host: HOST, task: CLOSED }, { PROMPTOBUS_HOME: HOME }, SB));
 check('закрытая задача: процесс выходит с причиной и отметку за собой снимает',
   /вышел: задача закрыта/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
 check('причина выхода ушла и в журнал задачи',
@@ -829,7 +829,7 @@ const shift = setTimeout(() => { skew = (store.WARDEN_BEAT_SEC + 1) * 1000; }, 2
 // Страховка от вечного цикла: не сработай выход по живым — задача закроется, процесс
 // выйдет другой причиной, и красным станет вердикт, а не весь прогон.
 const guard = setTimeout(() => store.closeTask(HOME, LOOP), 15_000);
-const loopOut = await capture(() => wdn.warden({ task: LOOP }, { PROMPTOBUS_HOME: HOME }, SB));
+const loopOut = await capture(() => wdn.warden({ host: HOST, task: LOOP }, { PROMPTOBUS_HOME: HOME }, SB));
 clearTimeout(shift);
 clearTimeout(guard);
 Date.now = realNow;
@@ -870,7 +870,7 @@ let skewLast = 0;
 Date.now = () => realNowLast.call(Date) + skewLast;
 const shiftLast = setTimeout(() => { skewLast = (store.WARDEN_BEAT_SEC + 1) * 1000; }, 20);
 const guardLast = setTimeout(() => store.closeTask(HOME, LAST), 15_000);
-const lastOut = await capture(() => wdn.warden({ task: LAST }, { PROMPTOBUS_HOME: HOME }, SB));
+const lastOut = await capture(() => wdn.warden({ host: HOST, task: LAST }, { PROMPTOBUS_HOME: HOME }, SB));
 clearTimeout(shiftLast);
 clearTimeout(guardLast);
 Date.now = realNowLast;
@@ -892,7 +892,7 @@ store.createTask(HOME, { id: FAIL, title: 'отказ круга', owner: SESSIO
 store.upsertParticipant(HOME, FAIL, store.participantRecord('worker:api'));
 store.sendMessage(HOME, FAIL, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'бриф' });
 mkdirSync(store.healthFile(HOME, FAIL), { recursive: true });
-const failOut = await capture(() => wdn.warden({ task: FAIL }, { PROMPTOBUS_HOME: HOME }, SB));
+const failOut = await capture(() => wdn.warden({ host: HOST, task: FAIL }, { PROMPTOBUS_HOME: HOME }, SB));
 check(`круг присмотра отказал ${wdn.ROUND_FAIL_LIMIT} раза подряд — выход с причиной`,
   new RegExp(`вышел: круг присмотра отказал ${wdn.ROUND_FAIL_LIMIT} раза подряд`).test(failOut), failOut);
 check('каждый отказ пронумерован в журнале надзирателя',

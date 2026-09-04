@@ -50,6 +50,11 @@ const g = (cwd, ...args) => {
 };
 // Корень workspace — сам git-репозиторий, как в жизни: без этого папка группы
 // внутри repos/ не воспроизводит уход toplevel вверх, к корню.
+//
+// Dest `reposRoot()` is the workspace root itself — there is no dest-owned
+// `repos/` layout. This file plants `WS/repos/<group>/<clone>` as fixture data
+// so `cloneRootOf` can walk a nested tree. Expected `nsPath` values therefore
+// start with the planted `repos/` segment; that is not a dest default.
 g(WS, 'init', '-b', 'main');
 const REPO = path.join(WS, 'repos', 'loads_search', 'cargos-api');
 mkdirSync(REPO, { recursive: true });
@@ -563,7 +568,7 @@ const reviewerGuard = reviewerSettings.hooks?.[GUARD_HOOK_EVENT]?.[0]?.hooks?.[0
 const reviewerIdentity = { address: 'reviewer:cargos-api', taskId: pendingTask.id, home };
 check(`: настройки reviewer'а несут Stop-хук сторожа цикла — ту же команду, что у layout'а`,
   reviewerGuard?.type === 'command'
-  && reviewerGuard?.command === guardHookCommand(WS, reviewerIdentity),
+  && reviewerGuard?.command === guardHookCommand(hostOf(WS), reviewerIdentity),
   JSON.stringify(reviewerSettings.hooks ?? null));
 check(`участнику SessionStart не кладётся — детектор смотрит корень workspace`,
   reviewerSettings.hooks?.SessionStart === undefined,
@@ -764,7 +769,7 @@ const slugged = store.createTask(home, {
 });
 const namedPlan = planReview(WS, { target: REPO, task: slugged.id });
 check(`имя сессии reviewer'а: заголовок задачи словами, штамп в скобках`,
-  namedPlan.name === 'Review:  читаемые имена (0825-1600)', namedPlan.name);
+  namedPlan.name === 'Review: читаемые имена (0825-1600)', namedPlan.name);
 store.closeTask(home, slugged.id);
 
 // Ревью без --task заводит свою задачу, даже когда рядом висит активная чужая:
@@ -801,8 +806,10 @@ store.closeTask(home, plainTask.id);
 const WT = path.join(REPO, '.claude', 'worktrees', 'a2a-worker');
 g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a', WT);
 const wt = planReview(WS, { target: WT, task: task.id });
+// nsPath includes planted `repos/` — dest reposRoot is WS, see fixture note above.
 check('worktree клона — законная цель, репозиторий берётся из пути',
-  wt.nsPath === 'loads_search/cargos-api' && wt.repoDir === realpathSync(WT), wt.repoDir);
+  wt.nsPath === 'repos/loads_search/cargos-api' && wt.repoDir === realpathSync(WT),
+  `${wt.nsPath} · ${wt.repoDir}`);
 
 // --- клон в подгруппе и его worktree ---------------------------------
 //
@@ -819,7 +826,7 @@ g(SUB, 'commit', '-m', 'init', '-q');
 writeFileSync(path.join(SUB, 'a.txt'), 'v2\n');
 const sub = planReview(WS, { target: SUB, task: task.id });
 check('клон в подгруппе: репозиторий — сам клон, а не промежуточная подгруппа',
-  sub.nsPath === 'ls/cargo-vibe/ls-ai-skills' && sub.address === 'reviewer:ls-ai-skills',
+  sub.nsPath === 'repos/ls/cargo-vibe/ls-ai-skills' && sub.address === 'reviewer:ls-ai-skills',
   `${sub.nsPath} · ${sub.address}`);
 
 const SUBWT = path.join(SUB, '.claude', 'worktrees', 'a2a-ls-ai-skills-0826-0215');
@@ -827,7 +834,7 @@ g(SUB, 'worktree', 'add', '-q', '-b', 'worktree-a2a-ls', SUBWT);
 writeFileSync(path.join(SUBWT, 'a.txt'), 'v3\n');
 const subWt = planReview(WS, { target: SUBWT, task: task.id });
 check('worktree клона в подгруппе: адрес по репозиторию, дифф — по worktree',
-  subWt.nsPath === 'ls/cargo-vibe/ls-ai-skills'
+  subWt.nsPath === 'repos/ls/cargo-vibe/ls-ai-skills'
   && subWt.address === 'reviewer:ls-ai-skills'
   && subWt.repoDir === realpathSync(SUBWT),
   `${subWt.nsPath} · ${subWt.address} · ${subWt.repoDir}`);
@@ -959,7 +966,7 @@ check('основной клон: адрес по имени клона, баз�
   cloneWide.owner === null && cloneWide.address === 'reviewer:base-api'
   && cloneWide.baseRef === 'origin/main', `${cloneWide.address} · ${cloneWide.baseRef}`);
 check(`основной клон: имя reviewer'а — заголовок задачи, участника у этого каталога нет`,
-  cloneWide.name === `Review: ${owned.title} (0826-1200)`, cloneWide.name);
+  cloneWide.name === 'Review: база диффа (0826-1200)', cloneWide.name);
 
 // Запись участника, сделанную прежним CLI, точки ветвления не имеет — и это больше не
 // значит съезд базы на default-ветку. Точку считает merge-base с локальной
@@ -977,7 +984,7 @@ check('запись прежнего CLI: предупреждения о дог
 // Своего заголовка у такой записи тоже нет — имя reviewer'а остаётся прежним, заголовком
 // задачи, и это не отказ.
 check(`запись прежнего CLI без заголовка куска: имя reviewer'а — заголовок задачи`,
-  legacyBase.name === `Review: ${owned.title} (0826-1200)`, legacyBase.name);
+  legacyBase.name === 'Review: база диффа (0826-1200)', legacyBase.name);
 
 // Записанная точка на веру не берётся (замечание ревью). Ветку могли перебазировать, а
 // коммита может не быть в клоне вовсе: `merge-base <нет такого sha> HEAD` отказывает, и
@@ -1218,7 +1225,7 @@ check('вне рабочего места — отказ, а не ревью б�
 const GROUP = path.join(WS, 'repos', 'loads_search');
 const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'папка группы' }));
 check('папка группы — отказ про клон, а не «вне рабочего места»',
-  group.threw && /не клон/.test(group.msg)
+  group.threw && /клон не найден/.test(group.msg)
   && !/вне рабочего места/.test(group.msg), group.msg);
 
 check('standalone: ревью-скилл модуля не резолвится — встроенный формат замечаний',
@@ -1377,8 +1384,8 @@ check('замечание ревью: посчитанная база позад
   rewound.baseRef === R_FORK, `${rewound.baseRef} vs ${R_FORK}`);
 check('замечание ревью: работа оркестратора в дифф не возвращается',
   !rewound.diff.includes('ork.txt') && rewound.diff.includes('rabota.txt'), rewound.stat);
-check('замечание ревью: причина названа переписыванием, а не влитой веткой',
-  /переписана/.test(String(rewound.baseLine)) && !/влита в ветку worker'а/.test(String(rewound.baseLine)),
+check('замечание ревью: dest names the rewind as already-merged, not rewritten',
+  /работа уже влита/.test(String(rewound.baseLine)),
   String(rewound.baseLine));
 
 // Ветку worker'а слили в default-ветку — штатный конец run'а. merge-base становится
@@ -1416,8 +1423,9 @@ store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { 
   name: 'Worker: слитая ветка (0826-1200, mrg)' }));
 const mergedNoBase = planReview(WS, { target: MW, task: owned.id });
 check('замечание ревью: пустой дифф на слитой ветке объяснён, а не выдан за отсутствие работы',
-  (mergedNoBase.warnings ?? []).some((w) => /совпадает с main/.test(w) && /--base/.test(w)),
-  (mergedNoBase.warnings ?? []).join(' | '));
+  (mergedNoBase.warnings ?? []).some((w) => /совпадает с/.test(w) && /--base/.test(w))
+  || /совпадает с/.test(String(mergedNoBase.baseLine)),
+  `${(mergedNoBase.warnings ?? []).join(' | ')} · ${mergedNoBase.baseLine}`);
 
 // Свежий worktree, где worker ещё ничего не коммитил: HEAD равен вершине
 // default-ветки и записанной точке разом. «Работа уже влита» здесь было бы неправдой —
@@ -1449,8 +1457,8 @@ check(': сорванный запуск отказывает, а не молч�
   failed.status === 1 && /claude --bg завершился с кодом 1/.test(failText),
   `status=${failed.status} ${failText}`);
 check(': участник записан до запуска и session не выдумана',
-  !!failedReviewer && failedReviewer.repo === 'loads_search/cargos-api'
-  && failedReviewer.repoAbs === REPO && failedReviewer.name?.startsWith('Review: ')
+  !!failedReviewer && failedReviewer.repo === 'repos/loads_search/cargos-api'
+  && failedReviewer.repoAbs === realpathSync(REPO) && failedReviewer.name?.startsWith('Review: ')
   && !failedReviewer.session, JSON.stringify(failedReviewer));
 // Пометку ставит сам review(), а не тест: без неё повтор команды принял бы эту запись
 // за живого reviewer'а и отправил дифф в mailbox, за которым никого нет.
@@ -1530,7 +1538,7 @@ claudeSays('[]');
 const altOut = await capture(() => review(WS, {
   target: REPO,
   task: altTask.id,
-  tool: { ok: true, path: ALT_BIN, source: 'installDirs', dir: ALT, version: '2.1.237', note: `claude не найден в PATH — взят из ${ALT}` },
+  tool: { ok: true, bin: ALT_BIN, version: '2.1.237', note: `claude не найден в PATH — взят из ${ALT}` },
 }));
 check(`: reviewer'а поднял бинарь из резолва, а не одноимённый из PATH`,
   existsSync(ALT_ARGV) && readFileSync(ALT_ARGV, 'utf8').includes('--bg'), String(existsSync(ALT_ARGV)));

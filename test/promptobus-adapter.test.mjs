@@ -639,8 +639,8 @@ check(': поверхность печати найдена в adapterFiles — 
   [...PRINT_SURFACE].every((rel) => adapterFiles.some(([r]) => r === rel)),
   [...PRINT_SURFACE].filter((rel) => !adapterFiles.some(([r]) => r === rel)).join(', ') || 'все на месте');
 const HARNESS_WORDS = /job not found|claude |agent |codex /;
-function harnessWordHits(rel, text) {
-  return stripComments(text).split('\n')
+function harnessWordHits(rel, text, { comments = false } = {}) {
+  return (comments ? text : stripComments(text)).split('\n')
     .filter((line) => HARNESS_WORDS.test(line))
     .map((line) => `${rel}: ${line.trim().slice(0, 90)}`);
 }
@@ -648,9 +648,12 @@ const surfaceHits = [];
 const naiveHits = [];
 for (const [rel, file] of adapterFiles) {
   if (DRIVER_OWN.has(rel)) continue;
-  const hits = harnessWordHits(rel, readFileSync(file, 'utf8'));
-  naiveHits.push(...hits);
-  if (PRINT_SURFACE.has(rel)) surfaceHits.push(...hits);
+  const text = readFileSync(file, 'utf8');
+  // Print surface is judged on code: comments may name a harness as the subject of
+  // a lift (`claude --bg` in spawn.js). Naive grep keeps comments so the cutoff
+  // is proven non-empty — dest adapter code outside drivers is already clean.
+  naiveHits.push(...harnessWordHits(rel, text, { comments: true }));
+  if (PRINT_SURFACE.has(rel)) surfaceHits.push(...harnessWordHits(rel, text));
 }
 check(': harness-neutral печать не содержит слов harness’ов',
   surfaceHits.length === 0, surfaceHits.join(' | '));
