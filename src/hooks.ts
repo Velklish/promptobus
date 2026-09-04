@@ -3,8 +3,7 @@
 // сюда не зашита.
 //
 // Скрипт хука лежит шаблоном рядом с исходниками (`templates/bus-hook.mjs`), а не
-// строковым литералом: в шаблоне есть имена harness'ов (комментарии генерата), и гейт
-// harness-neutral исходников package их в `.ts` не пускает.
+// строковым литералом: правки генерата отделены от TypeScript-ядра.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,8 +12,8 @@ import type { PromptobusHost } from './host.js';
 export const BUS_HOOK_EVENT = 'PostToolUse';
 export const BUS_HOOK_SEP = '\n';
 // Имя сервера шины. Своего `contract.js` у package нет, и литерал здесь — не копия
-// константы CLI, а объявление package. Расхождение с `PROMPTOBUS_SERVER` ловит
-// `sync.test.mjs`: матчер стейдженного хука перестаёт совпадать, и группа не находится.
+// константы потребителя, а объявление package. Расхождение с именем сервера ломает
+// матчер стейдженного хука: группа не находится.
 export const BUS_SERVER = 'promptobus';
 export const BUS_HOOK_MATCHER = `mcp__${BUS_SERVER}__(promptobus_send|promptobus_mailbox)`;
 

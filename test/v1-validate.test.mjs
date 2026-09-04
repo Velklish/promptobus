@@ -1,15 +1,15 @@
-// Runtime validation protocol v1 (`BL-409`): parity собственных валидаторов и JSON Schemas.
+// Runtime validation protocol v1: parity собственных валидаторов и JSON Schemas.
 //
-// Валидаторов у механизма два, и это не дубль ради надёжности, а цена решения ADR-032 §6:
-// в production работают собственные TypeScript-валидаторы БЕЗ runtime-зависимости, а схемы
+// Валидаторов у механизма два, и это не дубль ради надёжности: в production работают
+// собственные TypeScript-валидаторы БЕЗ runtime-зависимости, а схемы
 // лежат в `schemas/v1` и в production не читаются вовсе. Разъедься они — валидатор
 // перестал бы проверять то, что объявлено схемой, и узнал бы об этом первым потребитель
 // схемы, а не автор правки. Поэтому оба гоняются по ОДНОМУ набору fixtures: valid обязаны
 // принять оба, invalid — отвергнуть оба.
 //
-// Эталонный validator — `ajv`, devDependency единственного workspace (`cli/package.json`)
+// Эталонный validator — `ajv`, devDependency package
 // точным пином. В tarball он не едет, и runtime-зависимостей у package по-прежнему ноль —
-// это отдельный гейт ([promptobus-package.test.mjs](../../../test/promptobus-package.test.mjs)).
+// это отдельный гейт набора package.
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -84,7 +84,7 @@ test('parity: более новая версия схемы — отдельны
   assert.equal(validate('task', older).code, 'schema-invalid');
 });
 
-test('BL-486: отказ по незнакомым полям несёт их перечень отдельным полем вердикта', () => {
+test('отказ по незнакомым полям несёт их перечень отдельным полем вердикта', () => {
   // Перечень нужен читателю журнала: по нему «запись сделана механизмом новее меня»
   // отличается от порчи. Отдельным полем, а не разбором `note`: текст отказа — проза, и
   // матчер по ней разъехался бы с первой же правкой формулировки.

@@ -221,6 +221,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     extraEnv: () => ({ ...extra }),
     resolveToolBin: (name): HostToolBin => ({ ok: true, bin: name }),
     substituteVars: (value) => value,
+    legacyLayout: () => null,
 
     formatCommand: (args) => [commandName, ...args].join(' '),
     formatNpx: (args) => ['npx', commandName, ...args].join(' '),

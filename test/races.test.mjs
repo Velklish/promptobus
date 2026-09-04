@@ -4,11 +4,11 @@
 // системы (`mkdir` лока, `wx` журнала, `link` имени записи), а внутри одного процесса они
 // никогда не встречаются с собой.
 //
-// Переехало из `cli/test/promptobus.test.mjs` вместе с кодом (`BL-406`): разделы `BL-149`
-// (read-modify-write двух процессов) и `BL-249` (атомарность и «первый выигрывает»).
-// Запуск — своя команда package: `npm test --prefix cli/packages/promptobus`.
+// Переехало вместе с кодом: разделы про read-modify-write двух процессов
+// и про атомарность («первый выигрывает»).
+// Запуск — своя команда package: `npm test`.
 //
-// **Три проверки сняты в `BL-430` и не потеряны.** Они гоняли через слой совместимости ту же
+// **Три проверки сняты и не потеряны.** Они гоняли через слой совместимости ту же
 // конкуренцию, что [v1-races.test.mjs](v1-races.test.mjs) проверяет прямо на engine, и после
 // снятия слоя стали бы дословными копиями: «конкурентная запись двух процессов в один inbox»
 // покрыта там проверкой «два процесса шлют в один mailbox — ничего не потеряно и порядок
@@ -19,9 +19,9 @@
 // **Многопроцессная гонка ИМЕНИ артефакта в папке файлов задачи снята, и замены ей нет.**
 // Имя занимает сама жёсткая ссылка: `linkSync` отказывает `EEXIST` на занятом имени, и
 // выбор следующего идёт циклом у двери механизма (`placeFile` в
-// [cli/lib/promptobus/store.js](../../../lib/promptobus/store.js)). Свойство держится этим
+// adapter потребителя). Свойство держится этим
 // отказом ФС, а не проверкой перед записью, и покрыто оно последовательно —
-// [cli/test/promptobus-adapter.test.mjs](../../../test/promptobus-adapter.test.mjs),
+// набором adapter'а потребителя,
 // «артефакт: одноимённый не затирает прежний — имя занимает сама ссылка». Многопроцессного
 // стенда у двери нет: он стоил бы своего харнеса ради ветки, где сама ФС и есть арбитр.
 import assert from 'node:assert/strict';
@@ -34,9 +34,9 @@ import test from 'node:test';
 
 const store = await import('../dist/index.js');
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а (ADR-032,
-// §6): здесь adapter'а нет, и его играет набор. Правило ATI («worker'у нельзя писать
-// worker'у») живёт в CLI и проверяется там.
+// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
+// adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать worker'у»)
+// живёт в CLI и проверяется там.
 const DIST = new URL('../dist/index.js', import.meta.url).href;
 
 // Adapter'а здесь нет, и его играет набор: перевод адреса в запись участника — его дело.
@@ -110,7 +110,7 @@ function exitedZero(kids, who = (i) => `#${i}`) {
 // времени запуска процесса, и окно между проверкой и записью — то самое, которое чинится, —
 // не наступает вовсе.
 //
-// По готовности, а не по общей метке времени (`BL-448`). Метка давала фору на запуск node и
+// По готовности, а не по общей метке времени. Метка давала фору на запуск node и
 // импорт `dist`, и калибровалась она под спокойную машину: под нагрузкой (load average
 // 41–43) половина из восьми детей входила в барьер уже ПОСЛЕ метки, +27…−159 мс, и гонка
 // вырождалась в почти последовательный запуск. Доклад о нагрузке не знает вовсе: опоздавших
@@ -149,13 +149,13 @@ function racers(n, body) {
   });
 }
 
-// --- BL-149: read-modify-write двух процессов ---------------------------------
+// --- read-modify-write двух процессов ---------------------------------
 
-test('BL-149: два процесса пишут участников — ни одна запись не потеряна', async () => {
+test('два процесса пишут участников — ни одна запись не потеряна', async () => {
   // Без лока второй писатель кладёт список, прочитанный до чужой записи, и участник
   // теряется молча — worker поднят, а в журнале его нет. Адреса у всех разные:
   // потерянная запись не восстанавливается следующим кругом.
-  const home = path.join(SB, 'bl149', '.agents', 'a2a');
+  const home = path.join(SB, 'race-participants');
   const RACE_N = 120;
   const raceTask = at(home).createTask({
     id: 't20260827-100003', title: 'гонка участников', owner: rec(store.ORCHESTRATOR),
@@ -172,60 +172,60 @@ test('BL-149: два процесса пишут участников — ни �
     'временных файлов не осталось');
 });
 
-// --- BL-249: атомарность и «первый выигрывает» -------------------------------
+// --- атомарность и «первый выигрывает» -------------------------------
 
-const bl249 = path.join(SB, 'bl249', '.agents', 'a2a');
+const atomicHome = path.join(SB, 'race-atomic');
 
-test('BL-249: имена сообщений уникальны на диске, а не в памяти процесса', async (t) => {
+test('имена сообщений уникальны на диске, а не в памяти процесса', async (t) => {
   // `seq` свой у каждого процесса, и два отправителя под одним адресом в одну миллисекунду
   // собирали одно имя, а `rename` перезаписывал молча. Адрес у всех детей один — в этом
   // весь предмет.
   const NAME_TASK = 'imena-t20260829-030100';
-  const engine = at(bl249);
+  const engine = at(atomicHome);
   engine.createTask({ id: NAME_TASK, title: 'уникальность имён', owner: rec(store.ORCHESTRATOR) });
   engine.putParticipant(NAME_TASK, rec('worker:a'));
   const WRITERS = 6;
   const PER_WRITER = 30;
   const kids = await racers(WRITERS,
-    `const e = at(${J(bl249)});\n`
+    `const e = at(${J(atomicHome)});\n`
     + `for (let k = 0; k < ${PER_WRITER}; k += 1) e.sendSync(${J(NAME_TASK)}, `
     + "{ from: 'worker-a', to: ['orchestrator'], type: 'status', body: i + '#' + k });");
   const { messages: sameFrom } = engine.peek(NAME_TASK, 'orchestrator');
-  await t.test('BL-249: отправители под одним адресом — ни одно сообщение не затёрто', () => {
+  await t.test('отправители под одним адресом — ни одно сообщение не затёрто', () => {
     exitedZero(kids);
     assert.equal(sameFrom.length, WRITERS * PER_WRITER, `${sameFrom.length} из ${WRITERS * PER_WRITER}`);
   });
-  await t.test('BL-249: временных файлов после гонки имён не осталось', () => {
+  await t.test('временных файлов после гонки имён не осталось', () => {
     exitedZero(kids);
     assert.equal(readdirSync(engine.inboxPath(NAME_TASK, 'orchestrator'))
       .filter((n) => n.startsWith('.tmp-')).length, 0);
   });
 });
 
-test('BL-249: параллельные отправители одного содержимого не теряют записей', async (t) => {
+test('параллельные отправители одного содержимого не теряют записей', async (t) => {
   // Имя записи занимала проверка перед копированием, и два отправителя, увидевшие одно
   // свободное имя, клали файл друг поверх друга. В store v1 содержимое адресуется SHA-256 и
   // дедуплицируется, а видимая часть — metadata-запись: тридцать отправок одного файла дают
   // тридцать записей и один blob, и ни одна запись не теряется. Гонка ЧЕЛОВЕЧЕСКОГО имени в
   // папке файлов задачи — дело adapter'а, и проверяется она у него.
   const ART_TASK = 'artefakty-t20260829-030200';
-  const engine = at(bl249);
+  const engine = at(atomicHome);
   engine.createTask({ id: ART_TASK, title: 'гонка артефактов', owner: rec(store.ORCHESTRATOR) });
   engine.putParticipant(ART_TASK, rec('worker:a'));
-  const artRace = path.join(SB, 'bl249-artifact.json');
+  const artRace = path.join(SB, 'race-artifact.json');
   writeFileSync(artRace, '{"event":"CargoCreated"}\n');
   const kids = await racers(6,
-    `const e = at(${J(bl249)});\n`
+    `const e = at(${J(atomicHome)});\n`
     + `for (let k = 0; k < 5; k += 1) e.sendSync(${J(ART_TASK)}, `
     + "{ from: 'worker-a', to: ['orchestrator'], type: 'artifact', body: 'a' + i + k, "
     + `artifact: { path: ${J(artRace)} } });`);
-  await t.test('BL-249: параллельные отправители — metadata-записей столько же, сколько отправок', () => {
+  await t.test('параллельные отправители — metadata-записей столько же, сколько отправок', () => {
     exitedZero(kids);
     const { artifacts, broken } = engine.listArtifacts(ART_TASK);
     assert.equal(broken.length, 0, broken.join(', '));
     assert.equal(artifacts.length, 30, `${artifacts.length} из 30`);
   });
-  await t.test('BL-249: id записей не повторяются, а содержимое дедуплицировано в один blob', () => {
+  await t.test('id записей не повторяются, а содержимое дедуплицировано в один blob', () => {
     exitedZero(kids);
     const seen = engine.peek(ART_TASK, 'orchestrator').messages.map((msg) => msg.artifact);
     assert.equal(new Set(seen).size, 30);
@@ -233,34 +233,34 @@ test('BL-249: параллельные отправители одного со�
   });
 });
 
-test('BL-249: отметка надзирателя не пишется поверх себя', async () => {
-  // Приезжает на место через rename, как журнал (BL-149): жёсткая ссылка на прежний файл
+test('отметка надзирателя не пишется поверх себя', async () => {
+  // Приезжает на место через rename, как журнал: жёсткая ссылка на прежний файл
   // держит прежнее содержимое. Записанная поверх себя, она менялась бы и по ссылке — а
   // между усечением и записью читатель видит пустой файл и отвечает «надзирателя нет», то
   // есть противоположное правде.
   const MARK_TASK = 'otmetka-t20260829-030300';
-  at(bl249).createTask({ id: MARK_TASK, title: 'атомарность отметки', owner: rec(store.ORCHESTRATOR) });
-  store.claimWarden(bl249, MARK_TASK, { cli: 'проба' });
-  const heldMark = path.join(SB, 'bl249-mark.json');
-  linkSync(store.wardenMarkFile(bl249, MARK_TASK), heldMark);
+  at(atomicHome).createTask({ id: MARK_TASK, title: 'атомарность отметки', owner: rec(store.ORCHESTRATOR) });
+  store.claimWarden(atomicHome, MARK_TASK, { cli: 'проба' });
+  const heldMark = path.join(SB, 'race-mark.json');
+  linkSync(store.wardenMarkFile(atomicHome, MARK_TASK), heldMark);
   const heldBeat = JSON.parse(readFileSync(heldMark, 'utf8')).beat;
   // Удар сердца несёт время: без паузы обе записи легли бы в одну миллисекунду, и
   // сравнивать было бы нечего.
   await new Promise((r) => { setTimeout(r, 5); });
-  const beaten = store.beatWarden(bl249, MARK_TASK);
+  const beaten = store.beatWarden(atomicHome, MARK_TASK);
   assert.equal(JSON.parse(readFileSync(heldMark, 'utf8')).beat, heldBeat);
-  assert.equal(JSON.parse(readFileSync(store.wardenMarkFile(bl249, MARK_TASK), 'utf8')).beat, beaten.beat);
+  assert.equal(JSON.parse(readFileSync(store.wardenMarkFile(atomicHome, MARK_TASK), 'utf8')).beat, beaten.beat);
   assert.notEqual(beaten.beat, heldBeat);
 });
 
-test('BL-249: место надзирателя занимает ровно один из восьми', async () => {
+test('место надзирателя занимает ровно один из восьми', async () => {
   // Проверка живости и запись отметки — одно решение под локом. Без лока восемь
   // параллельных команд шины видят «надзирателя нет» и поднимают восемь процессов: одну
   // задачу стерегли бы восемь циклов доставки, и каждое сообщение уезжало бы адресату
   // восемь раз.
   const CLAIM_TASK = 'nadziratel-t20260829-030400';
-  at(bl249).createTask({ id: CLAIM_TASK, title: 'первый выигрывает место надзирателя', owner: rec(store.ORCHESTRATOR) });
-  // Отметка ставится на pid РОДИТЕЛЯ, а не свой у каждого ребёнка (`BL-435`). Место
+  at(atomicHome).createTask({ id: CLAIM_TASK, title: 'первый выигрывает место надзирателя', owner: rec(store.ORCHESTRATOR) });
+  // Отметка ставится на pid РОДИТЕЛЯ, а не свой у каждого ребёнка. Место
   // держится живостью владельца: `liveWarden` спрашивает `pidAlive`, и вышедший победитель
   // освобождает его по-настоящему. Пока дети метили себя, победителя приходилось держать
   // живым сном, и под пулом раннера этот сон не покрывал разброса — первый выходил раньше,
@@ -270,22 +270,22 @@ test('BL-249: место надзирателя занимает ровно од
   // держать место сном больше не надо вовсе — и проверяется ровно то, что названо в
   // заголовке: решение под локом, а не время жизни чужого процесса.
   const kids = await racers(8,
-    `const r = m.claimWarden(${J(bl249)}, ${J(CLAIM_TASK)}, { pid: ${process.pid} });\n`
+    `const r = m.claimWarden(${J(atomicHome)}, ${J(CLAIM_TASK)}, { pid: ${process.pid} });\n`
     + "console.log(r.busy ? 'busy' : 'mark');");
   exitedZero(kids);
   const claims = kids.map((k) => k.out);
   assert.equal(claims.filter((r) => r === 'mark').length, 1, claims.join(', '));
 });
 
-test('BL-249: снятие отметки идёт под локом задачи', async (t) => {
+test('снятие отметки идёт под локом задачи', async (t) => {
   // Снятие отметки — read-check-delete, и оно тоже под локом: между чтением «моя ли» и
   // удалением помещается чужой `claimWarden`, и снялась бы свежая чужая отметка. Признак
   // лока — само ожидание: держателя снимает посторонний процесс через 400 мс, и снятие
   // столько же и досиживает. Держатель живой (наш pid), поэтому сиротой лок не считается.
   const LOCK_TASK = 'snyatie-t20260829-030500';
-  at(bl249).createTask({ id: LOCK_TASK, title: 'снятие под локом', owner: rec(store.ORCHESTRATOR) });
-  store.claimWarden(bl249, LOCK_TASK);
-  const clearLock = path.join(store.taskDir(bl249, LOCK_TASK), '.lock');
+  at(atomicHome).createTask({ id: LOCK_TASK, title: 'снятие под локом', owner: rec(store.ORCHESTRATOR) });
+  store.claimWarden(atomicHome, LOCK_TASK);
+  const clearLock = path.join(store.taskDir(atomicHome, LOCK_TASK), '.lock');
   mkdirSync(clearLock, { recursive: true });
   writeFileSync(path.join(clearLock, 'owner'), `${JSON.stringify({ pid: process.pid, session: null, since: null })}\n`);
   const releaser = spawn(process.execPath, ['--input-type=module', '-e',
@@ -293,20 +293,20 @@ test('BL-249: снятие отметки идёт под локом задач�
     + `(await import('node:fs')).rmSync(${J(clearLock)}, { recursive: true, force: true });`],
   { stdio: ['ignore', 'ignore', 'inherit'] });
   const clearStart = Date.now();
-  const cleared = store.clearWarden(bl249, LOCK_TASK);
+  const cleared = store.clearWarden(atomicHome, LOCK_TASK);
   const clearMs = Date.now() - clearStart;
   await new Promise((r) => releaser.on('exit', r));
-  await t.test('BL-249: снятие отметки ждёт лока задачи — read-check-delete не идёт мимо него', () => {
+  await t.test('снятие отметки ждёт лока задачи — read-check-delete не идёт мимо него', () => {
     assert.equal(cleared, true);
     assert.ok(clearMs >= 350, `${clearMs}ms`);
-    assert.ok(!existsSync(store.wardenMarkFile(bl249, LOCK_TASK)));
+    assert.ok(!existsSync(store.wardenMarkFile(atomicHome, LOCK_TASK)));
   });
   // Задачи на диске уже нет — снимать нечего, и лок брать не у чего: зовётся это из
   // `finally` цикла надзирателя, и отказ оттуда унёс бы законный выход.
-  rmSync(store.taskDir(bl249, LOCK_TASK), { recursive: true, force: true });
-  await t.test('BL-249: снесённая с диска задача — снятие молчит, а не падает на локе', () => {
+  rmSync(store.taskDir(atomicHome, LOCK_TASK), { recursive: true, force: true });
+  await t.test('снесённая с диска задача — снятие молчит, а не падает на локе', () => {
     let threw = false;
-    try { store.clearWarden(bl249, LOCK_TASK); } catch { threw = true; }
+    try { store.clearWarden(atomicHome, LOCK_TASK); } catch { threw = true; }
     assert.ok(!threw);
   });
 });

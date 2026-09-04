@@ -1,11 +1,9 @@
 // Standalone-проверка package: собранный dist импортируется сам по себе, без CLI,
 // без рабочего места и без чужих зависимостей. Запуск — своя команда package:
-// `npm test --prefix cli/packages/promptobus` из корня репозитория; её же зовёт
-// набор репозитория ([promptobus-package.test.mjs](../../../test/promptobus-package.test.mjs)).
+// `npm test`.
 //
-// Файл лежит в package, а не в cli/test, намеренно: package обязан проверяться
-// отдельно от механизма — иначе «собирается standalone» держалось бы на слове.
-// Помощник вердиктов набора (check.mjs) сюда не тянется по той же причине.
+// Файл лежит в package намеренно: package обязан проверяться
+// отдельно от потребителя — иначе «собирается standalone» держалось бы на слове.
 //
 // dist собирается скриптом pretest, поэтому чистый checkout проверяется без
 // подготовки: заранее созданного dist файл не ждёт.
@@ -21,12 +19,12 @@ import test from 'node:test';
 test('entry point "." отдаёт версию протокола и имя package', async () => {
   const index = await import('../dist/index.js');
   assert.equal(index.PROTOCOL_VERSION, 1);
-  assert.equal(index.PACKAGE_NAME, '@ati-agents/promptobus');
+  assert.equal(index.PACKAGE_NAME, 'promptobus');
 });
 
 test('entry point "./driver" собран отдельным модулем', async () => {
   // Типы стираются компиляцией, поэтому у заглушки driver проверяется факт
-  // сборки отдельного модуля, а не его экспорты: их содержание приезжает в BL-408.
+  // сборки отдельного модуля, а не его экспорты: их содержание живёт в контракте driver'а.
   const driver = await import('../dist/driver.js');
   assert.equal(typeof driver, 'object');
 });

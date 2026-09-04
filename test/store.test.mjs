@@ -1,15 +1,14 @@
 // Package у своей границы там, где её не закрывает engine: словарь шины (адреса, идентичность
 // задачи), лок журнала задачи и три чтения mailbox'а, заведённые вместе со снятием слоя
-// совместимости, — `peekInbox`, `glanceInbox` и `lastSentAt` (`BL-430`). Запуск — своя команда
-// package: `npm test --prefix cli/packages/promptobus` из корня репозитория; её же зовёт набор
-// репозитория ([promptobus-package.test.mjs](../../../test/promptobus-package.test.mjs)).
+// совместимости, — `peekInbox`, `glanceInbox` и `lastSentAt`. Запуск — своя команда
+// package: `npm test`.
 //
-// **Чего здесь больше нет и почему.** До `BL-430` файл проверял слой совместимости — legacy
+// **Чего здесь больше нет и почему.** Раньше файл проверял слой совместимости — legacy
 // поверхность поверх engine v1, — и половина его проверок звала одну и ту же операцию v1
 // через фасад. Слоя нет, и каждая такая проверка уехала туда, где живёт её предмет:
 // операции store — в [v1-engine.test.mjs](v1-engine.test.mjs), дверь механизма (журнал в
 // адресах, кэш журнала, папка файлов задачи, отказ негодному адресату) — в
-// [cli/test/promptobus-adapter.test.mjs](../../../test/promptobus-adapter.test.mjs).
+// наборе adapter'а потребителя.
 // Поимённый разбор снятого — в результате задачи.
 //
 // Диагностика и идентичность сессии приходят АРГУМЕНТАМИ: package не читает окружение и в
@@ -28,9 +27,9 @@ const store = await import('../dist/index.js');
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-store-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а (ADR-032,
-// §6): здесь adapter'а нет, и его играет набор. Правило ATI («worker'у нельзя писать
-// worker'у») живёт в CLI и проверяется там.
+// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
+// adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать worker'у»)
+// живёт в CLI и проверяется там.
 const engineAt = (home) => store.openEngine({ home, policy: () => ({ allow: true }) });
 
 // Запись участника, какой её кладёт adapter: id — имя каталога mailbox'а, адрес — поле
@@ -48,7 +47,7 @@ function participant(address, fields = {}) {
 }
 
 // Что бросил вызов: класс и текст. Класс — по конструктору, как его читает верхний catch
-// CLI (`agents.js` опознаёт `GateError` по имени, а не `instanceof`).
+// CLI (опознаёт `GateError` по имени класса, а не `instanceof`).
 function thrown(fn) {
   try {
     fn();
@@ -88,14 +87,14 @@ test('адрес → имя файлов участника: reviewer отлич
 
 // Адрес без слага имени файла не даёт, и прежде это молчало: склейка отдавала `undefined`,
 // а путь конфига собирался из него как `undefined.mcp.json` — файл, которого не искал и не
-// убирал никто (`BL-421`). Отказ обязан называть адрес: маршрут сюда недостижим, и по
+// убирал никто. Отказ обязан называть адрес: маршрут сюда недостижим, и по
 // одному тексту «слага нет» вызывающего не найти.
 test('адрес без слага: имя файла участника не собирается, отказ называет адрес', () => {
   const stem = thrown(() => store.participantFileStem('orchestrator'));
   assert.ok(stem.threw && /orchestrator/.test(stem.msg), `${stem.threw} · ${stem.msg}`);
 });
 
-// BL-390: идентичность задачи и id сообщения лежат в одном журнале. Сообщение штампуется
+// идентичность задачи и id сообщения лежат в одном журнале. Сообщение штампуется
 // через `toISOString`, то есть UTC; задача прежде брала местные getters. Подставной clock
 // разводит обе зоны независимо от TZ машины теста: на UTC-машине настоящий Date скрыл бы
 // прежнюю реализацию.
@@ -106,13 +105,13 @@ const UTC_CLOCK = {
   getHours: () => 23, getMinutes: () => 59, getSeconds: () => 58,
 };
 
-test('BL-390: id задачи штампуется по UTC, а не по местным getters', () => {
+test('id задачи штампуется по UTC, а не по местным getters', () => {
   const utcIdentity = store.newTaskIdentity('utc-proba', UTC_CLOCK);
   assert.equal(utcIdentity.id, 'utc-proba-t20260831-110652');
   assert.equal(utcIdentity.stamp, 't20260831-110652');
 });
 
-test('BL-390: формат хвоста и чтение старых id не изменились', () => {
+test('формат хвоста и чтение старых id не изменились', () => {
   assert.equal(store.stampOfId('utc-proba-t20260831-110652'), 't20260831-110652');
   assert.equal(store.stampOfId('staryy-t20250102-030405'), 't20250102-030405');
 });
@@ -121,13 +120,13 @@ test('id задачи: путь наружу отвергнут', () => {
   assert.ok(thrown(() => store.taskDir(path.join(SB, 'ws'), '../../etc')).threw);
 });
 
-// --- accessor'ы полей adapter'а (BL-430) -------------------------------------
+// --- accessor'ы полей adapter'а -------------------------------------
 //
 // Своих полей у записи участника пять — роль, harness, режим, session reference и снимок
 // capabilities; всё прочее пишет adapter, и core заглядывает туда ровно этими семью
 // именами. Россыпи `metadata.<поле>` по core нет: дверь одна, и проверка сторожит, что
 // она отдаёт именно то поле, о котором говорит её имя.
-test('BL-430: accessor\'ы читают поля adapter\'а и молчат на пустом', () => {
+test('accessor\'ы читают поля adapter\'а и молчат на пустом', () => {
   const full = participant('worker:a', {
     started: '2026-09-03T10:00:00.000Z', repoAbs: '/tmp/repo', dismissed: '2026-09-03T11:00:00.000Z',
     session: 'bg-1', name: 'Worker: кусок (0903-1000)', owner: 'sess-1',
@@ -147,9 +146,9 @@ test('BL-430: accessor\'ы читают поля adapter\'а и молчат н�
   assert.equal(store.addressOf(null), null);
 });
 
-// --- BL-149 и BL-230: лок журнала задачи ------------------------------------
+// --- лок журнала задачи ------------------------------------
 
-test('BL-149 и BL-230: лок журнала задачи', async (t) => {
+test('лок журнала задачи', async (t) => {
   const home = path.join(SB, 'lock', '.promptobus');
   const engine = engineAt(home);
   const heldTask = engine.createTask({
@@ -167,8 +166,8 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
   // Вход через лок командой не достаётся: `taskExists` стоит выше по каждому маршруту, а
   // `task.json` лежит ВНУТРИ каталога задачи — состояния «журнал есть, каталога нет» без
   // гонки не бывает. Поэтому предмет здесь библиотечный и ровно тот, что читает верхний
-  // catch CLI: имя класса (`agents.js` опознаёт его по имени, а не `instanceof`).
-  await t.test('BL-366: ENOENT под локом отвечает словами и классом отказа человеку', () => {
+  // catch CLI: имя класса (опознаёт его по имени, а не `instanceof`).
+  await t.test('ENOENT под локом отвечает словами и классом отказа человеку', () => {
     const ghost = thrown(() => store.withTaskLock(home, 'net-takoy', () => 'не дойдёт'));
     assert.equal(ghost.name, 'GateError');
     assert.match(ghost.msg, /задачи net-takoy нет в/);
@@ -176,17 +175,17 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
 
   holdLock({ pid: process.pid, session: 'sess-derzhatel', since: '2026-08-28T10:00:00.000Z' });
   const busy = thrown(() => takeLock());
-  await t.test('BL-149: занятый лок — отказ, а не запись поверх чужого read-modify-write', () => {
+  await t.test('занятый лок — отказ, а не запись поверх чужого read-modify-write', () => {
     assert.ok(busy.threw && busy.msg.includes(heldLock), busy.msg);
   });
-  await t.test('BL-230: отказ называет держателя — pid, сессию и сколько ждали', () => {
+  await t.test('отказ называет держателя — pid, сессию и сколько ждали', () => {
     assert.ok(busy.msg.includes(`процесс ${process.pid}`), busy.msg);
     assert.ok(busy.msg.includes('сессия sess-derzhatel'), busy.msg);
     assert.match(busy.msg, /ждали \d+ мс/);
   });
   // Занятый журнал — законный отказ человеку («дождись его и повтори команду»), и класс у
   // него общий с остальным словарём: со стеком он читался бы как поломка CLI.
-  await t.test('BL-366: занятый журнал задачи — отказ человеку, а не поломка CLI', () => {
+  await t.test('занятый журнал задачи — отказ человеку, а не поломка CLI', () => {
     assert.equal(thrown(() => takeLock()).name, 'GateError');
   });
 
@@ -196,7 +195,7 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
   rmSync(heldLock, { recursive: true, force: true });
   const ownerFile = () => JSON.parse(readFileSync(path.join(heldLock, 'owner'), 'utf8'));
   const insideOwner = store.withTaskLock(home, heldTask.id, ownerFile, { session: 'sess-moya' });
-  await t.test('BL-230: лок называет себя изнутри — pid этого процесса, сессия и время захвата', () => {
+  await t.test('лок называет себя изнутри — pid этого процесса, сессия и время захвата', () => {
     assert.equal(insideOwner?.pid, process.pid);
     assert.equal(insideOwner.session, 'sess-moya');
     assert.ok(!Number.isNaN(Date.parse(insideOwner.since)), JSON.stringify(insideOwner));
@@ -204,7 +203,7 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
 
   // Идентичность сессии приходит АРГУМЕНТОМ, и другого источника у неё нет: переменная
   // сессии Claude Code при этом СТОИТ в окружении — иначе проверка говорила бы лишь о том,
-  // что её нет, а предмет здесь другой (`BL-406`, `BL-430`). На эту проверку нацелена
+  // что её нет, а предмет здесь другой. На эту проверку нацелена
   // мутационная проба «`process.env.CLAUDE_CODE_SESSION_ID` в исходнике package».
   const wasEnv = process.env.CLAUDE_CODE_SESSION_ID;
   process.env.CLAUDE_CODE_SESSION_ID = 'sess-iz-okruzheniya';
@@ -215,7 +214,7 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
     if (wasEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
     else process.env.CLAUDE_CODE_SESSION_ID = wasEnv;
   }
-  await t.test('BL-430: сессию локу называет вызывающий — package окружение не читает', () => {
+  await t.test('сессию локу называет вызывающий — package окружение не читает', () => {
     assert.equal(noSession.session, null);
     assert.equal(noSession.pid, process.pid);
   });
@@ -224,24 +223,24 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
   // номер по догадке не выдумывается. Мёртвым такой лок тоже не объявляется: между `mkdir` и
   // записью файла есть окно, и в нём безымянный лок — живой захват, а не сирота.
   mkdirSync(heldLock, { recursive: true });
-  await t.test('BL-149: держателя нет в локе — отказ говорит об этом, а не выдумывает номер', () => {
+  await t.test('держателя нет в локе — отказ говорит об этом, а не выдумывает номер', () => {
     const anon = thrown(() => takeLock());
     assert.ok(anon.threw && /лок не назвал/.test(anon.msg), anon.msg);
   });
-  // BL-230: осиротевший лок читается по живости pid, а не по наличию каталога. Процесс,
+  // осиротевший лок читается по живости pid, а не по наличию каталога. Процесс,
   // умерший внутри записи, иначе запирал бы журнал задачи навсегда: каждая следующая запись
   // досиживала бы таймаут и отказывала. Возраст лока при этом не значит ничего: у держателя
   // выше `since` годовалый, и лок остался.
   rmSync(heldLock, { recursive: true, force: true });
   holdLock({ pid: 2147483646, session: 'sess-umershaya', since: '2026-08-28T10:00:00.000Z' });
-  await t.test('BL-230: лок мёртвого процесса снимается сам — запись проходит, а каталог не остаётся', () => {
+  await t.test('лок мёртвого процесса снимается сам — запись проходит, а каталог не остаётся', () => {
     assert.equal(takeLock(), 'взят');
     assert.ok(!existsSync(heldLock));
   });
   // Лок прежнего CLI держит голый pid строкой. Читается тем же чтением: `JSON.parse('999999')`
   // отдаёт число, а не запись, и без проверки на объект такой лок молча считался бы безымянным.
   holdLock('999999\n');
-  await t.test('BL-230: лок прежнего формата (голый pid) читается тем же чтением — мёртвый снимается', () => {
+  await t.test('лок прежнего формата (голый pid) читается тем же чтением — мёртвый снимается', () => {
     assert.equal(takeLock(), 'взят');
     assert.ok(!existsSync(heldLock));
   });
@@ -249,10 +248,10 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
 
   // Повторный вход того же процесса. Read-modify-write двери берёт лок задачи, а операция
   // store внутри берёт ЕГО ЖЕ: без учёта своих локов процесс досиживал бы `waitMs` на самом
-  // себе и отказывал «журнал занят», назвав держателем собственный pid (`BL-430`, найдено
+  // себе и отказывал «журнал занят», назвав держателем собственный pid (найдено
   // живым прогоном — `promptobus dismiss` падал именно так). Вложение законно: лок разводит
   // ПРОЦЕССЫ, а внутри процесса участок синхронный, и вложенный вызов — та же секция.
-  await t.test('BL-430: вложенный лок того же процесса входит в ту же секцию, а не ждёт себя', () => {
+  await t.test('вложенный лок того же процесса входит в ту же секцию, а не ждёт себя', () => {
     // Сверять настенное время незачем: без учёта своих локов вложенный вызов не «медленный»,
     // а отказной — он досиживает свой `waitMs` и бросает. Проверяется исход, а не срок: под
     // нагрузкой соседних прогонов порог дрожал бы, а отказ — нет.
@@ -267,7 +266,7 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
   });
   // Снимает лок только тот вызов, который его взял: сними внутренний — внешний доработал бы
   // без лока вовсе, и сосед вошёл бы в его критическую секцию.
-  await t.test('BL-430: лок снимает взявший — после внутреннего вызова он ещё держится', () => {
+  await t.test('лок снимает взявший — после внутреннего вызова он ещё держится', () => {
     const held = store.withTaskLock(home, heldTask.id, () => {
       store.withTaskLock(home, heldTask.id, () => 'внутри');
       return existsSync(heldLock);
@@ -276,19 +275,19 @@ test('BL-149 и BL-230: лок журнала задачи', async (t) => {
     assert.equal(existsSync(heldLock), false, 'внешний вызов лок не снял');
   });
 
-  await t.test('BL-149: лок снят — временных файлов и каталога лока в задаче не осталось', () => {
+  await t.test('лок снят — временных файлов и каталога лока в задаче не осталось', () => {
     assert.ok(!existsSync(heldLock));
     assert.ok(readdirSync(store.taskDir(home, heldTask.id)).every((n) => !n.startsWith('.tmp-')));
   });
 });
 
-// --- BL-430: три чтения mailbox'а, которых нет у `read` ----------------------
+// --- три чтения mailbox'а, которых нет у `read` ----------------------
 //
 // `read` забирает mailbox и уносит ссылки в history. Этим трём операциям он не годится:
 // чужой сессии отдаётся копия, надзиратель заглядывает молча, а разбор стопа спрашивает
-// «когда этот адрес последний раз выходил на шину». До `BL-430` все три жили в слое
+// «когда этот адрес последний раз выходил на шину». Раньше все три жили в слое
 // совместимости и вместе с ним чуть не уехали.
-test('BL-430: peek, glance и lastSentAt — чтения, которые не забирают mailbox', async (t) => {
+test('peek, glance и lastSentAt — чтения, которые не забирают mailbox', async (t) => {
   const home = path.join(SB, 'peek', '.promptobus');
   const engine = engineAt(home);
   const task = engine.createTask({ id: 'peek-t20260903-000000', title: 'чтения', owner: participant('orchestrator') });
@@ -346,12 +345,11 @@ test('BL-430: peek, glance и lastSentAt — чтения, которые не �
   });
 });
 
-// --- BL-430: жёсткая ссылка на blob под именем adapter'а ---------------------
+// --- жёсткая ссылка на blob под именем adapter'а ---------------------
 //
-// Папка файлов задачи — дело adapter'а (ADR-032, §6: «упаковка каталога остаётся делом
-// adapter'а»), а путь blob'а наружу package не отдаёт. Дверь между ними одна — `linkBlob`,
-// и она же занимает имя: `false` вместо тихой перезаписи.
-test('BL-430: linkBlob ставит ссылку и не перезаписывает занятое имя', () => {
+// Папка файлов задачи — дело adapter'а, а путь blob'а наружу package не отдаёт.
+// Дверь между ними одна — `linkBlob`, и она же занимает имя: `false` вместо тихой перезаписи.
+test('linkBlob ставит ссылку и не перезаписывает занятое имя', () => {
   const home = path.join(SB, 'link', '.promptobus');
   const engine = engineAt(home);
   const task = engine.createTask({ id: 'link-t20260903-000000', title: 'ссылки', owner: participant('orchestrator') });

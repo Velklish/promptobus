@@ -1,16 +1,14 @@
-// Golden-протокол MCP-сервера шины у своей границы (`BL-407`). Запуск — своя команда
-// package: `npm test --prefix cli/packages/promptobus` из корня репозитория; её же зовёт
-// набор репозитория ([promptobus-package.test.mjs](../../../test/promptobus-package.test.mjs)).
+// Golden-протокол MCP-сервера шины у своей границы. Запуск — `npm test`.
 //
-// Родительского репозитория здесь нет вовсе: ни `AGENTS.md`, ни `modules.lock`, ни Git,
-// ни бинаря Claude, ни `cli/lib`. Сервер поднимается factory с потоками в памяти, а всё,
+// Родительского репозитория здесь нет вовсе: ни правил рабочего места, ни Git,
+// ни бинаря harness'а, ни модулей потребителя. Сервер поднимается factory с потоками в памяти, а всё,
 // что знает про рабочее место, приходит подставными callbacks — ровно теми, которыми его
 // поднимает adapter. Так и проверяется обещание границы: транспорт и диспетчер работают
 // без harness'а.
 //
 // Снимок `tools/list` лежит рядом ([fixtures/tools.json](fixtures/tools.json)). Снят он с
 // живого сервера `v0.61.0` тем же разговором по stdio, каким с ним говорит Claude Code, и
-// на hard rename (`BL-411`) переписан руками под новые имена — больше ничем: расхождение с
+// на hard rename переписан руками под новые имена — больше ничем: расхождение с
 // ним означает, что поверхность поехала.
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,12 +23,12 @@ const {
   ownerOf, PromptobusError, readableName, roleOf, summarizeMessages, ADDR_MARK, MESSAGE_TYPES,
 } = await import('../dist/index.js');
 
-// **Service подаётся factory, и дефолта у него нет** (`BL-430`): половина перечня стоит на
+// **Service подаётся factory, и дефолта у него нет**: половина перечня стоит на
 // идентичности сессии — владение mailbox'ом, привязка, резолв активной задачи и шапка
-// ответа, — а окружение читает только adapter (ADR-032, §2). Здесь adapter'а нет, и его
+// ответа, — а окружение читает только adapter. Здесь adapter'а нет, и его
 // играет набор: собранный ниже service — вторая, независимая от CLI реализация того же
 // интерфейса, и тем он и проверяется. Routing policy обязательна при открытии engine по той
-// же причине; правило ATI («worker'у нельзя писать worker'у») живёт в CLI и проверяется там.
+// же причине; пример policy («worker'у нельзя писать worker'у») живёт в CLI и проверяется там.
 const engines = new Map();
 const at = (home) => {
   if (!engines.has(home)) engines.set(home, openEngine({ home, policy: () => ({ allow: true }) }));
@@ -122,7 +120,7 @@ const busService = {
 const GOLDEN_TOOLS = JSON.parse(readFileSync(new URL('fixtures/tools.json', import.meta.url), 'utf8'));
 
 // Снимок вморожен целиком, кроме одного места: enum типов сообщений в схеме `send` — это
-// цитата контракта, чей дом `MESSAGE_TYPES` в store, и пополнить его `BL-409` вправе.
+// цитата контракта, чей дом `MESSAGE_TYPES` в store, и пополнить его вправе соседний релиз.
 // Литерал в снимке покраснел бы тогда с диагнозом «поверхность поехала», хотя поехал бы
 // контракт в другом файле, — а гейт литеральных копий в `.json` не заглядывает вовсе
 // (замечание ревью). Поэтому перед сверкой enum берётся у дома: описания, имена и схемы
@@ -221,7 +219,7 @@ test('negotiation: версия из поданного списка возвр�
 });
 
 test('пустой список версий — отказ при создании сервера, а не undefined в initialize', () => {
-  // Гейт стоит у factory: до первого соединения, там, где список приходит config'ом (`BL-423`).
+  // Гейт стоит у factory: до первого соединения, там, где список приходит config'ом.
   const opts = {
     service: busService, resolveIdentity: () => ({ role: 'orchestrator', home, declaredTask: TASK, session: OWNER }),
     serverInfo: () => ({ name: 'promptobus', version: '0.62.0' }), onJoin: () => {},
@@ -245,7 +243,7 @@ test('initialize: сервер объявил себя callback\'ом потре
 });
 
 test('contact point сдаётся на initialize и второй раз за соединение не сдаётся', async () => {
-  // `BL-427`: до этой задачи вход в задачу висел только на `tools/call`, и сессия, сделавшая
+  // до этой задачи вход в задачу висел только на `tools/call`, и сессия, сделавшая
   // рукопожатие и не позвавшая ни одного инструмента, оставалась для надзирателя глухой —
   // тот законно откатывался на `self-wake`. Идентичность к `initialize` уже резолвлена,
   // ждать инструмента незачем.
@@ -499,7 +497,7 @@ test('задача аргументом сильнее объявленной с
   assert.match(textOf(responses[0]), new RegExp(`^задача ${other} · вторая активная задача\n`));
 });
 
-// --- первая строка называет, а не считает (перенесено из cli/test/promptobus-mcp.test.mjs) ---
+// --- первая строка называет, а не считает ---
 
 // Канон несёт ID записи участника, а адрес отправителя собирается из журнала задачи. Здесь
 // журнала нет вовсе, и `summarizeMessages` берёт того, кого ей дали: по умолчанию — id.
@@ -549,7 +547,7 @@ test('одна группа печатается даже длиннее пот�
   assert.ok(huge.endsWith('+ ещё 1'));
 });
 
-// --- читаемое имя участника (перенесено из cli/test/promptobus-mcp.test.mjs) ---
+// --- читаемое имя участника ---
 
 const named = (name) => ({
   participants: [{ id: 'worker-gates', metadata: { address: 'worker:gates', ...(name ? { name } : {}) } }],

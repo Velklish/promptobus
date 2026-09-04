@@ -23,6 +23,8 @@ test('createStandaloneHost поднимает два независимых host
   assert.equal(a.extraEnv().MARK, 'a');
   assert.equal(b.extraEnv().MARK, 'b');
   assert.equal(a.memorySection(() => 'x'), null);
+  assert.equal(a.legacyLayout(), null);
+  assert.equal(b.legacyLayout(), null);
   assert.equal(b.toolsManifestRel(), 'promptobus.json');
   assert.notEqual(a.workspaceRoot(), b.workspaceRoot());
   assert.equal(a.version, '0.0.0');
@@ -37,7 +39,7 @@ test('createStandaloneHost поднимает два независимых host
   assert.equal(a.promptobusHome(), path.join(dirA, '.promptobus'));
 });
 
-test('entry point ./hooks отдаёт план без раскладки ATI', async () => {
+test('entry point ./hooks отдаёт план без раскладки чужого рабочего места', async () => {
   const { createStandaloneHost } = await import('../dist/host-index.js');
   const { planPromptobusHooks, BUS_HOOK_EVENT } = await import('../dist/hooks.js');
   const host = createStandaloneHost({ cwd: '.', commandName: 'promptobus', binPath: '/bin/pb' });
