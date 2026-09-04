@@ -1,37 +1,41 @@
-// Смешанный состав шины на подставных стендах: оркестратор Claude Code, worker Cursor,
-// reviewer Codex. Запуск: npm test
+// Mixed bus lineup on stub stands: Claude Code orchestrator, Cursor worker,
+// Codex reviewer. Run: npm test
 //
-// Каждый из трёх driver'ов до этой задачи проверялся ПООДИНОЧКЕ — своим файлом набора и
-// своим живым прогоном, — и круг всегда шёл на одном harness'е. Здесь впервые идёт состав:
-// worker поднимается `--harness cursor`, reviewer — `--harness codex`, а сценарий остаётся
-// тем же модулем ([scenario.mjs](scenario.mjs)), что у подставного Claude
-// ([promptobus-e2e.test.mjs](promptobus-e2e.test.mjs)) и у канарейки
-// ([live-e2e.mjs](../scripts/live-e2e.mjs)). Различаются составы, а не проверки: разъехаться
-// им негде — сверки лежат в общем модуле.
+// Until this task each of the three drivers was checked ALONE — its own suite file and
+// its own live run — and the loop always ran on one harness. Here a lineup runs for the
+// first time: the worker is lifted with `--harness cursor`, the reviewer with
+// `--harness codex`, and the scenario stays the same module ([scenario.mjs](scenario.mjs))
+// as the stub Claude ([promptobus-e2e.test.mjs](promptobus-e2e.test.mjs)) and the canary
+// ([live-e2e.mjs](../scripts/live-e2e.mjs)). The lineups differ, not the checks: there is
+// nowhere for them to diverge — the assertions live in the shared module.
 //
-// **Два подставных бинаря разом — часть предмета.** Стенд Cursor ставит `agent` и `tmux`,
-// стенд Codex — `codex`, и оба уводят свои дома переменными окружения. Складываются они
-// потому, что каждый ставит СВОЙ бинарь в ОДИН каталог и правит только свои переменные:
-// общего состояния у них нет вовсе, а PATH оба лишь дополняют этим каталогом. Порядок снятия
-// обратный порядку установки — иначе восстановленный PATH унёс бы каталог соседа.
+// **Two stub binaries at once are part of the subject.** The Cursor stand installs
+// `agent` and `tmux`, the Codex stand installs `codex`, and both divert their homes with
+// environment variables. They stack because each puts ITS binary into ONE directory and
+// edits only its own variables: they share no state at all, and PATH is only extended by
+// that directory. Teardown order is the reverse of install — otherwise the restored PATH
+// would take the neighbour directory with it.
 //
-// **Чего этот состав не играет и почему** — не «шаг пропущен», а объявленная способность
-// участника (`participantHarness` в сценарии):
+// **What this lineup does not play, and why** — not a "skipped step", but a declared
+// participant capability (`participantHarness` in the scenario):
 //
-//   - `blocks` — стоп на диалоге разрешения и на исчерпанном лимите. Поле `block` в ходе
-//     понимает только подставной `claude` ([participant.mjs](participant.mjs));
-//   - `stalls` — доклад о молчаливом конце хода. Сверяется он ПРИЧИНОЙ, которую сессия
-//     написала о себе в `jobs/<id>/state.json` демона Claude; у Cursor конец хода приносят
-//     `turn_ended` и хук `stop`, строки причины там нет;
-//   - `files` — mcp-config участника файлом по пути store. Cursor читает проектный
-//     `.cursor/mcp.json` своего рабочего каталога, Codex получает серверы полем запроса
-//     подъёма;
-//   - `guard` у reviewer'а — хуков под `codex app-server` нет вовсе, и отметки конца хода у
-//     него не будет ни на одном ходе. У worker'а Cursor она есть, и вердикт о ней идёт.
+//   - `blocks` — a stop on a permission dialog and on an exhausted limit. The `block`
+//     field in a turn is understood only by the stub `claude`
+//     ([participant.mjs](participant.mjs));
+//   - `stalls` — a report of a silent end of turn. It is checked by the REASON the
+//     session wrote about itself in the Claude daemon `jobs/<id>/state.json`; for Cursor
+//     the end of turn is brought by `turn_ended` and the `stop` hook, and there is no
+//     reason string there;
+//   - `files` — the participant mcp-config as a file on a store path. Cursor reads the
+//     project `.cursor/mcp.json` of its workspace, Codex gets servers as a lift-request
+//     field;
+//   - reviewer `guard` — there are no hooks under `codex app-server` at all, and it will
+//     have no end-of-turn mark on any turn. The Cursor worker has one, and the verdict
+//     on it runs.
 //
-// **Файл идёт серийной группой раннера** — по тому же доводу, что и его близнец на
-// подставном Claude: круг стука идёт между процессами настоящими сокетами и tmux-панелями, и
-// под нагрузкой пула эти пороги либо краснеют на исправном коде, либо зеленеют ни на чём.
+// **The file runs in a serial runner group** — for the same reason as its stub-Claude
+// twin: the knock loop runs between processes over real sockets and tmux panes, and under
+// pool load those thresholds either go red on working code or go green on nothing.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
@@ -44,24 +48,24 @@ import { codexDriver } from '../lib/driver-codex.js';
 import * as cursorSession from '../lib/cursor-persist.js';
 import * as codexSession from '../lib/codex-session.js';
 
-// Префикс песочницы — из семейства `promptobus-promptobus`, а не своё новое имя: уборка
-// набора метёт по перечню префиксов ([tmpdir-sweep.mjs](tmpdir-sweep.mjs)), перечень собран
-// руками, и новое имя пришлось бы вписывать туда же — иначе каталог оборванного прогона
-// оставался бы в общем `$TMPDIR` навсегда.
+// The sandbox prefix is from the `promptobus-promptobus` family, not a new name of its
+// own: suite cleanup sweeps by a prefix list ([tmpdir-sweep.mjs](tmpdir-sweep.mjs)), the
+// list is assembled by hand, and a new name would have to be written there too —
+// otherwise a cut-off run directory would stay in the shared `$TMPDIR` forever.
 const SB = makeSandbox('promptobus-promptobus-mixed-');
 const binDir = path.join(SB, 'bin');
-// Дома стендов заводят они сами и ВНЕ песочницы файла: хук песочницы сносит её каталог
-// раньше, чем стенд успевает погасить свои процессы.
+// The stand homes are created by the stands themselves and OUTSIDE the file sandbox:
+// the sandbox hook removes its directory before the stand has time to kill its processes.
 const cursorHarness = await cursorStub.installHarness({ binDir });
 const codexHarness = await codexStub.installHarness({ binDir });
 
-// Рабочее место готовит вызывающий: `--harness` отказывает инструменту, которого нет в
-// `promptobus.json`, — адаптеров под него `sync` не раскладывал, и участник остался бы без
-// правил рабочего места. Остальную раскладку строит сам сценарий.
+// The caller prepares the workspace: `--harness` refuses a tool that is not in
+// `promptobus.json` — `sync` did not lay out adapters for it, and the participant would
+// be left without workspace rules. The rest of the layout is built by the scenario itself.
 const WS = path.join(SB, 'ws');
 writeHostConfig(WS, { tools: ['claude', 'cursor', 'codex'] });
 
-/** Номер процесса panel'и участника Cursor — по тому же реестру, каким его смотрит driver. */
+/** Pane pid of the Cursor participant — from the same registry the driver looks at. */
 function cursorPid(ref) {
   const record = cursorSession.readSession(ref);
   if (!record?.sessionName) return null;
@@ -69,14 +73,14 @@ function cursorPid(ref) {
   return cursorSession.findSession(record.sessionName, { server })?.panePid ?? null;
 }
 
-/** Номер процесса держателя потока Codex: сессию держит `app-server`, а его — держатель. */
+/** Pid of the Codex thread holder: `app-server` holds the session, and the holder holds it. */
 function codexPid(ref) {
   return codexSession.readSession(ref)?.holderPid ?? null;
 }
 
-// Живость и занятость спрашиваются у DRIVER'А участника, а не выводятся своей сверкой полей:
-// реестры у Cursor и Codex разные (tmux-сервер против каталога записей), и собственное
-// правило разошлось бы с тем, каким судит механизм.
+// Liveness and busyness are asked of the participant DRIVER, not derived by a private
+// field check: the Cursor and Codex registries differ (tmux server vs a records
+// directory), and a home-grown rule would diverge from the one the mechanism judges by.
 const alive = (driver, refs) => refs.filter((ref) => driver.inspect(ref)?.state === 'alive');
 const handedOver = (driver, ref) => {
   const view = driver.inspect(ref);
@@ -85,9 +89,10 @@ const handedOver = (driver, ref) => {
 
 const worker = {
   id: cursorDriver.id,
-  // Ходы задаёт файл скрипта, а не бриф: подставной `agent` играет их буквально.
+  // Turns are set by the script file, not the brief: the stub `agent` plays them literally.
   scripted: true,
-  // Сторож цикла зовёт хук `stop` из проектного `.cursor/hooks.json`, и стенд его стреляет.
+  // The loop guard calls the `stop` hook from the project `.cursor/hooks.json`, and the
+  // stand fires it.
   guard: true,
   blocks: false,
   stalls: false,
@@ -99,16 +104,17 @@ const worker = {
   pidAlive: cursorSession.pidAlive,
   idle: (ref) => handedOver(cursorDriver, ref),
   inspect: (ref) => cursorDriver.inspect(ref),
-  // Красный вердикт без следа участника не диагноз, а загадка: сюда уходит журнал его
-  // действий и список живых panel'ей стенда.
+  // A red verdict with no participant trail is a riddle, not a diagnosis: this is where
+  // its action journal goes, and the list of live stand panes.
   diagnose: (address) => `${cursorStub.diagnoseTrace(cursorHarness.home, address)}`
-    + ` · панели tmux: ${JSON.stringify(cursorSession.listSessions().map((s) => [s.name, s.panePid]))}`,
+    + ` · tmux panes: ${JSON.stringify(cursorSession.listSessions().map((s) => [s.name, s.panePid]))}`,
 };
 
 const reviewer = {
   id: codexDriver.id,
   scripted: true,
-  // Хуки под `app-server` не исполняются вовсе — звать сторож цикла участнику нечем.
+  // Hooks under `app-server` do not run at all — the participant has nothing to call the
+  // loop guard with.
   guard: false,
   blocks: false,
   stalls: false,
@@ -121,19 +127,20 @@ const reviewer = {
   idle: (ref) => handedOver(codexDriver, ref),
   inspect: (ref) => codexDriver.inspect(ref),
   diagnose: (address) => `${codexStub.diagnoseTrace(codexHarness.home, address)}`
-    + ` · потоки: ${JSON.stringify(codexSession.listSessions().map((r) => [r.threadId, r.holderPid, r.state]))}`,
+    + ` · threads: ${JSON.stringify(codexSession.listSessions().map((r) => [r.threadId, r.holderPid, r.state]))}`,
 };
 
-// Состав: harness у участников разный, и объявляет его ВЫЗЫВАЮЩИЙ. Роль читается префиксом
-// адреса — тем же правилом, каким её читает сам механизм (`address.startsWith('reviewer:')` в
-// маршрутах стопа): своя таблица адресов разошлась бы со сценарием на первой же правке имён.
+// Lineup: the participants have different harnesses, and the CALLER declares them. Role
+// is read from the address prefix — the same rule the mechanism itself uses
+// (`address.startsWith('reviewer:')` on stall routes): a private address table would
+// diverge from the scenario on the first rename.
 const harness = {
-  label: 'смешанный',
+  label: 'mixed',
   sock: makeSockPath('a2m-'),
   at: (address) => (String(address).startsWith('reviewer:') ? reviewer : worker),
-  // Процессы стендов гасит `promptobus done` в сценарии, а за упавшим прогоном — хуки выхода
-  // самих стендов: каждый бьёт panel'и и держателей своего дома и сносит его целиком. Второй
-  // уборки здесь заводить нечего.
+  // Stand processes are killed by `promptobus done` in the scenario, and after a fallen
+  // run — by the stands' own exit hooks: each hits the panes and holders of its home and
+  // removes the home entirely. There is nothing to set up as a second cleanup here.
   cleanup: () => {},
 };
 
@@ -142,62 +149,67 @@ const report = await runScenario({
   harness,
   sandbox: SB,
   workspace: WS,
-  // Потолок шага выше подставного Claude, и это не запас «на всякий случай». Доставка в
-  // живую persist-сессию Cursor стоит своих секунд: driver ждёт свободного поля ввода
-  // (`INPUT_WAIT_MS`), держит паузу перед Enter (`ENTER_PAUSE_MS`) и на идущем ходе кладёт
-  // текст в очередь сессии — ход по нему начинается только после текущего. Замер: шаг
-  // «замечания worker'у и второй result» — 21,4–22,7 с в четырёх прогонах подряд при
-  // остальных шагах до четырёх секунд и круге целиком 45 с. Потолок 90 с даёт худшему шагу
-  // запас вчетверо; меньший превращал бы медленную машину в диагноз «участник не ответил».
-  // Порог доклада о стопе прежний: этот состав шага молчания не идёт вовсе.
+  // The step ceiling is higher than stub Claude, and this is not slack "just in case".
+  // Delivery into a live Cursor persist session costs its own seconds: the driver waits
+  // for a free input field (`INPUT_WAIT_MS`), holds a pause before Enter
+  // (`ENTER_PAUSE_MS`) and on a turn in progress puts the text into the session queue —
+  // the turn on it starts only after the current one. Measurement: the step "remarks to
+  // the worker and a second result" — 21.4–22.7 s in four runs in a row, with the other
+  // steps under four seconds and the whole loop at 45 s. A 90 s ceiling gives the worst
+  // step a fourfold reserve; a smaller one would turn a slow machine into a "participant
+  // did not reply" diagnosis. The stall-report threshold is the same: this lineup does
+  // not take the silence step at all.
   timeouts: { step: 90000, stall: 75000 },
-  // Второй round ревью — предмет этой задачи: reviewer Codex получает НОВЫЙ дифф тем же
-  // адресом, без второй сессии.
+  // A second review round is the subject of this task: the Codex reviewer gets a NEW
+  // diff at the same address, without a second session.
   reviewRounds: 2,
 });
 
-process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} с`).join(' · ')}`
-  + ` · всего ${(report.totalMs / 1000).toFixed(1)} с\n`);
+process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}`
+  + ` · total ${(report.totalMs / 1000).toFixed(1)} s\n`);
 
-// Оба стенда ОТРАБОТАЛИ, а не просто встали в PATH. Судим по следу каждого: ход сыгран
-// (`turn-end`) и инструмент шины из него позван (`tool`). Без этой пары зелень круга можно
-// было бы получить и на одном стенде — второй участник просто молчал бы, а его вердикты
-// краснели бы по другой причине; сверка следа отделяет «состав сложился» от «повезло».
+// Both stands PLAYED, they did not merely sit in PATH. We judge by each trail: a turn
+// was played (`turn-end`) and a bus tool was called from it (`tool`). Without that pair
+// the loop could go green on one stand — the second participant would simply stay
+// silent, and its verdicts would go red for another reason; the trail check separates
+// "the lineup came together" from "we got lucky".
 const workerTrace = cursorStub.readTrace(cursorHarness.home, WORKER);
 const reviewerTrace = codexStub.readTrace(codexHarness.home, REVIEWER);
 const served = (trace) => trace.some((e) => e.kind === 'turn-end') && trace.some((e) => e.kind === 'tool');
-check('оба подставных стенда играли ходы одного круга — worker бинарём agent, reviewer бинарём codex',
+check('both stub stands played turns of one loop — worker with the agent binary, reviewer with the codex binary',
   served(workerTrace) && served(reviewerTrace),
-  `ходов Cursor ${workerTrace.filter((e) => e.kind === 'turn-end').length},`
-  + ` вызовов шины ${workerTrace.filter((e) => e.kind === 'tool').length}`
-  + ` · ходов Codex ${reviewerTrace.filter((e) => e.kind === 'turn-end').length},`
-  + ` вызовов шины ${reviewerTrace.filter((e) => e.kind === 'tool').length}`);
+  `Cursor turns ${workerTrace.filter((e) => e.kind === 'turn-end').length},`
+  + ` bus calls ${workerTrace.filter((e) => e.kind === 'tool').length}`
+  + ` · Codex turns ${reviewerTrace.filter((e) => e.kind === 'turn-end').length},`
+  + ` bus calls ${reviewerTrace.filter((e) => e.kind === 'tool').length}`);
 
-// Дома обоих harness'ей уведены в песочницы стендов. Это и есть проверяемое «в дом человека
-// прогон не писал»: резолв дома у механизма один на все его двери, и уведён он тем же
-// способом, каким его уводит живой прогон. Сверять mtime `~/.cursor` было бы нельзя — по нему
-// пишет живая сессия человека, идущая рядом, и вердикт краснел бы от неё.
+// Both harness homes were diverted into the stand sandboxes. That is the checkable
+// "the run did not write to the human home": home resolve in the mechanism is one for
+// all its doors, and it is diverted the same way the live run diverts it. Checking
+// mtime of `~/.cursor` would be illegal — a live human session running beside us writes
+// there, and the verdict would go red from it.
 const inside = (p, home) => String(p).startsWith(String(home));
-check('дома обоих harness\'ей уведены в песочницы стендов — в дом человека прогон не писал',
+check('both harness homes were diverted into the stand sandboxes — the run did not write to the human home',
   inside(cursorSession.cursorStateHome(), cursorHarness.home)
   && inside(cursorSession.cursorUserHome(), cursorHarness.home)
   && inside(codexSession.codexStateHome(), codexHarness.home),
-  `Cursor: реестр ${cursorSession.cursorStateHome()}, дом ${cursorSession.cursorUserHome()}`
-  + ` · Codex: реестр ${codexSession.codexStateHome()}`);
+  `Cursor: registry ${cursorSession.cursorStateHome()}, home ${cursorSession.cursorUserHome()}`
+  + ` · Codex: registry ${codexSession.codexStateHome()}`);
 
-// Страховка, а не проверка: вердикт «процессов участников не осталось» стоит в сценарии, а
-// это — уборка за упавшим прогоном. Проверяются ОБЕ половины у каждого стенда: что гасить
-// было нечего (реестр пуст) и что живого процесса за записью не осталось.
+// Insurance, not a check: the "no participant processes left" verdict lives in the
+// scenario; this is cleanup after a fallen run. BOTH halves of each stand are checked:
+// that there was nothing to kill (registry empty) and that no live process was left
+// behind a record.
 const panes = cursorSession.listSessions();
 const threads = codexSession.listSessions();
 const heldThreads = threads.filter((r) => codexSession.pidAlive(r.holderPid));
-check('за прогоном не осталось ни панели Cursor, ни потока Codex — гасить было нечего',
+check('no Cursor pane and no Codex thread left after the run — there was nothing to kill',
   panes.length === 0 && threads.length === 0 && heldThreads.length === 0,
-  `панели ${JSON.stringify(panes.map((s) => s.name))} · потоки ${JSON.stringify(threads.map((r) => r.threadId))}`
-  + ` · живые держатели ${JSON.stringify(heldThreads.map((r) => r.holderPid))}`);
+  `panes ${JSON.stringify(panes.map((s) => s.name))} · threads ${JSON.stringify(threads.map((r) => r.threadId))}`
+  + ` · live holders ${JSON.stringify(heldThreads.map((r) => r.holderPid))}`);
 
-// Порядок снятия обратный порядку установки: `withStubPath` восстанавливает PATH тем
-// значением, которое видел САМ, и снятие в прямом порядке вернуло бы PATH без каталога,
-// поставленного вторым стендом.
+// Teardown order is the reverse of install: `withStubPath` restores PATH to the value
+// it saw ITSELF, and tearing down in install order would return a PATH without the
+// directory the second stand put there.
 codexHarness.restore();
 cursorHarness.restore();

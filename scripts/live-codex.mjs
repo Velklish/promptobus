@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-// Живая проверка driver'а Codex на настоящем `codex app-server`. Запуск:
+// Live check of the Codex driver on a real `codex app-server`. Run:
 //
 //   node scripts/live-codex.mjs [--model <id>]
 //
-// В `npm test` и в релизный гейт не входит: тратит лимит аккаунта Codex (он же
-// ChatGPT.app владельца) и говорит с живым бинарём. Рабочее место — временное,
-// `{claude, codex}` только в нём. Дом человека `~/.codex` скрипт не читает
-// ради содержимого и не пишет; sha `config.toml` до и после — обязателен.
+// Not in `npm test` and not in the release gate: it spends a Codex account limit
+// (the same as the owner's ChatGPT.app) and talks to a live binary. The workspace
+// is temporary, `{claude, codex}` only inside it. The script does not read the
+// person's `~/.codex` for content and does not write it; a sha of `config.toml`
+// before and after is required.
 //
-// **Права записи в ФС этот прогон не берёт.** Spawn идёт `--permission-mode read-only`.
-// Вопрос «пишет ли `app-server` с `workspace-write` секцию `[projects."…"]`»
-// здесь не проверяется.
+// **This run does not take filesystem write rights.** Spawn goes
+// `--permission-mode read-only`. Whether `app-server` with `workspace-write`
+// writes a `[projects."…"]` section is not checked here.
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -43,7 +44,7 @@ const MODEL = at >= 0 && at + 1 < argv.length ? argv[at + 1] : DEFAULT_MODEL;
 
 const tool = resolveToolBin('codex');
 if (!tool.ok) {
-  console.error(`✖ живой прогон нечем гнать: ${tool.reason}`);
+  console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);
 }
 
@@ -58,8 +59,8 @@ function check(name, cond, detail = '') {
   process.stdout.write(`${ok ? '✔' : '✖'} ${name}${ok ? '' : ` — ${String(detail).slice(0, 600)}`}\n`);
 }
 function at_(name, ms) {
-  times.push(`${name} ${(ms / 1000).toFixed(1)} с`);
-  process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} с\n`);
+  times.push(`${name} ${(ms / 1000).toFixed(1)} s`);
+  process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
 function shaFile(file) {
@@ -95,12 +96,12 @@ writeHostConfig(ws, { tools: ['claude', 'codex'] });
 const home = path.join(ws, '.promptobus');
 
 const workerBrief = path.join(SB, 'worker-brief.md');
-writeFileSync(workerBrief, `# Живая проверка круга шины из Codex
+writeFileSync(workerBrief, `# Live check of the bus loop from Codex
 
-Ты участник шины Promptobus. Сделай ровно это и ничего сверх:
+You are a Promptobus bus participant. Do exactly this and nothing more:
 
-1. Отправь оркестратору сообщение типа status с телом, начинающимся строкой «${MARK}».
-2. Закончи ход. Файлы не создавай и не правь.
+1. Send the orchestrator a status message whose body starts with the line «${MARK}».
+2. End the turn. Do not create or edit files.
 `);
 
 const env = {
@@ -113,12 +114,12 @@ const env = {
 
 store.createTask(home, { id: TASK, title: 'живая проверка driver’а Codex', owner: ORCH_SESSION });
 
-process.stdout.write(`▸ живой прогон Codex: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
-process.stdout.write(`▸ модель: ${MODEL} · sandbox: read-only · approvalPolicy: on-request\n`);
-process.stdout.write(`▸ механизм: ${MECHANISM_ROOT}\n`);
-process.stdout.write(`▸ песочница: ${SB} · store: ${home}\n`);
-process.stdout.write(`▸ sha ~/.codex/config.toml до: ${shaBefore ?? '(файла нет)'}\n`);
-if (leaked.length) process.stdout.write(`▸ снято с окружения прогона: ${leaked.join(', ')}\n`);
+process.stdout.write(`▸ live Codex run: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
+process.stdout.write(`▸ model: ${MODEL} · sandbox: read-only · approvalPolicy: on-request\n`);
+process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
+process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
+process.stdout.write(`▸ sha ~/.codex/config.toml before: ${shaBefore ?? '(no file)'}\n`);
+if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 let ref = '';
 let methodsCalled = [];
@@ -128,36 +129,36 @@ try {
   const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
     '--worker', 'live', '--harness', 'codex', '--model', MODEL, '--permission-mode', 'read-only'],
   { cwd: ws, env });
-  check('шаг 1: promptobus spawn --harness codex --permission-mode read-only поднял участника',
+  check('step 1: promptobus spawn --harness codex --permission-mode read-only raised a participant',
     spawned.status === 0 && /worker worker:live поднят/.test(spawned.out), spawned.out.slice(-800));
-  at_('подъём участника', Date.now() - t2);
+  at_('participant start', Date.now() - t2);
 
   const wp = store.participantOf(store.readTask(home, TASK), WORKER);
   ref = wp?.sessionRef ?? '';
   const record = readSession(ref, env);
   methodsCalled = [...(record?.methodsCalled ?? [])];
-  check('шаг 1: поток лёг в реестр механизма, holder жив',
+  check('step 1: the thread landed in the mechanism registry, the holder is alive',
     !!record?.threadId && record.state === 'alive' && typeof record.holderPid === 'number',
     JSON.stringify({ threadId: record?.threadId, state: record?.state, holder: record?.holderPid }));
-  check('шаг 1: sandbox потока — read-only (живой прогон права записи не берёт)',
+  check('step 1: thread sandbox is read-only (the live run does not take write rights)',
     record?.sandbox === 'read-only', record?.sandbox);
 
   const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
-  check('шаг 1: promptobus status показывает живость сессии Codex',
+  check('step 1: promptobus status shows the Codex session is alive',
     statusOut.status === 0 && statusOut.out.includes(WORKER), statusOut.out.slice(-400));
 
   const t3 = Date.now();
   const hello = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => String(m.body ?? '').includes(MARK)) ?? null, { timeoutMs: 300000 });
-  check('шаг 2: status дошёл до оркестратора — круг шины из Codex замкнулся',
+  check('step 2: status reached the orchestrator — the bus loop from Codex closed',
     !!hello, JSON.stringify(hello));
-  at_('первый ход участника', Date.now() - t3);
+  at_('participant first turn', Date.now() - t3);
 
   const idle = await waitFor(() => {
     const view = codexDriver.inspect(ref);
     return view && view.state === 'alive' && view.busy === false ? view : null;
   }, { timeoutMs: 30000 });
-  check('шаг 2: ход кончился — сессия жива и не занята',
+  check('step 2: the turn ended — the session is alive and not busy',
     idle?.state === 'alive' && idle?.busy === false, JSON.stringify(idle));
 
   const live = readSession(ref, env);
@@ -165,20 +166,20 @@ try {
 
   const t6 = Date.now();
   const stopped = await codexDriver.stop(ref);
-  check('шаг 3: stop гасит держателя и снимает запись',
+  check('step 3: stop kills the holder and drops the record',
     stopped.ok && stopped.stopped && !readSession(ref, env), JSON.stringify(stopped));
-  check('шаг 3: inspect после stop — gone',
+  check('step 3: inspect after stop is gone',
     codexDriver.inspect(ref).state === 'gone', JSON.stringify(codexDriver.inspect(ref)));
-  at_('гашение', Date.now() - t6);
+  at_('stop', Date.now() - t6);
 } catch (e) {
-  check('прогон дошёл до конца без обрыва', false, e.stack ?? e.message);
+  check('the run reached the end without a break', false, e.stack ?? e.message);
 } finally {
   if (ref) await Promise.resolve(codexDriver.stop(ref)).catch(() => {});
   rmSync(SB, { recursive: true, force: true });
 }
 
 const shaAfter = shaFile(CONFIG);
-check('личный ~/.codex/config.toml за прогон не изменился (sha)',
+check('personal ~/.codex/config.toml did not change over the run (sha)',
   shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
 
 const pgrepAfter = {
@@ -187,19 +188,19 @@ const pgrepAfter = {
 };
 const extraCask = pgrepAfter.cask.filter((p) => !pgrepBefore.cask.includes(p));
 const extraApp = pgrepAfter.app.filter((p) => !pgrepBefore.app.includes(p));
-check('после круга нет новых процессов Caskroom/codex', extraCask.length === 0, extraCask.join(' | '));
-check('после круга нет новых процессов app-server --stdio', extraApp.length === 0, extraApp.join(' | '));
+check('no new Caskroom/codex processes after the loop', extraCask.length === 0, extraCask.join(' | '));
+check('no new app-server --stdio processes after the loop', extraApp.length === 0, extraApp.join(' | '));
 
 const unobserved = RELIED.filter((m) => !methodsCalled.includes(m));
 
 const passed = verdicts.filter((v) => v.ok).length;
-process.stdout.write(`\n${passed}/${verdicts.length} вердиктов прошло\n`);
-process.stdout.write(`длительности: ${times.join(' · ') || '—'} · всего ${((Date.now() - t0) / 1000).toFixed(1)} с\n`);
-process.stdout.write(`бинарь: ${tool.path}${tool.version ? ` (${tool.version})` : ''} · модель: ${MODEL}\n`);
-process.stdout.write(`методы, которые видел holder: ${methodsCalled.join(', ') || '(пусто)'}\n`);
-process.stdout.write(`из объявленной поверхности ненаблюдавшиеся: ${unobserved.join(', ') || 'нет'}\n`);
-process.stdout.write(`  (ненаблюдавшийся — не отсутствующий; стенд их закрывает)\n`);
-process.stdout.write(`sha config.toml: ${shaBefore ?? '(нет)'} → ${shaAfter ?? '(нет)'}\n`);
-process.stdout.write(`pgrep Caskroom/codex: было ${pgrepBefore.cask.length}, стало ${pgrepAfter.cask.length}\n`);
-process.stdout.write(`pgrep 'app-server --stdio': было ${pgrepBefore.app.length}, стало ${pgrepAfter.app.length}\n`);
+process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
+process.stdout.write(`durations: ${times.join(' · ') || '—'} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
+process.stdout.write(`binary: ${tool.path}${tool.version ? ` (${tool.version})` : ''} · model: ${MODEL}\n`);
+process.stdout.write(`methods the holder saw: ${methodsCalled.join(', ') || '(empty)'}\n`);
+process.stdout.write(`declared surface not observed: ${unobserved.join(', ') || 'none'}\n`);
+process.stdout.write(`  (unobserved is not missing; the stand covers them)\n`);
+process.stdout.write(`sha config.toml: ${shaBefore ?? '(none)'} → ${shaAfter ?? '(none)'}\n`);
+process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, became ${pgrepAfter.cask.length}\n`);
+process.stdout.write(`pgrep 'app-server --stdio': was ${pgrepBefore.app.length}, became ${pgrepAfter.app.length}\n`);
 process.exitCode = passed === verdicts.length ? 0 : 1;

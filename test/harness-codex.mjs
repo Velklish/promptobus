@@ -1,10 +1,10 @@
-// Подставной harness Codex: бинарь `codex`, говорящий JSON-RPC `app-server` в stdio.
-// Не `*.test.mjs` — раннер берёт из каталога только их.
+// Stub Codex harness: a `codex` binary that speaks JSON-RPC `app-server` over stdio.
+// Not a `*.test.mjs` — the runner takes only those from the directory.
 //
-// Стенд повторяет живые промахи протокола, на которых стоит driver:
-// поток без хода не возобновляется, steer до turn/started отказывает, thread/items/list
-// отвечает «not supported yet», запрос одобрения без ответа вешает ход, read-only
-// песочница не пишет файл.
+// The stand repeats the live protocol misses the driver sits on:
+// a stream without a turn is not resumed, steer before turn/started refuses,
+// thread/items/list answers «not supported yet», an approval request without an answer
+// hangs the turn, a read-only sandbox does not write a file.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -53,7 +53,7 @@ export function readTrace(home, address) {
 }
 
 export function diagnoseTrace(home, address, tail = 8) {
-  return `след ${address}: ${JSON.stringify(readTrace(home, address).slice(-tail))}`;
+  return `trace for ${address}: ${JSON.stringify(readTrace(home, address).slice(-tail))}`;
 }
 
 function note(home, address, ev) {
@@ -164,11 +164,11 @@ function armCleanup(home) {
           const rec = JSON.parse(readFileSync(path.join(state, f), 'utf8'));
           for (const pid of [rec.holderPid, rec.appPid]) {
             if (pidAlive(pid)) {
-              try { process.kill(pid, 'SIGKILL'); } catch { /* уже нет */ }
+              try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
             }
           }
         } catch {
-          // Запись битая — сносить каталог всё равно.
+          // Broken record — the directory still gets removed.
         }
       }
       rmSync(dir, { recursive: true, force: true });
@@ -198,14 +198,14 @@ export async function codexMain(argv) {
     await appServer();
     return;
   }
-  process.stderr.write(`codex-stub: неизвестная команда ${argv.join(' ')}\n`);
+  process.stderr.write(`codex-stub: unknown command ${argv.join(' ')}\n`);
   process.exitCode = 2;
 }
 
 async function appServer() {
   const home = process.env[CODEX_HOME_VAR];
   if (!home) {
-    process.stderr.write('codex-stub: нет PROMPTOBUS_E2E_CODEX\n');
+    process.stderr.write('codex-stub: PROMPTOBUS_E2E_CODEX is missing\n');
     process.exit(2);
   }
   let buf = '';
@@ -373,11 +373,12 @@ async function appServer() {
   }
 }
 
-// Шина в оверрайде едет не каноническим ключом `promptobus`, а с префиксом.
-// Настоящий Codex именует инструменты ключом конфига; stub зовёт короткие имена
-// `tools/call` и должен найти НАШ stdio-сервер среди записей. Идентичность шины —
-// env `PROMPTOBUS_ROLE` / `PROMPTOBUS_ADDRESS`, а не литерал ключа: после переименования
-// литерал молча отдавал бы null, круг E2E зеленел бы подъёмом без вызова инструментов.
+// On the override the bus rides not under the canonical `promptobus` key, but with a
+// prefix. Real Codex names tools by the config key; the stub calls the short
+// `tools/call` names and must find OUR stdio server among the entries. Bus identity is
+// the `PROMPTOBUS_ROLE` / `PROMPTOBUS_ADDRESS` env, not a key literal: after a rename
+// the literal would silently return null, and the E2E loop would go green on a start
+// with no tool calls.
 function busServer(thread) {
   const servers = thread.config?.mcp_servers;
   if (!servers || typeof servers !== 'object') return null;
@@ -512,14 +513,14 @@ async function openBus(cfg) {
           resolve(msg);
         }
       } catch {
-        // Посторонняя строка — беда сервера.
+        // A stray line is the server's trouble.
       }
     }
   });
   const rpc = (method, params) => {
     const rid = (seq += 1);
     const answer = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`нет ответа на ${method}`)), 30000);
+      const timer = setTimeout(() => reject(new Error(`no reply to ${method}`)), 30000);
       pending.set(rid, (m) => { clearTimeout(timer); resolve(m); });
     });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: rid, method, params })}\n`);

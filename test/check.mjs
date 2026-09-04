@@ -1,58 +1,71 @@
-// Общий приём набора: вердикт проверки. Не `*.test.mjs` — раннер (run.mjs) берёт из
-// каталога только их, и этот файл в прогон не попадает.
+// Shared suite helper: a check verdict. Not `*.test.mjs` — the runner
+// (run.mjs) takes only those from the directory, so this file is not
+// in the run.
 //
-// Чинит одну беду. `fail()` внутри проверяемого кода — это `process.exit(1)`.
-// Пока каждый файл копил вердикты в свой массив и печатал их хвостом, такое падение
-// уносило разом все вердикты файла, включая уже пройденные: раннер видел упавший файл, а
-// чем именно он упал, из вывода не следовало. Сильнее всего это било по мутационной пробе:
-// проверка, стоящая ниже точки падения, не выполняется вовсе, и «лживую» от «не дожившей»
-// отличить нечем — а правило репозитория требует ровно этого различения.
+// Fixes one problem. `fail()` inside the code under test is
+// `process.exit(1)`. While each file stacked verdicts in its own array
+// and printed them at the tail, such a crash took every verdict of the
+// file at once, including ones that had already passed: the runner saw
+// a failed file, and what it failed on did not follow from the output.
+// This hit the mutation probe hardest: a check below the crash point
+// does not run at all, and there is no way to tell a "lying" check from
+// one that "never reached" — and the repository rule requires exactly
+// that distinction.
 //
-// Печатаем по мере накопления, а не сбрасываем массив в обработчике `exit`: вердикт
-// покидает процесс в тот момент, когда получен, и не зависит от того, доживёт ли до
-// обработчика сам процесс. На хук остаётся только итог — строка «N/M прошло» и, если файл
-// оборван, признак обрыва.
+// We print as they accumulate, rather than flushing an array in the
+// `exit` handler: the verdict leaves the process the moment it is
+// obtained, and does not depend on whether the process itself lives to
+// the handler. The hook keeps only the summary — the "N/M passed" line
+// and, if the file was cut off, the abort mark.
 //
-// Пишем в дескриптор 1 напрямую, мимо `console`, по двум причинам сразу:
-//   • тесты подменяют `console.log`, чтобы ловить вывод CLI, а `process.exit()` из `fail()`
-//     уносит процесс мимо `finally` — подменённая консоль остаётся, и вердикт ушёл бы в неё
-//     ровно в том случае, ради которого всё это делается;
-//   • `writeSync` синхронен на любом стдауте, а `process.stdout.write` на macOS пишет в
-//     трубу асинхронно — вывод из обработчика `exit` там теряется целиком.
+// We write to descriptor 1 directly, past `console`, for two reasons
+// at once:
+//   • tests swap `console.log` to catch CLI output, and `process.exit()`
+//     from `fail()` takes the process past `finally` — the swapped
+//     console stays, and the verdict would go into it in exactly the
+//     case this is all for;
+//   • `writeSync` is synchronous on any stdout, while
+//     `process.stdout.write` on macOS writes to a pipe asynchronously —
+//     output from the `exit` handler is lost there entirely.
 import { writeSync } from 'node:fs';
 import os from 'node:os';
 import process from 'node:process';
 import { makeSandbox } from './sandbox.mjs';
 import { HOME_VARS, applyHygiene } from './hygiene.mjs';
 
-// Перечень «что набор обязан не трогать» общий с раннером и живёт одним местом —
-// [hygiene.mjs](hygiene.mjs), . Там же сказано, почему в нём каждая переменная:
-// автоподъём надзирателя, contact point своей сессии, дом пользователя, рычаг хука памяти.
+// The list of "what the suite must not touch" is shared with the runner
+// and lives in one place — [hygiene.mjs](hygiene.mjs). That file also
+// says why each variable is in it: warden auto-lift, this session's
+// contact point, the user home, the memory-hook lever.
 //
-// Накладывается он здесь, а не только в раннере: файл набора запускают и в одиночку —
-// руками, при отладке, — и именно тогда цена промаха выше всего. Правка `process.env`
-// наследуется всеми процессами, которые файл запустит дальше, поэтому одного наложения
-// хватает на всё дерево.
+// It is applied here, not only in the runner: a suite file is also run
+// alone — by hand, while debugging — and that is when a miss costs the
+// most. A `process.env` edit is inherited by every process the file
+// starts later, so one apply covers the whole tree.
 //
-// Дом подменяется, только если в окружении стоит настоящий. Признак берётся у системы, а не
-// из окружения: под раннером дом уже уведён, и подменять его второй раз незачем. На Windows
-// `os.userInfo()` читает тот же `USERPROFILE`, поэтому там признак срабатывает и под
-// раннером — файл получает свою песочницу вместо выданной, обе внутри каталога прогона, и
-// вреда в этом нет.
+// Home is swapped only if the environment holds the real one. The
+// signal comes from the system, not the environment: under the runner
+// home is already diverted, and swapping it a second time is pointless.
+// On Windows `os.userInfo()` reads the same `USERPROFILE`, so the
+// signal also fires under the runner — the file gets its own sandbox
+// instead of the issued one, both inside the run directory, and there
+// is no harm in that.
 const REAL_HOME = os.userInfo().homedir;
 const home = HOME_VARS.some((name) => process.env[name] === REAL_HOME)
   ? makeSandbox('promptobus-home-') : null;
 applyHygiene(process.env, { home });
 
 const results = [];
-// `beforeExit` срабатывает только на естественном завершении — когда событийный цикл
-// опустел; `process.exit()` его пропускает. Отсюда и берётся различение «файл дошёл до
-// конца» и «файл оборван», без которого неполная сводка читалась бы как полная.
+// `beforeExit` fires only on a natural finish — when the event loop
+// has emptied; `process.exit()` skips it. That is how we tell "the
+// file reached the end" from "the file was cut off", without which an
+// incomplete summary would read as complete.
 let finished = false;
 process.on('beforeExit', () => { finished = true; });
 
-// Пауза между попытками записи. `writeSync` синхронен, событийного цикла тут нет вовсе,
-// и уступить такт нечем — спим по-настоящему, `Atomics.wait` на своей же памяти.
+// Pause between write attempts. `writeSync` is synchronous, there is
+// no event loop here at all, and there is nothing to yield a tick to —
+// we sleep for real, `Atomics.wait` on our own memory.
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
 function out(line) {
@@ -62,55 +75,62 @@ function out(line) {
     try {
       off += writeSync(1, buf, off);
     } catch (e) {
-      // EAGAIN — неблокирующая труба переполнена, пишем остаток дальше. Любая другая
-      // ошибка значит, что писать больше некуда.
+      // EAGAIN — the non-blocking pipe is full, write the rest later.
+      // Any other error means there is nowhere left to write.
       if (e.code !== 'EAGAIN') return;
-      // Ждём, пока читатель разберёт трубу. Без паузы цикл крутится горячим: тот же
-      // EAGAIN приходит миллионы раз в секунду, процесс жжёт ядро и мешает как раз тому,
-      // кто должен трубу разобрать. Две миллисекунды на круг незаметны на выводе вердикта
-      // и превращают busy-loop в ожидание.
+      // Wait for the reader to drain the pipe. Without a pause the
+      // loop spins hot: the same EAGAIN arrives millions of times a
+      // second, the process burns a core and gets in the way of the
+      // one who should drain the pipe. Two milliseconds per round are
+      // invisible on a verdict line and turn a busy-loop into a wait.
       Atomics.wait(PAUSE, 0, 0, 2);
     }
   }
 }
 
-// Вердикт проверки: имя, условие и деталь, которая печатается только у красной.
+// Check verdict: name, condition, and a detail printed only on red.
 export function check(name, cond, detail = '') {
   const ok = !!cond;
   results.push({ name, ok });
-  // Код выхода ставится на месте: в обработчике `exit` его уже не изменить, а до хвоста
-  // файла проверка может не дожить.
+  // The exit code is set on the spot: in the `exit` handler it can no
+  // longer be changed, and the check may not live to the file tail.
   if (!ok) process.exitCode = 1;
   out(`${ok ? '✔' : '✖'} ${name}${!ok && detail ? ` — ${detail}` : ''}`);
 }
 
 process.on('exit', () => {
   const passed = results.filter((r) => r.ok).length;
-  // Одного `beforeExit` мало. Не резолвящийся промис верхнего уровня опустошает
-  // событийный цикл — `beforeExit` срабатывает, файл считается дошедшим до конца, — а
-  // выходит процесс кодом 13 (`unsettled top-level await`). Сводка при этом печатала
-  // «1/1 прошло» о файле, оборванном на первой же проверке; красным прогон делал только
-  // раннер, по коду выхода, и человек читал полную сводку рядом с упавшим файлом.
-  // Поэтому вторая сверка — по коду: дошедший до конца файл выходит ровно тем кодом,
-  // который назначили его вердикты, любой другой означает обрыв.
+  // `beforeExit` alone is not enough. An unresolved top-level promise
+  // empties the event loop — `beforeExit` fires, the file is counted
+  // as having reached the end — and the process exits with code 13
+  // (`unsettled top-level await`). The summary then printed
+  // "1/1 passed" about a file cut off on the first check; only the
+  // runner made the run red, by exit code, and a person read a complete
+  // summary next to a failed file.
+  // So the second check is by code: a file that reached the end exits
+  // with exactly the code its verdicts assigned; any other means abort.
   //
-  // Код берётся у `process.exitCode`, а не у аргумента обработчика: аргумент вычислен до
-  // того, как Node проставил 13 неразрешённому top-level await, и на Node 20 приходит
-  // нулём при настоящем коде выхода 13 — обрыв там становился неотличим от штатного конца.
-  // Свой обработчик Node вешает раньше нашего, поэтому к этому моменту `process.exitCode`
-  // несёт 13 на обеих версиях; во всех остальных исходах он равен аргументу. В `beforeExit`
-  // брать его нечего — там он ещё `undefined` и на Node 20, и на Node 25.
+  // The code is taken from `process.exitCode`, not from the handler
+  // argument: the argument is computed before Node sets 13 on an
+  // unresolved top-level await, and on Node 20 it arrives as zero at a
+  // real exit code of 13 — abort there became indistinguishable from a
+  // clean end. Node installs its own handler before ours, so by this
+  // moment `process.exitCode` holds 13 on both versions; in every other
+  // outcome it equals the argument. There is nothing to take in
+  // `beforeExit` — there it is still `undefined` on both Node 20 and
+  // Node 25.
   const code = process.exitCode ?? 0;
   const expected = passed === results.length ? 0 : 1;
   if (finished && code === expected) {
-    out(`\n${passed}/${results.length} прошло`);
+    out(`\n${passed}/${results.length} passed`);
     return;
   }
-  const last = results.length ? `после проверки «${results[results.length - 1].name}»` : 'до первой проверки';
-  out(`\n${passed}/${results.length} прошло до обрыва`);
-  // Причина обрыва не называется: тем же путём файл уносит и `process.exit()` из `fail()`,
-  // и необработанное исключение, и отклонённый промис без обработчика. Назвать одну из них
-  // значит отправить читателя искать `fail()`, которого не было; само исключение видно в
-  // stderr рядом.
-  out(`✖ обрыв: процесс завершился кодом ${code} ${last} — проверки ниже не выполнялись, вердиктов по ним нет`);
+  const last = results.length ? `after check "${results[results.length - 1].name}"` : 'before the first check';
+  out(`\n${passed}/${results.length} passed before abort`);
+  // The abort reason is not named: the same path takes the file on
+  // `process.exit()` from `fail()`, an unhandled exception, and a
+  // rejected promise with no handler. Naming one of them sends the
+  // reader looking for a `fail()` that was not there; the exception
+  // itself is visible on stderr next to it.
+  out(`✖ abort: process exited with code ${code} ${last} — checks below did not run, there are no verdicts for them`);
 });

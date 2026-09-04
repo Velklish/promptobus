@@ -1,27 +1,33 @@
-// Раннер цепочки тестов: `npm test` = обход этого каталога. Прежний перечень в
-// package.json держался на внимательности автора — не вписанный в него файл не запускался
-// молча. Обход на node, а не шелл-цикл: npm-скрипты на Windows исполняет `cmd`.
+// Chain runner: `npm test` = walk this directory. The old list in
+// package.json depended on the author remembering — a file left off it
+// never ran, in silence. Walk is in node, not a shell loop: npm scripts
+// on Windows run under `cmd`.
 //
-// Файлы идут пулом дочерних процессов, а не по одному: изоляция per-file полная по
-// построению — свой процесс, своя песочница `mkdtemp`, своё окружение, — а последовательный
-// обход держал машину на 40% одного ядра, потому что больше половины прогона набор ждёт
-// придержек и чужих процессов. Замер 2026-08-30 на восьми ядрах, `time npm test`: 47 файлов,
-// 259,4 с wall-clock последовательно при 105,6 с CPU (user+sys), 181,2 с пулом.
+// Files run as a pool of child processes, not one by one: per-file
+// isolation is complete by construction — own process, own `mkdtemp`
+// sandbox, own environment — and a sequential walk kept the machine at
+// 40% of one core, because more than half the run the suite waits on
+// holds and foreign processes. Measured 2026-08-30 on eight cores,
+// `time npm test`: 47 files, 259.4 s wall-clock sequential at 105.6 s
+// CPU (user+sys), 181.2 s with the pool.
 //
-// Сортировка по имени задаёт теперь порядок РАЗДАЧИ файлов полосам, а не порядок вывода:
-// печатаются они по мере завершения, и порядок печати зависит от длительностей. Раздача
-// остаётся детерминированной — иначе состав первой волны плавал бы между прогонами вместе
-// с нагрузкой. Кому не место в пуле — ниже, у `SERIAL`.
+// Sort by name now sets the order files are HANDED to lanes, not the
+// print order: they print as they finish, and print order follows
+// durations. The hand-out stays deterministic — otherwise the first
+// wave's membership would drift between runs with load. Who does not
+// belong in the pool — below, at `SERIAL`.
 //
-// Падение файла цепочку не останавливает: файлы изолированы друг от друга, и остановка на
-// первом прятала картину за одним диагнозом — разработчик чинил набор по одному файлу за
-// прогон. Упавшие копятся и перечисляются сводкой в конце, код выхода при любом
-// падении остаётся ненулевым.
+// A file failure does not stop the chain: files are isolated from each
+// other, and stopping on the first hid the picture behind one diagnosis
+// — the developer fixed the suite one file per run. Failures accumulate
+// and are listed in the end summary; the exit code stays non-zero on
+// any failure.
 //
-// Вывод копится по-файлово и печатается целиком, когда файл кончился: `stdio: 'inherit'`
-// в параллели перемешал бы строки шести файлов в одну кашу. Внутри файла порядок прежний
-// — вердикты печатает общий помощник [check.mjs](check.mjs) по мере накопления,
-// поэтому оборванный файл показывает, что успело пройти и на чём он встал.
+// Output is buffered per file and printed whole when the file ends:
+// `stdio: 'inherit'` in parallel would mash six files' lines into one
+// mess. Inside a file the order is unchanged — verdicts are printed by
+// the shared helper [check.mjs](check.mjs) as they accumulate, so a
+// cut-off file shows what passed and where it stopped.
 import {
   closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync,
 } from 'node:fs';
@@ -35,61 +41,73 @@ import { sweepTestSandboxes, sweptLine } from './tmpdir-sweep.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const files = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
 
-// Песочницы прогона складываются в один каталог, и он убирается на выходе — включая
-// падение и Ctrl+C. Каждый файл делает свою `mkdtemp` в `os.tmpdir()`, а
-// `os.tmpdir()` читает TMPDIR (POSIX) и TEMP/TMP (Windows) — значит подмена этих
-// переменных уводит в каталог прогона ВСЕ песочницы разом: и те, что заводит тест, и
-// те, что заводит библиотека под ним (hooks.js, headless.js). Правки в самих файлах
-// для этого не нужны.
+// Run sandboxes go into one directory, removed on exit — including
+// failure and Ctrl+C. Each file does its own `mkdtemp` in `os.tmpdir()`,
+// and `os.tmpdir()` reads TMPDIR (POSIX) and TEMP/TMP (Windows) — so
+// swapping those variables sends EVERY sandbox into the run directory
+// at once: those the test creates and those the library under it
+// creates (hooks.js, headless.js). The files themselves need no edits.
 //
-// Убирает раннер, а не каждый файл: своё `rmSync` в хвосте файла не выполняется ровно
-// тогда, когда оно нужно, — на упавшей проверке (`process.exit` из `fail`) и на
-// прерывании. Замер до починки: 108 каталогов и 37 МБ настоящих git-репозиториев в
-// системном tmp. Зелёный прогон при этом не течёт — 33 файла поодиночке в чистый
-// TMPDIR оставляют ноль каталогов; течёт ровно то, что не доходит до хвоста.
+// The runner cleans up, not each file: a file's trailing `rmSync` is
+// exactly what does not run when it is needed — on a failed check
+// (`process.exit` from `fail`) and on interrupt. Measured before the
+// fix: 108 directories and 37 MB of real git repositories in system
+// tmp. A green run does not leak — 33 files one by one into a clean
+// TMPDIR leave zero directories; what leaks is exactly what never
+// reaches the tail.
 //
-// Каталог прогона свой у каждого запуска (`mkdtemp`), поэтому два параллельных `npm
-// test` не мешают друг другу и уборка одного не трогает песочницы другого.
+// Each launch has its own run directory (`mkdtemp`), so two parallel
+// `npm test` runs do not collide and one cleanup does not touch the
+// other's sandboxes.
 const RUN_TMP = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
 
-// Песочницы, пережившие ОБОРВАННЫЙ прогон, метутся при старте. Хук выхода
-// ([sandbox.mjs](sandbox.mjs)) и уборка каталога прогона снимают своё, но до них не доходит
-// ровно тот прогон, где мусор и остаётся: Ctrl-C, снятие файла по потолку, падение процесса.
-// Замер 2026-09-03 на машине владельца — 126 каталогов в системном `$TMPDIR`.
+// Sandboxes that survived a CUT-OFF run are swept at start. The exit
+// hook ([sandbox.mjs](sandbox.mjs)) and the run-directory cleanup
+// remove their own, but the run that leaves the garbage is exactly the
+// one that never reaches them: Ctrl-C, file taken down at the file
+// timeout, process crash. Measured 2026-09-03 on the owner's machine —
+// 126 directories in system `$TMPDIR`.
 //
-// Живёт уборка здесь, а не в общем помощнике [check.mjs](check.mjs): раннер — единственный
-// процесс набора, который видит настоящий `$TMPDIR`, детям он уводит `TMPDIR` в каталог
-// прогона строкой выше. Из `check.mjs` она мела бы каталог прогона с живыми песочницами
-// соседних файлов, а накопленное в системном `$TMPDIR` не тронула бы вовсе. Пороги, перечень
-// префиксов и довод — [tmpdir-sweep.mjs](tmpdir-sweep.mjs); идущий рядом прогон держит
-// возрастная отсечка в час.
+// Sweep lives here, not in the shared helper [check.mjs](check.mjs):
+// the runner is the only suite process that sees the real `$TMPDIR`;
+// it sends children `TMPDIR` into the run directory on the line above.
+// From `check.mjs` it would sweep the run directory with live sandboxes
+// of neighbouring files, and would not touch what piled up in system
+// `$TMPDIR` at all. Thresholds, prefix list, and rationale —
+// [tmpdir-sweep.mjs](tmpdir-sweep.mjs); a run going on nearby is held
+// by the one-hour age cut-off.
 const refusedBoxes = [];
 const sweptBoxes = sweepTestSandboxes(os.tmpdir(), { current: RUN_TMP, refused: refusedBoxes });
-if (sweptBoxes.length) console.log(`▸ ${sweptLine('песочниц прежних прогонов', sweptBoxes, { keep: 0 })}`);
-if (refusedBoxes.length) console.log(`▸ снести не дали (заняты или чужие права): ${refusedBoxes.join(', ')}`);
+if (sweptBoxes.length) console.log(`▸ ${sweptLine('previous-run sandboxes', sweptBoxes, { keep: 0 })}`);
+if (refusedBoxes.length) console.log(`▸ sweep refused (in use or foreign permissions): ${refusedBoxes.join(', ')}`);
 
 const RAISED_LOG = 'wardens-raised.log';
 const HOME_PREFIX = 'home-';
-// Буферы вывода лежат отдельной папкой: сам каталог прогона служит детям TMPDIR, и файл
-// рядом с их песочницами читался бы как ещё одна песочница.
+// Output buffers live in a separate folder: the run directory itself
+// is TMPDIR for the children, and a file next to their sandboxes would
+// be read as one more sandbox.
 const OUT_DIR = path.join(RUN_TMP, 'out');
 mkdirSync(OUT_DIR, { recursive: true });
 
-// Окружение файла набора. Перечень «что набор обязан не трогать» — общий с
-// [check.mjs](check.mjs) и живёт одним местом в [hygiene.mjs](hygiene.mjs): там же
-// сказано, почему в нём выключатель надзирателя, contact point сессии, дом
-// пользователя и рычаг хука памяти. Раннер добавляет к перечню своё — каталог песочниц
-// и путь следа автоподъёма.
+// Environment of a suite file. The list of "what the suite must not
+// touch" is shared with [check.mjs](check.mjs) and lives in one place
+// in [hygiene.mjs](hygiene.mjs): that file also says why it holds the
+// warden switch, the session contact point, the user home, and the
+// memory-hook lever. The runner adds its own — the sandbox directory
+// and the auto-lift trace path.
 //
-// След автоподъёма (`PROMPTOBUS_WARDEN_TRACE`) лежит в корне каталога прогона, а не в
-// сторе задачи: стор — внутри песочницы, которую файл теста сносит за собой, и к концу
-// прогона следа там уже нет. Файл один на прогон, дописывают в него все дети сразу.
+// The auto-lift trace (`PROMPTOBUS_WARDEN_TRACE`) lives at the root of
+// the run directory, not in the task store: the store is inside the
+// sandbox the test file removes, and by the end of the run the trace
+// would already be gone. One file per run; every child appends to it
+// at once.
 function testEnv(tmp) {
-  // Дом свой у каждого файла, а не один на прогон: под пулом настоящий CLI спавнят
-  // несколько файлов разом, а `sync` в его хвосте ставит хуки памяти в дом — общий дом
-  // означал бы гонку двух установок. Каталог заводится сразу: инсталлятор и `os.homedir()`
-  // ждут существующий путь, а не обещание. Живёт он внутри каталога прогона, поэтому
-  // убирается вместе с ним.
+  // Home is per file, not one per run: under the pool several files
+  // spawn the real CLI at once, and `sync` at its tail installs memory
+  // hooks into home — a shared home would be a race of two installs.
+  // The directory is created immediately: the installer and
+  // `os.homedir()` want an existing path, not a promise. It lives
+  // inside the run directory, so it is removed with it.
   const home = mkdtempSync(path.join(tmp, HOME_PREFIX));
   return applyHygiene({
     ...process.env,
@@ -100,70 +118,87 @@ function testEnv(tmp) {
   }, { home });
 }
 
-// Ширина пула. Два ядра оставлены машине: файлы набора сами спавнят процессы — настоящий
-// CLI, git, подставные бинари, — и полоса на каждое ядро отбирает время у этих детей, а не
-// добавляет параллелизма. Потолок в шесть — от той же меры: сорок семь файлов в шести
-// полосах уже упираются в самый долгий файл, и полосы сверх этого простаивают.
+// Pool width. Two cores are left for the machine: suite files themselves
+// spawn processes — the real CLI, git, stub binaries — and a lane per
+// core takes time from those children rather than adding parallelism.
+// The cap of six is from the same measure: forty-seven files in six
+// lanes already wait on the longest file, and lanes beyond that idle.
 const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 
-// Серийная группа: файлы, чьи проверки меряют настенные часы. Гоняется последней и без
-// соседей, на неподвижной машине, — под нагрузкой пула их пороги либо краснеют на
-// исправном коде, либо, что хуже, зеленеют ни на чём. Довод по каждому, в скобках — замер
-// 2026-08-30:
+// Serial group: files whose checks measure wall-clock. Run last and
+// without neighbours, on a still machine — under pool load their
+// thresholds either go red on sound code or, worse, go green on
+// nothing. Rationale per file, in parentheses — measured 2026-08-30:
 //
-// - `promptobus-warden.test.mjs` (5,3 с): круг стука идёт по настоящему unix-сокету, а вердикт
-//   снимается через `settle()` в 50 мс после него, часы процесса сдвигаются таймером на
-//   20 мс. Пятидесяти миллисекунд под шестью соседями на сокетный круг может не хватить;
-// - `promptobus-e2e.test.mjs` (32,7 с): полный круг оркестрации на подставном harness'е.
-//   Круг стука идёт по настоящему unix-сокету между четырьмя процессами — CLI, надзиратель,
-//   участник, его MCP-сервер, — а доклад о молчаливом конце хода приходит ударом сердца
-//   надзирателя (`WARDEN_BEAT_SEC`, 30 с). Обе цены — настенные часы, и под нагрузкой пула
-//   круг стука упирался бы в пороги, а сам файл спавнит столько же процессов, сколько полоса
-//   пула целиком. Ждёт в нём ровно одно место, и оно названо в самом файле: 25 с из 33 —
-//   ожидание того самого удара сердца;
-// - `runner.test.mjs` (4,6 с): вложенная копия раннера поднимает свои полосы. Вердикт
-//   одновременности читает пик живых детей (`live.size` в момент spawn), а не окно
-//   `Date.now()` в них: настенные часы меряют, когда ребёнок получил CPU, и под соседями
-//   по машине расходятся при исправном пуле. Паузы по 120 мс остаются ради вердикта
-//   буферизации. Файл идёт вне пула, потому что вложенная копия сама открывает до шести
-//   полос — иначе он отбирает время у соседей по прогону, а не потому что вердикт
-//   держится на неподвижной машине.
+// - `promptobus-warden.test.mjs` (5.3 s): the knock round goes over a
+//   real unix socket, and the verdict is taken via `settle()` 50 ms
+//   after it; process clocks are shifted by a 20 ms timer. Fifty
+//   milliseconds under six neighbours may not be enough for a socket
+//   round;
+// - `promptobus-e2e.test.mjs` (32.7 s): a full orchestration round on
+//   a stub harness. The knock round goes over a real unix socket
+//   between four processes — CLI, warden, participant, its MCP server
+//   — and the silent end-of-turn report arrives on the warden heartbeat
+//   (`WARDEN_BEAT_SEC`, 30 s). Both costs are wall-clock, and under
+//   pool load the knock round would hit the thresholds, while the file
+//   itself spawns as many processes as a whole pool lane. What it waits
+//   on is one place, named in the file: 25 s of 33 is waiting for that
+//   heartbeat;
+// - `runner.test.mjs` (4.6 s): a nested copy of the runner raises its
+//   own lanes. The concurrency verdict reads the peak of live children
+//   (`live.size` at spawn), not a `Date.now()` window in them:
+//   wall-clock measures when the child got CPU, and under machine
+//   neighbours it drifts on a sound pool. The 120 ms pauses stay for
+//   the buffering verdict. The file is outside the pool because the
+//   nested copy itself opens up to six lanes — it would take time from
+//   neighbours on the run, not because the verdict needs a still
+//   machine.
 //
-// Кого в группе нет и почему. У `promptobus-mcp.test.mjs` настенных порогов не осталось вовсе:
-// его проверки смотрят на содержание ответов и на счётчики стора. `fresh.test.mjs` —
-// единственный порог `spent < 10 000` при таймауте 400 мс, запас двадцатипятикратный.
-// В `install.test.mjs` и `zone.test.mjs` `Date.now()` строит возраст фикстур, а порога
-// на часах нет вовсе: такие файлы нагрузка не двигает.
-// `promptobus.test.mjs` ушёл из группы вместе со своим доводом: гонки , ради
-// которых он там стоял, уехали во вложенный package, а в самом файле `Date.now()`
-// строит только возраст фикстур — тот же случай, что `install` и `zone`. Гонки сегодня гоняет
-// `promptobus-package.test.mjs` дочерней командой `npm test --prefix cli/packages/promptobus`,
-// и в группе его нет намеренно: барьер гонок отпускает детей по готовности, а не по метке
-// времени, код возврата каждого ребёнка сверяется, а окно восстановления,
-// из-за которого файл краснел под пулом, закрыто в store — настенных порогов у гонок
-// не осталось. Замер файла под пулом: 186,5 с на занятой машине до  против 14,4 с после
-// (2026-09-02, load average 8).
+// Who is not in the group, and why. `promptobus-mcp.test.mjs` has no
+// wall-clock thresholds left: its checks look at response contents and
+// store counters. `fresh.test.mjs` — the only threshold is
+// `spent < 10 000` at a 400 ms timeout, a twenty-five-fold margin.
+// In `install.test.mjs` and `zone.test.mjs` `Date.now()` builds fixture
+// age, and there is no clock threshold at all: load does not move
+// those files.
+// `promptobus.test.mjs` left the group with its rationale: the races it
+// sat there for moved into the nested package, and in the file itself
+// `Date.now()` only builds fixture age — the same case as `install` and
+// `zone`. Races today are run by `promptobus-package.test.mjs` as a
+// child `npm test --prefix cli/packages/promptobus`, and it is out of
+// the group on purpose: the race barrier releases children on readiness,
+// not on a timestamp; each child's return code is checked; and the
+// recovery window that made the file go red under the pool is closed
+// in the store — the races have no wall-clock thresholds left. File
+// measured under the pool: 186.5 s on a busy machine before vs 14.4 s
+// after (2026-09-02, load average 8).
 //
-// Группа задана именами: файл, переименованный мимо этого списка, тихо уедет в пул.
-// Сторожит это [runner.test.mjs](runner.test.mjs) — он сверяет список с каталогом.
+// The group is a list of names: a file renamed past this list would
+// slip into the pool in silence. [runner.test.mjs](runner.test.mjs)
+// watches that — it checks the list against the directory.
 const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'runner.test.mjs'];
 
-// Потолок на файл. Зависший файл прежде вешал `npm test` навсегда: раннер ждал ребёнка без
-// срока, а вешает файл что угодно — не резолвящийся промис в подменённом stdin
-// (`answerWith`, setup.test.mjs), живой git по сети. Человек видит молчащую консоль и не знает, идёт прогон или встал.
+// File timeout. A hung file used to hang `npm test` forever: the runner
+// waited on the child with no deadline, and anything can hang a file —
+// an unresolved promise in swapped stdin (`answerWith`, setup.test.mjs),
+// a live git over the network. A person sees a silent console and does
+// not know whether the run is going or stuck.
 //
-// Число — от самого медленного файла набора. Сейчас это `promptobus-review.test.mjs`: 27,7 с в
-// одиночку и 32–45 с под пулом (замеры 2026-08-30). Всё это время — настоящая работа: файл
-// строит git-клоны и считает по ним дифф, значит и от машины, и от соседей по полосе оно
-// зависит целиком — разброс под пулом это и показывает.
+// The number comes from the slowest suite file. That is now
+// `promptobus-review.test.mjs`: 27.7 s alone and 32–45 s under the pool
+// (measured 2026-08-30). All of that time is real work: the file builds
+// git clones and diffs them, so it depends entirely on the machine and
+// on lane neighbours — the spread under the pool shows that.
 //
-// Отсюда потолок 300 с: худшему прогону под пулом дан запас почти в семь раз. Меньший
-// превращал бы медленную машину в диагноз «зависший файл» при исправном наборе, а ловить
-// потолок обязан зависание, а не медленную машину.
+// Hence a 300 s file timeout: the worst pool run is given almost a
+// seven-fold margin. A smaller one would turn a slow machine into a
+// "hung file" diagnosis on a sound suite, and the timeout must catch a
+// hang, not a slow machine.
 //
-// SIGKILL, а не SIGTERM: на SIGTERM у файлов набора висит уборка песочниц
-// ([sandbox.mjs](sandbox.mjs)), и файл, вставший внутри своего же обработчика, пережил бы
-// мягкий сигнал. Песочницы всё равно лежат в каталоге прогона, который убирает раннер.
+// SIGKILL, not SIGTERM: suite files hang sandbox cleanup on SIGTERM
+// ([sandbox.mjs](sandbox.mjs)), and a file stuck inside its own
+// handler would survive a soft signal. Sandboxes still live in the run
+// directory, which the runner removes.
 const FILE_TIMEOUT_MS = 300_000;
 let cleaned = false;
 function cleanup() {
@@ -173,13 +208,16 @@ function cleanup() {
 }
 process.on('exit', cleanup);
 
-// Живые дети — чтобы снять их на прерывании. Обработчик сигнала помечает прерывание, бьёт
-// по живым и на этом кончается: убирает всё тот же хук `exit`, один на все ветки выхода.
-// Полосы пула дальше не берут из очереди, а те, что в работе, вернутся снятыми.
+// Live children — so they can be taken down on interrupt. The signal
+// handler marks the interrupt, kills the live ones, and ends there:
+// cleanup is still the same `exit` hook, one for every exit path.
+// Pool lanes stop taking from the queue; those in flight come back
+// as taken down.
 const live = new Map();
-// Пик — сколько детей раннер держал сразу, в момент spawn. Не Date.now() в ребёнке:
-// тот штамп ставится, когда процесс получил CPU, и под соседями по машине окна
-// расходятся при исправном пуле. Счётчик `live` о соседях не знает.
+// Peak — how many children the runner held at once, at spawn. Not
+// Date.now() in the child: that stamp is set when the process got CPU,
+// and under machine neighbours the windows drift on a sound pool.
+// The `live` counter does not know about neighbours.
 let peakLive = 0;
 let interrupted = null;
 let interruptedOn = [];
@@ -189,25 +227,27 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     interrupted = sig;
     interruptedOn = [...live.keys()];
     for (const child of live.values()) {
-      try { child.kill('SIGKILL'); } catch { /* уже мёртв */ }
+      try { child.kill('SIGKILL'); } catch { /* already dead */ }
     }
   });
 }
 
-// Ноль найденных файлов — провал, а не успешный отчёт о пустой цепочке: так выглядит
-// переехавший каталог или сломанный обход.
+// Zero files found is a failure, not a successful report of an empty
+// chain: that is what a moved directory or a broken walk looks like.
 if (!files.length) {
-  console.error(`✖ в ${here} нет ни одного *.test.mjs — прогонять нечего`);
+  console.error(`✖ no *.test.mjs in ${here} — nothing to run`);
   process.exit(1);
 }
 
 const failed = [];
 
-// Один файл: свой процесс, своё окружение, свой буфер вывода. Буфер — файл на диске, а не
-// строка в памяти: дескриптор один на stdout и stderr ребёнка, поэтому строки двух потоков
-// ложатся в том порядке, в котором написаны, — двумя трубами этот порядок не собрать. Тем
-// же снимается EAGAIN-цикл помощника вердиктов ([check.mjs](check.mjs)): в файл `writeSync`
-// пишет без отказов, а неблокирующая труба под шестью писателями переполняется.
+// One file: own process, own environment, own output buffer. The buffer
+// is a file on disk, not a string in memory: one descriptor for the
+// child's stdout and stderr, so the two streams land in the order they
+// were written — two pipes cannot reconstruct that order. The same
+// removes the EAGAIN loop in the verdict helper ([check.mjs](check.mjs)):
+// `writeSync` into a file does not refuse, and a non-blocking pipe
+// under six writers overflows.
 function runFile(name) {
   return new Promise((resolve) => {
     const started = Date.now();
@@ -223,8 +263,8 @@ function runFile(name) {
     let timedOut = false;
     let error = null;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, FILE_TIMEOUT_MS);
-    // `error` и `close` приходят оба, когда ребёнок не запустился вовсе, — отметка держит
-    // разбор на первом из них.
+    // `error` and `close` both fire when the child did not start at
+    // all — the flag keeps the parse on the first of them.
     const finish = (status, signal) => {
       if (done) return;
       done = true;
@@ -232,14 +272,16 @@ function runFile(name) {
       live.delete(name);
       closeSync(fd);
       let out = '';
-      try { out = readFileSync(log, 'utf8'); } catch { /* писать было нечего */ }
+      try { out = readFileSync(log, 'utf8'); } catch { /* nothing to write */ }
       let why = null;
-      // Снятый по потолку файл называется отдельно: сигнал у него тоже стоит, и общая ветка
-      // «убит сигналом» отправила бы читателя искать чужой `kill` вместо зависания.
-      if (timedOut) why = `не уложился в ${FILE_TIMEOUT_MS / 1000} с — снят как зависший`;
-      else if (error) why = `не запустился: ${error.message}`;
-      else if (signal) why = `сигнал ${signal}`;
-      else if (status !== 0) why = `код ${status}`;
+      // A file taken down at the file timeout is named separately: it
+      // also has a signal, and the shared "killed by signal" branch
+      // would send the reader looking for a foreign `kill` instead of
+      // a hang.
+      if (timedOut) why = `did not finish in ${FILE_TIMEOUT_MS / 1000} s — taken down as hung`;
+      else if (error) why = `did not start: ${error.message}`;
+      else if (signal) why = `signal ${signal}`;
+      else if (status !== 0) why = `code ${status}`;
       resolve({ name, ms: Date.now() - started, out, why });
     };
     child.on('error', (e) => { error = e; finish(null, null); });
@@ -247,20 +289,21 @@ function runFile(name) {
   });
 }
 
-// Вывод файла целиком, разом: заголовок с длительностью, буфер, диагноз падения. Время
-// файла печатается всегда — по нему собирается расклад прогона, и по нему же решается
-// состав серийной группы.
+// File output in one piece: title with duration, buffer, failure
+// diagnosis. File time is always printed — the run breakdown is built
+// from it, and the serial group is decided from it.
 function report({ name, ms, out, why }) {
-  console.log(`\n▸ ${name} — ${(ms / 1000).toFixed(1)} с`);
+  console.log(`\n▸ ${name} — ${(ms / 1000).toFixed(1)} s`);
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
   if (why) {
-    console.error(`✖ ${name} — упал (${why})`);
+    console.error(`✖ ${name} — failed (${why})`);
     failed.push({ name, why });
   }
 }
 
-// Пул: `width` полос разбирают общую очередь. Полоса берёт следующий файл, как только
-// отдала предыдущий, — то есть длинный файл задерживает свою полосу, а не весь прогон.
+// Pool: `width` lanes share one queue. A lane takes the next file as
+// soon as it has handed back the previous — so a long file holds its
+// lane, not the whole run.
 async function runGroup(names, width) {
   const queue = [...names];
   const lanes = Array.from({ length: Math.min(width, queue.length) }, async () => {
@@ -271,54 +314,59 @@ async function runGroup(names, width) {
 
 const serial = files.filter((n) => SERIAL.includes(n));
 const pooled = files.filter((n) => !SERIAL.includes(n));
-console.log(`▸ ${files.length} файлов: ${pooled.length} пулом по ${POOL}, `
-  + `${serial.length} серийной группой в конце`);
+console.log(`▸ ${files.length} files: ${pooled.length} in a pool of ${POOL}, `
+  + `${serial.length} in the serial group at the end`);
 
 await runGroup(pooled, POOL);
-console.log(`▸ пик пула: ${peakLive}`);
+console.log(`▸ pool peak: ${peakLive}`);
 if (!interrupted) await runGroup(serial, 1);
 
-// Код выхода СТАВИТСЯ, а не выдаётся `process.exit`. Вывод файлов идёт через
-// `process.stdout.write`, а на macOS запись в трубу асинхронна: выход на месте обрубил бы
-// хвост последних напечатанных буферов — ровно то, ради чего буферы и заведены. Работы
-// дальше нет, событийный цикл пуст, и процесс выйдет сам, дописав всё.
+// The exit code is SET, not issued via `process.exit`. File output
+// goes through `process.stdout.write`, and on macOS a pipe write is
+// async: exiting on the spot would cut the tail of the last printed
+// buffers — exactly what the buffers were created for. There is no
+// further work, the event loop is empty, and the process will exit
+// itself after flushing.
 if (interrupted) {
-  const on = interruptedOn.length ? `на ${interruptedOn.join(', ')}` : 'между файлами';
-  console.error(`\n✖ прогон прерван (${interrupted}) ${on}`
-    + ' — песочницы убраны, остальные файлы не запускались');
+  const on = interruptedOn.length ? `on ${interruptedOn.join(', ')}` : 'between files';
+  console.error(`\n✖ run interrupted (${interrupted}) ${on}`
+    + ' — sandboxes cleaned up, remaining files were not started');
   process.exitCode = 130;
 } else {
-  // Гейт: команда шины не заводит процесс, переживающий прогон. Судим по следу
-  // автоподъёма — файлу `PROMPTOBUS_WARDEN_TRACE`, в который пишет точка подъёма надзирателя
-  // ([warden.js](../lib/warden.js)). Своего следа хватает по двум причинам сразу:
-  // журнал надзирателя в сторе задачи сносит вместе с песочницей сам файл теста, а пишет тот
-  // журнал не только подъём — строку туда кладёт и обычный круг присмотра, который набор
-  // зовёт полтора десятка раз.
+  // Gate: a bus command must not start a process that outlives the
+  // run. We judge by the auto-lift trace — the `PROMPTOBUS_WARDEN_TRACE`
+  // file written by the warden lift point ([warden.js](../lib/warden.js)).
+  // That trace is enough for two reasons at once: the warden journal
+  // in the task store is removed with the sandbox by the test file
+  // itself, and that journal is not written only on lift — an ordinary
+  // watch round, which the suite calls a dozen and a half times, also
+  // puts a line there.
   //
-  // Гейт смотрит на подъём, а не на живой pid: процесс отвязан по построению — он переживает
-  // и файл, и прогон, — а номера процессов система переиспользует, и проверка «жив ли он
-  // сейчас» краснела бы на чужом процессе с тем же номером.
+  // The gate looks at lift, not at a live pid: the process is detached
+  // by construction — it outlives both the file and the run — and the
+  // system reuses process numbers, so a "is it alive now" check would
+  // go red on a foreign process with the same number.
   //
-  // Граница у гейта одна и названа в [warden.js](../lib/warden.js): надзиратель,
-  // запущенный руками, следа не оставляет. Правило запрещает автоподъём, и запуском руками
-  // набор не пользуется.
+  // The gate has one boundary, named in [warden.js](../lib/warden.js):
+  // a warden started by hand leaves no trace. The rule forbids
+  // auto-lift, and the suite does not start one by hand.
   let raised = [];
   try {
     raised = readFileSync(path.join(RUN_TMP, RAISED_LOG), 'utf8').split('\n').filter(Boolean);
   } catch {
-    // Следа нет — никто и не поднимался
+    // no trace — nobody was raised
   }
 
   const passed = files.length - failed.length;
   if (failed.length) {
-    console.error(`\n✖ упало ${failed.length} из ${files.length} файлов, прошло ${passed}:`);
+    console.error(`\n✖ ${failed.length} of ${files.length} files failed, ${passed} passed:`);
     for (const f of failed) console.error(`  ✖ ${f.name} — ${f.why}`);
   }
   if (raised.length) {
-    console.error(`\n✖ под прогоном поднялись надзиратели (${raised.length}) — эти процессы переживают прогон:`);
+    console.error(`\n✖ wardens were raised under this run (${raised.length}) — these processes outlive the run:`);
     for (const line of raised) console.error(`  ✖ ${line}`);
-    console.error('  выключатель PROMPTOBUS_WARDEN=off стоит в общем перечне hygiene.mjs — команда шины его не прочитала');
+    console.error('  the PROMPTOBUS_WARDEN=off switch is in the shared hygiene.mjs list — the bus command did not read it');
   }
   if (failed.length || raised.length) process.exitCode = 1;
-  else console.log(`\n${passed}/${files.length} файлов тестов прошло`);
+  else console.log(`\n${passed}/${files.length} test files passed`);
 }

@@ -1,26 +1,27 @@
 #!/usr/bin/env node
-// Канарейка шины: ТОТ ЖЕ сценарий E2E, но на настоящем Claude Code. Запуск:
+// Bus canary: the SAME E2E scenario, but on real Claude Code. Run:
 //
 //   node scripts/live-e2e.mjs
 //
-// В `npm test` не входит и входить не будет: она поднимает живые сессии, стоит токенов и
-// зависит от машины. Предмет у неё тот же, что у подставного прогона
-// ([promptobus-e2e.test.mjs](../test/promptobus-e2e.test.mjs)), и сценарий — буквально тот же модуль
-// ([scenario.mjs](../test/scenario.mjs)): различаются два harness'а, а не две проверки.
-// Разъехаться им негде — сверки лежат в общем модуле, и правка сценария едет в оба прогона
-// сразу.
+// Not in `npm test` and will not be: it raises live sessions, costs tokens and
+// depends on the machine. The subject is the same as the stub run
+// ([promptobus-e2e.test.mjs](../test/promptobus-e2e.test.mjs)), and the scenario is
+// literally the same module ([scenario.mjs](../test/scenario.mjs)): two harnesses
+// differ, not two checks. They have nowhere to drift — the checks live in the shared
+// module, and a scenario edit goes into both runs at once.
 //
-// Что здесь другое:
+// What is different here:
 //
-// - бинарь настоящий. Подмены PATH нет вовсе, `--bg` поднимает живую фоновую сессию, а
-//   `stop` её гасит;
-// - ходы ролей задаёт БРИФ, а не файл скрипта: `say` каждого хода уезжает в промпт участника
-//   («забери mailbox, ответь строкой …»). Поэтому сверки в сценарии идут по вхождению
-//   маркера, а не по дословному телу: буквальность проверяла бы послушность модели;
-// - модель `sonnet`, эффорт `low`: канарейка проверяет круг шины, а не качество ответа.
+// - the binary is real. There is no PATH substitution at all, `--bg` raises a live
+//   background session, and `stop` tears it down;
+// - role turns are set by the BRIEF, not by a script file: each turn's `say` goes
+//   into the participant prompt ("fetch the mailbox, reply with the line …"). So the
+//   scenario checks by marker containment, not by a verbatim body: a letter-for-letter
+//   check would test the model's obedience;
+// - model `sonnet`, effort `low`: the canary checks the bus loop, not answer quality.
 //
-// Отчёт — вердикты и длительности шагов. Токенов в нём нет: слушатель сокета
-// оркестратора кладёт в след только признак «токен совпал», а не сам токен.
+// The report is verdicts and step durations. It has no tokens: the orchestrator socket
+// listener puts only the "token matched" mark into the trace, not the token itself.
 import { rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -30,19 +31,20 @@ import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
 
-// Механизм под проверкой — один корень на весь прогон, и объявляет его сценарий
-// (`PROMPTOBUS_E2E_ROOT`). Не задан — чекаут, как было. Задан — установленное дерево, и
-// тогда СВОИ модули этот скрипт обязан брать оттуда же: половинчатый резолв поднимал бы
-// сессии одним механизмом, а судил бы о них другим.
+// The mechanism under test is one root for the whole run, and the scenario declares
+// it (`PROMPTOBUS_E2E_ROOT`). Unset — the checkout, as before. Set — the installed
+// tree, and then THIS script must take ITS own modules from there too: a half resolve
+// would raise sessions with one mechanism and judge them with another.
 const { bgSessions, findSession, resetBgSessionsCache, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
 const { claudeDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'));
 
-// Бинарь ищется тем же резолвом, каким его ищет spawn, — включая `~/.local/bin`. Но реестр
-// сессий (`bgSessions`) зовёт `claude` через PATH, поэтому найденный вне PATH каталог в него
-// и добавляется: иначе половина прогона видела бы бинарь, а половина — нет.
+// The binary is found with the same resolve spawn uses — including `~/.local/bin`.
+// But the session registry (`bgSessions`) calls `claude` through PATH, so a directory
+// found outside PATH is prepended: otherwise half the run would see the binary and
+// half would not.
 const tool = resolveToolBin('claude');
 if (!tool.ok) {
-  console.error(`✖ живой прогон нечем гнать: ${tool.reason}`);
+  console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);
 }
 const binDir = path.dirname(tool.path);
@@ -51,45 +53,52 @@ if (!(process.env.PATH ?? '').split(path.delimiter).includes(binDir)) {
 }
 resetBgSessionsCache();
 
-// Автоподъём надзирателя выключен намеренно: сценарий поднимает его сам и сам гасит, а
-// отвязанный процесс, поднятый попутной командой, пережил бы канарейку и остался стучаться
-// в её сокеты. Тот же довод, что у общего перечня гигиены набора (`hygiene.mjs`).
+// Warden auto-start is off on purpose: the scenario raises it itself and stops it
+// itself, and a detached process raised by a side command would outlive the canary
+// and keep knocking its sockets. The same argument as the shared suite hygiene list
+// (`hygiene.mjs`).
 process.env.PROMPTOBUS_WARDEN = 'off';
 
-// **Идентичность сессии снимается со своего окружения, а не только с детского**.
-// Сценарий строит окружение команд из `process.env`, и гнать этот прогон принято как раз из
-// сессии, у которой все пять переменных стоят: релизный чеклист велит гонять канарейку перед
-// тегом, а в run'ах её гоняют worker'ы. Утёкший `PROMPTOBUS_TASK` уводит команды песочницы на
-// задачу БОЕВОГО run'а (живой замер 2026-09-03: красный шаг 4, «задачи run'а нет в
-// песочнице»), а `PROMPTOBUS_HOME` — в боевой журнал шины рабочего места. Перечень тот же и
-// оттуда же, что у набора; свои `CLAUDE_CODE_MESSAGING_*` сценарий заводит заново, уже сокетом
-// стенда. Дом и `CLAUDE_CONFIG_DIR` не трогаются: прогон живой, и настоящему `claude` нужен
-// его настоящий дом.
+// **Session identity is stripped from THIS environment, not only from the child's.**
+// The scenario builds command environments from `process.env`, and this run is
+// usually driven from a session that has all five variables set: the release
+// checklist says to run the canary before the tag, and in runs the workers drive it.
+// A leaked `PROMPTOBUS_TASK` sends sandbox commands onto a LIVE run task (live
+// measurement 2026-09-03: red step 4, "the run task is not in the sandbox"), and
+// `PROMPTOBUS_HOME` — into the workspace's live bus journal. The list is the same
+// and from the same home as the suite; the scenario creates its own
+// `CLAUDE_CODE_MESSAGING_*` again, already with the stand socket. Home and
+// `CLAUDE_CONFIG_DIR` are not touched: the run is live, and real `claude` needs its
+// real home.
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
 const SB = makeSandbox('promptobus-live-e2e-');
-// Каталог сокетов прогона — свой, и убирается он в `finally` вместе с песочницей.
-// Хук выхода [sandbox.mjs](../test/sandbox.mjs) его тоже снимает, но только на своём процессе:
-// круг, оборванный посреди, до конца файла не доходит, а уборка обязана идти по любому исходу.
-// Каталог берётся у самого помощника, а не выводится из строителя пути: на win32 строитель
-// отдаёт имя канала, и каталога там нет вовсе — `dir` приходит `null`, и сносить нечего.
+// The run socket directory is its own, and it is removed in `finally` with the
+// sandbox. The exit hook in [sandbox.mjs](../test/sandbox.mjs) removes it too, but
+// only on its own process: a loop cut off mid-file never reaches the end, and
+// cleanup must run on any outcome. The directory is taken from the helper itself,
+// not derived from the path builder: on win32 the builder returns a channel name
+// and there is no directory at all — `dir` comes `null`, and there is nothing to
+// sweep.
 const { dir: sockDir, sock } = makeSockDir('a2l-');
 const raised = new Set();
 
 const harness = {
-  label: 'живой',
-  // Ходы задаёт бриф, а не скрипт: сыграть по команде стоп на permission-запросе или на
-  // лимите живой сессии нечем, и шаги, требующие этого, канарейка не идёт.
-  // Сюда же вердикт о стороже цикла участника: хук лежит в настройках рабочего
-  // места, а cwd участника — в worktree клона, и доставку хука решает harness.
+  label: 'live',
+  // Turns are set by the brief, not by a script: there is no way to play a stop on
+  // a permission request or on a limit of a live session on command, and the canary
+  // does not take the steps that need that.
+  // The participant loop-guard verdict lives here too: the hook sits in the
+  // workspace settings, and the participant cwd is in the clone worktree, so the
+  // harness decides whether the hook is delivered.
   scripted: false,
   sock,
-  // Канарейка проверяет круг, а не рассуждение: дешёвая модель и низкий эффорт.
+  // The canary checks the loop, not the reasoning: a cheap model and low effort.
   spawnFlags: ['--model', 'sonnet', '--effort', 'low'],
   reviewFlags: ['--model', 'sonnet', '--effort', 'low'],
-  // Ходы живой роли задаёт бриф, который сценарий уже собрал из тех же скриптов, — писать
-  // на диск здесь нечего.
+  // Live role turns are set by the brief the scenario already built from the same
+  // scripts — there is nothing to write to disk here.
   plan: () => {},
   sessions: () => {
     resetBgSessionsCache();
@@ -105,8 +114,9 @@ const harness = {
       return hit && sessionLiveness(hit, list) === 'alive' ? hit : null;
     }).filter(Boolean);
   },
-  // Номера процессов сессий — их снимают ДО гашения: после `claude stop` запись исчезает
-  // из списка, и вердикт «процессов не осталось» по списку был бы зелёным по построению.
+  // Session process ids are taken BEFORE teardown: after `claude stop` the record
+  // vanishes from the list, and a "no processes left" verdict from the list would
+  // be green by construction.
   pidsOf: (refs) => {
     const list = bgSessions({ fresh: true }) ?? [];
     return refs.map((ref) => findSession(list, ref)?.pid).filter((pid) => Number.isInteger(pid));
@@ -114,20 +124,23 @@ const harness = {
   pidAlive,
   diagnose: (address) => {
     const list = bgSessions({ fresh: true }) ?? [];
-    return `сессии harness'а: ${JSON.stringify(list.map((s) => ({ name: s.name, status: s.status, state: s.state })))}`
-      + ` · участник ${address}`;
+    return `harness sessions: ${JSON.stringify(list.map((s) => ({ name: s.name, status: s.status, state: s.state })))}`
+      + ` · participant ${address}`;
   },
-  // Уборка канарейки: всё, что она подняла, гасится её же driver'ом. `promptobus done` в сценарии
-  // делает это сам, но канарейка обязана прибрать и за упавшим прогоном.
+  // Canary cleanup: everything it raised is stopped by its own driver. `promptobus
+  // done` in the scenario does this itself, but the canary must also tidy up after
+  // a fallen run.
   cleanup: () => {
     for (const ref of raised) {
-      // Исход гашения — обещание: сама команда уходит бинарю синхронно, ждать
-      // остаётся только исчезновения записи из реестра. Страховке за упавшим прогоном
-      // этого довольно, и ждать её здесь нечем — сценарий зовёт уборку из своего
-      // `finally`, без `await`. Ожидание поэтому снято НУЛЁМ (замечание ревью): с
-      // потолком по умолчанию оборванный прогон досиживал бы до десяти секунд таймеров на
-      // сессию уже после отчёта — скрипт выходит через `process.exitCode`, а не `exit`.
-      Promise.resolve(claudeDriver.stop(ref, { timeoutMs: 0 })).catch(() => { /* гасить нечего */ });
+      // The stop outcome is a promise: the command itself goes to the binary
+      // synchronously, and all that remains is waiting for the record to vanish
+      // from the registry. That is enough for the fallen-run safety net, and
+      // there is nothing to wait for here — the scenario calls cleanup from its
+      // `finally`, without `await`. The wait is therefore lifted to ZERO (review
+      // note): with the default ceiling a broken run would sit through up to ten
+      // seconds of timers per session after the report — the script exits through
+      // `process.exitCode`, not `exit`.
+      Promise.resolve(claudeDriver.stop(ref, { timeoutMs: 0 })).catch(() => { /* nothing to stop */ });
     }
   },
 };
@@ -139,21 +152,22 @@ const check = (name, cond, detail = '') => {
   process.stdout.write(`${ok ? '✔' : '✖'} ${name}${ok ? '' : ` — ${String(detail).slice(0, 500)}`}\n`);
 };
 
-// Рабочее место готовит вызывающий, если оно у него есть: канарейка подаёт сюда
-// РАЗЛОЖЕННЫЙ `sync`'ом workspace установленного tarball'а, и стенд обязан идти в нём, а не
-// в заглушке рядом. Переменной нет — стенд строит своё, как раньше.
+// The caller prepares the workspace when it has one: the canary feeds a workspace
+// LAID OUT by `sync` of the installed tarball, and the stand must go there, not
+// into a stub beside it. No variable — the stand builds its own, as before.
 const WS = process.env.PROMPTOBUS_E2E_WORKSPACE || null;
 
-process.stdout.write(`▸ живой прогон E2E: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
-process.stdout.write(`▸ механизм: ${MECHANISM_ROOT}\n`);
-process.stdout.write(`▸ шагов ${STEPS.length}, песочница ${SB}${WS ? `, рабочее место ${WS}` : ''}\n`);
-if (leaked.length) process.stdout.write(`▸ снято с окружения прогона: ${leaked.join(', ')}\n`);
+process.stdout.write(`▸ live E2E run: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
+process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
+process.stdout.write(`▸ ${STEPS.length} steps, sandbox ${SB}${WS ? `, workspace ${WS}` : ''}\n`);
+if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 let report = null;
 let failure = null;
 try {
-  // Потолки на порядок больше подставных: живая сессия думает секундами и десятками секунд,
-  // а доклад о стопе всё так же ждёт удара сердца надзирателя.
+  // Ceilings are an order of magnitude above the stub ones: a live session thinks
+  // for seconds and tens of seconds, and a stall report still waits for a warden
+  // heartbeat.
   report = await runScenario({
     check,
     harness,
@@ -166,25 +180,28 @@ try {
   failure = e;
 } finally {
   harness.cleanup();
-  // Песочница и каталог сокетов — здесь, а не после отчёта: сюда прогон приходит любым
-  // исходом, включая оборванный. Отчёт ниже читает только то, что уже собрано в памяти.
+  // Sandbox and socket directory — here, not after the report: the run arrives
+  // here on any outcome, including a broken one. The report below reads only
+  // what is already collected in memory.
   rmSync(SB, { recursive: true, force: true });
   if (sockDir) rmSync(sockDir, { recursive: true, force: true });
 }
 
 const passed = verdicts.filter((v) => v.ok).length;
-process.stdout.write(`\n${passed}/${verdicts.length} вердиктов прошло\n`);
+process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
 if (report) {
-  process.stdout.write(`длительности: ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} с`).join(' · ')}\n`);
-  process.stdout.write(`всего ${(report.totalMs / 1000).toFixed(1)} с\n`);
-  // Строка для вызывающего: каким бинарём прогон шёл по слову самого поднятого процесса.
-  // Канарейка сверяет её со своим install-деревом — сценарию знать, где «правильно», неоткуда.
-  process.stdout.write(`механизм по слову процесса: ${report.mechanism.reported ?? 'не назван'}\n`);
+  process.stdout.write(`durations: ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}\n`);
+  process.stdout.write(`total ${(report.totalMs / 1000).toFixed(1)} s\n`);
+  // Line for the caller: which binary the run used, by the word of the raised
+  // process itself. The canary checks it against its install tree — the scenario
+  // has no way to know where "right" is.
+  process.stdout.write(`mechanism as the process said: ${report.mechanism.reported ?? 'unnamed'}\n`);
 }
 if (failure) {
-  process.stdout.write(`✖ прогон оборван: ${failure.message}\n`);
+  process.stdout.write(`✖ run broken: ${failure.message}\n`);
 }
-// Песочницу и каталог сокетов прогон убирает за собой сам, в `finally` выше: они живут в
-// системном tmp, раннера над ними нет. Здесь только строка отчёта.
-process.stdout.write(`▸ песочница убрана (${os.tmpdir()})${sockDir ? `, каталог сокетов ${sockDir}` : ''}\n`);
+// The run removes the sandbox and the socket directory itself, in `finally`
+// above: they live in system tmp, there is no runner above them. Here only the
+// report line.
+process.stdout.write(`▸ sandbox removed (${os.tmpdir()})${sockDir ? `, socket directory ${sockDir}` : ''}\n`);
 process.exitCode = passed === verdicts.length && !failure ? 0 : 1;
