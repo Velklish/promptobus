@@ -576,7 +576,7 @@ export async function runScenario({
     const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
       '--worker', 'e2e', ...wh.flags], { cwd: ws, env: orchEnv });
     check('step 2: promptobus spawn started the worker and said so',
-      spawned.status === 0 && /worker worker:e2e поднят/.test(spawned.out), tail(spawned.out));
+      spawned.status === 0 && /worker worker:e2e lifted/.test(spawned.out), tail(spawned.out));
     const wp = participantOf(WORKER);
     const wf = fieldsOf(WORKER);
     // The record harness is checked against WHAT the lineup named, not a literal: in a
@@ -701,7 +701,7 @@ export async function runScenario({
     const reviewed = cli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
       { cwd: ws, env: orchEnv });
     check('step 6: promptobus review started the reviewer from the worker worktree',
-      reviewed.status === 0 && /reviewer reviewer:e2e поднят/.test(reviewed.out), tail(reviewed.out));
+      reviewed.status === 0 && /reviewer reviewer:e2e started/.test(reviewed.out), tail(reviewed.out));
     const rp = participantOf(REVIEWER);
     check('step 6: the reviewer record landed in the same registry — harness, mode and a live session',
       rp?.harness === rh.id && rp?.mode === 'managed'
@@ -818,7 +818,7 @@ export async function runScenario({
       // leaving the list the same length.
       const same = participantOf(REVIEWER);
       check('second round: the diff went to THE SAME reviewer — no second session appeared',
-        again.status === 0 && /уже на шине/.test(again.out)
+        again.status === 0 && /already on the bus/.test(again.out)
         && !!same?.sessionRef && same.sessionRef === rp?.sessionRef,
         `exit ${again.status} · session was ${rp?.sessionRef}, became ${same?.sessionRef} · ${tail(again.out)}`);
       const review2 = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.review2), { timeoutMs: step });
@@ -874,12 +874,12 @@ export async function runScenario({
       // place, not on a heartbeat, and so is checked before the report.
       const seenByMailbox = await waitFor(async () => {
         const answer = await mcp.tool('promptobus_mailbox');
-        return answer.text.includes(WORKER) && /встал|ЧИСЛИТСЯ|ИСЧЕЗ/.test(answer.text) ? answer.text : null;
+        return answer.text.includes(WORKER) && /stalled:|LISTED|GONE/.test(answer.text) ? answer.text : null;
       }, { timeoutMs: step, stepMs: 500 });
       check('step 8: the orchestrator mailbox reply names the stalled worker by the same parse',
         typeof seenByMailbox === 'string', `${tail(String(seenByMailbox))} · ${wh.diagnose()}`);
       const reported = await waitFor(() => {
-        const line = store.tailWardenLog(home, TASK, 40).find((l) => l.includes(WORKER) && /встал:|ИСЧЕЗ|ЧИСЛИТСЯ|ГЛУХ/.test(l));
+        const line = store.tailWardenLog(home, TASK, 40).find((l) => l.includes(WORKER) && /stalled:|GONE:|LISTED|DEAF/.test(l));
         return line ?? null;
       }, { timeoutMs: stall, stepMs: 500 });
       const stallPostcard = inbox.seen.find((p) => /встали участники/.test(String(p.body ?? '')));
@@ -1090,7 +1090,7 @@ export async function runScenario({
     const stat = cli([ 'status', '--task', TASK], { cwd: ws, env: orchEnv });
     check('step 12: status named the task, the live warden and both participants',
       stat.status === 0 && stat.out.includes(TASK) && stat.out.includes(WORKER)
-      && stat.out.includes(REVIEWER) && /надзиратель/.test(stat.out), tail(stat.out));
+      && stat.out.includes(REVIEWER) && /warden: alive/.test(stat.out), tail(stat.out));
     // Claim: a foreign session sees a COPY and a header, the originals stay with the
     // owner; the claim names the previous owner and rewrites the task owner. There is
     // no silent takeover.
@@ -1154,7 +1154,7 @@ export async function runScenario({
       .filter((f) => existsSync(f));
     const done = cli([ 'done', '--task', TASK], { cwd: ws, env: orchEnv });
     check('step 13: promptobus done closed the task and named the sessions it is tearing down',
-      done.status === 0 && /гашу сессии участников \(2\)/.test(done.out) && /worker:e2e/.test(done.out),
+      done.status === 0 && /stopping participant sessions \(2\)/.test(done.out) && /worker:e2e/.test(done.out),
       tail(done.out));
     // With a short wait — the same race as the twin in the harness unit: stub
     // `claude stop` waits for the process to die itself, but no longer than its
@@ -1177,11 +1177,11 @@ export async function runScenario({
     const t14 = Date.now();
     const gone = await waitFor(() => (store.liveWarden(home, TASK) ? null : true), { timeoutMs: step });
     check('step 14: the warden exited on its own — the task is closed, there is nothing to watch',
-      gone === true && /надзиратель.*вышел/.test(store.tailWardenLog(home, TASK, 200).join('\n')),
+      gone === true && /warden exited/.test(store.tailWardenLog(home, TASK, 200).join('\n')),
       store.tailWardenLog(home, TASK, 20).join('\n'));
     const probe = cli([ 'prune', '--older-than', '0'], { cwd: ws, env: orchEnv });
     check('step 14: a prune probe names the closed task and deletes nothing',
-      probe.status === 0 && probe.out.includes(TASK) && /Ничего не удалено/.test(probe.out)
+      probe.status === 0 && probe.out.includes(TASK) && /Nothing deleted/.test(probe.out)
       && existsSync(store.taskDir(home, TASK)), tail(probe.out));
     const pruned = cli([ 'prune', '--older-than', '0', '--yes'], { cwd: ws, env: orchEnv });
     check('step 14: prune --yes removed the journal of the closed task',

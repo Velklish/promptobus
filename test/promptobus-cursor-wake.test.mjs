@@ -103,7 +103,7 @@ check('step 1: the task warden is up as a real process', !!live?.pid, JSON.strin
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'wake', '--harness', 'cursor'], { cwd: ws, env });
 check('step 2: the Cursor participant is up, and its session is live',
-  spawned.status === 0 && /worker worker:wake поднят/.test(spawned.out), spawned.out.slice(-400));
+  spawned.status === 0 && /worker worker:wake lifted/.test(spawned.out), spawned.out.slice(-400));
 
 const wp = store.participantOf(store.readTask(home, TASK), WORKER);
 const ref = wp?.sessionRef ?? '';

@@ -233,7 +233,7 @@ try {
   const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
     '--worker', 'live', '--harness', 'cursor', '--model', MODEL], { cwd: ws, env });
   check('step 2: promptobus spawn --harness cursor raised a live participant',
-    spawned.status === 0 && /worker worker:live поднят/.test(spawned.out), spawned.out.slice(-600));
+    spawned.status === 0 && /worker worker:live lifted/.test(spawned.out), spawned.out.slice(-600));
   at_('participant start', Date.now() - t2);
 
   const wp = store.participantOf(store.readTask(home, TASK), WORKER);
@@ -260,7 +260,7 @@ try {
 
   const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
   check('step 2: promptobus status shows the Cursor session is alive',
-    statusOut.status === 0 && statusOut.out.includes(WORKER) && /сесси/.test(statusOut.out),
+    statusOut.status === 0 && statusOut.out.includes(WORKER) && /session /.test(statusOut.out),
     statusOut.out.slice(-500));
 
   const liveWt = wp?.metadata?.worktree ?? '';
@@ -422,7 +422,7 @@ try {
   const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor', '--model', MODEL],
     { cwd: ws, env });
   check('step 5: promptobus review --harness cursor raised a live reviewer',
-    reviewed.status === 0 && /reviewer reviewer:live поднят/.test(reviewed.out), reviewed.out.slice(-600));
+    reviewed.status === 0 && /reviewer reviewer:live started/.test(reviewed.out), reviewed.out.slice(-600));
   sandboxDir = reviewSandbox(store.participantSettingsPath(home, TASK, REVIEWER));
   check('step 5: the reviewer sandbox is a git directory with its own deny',
     existsSync(path.join(sandboxDir, '.git'))

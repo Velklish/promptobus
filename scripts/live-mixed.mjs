@@ -284,7 +284,7 @@ try {
   const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
     '--worker', 'live', '--harness', 'cursor', '--model', CURSOR_MODEL], { cwd: ws, env });
   check('step 2: promptobus spawn --harness cursor raised a live worker',
-    spawned.status === 0 && /worker worker:live поднят/.test(spawned.out), spawned.out.slice(-600));
+    spawned.status === 0 && /worker worker:live lifted/.test(spawned.out), spawned.out.slice(-600));
   const wp = store.participantOf(store.readTask(home, TASK), WORKER);
   workerRef = wp?.sessionRef ?? '';
   const record = cursorPersist.readSession(workerRef);
@@ -313,7 +313,7 @@ try {
   const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex', '--model', CODEX_MODEL],
     { cwd: ws, env });
   check('step 4: promptobus review --harness codex raised a live reviewer',
-    reviewed.status === 0 && /reviewer reviewer:live поднят/.test(reviewed.out), reviewed.out.slice(-800));
+    reviewed.status === 0 && /reviewer reviewer:live started/.test(reviewed.out), reviewed.out.slice(-800));
   const rp = store.participantOf(store.readTask(home, TASK), REVIEWER);
   reviewerRef = rp?.sessionRef ?? '';
   const thread = codexSession.readSession(reviewerRef);
@@ -364,13 +364,13 @@ try {
     `${again.stdout ?? ''}${again.stderr ?? ''}`.slice(-400));
   const reReview = cli([ 'review', wt, '--task', TASK], { cwd: ws, env });
   const rp2 = store.participantOf(store.readTask(home, TASK), REVIEWER);
-  // The same reviewer is THREE things at once: the mechanism said «уже на шине»,
+  // The same reviewer is THREE things at once: the mechanism said "already on the bus",
   // the session reference did not change, and a second reviewer address did not
   // appear on the task. Any one of them would go green on a reviewer raised
   // again.
   const reviewerAddrs = store.addressesOf(store.readTask(home, TASK)).filter((a) => String(a).startsWith('reviewer:'));
   check('step 6: the second diff went to the SAME reviewer — no second session appeared',
-    reReview.status === 0 && /уже на шине — отправлен новый дифф/.test(reReview.out)
+    reReview.status === 0 && /already on the bus — new diff sent/.test(reReview.out)
     && rp2?.sessionRef === reviewerRef && reviewerAddrs.length === 1,
     `${reReview.out.slice(-500)} · session ${reviewerRef} → ${rp2?.sessionRef} · addresses ${JSON.stringify(reviewerAddrs)}`);
   const diffsB = diffsOf().filter((n) => !diffsA.includes(n));

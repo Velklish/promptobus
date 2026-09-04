@@ -242,17 +242,17 @@ check(': a declared harness passes the same gate',
 const dry = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cdx', '--harness', 'codex', '--dry-run'], { cwd: ws, env });
 check(': --dry-run prints app-server --stdio and writes nothing to disk',
-  dry.status === 0 && /app-server --stdio/.test(dry.out) && /dry-run: на диск ничего не записано/.test(dry.out),
+  dry.status === 0 && /app-server --stdio/.test(dry.out) && /dry-run: nothing written to disk, worker not started/.test(dry.out),
   dry.out.slice(-500));
 check(': --dry-run names the thread id and that the prompt goes out as turn/start',
-  /имя сессии у harness'а: the thread id is chosen by app-server/.test(dry.out)
+  /harness session name: the thread id is chosen by app-server/.test(dry.out)
   && /the prompt then goes out as a turn\/start request/.test(dry.out),
   dry.out.slice(-400));
 
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cdx', '--harness', 'codex'], { cwd: ws, env });
 check('step 1: promptobus spawn --harness codex lifted the participant',
-  spawned.status === 0 && /worker worker:cdx поднят/.test(spawned.out), spawned.out.slice(-800));
+  spawned.status === 0 && /worker worker:cdx lifted/.test(spawned.out), spawned.out.slice(-800));
 
 const wp = store.participantOf(store.readTask(home, TASK), WORKER);
 check('step 1: the record carries harness codex and a capabilities snapshot',
@@ -286,7 +286,7 @@ check('step 3: the turn ended — the session is alive and not busy',
   const idleLine = idleStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? idleStatus.out;
   check(': idle after a Codex turn — inspect.unknown, status is not a stall of unknown nature',
     idle?.stall?.kind === 'unknown' && /the turn ended/.test(String(idle?.stall?.reason))
-    && idleStatus.status === 0 && /ждёт сообщения/.test(idleLine) && !/ВСТАЛА/.test(idleLine),
+    && idleStatus.status === 0 && /waiting for a message/.test(idleLine) && !/STALLED/.test(idleLine),
     `${JSON.stringify(idle)} · ${idleLine}`);
 }
 
@@ -334,7 +334,7 @@ check('step 4: the second turn arrived as a result',
 const wt = wp?.metadata?.worktree ?? ws;
 const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex'], { cwd: ws, env });
 check('step 5: promptobus review --harness codex lifted the reviewer',
-  reviewed.status === 0 && /reviewer reviewer:cdx поднят/.test(reviewed.out), reviewed.out.slice(-600));
+  reviewed.status === 0 && /reviewer reviewer:cdx started/.test(reviewed.out), reviewed.out.slice(-600));
 
 const reviewSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(REVIEW_MARK)) ?? null, { timeoutMs: 25000 });
@@ -371,7 +371,7 @@ planParticipant(HARNESS, 'worker:apr', {
 const approved = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'apr', '--harness', 'codex'], { cwd: ws, env: approvalEnv });
 check('step 7: an approval request without a hang — the driver replied, the participant is up',
-  approved.status === 0 && /worker worker:apr поднят/.test(approved.out), approved.out.slice(-500));
+  approved.status === 0 && /worker worker:apr lifted/.test(approved.out), approved.out.slice(-500));
 
 const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
 if (apr?.sessionRef) await codexDriver.stop(apr.sessionRef);
@@ -439,7 +439,7 @@ const slowEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '25000', [FIRST_DELAY_VAR]:
 const slow = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'slow', '--harness', 'codex'], { cwd: ws, env: slowEnv });
 check(': waitReady waits for a delayed first turn and does not give up before the holder',
-  slow.status === 0 && /worker worker:slow поднят/.test(slow.out), slow.out.slice(-500));
+  slow.status === 0 && /worker worker:slow lifted/.test(slow.out), slow.out.slice(-500));
 const slowPart = store.participantOf(store.readTask(home, TASK), 'worker:slow');
 if (slowPart?.sessionRef) await codexDriver.stop(slowPart.sessionRef);
 
@@ -460,7 +460,7 @@ planParticipant(HARNESS, 'worker:mcp', {
 const mcpUp = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'mcp', '--harness', 'codex'], { cwd: ws, env });
 check(': a participant with a url-server in the set is lifted — the Codex config was accepted',
-  mcpUp.status === 0 && /worker worker:mcp поднят/.test(mcpUp.out), mcpUp.out.slice(-600));
+  mcpUp.status === 0 && /worker worker:mcp lifted/.test(mcpUp.out), mcpUp.out.slice(-600));
 
 const mcpPart = store.participantOf(store.readTask(home, TASK), 'worker:mcp');
 const mcpThread = (() => {

@@ -130,7 +130,7 @@ try {
     '--worker', 'live', '--harness', 'codex', '--model', MODEL, '--permission-mode', 'read-only'],
   { cwd: ws, env });
   check('step 1: promptobus spawn --harness codex --permission-mode read-only raised a participant',
-    spawned.status === 0 && /worker worker:live поднят/.test(spawned.out), spawned.out.slice(-800));
+    spawned.status === 0 && /worker worker:live lifted/.test(spawned.out), spawned.out.slice(-800));
   at_('participant start', Date.now() - t2);
 
   const wp = store.participantOf(store.readTask(home, TASK), WORKER);

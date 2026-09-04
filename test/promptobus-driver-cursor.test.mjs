@@ -313,7 +313,7 @@ check(': without a workspace root the plan honestly says there are no skills, an
   /no \.cursor\/skills/.test(workerPlan.skillsNote)
   && !workerPlan.files.some((f) => f.copyFrom)
   && /no \.cursor\/skills/.test(skillsNote({ launch: workerPlan, pluginDir: null, driver: cursorDriver }))
-  && !/не читает плагин/.test(skillsNote({ launch: workerPlan, pluginDir: null, driver: cursorDriver })),
+  && !/does not read the Claude Code skills plugin/.test(skillsNote({ launch: workerPlan, pluginDir: null, driver: cursorDriver })),
   workerPlan.skillsNote);
 
 const skillsRoot = path.join(SB, 'skills-src');
@@ -380,7 +380,7 @@ console.warn = copyWarn0;
 check(': a second copy removes a leftover skill and warns about a symlink',
   !existsSync(path.join(skillsWt, '.cursor', 'skills', 'leftover'))
   && !existsSync(path.join(skillsWt, '.cursor', 'skills', 'ghost-link'))
-  && /ghost-link/.test(copyWarns) && /символическая ссылка/.test(copyWarns),
+  && /ghost-link/.test(copyWarns) && /symbolic link/.test(copyWarns),
   copyWarns);
 rmSync(path.join(skillsRoot, '.cursor', 'skills', 'ghost-link'), { force: true });
 
@@ -659,20 +659,20 @@ const dry = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
 const dryClaude = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cl', '--dry-run'], { cwd: ws, env });
 check(': --dry-run prints the lift command and the persist-session name form',
-  dry.status === 0 && /persist --workspace/.test(dry.out) && /имя сессии у harness'а/.test(dry.out)
-  && /cursor-<directory-slug>/.test(dry.out) && !/имя сессии у harness'а/.test(dryClaude.out),
+  dry.status === 0 && /persist --workspace/.test(dry.out) && /harness session name:/.test(dry.out)
+  && /cursor-<directory-slug>/.test(dry.out) && !/harness session name:/.test(dryClaude.out),
   `${dry.out.slice(-600)} · claude: ${dryClaude.out.slice(-200)}`);
 
 check(': --dry-run names the source, the skill count and where they will land',
-  dry.status === 0 && /скиллы workspace: 1 from /.test(dry.out)
+  dry.status === 0 && /workspace skills: 1 from /.test(dry.out)
   && dry.out.includes(path.join(ws, '.cursor', 'skills'))
-  && /не читает плагин/.test(dry.out) === false,
-  dry.out.split('\n').find((l) => l.includes('скиллы workspace')) ?? dry.out.slice(0, 300));
+  && /does not read the Claude Code skills plugin/.test(dry.out) === false,
+  dry.out.split('\n').find((l) => l.includes('workspace skills')) ?? dry.out.slice(0, 300));
 
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cur', '--harness', 'cursor'], { cwd: ws, env });
 check('step 1: promptobus spawn --harness cursor lifted the participant',
-  spawned.status === 0 && /worker worker:cur поднят/.test(spawned.out), spawned.out.slice(-500));
+  spawned.status === 0 && /worker worker:cur lifted/.test(spawned.out), spawned.out.slice(-500));
 
 const wp = store.participantOf(store.readTask(home, TASK), WORKER);
 check('step 1: the participant record carries harness cursor and a snapshot of its capabilities',
@@ -779,7 +779,7 @@ check('step 3: the turn ended — the session is alive, not busy, and is named w
   const idleLine = idleStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? idleStatus.out;
   check(': idle after a turn — inspect.unknown, status is not a stall of unknown nature',
     idle?.stall?.kind === 'unknown' && /the turn ended/.test(String(idle?.stall?.reason))
-    && idleStatus.status === 0 && /ждёт сообщения/.test(idleLine) && !/ВСТАЛА/.test(idleLine),
+    && idleStatus.status === 0 && /waiting for a message/.test(idleLine) && !/STALLED/.test(idleLine),
     `${JSON.stringify(idle)} · ${idleLine}`);
 }
 
@@ -805,14 +805,14 @@ check(': two injections at once — one delivered, the other refused by the lock
 
 const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
 check('step 3: promptobus status shows Cursor session liveness in the words of its driver',
-  statusOut.status === 0 && statusOut.out.includes(WORKER) && /сесси/.test(statusOut.out),
+  statusOut.status === 0 && statusOut.out.includes(WORKER) && /session /.test(statusOut.out),
   statusOut.out.slice(-400));
 
 // --- Cursor reviewer: its own sandbox and its own cleanup ---------------------------
 
 const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor'], { cwd: ws, env });
 check('step 4: promptobus review --harness cursor lifted the reviewer',
-  reviewed.status === 0 && /reviewer reviewer:cur поднят/.test(reviewed.out), reviewed.out.slice(-500));
+  reviewed.status === 0 && /reviewer reviewer:cur started/.test(reviewed.out), reviewed.out.slice(-500));
 
 const rp = store.participantOf(store.readTask(home, TASK), REVIEWER);
 check('step 4: the reviewer record carries the same harness and the denied tools are declared',
@@ -852,7 +852,7 @@ check('step 4: --effort is checked against the reviewer own harness vocabulary, 
 
 const alienHarness = cli([ 'review', wt, '--task', TASK, '--harness', 'claude'], { cwd: ws, env });
 check('step 4: --harness on an already lifted reviewer is refused, not silently ignored',
-  alienHarness.status !== 0 && /поднят harness'ом cursor/.test(alienHarness.out), alienHarness.out.slice(-260));
+  alienHarness.status !== 0 && /was started by harness cursor/.test(alienHarness.out), alienHarness.out.slice(-260));
 
 // An "address already working" refusal must name an EXECUTABLE harness route. Under
 // persist it appeared: `agent persist stop <name>` really kills the session, after which
@@ -974,7 +974,7 @@ check(': a turn silent past the threshold — a watchdog verdict, and the sessio
 const hangStatus = cli([ 'status', '--task', HANG_TASK], { cwd: ws, env });
 const hangLine = hangStatus.out.split('\n').find((l) => l.includes(HANG_WORKER)) ?? hangStatus.out;
 check(': the status line of a standing Cursor does not contain claude — the route is from its driver',
-  hangStatus.status === 0 && /ВСТАЛА/.test(hangLine) && !/claude /.test(hangLine)
+  hangStatus.status === 0 && /STALLED/.test(hangLine) && !/claude /.test(hangLine)
   && /agent persist/.test(hangLine),
   hangLine);
 
@@ -1005,9 +1005,9 @@ check(': transcript silence with a live pane child is not a stop, the line is ho
 const livingStatus = cli([ 'status', '--task', HANG_CHILD_TASK], { cwd: ws, env });
 const livingLine = livingStatus.out.split('\n').find((l) => l.includes(HANG_CHILD_WORKER))
   ?? livingStatus.out;
-check(': status on silence with live processes does not say «встал»',
-  livingStatus.status === 0 && /жива/.test(livingLine) && !/ВСТАЛА/.test(livingLine)
-  && !/встал/.test(livingLine) && /processes are alive/.test(livingLine),
+check(': status on silence with live processes does not say STALLED',
+  livingStatus.status === 0 && /is alive/.test(livingLine) && !/STALLED/.test(livingLine)
+  && /processes are alive/.test(livingLine),
   livingLine);
 
 cli([ 'done', '--task', HANG_CHILD_TASK], { cwd: ws, env });
