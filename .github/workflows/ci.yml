@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The ambient gate asserts that ast-grep is present: without it the gate
+      # would go quiet instead of red, which is the failure it exists to prevent.
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli
+
       # No compile/build step yet: this package has no source tree and no
       # TypeScript/bundler config. Implementation arrives in follow-up work.
       # Do not add a silent no-op "build" that hides the missing compile.
