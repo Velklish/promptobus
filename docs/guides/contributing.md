@@ -1,0 +1,61 @@
+# Contributing
+
+This repository is run entirely through [backslop](https://github.com/Velklish/backslop) `v0.3.0`. There is no issue tracker beside it. The pin is `backslop.json`.
+
+```bash
+npx github:Velklish/backslop#v0.3.0 status
+npx github:Velklish/backslop#v0.3.0 lint
+```
+
+English is the language of new strings, comments, commit messages, and checks. `README.ru.md` is the only file that may use Cyrillic.
+
+## Roles
+
+| Role | Steps | Must not |
+|---|---|---|
+| Worker | 1–4: change, document, run gates | Declare the work accepted; move files in `docs/backlog/` or `docs/archive/` |
+| Approver | 5–7: review, archive, triage, commit to the main line | Write the worker's code |
+
+One agent may play both roles in order. Under orchestration they are different sessions. The worker commits on the assigned branch and stops.
+
+Procedure text lives in `AGENTS.md` (backslop block) and in the `backslop-task` / `backslop-batch` skills that `backslop init` laid out for the selected adapters.
+
+## Worker path
+
+1. **Take the first queued task** from `status`, or create one:
+   - `npx github:Velklish/backslop#v0.3.0 new <slug> --title "…"` → triage
+   - add `--queue` to put it in the queue
+   - A tiny change that does not alter a contract may skip a tracker file if one pass finishes it.
+2. **Change the code.** Reverse a prior decision by deleting it. Do not strike through. Use [glossary](../GLOSSARY.md) names. If a name is missing, propose a row.
+3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.3.0 adr <slug>` and a row in [docs/README.md](../README.md).
+4. **Gates on an unchanged tree.** Commands in `backslop.json` `gates` must exit 0. Today that is `npx github:Velklish/backslop#v0.3.0 lint`. Also run `npm test` when you touch runtime code. A test change needs a mutation probe: commit first, then break the assertion, then revert. A gate with an early cutoff needs a second probe that feeds a false positive.
+
+Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.3.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
+
+Commit subject: `PB-N: <what was done>` when the change has a task number.
+
+## Approver path
+
+Review the diff. Then archive and triage in one pass:
+
+```bash
+npx github:Velklish/backslop#v0.3.0 archive N
+```
+
+Fill `docs/archive/<id>-<slug>/result.md` (outcome, what was done, verification). `[TODO]` in that file fails lint. Review every `triage/` entry: merge, clarify, `mv N queue`, or `mv N deferred` with a return condition. Ask the owner only before rejecting.
+
+A task reaches the default branch as one commit. Intermediate worker and review commits are squashed before that push.
+
+## Skills
+
+| Skill | When |
+|---|---|
+| `backslop-task` | One backlog task, take through archive |
+| `backslop-batch` | Several tasks, tracks, review gate |
+| `backslop-seed` | Fill glossary / roadmap / reference after `backslop init` |
+| [orchestrate](../../skills/orchestrate/SKILL.md) | Split work across worker sessions on this bus |
+| [solo-review](../../skills/solo-review/SKILL.md) | Isolated read-only review of one diff |
+
+## Public surface
+
+Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. See the publicity checks in the project gates when they land.
