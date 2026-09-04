@@ -38,7 +38,7 @@ import { addrKey } from '../test/harness-cursor.mjs';
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const {
-  listSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
+  cursorStateHome, listSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 
 // Модель называется флагом, а не берётся дефолтом driver'а: живую проверку гоняют на той,
@@ -92,7 +92,7 @@ const before = snapshotHome();
 // Реестр сессий механизма живёт в доме человека и в живом прогоне НЕ уводится: предмет
 // проверки — то, как это работает у пользователя. Что после круга там ничего не осталось,
 // прогон и сверяет — составами до и после.
-const STATE_HOME = path.join(homedir(), '.agents', 'cursor');
+const STATE_HOME = cursorStateHome();
 function snapshotState() {
   try {
     return readdirSync(path.join(STATE_HOME, 'sessions'));

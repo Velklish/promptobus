@@ -108,8 +108,8 @@ const pgrepBefore = { cask: pgrep('Caskroom/codex'), app: pgrep('app-server --st
 // проверки — то, как это работает у пользователя. Что после круга там ничего не осталось,
 // прогон сверяет составами до и после. Сессии человека рядом законны, и вычитать их
 // обязательно: «список пуст» было бы неверным вердиктом на машине, где он работает.
-const CURSOR_STATE = path.join(homedir(), '.agents', 'cursor', 'sessions');
-const CODEX_STATE = path.join(homedir(), '.agents', 'codex', 'sessions');
+const CURSOR_STATE = cursorPersist.sessionsDir();
+const CODEX_STATE = codexSession.sessionsDir();
 const listing = (dir) => {
   try {
     return readdirSync(dir);

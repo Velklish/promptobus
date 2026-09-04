@@ -33,6 +33,8 @@ const TASK = 'sup-t20260829-150000';
 const SESSION = 'sess-sup-0001';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
+const HOST = hostOf(SB);
 const wdn = await import(path.join(here, '..', 'lib', 'warden.js'));
 const { wardenLine, status, WARDEN_MARK, stallLine, blockedParticipants, orchestratorDeadLine } =
   await import(path.join(here, '..', 'lib', 'status.js'));
@@ -380,7 +382,7 @@ check(': снимок по тем же участникам бинарь зов�
 
 // --- видимость надзирателя ----------------------------------------------------
 
-const aliveLine = wardenLine(HOME, TASK);
+const aliveLine = wardenLine(HOME, TASK, HOST);
 check('живой надзиратель виден строкой с pid и проверенной версией бинаря',
   aliveLine.alive && aliveLine.line.includes(String(process.pid)) && aliveLine.line.includes(`claude ${PROVEN_CLAUDE_VERSION}`),
   aliveLine.line);
@@ -388,7 +390,7 @@ check('живой надзиратель виден строкой с pid и п�
 // Смерть надзирателя обязана быть видимой: процесс, который никто не сторожит, тихо
 // перестаёт доставлять, и run выглядит «просто медленным».
 store.clearWarden(HOME, TASK);
-const deadLine = wardenLine(HOME, TASK);
+const deadLine = wardenLine(HOME, TASK, HOST);
 check('мёртвый надзиратель назван вслух и с маршрутом перезапуска',
   !deadLine.alive && deadLine.line.startsWith(WARDEN_MARK) && deadLine.line.includes('promptobus warden'),
   deadLine.line);

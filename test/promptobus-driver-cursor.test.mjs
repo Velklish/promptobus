@@ -625,7 +625,6 @@ store.createTask(home, { id: TASK, title: 'проба driver’а Cursor', owner
 // Гейт декларации: harness, не объявленный в `promptobus.json`, участника не поднимает —
 // адаптеров под него `sync` не раскладывал.
 const bare = path.join(SB, 'bare-ws');
-mkdirSync(path.join(bare, '.agents'), { recursive: true });
 writeHostConfig(bare, { tools: ['claude'] });
 const undeclared = thrown(() => liftHarness(bare, 'cursor'));
 check(': harness вне promptobus.json отказывает до подъёма и называет маршрут',

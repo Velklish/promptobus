@@ -65,7 +65,7 @@ check('hook plan writes the standalone bus-hook path',
 
 const standaloneSrc = readFileSync(path.join(here, '..', 'src', 'standalone.ts'), 'utf8');
 const banned = ['ati', 'agents'].join('-');
-const forbidden = [banned, ['.', 'agents/'].join(''), 'ATI_', 'memory-hooks', 'gitlab.ati']
+const forbidden = [banned, ['.', 'agents/'].join(''), ['ATI', '_'].join(''), 'memory-hooks', 'gitlab.ati']
   .filter((n) => standaloneSrc.includes(n));
 check('standalone host source does not contain a foreign workspace layout',
   forbidden.length === 0, forbidden.join(', '));

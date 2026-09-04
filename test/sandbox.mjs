@@ -162,6 +162,24 @@ export function resolveToolBin(name) {
   return { ok: true, path: name, bin: name, version: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() };
 }
 
+export const AST_GREP_INSTALL = 'npm install -g @ast-grep/cli';
+
+/** Locate ast-grep on PATH or common install prefixes. Missing binary is a red gate, not a skip. */
+export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
+  const r = spawnSync('ast-grep', ['--version'], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (!r.error) return 'ast-grep';
+  const extras = [
+    '/opt/homebrew/bin/ast-grep',
+    '/usr/local/bin/ast-grep',
+    path.join(home, '.npm-global', 'bin', 'ast-grep'),
+  ];
+  for (const candidate of extras) {
+    const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (!probe.error) return candidate;
+  }
+  return null;
+}
+
 // Путь тестового сокета — целиком, вместе с выбором корня. Помощник отдаёт
 // строитель `имя → путь`, а не каталог: каталог на Windows бессмыслен — сокет там
 // именованный канал и файловой системы не занимает вовсе, — и помощник, отдающий там

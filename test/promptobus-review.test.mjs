@@ -260,10 +260,12 @@ check(': промпт reviewer\'а ожидание заводить не вел
 check(': промпт требует объявить затянувшуюся работу status\'ом со сроком',
   /Работа затягивается дольше пары минут молчания/.test(plan.prompt) && /оценкой срока/.test(plan.prompt),
   plan.prompt);
-check('промпт: режим «только отчёт», механические проверки объявлены недоступными',
-  plan.prompt.includes('только отчёт') && plan.prompt.includes('не прогонялись'));
+check('промпт: механические проверки объявлены недоступными; standalone процедура без скилла',
+  plan.prompt.includes('не прогонялись')
+  && /Замечаний нет — так и скажи/.test(plan.prompt)
+  && !plan.prompt.includes('только отчёт'));
 check('промпт: правила — репозиторий (standalone: без модуля рабочего места)',
-  plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes('.agents/base/rules'));
+  plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes(['.', 'agents/base/rules'].join('')));
 check('read-only: deny перекрывает запись и исполнение',
   ['Edit', 'Write', 'NotebookEdit', 'Bash'].every((t) => plan.settings.permissions.deny.includes(t))
   && plan.settings.permissions.deny === REVIEWER_DENY);
@@ -384,7 +386,7 @@ check('--effort: неизвестное значение → понятный о
   && EFFORT_LEVELS.every((l) => badEffort.msg.includes(l)), badEffort.msg);
 
 check('dry-run: заданный effort печатается как применяемый',
-  /effort: high/.test(dryEffort) && !/не применяется/.test(dryEffort), dryEffort);
+  /effort: high/.test(dryEffort) && !/effort: high \(не применяется/.test(dryEffort), dryEffort);
 check(`dry-run без живого reviewer'а: модель тоже печатается как применяемая`,
   /модель: opus/.test(dryEffort) && !/модель: opus \(/.test(dryEffort), dryEffort);
 

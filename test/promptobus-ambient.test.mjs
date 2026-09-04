@@ -30,9 +30,8 @@
 // форме: копилка держит СВОЁ состояние процесса — счётчик, кэш, реестр, — и значение в неё
 // кладёт сам package. Мост держит ЧУЖОЕ: значение в него кладёт adapter снаружи.
 //
-// **Гейт живёт в наборе CLI, а не в наборе package.** Здесь резолв `ast-grep` механизмом
-// ([astgrep.js](../lib/astgrep.js)), а standalone-копия package не получает зависимости от
-// внешнего бинаря — она обязана проверяться без механизма вокруг. Бинаря нет — красный
+// **Гейт живёт в интеграционном наборе.** Резолв `ast-grep` — PATH и известные префиксы
+// ([sandbox.mjs](sandbox.mjs)); ядро не зависит от внешнего бинаря. Бинаря нет — красный
 // вердикт с командой установки, а не пропуск: гейт, который молчит без инструмента, зелёный
 // при любой реализации.
 //
@@ -42,12 +41,11 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AST_GREP_INSTALL, findAstGrep } from '../lib/astgrep.js';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { AST_GREP_INSTALL, findAstGrep, makeSandbox } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PKG = path.join(here, '..', 'packages', 'promptobus');
+const PKG = path.join(here, '..');
 
 const DECL = 'module-binding';
 const WRITE = 'fn-write';

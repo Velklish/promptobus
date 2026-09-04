@@ -39,7 +39,12 @@ import { check } from './check.mjs';
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus spawn-')));
 const here = path.dirname(fileURLToPath(import.meta.url));
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
-const { planSpawn, spawn: spawnWorker, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings } = await import(spawnUrl);
+const { planSpawn, spawn: spawnRaw, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings } = await import(spawnUrl);
+const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+const spawnWorker = (root, opts = {}) => spawnRaw(root, {
+  tool: { ok: true, bin: stubClaude() },
+  ...opts,
+});
 const { installWorktreeDeps, npmCiCommand } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { IDENTITY_VARS } = await import(path.join(here, 'hygiene.mjs'));
 const { ULTRACODE_MIN_VERSION } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
@@ -1017,6 +1022,24 @@ check(': node_modules вне ignore — предупреждение, spawn пр
   && /worker worker:barelock поднят/.test(bareOut)
   && !lockOut.includes('node_modules в worktree git не игнорирует'),
   bareOut);
+
+// HostToolBin: consumers read `bin`. A host that returns only the declared
+// fields must still launch. A consumer that reads `path` again throws
+// "file must be of type string" here — that is the mutation probe target.
+const CONTRACT_TASK = 'bin-only-t20260904-000000';
+store.createTask(HOME, {
+  id: CONTRACT_TASK, title: 'host tool bin contract', slug: 'bin-only', stamp: 't20260904-000000',
+});
+const contractHost = hostOf(WS);
+contractHost.resolveToolBin = () => ({ ok: true, bin: stubClaude() });
+const contractOpts = { repo: 'cargos-api', brief: BRIEF, task: CONTRACT_TASK, worker: 'binonly' };
+const contractPlan = await planSpawn(contractHost, contractOpts);
+claudeSays([{ id: 'sess-bin', name: contractPlan.name, state: 'working', pid: 4600 }]);
+resetCliCaches();
+await quiet(() => spawnRaw(contractHost, contractOpts));
+const contractRec = store.participantOf(store.readTask(HOME, CONTRACT_TASK), 'worker:binonly');
+check('HostToolBin: resolveToolBin returning only `bin` launches the worker',
+  contractRec?.metadata?.session === 'sess-bin', JSON.stringify(contractRec?.metadata));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

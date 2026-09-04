@@ -3,12 +3,11 @@
 // механизма, папка файлов задачи, отказ незарегистрированному адресату, кэш журнала на один
 // вызов инструмента и два канала доклада о битом.
 //
-// Проверки переехали сюда из `cli/packages/promptobus/test/store.test.mjs` вместе с
-// предметом: до  он жил в слое совместимости внутри package, а слоя больше нет —
-// package отдаёт одну поверхность v1, и всё, что говорит адресами и полями механизма,
-// живёт в CLI. Что осталось в package: словарь шины, лок журнала, операции store
-// ([v1-engine.test.mjs](../packages/promptobus/test/v1-engine.test.mjs)) и три чтения
-// mailbox'а ([store.test.mjs](../packages/promptobus/test/store.test.mjs)).
+// Проверки переехали сюда из набора store вместе с предметом: слой совместимости
+// внутри package снят — package отдаёт одну поверхность v1, и всё, что говорит
+// адресами и полями механизма, живёт в CLI. Что осталось в ядре: словарь шины, лок
+// журнала, операции store ([v1-engine.test.mjs](v1-engine.test.mjs)) и три чтения
+// mailbox'а ([store.test.mjs](store.test.mjs)).
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -480,7 +479,7 @@ check(': сборка argv и конфига наружу не экспорти�
 // `.phrases.<имя>`, `.capabilities.<имя>`. Помощник, отдающий словарь целиком, спрятал бы
 // имя от разбора, и поверхность снова перестала бы сверяться.
 
-const DRIVER_TS = path.join(MECHANISM_ROOT, 'packages', 'promptobus', 'src', 'driver.ts');
+const DRIVER_TS = path.join(MECHANISM_ROOT, 'src', 'driver.ts');
 
 /** Тело интерфейса по имени — со счётом скобок: внутри есть вложенные объектные типы. */
 function interfaceBody(src, name) {

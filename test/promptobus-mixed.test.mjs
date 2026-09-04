@@ -59,7 +59,6 @@ const codexHarness = await codexStub.installHarness({ binDir });
 // `promptobus.json`, — адаптеров под него `sync` не раскладывал, и участник остался бы без
 // правил рабочего места. Остальную раскладку строит сам сценарий.
 const WS = path.join(SB, 'ws');
-mkdirSync(path.join(WS, '.agents'), { recursive: true });
 writeHostConfig(WS, { tools: ['claude', 'cursor', 'codex'] });
 
 /** Номер процесса panel'и участника Cursor — по тому же реестру, каким его смотрит driver. */
