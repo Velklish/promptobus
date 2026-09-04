@@ -11,8 +11,8 @@ Only project files next to `promptobus.json`:
 | Harness | File | Owned records |
 |---|---|---|
 | Claude Code | `.claude/settings.json` | `PostToolUse` matcher `mcp__promptobus__(promptobus_send\|promptobus_mailbox)`; `Stop` and `SessionStart` running `promptobus guard` |
-| Cursor | `.cursor/hooks.json` | `postToolUse` that returns `additional_context`; `stop` running `promptobus guard` |
-| Codex | `.codex/hooks.json` | `PostToolUse` that returns `systemMessage`; `Stop` running `promptobus guard` |
+| Cursor | `.cursor/hooks.json` | `postToolUse` with `--output additional_context`; `stop` running `promptobus guard` |
+| Codex | `.codex/hooks.json` | `PostToolUse` (runner field `systemMessage`); `Stop` and `SessionStart` running `promptobus guard` |
 
 The generated runner is `.promptobus/hooks/bus.mjs`. `src/hooks.ts` plans the Claude-shaped settings. The installer maps that plan onto each harness file.
 
@@ -48,13 +48,17 @@ From a subdirectory of the workspace, hooks still run against the workspace root
 
 ## How to trust
 
-The installer does not bypass harness trust. After a successful write the CLI prints `configured` and the checks for that harness.
+The installer does not bypass harness trust. After a successful write the CLI prints `configured` and:
+
+```text
+Review: Codex requires /hooks; project hooks also depend on workspace trust.
+```
 
 **Claude Code.** Project hooks in `.claude/settings.json` run only when this workspace is trusted. Approve the project when the harness asks. The Stop hook is `promptobus guard`. A clean mailbox exits 0 and prints nothing. Unread mail exits 2 and returns the turn.
 
-**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback arrives as `additional_context` on `postToolUse`. The loop guard is `stop`.
+**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback arrives as `additional_context` because install passes `--output additional_context`. The loop guard is `stop`.
 
-**Codex.** Review the new project hooks with `/hooks` before you rely on them. Bus feedback arrives as `systemMessage` on `PostToolUse`. Project hooks also depend on trusting this workspace.
+**Codex.** Review the new project hooks with `/hooks` before you rely on them. The runner default field is `systemMessage`. Project hooks also depend on trusting this workspace.
 
 If you skip trust, spawn still works. You lose the tape line and the Stop guard. The warden can still knock. `promptobus_mailbox` is still the source of truth.
 
@@ -62,7 +66,7 @@ If you skip trust, spawn still works. You lose the tape line and the Stop guard.
 
 | Symptom | What to check |
 |---|---|
-| `promptobus help` has no `install` | The installer is not in this CLI yet. Do not hand-copy hook JSON from another machine. Wait for the command or call `planPromptobusHooks` from `promptobus/hooks` in your own installer. |
+| `promptobus help` has no `install` | This binary was built before the hook installer merged. Do not hand-copy hook JSON. Use the `install` command from a build that lists it in help. |
 | `--harness X` refused | `X` is not in `promptobus.json` `tools`. Add it. Do not invent a `tools add` command — this CLI has none. |
 | MCP tools missing | The session has no `promptobus` stdio server, or `PROMPTOBUS_HOME` is wrong. Compare the path with `promptobus status`. |
 | Foreign mailbox header | You resolved another task. Pass `task` to the tool, or `promptobus_mailbox` with `claim: true` if this is your task and a new session. |

@@ -51,6 +51,8 @@ npm install promptobus
 
 `tools` — harness'ы, которые это место может поднимать. `--harness` должен назвать один из них. Без флага spawn и review берут `claude` (`lib/drivers.js`).
 
+`promptobus install` пишет в тот же файл поле `harnesses`: последний установленный список hooks. Это не список для spawn.
+
 Необязательные ключи, которые читает standalone host: `commandName`, `locale`, `version`. Ещё `rules` (дополнительные файлы правил), `mcp` (серверы участника), `skills` (каталог скиллов процесса).
 
 ## Как подключить MCP-сервер
@@ -117,6 +119,8 @@ promptobus review ./my-repo --title "Review the change"
 | `promptobus guard` | Сторож цикла для Stop-хука. Код 2 возвращает ход |
 | `promptobus warden` | Слушатель задачи. Любая команда шины поднимает его. `PROMPTOBUS_WARDEN=off` гасит автоподъём |
 | `promptobus mcp` | MCP-сервер на stdio |
+| `promptobus install` | Записать project-level hooks (`--harnesses`, `--check`, `--dry-run`) |
+| `promptobus uninstall` | Снять только свои project-level hooks |
 
 `promptobus help` и `promptobus --version` работают без файла host.
 

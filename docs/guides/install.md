@@ -34,7 +34,9 @@ Create `promptobus.json` at the workspace root:
 }
 ```
 
-List only harnesses this workspace will spawn. `--harness` checks this list. The standalone host walks up from the current directory to find the file. The store is `.promptobus/` beside it.
+`tools` is the spawn allow-list. `--harness` checks this list (`lib/spawn.js`). The standalone host walks up from the current directory to find the file. The store is `.promptobus/` beside it.
+
+`promptobus install` writes a second field, `harnesses`: the last installed hook list. Do not invent that field by hand on the first install. Pass `--harnesses` instead.
 
 ## 3. MCP server for the orchestrator
 
@@ -70,24 +72,22 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 
 | Flag | Effect |
 |---|---|
-| `--harnesses <list>` | Comma-separated `claude`, `cursor`, `codex`. First install stores the choice in `promptobus.json`. A later call without the flag reuses that list. A new list replaces the old one and removes owned hooks of a dropped harness. |
+| `--harnesses <list>` | Comma-separated `claude`, `cursor`, `codex`. Required on the first install. Saved as `harnesses` in `promptobus.json`. A later call without the flag reuses that list. A new list replaces the old one and removes owned hooks of a dropped harness. |
 | `--dry-run` | Print the plan. Write nothing. |
-| `--check` | Report drift. Exit non-zero if project files no longer match. Do not repair. |
-| `uninstall` | Remove owned Promptobus records only. Foreign groups and unknown fields stay. |
+| `--check` | Report drift. Exit 1 if project files no longer match. Do not repair. On a clean tree prints `configured` and exits 0. |
+| `uninstall` | Separate command. Removes owned Promptobus records only. `--check` is not supported. |
 
 `--harnesses` may name one harness or several. Install each alone or all together.
-
-The first install saves the harness list in `promptobus.json`. Later calls without `--harnesses` read it from there.
 
 ### What the installer writes
 
 | Harness | Project file | Bus feedback | Loop guard |
 |---|---|---|---|
-| Claude Code | `.claude/settings.json` | `PostToolUse` on `promptobus_send` / `promptobus_mailbox` | `Stop` |
-| Cursor | `.cursor/hooks.json` | `postToolUse` with `additional_context` | `stop` |
-| Codex | `.codex/hooks.json` | `PostToolUse` with `systemMessage` | `Stop` |
+| Claude Code | `.claude/settings.json` | `PostToolUse` matcher on `promptobus_send` / `promptobus_mailbox`; runner field `systemMessage` | `Stop` and `SessionStart` |
+| Cursor | `.cursor/hooks.json` (`version` 1) | `postToolUse` with `--output additional_context` | `stop` |
+| Codex | `.codex/hooks.json` | `PostToolUse`; runner field `systemMessage` | `Stop` and `SessionStart` |
 
-The runner script is generated under `.promptobus/hooks/` (`src/standalone.ts` `busHookRel()`). Cleanup of a run must keep that directory.
+The runner script is generated under `.promptobus/hooks/` (`busHookRel()`). Ownership ids are stored in `.promptobus/manifest.json` (`installManifestRel()`). Cleanup of a run must keep `.promptobus/hooks/`.
 
 Merge keeps foreign hook groups, foreign settings, and unknown fields. Promptobus recognises its own records by a stable command and matcher. `uninstall` removes only those records.
 
@@ -100,8 +100,12 @@ A malformed or shared config file fails the command. The installer does not writ
 
 ### After install
 
-The CLI reports `configured` and prints what to verify. Then trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).
+The CLI prints `configured` and then:
 
-## What this guide does not claim
+```text
+Review: Codex requires /hooks; project hooks also depend on workspace trust.
+```
 
-`promptobus install` / `uninstall` are the documented command form. Confirm they are present in the CLI you are running (`promptobus help`). This tree's help lists `spawn, review, status, done, dismiss, history, prune, guard, warden, mcp` until the installer lands.
+Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).
+
+This worktree's `promptobus help` does not yet list `install`. The command form above is the public installer. It lands with the hook track. After merge, `promptobus help` must show `install` and `uninstall`.

@@ -51,6 +51,8 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 
 `tools` lists harnesses this workspace may spawn. `--harness` must name one of them. Without the flag, spawn and review use `claude` (`lib/drivers.js`).
 
+`promptobus install` writes `harnesses` in the same file: the last installed hook list. That field is not the spawn allow-list.
+
 Optional keys the standalone host reads: `commandName`, `locale`, `version`, `rules` (extra rule files), `mcp` (servers copied to a participant), `skills` (directory of process skills).
 
 ## Add the MCP server
@@ -117,6 +119,8 @@ The path is required. `--title` is required to open a new review task. Repeat wi
 | `promptobus guard` | Loop guard for the Stop hook. Exit 2 returns the turn |
 | `promptobus warden` | Task listener. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start |
 | `promptobus mcp` | MCP stdio server |
+| `promptobus install` | Write project-level hooks (`--harnesses`, `--check`, `--dry-run`) |
+| `promptobus uninstall` | Remove owned project-level hooks |
 
 `promptobus help` and `promptobus --version` work without a host file.
 

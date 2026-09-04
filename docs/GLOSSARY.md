@@ -25,6 +25,7 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | worktree | worktree | Isolated git checkout a worker edits. The main tree stays untouched. | `lib/worktree.js` |
 | legacy layout | legacy layout | Former store location the host may declare. `null` means there is nothing to migrate. | `src/host.ts` (`legacyLayout`) |
 | hook | hook | Project-level harness callback for bus feedback and the loop guard. | `src/hooks.ts` |
+| harnesses field | harnesses | Array in `promptobus.json` written by `promptobus install`: the last installed hook list. Not the same as `tools`. | [guides/install.md](guides/install.md) |
 | claim | claim | Take ownership of the orchestrator mailbox after the previous session dies. | `src/mcp/tools.ts` (`claim`) |
 | store | store | On-disk home of tasks, usually `<workspace>/.promptobus`. | `src/v1/layout.ts` (`ROOT_DIR`) |
 
