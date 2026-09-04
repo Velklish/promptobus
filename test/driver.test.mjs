@@ -15,8 +15,8 @@ import test from 'node:test';
 
 const bus = await import('../dist/index.js');
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а (ADR-032,
-// §6): здесь adapter'а нет, и его играет набор. Правило «worker'у нельзя писать worker'у»
+// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
+// adapter'а нет, и его играет набор. Правило «worker'у нельзя писать worker'у»
 // живёт у потребителя и проверяется там.
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-driver-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
@@ -72,7 +72,7 @@ function fakeDriver(id, {
   const calls = { spawn: [], attach: [], inspect: [], activate: [], stop: [] };
   const d = {
     id,
-    // Свойства harness'а (ADR-034) объявляются ОТДЕЛЬНО от операций и по умолчанию их нет
+    // Свойства harness'а объявляются ОТДЕЛЬНО от операций и по умолчанию их нет
     // вовсе: driver прежней редакции контракта их не знает, и читаться он обязан как
     // «не умеет», а не как «наверное, умеет».
     capabilities: { spawn, attach, activation, inspect, stop, ...(features ?? {}) },
@@ -153,7 +153,7 @@ test('capability спрашивается и как объявление, и к�
   assert.match(thrown(() => bus.requireCapability(lying, 'stop')).msg, /объявил stop, но операции/);
 });
 
-// --- свойства harness'а: флаги без своей операции (ADR-034) -------------------
+// --- свойства harness'а: флаги без своей операции -------------------
 
 test('свойство harness\'а спрашивается флагом, а не наличием операции', () => {
   const full = fakeDriver('fake', {
@@ -263,8 +263,8 @@ test('stop гасит только managed: attached отказывает реж
   const registry = bus.createRegistry({ drivers: { fake: driver } });
   const managed = rec('worker:a', { harness: 'fake', mode: 'managed', sessionRef: 'sess-a' });
   const attached = rec('worker:b', { harness: 'fake', mode: 'attached', sessionRef: 'sess-b' });
-  // Исход гашения `await`'ится: driver вправе дождаться, пока сессии у harness'а не станет
-  //, и синхронное чтение поля прошло бы мимо обещания.
+  // Исход гашения `await`'ится: driver вправе дождаться, пока сессии у harness'а не станет,
+  // и синхронное чтение поля прошло бы мимо обещания.
   assert.equal((await bus.stopParticipant(managed, registry)).ok, true);
   assert.deepEqual(driver.calls.stop, ['sess-a']);
   const refused = await rejected(() => bus.stopParticipant(attached, registry));
@@ -382,7 +382,7 @@ test('driver без inspect — тоже неизвестность: живую 
   });
 });
 
-// --- доклад о стопе несёт harness записи (ADR-034) ----------------------------
+// --- доклад о стопе несёт harness записи ----------------------------
 //
 // Маршрут по стопу — команда КОНКРЕТНОГО harness'а, и спрашивать её надо у того driver'а,
 // который состояние и разобрал. Снимок к этому моменту уже собран, registry в разбор не
