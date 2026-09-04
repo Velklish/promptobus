@@ -22,7 +22,7 @@ function fakeHost(commandName, version = '0.0.0') {
   };
 }
 
-test('runPromptobus принимает два разных host в одном процессе', async () => {
+test('runPromptobus accepts two different hosts in one process', async () => {
   const a = collect();
   const b = collect();
   const hostA = fakeHost('alpha', '1.2.3');
@@ -37,15 +37,15 @@ test('runPromptobus принимает два разных host в одном п
 
   assert.equal(codeA, 0);
   assert.equal(codeB, 0);
-  assert.match(a.text(), /Использование: alpha /);
-  assert.doesNotMatch(a.text(), /Использование: beta /);
+  assert.match(a.text(), /Usage: alpha /);
+  assert.doesNotMatch(a.text(), /Usage: beta /);
   assert.equal(b.text().trim(), 'beta 9.9.9');
   assert.doesNotMatch(b.text(), /alpha/);
 });
 
-test('helpText берёт имя команды у host, не литералом', () => {
+test('helpText takes the command name from the host, not a literal', () => {
   const text = helpText(fakeHost('gamma'));
-  assert.match(text, /Использование: gamma /);
+  assert.match(text, /Usage: gamma /);
   assert.match(text, /gamma spawn /);
   const banned = ['ati', 'agents'].join('-');
   assert.equal(text.includes(banned), false);
