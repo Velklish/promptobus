@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install and check tmux
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y tmux
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            brew list tmux >/dev/null 2>&1 || brew install tmux
+          fi
+          tmux -V
+
+      - name: Install dependencies
+        run: npm ci
+
+      # No compile/build step yet: this package has no source tree and no
+      # TypeScript/bundler config. Implementation arrives in follow-up work.
+      # Do not add a silent no-op "build" that hides the missing compile.
+
+      - name: Test
+        run: npm test
+
+      - name: Pack dry-run
+        run: npm pack --dry-run
+
+      - name: backslop lint
+        run: npm run lint:backslop
+
+      # Live harness runs are never started in CI: they spend account limits
+      # and write into the home directory. When a harness exists, keep it
+      # local-only; do not add a workflow step that invokes it.

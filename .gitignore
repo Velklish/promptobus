@@ -1,3 +1,13 @@
 node_modules/
 dist/
 .promptobus/
+*.tgz
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Session-local agent surfaces — not part of the published tree.
+.cursor/
+.agents/

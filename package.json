@@ -1,0 +1,19 @@
+{
+  "name": "promptobus",
+  "version": "0.1.0",
+  "description": "Local mailbox and task bus for agent sessions.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "README.ru.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint:backslop": "npx --yes github:Velklish/backslop#v0.2.0 lint"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

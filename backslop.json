@@ -1,0 +1,9 @@
+{
+  "prefix": "PB",
+  "docs": "docs",
+  "cli": "npx github:Velklish/backslop#v0.2.0",
+  "gates": [
+    "npx github:Velklish/backslop#v0.2.0 lint"
+  ],
+  "version": "0.2.0"
+}
