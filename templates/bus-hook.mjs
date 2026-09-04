@@ -196,4 +196,11 @@ try {
 } catch {
   line = '';
 }
-if (line) process.stdout.write(JSON.stringify({ systemMessage: line }) + '\n');
+// Default field is Claude/Codex `systemMessage`. Cursor project hooks read
+// `additional_context`; the install command passes `--output <field>`.
+function outputField() {
+  const at = process.argv.indexOf('--output');
+  const name = at >= 0 ? String(process.argv[at + 1] ?? '') : '';
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : 'systemMessage';
+}
+if (line) process.stdout.write(JSON.stringify({ [outputField()]: line }) + '\n');
