@@ -1,0 +1,11 @@
+2026-08-31T09:42:30.000Z надзиратель поднят · pid 424242 · CLI 0.61.0
+2026-08-31T09:43:00.000Z notification orchestrator: непрочитанных 2, стук 1
+2026-08-31T09:43:00.000Z notification worker:demo: непрочитанных 1, стук 1
+2026-08-31T09:43:00.000Z notification reviewer:demo: непрочитанных 1, стук 1
+2026-08-31T09:46:00.000Z notification orchestrator: непрочитанных 3, стук 2
+2026-08-31T09:46:00.000Z notification worker:demo: непрочитанных 1, стук 2
+2026-08-31T09:46:00.000Z доставлено reviewer:demo: mailbox забран (лежало 1, стуков 1)
+2026-08-31T10:01:00.000Z notification orchestrator: непрочитанных 1, стук 3
+2026-08-31T10:01:00.000Z МОЛЧИТ orchestrator: mailbox не забран 18 мин, непрочитанных 1, канал socket
+2026-08-31T10:01:00.000Z откат на self-wake worker:demo: сокет не принял notification (ENOENT)
+2026-08-31T10:01:00.000Z МОЛЧИТ worker:demo: mailbox не забран 18 мин, непрочитанных 3, канал self-wake

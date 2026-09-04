@@ -1,0 +1,9 @@
+{
+  "id": "20260831T090500000-0003-orchestrator",
+  "task": "t20260831-090000",
+  "from": "orchestrator",
+  "to": "worker:demo",
+  "type": "task",
+  "ts": "2026-08-31T09:05:00.000Z",
+  "body": "демо-бриф активной задачи"
+}

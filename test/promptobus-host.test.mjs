@@ -1,0 +1,110 @@
+// Standalone host through the CLI adapter: two hosts in one process, liftHarness, sessionEnv.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { check } from './check.mjs';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const { hostOf, isPromptobusHost } = await import(path.join(here, '..', 'lib', 'host.js'));
+const { createStandaloneHost, HOST_KIND } = await import(path.join(here, '..', 'dist', 'host-index.js'));
+const { liftHarness, memoryRule, sessionEnv, sessionEnvNote } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { renderBusHook, planPromptobusHooks } = await import(path.join(here, '..', 'dist', 'hooks.js'));
+const { promptobusHome: storeHome } = await import(path.join(here, '..', 'lib', 'store.js'));
+
+const thrown = (fn) => {
+  try { fn(); return { threw: false, msg: '' }; }
+  catch (e) { return { threw: true, msg: String(e.message ?? e) }; }
+};
+
+const a = makeSandbox('promptobus-host-a-');
+const b = makeSandbox('promptobus-host-b-');
+writeHostConfig(a, { tools: ['claude', 'cursor'] });
+writeHostConfig(b, { tools: ['claude'] });
+
+const hostA = createStandaloneHost({
+  cwd: a, commandName: 'alpha', extraEnv: { MARK: 'a' }, binPath: '/bin/alpha',
+});
+const hostB = createStandaloneHost({
+  cwd: b, commandName: 'beta', extraEnv: { MARK: 'b' }, binPath: '/bin/beta',
+});
+
+check('two standalone hosts in one process are different objects with different roots',
+  hostA !== hostB && hostA.workspaceRoot() === a && hostB.workspaceRoot() === b
+  && hostA.kind === HOST_KIND && isPromptobusHost(hostA) && isPromptobusHost(hostB),
+  `${hostA.workspaceRoot()} / ${hostB.workspaceRoot()}`);
+
+check('hosts declare tools independently: cursor lifts only on the first',
+  liftHarness(hostA, 'cursor').id === 'cursor'
+  && thrown(() => liftHarness(hostB, 'cursor')).threw,
+  thrown(() => liftHarness(hostB, 'cursor')).msg);
+
+check('sessionEnvNote reads extraEnv of the host that was passed',
+  hostA.extraEnv().MARK === 'a' && hostB.extraEnv().MARK === 'b'
+  && sessionEnvNote({ options: { envDrop: ['X'] } }, hostA).includes('MARK=a')
+  && sessionEnvNote({ options: { envDrop: ['X'] } }, hostB).includes('MARK=b')
+  && !sessionEnvNote({ options: { envDrop: ['X'] } }, hostA).includes('MARK=b'),
+  sessionEnvNote({ options: { envDrop: ['X'] } }, hostA));
+
+check('hostOf(string) builds a standalone host; hostOf(host) returns the same object',
+  hostOf(a).commandName === 'promptobus' && hostOf(hostA) === hostA
+  && hostOf(hostB) === hostB,
+  hostOf(a).id);
+
+const hookA = renderBusHook(hostA);
+const hookB = renderBusHook(hostB);
+check('bus hook substitutes host commandName, not a hardcoded name',
+  hookA.includes('Сгенерирован alpha sync') && hookB.includes('Сгенерирован beta sync'),
+  hookA.split('\n')[1]);
+
+const planned = planPromptobusHooks(hostA);
+check('hook plan writes the standalone bus-hook path',
+  planned.rel === path.join('.promptobus', 'hooks', 'bus.mjs')
+  && planned.text.includes('Сгенерирован alpha sync'),
+  planned.rel);
+
+const standaloneSrc = readFileSync(path.join(here, '..', 'src', 'standalone.ts'), 'utf8');
+const banned = ['ati', 'agents'].join('-');
+const forbidden = [banned, ['.', 'agents/'].join(''), 'ATI_', 'memory-hooks', 'gitlab.ati']
+  .filter((n) => standaloneSrc.includes(n));
+check('standalone host source does not contain a foreign workspace layout',
+  forbidden.length === 0, forbidden.join(', '));
+
+const fakeDriver = {
+  sessionEnv: (base, extra) => ({ ...base, ...extra }),
+  options: { envDrop: [] },
+  phrases: { tool: (server, name) => `${server}__${name}` },
+};
+check('memoryRule on a standalone host is empty',
+  memoryRule(fakeDriver, hostA) === '',
+  memoryRule(fakeDriver, hostA));
+const envA = sessionEnv(fakeDriver, { PATH: '/bin' }, hostA);
+const envB = sessionEnv(fakeDriver, { PATH: '/bin' }, hostB);
+check('sessionEnv takes extraEnv of the host that was passed',
+  envA.MARK === 'a' && envB.MARK === 'b', JSON.stringify({ a: envA.MARK, b: envB.MARK }));
+
+check('standalone host contract members that otherwise would have no call site',
+  hostA.locale === 'en'
+  && hostA.promptobusHome() === storeHome(a, hostA)
+  && hostA.toolsManifestRel() === 'promptobus.json'
+  && hostA.installManifestRel() === path.join('.promptobus', 'manifest.json')
+  && hostA.reposRoot() === a
+  && hostA.inWorkspace(a)
+  && !hostA.inWorkspace(b)
+  && hostA.cloneHint('x') === 'git clone <url> x'
+  && hostA.formatNpx(['clone', 'x']) === 'npx alpha clone x'
+  && hostA.legacyLayout() === null,
+  `${hostA.promptobusHome()} ${hostA.toolsManifestRel()}`);
+
+mkdirSync(path.join(a, 'skills'), { recursive: true });
+writeFileSync(path.join(a, 'promptobus.json'), `${JSON.stringify({
+  commandName: 'fromfile', tools: ['claude'], skills: 'skills', locale: 'ru', version: '9.9.9',
+})}\n`);
+const fromFile = createStandaloneHost({ cwd: a });
+check('createStandaloneHost reads promptobus.json from cwd',
+  fromFile.commandName === 'fromfile'
+  && fromFile.declaredTools().join(',') === 'claude'
+  && fromFile.skillsDir() === path.join(a, 'skills')
+  && fromFile.locale === 'ru'
+  && fromFile.version === '9.9.9',
+  `${fromFile.commandName} ${fromFile.declaredTools()}`);

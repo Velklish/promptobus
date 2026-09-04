@@ -1,0 +1,27 @@
+{
+  "id": "t20260830-140000",
+  "title": "демо: закрытая задача",
+  "slug": "stale",
+  "stamp": "t20260830-140000",
+  "created": "2026-08-30T14:00:00.000Z",
+  "status": "done",
+  "participants": [
+    {
+      "address": "orchestrator",
+      "owner": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "address": "worker:stale",
+      "repo": "demo-group/demo-lib",
+      "repoAbs": "/workspace/repos/demo-group/demo-lib",
+      "worktree": "/workspace/repos/demo-group/demo-lib/.claude/worktrees/worktree-demo-stale",
+      "branch": "worktree-demo-stale",
+      "model": "sonnet",
+      "name": "demo-stale",
+      "worktreeName": "worktree-demo-stale",
+      "session": "00000000-0000-4000-8000-00000000000a",
+      "started": "2026-08-30T14:00:10.000Z"
+    }
+  ],
+  "closed": "2026-08-30T15:35:00.000Z"
+}

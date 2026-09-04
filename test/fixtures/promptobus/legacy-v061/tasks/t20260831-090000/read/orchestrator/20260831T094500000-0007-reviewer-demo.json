@@ -1,0 +1,9 @@
+{
+  "id": "20260831T094500000-0007-reviewer-demo",
+  "task": "t20260831-090000",
+  "from": "reviewer:demo",
+  "to": "orchestrator",
+  "type": "review",
+  "ts": "2026-08-31T09:45:00.000Z",
+  "body": "демо-замечания ревью"
+}
