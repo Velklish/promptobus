@@ -430,7 +430,7 @@ function racers(n, body) {
 
 test('доклад о переезде печатает тот, кто переехал, — и только он', async (t) => {
   // Печатает его adapter, а не package: он же и молчит, когда переносить было нечего.
-  // Без этой ветки проигравший рапортовал бы «задач 0, сообщений 0, прежний каталог снят»
+  // Без этой ветки проигравший рапортовал бы «0 tasks, 0 messages, former directory»
   // на рабочем месте, где сосед перенёс всё, — врала бы ровно та строка, которая обещана
   // пользователю как доклад числами.
   const { root, home } = workspace();
@@ -441,14 +441,14 @@ test('доклад о переезде печатает тот, кто пере�
     assert.deepEqual(runs.map((r) => r.code), [0, 0], JSON.stringify(runs));
   });
 
-  await t.test('строка «шина переехала» ровно одна — у того, кто переехал', () => {
-    const said = runs.filter((r) => r.err.includes('шина переехала'));
+  await t.test('строка "the bus moved" ровно одна — у того, кто переехал', () => {
+    const said = runs.filter((r) => r.err.includes('the bus moved'));
     assert.equal(said.length, 1, runs.map((r) => `«${r.err}»`).join(' | '));
-    assert.match(said[0].err, new RegExp(`задач ${before}`), said[0].err);
+    assert.match(said[0].err, new RegExp(`${before} tasks`), said[0].err);
   });
 
   await t.test('второй молчит вовсе — пустого доклада не бывает', () => {
-    const quiet = runs.filter((r) => !r.err.includes('шина переехала'));
+    const quiet = runs.filter((r) => !r.err.includes('the bus moved'));
     assert.equal(quiet.length, 1);
     assert.equal(quiet[0].err, '', `«${quiet[0].err}»`);
   });
@@ -485,7 +485,7 @@ test('два процесса переезжают одновременно — 
 
   await t.test('проигравший говорит «ничего не делал», а не пустой перенос', () => {
     // Без этого поля пустой отчёт неотличим от удавшегося переноса, и доклад числами
-    // сказал бы «задач 0, сообщений 0, прежний каталог снят» на месте, где сосед перенёс всё.
+    // сказал бы «0 tasks, 0 messages, former directory» на месте, где сосед перенёс всё.
     const said = runs.map((r) => JSON.parse(r.out));
     assert.deepEqual(said.map((r) => r.moved).sort(), [false, true], JSON.stringify(said));
     assert.equal(said.find((r) => !r.moved).tasks, 0);

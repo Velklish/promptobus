@@ -60,7 +60,7 @@ const invalid = thrown(() => store.upsertParticipant(home, task.id,
   store.participantRecord('worker:Плохой Адрес', { repo: 'ns/repo' })));
 
 check(': запись участника отвергает негодный адрес через GateError',
-  invalid.name === 'GateError' && /недопустимый адрес участника/.test(invalid.msg),
+  invalid.name === 'GateError' && /invalid participant address/.test(invalid.msg),
   `${invalid.name} · ${invalid.msg}`);
 
 check(': отказ произошёл до записи — участники задачи не изменились',
@@ -105,8 +105,8 @@ const bad = (patch) => thrown(() => store.sendMessage(home, task.id, {
 }));
 
 check('валидация: чужой тип сообщения отвергнут', bad({ type: 'gossip' }).threw
-  && /протокол/i.test(bad({ type: 'gossip' }).msg));
-check('валидация: неизвестный адрес получателя отвергнут', bad({ to: 'somebody' }).threw);
+  && /protocol/i.test(bad({ type: 'gossip' }).msg));
+check('валидация: unknown recipient address отвергнут', bad({ to: 'somebody' }).threw);
 check('валидация: пустой body отвергнут', bad({ body: '   ' }).threw);
 
 const rejectedType = store.MESSAGE_TYPES.filter((t) => thrown(() => store.sendMessage(home, task.id, {
@@ -125,10 +125,10 @@ const between = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'worker:b', type: 'status', body: 'мимо оркестратора',
 }));
 check('policy ATI: worker worker\'у не пишет — отказ, а не тихая доставка',
-  between.threw && /между собой не переписываются/.test(between.msg), `${between.threw} · ${between.msg}`);
+  between.threw && /do not write to each other/.test(between.msg), `${between.threw} · ${between.msg}`);
 
-check('policy ATI: отказ называет маршрут — через оркестратора',
-  /через оркестратора/.test(between.msg) && /перешли это ему/.test(between.msg), between.msg);
+check('policy ATI: отказ называет маршрут — through the orchestrator',
+  /through the orchestrator/.test(between.msg) && /pass this to them/.test(between.msg), between.msg);
 
 // Отказ не имеет права оставить в задаче ни байта: ни ссылки в mailbox'е получателя, ни
 // записи отправителя. Порядок тот же, что у engine, — policy спрашивается ДО side effect.
@@ -151,7 +151,7 @@ const workerToReviewer = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'reviewer:a', type: 'question', body: 'напрямую ревьюеру',
 }));
 check('policy ATI: worker и reviewer между собой тоже не переписываются',
-  workerToReviewer.threw && /между собой не переписываются/.test(workerToReviewer.msg),
+  workerToReviewer.threw && /do not write to each other/.test(workerToReviewer.msg),
   workerToReviewer.msg);
 
 // --- доставка адресами --------------------------------------------------------

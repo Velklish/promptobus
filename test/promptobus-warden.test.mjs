@@ -201,7 +201,7 @@ const body = first.calls[0].body;
 check('тело инъекции называет задачу, адрес и число непрочитанных',
   body.includes(TASK) && body.includes('worker:api') && /непрочитанных: 1/.test(body), body);
 check(`: короткое сообщение едет в postcard'е текстом`,
-  body.includes('бриф') && /task от orchestrator/.test(body), body);
+  body.includes('бриф') && /task from orchestrator/.test(body), body);
 check(': postcard всё равно ведёт в inbox — прочитанным делает он',
   body.includes('mailbox') && /истина остаётся в mailbox'е|прочитанными.*делает только mailbox/.test(body), body);
 check('тело инъекции опирается на правила шины и отказывается от эскалации прав',
@@ -402,10 +402,10 @@ check('promptobus status печатает смерть надзирателя', 
 const deadOrch = health().orchestrator ?? {};
 check('promptobus status при ENOENT оркестратора называет мёртвого владельца и claim, не self-wake',
   out.includes(orchestratorDeadLine(SESSION, deadOrch.triedAt ?? deadOrch.since))
-  && /МОЛЧИТ/.test(out)
-  && !/будильник: self-wake \(причина: ENOENT\)/.test(out),
+  && /SILENT/.test(out)
+  && !/alarm: self-wake \(reason: ENOENT\)/.test(out),
   out);
-check('promptobus status печатает хвост журнала надзирателя', /журнал надзирателя/.test(out), out);
+check('promptobus status печатает хвост warden journal', /warden journal/.test(out), out);
 
 // --- : что несёт postcard -----------------------------------------------
 
@@ -417,30 +417,30 @@ const withArt = { type: 'artifact', from: 'worker:api', ts: 'T3', body: 'диф�
 
 const one = orderBody(TASK, 'orchestrator', 1, [short]);
 check(': короткое сообщение уезжает текстом целиком',
-  one.includes('да, делай') && one.includes('answer от orchestrator'), one);
+  one.includes('да, делай') && one.includes('answer from orchestrator'), one);
 
 const big = orderBody(TASK, 'orchestrator', 1, [long]);
 check(': длинное сообщение уезжает счётчиком со своим размером, а не обрывком',
-  !big.includes('ыыы') && big.includes(`текст ${KNOCK_TEXT_MAX + 1} знаков`), big);
+  !big.includes('ыыы') && big.includes(`text ${KNOCK_TEXT_MAX + 1} characters`), big);
 
 const art = orderBody(TASK, 'orchestrator', 1, [withArt]);
 check(': сообщение с артефактом уезжает счётчиком, каким бы коротким ни было',
-  !art.includes('дифф') && art.includes('артефакт diff.patch'), art);
+  !art.includes('дифф') && art.includes('artifact diff.patch'), art);
 
 // Бюджет тратится по порядку прихода: первым уезжает то, что пришло первым. Съевшее
 // почти весь бюджет сообщение не оставляет места соседу — тот уходит счётчиком или в
 // хвост, но молча не пропадает.
-const half = { type: 'status', from: 'worker:api', ts: 'T4', body: 'я'.repeat(KNOCK_TEXT_MAX - 60) };
+const half = { type: 'status', from: 'worker:api', ts: 'T4', body: 'я'.repeat(KNOCK_TEXT_MAX - 80) };
 const pack = orderBody(TASK, 'orchestrator', 2, [half, short]);
 check(': бюджет общий на postcard — первое влезло целиком, второе уже нет',
   pack.includes(half.body) && !pack.includes('да, делай'), pack.slice(0, 400));
 check(': не поместившееся названо, а не проглочено',
-  /— и ещё 1: забери mailbox|текст 9 знаков/.test(pack), pack.slice(-300));
+  /— and 1 more: fetch the mailbox|text 9 characters/.test(pack), pack.slice(-300));
 check(': postcard не разрастается сверх бюджета плюс своя рамка',
   pack.length < KNOCK_TEXT_MAX * 2, String(pack.length));
 
 // Бюджет держит ВЕСЬ блок выжимок, а не сумму тел (замечание ревью): у каждой строки есть
-// заголовок «тип от адреса · время», и полсотни непрочитанных давали бы postcard в
+// заголовок «type from address · time», и полсотни непрочитанных давали бы postcard в
 // килобайты при формально соблюдённом бюджете. Не поместившееся считается хвостом —
 // обрывать пакет молча нельзя.
 const pack50 = Array.from({ length: 50 }, (_, i) => (
@@ -456,14 +456,14 @@ check(': пакет из полусотни укладывается в бюдж
 check(': бюджет тратится, а не простаивает — пакет занял его почти весь',
   packed.length - frame > KNOCK_TEXT_MAX - 100, String(packed.length - frame));
 check(': не поместившееся названо хвостом, а не проглочено',
-  /— и ещё \d+: забери mailbox/.test(packed), packed.slice(-300));
+  /— and \d+ more: fetch the mailbox/.test(packed), packed.slice(-300));
 // Заголовки идут в бюджет наравне с телами: пакет коротких строк, где тела почти ничего не
 // весят, всё равно упирается в предел и даёт хвост.
 const tiny = Array.from({ length: 60 }, (_, i) => (
   { type: 'status', from: 'worker:very-long-address-here', ts: `2026-08-30T00:00:${i}`, body: 'ок' }));
 const tinyCard = orderBody(TASK, 'orchestrator', 60, tiny);
 check(': заголовки считаются в бюджет — на коротких телах хвост всё равно есть',
-  /— и ещё \d+: забери mailbox/.test(tinyCard), tinyCard.slice(-200));
+  /— and \d+ more: fetch the mailbox/.test(tinyCard), tinyCard.slice(-200));
 // Худший случай для бюджета — не длинные тела, а МНОГО коротких строк: там больше всего
 // разделителей, и там же тесней всего место под хвост. Мутации, снявшие любой из этих двух
 // расходов, на длинном пакете оставались зелёными и ловятся только здесь.
@@ -531,7 +531,7 @@ store.clearWarden(HOME, TASK);
 wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN_TRACE: TRACE }, launch, host: HOST });
 const trace1 = traceLines();
 check(': автоподъём оставляет след с задачей и pid',
-  trace1.length === 1 && trace1[0].includes(`задача ${TASK}`) && trace1[0].includes('pid 4242'),
+  trace1.length === 1 && trace1[0].includes(`task ${TASK}`) && trace1[0].includes('pid 4242'),
   JSON.stringify(trace1));
 
 wdn.ensureWarden(HOME, TASK, { env: { PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_WARDEN_TRACE: TRACE }, launch, host: HOST });
@@ -656,7 +656,7 @@ store.upsertParticipant(HOME, LOST, store.participantRecord('worker:api', { name
 knocks.length = 0;
 const rl1 = await wdn.reportStalls(HOME, LOST, { sessions: snap(LOST, BLOCKED) });
 check(': без contact point стоп всё равно пишется, стука нет',
-  knocks.length === 0 && rl1.length === 1 && /worker:api встал: permission prompt/.test(rl1[0]),
+  knocks.length === 0 && rl1.length === 1 && /worker:api stalled: permission prompt/.test(rl1[0]),
   `${knocks.length} · ${JSON.stringify(rl1)}`);
 const rl2 = await wdn.reportStalls(HOME, LOST, { sessions: snap(LOST, BLOCKED) });
 check(': повтор без сокета стука тоже не даёт',
@@ -670,7 +670,7 @@ knocks.length = 0;
 const rsAgain = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
 await settle();
 check(': участник отвис и встал снова — новая запись в журнале, стука нет',
-  knocks.length === 0 && rsAgain.length === 1 && /worker:api встал: permission prompt/.test(rsAgain[0]),
+  knocks.length === 0 && rsAgain.length === 1 && /worker:api stalled: permission prompt/.test(rsAgain[0]),
   `${knocks.length} · ${JSON.stringify(rsAgain)}`);
 
 const later = (n) => Date.now() + n * (wdn.KNOCK_RETRY_SEC * 1000 + 1000);
@@ -705,7 +705,7 @@ store.upsertParticipant(HOME, NOWAKE, store.participantRecord('orchestrator', { 
 store.upsertParticipant(HOME, NOWAKE, store.participantRecord('worker:api', { name: 'Worker: вставший' }));
 const rnw = await wdn.reportStalls(HOME, NOWAKE, { sessions: snap(NOWAKE, BLOCKED) });
 check(': оркестратор не сдал сокет — стоп всё равно в журнале, стука нет',
-  rnw.length === 1 && /worker:api встал: permission prompt/.test(rnw[0]), JSON.stringify(rnw));
+  rnw.length === 1 && /worker:api stalled: permission prompt/.test(rnw[0]), JSON.stringify(rnw));
 
 await new Promise((res) => wserver.close(res));
 
@@ -801,16 +801,16 @@ store.createTask(HOME, { id: BUSY, title: 'занятое место', owner: SE
 store.claimWarden(HOME, BUSY, { cli: '0.45.0' });
 const busyOut = await capture(() => wdn.warden({ host: HOST, task: BUSY }, { PROMPTOBUS_HOME: HOME }, SB));
 check('место занято живым — процесс уходит, назвав держателя',
-  /уже работает/.test(busyOut) && busyOut.includes(String(process.pid))
-  && !store.tailWardenLog(HOME, BUSY, 20).some((l) => /надзиратель поднят/.test(l)),
+  /already running/.test(busyOut) && busyOut.includes(String(process.pid))
+  && !store.tailWardenLog(HOME, BUSY, 20).some((l) => /warden started/.test(l)),
   busyOut);
 
 // Задача закрылась — процесс кончается сам, первым же кругом, и снимает свою отметку.
 const closedOut = await capture(() => wdn.warden({ host: HOST, task: CLOSED }, { PROMPTOBUS_HOME: HOME }, SB));
 check('закрытая задача: процесс выходит с причиной и отметку за собой снимает',
-  /вышел: задача закрыта/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
+  /exited: задача закрыта/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
 check('причина выхода ушла и в журнал задачи',
-  store.tailWardenLog(HOME, CLOSED, 20).some((l) => /надзиратель вышел · задача закрыта/.test(l)),
+  store.tailWardenLog(HOME, CLOSED, 20).some((l) => /warden exited · задача закрыта/.test(l)),
   store.tailWardenLog(HOME, CLOSED, 20).join('\n'));
 
 // Цикл выходит по опустевшей задаче. Тридцати секунд удара сердца набор не
@@ -834,7 +834,7 @@ clearTimeout(shift);
 clearTimeout(guard);
 Date.now = realNow;
 check(': цикл выходит по опустевшей задаче, а не досиживает потолок',
-  /вышел: живых участников не осталось/.test(loopOut), loopOut);
+  /exited: живых участников не осталось/.test(loopOut), loopOut);
 check('отметка надзирателя снята на выходе', store.liveWarden(HOME, LOOP) === null);
 
 // --- : последний стоп задачи пишется в журнал на том же круге, что и выход ---------
@@ -877,10 +877,10 @@ Date.now = realNowLast;
 process.env.PATH = PATH_WAS;
 await new Promise((res) => setTimeout(res, 100));
 check(': цикл вышел по опустевшей задаче',
-  /вышел: живых участников не осталось/.test(lastOut), lastOut);
+  /exited: живых участников не осталось/.test(lastOut), lastOut);
 const lastLog = store.tailWardenLog(HOME, LAST, 40);
 check(': последний стоп в журнале тем же кругом — postcard нет',
-  lastCards.length === 0 && lastLog.some((l) => /worker:api ИСЧЕЗ/.test(l)),
+  lastCards.length === 0 && lastLog.some((l) => /worker:api GONE/.test(l)),
   `карточек ${lastCards.length} · ${lastLog.slice(-8).join(' | ')}`);
 await new Promise((res) => lserver.close(res));
 
@@ -894,10 +894,10 @@ store.sendMessage(HOME, FAIL, { from: 'orchestrator', to: 'worker:api', type: 't
 mkdirSync(store.healthFile(HOME, FAIL), { recursive: true });
 const failOut = await capture(() => wdn.warden({ host: HOST, task: FAIL }, { PROMPTOBUS_HOME: HOME }, SB));
 check(`круг присмотра отказал ${wdn.ROUND_FAIL_LIMIT} раза подряд — выход с причиной`,
-  new RegExp(`вышел: круг присмотра отказал ${wdn.ROUND_FAIL_LIMIT} раза подряд`).test(failOut), failOut);
+  new RegExp(`exited: watch round failed ${wdn.ROUND_FAIL_LIMIT} times in a row`).test(failOut), failOut);
 check('каждый отказ пронумерован в журнале надзирателя',
   store.tailWardenLog(HOME, FAIL, 20)
-    .filter((l) => new RegExp(`круг присмотра отказал \\(\\d/${wdn.ROUND_FAIL_LIMIT}\\)`).test(l))
+    .filter((l) => new RegExp(`watch round failed \\(\\d/${wdn.ROUND_FAIL_LIMIT}\\)`).test(l))
     .length === wdn.ROUND_FAIL_LIMIT,
   store.tailWardenLog(HOME, FAIL, 20).join('\n'));
 
@@ -1040,7 +1040,7 @@ check(': stalls.json не пишется поверх себя — новый ф
 // --- : за мёртвой записью никого нет, и это не стоп --------------------
 
 // Запись, пережившая свой демон, отличается от живой отсутствием `pid`, и признак
-// самокалибрующийся: объявлять по нему «числится» можно только там, где этот claude
+// самокалибрующийся: объявлять по нему «LISTED» можно только там, где этот claude
 // вообще печатает pid. Поэтому в списке рядом стоит живая запись с pid.
 const GHOST_NAME = `a2a-${DIAG}-ghost`;
 const ghostList = [
@@ -1090,18 +1090,18 @@ const stallSample = [{
 }];
 const sampleLine = stallLine(stallSample[0], DIAG);
 check(': строка вставшего собирается одной функцией — адрес, причина, маршрут',
-  sampleLine.startsWith('worker:api встал: permission prompt')
+  sampleLine.startsWith('worker:api stalled: permission prompt')
   && sampleLine.includes('claude attach abc123'), sampleLine);
 const staleLine = stallLine({ ...stallSample[0], kind: 'stale', reason: 'запись пережила свой демон' }, DIAG);
-check(': та же функция даёт «ЧИСЛИТСЯ» для пережившей демон записи',
-  staleLine.includes('ЧИСЛИТСЯ, но процесса за ней нет'), staleLine);
+check(': та же функция даёт «LISTED» для пережившей демон записи',
+  staleLine.includes('LISTED, but no process behind it'), staleLine);
 // Причина и слова вызывающего не должны повторять друг друга: до правки строка говорила
 // «процесса за ней нет» дважды подряд.
 check(': строка не заикается — про отсутствие процесса сказано один раз',
-  staleLine.split('процесса за ней нет').length - 1 === 1, staleLine);
+  staleLine.split('no process behind it').length - 1 === 1, staleLine);
 check(': хвост на живом стопе обещает возврат, на мёртвой записи — нет',
-  /пока стоп не снят/.test(stallTail(stallSample))
-  && !/пока стоп не снят/.test(stallTail([{ ...stallSample[0], kind: 'stale' }])), stallTail(stallSample));
+  /until the stall is cleared/.test(stallTail(stallSample))
+  && !/until the stall is cleared/.test(stallTail([{ ...stallSample[0], kind: 'stale' }])), stallTail(stallSample));
 // Общего совета на всех вставших нет: маршрут у каждого свой и стоит в его строке. Прежняя
 // общая строка звала снять сессию сразу после маршрута, который на лимите только что
 // сказал «человек не нужен», — и сливала два разных исхода обратно в один. `claude stop`
@@ -1181,11 +1181,11 @@ check(`: маршрут исчезнувшего reviewer'а — promptobus revi
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n')
     .includes(`promptobus review "/tmp/klon" --task ${DIAG}`),
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n'));
-check(': строка исчезнувшего — своя, не «встал» и не «числится»',
-  stallLine(goneSeen[0], DIAG).includes('ИСЧЕЗ: записи сессии в claude agents нет')
-  && !/встал|ЧИСЛИТСЯ/.test(stallLine(goneSeen[0], DIAG)), stallLine(goneSeen[0], DIAG));
+check(': строка исчезнувшего — своя, не «stalled» и не «LISTED»',
+  stallLine(goneSeen[0], DIAG).includes('GONE: записи сессии в claude agents нет')
+  && !/stalled|LISTED/.test(stallLine(goneSeen[0], DIAG)), stallLine(goneSeen[0], DIAG));
 check(': хвост на исчезнувшем возврата сообщений не обещает',
-  !/пока стоп не снят/.test(stallTail(goneSeen)), stallTail(goneSeen));
+  !/until the stall is cleared/.test(stallTail(goneSeen)), stallTail(goneSeen));
 
 // Часы, сдвинутые назад после spawn'а, делали свежую запись «из будущего», грейс-окно
 // снималось, и поднимающийся участник объявлялся призраком в ту же секунду, ради которой
@@ -1407,16 +1407,16 @@ store.upsertParticipant(HOME, CYCLE, asRecords([cycleP])[0]);
 // нет вовсе — печать и предикат судятся по одному входу, а не по двум разным.
 const cycleStatus = () => capture(() => status(SB, { task: CYCLE, sessions: snap(CYCLE, cycleSessions) }));
 const quietOut = cycleStatus();
-check(': `promptobus status` не печатает ВСТАЛА на конце хода после отправленного сообщения',
-  !/ВСТАЛА/.test(quietOut) && quietOut.includes('worker:api'), quietOut);
+check(': `promptobus status` не печатает STALLED на конце хода после отправленного сообщения',
+  !/STALLED/.test(quietOut) && quietOut.includes('worker:api'), quietOut);
 // Замечание ревью: `blocked` в этой ветке не признак жизни — после  это обычное
-// состояние участника между ходами, и прежняя строка «жива (blocked)» спорила сама с собой.
-check('замечание ревью: штатному концу хода даны свои слова, а не «жива (blocked)»',
-  /ход закончила, ждёт сообщения/.test(quietOut) && !/жива \(blocked\)/.test(quietOut), quietOut);
+// состояние участника между ходами, и прежняя строка «alive (blocked)» спорила сама с собой.
+check('замечание ревью: штатному концу хода даны свои слова, а не «alive (blocked)»',
+  /finished the turn, waiting for a message/.test(quietOut) && !/alive \(blocked\)/.test(quietOut), quietOut);
 store.writeHealth(HOME, CYCLE, { 'worker:api': { deliveredAt: afterMsg } });
 const stalledOut = cycleStatus();
-check(': молчаливый конец хода `promptobus status` по-прежнему называет ВСТАЛА',
-  /ВСТАЛА/.test(stalledOut), stalledOut);
+check(': молчаливый конец хода `promptobus status` по-прежнему называет STALLED',
+  /STALLED/.test(stalledOut), stalledOut);
 
 // --- : postcard короче, без повторов списка и без стука в занятую сессию --
 //
@@ -1662,7 +1662,7 @@ check(': доклада о стопе снятого нет, а о не снят
 const dOut = capture(() => status(SB, { task: DISMISSED, sessions: snap(DISMISSED, []) }));
 const dLine = dOut.split('\n').find((l) => l.includes('worker:api')) ?? '';
 check(': promptobus status печатает у снятого и снятие, и непрочитанное',
-  /СНЯТ С НАБЛЮДЕНИЯ/.test(dLine) && /непрочитано 1/.test(dLine), dLine || dOut);
+  /DISMISSED FROM WATCH/.test(dLine) && /unread 1/.test(dLine), dLine || dOut);
 
 // --- : status называет канал driver'а, не литерал socket -------------------
 //
@@ -1682,8 +1682,8 @@ store.writeHealth(HOME, CH_TASK, {
 });
 const injectOut = capture(() => status(SB, { task: CH_TASK, sessions: snap(CH_TASK, []) }));
 const injectLine = injectOut.split('\n').find((l) => l.includes('worker:cur')) ?? '';
-check(': promptobus status называет канал inject, а не сокет',
-  /будильник: inject сдан/.test(injectLine) && !/будильник: сокет сдан/.test(injectLine),
+check(': promptobus status называет канал inject, а не socket',
+  /alarm: inject handed over/.test(injectLine) && !/alarm: socket handed over/.test(injectLine),
   injectLine || injectOut);
 
 // --- : contact point, который держит чужая сессия -------------------------
@@ -1757,7 +1757,7 @@ check(': глухой участник попадает в доклад орке
   && takenStalled[0].reason.includes(ALIEN),
   JSON.stringify(takenStalled));
 check(': строка доклада зовёт его глухим и называет маршрут человеку',
-  /ГЛУХ/.test(stallLine(takenStalled[0], TAKEN)) && /claude attach/.test(stallLine(takenStalled[0], TAKEN)),
+  /DEAF/.test(stallLine(takenStalled[0], TAKEN)) && /claude attach/.test(stallLine(takenStalled[0], TAKEN)),
   stallLine(takenStalled[0], TAKEN));
 // Замечание ревью: у доклада то же окно регистрации, что у соседних веток. При повторном
 // подъёме запись участника несёт НОВЫЙ id сессии, а `wake/<адрес>.json` остаётся от прежней —
@@ -1813,8 +1813,8 @@ check(': отказ гейта записан в журнал надзирате
 // одному — перехваченный contact point канал доставки не звал.
 const takenOut = capture(() => status(SB, { task: TAKEN, sessions: snap(TAKEN, []) }));
 const takenLine = takenOut.split('\n').find((l) => l.includes('worker:api')) ?? '';
-check(': promptobus status печатает причину отката в строке будильника',
-  /будильник: self-wake \(причина: contact point держит сессия /.test(takenLine)
+check(': promptobus status печатает причину отката в строке alarm',
+  /alarm: self-wake \(reason: contact point держит сессия /.test(takenLine)
   && takenLine.includes(ALIEN), takenLine || takenOut);
 // Запись прежнего релиза полного id не несёт вовсе — там правилом остаётся префикс, иначе
 // участник, поднятый до этой задачи, остался бы без contact point'а навсегда.
@@ -1874,7 +1874,7 @@ check('преемник: после claim notification доходит на но�
 // «оркестратор всегда мёртв» на проверке ENOENT осталась бы зелёной.
 const liveOrch = capture(() => status(SB, { task: HEIR_TASK, sessions: snap(HEIR_TASK, []) }));
 check('преемник: живой сокет после claim status не зовёт владельца мёртвым',
-  /будильник: сокет сдан/.test(liveOrch) && !/мёртв с/.test(liveOrch),
+  /alarm: socket handed over/.test(liveOrch) && !/is dead since/.test(liveOrch),
   liveOrch);
 heirSrv.close();
 
@@ -1889,5 +1889,5 @@ store.writeHealth(HOME, CLAIM_EMPTY, {
 store.claimOwnership(HOME, CLAIM_EMPTY, NEW_ORCH);
 const emptyClaimOut = capture(() => status(SB, { task: CLAIM_EMPTY, sessions: snap(CLAIM_EMPTY, []) }));
 check('преемник: claim с пустым mailbox без стука status не зовёт владельца мёртвым',
-  !/мёртв с/.test(emptyClaimOut) && store.countInbox(HOME, CLAIM_EMPTY, 'orchestrator') === 0,
+  !/is dead since/.test(emptyClaimOut) && store.countInbox(HOME, CLAIM_EMPTY, 'orchestrator') === 0,
   emptyClaimOut);

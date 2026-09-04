@@ -82,13 +82,13 @@ writeFileSync(path.join(REPO, 'new.txt'), 'новый файл\n');
 
 const unnamed = expectThrow(() => planReview(WS, { target: REPO }));
 check('новая задача: без --title понятный отказ с названием флага',
-  unnamed.threw && /новую задачу/.test(unnamed.msg) && /--title/.test(unnamed.msg), unnamed.msg);
+  unnamed.threw && /opens a new task/.test(unnamed.msg) && /--title/.test(unnamed.msg), unnamed.msg);
 const blankTitle = expectThrow(() => planReview(WS, { target: REPO, title: '  ' }));
 check('новая задача: пустой --title тоже не считается именем',
   blankTitle.threw && /--title/.test(blankTitle.msg), blankTitle.msg);
 
 // Гейт имени не отнимает у команды самый дешёвый её ход: на чистом клоне ответ
-// «изменений нет — ревьюить нечего» стоит раньше любого требования имени, потому что
+// "no changes — nothing to review" стоит раньше любого требования имени, потому что
 // задача в этом случае не заводится вовсе (замечание ревью по ).
 const CLEAN = path.join(WS, 'repos', 'loads_search', 'clean-api');
 mkdirSync(CLEAN, { recursive: true });
@@ -105,12 +105,12 @@ try {
 } catch (e) {
   cleanThrew = e.message;
 }
-check('чистый клон без --title: отвечает «ревьюить нечего», а не требует имя',
-  !cleanThrew && /ревьюить нечего/.test(cleanOut) && !/--title/.test(cleanOut),
+check('чистый клон без --title: отвечает "no changes — nothing to review", а не требует имя',
+  !cleanThrew && /nothing to review/.test(cleanOut) && !/--title/.test(cleanOut),
   cleanThrew ?? cleanOut.slice(-400));
 
 // : имя, не переживающее транслитерацию (CJK, эмодзи, одна пунктуация), давало
-// отказ «имени у неё нет — назови её --title» на команду, где --title назван. Человек
+// отказ "it has no name" на команду, где --title назван. Человек
 // звал её снова тем же именем и получал тот же отказ. Имя названо — задача заводится,
 // id остаётся машинным штампом (его законная форма), а само имя не теряется.
 // Отказ ловим сами, тем же приёмом, что у чистого клона выше: гейт бросает из
@@ -118,13 +118,13 @@ check('чистый клон без --title: отвечает «ревьюить
 let cjk = null;
 let cjkErr = '';
 try { cjk = planReview(WS, { target: REPO, title: '日本語の作業' }); } catch (e) { cjkErr = e.message; }
-check(': имя без латиницы задачу не отменяет — отказа «имени нет» больше нет',
+check(': имя без латиницы задачу не отменяет — отказа "it has no name" больше нет',
   // Слага в журнале нет вовсе, а не `null`: пустых полей журнал не несёт.
   !!cjk && cjk.createNew?.title === '日本語の作業' && cjk.createNew.adapter.slug === undefined,
   cjkErr || JSON.stringify(cjk?.createNew));
 check(': id такой задачи — машинный штамп, и это сказано вслух, а не молча',
   !!cjk && /^t\d{8}-\d{6}$/.test(cjk.taskId)
-  && (cjk.warnings ?? []).some((w) => w.includes('日本語の作業') && /машинным штампом/.test(w)),
+  && (cjk.warnings ?? []).some((w) => w.includes('日本語の作業') && /machine stamp/.test(w)),
   cjkErr || `${cjk?.taskId} · ${(cjk?.warnings ?? []).join(' | ')}`);
 check(`: имя целиком уехало в имя сессии reviewer'а`,
   !!cjk && cjk.name.includes('日本語の作業'), cjkErr || String(cjk?.name));
@@ -174,30 +174,30 @@ const NOT_A_REPO = path.join(SB, 'ne-repozitorij');
 mkdirSync(NOT_A_REPO, { recursive: true });
 const notGit = planReview(WS, { target: NOT_A_REPO });
 check(': не-git цель — план возвращает отказ полем, а не убивает процесс',
-  notGit.refusal === `${NOT_A_REPO}: не git-репозиторий`, JSON.stringify(notGit.refusal ?? null));
+  notGit.refusal === `${NOT_A_REPO}: not a git repository`, JSON.stringify(notGit.refusal ?? null));
 check(': без пути команда отказывает, а не берёт текущий каталог',
-  noTarget.threw && /путь к репозиторию обязателен/.test(noTarget.msg)
-  && /Резолва по текущему каталогу у этой команды нет/.test(noTarget.msg), noTarget.msg);
+  noTarget.threw && /repository path is required/.test(noTarget.msg)
+  && /There is no resolve from the current directory/.test(noTarget.msg), noTarget.msg);
 // Названо должно быть именно «репозиторий»: cwdRepo отдаёт git-toplevel, и из
 // repos/<group>/<repo>/src человек прочитал бы про каталог, в котором не стоит.
 check(': отказ называет репозиторий текущего каталога и печатает готовую команду с ним',
-  noTarget.msg.includes('Репозиторий текущего каталога — repos/loads_search/cargos-api')
+  noTarget.msg.includes('The repository of the current directory is repos/loads_search/cargos-api')
   && noTarget.msg.includes(`promptobus review "${REPO}"`), noTarget.msg);
 check(': флаги вызова уезжают в подсказку — повтор стоит одного раза',
   noTargetFlags.threw
   && noTargetFlags.msg.includes(`promptobus review "${REPO}" --task нет-такой --title "моя работа" --dry-run`),
   noTargetFlags.msg);
 check(': --dry-run пути не отменяет — гейт стоит раньше плана',
-  noTargetDry.threw && /путь к репозиторию обязателен/.test(noTargetDry.msg), noTargetDry.msg);
+  noTargetDry.threw && /repository path is required/.test(noTargetDry.msg), noTargetDry.msg);
 check(': cwd в корне рабочего места — отказ без готовой команды (toplevel workspace)',
   outsideRepos.threw && /вне рабочего места/.test(outsideRepos.msg)
-  && !outsideRepos.msg.includes('повтори с ним'), outsideRepos.msg);
+  && !outsideRepos.msg.includes('repeat with it'), outsideRepos.msg);
 check(': клон на диске рабочего места — отказ называет путь и готовую команду',
-  shallowClone.threw && /путь к репозиторию обязателен/.test(shallowClone.msg)
-  && shallowClone.msg.includes('повтори с ним'), shallowClone.msg);
+  shallowClone.threw && /repository path is required/.test(shallowClone.msg)
+  && shallowClone.msg.includes('repeat with it'), shallowClone.msg);
 check(': каталог вне git — отказ без готовой команды',
-  notARepo.threw && /не в git-репозитории/.test(notARepo.msg)
-  && !notARepo.msg.includes('повтори с ним'), notARepo.msg);
+  notARepo.threw && /not in a git repository/.test(notARepo.msg)
+  && !notARepo.msg.includes('repeat with it'), notARepo.msg);
 const plan = planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api' });
 check(`план: адрес reviewer'а из имени репозитория`, plan.address === 'reviewer:cargos-api', plan.address);
 check('план: задача заводится с именем, которое дал человек',
@@ -248,27 +248,27 @@ check('промпт: standalone host не вписывает инструмен�
 // Edit/Write/NotebookEdit/Bash/WebFetch/WebSearch. Границу здесь держит промпт, и она
 // обязана быть в нём названа, а не подразумеваться (замечание ревью 2026-08-28).
 check('промпт: MCP внешних систем — только на чтение, границу держит сам reviewer',
-  plan.prompt.includes('только на чтение')
-  && /Не создавай, не меняй, не удаляй и не публикуй/.test(plan.prompt)
-  && plan.prompt.includes('пре-аппрувлено'));
+  plan.prompt.includes('read-only')
+  && /Do not create, change, delete or publish/.test(plan.prompt)
+  && plan.prompt.includes('pre-approved'));
 check('промпт: standalone host — секции памяти команд нет',
   !plan.prompt.includes('`search_facts`') && !plan.prompt.includes('`save_fact`'));
 // : ждать reviewer'у нечем и не надо — его будит надзиратель. Гейт парный
 // worker'скому (promptobus.test.mjs): промпт участника лежит в его контексте всегда, поэтому
 // уцелевшее там «wait» переживает любое правило, снятое где-то ещё.
 check(': промпт reviewer\'а ожидание заводить не велит — будильник в задаче один',
-  !/ожидан/i.test(plan.prompt) && !/\bwait\b/.test(plan.prompt)
-  && /слушает надзиратель/.test(plan.prompt), plan.prompt);
+  /nothing to wait with/.test(plan.prompt) && !/\bpromptobus wait\b/.test(plan.prompt)
+  && /listened to by the bus warden/.test(plan.prompt), plan.prompt);
 
 // : та же норма, что у worker'а, с поправкой на набор reviewer'а — фоновой команды
 // у него нет вовсе, объявляет он затянувшееся ревью.
 check(': промпт требует объявить затянувшуюся работу status\'ом со сроком',
-  /Работа затягивается дольше пары минут молчания/.test(plan.prompt) && /оценкой срока/.test(plan.prompt),
+  /Work stretches past a couple of minutes of silence/.test(plan.prompt) && /time estimate/.test(plan.prompt),
   plan.prompt);
 check('промпт: механические проверки объявлены недоступными; standalone процедура без скилла',
-  plan.prompt.includes('не прогонялись')
-  && /Замечаний нет — так и скажи/.test(plan.prompt)
-  && !plan.prompt.includes('только отчёт'));
+  plan.prompt.includes('were not run')
+  && /No findings/.test(plan.prompt)
+  && !plan.prompt.includes('report only'));
 check('промпт: правила — репозиторий (standalone: без модуля рабочего места)',
   plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes(['.', 'agents/base/rules'].join('')));
 check('read-only: deny перекрывает запись и исполнение',
@@ -281,7 +281,7 @@ check('read-only: deny перекрывает запись и исполнени
 const denyLess = denyToolsRefusal({ id: 'bezrukiy', capabilities: { denyTools: false } });
 check(': harness без denyTools ревью не поднимает — отказ называет harness и причину',
   typeof denyLess === 'string' && denyLess.includes('bezrukiy')
-  && /снимать инструменты/.test(denyLess) && /правил бы/.test(denyLess), String(denyLess));
+  && /cannot strip/.test(denyLess) && /would write/.test(denyLess), String(denyLess));
 check(': у driver\'а с объявленным denyTools отказа нет',
   denyToolsRefusal(plan.driver) === null, String(denyToolsRefusal(plan.driver)));
 // : имя файлов reviewer'а в `workers/` — тот же шов, которым их снимает уборка
@@ -335,7 +335,7 @@ const reviewAddDir = plan.argv.indexOf('--add-dir');
 // : дифф лежит в артефактах задачи — вне рабочей директории reviewer'а и вне
 // каталогов правил. По записанной в этом же файле модели доступа чтение оттуда требует
 // разрешения, за которым в bg-сессии некому ответить, а первое указание промпта — как
-// раз «прочитай дифф целиком».
+// раз "read it in full".
 check(': каталог диффа открыт --add-dir наравне с каталогами правил',
   plan.argv.includes(path.dirname(plan.diffPath))
   && plan.argv.indexOf(path.dirname(plan.diffPath)) > plan.argv.indexOf('--add-dir'),
@@ -365,7 +365,7 @@ check(': --permission-mode reviewer\'а уезжает в argv сессии',
   withMode.argv.slice(-6).join(' '));
 
 // План на `--effort high` считается один раз на три проверки: `review()` возвращает
-// тот же план, что `planReview()` (`dryRun` — вход отказа «путь обязателен», на
+// тот же план, что `planReview()` (`dryRun` — вход отказа "repository path is required", на
 // посчитанный план он не влияет), и лишний его расчёт стоит десятка процессов `git`
 //. Тем же приёмом ниже сведены пары «план + его же --dry-run».
 let withEffort;
@@ -386,14 +386,14 @@ for (const level of EFFORT_LEVELS) {
 }
 
 const badEffort = expectThrow(() => planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api', effort: 'super-high' }));
-check('--effort: неизвестное значение → понятный отказ, а не молчаливый дефолт',
-  badEffort.threw && /effort/i.test(badEffort.msg) && badEffort.msg.includes('super-high')
+check('--effort: unknown value → понятный отказ, а не молчаливый дефолт',
+  badEffort.threw && /--effort: unknown value/.test(badEffort.msg) && badEffort.msg.includes('super-high')
   && EFFORT_LEVELS.every((l) => badEffort.msg.includes(l)), badEffort.msg);
 
 check('dry-run: заданный effort печатается как применяемый',
-  /effort: high/.test(dryEffort) && !/effort: high \(не применяется/.test(dryEffort), dryEffort);
+  /effort: high/.test(dryEffort) && !/effort: high \(not applied/.test(dryEffort), dryEffort);
 check(`dry-run без живого reviewer'а: модель тоже печатается как применяемая`,
-  /модель: opus/.test(dryEffort) && !/модель: opus \(/.test(dryEffort), dryEffort);
+  /model: opus/.test(dryEffort) && !/model: opus \(/.test(dryEffort), dryEffort);
 
 // --- переревью: тот же адрес, но только в живую сессию ----------------
 //
@@ -476,8 +476,8 @@ const dryReuse = await capture(async () => { again = await review(WS, { target: 
 check(`переревью: сессия жива — участник найден, второго spawn'а не будет`,
   !!again.participant && again.sessionState === 'alive' && again.reuse === true, again.sessionState);
 check('переревью: живой сессии уходит переревью — про новый дифф, без повторного онбординга',
-  dryReuse.includes(again.reReview) && !dryReuse.includes('## Протокол связи')
-  && again.reReview.includes('Переревью') && again.reReview.includes(again.diffPath), dryReuse);
+  dryReuse.includes(again.reReview) && !dryReuse.includes('## Communication protocol')
+  && again.reReview.includes('Re-review') && again.reReview.includes(again.diffPath), dryReuse);
 check('переревью: старый дифф не перетирается — имя с номером',
   again.diffPath.endsWith('review-cargos-api-2.diff'), again.diffPath);
 
@@ -507,12 +507,12 @@ check('переревью: --effort не пересоздаёт живую се�
   && againEffort.effort === 'max',
   `reuse=${againEffort.reuse} state=${againEffort.sessionState}`);
 check('dry-run переревью alive: effort помечен как неприменённый — сессия уже жива',
-  /effort: max \(не применяется — сессия уже жива\)/.test(dryReuseEffort), dryReuseEffort);
+  /effort: max \(not applied — the session is already alive\)/.test(dryReuseEffort), dryReuseEffort);
 // Модель живой сессии переревью не меняет ровно так же, как effort: argv
 // не исполняется, уходит только дифф.
 const dryReuseModel = await capture(() => review(WS, { target: REPO, task: task.id, dryRun: true, model: 'sonnet' }));
 check('dry-run переревью alive: --model помечен как неприменённый, а не выдан за применённый',
-  /модель: sonnet \(не применяется — сессия уже жива\)/.test(dryReuseModel), dryReuseModel);
+  /model: sonnet \(not applied — the session is already alive\)/.test(dryReuseModel), dryReuseModel);
 
 // Запись, сделанная ДО запуска, reviewer'ом не считается: сорвавшийся запуск оставляет её
 // на месте, а живость подтвердить нечем — `claude agents --json` не добыт ровно там, где
@@ -539,12 +539,12 @@ check('запись до запуска: сессия нашлась живой 
   && pendingAlive.reuse === true, `state=${pendingAlive.sessionState} reuse=${pendingAlive.reuse}`);
 
 // Печать обязана говорить то же, что сделает реальный прогон: на записи до запуска он
-// поднимет нового reviewer'а, а прежний текст обещал «уже на шине — уйдёт новый дифф».
+// поднимет нового reviewer'а, а прежний текст обещал "already on the bus — a new diff will go".
 claudeStub('process.exit(1);');
 const dryPending = await capture(() => review(WS, { target: REPO, task: pendingTask.id, dryRun: true }));
-check('dry-run на записи до запуска: сказано, что reviewer не поднимался, а не «уже на шине»',
-  /запись сделана до запуска, reviewer не поднимался/.test(dryPending)
-  && !/уже на шине/.test(dryPending), dryPending.slice(-600));
+check('dry-run на записи до запуска: сказано, что reviewer не поднимался, а не "already on the bus"',
+  /record was made before start, the reviewer was not started/.test(dryPending)
+  && !/already on the bus/.test(dryPending), dryPending.slice(-600));
 
 // Обратная половина пометки, и держится она на неочевидном: applyParticipant заменяет
 // запись целиком, поэтому второй upsert без pending её и стирает. Поменяй кто-нибудь его
@@ -589,7 +589,7 @@ const dryBoth = await capture(async () => {
 check('--task с --title: имя не применяется, и план об этом говорит',
   bothFlags.titleIgnored === true && bothFlags.createNew === null, String(bothFlags.titleIgnored));
 check('--task с --title: dry-run называет журнал задачи источником имени',
-  /--title не применяется — имя берётся из журнала задачи/.test(dryBoth), dryBoth.slice(-500));
+  /--title is not applied — the name is taken from the journal/.test(dryBoth), dryBoth.slice(-500));
 
 // Сессия reviewer'а закрыта (`claude stop`): переревью ушло бы ей в inbox навсегда,
 // и вызвавший ждал бы отчёта, которого не будет.
@@ -600,19 +600,19 @@ check(`мёртвая сессия: переревью в inbox не уходи�
 rmSync(BG_ARGV, { force: true });
 const deadOut = await capture(() => review(WS, { target: REPO, task: task.id }));
 check(`мёртвая сессия: новому reviewer'у ушёл полный промпт, а не «проверь свои прошлые замечания»`,
-  bgArgv().includes('## Протокол связи') && !bgArgv().includes('Переревью'),
+  bgArgv().includes('## Communication protocol') && !bgArgv().includes('Re-review'),
   bgArgv().slice(0, 200) || 'claude --bg не звался вовсе');
 check('мёртвая сессия: предупреждение называет смерть сессии и потерю прошлых находок',
-  /мертва/.test(deadOut) && /прошлые находки/.test(deadOut) && /поднят/.test(deadOut), deadOut);
+  /is dead/.test(deadOut) && /prior findings/.test(deadOut) && /started/.test(deadOut), deadOut);
 // Подсказка после spawn'а давала имя сессии из вывода `claude --bg`, а `--task` его
 // не принимает: печатаем готовые команды с настоящим id задачи.
 check('spawn: подсказки печатают команды с id задачи, а не с именем сессии',
-  deadOut.includes(`задачи ${task.id}`)
+  deadOut.includes(`task ${task.id}`)
   && deadOut.includes(`promptobus review "${realpathSync(REPO)}" --task ${task.id}`)
   && !/--task a2a-/.test(deadOut), deadOut);
-// : ждать отчёт нечем и не надо — разбудит надзиратель.
+// : ждать отчёт нечем и не надо — the bus warden will wake you.
 check(': подсказка ведёт к надзирателю и mailbox, а не к ожиданию',
-  /разбудит тебя надзиратель/.test(deadOut) && !/promptobus wait/.test(deadOut), deadOut);
+  /the bus warden will wake you/.test(deadOut) && !/promptobus wait/.test(deadOut), deadOut);
 check('мёртвая сессия: в inbox мёртвого адреса ничего не легло',
   store.countInbox(home, task.id, 'reviewer:cargos-api') === 0,
   String(store.countInbox(home, task.id, 'reviewer:cargos-api')));
@@ -640,10 +640,10 @@ const silent = liftoffRun(
   { STUB_SILENT_FAIL: '1' },
 );
 check(`: сессии reviewer'а в claude agents нет — отказ, а не доклад об успехе`,
-  silent.status === 1 && /живой сессии .* в claude agents нет — reviewer НЕ поднят/.test(silent.text)
-  && !/reviewer reviewer:cargos-api поднят/.test(silent.text), `status=${silent.status} ${silent.text}`);
+  silent.status === 1 && /there is no live session .* in claude agents — reviewer was NOT started/.test(silent.text)
+  && !/reviewer reviewer:cargos-api started/.test(silent.text), `status=${silent.status} ${silent.text}`);
 check(`: отказ по несостоявшейся сессии называет маршрут переподъёма reviewer'а`,
-  /Поднимай reviewer'а заново: promptobus review/.test(silent.text)
+  /Start the reviewer again: promptobus review/.test(silent.text)
   && silent.text.includes(`--task ${silentTask.id}`), silent.text);
 const silentPart = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:cargos-api')?.metadata;
 check(`: запись reviewer'а на месте и после отказа — повтор поднимет его тем же адресом`,
@@ -673,7 +673,7 @@ const ghost = liftoffRun(
   { STUB_GHOST: '1' },
 );
 check(': призрак под тем же именем подъёмом не считается — отказ называет его',
-  ghost.status === 1 && /запись прошлой сессии \(ghost1\)/.test(ghost.text), `status=${ghost.status} ${ghost.text}`);
+  ghost.status === 1 && /A record of a past session sits under this name \(ghost1\)/.test(ghost.text), `status=${ghost.status} ${ghost.text}`);
 
 // Обратная сторона сверки: список не разобран — это не смерть. Reviewer поднят,
 // но неподтверждённость названа вслух, как у worker'а.
@@ -688,8 +688,8 @@ const unverified = await capture(() => review(WS, {
 }));
 delete process.env.STUB_SILENT_FAIL;
 check(': список сессий не разобран — не отказ, а названная вслух неподтверждённость',
-  /reviewer reviewer:cargos-api поднят/.test(unverified)
-  && /подъём сессии .* не подтверждён/.test(unverified), unverified);
+  /reviewer reviewer:cargos-api started/.test(unverified)
+  && /lift of session .* is not confirmed/.test(unverified), unverified);
 
 // Порядок источников id тот же, что у worker'а (`spawnedSessionId`): запись из `claude agents`
 // — прямой ответ harness'а, разбор вывода `claude --bg` остаётся запасным.
@@ -708,16 +708,16 @@ check(`состояние сессии неизвестно — прежний �
   unknown.sessionState === 'unknown' && unknown.reuse === true, unknown.sessionState);
 const dryUnknownEffort = await capture(() => review(WS, { target: REPO, task: task.id, dryRun: true, effort: 'high', model: 'sonnet' }));
 check('dry-run unknown: effort и модель нейтральны, не утверждают что сессия жива',
-  /effort: high \(не применяется — дифф уйдёт прежнему адресу\)/.test(dryUnknownEffort)
-  && /модель: sonnet \(не применяется — дифф уйдёт прежнему адресу\)/.test(dryUnknownEffort)
-  && !/сессия уже жива/.test(dryUnknownEffort)
-  && /живость сессии не подтверждена/.test(dryUnknownEffort), dryUnknownEffort);
+  /effort: high \(not applied — the diff will go to the former address\)/.test(dryUnknownEffort)
+  && /model: sonnet \(not applied — the diff will go to the former address\)/.test(dryUnknownEffort)
+  && !/the session is already alive/.test(dryUnknownEffort)
+  && /session liveness is not confirmed/.test(dryUnknownEffort), dryUnknownEffort);
 const unknownOut = await capture(() => review(WS, { target: REPO, task: task.id }));
 check('неизвестное состояние: дифф ушёл прежним адресом с честным предупреждением',
-  /подтвердить нечем/.test(unknownOut) && store.countInbox(home, task.id, 'reviewer:cargos-api') === 1,
+  /cannot be confirmed/.test(unknownOut) && store.countInbox(home, task.id, 'reviewer:cargos-api') === 1,
   unknownOut);
 check('переревью: подсказка тоже называет id задачи',
-  unknownOut.includes(`задачи ${task.id}`) && !/promptobus wait/.test(unknownOut), unknownOut);
+  unknownOut.includes(`task ${task.id}`) && !/promptobus wait/.test(unknownOut), unknownOut);
 
 // --- счётчик непрочитанного -----------------------------------------
 //
@@ -726,13 +726,13 @@ check('переревью: подсказка тоже называет id за�
 // печатающаяся всегда, перестаёт читаться вместе с непустой.
 const quietReview = await capture(() => review(WS, { target: REPO, task: task.id }));
 check(': пустой mailbox оркестратора вывод `promptobus review` не называет',
-  !/твой mailbox/.test(quietReview), quietReview);
+  !/your mailbox/.test(quietReview), quietReview);
 store.sendMessage(home, task.id, {
   from: 'reviewer:cargos-api', to: 'orchestrator', type: 'result', body: `отчёт reviewer'а лежит непрочитанным`,
 });
 const loudReview = await capture(() => review(WS, { target: REPO, task: task.id }));
 check(`: непрочитанное в mailbox'е оркестратора названо в выводе \`promptobus review\` вместе с маршрутом`,
-  /твой mailbox: непрочитано 1 — забери инструментом promptobus_mailbox/.test(loudReview), loudReview);
+  /your mailbox: unread 1 — fetch it with the promptobus_mailbox tool/.test(loudReview), loudReview);
 check(': счётчик — notification, а не читатель: сообщение осталось в inbox',
   store.countInbox(home, task.id, 'orchestrator') === 1,
   String(store.countInbox(home, task.id, 'orchestrator')));
@@ -753,7 +753,7 @@ store.sendMessage(home, task.id, {
 });
 const freshTaskOut = await capture(() => review(WS, { tool: TOOL, target: REPO, title: 'работа оркестратора в cargos-api' }));
 check(': ревью, заводящее свою задачу, чужого счётчика не называет',
-  !/непрочитано/.test(freshTaskOut), freshTaskOut);
+  !/unread/.test(freshTaskOut), freshTaskOut);
 store.readInbox(home, task.id, 'orchestrator');
 
 const plainTask = store.createTask(home, { id: 't20260825-150000', title: 'ревью без effort' });
@@ -794,7 +794,7 @@ check('--task: присоединение к существующей задач
 check('план знает о соседних активных задачах',
   own.otherActive.includes(foreign.id) && joined.otherActive.length === 0, own.otherActive.join(','));
 check('предупреждение о второй активной задаче с готовой командой закрытия',
-  /активн[аы] ещё задач/.test(secondOut) && secondOut.includes(foreign.id)
+  /another task is also active|other tasks are also active/.test(secondOut) && secondOut.includes(foreign.id)
   && /--task/.test(secondOut) && /promptobus done --task/.test(secondOut), secondOut);
 store.closeTask(home, foreign.id);
 
@@ -945,8 +945,8 @@ check('--base сильнее записанной точки ветвления,
 claudeSays('backgrounded · cafe34 · reviewer');
 const liveOut = await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
 check(`: реальный прогон называет базу, worker'а и адрес reviewer'а`,
-  liveOut.includes(FORK) && /по worker'у worker:vtoroy/.test(liveOut)
-  && liveOut.includes('reviewer:vtoroy') && /база диффа/.test(liveOut), liveOut);
+  liveOut.includes(FORK) && /by the worker worker:vtoroy/.test(liveOut)
+  && liveOut.includes('reviewer:vtoroy') && /diff base/.test(liveOut), liveOut);
 
 // Переревью того же предмета обязано остаться прежним: тот же каталог и тот же --task
 // уходят тому же reviewer'у, а не поднимают второго.
@@ -979,7 +979,7 @@ check('запись прежнего CLI без точки ветвления: �
   && legacyBase.diff.includes('pervyy.txt') && legacyBase.address === 'reviewer:pervyy',
   `${legacyBase.baseRef} · ${legacyBase.address}`);
 check('запись прежнего CLI: предупреждения о догадочной базе нет — база не догадка',
-  (legacyBase.warnings ?? []).every((w) => !/цель — worktree/.test(w)),
+  (legacyBase.warnings ?? []).every((w) => !/the target is a worktree/.test(w)),
   (legacyBase.warnings ?? []).join(' | '));
 // Своего заголовка у такой записи тоже нет — имя reviewer'а остаётся прежним, заголовком
 // задачи, и это не отказ.
@@ -1017,7 +1017,7 @@ const orphan = await capture(async () => {
   forcedPlan = await review(WS, { target: W1, task: task.id, dryRun: true });
 });
 check('worktree вне журнала названной задачи: база посчитана, громкого предупреждения нет',
-  !/цель — worktree/.test(orphan) && orphan.includes(FORK), orphan);
+  !/the target is a worktree/.test(orphan) && orphan.includes(FORK), orphan);
 // : забытый `--task` на worktree своего же worker'а больше не беда. Активную
 // задачу, в чьём журнале этот каталог числится, команда подхватывает сама — и вместе
 // с задачей берёт владельца каталога, его адрес и его точку ветвления. Прежде она
@@ -1025,7 +1025,7 @@ check('worktree вне журнала названной задачи: база 
 let noTaskPlan;
 const noTask = await capture(async () => { noTaskPlan = await review(WS, { target: W1, dryRun: true }); });
 check(`: worktree своего worker'а без --task подхватывает его активную задачу`,
-  !/цель — worktree/.test(noTask) && noTask.includes(owned.id) && !/будет создана/.test(noTask)
+  !/the target is a worktree/.test(noTask) && noTask.includes(owned.id) && !/will be created/.test(noTask)
   && /reviewer:pervyy/.test(noTask) && noTask.includes(FORK), noTask);
 check(': подхваченная задача — та же, что назвал бы --task, и второй активной не заводит',
   noTaskPlan.taskId === owned.id && noTaskPlan.createNew === null
@@ -1040,8 +1040,8 @@ check(': явный --task сильнее подхвата',
 // о том, что активных станет несколько.
 const outsideTask = await capture(() => review(WS, { target: OWN, title: 'работа оркестратора в base-api', dryRun: true }));
 check(': цель вне журналов активных задач заводит свою — и говорит об этом',
-  /будет создана/.test(outsideTask) && !outsideTask.includes(`задача: ${owned.id}`)
-  && new RegExp(`активн\\S* ещё задач\\S*[^\\n]*${owned.id}`).test(outsideTask), outsideTask);
+  /will be created/.test(outsideTask) && !outsideTask.includes(`task: ${owned.id}`)
+  && new RegExp(`(?:another task is also active|other tasks are also active)[^\\n]*${owned.id}`).test(outsideTask), outsideTask);
 // Выбирать задачу за человека команда не станет ни при каком устройстве журнала:
 // журнал правится и руками, а два живых журнала на один каталог — уже не подхват, а
 // догадка.
@@ -1050,7 +1050,7 @@ store.upsertParticipant(home, twin.id, worker('worker:pervyy', W1, 'a2a-pervyy-t
 let ambiguous = '';
 try { planReview(WS, { target: W1 }); } catch (e) { ambiguous = e.message; }
 check(': каталог в двух активных журналах — отказ со списком, а не выбор наугад',
-  /нескольких активных задачах/.test(ambiguous) && ambiguous.includes(twin.id)
+  /several active tasks at once/.test(ambiguous) && ambiguous.includes(twin.id)
   && ambiguous.includes(owned.id) && /--task/.test(ambiguous), ambiguous);
 store.closeTask(home, twin.id);
 
@@ -1113,7 +1113,7 @@ const reviewCli = (args) => {
 const noStack = (run) => run.status === 1 && !/\n\s+at /.test(run.text) && !/^Error:/m.test(run.text);
 const missingReviewTask = reviewCli([REPO, '--task', 'net-takoy-bl394', '--dry-run']);
 check(': review --task несуществующей задачи печатается без стека',
-  noStack(missingReviewTask) && /задачи net-takoy-bl394 нет/.test(missingReviewTask.text),
+  noStack(missingReviewTask) && /there is no task net-takoy-bl394/.test(missingReviewTask.text),
   `status=${missingReviewTask.status} ${missingReviewTask.text}`);
 
 // --- : явный --task на закрытый журнал — той же формой, что spawn -------
@@ -1128,16 +1128,16 @@ store.closeTask(home, DONE_REVIEW);
 const closedReviewThrow = expectThrow(() => planReview(WS, { target: REPO, task: DONE_REVIEW, dryRun: true }));
 check(': planReview на закрытой задаче бросает GateError',
   closedReviewThrow.threw && closedReviewThrow.name === 'GateError'
-  && /задача bl-395-zakryta-t20260831-120000 закрыта/.test(closedReviewThrow.msg)
+  && /task bl-395-zakryta-t20260831-120000 is closed/.test(closedReviewThrow.msg)
   && /worktree/.test(closedReviewThrow.msg),
   `${closedReviewThrow.name}: ${closedReviewThrow.msg}`);
 check(': отказ называет --title, а не «без --task заведёт сама»',
-  /--title/.test(closedReviewThrow.msg) && /не этот id/.test(closedReviewThrow.msg)
-  && !/заведёт задачу сама/.test(closedReviewThrow.msg),
+  /--title/.test(closedReviewThrow.msg) && /just not this id/.test(closedReviewThrow.msg)
+  && !/will open a task itself/.test(closedReviewThrow.msg),
   closedReviewThrow.msg);
 const closedReviewTask = reviewCli([REPO, '--task', DONE_REVIEW, '--dry-run']);
 check(': review --task закрытой задачи печатается без стека',
-  noStack(closedReviewTask) && /задача bl-395-zakryta-t20260831-120000 закрыта/.test(closedReviewTask.text),
+  noStack(closedReviewTask) && /task bl-395-zakryta-t20260831-120000 is closed/.test(closedReviewTask.text),
   `status=${closedReviewTask.status} ${closedReviewTask.text}`);
 
 // Явный `--task` — вход по договорённости, и гейт его не знает: тот же порядок, что в spawn'е.
@@ -1196,20 +1196,20 @@ store.claimOwnership(home, owned.id, ownerWasBind);
 // база считается от локальной default-ветки.
 const orphanNoTask = await capture(() => review(WS, { target: W3, title: 'ревью worktree без владельца', dryRun: true }));
 check('worktree без владельца в живых журналах: база посчитана, предупреждения нет',
-  !/цель — worktree/.test(orphanNoTask), orphanNoTask);
+  !/the target is a worktree/.test(orphanNoTask), orphanNoTask);
 // Законные цели предупреждения не получают: основной клон и worktree со своим владельцем.
 const quietClone = await capture(() => review(WS, { target: OWN, task: owned.id, dryRun: true }));
 const quietOwned = await capture(() => review(WS, { target: W1, task: owned.id, dryRun: true }));
 check('основной клон и worktree со своим владельцем предупреждения не получают',
-  !/цель — worktree/.test(quietClone) && !/цель — worktree/.test(quietOwned),
-  `${/цель — worktree/.test(quietClone)} · ${/цель — worktree/.test(quietOwned)}`);
+  !/the target is a worktree/.test(quietClone) && !/the target is a worktree/.test(quietOwned),
+  `${/the target is a worktree/.test(quietClone)} · ${/the target is a worktree/.test(quietOwned)}`);
 
 // Пустой дифф — ровно тот случай, когда база подозрительна первым делом («почему
 // пусто?»), а выход стоит раньше всякой печати базы.
 store.upsertParticipant(home, owned.id, worker('worker:tretiy', W3, 'a2a-tretiy', null, { baseSha: FORK }));
 const emptyOut = await capture(() => review(WS, { target: W3, task: owned.id }));
-check('пустой дифф: сообщение «ревьюить нечего» называет базу',
-  /ревьюить нечего/.test(emptyOut) && emptyOut.includes(FORK), emptyOut);
+check('пустой дифф: сообщение "no changes — nothing to review" называет базу',
+  /nothing to review/.test(emptyOut) && emptyOut.includes(FORK), emptyOut);
 
 // --- отказы -------------------------------------------------------------------
 
@@ -1255,7 +1255,7 @@ check(': чужая принятая работа в дифф не попада�
   !merged.diff.includes('chuzhaya.txt') && merged.diff.includes('pervyy.txt'), merged.stat);
 check(': расхождение записанной и посчитанной базы названо вслух',
   String(merged.baseLine).includes(MERGED) && String(merged.baseLine).includes(FORK)
-  && /осталась позади/.test(String(merged.baseLine)), String(merged.baseLine));
+  && /was left behind/.test(String(merged.baseLine)), String(merged.baseLine));
 
 // --- гейт догадочной базы: смотрит на источник, а не на поля записи ----
 //
@@ -1282,11 +1282,11 @@ store.upsertParticipant(home, owned.id, store.participantRecord('worker:bezbazy'
 
 const noBase = planReview(WS, { target: NLWT, task: owned.id });
 check(': запись с worktree и без baseSha даёт предупреждение, а не спокойную строку',
-  (noBase.warnings ?? []).some((w) => /цель — worktree/.test(w) && /точки ветвления нет/.test(w)
+  (noBase.warnings ?? []).some((w) => /the target is a worktree/.test(w) && /has no branch point/.test(w)
     && /--base/.test(w)),
   (noBase.warnings ?? []).join(' | '));
 check(': база при этом честно названа догадкой по default-ветке',
-  noBase.baseRef === 'origin/main' && /default-ветка репозитория/.test(String(noBase.baseLine)),
+  noBase.baseRef === 'origin/main' && /repository default branch/.test(String(noBase.baseLine)),
   String(noBase.baseLine));
 
 // --- : детект default-ветки один на spawn и ревью ------------------------
@@ -1338,7 +1338,7 @@ g(DW, 'commit', '-m', 'заметка в индексе', '-q');
 
 const dual = planReview(WS, { target: DW, task: owned.id });
 check(': reviewer считает базу от той же ветки, от которой ветвится spawn',
-  dual.baseRef === D1 && /merge-base с master/.test(String(dual.baseLine)), String(dual.baseLine));
+  dual.baseRef === D1 && /merge-base with master/.test(String(dual.baseLine)), String(dual.baseLine));
 check(`: работа оркестратора на master в дифф worker'а не попадает`,
   !dual.diff.includes('ork.txt') && dual.diff.includes('rabota.txt'), dual.stat);
 check(`: неотслеживаемые файлы едут reviewer'у своими именами, а не в октальном виде`,
@@ -1385,7 +1385,7 @@ check('замечание ревью: посчитанная база позад
 check('замечание ревью: работа оркестратора в дифф не возвращается',
   !rewound.diff.includes('ork.txt') && rewound.diff.includes('rabota.txt'), rewound.stat);
 check('замечание ревью: dest names the rewind as already-merged, not rewritten',
-  /работа уже влита/.test(String(rewound.baseLine)),
+  /work already merged/.test(String(rewound.baseLine)),
   String(rewound.baseLine));
 
 // Ветку worker'а слили в default-ветку — штатный конец run'а. merge-base становится
@@ -1414,26 +1414,26 @@ check('замечание ревью: слитая ветка ревьюится
   mergedBack.baseRef === M_FORK && mergedBack.diff.includes('sdelano.txt'),
   `${mergedBack.baseRef} · ${mergedBack.stat}`);
 check('замечание ревью: строка базы называет, что работа уже влита',
-  /работа уже влита/.test(String(mergedBack.baseLine)), String(mergedBack.baseLine));
+  /work already merged/.test(String(mergedBack.baseLine)), String(mergedBack.baseLine));
 
 // Та же слитая ветка, но точки ветвления в журнале нет: дифф честно пуст, и команда
-// говорит, почему — «ревьюить нечего» без объяснения было бы неправдой.
+// говорит, почему — "no changes — nothing to review" без объяснения было бы неправдой.
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'loads_search/merged-api', repoAbs: MRG,
   worktree: MW, worktreeName: 'a2a-mrg', branch: 'worktree-a2a-mrg',
   name: 'Worker: слитая ветка (0826-1200, mrg)' }));
 const mergedNoBase = planReview(WS, { target: MW, task: owned.id });
 check('замечание ревью: пустой дифф на слитой ветке объяснён, а не выдан за отсутствие работы',
-  (mergedNoBase.warnings ?? []).some((w) => /совпадает с/.test(w) && /--base/.test(w))
-  || /совпадает с/.test(String(mergedNoBase.baseLine)),
+  (mergedNoBase.warnings ?? []).some((w) => /matches/.test(w) && /--base/.test(w))
+  || /matches/.test(String(mergedNoBase.baseLine)),
   `${(mergedNoBase.warnings ?? []).join(' | ')} · ${mergedNoBase.baseLine}`);
 
 // Свежий worktree, где worker ещё ничего не коммитил: HEAD равен вершине
-// default-ветки и записанной точке разом. «Работа уже влита» здесь было бы неправдой —
+// default-ветки и записанной точке разом. "work already merged" здесь было бы неправдой —
 // в default-ветку ничего не уезжало (замечание ревью).
 const untouched = planReview(WS, { target: W3, task: owned.id });
 check(`замечание ревью: у worker'а без единого коммита строка базы не обещает влитой работы`,
-  untouched.baseRef === FORK && !/влита/.test(String(untouched.baseLine))
-  && /точка ветвления worktree worker:tretiy/.test(String(untouched.baseLine)),
+  untouched.baseRef === FORK && !/already merged/.test(String(untouched.baseLine))
+  && /worktree branch point of worker:tretiy/.test(String(untouched.baseLine)),
   String(untouched.baseLine));
 // owned.id держали активным: проверки базы диффа зовут его явным `--task`, и закрытый
 // журнал теперь отказ, а не фикстура.
@@ -1454,7 +1454,7 @@ const failText = `${failed.stdout}${failed.stderr}`;
 const orphanTask = store.activeTasks(home).find((t) => t.title === FAIL_TITLE);
 const failedReviewer = store.participantOf(orphanTask, 'reviewer:cargos-api')?.metadata;
 check(': сорванный запуск отказывает, а не молчит',
-  failed.status === 1 && /claude --bg завершился с кодом 1/.test(failText),
+  failed.status === 1 && /claude --bg exited with code 1/.test(failText),
   `status=${failed.status} ${failText}`);
 check(': участник записан до запуска и session не выдумана',
   !!failedReviewer && failedReviewer.repo === 'repos/loads_search/cargos-api'
@@ -1471,7 +1471,7 @@ check(': diff и конфиги задачи-сироты сохранены д�
   && existsSync(path.join(store.workersDir(home, orphanTask.id), 'reviewer-cargos-api.mcp.json')),
   String(orphanTask?.id));
 check(': отказ называет сироту и готовую команду закрытия',
-  !!orphanTask && /активная задача-сирота/.test(failText)
+  !!orphanTask && /active orphan task/.test(failText)
   && failText.includes(orphanTask.id)
   && failText.includes(`promptobus done --task ${orphanTask.id}`), failText);
 if (orphanTask) store.closeTask(home, orphanTask.id);
@@ -1494,7 +1494,7 @@ const gated = spawnSync(process.execPath, ['--input-type=module', '-e',
 ], { encoding: 'utf8', cwd: REPO, env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const gateText = `${gated.stdout}${gated.stderr}`;
 check(': вызов без пути из каталога клона отказывает до всего остального',
-  gated.status === 1 && /путь к репозиторию обязателен/.test(gateText), `status=${gated.status} ${gateText}`);
+  gated.status === 1 && /repository path is required/.test(gateText), `status=${gated.status} ${gateText}`);
 check(': задача по текущему каталогу не заводится',
   store.activeTasks(home).length === activeBefore
   && !store.activeTasks(home).some((t) => t.title === GATE_TITLE),
@@ -1511,7 +1511,7 @@ const refused = spawnSync(process.execPath, ['--input-type=module', '-e',
 ], { encoding: 'utf8', cwd: REPO, env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const refusedText = `${refused.stdout}${refused.stderr}`;
 check(': отказ плана печатает и выходит команда, а не план',
-  refused.status === 1 && refusedText.includes(`${NOT_A_REPO}: не git-репозиторий`)
+  refused.status === 1 && refusedText.includes(`${NOT_A_REPO}: not a git repository`)
   && !/TypeError|plan\.warnings/.test(refusedText),
   `status=${refused.status} ${refusedText}`);
 
@@ -1577,8 +1577,8 @@ store.upsertParticipant(home, reuseTask.id, store.participantRecord('reviewer:ca
 claudeSays(JSON.stringify([{ id: 'cafe12', name: REUSE_SESSION, state: 'working', pid: 4242 }]));
 const reuseRun = await capture(() => review(WS, { target: REPO, task: reuseTask.id }));
 check(': на переревью строка про набор MCP не печатается',
-  /уже на шине/.test(reuseRun) && !/MCP reviewer'а/.test(reuseRun),
-  reuseRun.split('\n').filter((l) => /MCP|шине/.test(l)).join(' | '));
+  /already on the bus/.test(reuseRun) && !/MCP the reviewer/.test(reuseRun),
+  reuseRun.split('\n').filter((l) => /MCP|on the bus/.test(l)).join(' | '));
 claudeSays('[]');
 
 // --- : потолок вывода git ------------------------------------------------

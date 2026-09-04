@@ -81,7 +81,7 @@ const outTwo = await capture(async () => stopManaged(HOME, TASK, { registry: fai
 check(': отказ одного не прерывает обход — второго всё равно погасили',
   failing.calls.length === 2 && failing.calls.includes('sess-reviewer'), failing.calls.join(', '));
 check(': отказ назван вслух и с маршрутом — иначе worktree останется молча',
-  /закрыть не удалось/.test(outTwo) && /claude agents/.test(outTwo), outTwo.trim());
+  /could not close/.test(outTwo) && /claude agents/.test(outTwo), outTwo.trim());
 // : слово про реестр сессий в маршруте приходит от driver'а, а не живёт в уборке.
 // Проверяется подменой самого слова: разъехавшись, строка советовала бы человеку команду
 // harness'а, которого в этой задаче нет.
@@ -93,34 +93,34 @@ check(': маршрут отказа называет реестр сессий 
   /реестр подставного harness'а/.test(outNamed) && !/claude agents/.test(outNamed), outNamed.trim());
 
 // : третий исход гашения — команду отдали, подтвердить нечем. Печатать его словами
-// «гасить не пришлось» значило бы отрицать первую половину строки второй: гасить как раз
+// "no need to stop" значило бы отрицать первую половину строки второй: гасить как раз
 // пришлось. Отличает его от «сессии не было ещё до команды» признак `attempted` исхода, и
 // без него два разных состояния machine видела бы одним.
 const unsure = fakeRegistry(() => ({
   ok: true, stopped: false, attempted: true, note: 'подставной стоп не подтвердил исчезновение записи',
 }));
 const unsureOut = await capture(async () => stopManaged(HOME, TASK, { registry: unsure.registry }));
-check(': гашение без подтверждения — свой исход, а не «гасить не пришлось»',
-  /гашение сессии участника worker:api не подтвердилось/.test(unsureOut)
-  && !/гасить не пришлось/.test(unsureOut), unsureOut.trim());
-check(': строка называет цену — каталог worktree останется на месте',
-  /worktree останется на месте/.test(unsureOut), unsureOut.trim());
+check(': гашение без подтверждения — свой исход, а не "no need to stop"',
+  /stop of the session of participant worker:api was not confirmed/.test(unsureOut)
+  && !/no need to stop/.test(unsureOut), unsureOut.trim());
+check(': строка называет цену — worktree will stay in place',
+  /worktree will stay in place/.test(unsureOut), unsureOut.trim());
 const unsureCount = await stopManaged(HOME, TASK, { registry: fakeRegistry(() => ({
   ok: true, stopped: false, attempted: true, note: 'подставной стоп не подтвердил исчезновение записи',
 })).registry });
-check(': неподтверждённое не считается ни погашенным, ни «нечего гасить», ни отказом',
+check(': неподтверждённое не считается ни погашенным, ни "nothing to stop", ни отказом',
   unsureCount.unconfirmed === 2 && unsureCount.stopped === 0 && unsureCount.idle === 0
   && unsureCount.failed === 0, JSON.stringify(unsureCount));
 
-// Гасить нечего: сессий этих участников в списке нет. Предикат живости тот же, что у всей
+// nothing to stop: сессий этих участников в списке нет. Предикат живости тот же, что у всей
 // уборки, поэтому мёртвая сессия до driver'а не доходит вовсе.
 const DEAD = 'done-dead-t20260901-230100';
 store.createTask(HOME, { id: DEAD, title: 'мёртвые сессии', owner: null });
 store.upsertParticipant(HOME, DEAD, store.participantRecord('worker:mertvyy', { harness: 'claude', mode: 'managed', sessionRef: 'sess-net-takoy' }));
 const dead = fakeRegistry();
 const deadOut = await capture(async () => stopManaged(HOME, DEAD, { registry: dead.registry }));
-check(': мёртвая сессия до driver’а не доходит — гасить нечего',
-  dead.calls.length === 0 && !/закрыта/.test(deadOut), `${dead.calls.join(', ')} · ${deadOut.trim()}`);
+check(': мёртвая сессия до driver’а не доходит — nothing to stop',
+  dead.calls.length === 0 && !/closed/.test(deadOut), `${dead.calls.join(', ')} · ${deadOut.trim()}`);
 
 // Контракт: attached отказывает по режиму, а не по capability — capability у driver'а есть.
 // Отказ ловится `await`'ом: исход гашения — обещание, и синхронный `try` мимо
@@ -164,12 +164,12 @@ check(': задачи нет — обход молчит, а не падает',
   JSON.stringify(await stopManaged(HOME, 'net-takoy-zadachi', { registry: fakeRegistry().registry }))
   === JSON.stringify({ stopped: 0, idle: 0, failed: 0, unconfirmed: 0 }));
 
-// Успех без гашения — свой исход, а не «закрыта» (замечание ревью): сессия исчезла между
+// Успех без гашения — свой исход, а не "closed" (замечание ревью): сессия исчезла между
 // снимком и вызовом, и печатать это как сделанную работу значило бы утверждать недоказанное.
 const idle = fakeRegistry(() => ({ ok: true, stopped: false, note: 'сессии «sess-worker» в списке нет' }));
 const idleOut = await capture(async () => stopManaged(HOME, TASK, { registry: idle.registry }));
-check(': гасить не пришлось — исход свой, и он не «закрыта»',
-  /гасить не пришлось/.test(idleOut) && !/сессия участника worker:api закрыта/.test(idleOut), idleOut.trim());
+check(': no need to stop — исход свой, и он не "closed"',
+  /no need to stop/.test(idleOut) && !/session of participant worker:api closed/.test(idleOut), idleOut.trim());
 let counted;
 await capture(async () => { counted = await stopManaged(HOME, TASK, { registry: idle.registry }); });
 check(': и считается он отдельно от погашенных',
@@ -181,8 +181,8 @@ check(': и считается он отдельно от погашенных',
 const ahead = fakeRegistry();
 const aheadOut = await capture(async () => stopManaged(HOME, TASK, { registry: ahead.registry }));
 check(': перечень гасимых назван до гашения',
-  /гашу сессии участников \(2\)/.test(aheadOut)
-  && aheadOut.indexOf('гашу сессии участников') < aheadOut.indexOf('закрыта'), aheadOut.trim());
+  /stopping participant sessions \(2\)/.test(aheadOut)
+  && aheadOut.indexOf('stopping participant sessions') < aheadOut.indexOf('closed'), aheadOut.trim());
 
 // Незнакомый режим — не managed: «раз не attached, значит managed» погасил бы сессию,
 // которую driver не поднимал. Опечатка в регистре здесь ровно такой случай.
@@ -241,9 +241,9 @@ store.createTask(HOME, { id: KEEP, title: 'выключатель гашения
 const noSessions = () => ({});
 const keptOut = await capture(async () => done(SB, { task: KEEP, 'keep-sessions': true, snapshot: noSessions }));
 check(': --keep-sessions доезжает своим ключом и называет себя в выводе',
-  /--keep-sessions: сессии участников оставлены живыми/.test(keptOut), keptOut.trim());
+  /--keep-sessions: participant sessions left alive/.test(keptOut), keptOut.trim());
 check(': с флагом обход гашения не начинается вовсе',
-  !/гашу сессии участников/.test(keptOut), keptOut.trim());
+  !/stopping participant sessions/.test(keptOut), keptOut.trim());
 // --- : `done` убирает журналы ДАВНО закрытых задач ------------------------
 //
 // Замер владельца 2026-09-02: журнал рабочего места — 71 задача, 36 МБ, 1243 сообщения,
@@ -269,7 +269,7 @@ const SWEEP_OLD = closedAgo('sweep-staraya-t20260801-010000', 'давно зак
 const SWEEP_YOUNG = closedAgo('sweep-svezhaya-t20260901-020000', 'вчерашний заход', 1);
 // Закрыта давно, но её worktree ещё стоит на диске: журнал — единственное место, где
 // записано, где лежит эта работа. Сессии у участника нет вовсе — обход worktree оставит
-// каталог со словами «состояние неизвестно» и внешнего опроса не сделает.
+// каталог со словами "unknown" и внешнего опроса не сделает.
 const SWEEP_HELD = closedAgo('sweep-zanyataya-t20260801-030000', 'заход с оставленным каталогом', PRUNE_DEFAULT_DAYS + 1);
 const heldTree = path.join(SB, 'sweep-repo', '.claude', 'worktrees', 'promptobus-ostavshiysya');
 mkdirSync(heldTree, { recursive: true });
@@ -283,22 +283,22 @@ store.createTask(sweepHome, { id: SWEEP_NOW, title: 'закрываемая се
 const swept = await capture(async () => done(SWEEP, { task: SWEEP_NOW, snapshot: noSessions }));
 check(': done снял журнал давно закрытой задачи и назвал её в перечне',
   !existsSync(store.taskDir(sweepHome, SWEEP_OLD)) && swept.includes(SWEEP_OLD)
-  && /журналы убраны: задач 1/.test(swept), swept.trim());
+  && /journals removed: tasks 1/.test(swept), swept.trim());
 check(': молодая, занятая каталогом и активная задачи уборку пережили',
   [SWEEP_YOUNG, SWEEP_HELD, SWEEP_ACTIVE].every((id) => existsSync(store.taskDir(sweepHome, id))),
   [SWEEP_YOUNG, SWEEP_HELD, SWEEP_ACTIVE].filter((id) => !existsSync(store.taskDir(sweepHome, id))).join(' · '));
-// Ищем id в строке ПЕРЕЧНЯ (`<id> «<заголовок>» — закрыта …`), а не где угодно в выводе:
+// Ищем id в строке ПЕРЕЧНЯ (`<id> "<title>" — closed …`), а не где угодно в выводе:
 // закрываемую задачу `done` называет своей первой строкой, и голое вхождение id было бы
 // истинно всегда.
 check(': только что закрытая задача остаётся — уборка идёт по порогу, а не по факту закрытия',
-  existsSync(store.taskDir(sweepHome, SWEEP_NOW)) && !new RegExp(`${SWEEP_NOW} «`).test(swept),
+  existsSync(store.taskDir(sweepHome, SWEEP_NOW)) && !new RegExp(`${SWEEP_NOW} "`).test(swept),
   swept.trim());
 // Порядок обязателен: обход worktree читает журналы ВСЕХ закрытых задач, и снеси уборка
 // журнал раньше — каталог остался бы сиротой без имени.
 // `includes` обязателен: `indexOf` отсутствующей строки даёт −1, и сверка порядка прошла
 // бы вхолостую ровно там, где обход worktree не сказал ничего (замечание ревью).
 check(': уборка журналов идёт после обхода worktree, а не до него',
-  swept.includes('оставлен') && swept.indexOf('оставлен') < swept.indexOf('журналы убраны'),
+  swept.includes('left in place') && swept.indexOf('left in place') < swept.indexOf('journals removed'),
   swept.trim());
 
 // Дом без кандидатов: `done` про уборку молчит вовсе. Строка про несделанное на каждом
@@ -310,5 +310,5 @@ writeHostConfig(QUIET);
 const QUIET_TASK = 'quiet-t20260902-060000';
 store.createTask(path.join(QUIET, '.promptobus'), { id: QUIET_TASK, title: 'нечего убирать', owner: null });
 const quietOut = await capture(async () => done(QUIET, { task: QUIET_TASK, snapshot: noSessions }));
-check(': убирать нечего — done про уборку не говорит ничего',
-  !/журналы убраны|убирать нечего/.test(quietOut) && /закрыта/.test(quietOut), quietOut.trim());
+check(': nothing to remove — done про уборку не говорит ничего',
+  !/journals removed|nothing to remove/.test(quietOut) && /closed/.test(quietOut), quietOut.trim());

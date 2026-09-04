@@ -58,8 +58,8 @@ send('status', 'взял в работу');
 send('result', 'готово');
 const unread = guardVerdict(HOME, TASK, 'orchestrator');
 check(`непрочитанное в mailbox'е: вердикт называет число и маршрут через inbox`,
-  unread?.key === 'mailbox:2' && /в mailbox'е 2/.test(unread.reason)
-  && /забери их инструментом promptobus_mailbox/.test(unread.reason), JSON.stringify(unread));
+  unread?.key === 'mailbox:2' && /mailbox has 2/.test(unread.reason)
+  && /fetch them with the promptobus_mailbox tool/.test(unread.reason), JSON.stringify(unread));
 
 // : живой надзиратель эту ветку не гасит. Он будит того, кому пишут, — а здесь ход
 // кончает сам адресат, не разобрав mailbox: стучаться в сессию, которая уже кончает ход,
@@ -143,15 +143,15 @@ send('question', 'какой контракт события?');
 const blocked = cli();
 check('CLI: непрочитанное возвращает ход кодом 2, причина — в stderr',
   blocked.status === 2 && blocked.stdout === ''
-  && blocked.stderr.startsWith(`${GUARD_MARK}: `) && /в mailbox'е 1/.test(blocked.stderr),
+  && blocked.stderr.startsWith(`${GUARD_MARK}: `) && /mailbox has 1/.test(blocked.stderr),
   `status=${blocked.status} ${blocked.stderr}`);
 // Причина уезжает модели дословно (харнес вклеивает stderr в свой blockingError), и
 // значок с цветом там были бы мусором посреди фразы.
 check('CLI: причина без значка и без ANSI — её читает модель, а не терминал',
   !/\u001b\[/.test(blocked.stderr) && !/[✖⚠✔]/.test(blocked.stderr), JSON.stringify(blocked.stderr));
 check(`CLI: причина называет задачу и адрес — по ней видно, о каком mailbox'е речь`,
-  blocked.stderr.includes(`PROMPTOBUS_HOME=${HOME}`) && blocked.stderr.includes(`задача=${TASK}`)
-  && blocked.stderr.includes('адрес=orchestrator'), blocked.stderr);
+  blocked.stderr.includes(`PROMPTOBUS_HOME=${HOME}`) && blocked.stderr.includes(`task=${TASK}`)
+  && blocked.stderr.includes('address=orchestrator'), blocked.stderr);
 check(`CLI: сообщение из mailbox'а не тронуто — сторож не читатель`,
   store.countInbox(HOME, TASK, 'orchestrator') === 1);
 
@@ -169,8 +169,8 @@ const third = cli();
 // никуда не поднимает, и предупреждение о снятой страховке не прочитал бы никто.
 const thirdSaid = (() => { try { return JSON.parse(third.stdout); } catch { return null; } })();
 check('защита: третий ход на том же состоянии пропущен — код 0 и строка в ленту вместо возврата',
-  third.status === 0 && /пропускает ход/.test(thirdSaid?.systemMessage ?? '')
-  && /возвращён 2/.test(thirdSaid?.systemMessage ?? ''),
+  third.status === 0 && /lets the turn through/.test(thirdSaid?.systemMessage ?? '')
+  && /returned 2/.test(thirdSaid?.systemMessage ?? ''),
   `status=${third.status} out=${JSON.stringify(third.stdout)} err=${JSON.stringify(third.stderr)}`);
 check('защита: пропуск не пишет в stderr — при коде 0 его никто не читает',
   third.stderr === '', JSON.stringify(third.stderr));
@@ -183,9 +183,9 @@ check('защита: и дальше пропускает — счётчик н�
 send('status', 'а это пришло, пока модель работала');
 const changed = cli();
 check('защита: новое сообщение меняет состояние — ход возвращается снова',
-  changed.status === 2 && /в mailbox'е 2/.test(changed.stderr), `status=${changed.status} ${changed.stderr}`);
+  changed.status === 2 && /mailbox has 2/.test(changed.stderr), `status=${changed.status} ${changed.stderr}`);
 
-// Отметку конца хода уводим в прошлое ПЕРЕД чистым проходом: выше её уже поставил проход
+// turn-end mark уводим в прошлое ПЕРЕД чистым проходом: выше её уже поставил проход
 // по исчерпанному потолку возвратов, и проверка ниже была бы зелена от него — то есть
 // прошла бы при любой реализации чистого прохода.
 const turnWas = store.markTurn(HOME, TASK, 'orchestrator', '2020-01-01T00:00:00.000Z');
@@ -196,8 +196,8 @@ check('защита: чистый проход сбрасывает счётчи
   `status=${cleared.status} ${cleared.stderr}`);
 // , замечание ревью: у оркестратора bg-сессии нет, и «отдал ли он ход» надзиратель
 // узнаёт только отсюда. Счётчик возвратов для этого не годится — чистый проход его СНОСИТ
-// (строкой выше), — поэтому отметка своя и переживает сброс счётчика.
-check(': чистый проход ставит отметку конца хода — по ней надзиратель судит о занятости',
+// (строкой выше), — поэтому turn-end mark своя и переживает сброс счётчика.
+check(': чистый проход ставит turn-end mark — по ней надзиратель судит о занятости',
   store.lastTurnAt(HOME, TASK, 'orchestrator') > Date.parse(turnWas),
   `${store.lastTurnAt(HOME, TASK, 'orchestrator')} против ${Date.parse(turnWas)}`);
 send('status', 'после чистого прохода');
@@ -221,9 +221,9 @@ check(`сессия без привязки: сторож молчит, хотя
 store.bindSession(HOME, TASK, SESSION);
 const bound = cli({ PROMPTOBUS_TASK: '' });
 check('привязка на диске: задача резолвится без PROMPTOBUS_TASK, ход возвращается',
-  bound.status === 2 && bound.stderr.includes(`задача=${TASK}`), `status=${bound.status} ${bound.stderr}`);
+  bound.status === 2 && bound.stderr.includes(`task=${TASK}`), `status=${bound.status} ${bound.stderr}`);
 
-// Mailbox чужой — стеречь нечего: оригиналы уйдут владельцу, и «забери mailbox» тут ложь.
+// Mailbox чужой — стеречь нечего: оригиналы уйдут владельцу, и «fetch the mailbox» тут ложь.
 const foreign = cli({ CLAUDE_CODE_SESSION_ID: 'sess-chuzhaya-3333' });
 check('чужой mailbox: сторож молчит — забирать оттуда нечего',
   foreign.status === 0 && foreign.stderr === '', `status=${foreign.status} ${foreign.stderr}`);
@@ -267,20 +267,20 @@ const asWorker = (role = 'worker:api', { args = true } = {}) => spawnSync(proces
 store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'закрой замечание' });
 const workerBlocked = asWorker();
 check(': аргументы команды сильнее чужой тройки в окружении — сторож взял адрес из них',
-  workerBlocked.stderr.includes('адрес=worker:api') && !workerBlocked.stderr.includes('worker:sosed'),
+  workerBlocked.stderr.includes('address=worker:api') && !workerBlocked.stderr.includes('worker:sosed'),
   `status=${workerBlocked.status} ${workerBlocked.stderr}`);
 check(': участнику с неразобранным mailbox\'ом сторож возвращает ход — кодом 2, как оркестратору',
-  workerBlocked.status === 2 && /в mailbox'е 1/.test(workerBlocked.stderr)
-  && workerBlocked.stderr.includes('адрес=worker:api'),
+  workerBlocked.status === 2 && /mailbox has 1/.test(workerBlocked.stderr)
+  && workerBlocked.stderr.includes('address=worker:api'),
   `status=${workerBlocked.status} ${workerBlocked.stderr}`);
 check(': привязки на диске у сессии участника нет — идентичность пришла из окружения',
   store.boundTaskId(HOME, WORKER_SESSION) === null, String(store.boundTaskId(HOME, WORKER_SESSION)));
-// Отметку уводим в прошлое ПЕРЕД чистым проходом: возврат хода её тоже не ставит, но
+// turn-end mark уводим в прошлое ПЕРЕД чистым проходом: возврат хода её тоже не ставит, но
 // потолок возвратов ниже поставил бы, и вердикт зеленел бы от него.
 const workerTurnWas = store.markTurn(HOME, TASK, 'worker:api', '2020-01-01T00:00:00.000Z');
 store.readInbox(HOME, TASK, 'worker:api');
 const workerClean = asWorker();
-check(': чистый проход участника ставит отметку конца хода — прежде её получал только оркестратор',
+check(': чистый проход участника ставит turn-end mark — прежде её получал только оркестратор',
   workerClean.status === 0 && workerClean.stderr === ''
   && store.lastTurnAt(HOME, TASK, 'worker:api') > Date.parse(workerTurnWas),
   `status=${workerClean.status} ${workerClean.stderr}`
@@ -292,7 +292,7 @@ check(': чистый проход участника ставит отметк�
 store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'второе замечание' });
 const byEnv = asWorker('worker:api', { args: false });
 check(': без аргументов идентичность берётся из окружения — запасной путь ручного запуска',
-  byEnv.status === 2 && byEnv.stderr.includes('адрес=worker:api'), `status=${byEnv.status} ${byEnv.stderr}`);
+  byEnv.status === 2 && byEnv.stderr.includes('address=worker:api'), `status=${byEnv.status} ${byEnv.stderr}`);
 const roleless = asWorker('', { args: false });
 check(': без роли в окружении сессия участника снова резолвится оркестратором и его ход не держится',
   roleless.status === 0 && roleless.stderr === '' && store.countInbox(HOME, TASK, 'worker:api') === 1,
@@ -304,7 +304,7 @@ store.readInbox(HOME, TASK, 'worker:api');
 // Второй рубеж после аргументов. Он держит то, чего аргументы не покрывают: ручной запуск с
 // чужой тройкой в окружении и участника, поднятого прежним релизом, — там идентичность
 // по-прежнему приходит из окружения демона. Записать сюда чужой contact point значит увести
-// notification'ы адресата в свою сессию, а отметку конца хода — соврать о чужом ходе.
+// notification'ы адресата в свою сессию, а turn-end mark — соврать о чужом ходе.
 // Короткий id журнала против полного uuid пишущего — два написания одной сессии (замер
 // 2026-09-03 на `claude` 2.1.251: `id: "e8c5be23"` при `sessionId: "e8c5be23-dfef-…"`).
 const OWN_SHORT = 'e8c5be23';
@@ -326,7 +326,7 @@ const alienGuard = spawnSync(process.execPath, [
   env: { ...process.env, PATH: `${STUB}${path.delimiter}${process.env.PATH}` },
   encoding: 'utf8',
 });
-check(': чужая сессия за этот адрес не пишет ни contact point, ни отметку конца хода',
+check(': чужая сессия за этот адрес не пишет ни contact point, ни turn-end mark',
   alienGuard.status === 0 && alienGuard.stderr === ''
   && store.readWake(HOME, CHUZHOY, 'worker:api')?.socket === path.join(ROOT, 'svoy.sock')
   && store.lastTurnAt(HOME, CHUZHOY, 'worker:api') === Date.parse('2020-01-01T00:00:00.000Z'),
@@ -337,7 +337,7 @@ check(': чужая сессия за этот адрес не пишет ни c
 // молчи он здесь, самый частый вход в беду — чужой Stop-хук — прошёл бы неотличимо от
 // чистого прохода (второй раунд ревью).
 check(': сторож записал свой отказ в журнал надзирателя',
-  store.tailWardenLog(HOME, CHUZHOY, 10).some((l) => l.includes('отметка конца хода за адрес worker:api не идёт')
+  store.tailWardenLog(HOME, CHUZHOY, 10).some((l) => l.includes('turn-end mark за адрес worker:api не идёт')
     && l.includes(ALIEN_SESSION)),
   store.tailWardenLog(HOME, CHUZHOY, 5).join('\n') || '(журнал пуст)');
 // Своя сессия тем же вызовом пишет обе записи: гейт отличает чужого от владельца, а не
@@ -351,7 +351,7 @@ const ownGuard = spawnSync(process.execPath, [
   encoding: 'utf8',
 });
 check(': своя сессия тем же вызовом ход возвращает — гейт отличает чужого, а не запирает адрес',
-  ownGuard.status === 2 && /в mailbox'е 1/.test(ownGuard.stderr), `status=${ownGuard.status} ${ownGuard.stderr}`);
+  ownGuard.status === 2 && /mailbox has 1/.test(ownGuard.stderr), `status=${ownGuard.status} ${ownGuard.stderr}`);
 
 // --- , замечание ревью: сессия доезжает до contact point'а из НАГРУЗКИ события ------
 //
@@ -390,7 +390,7 @@ store.upsertParticipant(HOME, FRESH, store.participantRecord('worker:api', { nam
 store.sendMessage(HOME, FRESH, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог' });
 const fresh = cli({ PROMPTOBUS_TASK: FRESH });
 check('waits/ ещё нет: ход возвращается на непрочитанном, счётчик заводится сам',
-  fresh.status === 2 && /в mailbox'е 1/.test(fresh.stderr)
+  fresh.status === 2 && /mailbox has 1/.test(fresh.stderr)
   && existsSync(guardMarkFile(HOME, FRESH, 'orchestrator')),
   `status=${fresh.status} ${fresh.stderr}`);
 
@@ -461,7 +461,7 @@ check('живой прогон: событие Stop на stdin — код 2 и �
 // процессу хука эта переменная ничем не обещана — не окажись её, сторож молча не работал бы
 // на каждом ходу, неотличимо от чистого прохода.
 check('идентичность: session_id взят из нагрузки, а не из окружения',
-  hookRun.stderr.includes(`задача=${TASK}`), hookRun.stderr);
+  hookRun.stderr.includes(`task=${TASK}`), hookRun.stderr);
 const wrongSession = asHook(stopEvent('sess-postoronnyaya-9999'), { PROMPTOBUS_TASK: '' });
 check('идентичность: чужой session_id из нагрузки привязки не находит — молчание',
   wrongSession.status === 0 && wrongSession.stdout === '' && wrongSession.stderr === '',
@@ -469,7 +469,7 @@ check('идентичность: чужой session_id из нагрузки п�
 // Привязка на диске у SESSION уже есть (выше) — и по ней задача резолвится без PROMPTOBUS_TASK.
 const boundByEvent = asHook(stopEvent(), { PROMPTOBUS_TASK: '' });
 check('идентичность: по session_id из нагрузки находится привязка на диске',
-  boundByEvent.status === 2 && boundByEvent.stderr.includes(`задача=${TASK}`),
+  boundByEvent.status === 2 && boundByEvent.stderr.includes(`task=${TASK}`),
   `status=${boundByEvent.status} ${boundByEvent.stderr}`);
 
 // Нагрузки нет или она не разбирается — запасной путь через окружение. Так сторожа зовёт
@@ -583,7 +583,7 @@ const bothRun = spawnSync(process.execPath, [BIN, 'guard'], {
 });
 
 check(': leftover catalog does not skip the live mailbox — unread still returns the turn',
-  bothRun.status === 2 && /в mailbox'е 1/.test(bothRun.stderr)
+  bothRun.status === 2 && /mailbox has 1/.test(bothRun.stderr)
   && store.countInbox(BOTH_HOME, BOTH_TASK, 'orchestrator') === 1,
   `код ${bothRun.status} · out «${bothRun.stdout.trim()}» · err «${bothRun.stderr.trim()}»`
   + ` · непрочитано ${store.countInbox(BOTH_HOME, BOTH_TASK, 'orchestrator')}`);
@@ -664,7 +664,7 @@ check('преемник: сокет владельца ENOENT — сторож �
   deadHint.status === 0 && deadHint.stderr === ''
   && deadText.includes(SUCC) && deadText.includes('преемник после смены id')
   && deadText.includes(OLD_ORCH) && deadText.includes('2026-09-03T20:31:43.000Z')
-  && /непрочитанных 1/.test(deadText)
+  && /unread 1/.test(deadText)
   && deadText.includes('promptobus_mailbox {claim: true}')
   && !deadText.includes(emptyDead),
   `status=${deadHint.status} out=${JSON.stringify(deadHint.stdout)} err=${JSON.stringify(deadHint.stderr)}`);
