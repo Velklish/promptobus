@@ -16,10 +16,15 @@ Immediate repair was to stub all three names — `cursor`, `cursor-agent`, `agen
 
 Nothing detectable was damaged this time: the personal Cursor config held four servers, none of them ours, with no sandbox or temporary paths inside it. That is luck about which subcommand ran, not a property of the suite.
 
+A second route out, found the same day by the consumer track and different in mechanism: driver state homes. The package reads `PROMPTOBUS_CURSOR_HOME` and `PROMPTOBUS_CODEX_HOME` and falls back to a default under the real home directory when they are unset. A consumer that sets its own names instead had the Cursor and Codex registries writing to the operator's actual home while `inspect` read the sandbox — the two halves of one test looking at different directories, with no error anywhere.
+
+The predicate is the same in both routes and worth stating once: **sandboxing `HOME` and `TMPDIR` seals nothing by itself.** A child process escapes through `PATH`, and a default path escapes through an environment variable nobody set. Both were found by a test behaving oddly, not by a gate.
+
 ## Work to do
 
 - Make escape impossible rather than unlikely: run child processes with a `PATH` that contains only the stub directory, so an unstubbed name fails to resolve instead of finding the machine.
 - Decide whether the Cursor driver's `options.tool` should say `agent`, the name of the binary it actually runs. Today the declared name and the real one differ, and the harness had to know both.
+- Make a home default refuse rather than guess: with no state home declared, fail with a named variable instead of silently choosing one under the real home directory.
 
 ## Out of scope
 
