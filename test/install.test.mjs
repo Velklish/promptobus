@@ -280,7 +280,7 @@ test('cursor event-name gate matches the driver list and rejects any other name'
   assert.doesNotThrow(() => assertCursorHookEvents({ stop: [{}] }));
 });
 
-test('cursor install writes only known hook event names and no bus-feedback group', () => {
+test('cursor install writes only known hook event names and does not write a bus-feedback group', () => {
   const { dir, home } = sandbox();
   doInstall(dir, home, { harnesses: 'cursor' });
   const hooks = readJson(dir, path.join('.cursor', 'hooks.json')).hooks;
