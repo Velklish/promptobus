@@ -226,6 +226,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     formatCommand: (args) => [commandName, ...args].join(' '),
     formatNpx: (args) => ['npx', commandName, ...args].join(' '),
     busCommand: (args) => [commandName, ...args].join(' '),
+    busArgv: (args) => [binPath, ...args],
     cloneHint: (nsPath) => `git clone <url> ${nsPath}`,
     syncHint: () => `${commandName} install`,
     workerPreamble: ({ taskId, nsPath, branch }) => (
