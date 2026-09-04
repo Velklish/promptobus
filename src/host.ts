@@ -92,6 +92,16 @@ export interface HostToolBin {
  * and not `..`; an absolute path and `\\` are a shape error, not "no legacy".
  * `done` — the former CLI's close-active-tasks command, `<id>` placeholder.
  */
+/**
+ * The clone a directory belongs to, as the host names it. `abs` — the clone
+ * root; `nsPath` — the host's namespace path for it (`group/repo`,
+ * `external/repo`, or whatever the host uses for participant and task names).
+ */
+export interface HostClone {
+  abs: string;
+  nsPath: string;
+}
+
 export interface HostLegacyLayout {
   rel: string;
   done: string;
@@ -120,7 +130,6 @@ export interface PromptobusHost {
   pluginManifestRel(): string;
   busHookRel(): string;
   installManifestRel(): string;
-  reposRoot(): string;
   pluginSkillsRel(): string;
 
   declaredTools(): string[];
@@ -138,11 +147,23 @@ export interface PromptobusHost {
   formatCandidate(candidate: HostRepoCandidate): string;
   inWorkspace(abs: string): boolean;
   /**
+   * The clone `abs` sits in, or `null` when no clone of this workspace
+   * contains it. The host owns the layout entirely: which zones exist
+   * (`repos/<group>/<repo>`, `external/<repo>`, a flat root), how deep a
+   * namespace goes, whether a bare repository directly under a zone counts.
+   * The package asks and never walks the tree itself: a walk from one "repos
+   * root" knew a single zone, and the second zone a host grew turned into a
+   * refusal the host could not word.
+   */
+  cloneOf(abs: string): HostClone | null;
+  /**
    * Reviewer refusal about clone layout. `null` — this kind of refusal does
-   * not apply for this host (standalone does not require a group/repo pair).
+   * not apply for this host. A host that requires a particular shape of clone
+   * (a group/repo pair, a known zone) says so in its `no-clone` and
+   * `cwd-outside` texts: what a clone is, `cloneOf` has already decided.
    */
   reviewLayoutError(
-    kind: 'not-clone' | 'outside' | 'no-clone' | 'need-pair' | 'cwd-outside' | 'cwd-need-pair' | 'ask-path',
+    kind: 'not-clone' | 'outside' | 'no-clone' | 'cwd-outside' | 'ask-path',
     ctx?: { targetDir?: string; repoDir?: string; abs?: string; dir?: string },
   ): string | null;
 

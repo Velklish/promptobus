@@ -12,6 +12,7 @@ import {
 import type {
   HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
   HostServers, HostToolBin, PromptobusHost,
+  HostClone,
 } from './host.js';
 
 export const HOST_CONFIG = 'promptobus.json';
@@ -87,6 +88,23 @@ function defaultBranchOf(repoDir: string): string | null {
   return git(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
+// The clone `dir` sits in: descend from the root by path parts to the first
+// directory with `.git`. The root itself is never a clone here — a standalone
+// workspace holds its clones below the root, the same shape the review fixture
+// plants. nsPath — the path from the root, `/`-joined.
+function cloneBelow(root: string, dir: string): HostClone | null {
+  const rel = path.relative(root, dir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  let abs = root;
+  const taken: string[] = [];
+  for (const part of rel.split(path.sep)) {
+    abs = path.join(abs, part);
+    taken.push(part);
+    if (existsSync(path.join(abs, '.git'))) return { abs, nsPath: taken.join('/') };
+  }
+  return null;
+}
+
 export function createStandaloneHost(options: StandaloneHostOptions = {}): PromptobusHost {
   const found = findConfig(options.cwd ?? '.');
   const config: HostFile = { ...found.config, ...(options.config ?? {}) };
@@ -127,7 +145,6 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     pluginManifestRel: () => path.join('.promptobus', 'plugin.json'),
     busHookRel: () => path.join('.promptobus', 'hooks', 'bus.mjs'),
     installManifestRel: () => path.join('.promptobus', 'manifest.json'),
-    reposRoot: () => root,
     pluginSkillsRel: () => path.join('.promptobus', 'skills'),
 
     declaredTools: () => [...tools],
@@ -173,6 +190,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       const rel = path.relative(root, abs);
       return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
     },
+    cloneOf: (abs) => cloneBelow(root, abs),
     reviewLayoutError: (kind, ctx = {}) => {
       switch (kind) {
         case 'not-clone':

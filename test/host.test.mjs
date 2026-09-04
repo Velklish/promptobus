@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -64,9 +64,14 @@ test('createStandaloneHost lifts two independent hosts in one process', async ()
   assert.notEqual(a.workspaceRoot(), b.workspaceRoot());
   assert.equal(a.version, '0.0.0');
   assert.equal(a.locale, 'en');
-  assert.equal(a.reposRoot(), dirA);
   assert.equal(a.inWorkspace(dirA), true);
   assert.equal(a.inWorkspace(dirB), false);
+  // cloneOf: a clone below the root by its path, the root itself and the outside — null.
+  mkdirSync(path.join(dirA, 'g', 'r', '.git'), { recursive: true });
+  assert.deepEqual(a.cloneOf(path.join(dirA, 'g', 'r', 'src')), { abs: path.join(dirA, 'g', 'r'), nsPath: 'g/r' });
+  assert.equal(a.cloneOf(path.join(dirA, 'g')), null);
+  assert.equal(a.cloneOf(dirA), null);
+  assert.equal(a.cloneOf(dirB), null);
   assert.equal(a.findRoot(dirA), path.resolve(dirA));
   assert.equal(a.cloneHint('x'), 'git clone <url> x');
   assert.equal(a.formatNpx(['clone', 'x']), 'npx alpha clone x');

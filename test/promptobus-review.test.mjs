@@ -51,9 +51,9 @@ const g = (cwd, ...args) => {
 // Корень workspace — сам git-репозиторий, как в жизни: без этого папка группы
 // внутри repos/ не воспроизводит уход toplevel вверх, к корню.
 //
-// Dest `reposRoot()` is the workspace root itself — there is no dest-owned
-// `repos/` layout. This file plants `WS/repos/<group>/<clone>` as fixture data
-// so `cloneRootOf` can walk a nested tree. Expected `nsPath` values therefore
+// The standalone host's `cloneOf` descends from the workspace root — there is
+// no dest-owned `repos/` layout. This file plants `WS/repos/<group>/<clone>` as
+// fixture data so that walk finds a nested tree. Expected `nsPath` values therefore
 // start with the planted `repos/` segment; that is not a dest default.
 g(WS, 'init', '-b', 'main');
 const REPO = path.join(WS, 'repos', 'loads_search', 'cargos-api');
@@ -806,7 +806,7 @@ store.closeTask(home, plainTask.id);
 const WT = path.join(REPO, '.claude', 'worktrees', 'a2a-worker');
 g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a', WT);
 const wt = planReview(WS, { target: WT, task: task.id });
-// nsPath includes planted `repos/` — dest reposRoot is WS, see fixture note above.
+// nsPath includes planted `repos/` — standalone `cloneOf` walks from WS, see fixture note above.
 check('worktree клона — законная цель, репозиторий берётся из пути',
   wt.nsPath === 'repos/loads_search/cargos-api' && wt.repoDir === realpathSync(WT),
   `${wt.nsPath} · ${wt.repoDir}`);

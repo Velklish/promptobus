@@ -5,7 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — Unreleased
+## [0.2.0] — 2026-09-05
+
+### Changed
+
+- **Host contract: `cloneOf(abs)` replaces `reposRoot()`.** The host names the clone a directory belongs to and its namespace path; the package no longer walks a single "repos root" or requires a two-segment namespace — `need-pair` and `cwd-need-pair` are gone from `reviewLayoutError`. A host with several zones (`repos/<group>/<repo>` beside `external/<repo>`) could not be expressed before (PB-5).
+
+## [0.1.0] — 2026-09-04
 
 ### Added
 

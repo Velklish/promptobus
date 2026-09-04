@@ -11,7 +11,8 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 - Identity: `id`, `commandName`, `version`, `locale`
 - Roots: `workspaceRoot()`, `promptobusHome()`, `findRoot(cwd)`
 - Binaries: `nodePath()`, `binPath()`, `layoutBinPath()`
-- Layout relatives: tools manifest, skills, plugin, bus hook, install manifest, repos root
+- Layout relatives: tools manifest, skills, plugin, bus hook, install manifest
+- `cloneOf(abs)` — the clone a directory belongs to and its namespace path, or `null`; zones and namespace depth are the host's layout, the package never walks the tree
 - `declaredTools()` — harness names allowed for `--harness`
 - Rules and module notes for a repo directory
 - `participantServers()` — MCP map copied to a spawned session (the bus server is added by the CLI)
@@ -25,7 +26,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`.
 
-`legacyLayout()` is always `null`. `pluginDir()` is `null`. `memorySection()` is `null`. `resolveRepo` accepts a path on disk, not a remote namespace. `reviewLayoutError` returns `null` for pair-layout kinds this host does not use.
+`legacyLayout()` is always `null`. `pluginDir()` is `null`. `memorySection()` is `null`. `resolveRepo` accepts a path on disk, not a remote namespace. `cloneOf` descends from the root to the first directory with `.git`; the root itself is never a clone. `reviewLayoutError` knows `not-clone`, `outside`, `no-clone`, `cwd-outside`, `ask-path`; a host that requires a shape of clone (a group/repo pair, a known zone) words that in its `no-clone` text.
 
 `syncHint()` returns `<commandName> install`.
 

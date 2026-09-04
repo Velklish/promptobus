@@ -89,7 +89,7 @@ check('standalone host contract members that otherwise would have no call site',
   && hostA.promptobusHome() === storeHome(a, hostA)
   && hostA.toolsManifestRel() === 'promptobus.json'
   && hostA.installManifestRel() === path.join('.promptobus', 'manifest.json')
-  && hostA.reposRoot() === a
+  && hostA.cloneOf(a) === null
   && hostA.inWorkspace(a)
   && !hostA.inWorkspace(b)
   && hostA.cloneHint('x') === 'git clone <url> x'
