@@ -217,8 +217,8 @@ const empty = await worker.call('tools/call', { name: 'promptobus_mailbox', argu
 check('inbox: пустой mailbox называет home, задачу и адрес',
   text(empty).startsWith('пусто')
     && text(empty).includes(`PROMPTOBUS_HOME=${HOME}`)
-    && text(empty).includes(`задача=${TASK}`)
-    && text(empty).includes('адрес=worker:cargos-api'),
+    && text(empty).includes(`task=${TASK}`)
+    && text(empty).includes('address=worker:cargos-api'),
   text(empty));
 
 const sent = await orch.call('tools/call', {
@@ -311,13 +311,13 @@ const badType = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'gossip', body: 'текст' },
 });
 check('tools/call: чужой тип — isError, соединение живо',
-  badType.result?.isError === true && /протокол/i.test(text(badType)), text(badType));
+  badType.result?.isError === true && /protocol/i.test(text(badType)), text(badType));
 const badAddr = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'boss', type: 'task', body: 'текст' },
 });
 check('tools/call: неизвестный адрес — isError', badAddr.result?.isError === true, text(badAddr));
 const badTool = await orch.call('tools/call', { name: 'a2a_teleport', arguments: {} });
-check('tools/call: неизвестный инструмент — isError',
+check('tools/call: unknown tool — isError',
   badTool.result?.isError === true && /a2a_teleport/.test(text(badTool)), text(badTool));
 
 const stillAlive = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
@@ -340,10 +340,10 @@ const quietSend = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'ящик оркестратора пуст' },
 });
 check(': пустой свой mailbox send не называет — строка «всегда» перестаёт читаться',
-  !/твой mailbox/.test(text(quietSend)), text(quietSend));
+  !/your mailbox/.test(text(quietSend)), text(quietSend));
 const quietTask = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check(': пустой свой mailbox task не называет',
-  !/твой mailbox/.test(text(quietTask)), text(quietTask));
+  !/your mailbox/.test(text(quietTask)), text(quietTask));
 
 await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 await worker.call('tools/call', {
@@ -353,17 +353,17 @@ const loudSend = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'а в ящике непрочитанное' },
 });
 check(`: send называет счётчик своего mailbox'а и маршрут к нему`,
-  /твой mailbox: непрочитано 1 — забери инструментом promptobus_mailbox/.test(loudSend.result ? text(loudSend) : ''),
+  /your mailbox: unread 1 — fetch it with the promptobus_mailbox tool/.test(loudSend.result ? text(loudSend) : ''),
   text(loudSend));
 const loudTask = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check(': task отделяет свой mailbox от счётчиков участников',
-  /твой mailbox: непрочитано 1/.test(text(loudTask)) && /^- orchestrator .*непрочитано 1$/m.test(text(loudTask)),
+  /your mailbox: unread 1/.test(text(loudTask)) && /^- orchestrator .*непрочитано 1$/m.test(text(loudTask)),
   text(loudTask));
 check(': свой mailbox назван в шапке, до перечня участников',
-  text(loudTask).indexOf('твой mailbox:') < text(loudTask).indexOf('участники:'), text(loudTask));
+  text(loudTask).indexOf('your mailbox:') < text(loudTask).indexOf('участники:'), text(loudTask));
 const afterInbox = await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(': inbox счётчика не печатает — он только что забрал сообщения',
-  !/твой mailbox/.test(text(afterInbox)) && text(afterInbox).includes('лежит и ждёт'), text(afterInbox));
+  !/your mailbox/.test(text(afterInbox)) && text(afterInbox).includes('лежит и ждёт'), text(afterInbox));
 
 // --- задача аргументом ----------------------------------------------
 //
@@ -376,7 +376,7 @@ store.createTask(HOME, { id: SECOND, title: 'ревью loads_search/cargos-api'
 
 const declared = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('обратная совместимость: без аргумента берётся объявленная задача сессии',
-  text(declared).includes(`задача=${TASK}`), text(declared));
+  text(declared).includes(`task=${TASK}`), text(declared));
 
 const loose = startServer('orchestrator', { task: '' });
 await loose.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
@@ -413,12 +413,12 @@ check(': снятый с наблюдения гость в доклад о вс
 
 const inboxSecond = await loose.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } });
 check('inbox: аргумент task забирает mailbox указанной задачи',
-  text(inboxSecond).includes('отчёт по второй задаче') && text(inboxSecond).includes(`задача=${SECOND}`),
+  text(inboxSecond).includes('отчёт по второй задаче') && text(inboxSecond).includes(`task=${SECOND}`),
   text(inboxSecond));
 
 const emptySecond = await loose.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } });
 check('inbox: пустой mailbox указанной задачи называет её же',
-  text(emptySecond).startsWith('пусто') && text(emptySecond).includes(`задача=${SECOND}`), text(emptySecond));
+  text(emptySecond).startsWith('пусто') && text(emptySecond).includes(`task=${SECOND}`), text(emptySecond));
 
 const schemas = await loose.call('tools/list', {});
 check('tools/list: аргумент task объявлен у всех трёх инструментов',
@@ -440,7 +440,7 @@ picking.notify('notifications/initialized');
 
 const pickedInbox = await picking.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(': пустой inbox называет задачу по имени, а не одним id',
-  text(pickedInbox).includes(`задача=${TASK} «событие CargoCreated в двух сервисах»`), text(pickedInbox));
+  text(pickedInbox).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`), text(pickedInbox));
 
 // Непустая ветка identity печатала и до  — новым тут стало имя задачи.
 await worker.call('tools/call', {
@@ -450,8 +450,8 @@ const pickedMsgs = await picking.call('tools/call', { name: 'promptobus_mailbox'
 check(': непустой mailbox называет home, задачу с именем и адрес',
   text(pickedMsgs).includes('сообщение в подобранную задачу')
     && text(pickedMsgs).includes(`PROMPTOBUS_HOME=${HOME}`)
-    && text(pickedMsgs).includes(`задача=${TASK} «событие CargoCreated в двух сервисах»`)
-    && text(pickedMsgs).includes('адрес=orchestrator'),
+    && text(pickedMsgs).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`)
+    && text(pickedMsgs).includes('address=orchestrator'),
   text(pickedMsgs));
 picking.stop();
 
@@ -463,8 +463,8 @@ const namedSend = await worker.call('tools/call', {
 check(': send называет mailbox, в который легло сообщение',
   /отправлено status → оркестратор · адрес orchestrator/.test(text(namedSend))
     && text(namedSend).includes(`PROMPTOBUS_HOME=${HOME}`)
-    && text(namedSend).includes(`задача=${TASK} «событие CargoCreated в двух сервисах»`)
-    && text(namedSend).includes('адрес=worker:cargos-api'),
+    && text(namedSend).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`)
+    && text(namedSend).includes('address=worker:cargos-api'),
   text(namedSend));
 store.readInbox(HOME, TASK, 'orchestrator');
 
@@ -473,7 +473,7 @@ store.readInbox(HOME, TASK, 'orchestrator');
 const NAMELESS = 't20260813-110000';
 store.createTask(HOME, { id: NAMELESS });
 check(': у задачи без имени печатается один id, без кавычек',
-  store.identityLabel(HOME, NAMELESS, 'orchestrator') === `PROMPTOBUS_HOME=${HOME} · задача=${NAMELESS} · адрес=orchestrator`,
+  store.identityLabel(HOME, NAMELESS, 'orchestrator') === `PROMPTOBUS_HOME=${HOME} · task=${NAMELESS} · address=orchestrator`,
   store.identityLabel(HOME, NAMELESS, 'orchestrator'));
 store.closeTask(HOME, NAMELESS);
 
@@ -620,14 +620,14 @@ check(': пустой чужой mailbox тоже назван чужим — с
 putOwned('счётчик чужому');
 const foreignCount = await owns.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check(': чужому счётчик не зовёт в inbox — сигнал не работает против гейта',
-  /ЧУЖОЙ MAILBOX: непрочитано 1/.test(text(foreignCount)) && !/твой mailbox/.test(text(foreignCount))
+  /ЧУЖОЙ MAILBOX: unread 1/.test(text(foreignCount)) && !/your mailbox/.test(text(foreignCount))
   && /claim/.test(text(foreignCount)), text(foreignCount));
 joinWorker(HOME, OWNED);
 const foreignSend = await owns.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'status', body: 'счётчик в ответе отправки' },
 });
 check(': та же формулировка в ответе send',
-  /ЧУЖОЙ MAILBOX: непрочитано 1/.test(text(foreignSend)) && !/твой mailbox/.test(text(foreignSend)),
+  /ЧУЖОЙ MAILBOX: unread 1/.test(text(foreignSend)) && !/your mailbox/.test(text(foreignSend)),
   text(foreignSend));
 store.readInbox(HOME, OWNED, 'orchestrator');
 
@@ -700,7 +700,7 @@ check(': первая строка живого ответа называет о
   sameHead.startsWith('сообщений 2: status от worker:cargos-api, result от worker:cargos-api ·'), sameHead);
 // Служебный хвост на месте — ради него строку и читают.
 check(': служебный хвост первой строки сохранён целиком',
-  sameHead.includes(`PROMPTOBUS_HOME=${HOME}`) && sameHead.includes('адрес=orchestrator')
+  sameHead.includes(`PROMPTOBUS_HOME=${HOME}`) && sameHead.includes('address=orchestrator')
   && sameHead.includes(TASK), sameHead);
 // Ответ отправки называет тип и адресата первым делом — до служебного хвоста.
 check(': ответ send начинается с того, что и кому ушло',
@@ -770,7 +770,7 @@ const STALLED = 'stalled-t20260828-150000';
 const GHOST_NAME = 'Worker: призрак';
 store.createTask(HOME, { id: STALLED, title: 'вставший участник' });
 store.upsertParticipant(HOME, STALLED, store.participantRecord('worker:cargos-api', { name: GHOST_NAME }));
-// Запись без pid рядом с живой записью с pid — «числится, но процесса за ней нет»
+// Запись без pid рядом с живой записью с pid — «LISTED, but no process behind it»
 //: признак самокалибрующийся, и одной записи для него мало.
 const STALL_BIN = path.join(ROOT, 'stall-bin');
 // Замечание ревью: ответ `mailbox` — третий потребитель предиката стопа, и
@@ -796,17 +796,17 @@ await watcher.call('initialize', { protocolVersion: '2025-06-18', capabilities: 
 watcher.notify('notifications/initialized');
 const stalledInbox = text(await watcher.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
 check(': inbox докладывает вставшего участника — теми же словами, что и команда',
-  /worker:cargos-api ЧИСЛИТСЯ, но процесса за ней нет/.test(stalledInbox)
-  && /claude logs ghost9/.test(stalledInbox) && /у каждого свой маршрут/.test(stalledInbox), stalledInbox);
+  /worker:cargos-api LISTED, but no process behind it/.test(stalledInbox)
+  && /claude logs ghost9/.test(stalledInbox) && /each has its own route/.test(stalledInbox), stalledInbox);
 // Доклад приходит в ответе инструмента, а не только в stdout завершившейся команды: его
 // читает агент, и маршрут по вставшему обязан доехать до него.
 check(': доклад ведёт заводить ожидание не зовёт — маршрут по каждому свой',
   !/запусти ожидание снова/.test(stalledInbox), stalledInbox);
 check('замечание ревью: ответ mailbox не зовёт вставшим того, кто только что прислал сообщение',
-  !/worker:sdal встал/.test(stalledInbox) && /worker:cargos-api ЧИСЛИТСЯ/.test(stalledInbox), stalledInbox);
+  !/worker:sdal stalled/.test(stalledInbox) && /worker:cargos-api LISTED/.test(stalledInbox), stalledInbox);
 watcher.stop();
 
-// Worker'у смотреть не за кем: его собеседник не bg-сессия, а сессия человека, и в
+// Worker'у смотреть не за кем: его собеседник не bg-session, а сессия человека, и в
 // `claude agents --json` её стопа не видно — то же условие, что у команды.
 const watcherWorker = startServer('worker:cargos-api', {
   task: STALLED,
@@ -816,7 +816,7 @@ await watcherWorker.call('initialize', { protocolVersion: '2025-06-18', capabili
 watcherWorker.notify('notifications/initialized');
 const workerInbox = text(await watcherWorker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
 check(`: worker'у доклада о вставших нет — смотреть ему не за кем`,
-  !/ЧИСЛИТСЯ/.test(workerInbox), workerInbox);
+  !/LISTED/.test(workerInbox), workerInbox);
 watcherWorker.stop();
 
 // --- : негодная запись участника не роняет task --------------------
@@ -873,9 +873,9 @@ await brokenSrv.call('initialize', { protocolVersion: '2025-06-18', capabilities
 brokenSrv.notify('notifications/initialized');
 const brokenInbox = text(await brokenSrv.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
 check(': inbox называет битое сообщение в ОТВЕТЕ, а не только в stderr',
-  brokenInbox.includes('БИТОЕ СООБЩЕНИЕ') && brokenInbox.includes(BROKEN_NAME), brokenInbox);
+  brokenInbox.includes('BROKEN MESSAGE') && brokenInbox.includes(BROKEN_NAME), brokenInbox);
 check(': доклад идёт первой строкой — это находка, а хвост длинного ответа читают не всегда',
-  brokenInbox.startsWith('БИТОЕ СООБЩЕНИЕ'), brokenInbox.split('\n')[0]);
+  brokenInbox.startsWith('BROKEN MESSAGE'), brokenInbox.split('\n')[0]);
 check(': целое рядом с битым дошло тем же ответом',
   brokenInbox.includes('целое рядом с битым'), brokenInbox);
 
@@ -885,7 +885,7 @@ const SECOND_BROKEN = '20260829T071500000-0001-orchestrator.json';
 writeFileSync(path.join(brokenBox, SECOND_BROKEN), '{"оборван');
 const brokenEmpty = text(await brokenSrv.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
 check(': mailbox называет битое и на пустом ответе',
-  brokenEmpty.includes('БИТОЕ СООБЩЕНИЕ') && brokenEmpty.includes(SECOND_BROKEN)
+  brokenEmpty.includes('BROKEN MESSAGE') && brokenEmpty.includes(SECOND_BROKEN)
   && brokenEmpty.includes('пусто'), brokenEmpty);
 check(': оба битых уехали в broken/, mailbox не заткнут',
   store.countInbox(HOME, BROKEN, 'worker:cargos-api') === 0
@@ -970,21 +970,21 @@ const words = startServer('orchestrator');
 await words.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 const noMethod = await words.call('resources/list', {});
 check(': текст неизвестного метода прежний, слово в слово',
-  noMethod.error?.message === 'метод «resources/list» не поддерживается', JSON.stringify(noMethod.error));
+  noMethod.error?.message === 'method "resources/list" is not supported', JSON.stringify(noMethod.error));
 const noTool = await words.call('tools/call', { name: 'teleport', arguments: {} });
 check(': текст неизвестного инструмента прежний, слово в слово',
-  text(noTool) === 'ошибка: неизвестный инструмент «teleport»', text(noTool));
+  text(noTool) === 'error: unknown tool "teleport"', text(noTool));
 const failedTool = await words.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'gossip', body: 'текст' },
 });
-check(': отказ инструмента идёт зачином «ошибка: » и без стека',
-  text(failedTool).startsWith('ошибка: ') && !/\n\s+at /.test(text(failedTool)), text(failedTool));
+check(': отказ инструмента идёт зачином "error: " и без стека',
+  text(failedTool).startsWith('error: ') && !/\n\s+at /.test(text(failedTool)), text(failedTool));
 words.raw('{ это не json\n');
 for (let i = 0; i < 200 && words.unsolicited.length === 0; i += 1) await new Promise((r) => { setTimeout(r, 20); });
 const parseFail = words.unsolicited[0];
 check(': неразобранная строка — -32700 прежним текстом и с id null',
   parseFail?.id === null && parseFail?.error?.code === -32700
-  && parseFail?.error?.message === 'не разобрано как JSON', JSON.stringify(parseFail));
+  && parseFail?.error?.message === 'not parsed as JSON', JSON.stringify(parseFail));
 const afterParse = await words.call('ping', {});
 check(': соединение неразобранную строку пережило',
   afterParse.result && Object.keys(afterParse.result).length === 0, JSON.stringify(afterParse));
@@ -1029,18 +1029,18 @@ check(': устаревший PROMPTOBUS_HOME ведёт в новый коре�
 
 // --- : строки участника, которые собирает adapter ----------------------
 //
-// `репозиторий`, `worktree … (ветка)` и `bg-сессия` в ответе `task` собирает
+// `repository`, `worktree … (branch)` и `bg-session` в ответе `task` собирает
 // `decorateParticipant` ([server.js](../lib/server.js)) — store этих полей не
 // печатает. До этой задачи их не сверял никто: мутационная проба  отцепила хук
 // decoration целиком, и файл остался зелёным — краснел только golden набора package и
-// только по строке `репозиторий`. Worktree здесь НАСТОЯЩИЙ: ветку в этой строке называет
+// только по строке `repository`. Worktree здесь НАСТОЯЩИЙ: ветку в этой строке называет
 // git, а не журнал, и на выдуманном пути проверялась бы ветка журнальная.
 const DECOR = 'decor-t20260902-130000';
 const DECOR_REPO = path.join(ROOT, 'repo-decor');
 const DECOR_BRANCH = 'worktree-promptobus-decor';
 const DECOR_WT = path.join(DECOR_REPO, '.claude', 'worktrees', 'promptobus-decor');
 // Код возврата у самого git, а не у стенда: упавший `worktree add` (или `init -b` на git
-// старше 2.28) дал бы красную «git не ответил — worktree снят?», то есть подменил бы
+// старше 2.28) дал бы красную «git did not answer — worktree removed?», то есть подменил бы
 // предмет проверки журнальной веткой и назвал бы виноватым механизм.
 const git = (...args) => {
   const r = spawnSync('git', args, { encoding: 'utf8' });
@@ -1068,21 +1068,21 @@ const decorOut = text(await decorSrv.call('tools/call', { name: 'promptobus_task
 decorSrv.stop();
 const decorLine = decorOut.split('\n').find((l) => l.startsWith('- worker:cargos-api')) ?? '';
 const bareLine = decorOut.split('\n').find((l) => l.startsWith('- worker:web')) ?? '';
-check(': ответ task печатает репозиторий участника',
-  decorLine.includes('репозиторий loads_search/cargos-api'), decorLine || decorOut);
+check(': ответ task печатает repository участника',
+  decorLine.includes('repository loads_search/cargos-api'), decorLine || decorOut);
 // Кусок строки целиком, а не три вхождения порознь: порядок частей — контракт, общий с
 // `promptobus status`, и проверка по одному `includes` пережила бы перестановку молча.
-check(': ответ task печатает worktree участника с настоящей веткой git — перед bg-сессией',
-  decorLine.includes(`worktree ${DECOR_WT} (ветка ${DECOR_BRANCH}) · bg-сессия ab12cd34`),
+check(': ответ task печатает worktree участника с настоящей веткой git — перед bg-session',
+  decorLine.includes(`worktree ${DECOR_WT} (branch ${DECOR_BRANCH}) · bg-session ab12cd34`),
   decorLine || decorOut);
-check(': у участника без репозитория, worktree и сессии этих строк нет',
+check(': у участника без repository, worktree и сессии этих строк нет',
   bareLine.startsWith('- worker:web · непрочитано')
-  && !/(репозиторий|worktree |bg-сессия)/.test(bareLine), bareLine || decorOut);
+  && !/(repository |worktree |bg-session)/.test(bareLine), bareLine || decorOut);
 
 // --- : смесь версий — текст отказа доходит до инструментов -------------
 //
 // Отказ читателя журнала собирает package, а до агента его доносит adapter строкой
-// `ошибка: <текст>` ([server.js](../lib/server.js), `tool-failed`). Путь этот
+// `error: <текст>` ([server.js](../lib/server.js), `tool-failed`). Путь этот
 // общий у всех инструментов, но проверяется он именно здесь: живой случай  пришёл
 // не из CLI, а из `promptobus_send` сессии, работавшей с сервером прежнего релиза.
 //

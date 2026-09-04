@@ -69,20 +69,20 @@ check('отсоединённый HEAD — null, а не строка «HEAD»',
   return got === null;
 })());
 
-check('строка ветки: журнал и git совпали — без шума', branchLine('worktree-a2a-clean', 'worktree-a2a-clean') === 'ветка worktree-a2a-clean');
+check('строка ветки: журнал и git совпали — без шума', branchLine('worktree-a2a-clean', 'worktree-a2a-clean') === 'branch worktree-a2a-clean');
 check('строка ветки: расхождение названо громко и с обеими ветками', (() => {
   const line = branchLine('worktree-a2a-moved', 'feat/diagnostics-domain');
-  return line.includes('WORKER СМЕНИЛ ВЕТКУ') && line.includes('worktree-a2a-moved') && line.includes('feat/diagnostics-domain');
+  return line.includes('WORKER CHANGED BRANCH') && line.includes('worktree-a2a-moved') && line.includes('feat/diagnostics-domain');
 })(), branchLine('worktree-a2a-moved', 'feat/diagnostics-domain'));
 check('строка ветки: git молчит — говорим это, а не печатаем журнальную как факт',
-  branchLine('worktree-a2a-clean', null).includes('git не ответил'), branchLine('worktree-a2a-clean', null));
+  branchLine('worktree-a2a-clean', null).includes('git did not answer'), branchLine('worktree-a2a-clean', null));
 
 // --- судьба каталога при закрытии задачи ------------------------------
 const disp = (p) => worktreeDisposition(inspectWorktree(REPO, p, 'master'));
 check('слитый и чистый worktree — снять', disp(CLEAN).action === 'remove', JSON.stringify(disp(CLEAN)));
 check('есть свои коммиты — оставить и назвать, сколько их', (() => {
   const d = disp(AHEAD);
-  return d.action === 'keep' && d.reason.includes('1 коммит');
+  return d.action === 'keep' && d.reason.includes('1 commit');
 })(), JSON.stringify(disp(AHEAD)));
 check('сверка идёт по ветке от git, а не по журнальной: уведённый worktree не снимается', (() => {
   writeFileSync(path.join(MOVED, 'f'), 'правка на своей ветке\n');
@@ -95,7 +95,7 @@ check('незакоммиченные правки — оставить', (() =>
   writeFileSync(path.join(CLEAN, 'f'), 'недописанное\n');
   const d = disp(CLEAN);
   writeFileSync(path.join(CLEAN, 'f'), 'первый\n');
-  return d.action === 'keep' && d.reason.includes('незакоммиченные');
+  return d.action === 'keep' && d.reason.includes('uncommitted');
 })());
 // Тристейт `adds` держится честно: `false` означает «сверили merge-tree, вливать
 // нечего» — приговор каталогу. Там, где сверки не было (грязное дерево, молчание git,
@@ -113,7 +113,7 @@ check('adds не выдумывает «вливать нечего» там, г
 // не 'keep', он ведёт в `removeWorktree` — то есть прежняя ветка была миной.
 check('каталога нет — оставить, а не вести в снос', (() => {
   const d = worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'));
-  return d.action === 'keep' && /git не ответил/.test(d.reason);
+  return d.action === 'keep' && /git did not answer/.test(d.reason);
 })(), JSON.stringify(worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'))));
 check('сверить не с чем — оставить, а не снести на всякий случай',
   worktreeDisposition(inspectWorktree(REPO, CLEAN, 'нет-такой-ветки')).action === 'keep',
@@ -245,7 +245,7 @@ const cf = inspectWorktree(REPO, CF, 'master');
 check('конфликт слияния — «не знаю», а не «вливать нечего»', cf.adds === null, String(cf.adds));
 check('неизвестность решает в пользу «оставить», и причина названа', (() => {
   const d = worktreeDisposition(cf);
-  return d.action === 'keep' && /конфликт или старый git/.test(d.reason);
+  return d.action === 'keep' && /conflict or old git/.test(d.reason);
 })(), JSON.stringify(worktreeDisposition(cf)));
 git(REPO, 'worktree', 'remove', '--force', CF);
 git(REPO, 'branch', '-D', 'worktree-a2a-conflict');
@@ -366,7 +366,7 @@ check('запись идёт через tmp+rename, а не поверх чуж�
 //
 // Дефолтный мегабайт `spawnSync` подменяет ответ ровно на самом нужном каталоге:
 // по-настоящему грязный worktree перебирает его, процесс убивается, и клон читается как
-// «git не ответил» вместо «с незакоммиченным». Фикстура настоящая: пять тысяч файлов с
+// «git did not answer» вместо «с незакоммиченным». Фикстура настоящая: пять тысяч файлов с
 // длинными именами дают больше мегабайта `status --porcelain` (замер — 1.2 МБ, вся
 // проверка около 0.4 с).
 const BIG = path.join(SB, 'big');
@@ -383,7 +383,7 @@ const bigStatus = git(BIGWT, 'status', '--porcelain');
 check('фикстура: вывод status перебирает дефолтный мегабайт',
   bigStatus.stdout.length > 1024 * 1024, String(bigStatus.stdout.length));
 const bigInfo = inspectWorktree(BIG, BIGWT, 'master');
-check('очень грязный worktree читается как грязный, а не как «git не ответил»',
+check('очень грязный worktree читается как грязный, а не как «git did not answer»',
   bigInfo.dirty === true, JSON.stringify(bigInfo));
 
 // --- живость сессии: «жива» против «числится» -------------------------

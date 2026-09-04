@@ -99,4 +99,4 @@ check(': база ревью — коммит, от которого worktree ad
 check(': при перестановке лесенки в дифф вернулась бы работа оркестратора — её там нет',
   plan.diff.includes('rabota.txt') && !plan.diff.includes('orkestrator.txt'), plan.stat);
 check(': угаданная ветка названа вслух, и это master — прямое чтение порядка лесенки',
-  /merge-base с master /.test(String(plan.baseLine)), String(plan.baseLine));
+  /merge-base with master /.test(String(plan.baseLine)), String(plan.baseLine));
