@@ -1,10 +1,8 @@
-// Contract suite driver'ов и машины состояний надзирателя (`BL-408`). Запуск — своя
-// команда package: `npm test --prefix cli/packages/promptobus` из корня репозитория.
+// Contract suite driver'ов и машины состояний надзирателя. Запуск — `npm test`.
 //
 // Driver'ы здесь ПОДСТАВНЫЕ, и это не экономия, а предмет проверки: контракт обязан
-// держаться на harness'е, которого не существует. Настоящий driver один, он живёт в CLI, и
-// его собственные ветки — сокет, реестр сессий, отказ бинаря — проверяются там
-// ([cli/test/promptobus-warden.test.mjs](../../../test/promptobus-warden.test.mjs)).
+// держаться на harness'е, которого не существует. Настоящие driver'ы живут в `lib/`,
+// их собственные ветки — сокет, реестр сессий, отказ бинаря — проверяются отдельно.
 //
 // Четыре рода driver'а покрыты подставными: push (будит сам), pull (организует свой
 // polling), managed (сессию поднял он) и attached (сессия подключилась сама).
@@ -18,8 +16,8 @@ import test from 'node:test';
 const bus = await import('../dist/index.js');
 
 // Routing policy обязательна при открытии engine, и правило её — дело adapter'а (ADR-032,
-// §6): здесь adapter'а нет, и его играет набор. Правило ATI («worker'у нельзя писать
-// worker'у») живёт в CLI и проверяется там.
+// §6): здесь adapter'а нет, и его играет набор. Правило «worker'у нельзя писать worker'у»
+// живёт у потребителя и проверяется там.
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-driver-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
@@ -27,7 +25,7 @@ const home = path.join(SB, 'ws', '.promptobus');
 const engine = bus.openEngine({ home, policy: () => ({ allow: true }) });
 
 // Adapter'а здесь нет, и его играет набор: перевод адреса в запись участника v1 — его дело,
-// и делает он его теми же правилами, что дверь механизма (`cli/lib/promptobus/store.js`).
+// и делает он его теми же правилами, что дверь механизма (`lib/store.js`).
 // Адрес лежит полем `metadata`: по нему участника называет notification и по нему ключуются
 // health, contact point'ы и отметки стопа.
 function rec(address, { harness = 'fake', mode, sessionRef = null, ...fields } = {}) {
@@ -94,7 +92,7 @@ function fakeDriver(id, {
   return d;
 }
 
-// Отказ асинхронной операции: `stopParticipant` отдаёт обещание (`BL-473`), и синхронный
+// Отказ асинхронной операции: `stopParticipant` отдаёт обещание, и синхронный
 // `try` прошёл бы мимо отказа с исходом «не бросило».
 const rejected = async (fn) => {
   try {
@@ -266,7 +264,7 @@ test('stop гасит только managed: attached отказывает реж
   const managed = rec('worker:a', { harness: 'fake', mode: 'managed', sessionRef: 'sess-a' });
   const attached = rec('worker:b', { harness: 'fake', mode: 'attached', sessionRef: 'sess-b' });
   // Исход гашения `await`'ится: driver вправе дождаться, пока сессии у harness'а не станет
-  // (`BL-473`), и синхронное чтение поля прошло бы мимо обещания.
+  //, и синхронное чтение поля прошло бы мимо обещания.
   assert.equal((await bus.stopParticipant(managed, registry)).ok, true);
   assert.deepEqual(driver.calls.stop, ['sess-a']);
   const refused = await rejected(() => bus.stopParticipant(attached, registry));
