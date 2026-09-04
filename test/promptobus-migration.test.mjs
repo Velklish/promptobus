@@ -148,7 +148,7 @@ test('preflight: оба root\'а сразу — отказ без merge', async 
   await t.test('отказ называет оба каталога и не берётся их сливать', () => {
     assert.ok(plan.refusal, 'отказа нет');
     assert.ok(plan.refusal.includes(target) && plan.refusal.includes(home), plan.refusal);
-    assert.match(plan.refusal, /Слить их механизм не берётся/);
+    assert.match(plan.refusal, /The mechanism will not merge them/);
   });
 
   await t.test('legacy store не тронут', () => {
@@ -165,7 +165,7 @@ test('preflight: повреждённый корень — отказ без м�
     const plan = preflight(root);
     assert.ok(plan.refusal, 'отказа нет');
     assert.equal(plan.needed, false);
-    assert.match(plan.refusal, /не каталог/);
+    assert.match(plan.refusal, /is not a directory/);
   });
 
   await t.test('tasks/ файлом вместо каталога — тот же отказ', () => {
@@ -174,7 +174,7 @@ test('preflight: повреждённый корень — отказ без м�
     writeFileSync(path.join(other, 'legacy', 'a2a', 'tasks'), 'подмена\n');
     const plan = preflight(other);
     assert.ok(plan.refusal, 'отказа нет');
-    assert.match(plan.refusal, /не каталог/);
+    assert.match(plan.refusal, /is not a directory/);
     assert.equal(existsSync(path.join(other, ROOT_DIR)), false);
   });
 });
@@ -598,7 +598,7 @@ test('повреждённая задача уезжает в migration-broken �
   await t.test('её каталог сохранён целиком, с причиной рядом', () => {
     assert.equal(existsSync(path.join(target, 'migration-broken', CLOSED, 'task.json')), true);
     assert.match(readFileSync(path.join(target, 'migration-broken', `${CLOSED}.txt`), 'utf8'),
-      /журнал не разобран/);
+      /journal did not parse/);
   });
 
   await t.test('здоровая задача при этом читается', () => {

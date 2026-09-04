@@ -245,7 +245,7 @@ store.readInbox(HOME, TASK, 'worker:api');
 const done = stubKnock();
 const r2 = await wdn.wardenRound(HOME, TASK, { knock: done });
 check('забранный mailbox — это и есть подтверждение доставки',
-  r2.events.some((e) => /доставлено worker:api/.test(e)), JSON.stringify(r2.events));
+  r2.events.some((e) => /delivered worker:api/.test(e)), JSON.stringify(r2.events));
 check('счётчики ожидания сброшены, доставка отмечена временем',
   health()['worker:api'].unread === 0 && health()['worker:api'].since === null
   && typeof health()['worker:api'].deliveredAt === 'string' && sinceBefore !== null,
@@ -263,7 +263,7 @@ check(`contact point'а нет — стука нет и канал self-wake`,
   noWake.calls.length === 0 && health().orchestrator.channel === 'self-wake',
   JSON.stringify(health().orchestrator));
 check('откат назван в журнале надзирателя',
-  r3.events.some((e) => /откат на self-wake orchestrator/.test(e)), JSON.stringify(r3.events));
+  r3.events.some((e) => /fell back to self-wake orchestrator/.test(e)), JSON.stringify(r3.events));
 
 // Участник без contact point'а входит в ветку доставки КАЖДЫЙ круг: `knockedAt` ему не
 // ставится никогда, а сокет он может сдать уже после того, как сообщение легло. Значит
@@ -288,7 +288,7 @@ check('сокет не принял notification — канал откатыва
   health().orchestrator.channel === 'self-wake' && health().orchestrator.knockError === 'ENOENT',
   JSON.stringify(health().orchestrator));
 check('причина отказа названа в журнале',
-  r4.events.some((e) => /сокет не принял notification \(ENOENT\)/.test(e)), JSON.stringify(r4.events));
+  r4.events.some((e) => /did not accept the notification \(ENOENT\)/.test(e)), JSON.stringify(r4.events));
 
 // Отказ throttl-ится тем же порогом, что и успех, — иначе неотвечающий сокет получал бы
 // попытку каждую секунду (за шесть часов больше двадцати тысяч соединений), а сокет,
@@ -304,7 +304,7 @@ check('время попытки записано, а время доставк�
   JSON.stringify(health().orchestrator));
 check('повторный отказ с той же причиной журнал не заливает',
   !(await wdn.wardenRound(HOME, TASK, { knock: stubKnock({ ok: false, error: 'ENOENT' }), now: T1 + wdn.KNOCK_RETRY_SEC * 1000 + 1000 }))
-    .events.some((e) => /откат на self-wake orchestrator/.test(e)));
+    .events.some((e) => /fell back to self-wake orchestrator/.test(e)));
 
 // Участник перезапустился и сдал ДРУГОЙ сокет: прежний адрес мёртв по построению, и
 // досиживать порог по нему значит держать участника спящим ровно там, где он только что
@@ -317,19 +317,19 @@ check('переписанный contact point будит немедленно, �
   moved.calls.length === 1 && moved.calls[0].endpoint.socket === SOCK2,
   JSON.stringify(moved.calls.map((c) => c.endpoint.socket)));
 check('переписанный contact point назван в журнале',
-  rm.events.some((e) => /contact point переписан/.test(e)), JSON.stringify(rm.events));
+  rm.events.some((e) => /contact point rewritten/.test(e)), JSON.stringify(rm.events));
 
 // --- health: молчание дольше порога -------------------------------------------
 
 const late = Date.now() + (wdn.SILENCE_SEC + 60) * 1000;
 const r5 = await wdn.wardenRound(HOME, TASK, { knock: stubKnock(), now: late });
 check('молчание дольше порога эскалируется с причиной',
-  r5.events.some((e) => /МОЛЧИТ orchestrator/.test(e)) && typeof health().orchestrator.escalatedAt === 'string',
+  r5.events.some((e) => /SILENT orchestrator/.test(e)) && typeof health().orchestrator.escalatedAt === 'string',
   JSON.stringify(r5.events));
 
 const r6 = await wdn.wardenRound(HOME, TASK, { knock: stubKnock(), now: late + 60_000 });
 check('эскалация однократна — журнал не заливается одним фактом',
-  !r6.events.some((e) => /МОЛЧИТ orchestrator/.test(e)), JSON.stringify(r6.events));
+  !r6.events.some((e) => /SILENT orchestrator/.test(e)), JSON.stringify(r6.events));
 
 // --- : круг присмотра снимок сессий не запрашивает -----------------------
 //
@@ -510,7 +510,7 @@ store.closeTask(HOME, CLOSED);
 check('закрытую задачу не стережёт никто',
   wdn.ensureWarden(HOME, CLOSED, { env: {}, launch, host: HOST }) === null && launches === 1);
 const stopped = await wdn.wardenRound(HOME, CLOSED, { knock: stubKnock() });
-check('круг присмотра по закрытой задаче выходит с причиной', stopped.stop === 'задача закрыта', stopped.stop);
+check('круг присмотра по закрытой задаче выходит с причиной', stopped.stop === 'task is closed', stopped.stop);
 
 // След автоподъёма для гейта раннера. Пишется в точке решения «поднимаем», а не
 // внутри отвязанного процесса: гейт читает файл сразу после прогона, гнаться за только что
@@ -751,7 +751,7 @@ store.writeJsonAtomic(store.wardenMarkFile(HOME, BEAT), {
   pid: 999_999_999, started: new Date().toISOString(), beat: new Date().toISOString(),
 });
 check('удар сердца по чужой отметке — выход, а не молчаливое продление',
-  wdn.beatRound(HOME, BEAT, Date.now(), { sessions: snap(BEAT, ALIVE) }) === 'место надзирателя занял другой процесс',
+  wdn.beatRound(HOME, BEAT, Date.now(), { sessions: snap(BEAT, ALIVE) }) === 'another process took the warden place',
   String(wdn.beatRound(HOME, BEAT, Date.now(), { sessions: snap(BEAT, ALIVE) })));
 
 // Своя отметка, но состаренная: удар сердца обязан её подвинуть — по свежести отметки
@@ -767,7 +767,7 @@ check('удар сердца продлил свою отметку',
   store.liveWarden(HOME, BEAT)?.beat > staleBeat, store.liveWarden(HOME, BEAT)?.beat);
 
 check(': живых участников не осталось — причина выхода названа',
-  wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === 'живых участников не осталось',
+  wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === 'no live participants remain',
   String(wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) })));
 
 // «Некого будить» и «нечего доставлять» — не одно и то же (замечание ревью). Worker
@@ -780,14 +780,14 @@ check('непрочитанное держит слушателя, даже ко
   String(wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) })));
 store.readInbox(HOME, BEAT, 'orchestrator');
 check('mailbox забран — держать больше нечего, и процесс выходит',
-  wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === 'живых участников не осталось',
+  wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === 'no live participants remain',
   String(wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) })));
 
 // Потолок проверяется подстановкой времени, а не шестью часами ожидания.
 const capped = wdn.beatRound(HOME, BEAT, startedMs - wdn.WARDEN_TOTAL_SEC * 1000,
   { now: startedMs, sessions: snap(BEAT, ALIVE) });
 check('просиженный общий потолок называет себя причиной выхода',
-  capped === 'просидел общий потолок 6 ч', String(capped));
+  capped === 'sat out the overall ceiling 6 h', String(capped));
 check('секунды до потолка не хватило — сидим дальше',
   wdn.beatRound(HOME, BEAT, startedMs - wdn.WARDEN_TOTAL_SEC * 1000 + 1000,
     { now: startedMs, sessions: snap(BEAT, ALIVE) }) === null);
@@ -808,9 +808,9 @@ check('место занято живым — процесс уходит, на�
 // Задача закрылась — процесс кончается сам, первым же кругом, и снимает свою отметку.
 const closedOut = await capture(() => wdn.warden({ host: HOST, task: CLOSED }, { PROMPTOBUS_HOME: HOME }, SB));
 check('закрытая задача: процесс выходит с причиной и отметку за собой снимает',
-  /exited: задача закрыта/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
+  /exited: task is closed/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
 check('причина выхода ушла и в журнал задачи',
-  store.tailWardenLog(HOME, CLOSED, 20).some((l) => /warden exited · задача закрыта/.test(l)),
+  store.tailWardenLog(HOME, CLOSED, 20).some((l) => /warden exited · task is closed/.test(l)),
   store.tailWardenLog(HOME, CLOSED, 20).join('\n'));
 
 // Цикл выходит по опустевшей задаче. Тридцати секунд удара сердца набор не
@@ -834,7 +834,7 @@ clearTimeout(shift);
 clearTimeout(guard);
 Date.now = realNow;
 check(': цикл выходит по опустевшей задаче, а не досиживает потолок',
-  /exited: живых участников не осталось/.test(loopOut), loopOut);
+  /exited: no live participants remain/.test(loopOut), loopOut);
 check('отметка надзирателя снята на выходе', store.liveWarden(HOME, LOOP) === null);
 
 // --- : последний стоп задачи пишется в журнал на том же круге, что и выход ---------
@@ -877,7 +877,7 @@ Date.now = realNowLast;
 process.env.PATH = PATH_WAS;
 await new Promise((res) => setTimeout(res, 100));
 check(': цикл вышел по опустевшей задаче',
-  /exited: живых участников не осталось/.test(lastOut), lastOut);
+  /exited: no live participants remain/.test(lastOut), lastOut);
 const lastLog = store.tailWardenLog(HOME, LAST, 40);
 check(': последний стоп в журнале тем же кругом — postcard нет',
   lastCards.length === 0 && lastLog.some((l) => /worker:api GONE/.test(l)),
@@ -1584,7 +1584,7 @@ const noStore = (() => {
   }
 })();
 check('замечание ревью: blockedParticipants без store задачи отказывает сразу, а не на первом стопе',
-  /нужны home и task/.test(noStore ?? ''), String(noStore));
+  /home and task are required/.test(noStore ?? ''), String(noStore));
 
 // Замечание ревью: у накопительного признака есть верхняя граница. Стук мог уйти успешно и
 // быть отброшенным пределами очереди получателя — сессия тогда хода не начинала и не
@@ -1814,7 +1814,7 @@ check(': отказ гейта записан в журнал надзирате
 const takenOut = capture(() => status(SB, { task: TAKEN, sessions: snap(TAKEN, []) }));
 const takenLine = takenOut.split('\n').find((l) => l.includes('worker:api')) ?? '';
 check(': promptobus status печатает причину отката в строке alarm',
-  /alarm: self-wake \(reason: contact point держит сессия /.test(takenLine)
+  /alarm: self-wake \(reason: contact point is held by session /.test(takenLine)
   && takenLine.includes(ALIEN), takenLine || takenOut);
 // Запись прежнего релиза полного id не несёт вовсе — там правилом остаётся префикс, иначе
 // участник, поднятый до этой задачи, остался бы без contact point'а навсегда.
@@ -1868,7 +1868,7 @@ const delivered = await wdn.wardenRound(HOME, HEIR_TASK, { knock: afterClaim });
 check('преемник: после claim notification доходит на новый сокет',
   afterClaim.calls.length === 1 && afterClaim.calls[0].endpoint.socket === HEIR_SOCK
   && store.readHealth(HOME, HEIR_TASK).orchestrator?.channel === 'socket'
-  && !delivered.events.some((e) => /откат на self-wake orchestrator/.test(e)),
+  && !delivered.events.some((e) => /fell back to self-wake orchestrator/.test(e)),
   JSON.stringify({ calls: afterClaim.calls.map((c) => c.endpoint.socket), health: store.readHealth(HOME, HEIR_TASK).orchestrator, events: delivered.events }));
 // Пока сокет слушает: иначе existsSync после close снова «мёртв», и наивная печать
 // «оркестратор всегда мёртв» на проверке ENOENT осталась бы зелёной.
