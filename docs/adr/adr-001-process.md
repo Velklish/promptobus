@@ -1,26 +1,26 @@
-# ADR-001: Задачи и решения ведутся по backslop
+# ADR-001: Tasks and decisions are managed with backslop
 
 **Status:** Accepted
 **Date:** 2026-09-04
-**Deciders:** [TODO: владелец проекта]
+**Deciders:** [TODO: project owner]
 
 ## Context
 
-Проекту нужен трекер задач и журнал решений, которые живут рядом с кодом, читаются агентом без внешних сервисов и не дают конфликтов при параллельной работе в ветках. Список задач в одном файле конфликтует на каждом закрытии; решения, разбросанные по чатам, не находятся, когда нужны.
+The project needs a task tracker and decision log that live alongside code, can be read by an agent without external services, and do not conflict when branches are worked on in parallel. A task list in one file conflicts on every closure; decisions scattered across chats cannot be found when needed.
 
 ## Decision
 
-Задачи и решения ведутся по backslop:
+Tasks and decisions are managed with backslop:
 
-- задача — файл `PB-<номер>-<slug>.md`; статус — каталог `docs/backlog/{triage,queue,active,deferred}/`; закрытые — `docs/archive/<id>-<slug>/` с `task.md` и `result.md`;
-- приоритет очереди — поле «Порядок» в файле; номера считает `npx github:Velklish/backslop#v0.2.0 new` по каталогам, находки получают `N.k` без координации;
-- решения — ADR в `docs/adr/` со строкой в таблице `docs/README.md`; принятое решение не правится, а заменяется новым;
-- процедура изменения и роли worker/approver — блок backslop в `AGENTS.md`; детали — скиллы `backslop-task` и `backslop-batch`, наполнение документации — `backslop-seed`;
-- гейты — `npx github:Velklish/backslop#v0.2.0 lint` плюс `gates` из `backslop.json`;
-- версия инструмента фиксируется пином в `backslop.json` (`cli` с тегом, штамп `version`); обновление — `npx github:Velklish/backslop#v0.2.0 upgrade`, формат файлов при смене версии переводит `migrate`.
+- a task is a `PB-<number>-<slug>.md` file; its status is the `docs/backlog/{triage,queue,active,deferred}/` directory; closed tasks live in `docs/archive/<id>-<slug>/` with `task.md` and `result.md`;
+- queue priority is the “Order” field in the file; `npx github:Velklish/backslop#v0.3.0 new` assigns numbers across directories, while findings get `N.k` without coordination;
+- decisions are ADRs in `docs/adr/` with a row in `docs/README.md`; an accepted decision is replaced by a new one, not edited;
+- the change procedure and worker/approver roles are in the backslop section of `AGENTS.md`; details are in `backslop-task` and `backslop-batch`, and documentation population is in `backslop-seed`;
+- gates are `npx github:Velklish/backslop#v0.3.0 lint` plus `gates` from `backslop.json`;
+- the tool version is pinned in `backslop.json` (`cli` with a tag and the `version` stamp); update with `npx github:Velklish/backslop#v0.3.0 upgrade`, while `migrate` changes file formats between versions.
 
 ## Consequences
 
-- Смена статуса — `git mv` одного файла: две ветки конфликтуют только на одной и той же задаче.
-- Списка задач в git нет — сводку даёт `npx github:Velklish/backslop#v0.2.0 status`; открывать README бэклога ради очереди бесполезно.
-- Цена — дисциплина: `lint` держит ссылки, номера и поля, но содержание постановок и результатов держится на авторе.
+- Changing status is a `git mv` of one file: two branches conflict only on the same task.
+- There is no task list in git — `npx github:Velklish/backslop#v0.3.0 status` provides the summary; opening the backlog README to see the queue is pointless.
+- The cost is discipline: `lint` maintains links, numbers, and fields, but authors maintain the substance of task definitions and results.

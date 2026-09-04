@@ -1,9 +1,15 @@
 {
   "prefix": "PB",
   "docs": "docs",
-  "cli": "npx github:Velklish/backslop#v0.2.0",
+  "cli": "npx github:Velklish/backslop#v0.3.0",
   "gates": [
-    "npx github:Velklish/backslop#v0.2.0 lint"
+    "npx github:Velklish/backslop#v0.3.0 lint"
   ],
-  "version": "0.2.0"
+  "version": "0.3.0",
+  "lang": "en",
+  "tools": [
+    "claude",
+    "cursor",
+    "codex"
+  ]
 }

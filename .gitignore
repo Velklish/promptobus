@@ -8,6 +8,18 @@ coverage/
 .env.*
 !.env.example
 
-# Session-local agent surfaces — not part of the published tree.
-.cursor/
-.agents/
+# backslop adapter outputs; harness directories remain available for custom files.
+.claude/worktrees/
+.claude/skills/backslop-task/
+.claude/skills/backslop-batch/
+.claude/skills/backslop-seed/
+.cursor/rules/backslop-task.mdc
+.cursor/rules/backslop-task/
+.cursor/rules/backslop-batch.mdc
+.cursor/rules/backslop-batch/
+.cursor/rules/backslop-seed.mdc
+.cursor/rules/backslop-seed/
+.agents/skills/backslop-task/
+.agents/skills/backslop-batch/
+.agents/skills/backslop-seed/
+/CLAUDE.md

@@ -1,21 +1,21 @@
-# Документация promptobus
+# promptobus documentation
 
-Канон документации проекта. Что делаем сейчас — `npx github:Velklish/backslop#v0.2.0 status`; куда движется проект — [ROADMAP.md](ROADMAP.md); почему устроено так, а не иначе — ADR в таблице ниже.
+The canonical project documentation. For current work, use `npx github:Velklish/backslop#v0.3.0 status`; for project direction, see [ROADMAP.md](ROADMAP.md); for why the system is arranged this way, see the ADRs in the table below.
 
-| Документ | Тема | Статус |
+| Document | Topic | Status |
 |---|---|---|
-| [reference/](reference/README.md) | Справочник по подсистемам: как устроено сейчас, по коду | Живой |
-| [GLOSSARY.md](GLOSSARY.md) | Нормативный словарь терминов: одно понятие — одно имя | Живой |
-| [ROADMAP.md](ROADMAP.md) | Направление и цели; задачи — в бэклоге | Живой |
-| [backlog/](backlog/README.md) | Трекер задач: файл на задачу, статус — каталог, сводка — `npx github:Velklish/backslop#v0.2.0 status` | Живой |
-| [archive/](archive/README.md) | Закрытые задачи: постановка и результат раздельными файлами | Живой |
-| [adr/adr-001-process.md](adr/adr-001-process.md) | Задачи и решения ведутся по backslop | Accepted |
+| [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
+| [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
+| [ROADMAP.md](ROADMAP.md) | Direction and goals; tasks are in the backlog | Living |
+| [backlog/](backlog/README.md) | Task tracker: one file per task, status is the directory, summary is `npx github:Velklish/backslop#v0.3.0 status` | Living |
+| [archive/](archive/README.md) | Closed tasks: task definition and result in separate files | Living |
+| [adr/adr-001-process.md](adr/adr-001-process.md) | Tasks and decisions are managed with backslop | Accepted |
 
-## Сквозные принципы
+## Cross-cutting principles
 
-1. **Незадокументированное изменение считается незавершённым.** Справочник, README подсистемы и CHANGELOG правятся тем же ходом, что и код.
-2. **Принятое решение не правится — заменяется.** Новое решение по тому же вопросу — новый ADR; в заменяемом остаётся пометка «заменён ADR-NNN».
-3. **Термины — только из глоссария.** Нужного имени нет — предложи владельцу, молча не выдумывай.
-4. **Улика сильнее ощущения.** Число, путь к файлу или вывод команды — в постановке, результате и ADR; непроверенное пишется как предположение.
+1. **An undocumented change is incomplete.** Update the reference, subsystem README, and CHANGELOG in the same pass as the code.
+2. **An accepted decision is not edited; it is superseded.** A new decision on the same question gets a new ADR; the replaced ADR retains a “superseded by ADR-NNN” note.
+3. **Use only terms from the glossary.** If a required name is missing, propose it rather than silently inventing it.
+4. **Evidence is stronger than intuition.** Put a number, file path, or command output in task definitions, results, and ADRs; state unverified claims as hypotheses.
 
-Новый ADR — `npx github:Velklish/backslop#v0.2.0 adr <slug>` **и строка в таблицу выше**: без строки `npx github:Velklish/backslop#v0.2.0 lint` красный.
+Create a new ADR with `npx github:Velklish/backslop#v0.3.0 adr <slug>` **and add a row to the table above**: without the row, `npx github:Velklish/backslop#v0.3.0 lint` fails.

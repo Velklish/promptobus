@@ -1,16 +1,16 @@
-# Глоссарий
+# Glossary
 
-Нормативный словарь терминов promptobus. Тексты проекта используют только имена отсюда: одно понятие — одно имя. Встретилось второе написание — либо оно попадает в «Убранные слова» как замена, либо вычищается из текста.
+The normative vocabulary for promptobus. Project texts use only names from this glossary: one concept, one name. When a second spelling appears, either add it to “Retired terms” as a replacement or remove it from the text.
 
-Колонка «В тексте» задаёт написание в русских текстах; EN — имя в коде и англоязычных текстах. Улика — где термин живёт: путь к файлу, таблица, событие, документ. Термин без улики — предположение, и он помечен `[?]` до подтверждения владельцем.
+The “Term” column gives the spelling for prose; EN is the name in code and English text. Evidence identifies where the term lives: a file path, table, event, or document. A term without evidence is a hypothesis and is marked `[?]` until the owner confirms it.
 
-## Термины
+## Terms
 
-| В тексте | EN | Определение | Улика |
+| Term | EN | Definition | Evidence |
 |---|---|---|---|
-| [TODO: термин] | | | |
+| [TODO: term] | | | |
 
-## Убранные слова
+## Retired terms
 
-| Не пишем | Пишем | Почему |
+| Do not use | Use | Why |
 |---|---|---|

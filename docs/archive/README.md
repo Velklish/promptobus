@@ -1,7 +1,7 @@
-# Архив закрытых задач
+# Closed task archive
 
-Каждая закрытая задача — каталог `PB-<номер>-<slug>/` с двумя файлами: `task.md` — постановка (что и зачем делали, когда появилась) и `result.md` — результат с датой и исходом. Выполненные, отклонённые и слитые лежат вместе; исход назван в `result.md`.
+Every closed task is a `PB-<number>-<slug>/` directory with two files: `task.md` contains the definition (what and why, and when it appeared), and `result.md` contains the dated outcome. Completed, rejected, and merged tasks live together; `result.md` names the outcome.
 
-Живые задачи — в [backlog/](../backlog/README.md). Номера сквозные и не переиспользуются; пропуск номера в архиве означает, что задача ещё жива или так и не была заведена.
+Live tasks are in [backlog/](../backlog/README.md). Numbers are sequential and never reused; a missing number in the archive means that the task is still live or was never created.
 
-Переезд делает `npx github:Velklish/backslop#v0.2.0 archive N`: он же переписывает ссылки на задачу по всему репозиторию и кладёт заготовку `result.md`.
+Move a task with `npx github:Velklish/backslop#v0.3.0 archive N`: it also rewrites task links throughout the repository and creates the `result.md` stub.

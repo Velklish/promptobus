@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "lint:backslop": "npx --yes github:Velklish/backslop#v0.2.0 lint"
+    "lint:backslop": "npx --yes github:Velklish/backslop#v0.3.0 lint"
   },
   "engines": {
     "node": ">=20"

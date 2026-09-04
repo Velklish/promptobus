@@ -1,11 +1,11 @@
 # Roadmap
 
-Куда движется promptobus: цели и их обоснование. Документ живой: цель — направление, а не обязательство; приоритет и состав определяются сигналом от пользователей, а не этим списком. Конкретные задачи со статусами — `npx github:Velklish/backslop#v0.2.0 status` и каталоги [backlog/](backlog/README.md).
+Where promptobus is going: goals and their rationale. This is a living document: a goal is direction, not a commitment; user signals determine priority and scope, not this list. Concrete tasks with statuses are in `npx github:Velklish/backslop#v0.3.0 status` and [backlog/](backlog/README.md).
 
-## Цели
+## Goals
 
-[TODO: 3–7 целей. У каждой — что, зачем, от чего зависит, и ссылка на ADR или задачу, где цель прослеживается.]
+[TODO: 3–7 goals. For each: what, why, dependencies, and a link to an ADR or task that traces the goal.]
 
-## Принцип приоритизации
+## Prioritisation principle
 
-[TODO: чем решается порядок — болью из реальной работы, запросом владельца, дедлайном. Гипотеза уступает требованию, пришедшему из живой задачи.]
+[TODO: what determines ordering — pain from real work, an owner request, a deadline. A hypothesis yields to a requirement from a live task.]
