@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Живая проверка driver'а Cursor на настоящем `agent`. Запуск:
 //
-//   node cli/scripts/live-cursor.mjs [--model <id>]
+//   node scripts/live-cursor.mjs [--model <id>]
 //
 // В `npm test` не входит и входить не будет: она поднимает живые сессии Cursor, тратит
 // лимиты аккаунта и пишет в дом человека то, что пишет туда сам Cursor.
@@ -29,7 +29,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { makeSandbox, writeHostConfig } from '../test/sandbox.mjs';
+import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
@@ -40,7 +40,6 @@ const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, '
 const {
   listSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
-const { resolveToolBin } = await import(path.join(MECHANISM_ROOT, 'lib', 'tools.js'));
 
 // Модель называется флагом, а не берётся дефолтом driver'а: живую проверку гоняют на той,
 // которую назвал владелец, и она уезжает в отчёт.

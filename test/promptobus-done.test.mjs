@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-done-');
@@ -233,7 +233,7 @@ check(': явный вызов на незнакомом режиме отказ
 // что флаг доезжает до библиотеки своим кебабным ключом и меняет ход команды.
 const { done } = await import(path.join(here, '..', 'lib', 'done.js'));
 writeFileSync(path.join(SB, 'AGENTS.md'), 'песочница\n');
-writeFileSync(path.join(SB, 'modules.lock'), JSON.stringify({ modules: [] }));
+writeHostConfig(SB);
 const KEEP = 'done-keep-t20260901-230400';
 store.createTask(HOME, { id: KEEP, title: 'выключатель гашения', owner: null });
 // Снимок сессий — швом: предмет файла — уборка, а не опрос harness'а, и живой
@@ -256,7 +256,7 @@ const SWEEP = path.join(SB, 'sweep-ws');
 const sweepHome = path.join(SWEEP, '.promptobus');
 mkdirSync(sweepHome, { recursive: true });
 writeFileSync(path.join(SWEEP, 'AGENTS.md'), 'песочница\n');
-writeFileSync(path.join(SWEEP, 'modules.lock'), JSON.stringify({ modules: [] }));
+writeHostConfig(SWEEP);
 // Дата ставится прямо в журнал: `closeTask` пишет «сейчас», а предмет проверки — возраст.
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 const closedAgo = (id, title, ago) => {
@@ -306,7 +306,7 @@ check(': уборка журналов идёт после обхода worktree
 const QUIET = path.join(SB, 'quiet-ws');
 mkdirSync(path.join(QUIET, '.promptobus'), { recursive: true });
 writeFileSync(path.join(QUIET, 'AGENTS.md'), 'песочница\n');
-writeFileSync(path.join(QUIET, 'modules.lock'), JSON.stringify({ modules: [] }));
+writeHostConfig(QUIET);
 const QUIET_TASK = 'quiet-t20260902-060000';
 store.createTask(path.join(QUIET, '.promptobus'), { id: QUIET_TASK, title: 'нечего убирать', owner: null });
 const quietOut = await capture(async () => done(QUIET, { task: QUIET_TASK, snapshot: noSessions }));

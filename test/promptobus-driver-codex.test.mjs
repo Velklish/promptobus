@@ -232,7 +232,6 @@ const env = {
 store.createTask(home, { id: TASK, title: 'проба driver’а Codex', owner: ORCH_SESSION });
 
 const bare = path.join(SB, 'bare-ws');
-mkdirSync(path.join(bare, '.agents'), { recursive: true });
 writeHostConfig(bare, { tools: ['claude'] });
 const undeclared = thrown(() => liftHarness(bare, 'codex'));
 check(': harness вне promptobus.json отказывает до подъёма',
@@ -448,10 +447,12 @@ if (slowPart?.sessionRef) await codexDriver.stop(slowPart.sessionRef);
 // в свою запись потока — её и читаем. До этого места канон рабочего места стенда состоял из
 // одной записи шины, то есть url-сервера подъём не видел ни разу; здесь канон получает его
 // и участник поднимается с обоими транспортами разом.
-mkdirSync(path.join(ws, '.agents', 'base', 'mcp'), { recursive: true });
-writeFileSync(path.join(ws, '.agents', 'base', 'mcp', 'servers.json'), `${JSON.stringify({
-  'probe-http': { type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'ПРОБНЫЙ-ТОКЕН' } },
-}, null, 2)}\n`);
+writeHostConfig(ws, {
+  tools: ['claude', 'codex'],
+  mcp: {
+    'probe-http': { type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'ПРОБНЫЙ-ТОКЕН' } },
+  },
+});
 
 planParticipant(HARNESS, 'worker:mcp', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-MCP' } }] }],

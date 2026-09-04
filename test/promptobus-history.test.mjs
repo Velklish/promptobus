@@ -14,20 +14,21 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture, expectFail } from './console.mjs';
 
 const ROOT = makeSandbox('promptobus-promptobus-history-');
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// Корень рабочего места команда ищет сама: `requireRoot` смотрит на пару файлов.
-writeFileSync(path.join(ROOT, 'modules.lock'), '{}\n');
+const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
+
+writeHostConfig(ROOT);
 writeFileSync(path.join(ROOT, 'AGENTS.md'), 'проба истории\n');
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { history } = await import(path.join(here, '..', 'lib', 'history.js'));
 
-const HOME = store.promptobusHome(ROOT);
+const HOME = store.promptobusHome(ROOT, hostOf(ROOT));
 const TASK = 'istoriya-t20260902-120000';
 const SECOND = 'sosedka-t20260902-130000';
 const WORKER = 'worker:api';

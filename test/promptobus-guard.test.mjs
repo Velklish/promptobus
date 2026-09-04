@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, makeSockPath, stubCommand } from './sandbox.mjs';
+import { makeSandbox, makeSockPath, stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-guard-');
 const ROOT = realpathSync(SB);
@@ -32,8 +32,9 @@ const {
   guardVerdict, guardMarkFile, GUARD_MARK, GUARD_BLOCK_LIMIT,
   successorLine, successorVerdict, probeContactPoint,
 } = await import(path.join(here, '..', 'lib', 'guard.js'));
-const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'lib', 'guardhook.js'));
-const { mergeClaudeSettings, ownedSettingsEntries } = await import(path.join(here, '..', 'lib', 'plugin.js'));
+const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
+const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
+writeHostConfig(ROOT);
 
 store.createTask(HOME, { id: TASK, title: 'сторож цикла', owner: SESSION });
 const WORKER_NAME = `a2a-${TASK}-api`;
@@ -419,15 +420,19 @@ check('вне workspace: молчит и выходит нулём, а не па
 // : команда хука живёт на диске дольше процесса, который её записал, поэтому
 // бинарь в ней — из рабочего места. Пакета в фикстуре нет, и путь остаётся своим;
 // проверяется здесь только то, что root доходит до layoutAgentsBin, а не игнорируется.
+const PACK_BIN = path.join(here, '..', 'bin', 'promptobus.js');
+const layoutHost = createStandaloneHost({ cwd: ROOT, binPath: PACK_BIN });
 const guardRoot = path.join(SB, 'guard-root');
-const guardBin = path.join(guardRoot, 'node_modules', '@agent-workspace', 'promptobus', 'bin', 'promptobus.js');
-mkdirSync(path.dirname(guardBin), { recursive: true });
-writeFileSync(guardBin, '// подставная точка входа\n');
-check(': команда сторожа зовёт CLI рабочего места, а не запущенный',
-  guardHookSettings(guardRoot)[GUARD_HOOK_EVENT][0].hooks[0].command.includes(`"${guardBin}"`),
-  guardHookSettings(guardRoot)[GUARD_HOOK_EVENT][0].hooks[0].command);
+writeHostConfig(guardRoot);
+const plantedBin = path.join(guardRoot, 'node_modules', 'promptobus', 'bin', 'promptobus.js');
+mkdirSync(path.dirname(plantedBin), { recursive: true });
+writeFileSync(plantedBin, '// stub entry\n');
+const plantedHost = createStandaloneHost({ cwd: guardRoot, binPath: plantedBin });
+check(': команда сторожа зовёт CLI, который назвал host, а не запущенный процесс',
+  guardHookSettings(plantedHost)[GUARD_HOOK_EVENT][0].hooks[0].command.includes(`"${plantedBin}"`),
+  guardHookSettings(plantedHost)[GUARD_HOOK_EVENT][0].hooks[0].command);
 
-const section = guardHookSettings();
+const section = guardHookSettings(layoutHost);
 const group = section[GUARD_HOOK_EVENT][0];
 check('секция: Stop и SessionStart в корне, одна группа на событие без матчера',
   Object.keys(section).length === 2 && section[GUARD_HOOK_EVENT].length === 1
@@ -438,7 +443,7 @@ check('секция: SessionStart зовёт ту же команду, что и
   section[GUARD_START_EVENT][0].hooks[0].command);
 check('секция: команда зовёт абсолютный node, абсолютный бинарь и подкоманду guard',
   group.hooks[0].type === 'command'
-  && group.hooks[0].command === `"${process.execPath}" "${path.join(here, '..', 'bin', 'promptobus.js')}" promptobus guard`,
+  && group.hooks[0].command === `"${process.execPath}" "${PACK_BIN}" promptobus guard`,
   group.hooks[0].command);
 
 // Живой прогон связки: ровно та команда, которую layout кладёт в settings.json,
@@ -491,39 +496,11 @@ check('запасной путь: нагрузка не разобралась �
   `status=${noPayload.status} ${noPayload.stderr}`);
 store.readInbox(HOME, TASK, 'orchestrator');
 
-// --- владение группой в settings.json -------------------------------------------
-//
-// Матчера у Stop-группы нет, а владение layout'а опознаётся именно по нему: ключ
-// «Stop плюс пустая строка» совпал бы у нашей группы и у любой пользовательской, и
-// слияние снесло бы чужую запись как свою.
-const ours = { hooks: { ...guardHookSettings() } };
-const mine = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'своя на стопе' }] }] } };
-const merged = mergeClaudeSettings(JSON.stringify(mine), ours, {});
-const doc = JSON.parse(merged.text);
-check('слияние: пользовательская Stop-группа цела, наша дописана рядом',
-  doc.hooks.Stop.length === 2 && doc.hooks.Stop[0].hooks[0].command === 'своя на стопе'
-  && doc.hooks.Stop[1].hooks[0].command === group.hooks[0].command, JSON.stringify(doc.hooks));
-
-// Свои записи уезжают в манифест — по ним следующий проход отличает «наше прошлое» от
-// пользовательского. Ключ группы без матчера обязан различать две группы одного события.
-const owned = ownedSettingsEntries(ours);
-check('манифест: ключ группы без матчера несёт событие и команду',
-  owned.hooks.length === 2
-  && owned.hooks.some((h) => h.startsWith('Stop::') && h.includes('promptobus guard'))
-  && owned.hooks.some((h) => h.startsWith('SessionStart::') && h.includes('promptobus guard')),
-  JSON.stringify(owned.hooks));
-
-// Повторное слияние поверх результата: своя группа не двоится, чужая не теряется.
-const twice = JSON.parse(mergeClaudeSettings(merged.text, ours, owned).text);
-check('слияние: повторный проход не двоит нашу группу и не теряет чужую',
-  twice.hooks.Stop.length === 2 && twice.hooks.Stop[0].hooks[0].command === 'своя на стопе',
-  JSON.stringify(twice.hooks.Stop));
-
-// Claude ушёл из декларации — своя группа снимается, чужая остаётся.
-const released = JSON.parse(mergeClaudeSettings(merged.text, { hooks: {} }, owned).text);
-check('слияние: без нашей секции группа снимается, пользовательская остаётся',
-  released.hooks.Stop.length === 1 && released.hooks.Stop[0].hooks[0].command === 'своя на стопе',
-  JSON.stringify(released.hooks));
+// Dest has no plugin settings merge. Standalone host does not plant Stop groups into
+// a consumer's ~/.claude/settings.json — that is the host adapter's job.
+check('standalone: секция сторожа самодостаточна — команда хука на месте',
+  typeof group.hooks[0].command === 'string' && group.hooks[0].command.includes('guard'),
+  group.hooks[0].command);
 
 // Счётчик лежит внутри каталога задачи, а не в своём: уборка задачи метёт его вместе с
 // остальным её состоянием.
@@ -543,22 +520,20 @@ check('счётчик назван по адресу: двоеточие уст�
 // Доклада отсюда не увидит никто: при коде 0 stderr хука никуда не поднимается, а переезд
 // обещан пользователю числами. Сторож поэтому дом резолвит, а store не двигает — и на
 // рабочем месте, которому переезд нужен, молча пропускает ход.
+// --- leftover foreign store: standalone host has no legacyLayout, so guard
+// neither migrates nor skips the live mailbox. ---------------------------------
 const MIG_ROOT = path.join(ROOT, 'ne-dvigay');
-const MIG_LEGACY = path.join(MIG_ROOT, '.agents', 'a2a');
+writeHostConfig(MIG_ROOT);
+const MIG_LEFTOVER = path.join(MIG_ROOT, 'legacy', 'a2a');
 const MIG_TASK = 'guard-migr-t20260902-100000';
 const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
-legacy.createTask(MIG_LEGACY, { id: MIG_TASK, title: 'store прежней шины', owner: SESSION });
-// Legacy store читает записи ПРЕЖНЕЙ формы: адрес там поле верхнего уровня, а не
-// `metadata` записи v1 — тем он и предмет миграции.
-legacy.upsertParticipant(MIG_LEGACY, MIG_TASK, { address: 'worker:api', name: WORKER_NAME });
-legacy.sendMessage(MIG_LEGACY, MIG_TASK, {
+legacy.createTask(MIG_LEFTOVER, { id: MIG_TASK, title: 'store прежней шины', owner: SESSION });
+legacy.upsertParticipant(MIG_LEFTOVER, MIG_TASK, { address: 'worker:api', name: WORKER_NAME });
+legacy.sendMessage(MIG_LEFTOVER, MIG_TASK, {
   from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное прежнего store',
 });
-// Задача ЗАКРЫТА, и это условие проверки: с активной переезд отказал бы сам, и сторож
-// молчал бы по чужой причине — проба на снятую защиту оставалась бы зелёной. Здесь переезд
-// возможен, и не делает его ровно сторож.
-legacy.closeTask(MIG_LEGACY, MIG_TASK);
-const beforeGuard = readdirSync(path.join(MIG_LEGACY, 'tasks')).sort();
+legacy.closeTask(MIG_LEFTOVER, MIG_TASK);
+const beforeGuard = readdirSync(path.join(MIG_LEFTOVER, 'tasks')).sort();
 
 const migRun = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: MIG_ROOT,
@@ -574,21 +549,17 @@ const migRun = spawnSync(process.execPath, [BIN, 'guard'], {
   encoding: 'utf8',
 });
 
-check(': сторож на непереехавшем месте молча пропускает ход',
-  migRun.status === 0 && !migRun.stdout.trim() && !migRun.stderr.trim(),
+check(': leftover foreign store: standalone guard does not migrate it',
+  existsSync(MIG_LEFTOVER)
+  && readdirSync(path.join(MIG_LEFTOVER, 'tasks')).sort().join(',') === beforeGuard.join(','),
+  `legacy ${existsSync(MIG_LEFTOVER) ? 'kept' : 'gone'} · guard ${migRun.status} ${migRun.stderr}`);
+check(': leftover foreign store: guard does not treat it as the live mailbox',
+  migRun.status === 0 && !migRun.stderr.includes(GUARD_MARK),
   `код ${migRun.status} · out «${migRun.stdout.trim()}» · err «${migRun.stderr.trim()}»`);
-check(': сторож store не двинул — прежний каталог цел, нового нет',
-  existsSync(MIG_LEGACY)
-  && readdirSync(path.join(MIG_LEGACY, 'tasks')).sort().join(',') === beforeGuard.join(',')
-  && !existsSync(path.join(MIG_ROOT, '.promptobus')),
-  `прежний ${existsSync(MIG_LEGACY) ? 'цел' : 'исчез'} · новый ${existsSync(path.join(MIG_ROOT, '.promptobus')) ? 'появился' : 'не появился'}`);
 
-// Второй случай — тот, ради которого проверка `storePending` и стоит: рядом лежат ОБА
-// корня, и preflight отказывается их сливать. Новый корень при этом на месте и держит
-// непрочитанное — то есть без проверки сторож честно вернул бы ход кодом 2 на store,
-// который остальной механизм обслуживать отказывается. Первый случай (переезд возможен)
-// пиннит `move: false`, этот — саму проверку.
+// Unread in the live .promptobus still returns the turn even if a leftover catalog sits nearby.
 const BOTH_ROOT = path.join(ROOT, 'oba-kornya');
+writeHostConfig(BOTH_ROOT);
 const BOTH_HOME = path.join(BOTH_ROOT, '.promptobus');
 const BOTH_TASK = 'guard-oba-t20260902-101000';
 store.createTask(BOTH_HOME, { id: BOTH_TASK, title: 'оба корня сразу', owner: SESSION });
@@ -596,7 +567,7 @@ store.upsertParticipant(BOTH_HOME, BOTH_TASK, store.participantRecord('worker:ap
 store.sendMessage(BOTH_HOME, BOTH_TASK, {
   from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное в новом корне',
 });
-mkdirSync(path.join(BOTH_ROOT, '.agents', 'a2a', 'tasks'), { recursive: true });
+mkdirSync(path.join(BOTH_ROOT, 'legacy', 'a2a', 'tasks'), { recursive: true });
 
 const bothRun = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: BOTH_ROOT,
@@ -612,13 +583,13 @@ const bothRun = spawnSync(process.execPath, [BIN, 'guard'], {
   encoding: 'utf8',
 });
 
-check(': на отказе preflight сторож ход не возвращает, хотя непрочитанное лежит',
-  bothRun.status === 0 && !bothRun.stdout.trim() && !bothRun.stderr.trim()
+check(': leftover catalog does not skip the live mailbox — unread still returns the turn',
+  bothRun.status === 2 && /в mailbox'е 1/.test(bothRun.stderr)
   && store.countInbox(BOTH_HOME, BOTH_TASK, 'orchestrator') === 1,
   `код ${bothRun.status} · out «${bothRun.stdout.trim()}» · err «${bothRun.stderr.trim()}»`
   + ` · непрочитано ${store.countInbox(BOTH_HOME, BOTH_TASK, 'orchestrator')}`);
-check(': отказ preflight от сторожа store не тронул — оба корня на месте',
-  existsSync(path.join(BOTH_ROOT, '.agents', 'a2a')) && existsSync(BOTH_HOME));
+check(': leftover catalog and live store both stay on disk',
+  existsSync(path.join(BOTH_ROOT, 'legacy', 'a2a')) && existsSync(BOTH_HOME));
 
 // --- преемник оркестратора: детектор в корне, не авто-claim --------------------
 const SUCC = 'succ-t20260904-010000';

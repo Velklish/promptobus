@@ -8,7 +8,7 @@ Baseline для миграции Promptobus ([], постановка []). Чи�
 |---|---|
 | Формат store | `v0.61.0` (tag `v0.61.0`, commit `8ca22be`) |
 | Снята чем | [store.js](../../../lib/store.js) этого чекаута — `createTask`, `upsertParticipant`, `bindSession`, `sendMessage`, `readInbox`, `closeTask`, `writeWake`, `claimWarden`, `logWarden`; health и журнал надзирателя — `wardenRound` из [warden.js](../../../lib/warden.js) |
-| Генератор | `cli/scripts/make-promptobus-fixture.mjs` — снят вместе с cutover'ом |
+| Генератор | `scripts/make-promptobus-fixture.mjs` — снят вместе с cutover'ом |
 | Состояние | **срез заморожен**: пересъёмке он больше не подлежит |
 
 **Рукописного JSON в fixture нет: и раскладку, и содержимое файлов пишет механизм.** Раскладку — store, health и журнал надзирателя — `wardenRound`, настоящий круг присмотра со швом `knock`, тем же, которым его гоняет набор. Генератор задаёт кругу только время и ответ сокета: удался стук или отказал. Собирать те же записи аргументами `writeHealth` значило бы их сочинить — у health одиннадцать полей, три из них (`channel`, `wake`, `knockError`) ставит только ветка стука, а формат строк журнала живёт в самом надзирателе; источник истины по обоим — [warden.js](../../../lib/warden.js).
@@ -21,7 +21,7 @@ Baseline для миграции Promptobus ([], постановка []). Чи�
 
 Поэтому генератор снят, а срез остаётся историческим эталоном: он показывает, что механизм писал на диск в `v0.61.0`, и служит входом миграции. Дрейфовать ему не от чего — код, который его писал, дальше не меняется.
 
-**Пересъёмка шла байт в байт**, пока генератор был жив: замер — `shasum` всех 17 файлов до и после повторного прогона, расхождений ноль. Держалось это подменой часов: store штампует `created`, `ts`, `beat` и имена файлов сообщений настоящим временем. Pid надзирателя (`424242`) подставной и заведомо мёртвый: живым надзирателем fixture притворяться не должна. Сам генератор жил в `cli/scripts/make-promptobus-fixture.mjs` и снят коммитом `e2ea30a` («: cutover на protocol v1 и миграция `legacy/a2a` → `.promptobus`»). Понадобится — доставать так: `git show e2ea30a^:cli/scripts/make-promptobus-fixture.mjs`.
+**Пересъёмка шла байт в байт**, пока генератор был жив: замер — `shasum` всех 17 файлов до и после повторного прогона, расхождений ноль. Держалось это подменой часов: store штампует `created`, `ts`, `beat` и имена файлов сообщений настоящим временем. Pid надзирателя (`424242`) подставной и заведомо мёртвый: живым надзирателем fixture притворяться не должна. Сам генератор жил в `scripts/make-promptobus-fixture.mjs` и снят коммитом `e2ea30a` («cutover на protocol v1 и миграция `legacy/a2a` → `.promptobus`»). Понадобится — доставать так: `git show e2ea30a^:scripts/make-promptobus-fixture.mjs`.
 
 ## Состав
 
@@ -57,9 +57,9 @@ Baseline для миграции Promptobus ([], постановка []). Чи�
 Проверка перед коммитом, из корня репозитория:
 
 ```sh
-grep -rn '/Users/' cli/test/fixtures/promptobus/legacy-v061
-grep -rni 'token\|secret' cli/test/fixtures/promptobus/legacy-v061
-grep -rno '/[^"#]*\.sock' cli/test/fixtures/promptobus/legacy-v061
+grep -rn '/Users/' test/fixtures/promptobus/legacy-v061
+grep -rni 'token\|secret' test/fixtures/promptobus/legacy-v061
+grep -rno '/[^"#]*\.sock' test/fixtures/promptobus/legacy-v061
 ```
 
 Первые две обязаны не найти ничего. Третья — не «пусто», а ровно три отпечатка под `/tmp/promptobus-demo/`: слово `socket` в срезе законно (`channel` его значением и есть), а вот адрес сокета — только подставной.

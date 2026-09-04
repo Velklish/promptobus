@@ -8,7 +8,7 @@
 //
 // Перечень собран руками, как `SUITE_PREFIXES`. Полноту сторожит
 // [tmpdir-sweep.test.mjs](tmpdir-sweep.test.mjs): каждый литерал `makeSockPath('…')` и
-// `makeSockDir('…')` в `cli/test/` и `cli/scripts/` обязан начинаться с одной из записей.
+// `makeSockDir('…')` в `test/` и `scripts/` обязан начинаться с одной из записей.
 // Без сторожа новый префикс утекал бы молча — живой случай: `ags-` в
 // `promptobus-guard.test.mjs` в литерале гейта не было.
 export const SOCK_PREFIXES = ['a2l-', 'a2e-', 'a2h-', 'a2s-', 'adoc-', 'ags-', 'a2m-'];

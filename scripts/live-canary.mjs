@@ -1,8 +1,7 @@
-import { writeHostConfig } from '../test/sandbox.mjs';
 #!/usr/bin/env node
 // Живая канарейка релиза. Запуск из корня репозитория механизма:
 //
-//   node cli/scripts/live-canary.mjs
+//   node scripts/live-canary.mjs
 //
 // Гейты релиза ([release-gates.mjs](release-gates.mjs)) доказывают, что tarball собран и
 // содержит то, что обещано. Канарейка доказывает следующее: собранный пакет РАБОТАЕТ — в
@@ -39,11 +38,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
+import { writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, '..');
-const REPO = path.join(CLI, '..');
+const REPO = CLI;
 const LIVE_E2E = path.join(here, 'live-e2e.mjs');
 // Всё, что `sync` пишет за пределы каталога workspace тремя своими дверями: глобальное
 // состояние Claude Code, дом хуков памяти и личные настройки Claude Code. Режим
@@ -52,7 +52,6 @@ const CLAUDE_PLUGINS = path.join(os.homedir(), '.claude', 'plugins');
 const KNOWN_MARKETPLACES = path.join(CLAUDE_PLUGINS, 'known_marketplaces.json');
 const INSTALLED_PLUGINS = path.join(CLAUDE_PLUGINS, 'installed_plugins.json');
 const PLUGIN_CACHE = path.join(CLAUDE_PLUGINS, 'cache');
-const HOME_HOOKS = path.join(os.homedir(), '.agents', 'memory-hooks', 'hooks');
 const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 
 // Id задачи, которую заводит сценарий: по нему опознаются его сессии в общем реестре
@@ -77,9 +76,9 @@ const born = startedAt.getTime();
 // Что канарейка делает — прозой, без нумерации: число шагов круга живёт в сценарии и там же
 // меняется, а подпись с числом протухает молча.
 const STEPS = [
-  'tarball установлен в чистое рабочее место, sync --no-global и doctor прошли из него',
+  'tarball установлен в чистое рабочее место, установленный bin отвечает --version',
   'живой круг оркестрации проверяемым деревом — полностью, шагами сценария',
-  'дом человека не тронут: снимок до sync сверяется с ним после sync и в конце прогона',
+  'дом человека не тронут: снимок до установки сверяется с ним после --version и в конце прогона',
   'уборка: сессии, песочницы, сокеты, процессы, само рабочее место',
 ];
 
@@ -142,11 +141,8 @@ const baseOrigin = path.join(RUN, 'base-origin.git');
 const mirrored = spawnSync('git', ['clone', '--bare', '--quiet', '--single-branch', '--branch', branch, REPO, baseOrigin], { encoding: 'utf8' });
 
 const ws = path.join(RUN, 'ws');
-mkdirSync(path.join(ws, '.agents'), { recursive: true });
+mkdirSync(ws, { recursive: true });
 writeFileSync(path.join(ws, 'AGENTS.md'), '# Канареечное рабочее место\n\nВременное: живёт один прогон.\n');
-writeFileSync(path.join(ws, 'modules.lock'), `${JSON.stringify({
-  base: { repo: baseOrigin, ref: branch }, modules: [],
-}, null, 2)}\n`);
 writeFileSync(path.join(ws, 'package.json'), `${JSON.stringify({
   name: 'promptobus-canary-workspace', private: true, version: '0.0.0',
 }, null, 2)}\n`);
@@ -155,12 +151,11 @@ writeHostConfig(ws, { tools: ['claude'] });
 const installed = tgz
   ? run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', '--offline', tgz], { cwd: ws, encoding: 'utf8' })
   : { status: 1, stderr: 'tarball не собран' };
-const PKG = path.join(ws, 'node_modules', '@agent-workspace', 'promptobus');
+const PKG = path.join(ws, 'node_modules', 'promptobus');
 const BIN = path.join(PKG, 'bin', 'promptobus.js');
 check('канарейка: tarball собран и установлен в чистое рабочее место',
-  packed.status === 0 && mirrored.status === 0 && installed.status === 0 && existsSync(BIN),
-  `pack ${packed.status} · зеркало базы ${mirrored.status} ${tail(mirrored.stderr, 200)}`
-  + ` · install ${installed.status} ${tail(installed.stderr, 300)} · bin ${existsSync(BIN)}`);
+  packed.status === 0 && installed.status === 0 && existsSync(BIN),
+  `pack ${packed.status} · install ${installed.status} ${tail(installed.stderr, 300)} · bin ${existsSync(BIN)}`);
 if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} КБ), ветка ${branch}, коммит ${head.slice(0, 8)}`);
 
 // **Окружение детей — без идентичности сессии**. Гонят канарейку как раз из
@@ -191,7 +186,7 @@ const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
 //: ровно так и вышло.
 let claudeBin = null;
 try {
-  const { resolveToolBin } = await import(path.join(PKG, 'lib', 'tools.js'));
+  const { resolveToolBin } = await import(new URL('../test/sandbox.mjs', import.meta.url));
   const found = resolveToolBin('claude');
   claudeBin = found.ok ? found.path : null;
 } catch { claudeBin = null; }
@@ -210,7 +205,7 @@ if (claudeBin) {
 let bgSessions = null;
 let resetBgSessionsCache = null;
 try {
-  ({ bgSessions, resetBgSessionsCache } = await import(path.join(PKG, 'lib', 'promptobus', 'liftoff.js')));
+  ({ bgSessions, resetBgSessionsCache } = await import(path.join(PKG, 'lib', 'liftoff.js')));
 } catch { bgSessions = null; }
 
 // **Снимок дома — ДО `sync`, и он же мера всей проверки**. Прежде здесь стояло
@@ -226,7 +221,7 @@ try {
 // отвечает на вопрос «свежие ли», а снимку нужен другой: «те же ли байты».
 let hooksState = null;
 try {
-  ({ hooksState } = await import(path.join(PKG, 'lib', 'hooks.js')));
+  ({ hooksState } = await import(path.join(PKG, 'dist', 'hooks.js')));
 } catch { hooksState = null; }
 
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
@@ -241,8 +236,6 @@ const homeSnapshot = () => ({
   'записи marketplace': marketplaceIds().sort().join(' ') || '(нет)',
   'установки плагинов': fileMark(INSTALLED_PLUGINS),
   'кэш плагинов': listOf(PLUGIN_CACHE).sort().join(' ') || '(нет)',
-  'свежесть хуков памяти': hooksState ? hooksState() : '(не спросить)',
-  'файлы хуков памяти': dirMark(HOME_HOOKS) || '(нет)',
   'личные настройки Claude Code': fileMark(CLAUDE_SETTINGS),
 });
 /** Что разошлось между двумя снимками — построчно, чтобы вердикт называл дверь. */
@@ -253,17 +246,15 @@ const homeDiff = (before, after) => Object.keys(before)
 const homeBefore = homeSnapshot();
 note(`снимок дома до sync: ${Object.entries(homeBefore).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
 
-const synced = existsSync(BIN) ? cli(['sync', '--no-global']) : { status: 1, stdout: '', stderr: `нет ${BIN}` };
-const layout = ['.mcp.json', path.join('.claude', 'settings.json'), path.join('.agents', 'base', 'rules', 'AGENTS.md'),
-  path.join('.agents', 'plugin')].map((rel) => ({ rel, there: existsSync(path.join(ws, rel)) }));
-check('канарейка: sync --no-global из установленного tarball разложил рабочее место',
-  synced.status === 0 && layout.every((l) => l.there),
-  `код ${synced.status} · ${JSON.stringify(layout)} · ${tail(`${synced.stdout}${synced.stderr}`)}`);
+const versioned = existsSync(BIN) ? cli(['--version']) : { status: 1, stdout: '', stderr: `нет ${BIN}` };
+check('канарейка: установленный tarball отвечает --version',
+  versioned.status === 0,
+  `код ${versioned.status} · ${tail(`${versioned.stdout}${versioned.stderr}`)}`);
 
 // **Вердикт режима — сверка со снимком, а не пересчёт имён.** Раньше здесь стояло обратное:
 // прогон искал СВОЮ новую запись marketplace разницей реестра и снимал её. Разницей потому,
 // что пересчитать имя снаружи нельзя — правило (`marketplaceName` в
-// [plugin.js](../lib/plugin.js)) считает хеш от пути корня, а корень команда резолвит своим
+// the host adapter) считает хеш от пути корня, а корень команда резолвит своим
 // `requireRoot()`: под временным каталогом macOS он приходит как `/private/var/…`, тогда как
 // здесь тот же каталог зовётся `/var/…`, и хеши двух написаний разные (живой случай прогона
 // 2026-09-02, : `sync` зарегистрировал `ati-workspace-005c0315`, пересчёт правила дал
@@ -282,16 +273,6 @@ check('канарейка: sync --no-global не написал за преде�
 
 let failure = null;
 try {
-  const doctored = existsSync(BIN) ? cli(['doctor']) : { status: 1, stdout: '', stderr: 'нет CLI' };
-  const doctorOut = `${doctored.stdout ?? ''}${doctored.stderr ?? ''}`;
-  // С  `doctor` отдаёт ненулевой код при хотя бы одном `✖`, и вердикт смотрит обе
-  // половины: код — и строки вывода. Вторая остаётся защитой от регресса первой — снимут
-  // установку кода, и по одному коду вердикт зеленел бы при любом диагнозе. Предупреждения
-  // (`.env` не заведён у свежего рабочего места) законны, кода не меняют и вердикт не красят.
-  const doctorBad = doctorOut.split('\n').filter((l) => l.includes('✖'));
-  check('канарейка: doctor из установленного tarball не нашёл поломок layout',
-    doctored.status === 0 && doctorBad.length === 0,
-    `код ${doctored.status} · ${doctorBad.join('\n') || tail(doctorOut)}`);
 
   // ── Живой круг ──────────────────────────────────────────────────────────────────────
   // Механизм под проверкой — установленное дерево целиком, одним корнем. Рабочее место —

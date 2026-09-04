@@ -37,7 +37,7 @@ import { sweepPreviousRuns, sweptLine } from '../scripts/canary-runs.mjs';
 export { sweptLine };
 
 // Префиксы, которые набор заводит САМ, — только их и метём. Собраны грепом по литералам
-// `makeSandbox('…')` и `mkdtempSync(path.join(os.tmpdir(), '…'))` в `cli/test/` и в наборе
+// `makeSandbox('…')` и `mkdtempSync(path.join(os.tmpdir(), '…'))` в `test/` и в наборе
 // вложенного package; полноту
 // перечня сторожит [tmpdir-sweep.test.mjs](tmpdir-sweep.test.mjs) — тем же грепом по
 // каталогу, как [runner.test.mjs](runner.test.mjs) сторожит состав `SERIAL`. Без сторожа

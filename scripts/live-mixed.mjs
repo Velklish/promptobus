@@ -2,7 +2,7 @@
 // Живой прогон СМЕШАННОГО состава: оркестратор — этот скрипт, worker — живой Cursor,
 // reviewer — живой Codex. Запуск:
 //
-//   node cli/scripts/live-mixed.mjs [--cursor-model <id>] [--codex-model <id>]
+//   node scripts/live-mixed.mjs [--cursor-model <id>] [--codex-model <id>]
 //
 // В `npm test` и в релизный гейт не входит: тратит лимиты ДВУХ аккаунтов сразу (Cursor и
 // ChatGPT.app владельца) и говорит с живыми бинарями. Гоняет его владелец руками.
@@ -35,7 +35,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { makeSandbox, writeHostConfig } from '../test/sandbox.mjs';
+import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
@@ -46,7 +46,6 @@ const { cursorDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-c
 const { codexDriver, DEFAULT_MODEL: CODEX_DEFAULT } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const cursorPersist = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 const codexSession = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
-const { resolveToolBin } = await import(path.join(MECHANISM_ROOT, 'lib', 'tools.js'));
 
 // Обе модели называются флагами: прогон гонят на тех, которые назвал владелец, и они
 // уезжают в отчёт. Дефолт Codex берётся у driver'а — своего числа тут заводить нечего.

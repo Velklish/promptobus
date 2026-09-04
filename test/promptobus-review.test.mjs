@@ -262,9 +262,8 @@ check(': промпт требует объявить затянувшуюся �
   plan.prompt);
 check('промпт: режим «только отчёт», механические проверки объявлены недоступными',
   plan.prompt.includes('только отчёт') && plan.prompt.includes('не прогонялись'));
-check('промпт: правила — база, репозиторий, модуль',
-  [path.join(WS, '.agents', 'base', 'rules', 'AGENTS.md'), path.join(REPO, 'AGENTS.md'), path.join(MOD, 'rules', 'AGENTS.md')]
-    .every((f) => plan.prompt.includes(f)));
+check('промпт: правила — репозиторий (standalone: без модуля рабочего места)',
+  plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes('.agents/base/rules'));
 check('read-only: deny перекрывает запись и исполнение',
   ['Edit', 'Write', 'NotebookEdit', 'Bash'].every((t) => plan.settings.permissions.deny.includes(t))
   && plan.settings.permissions.deny === REVIEWER_DENY);
@@ -282,8 +281,8 @@ check(': у driver\'а с объявленным denyTools отказа нет',
 // `promptobus done`. Разойдись план и уборка, конфиг reviewer'а с подставленными токенами остался
 // бы на диске навсегда, и молча: `done` отчитался бы успехом.
 check(`: путь конфига reviewer'а выводится из его адреса, а не собирается отдельно`,
-  plan.mcpConfigPath === store.participantMcpPath(store.promptobusHome(WS), plan.taskId, plan.address)
-  && plan.settingsPath === store.participantSettingsPath(store.promptobusHome(WS), plan.taskId, plan.address)
+  plan.mcpConfigPath === store.participantMcpPath(store.promptobusHome(WS, hostOf(WS)), plan.taskId, plan.address)
+  && plan.settingsPath === store.participantSettingsPath(store.promptobusHome(WS, hostOf(WS)), plan.taskId, plan.address)
   && path.basename(plan.mcpConfigPath).startsWith('reviewer-'),
   `${path.basename(plan.mcpConfigPath)} · ${path.basename(plan.settingsPath)}`);
 check('settings: MCP-серверы репозитория включены без интерактивного диалога',
@@ -1171,7 +1170,7 @@ check(': фикстура — сессия ведёт свой run, привяз
 // Прежде на это был громкий отказ «активных задач несколько»; молча увести туда резолв —
 // та же беда без единого слова, и с ней возвращается .
 const strayReview = await withSessionAsync(BIND_SESS,
-  => capture(() => review(WS, { tool: TOOL, target: OWN, title: 'ревью постороннего каталога' })));
+  () => capture(() => review(WS, { tool: TOOL, target: OWN, title: 'ревью постороннего каталога' })));
 check(': ревью постороннего каталога не крадёт привязку сессии',
   store.boundTaskId(home, BIND_SESS) === owned.id,
   `${store.boundTaskId(home, BIND_SESS)} · ${strayReview.split('\n')[0]}`);
@@ -1209,34 +1208,19 @@ const OUT = path.join(SB, 'outside');
 mkdirSync(OUT, { recursive: true });
 g(OUT, 'init', '-b', 'main');
 const outside = expectThrow(() => planReview(WS, { target: OUT, title: 'посторонний каталог' }));
-check('вне repos/ — отказ, а не ревью без правил', outside.threw && /repos\//.test(outside.msg), outside.msg);
+check('вне рабочего места — отказ, а не ревью без правил',
+  outside.threw && /вне рабочего места/.test(outside.msg), outside.msg);
 
-// Папка группы: путь внутри repos/, но своего .git нет — toplevel уезжает в корень
-// workspace. Отказ должен звать в конкретный клон, а не врать про «вне repos/».
+// Папка группы: путь внутри рабочего места, но своего .git нет — toplevel уезжает в корень
+// workspace. Отказ должен звать в конкретный клон, а не врать про «вне рабочего места».
 const GROUP = path.join(WS, 'repos', 'loads_search');
 const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'папка группы' }));
-check('папка группы — отказ про клон, а не «вне repos/»',
-  group.threw && /не клон/.test(group.msg) && /repos\/<group>\/<repo>/.test(group.msg)
-  && !/вне repos\//.test(group.msg), group.msg);
+check('папка группы — отказ про клон, а не «вне рабочего места»',
+  group.threw && /не клон/.test(group.msg)
+  && !/вне рабочего места/.test(group.msg), group.msg);
 
-writeFileSync(path.join(MOD, 'module.json'), JSON.stringify({
-  name: 'test-mod', version: '0.1.0', baseContract: '2', owners: ['@t'],
-  appliesTo: { gitlabGroups: ['loads_search'] },
-  review: { skill: 'missing-skill' },
-}));
-const gone = expectThrow(() => planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api' }));
-check('объявленный скилл не разложен — отказ с подсказкой sync',
-  gone.threw && /missing-skill/.test(gone.msg) && /sync/.test(gone.msg), gone.msg);
-
-// --- модуль без декларации: встроенная процедура ------------------------------
-
-writeFileSync(path.join(MOD, 'module.json'), JSON.stringify({
-  name: 'test-mod', version: '0.1.0', baseContract: '2', owners: ['@t'],
-  appliesTo: { gitlabGroups: ['loads_search'] },
-}));
-const generic = planReview(WS, { target: REPO, task: task.id });
-check('без review.skill — встроенный формат замечаний',
-  generic.skill === null && generic.prompt.includes('[critical|major|minor]'));
+check('standalone: ревью-скилл модуля не резолвится — встроенный формат замечаний',
+  plan.skill === null && plan.prompt.includes('[critical|major|minor]'));
 
 // --- база на момент ревью: worker влил default-ветку ------------------
 //

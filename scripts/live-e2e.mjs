@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Канарейка шины: ТОТ ЖЕ сценарий E2E, но на настоящем Claude Code. Запуск:
 //
-//   node cli/scripts/live-e2e.mjs
+//   node scripts/live-e2e.mjs
 //
 // В `npm test` не входит и входить не будет: она поднимает живые сессии, стоит токенов и
 // зависит от машины. Предмет у неё тот же, что у подставного прогона
@@ -25,7 +25,7 @@ import { rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
-import { makeSandbox, makeSockDir } from '../test/sandbox.mjs';
+import { makeSandbox, makeSockDir, resolveToolBin } from '../test/sandbox.mjs';
 import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
@@ -36,7 +36,6 @@ import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
 // сессии одним механизмом, а судил бы о них другим.
 const { bgSessions, findSession, resetBgSessionsCache, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
 const { claudeDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'));
-const { resolveToolBin } = await import(path.join(MECHANISM_ROOT, 'lib', 'tools.js'));
 
 // Бинарь ищется тем же резолвом, каким его ищет spawn, — включая `~/.local/bin`. Но реестр
 // сессий (`bgSessions`) зовёт `claude` через PATH, поэтому найденный вне PATH каталог в него

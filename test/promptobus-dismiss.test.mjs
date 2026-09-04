@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, snapshotOfList, stubCommand } from './sandbox.mjs';
+import { makeSandbox, snapshotOfList, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, captureSplit, expectFail } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-dismiss-');
@@ -163,12 +163,12 @@ check(': без адреса — отказ с готовой командой �
   noAddr.failed && /назови адрес участника/.test(noAddr.out) && noAddr.out.includes(WORKER), noAddr.out);
 
 const stranger = await withSession(OWNER,
-  => expectFail(() => dismiss(ROOT, { task: TASK, address: 'worker:net-takogo' })));
+  () => expectFail(() => dismiss(ROOT, { task: TASK, address: 'worker:net-takogo' })));
 check(': посторонний адрес — отказ со списком участников, а не молчаливая отметка',
   stranger.failed && /нет участника/.test(stranger.out) && stranger.out.includes(REVIEWER), stranger.out);
 
 const self = await withSession(OWNER,
-  => expectFail(() => dismiss(ROOT, { task: TASK, address: 'orchestrator' })));
+  () => expectFail(() => dismiss(ROOT, { task: TASK, address: 'orchestrator' })));
 check(': оркестратор не снимается — докладов о нём не бывает',
   self.failed && /докладов о нём не бывает/.test(self.out), self.out);
 
@@ -180,7 +180,7 @@ check(': оркестратор не снимается — докладов о 
 // участника до списка сессий не доходят.
 await withSession(OWNER, () => capture(() => dismiss(ROOT, { task: TASK, address: REVIEWER })));
 const printed = await withSession(OWNER,
-  => captureSplit(() => status(ROOT, { task: TASK, sessions: OTHERS() })));
+  () => captureSplit(() => status(ROOT, { task: TASK, sessions: OTHERS() })));
 const reviewerLine = printed.out.split('\n').find((l) => l.includes(REVIEWER)) ?? '';
 const workerStatusLine = printed.out.split('\n').find((l) => l.includes(WORKER)) ?? '';
 check(': promptobus status называет снятие — иначе молчание докладов не объяснить',
@@ -209,16 +209,7 @@ const g = (cwd, ...args) => {
 
 // Рабочее место поверх той же песочницы: `promptobusHome(ROOT)` у команды и у проверок один.
 writeFileSync(path.join(ROOT, 'AGENTS.md'), 'workspace\n');
-writeFileSync(path.join(ROOT, 'modules.lock'), JSON.stringify({
-  base: { repo: 'https://example.invalid/agent-workspace/promptobus.git', ref: 'latest' },
-  modules: [],
-}));
-mkdirSync(path.join(ROOT, '.agents', 'base', 'rules'), { recursive: true });
-writeFileSync(path.join(ROOT, '.agents', 'base', 'rules', 'AGENTS.md'), 'Базовые правила.\n');
-mkdirSync(path.join(ROOT, '.agents', 'base', 'mcp'), { recursive: true });
-writeFileSync(path.join(ROOT, '.agents', 'base', 'mcp', 'servers.json'), JSON.stringify({
-  'memory-hooks': { type: 'http', url: 'http://memory-hooks.example/mcp/' },
-}, null, 2));
+writeHostConfig(ROOT);
 // Корень рабочего места — сам git-репозиторий, как в жизни: без этого toplevel клона
 // уходит вверх, к корню.
 g(ROOT, 'init', '-b', 'main');
@@ -260,7 +251,7 @@ check(': reviewer снят и до переревью числится снят�
 
 const { review } = await import(path.join(here, '..', 'lib', 'review.js'));
 const reviewOut = await withSession(OWNER,
-  => capture(() => review(ROOT, { target: REPO, task: REUSE_TASK })));
+  () => capture(() => review(ROOT, { target: REPO, task: REUSE_TASK })));
 process.env.PATH = PATH_WAS;
 check(': команда пошла веткой переревью живой сессии, а не подъёмом второго',
   /уже на шине/.test(reviewOut), reviewOut.trim().split('\n').slice(-4).join(' | '));

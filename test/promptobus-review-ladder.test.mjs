@@ -32,7 +32,7 @@
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { check } from './check.mjs';
 
 // realpath: план канонизирует корень (macOS: /var → /private/var), и ожидания проверок
@@ -49,20 +49,9 @@ const g = (cwd, ...args) => {
 
 // --- workspace: минимум, который читает план ------------------------------
 const WS = path.join(SB, 'ws');
-mkdirSync(path.join(WS, '.agents', 'base', 'rules'), { recursive: true });
+mkdirSync(WS, { recursive: true });
 writeFileSync(path.join(WS, 'AGENTS.md'), 'workspace\n');
-writeFileSync(path.join(WS, 'modules.lock'), JSON.stringify({
-  base: { repo: 'https://example.invalid/agent-workspace/promptobus.git', ref: 'latest' },
-  modules: [],
-}));
-writeFileSync(path.join(WS, '.agents', 'base', 'rules', 'AGENTS.md'), 'Базовые правила.\n');
-mkdirSync(path.join(WS, '.agents', 'base', 'mcp'), { recursive: true });
-writeFileSync(path.join(WS, '.agents', 'base', 'mcp', 'servers.json'), '{}\n');
-// Манифест плагина скиллов — только затем, чтобы план не предупреждал о его отсутствии:
-// предупреждение к предмету проверки отношения не имеет, а в выводе набора шумит.
-mkdirSync(path.join(WS, '.agents', 'plugin', 'workspace', '.claude-plugin'), { recursive: true });
-writeFileSync(path.join(WS, '.agents', 'plugin', 'workspace', '.claude-plugin', 'plugin.json'),
-  JSON.stringify({ name: 'workspace', version: '0.0.0' }));
+writeHostConfig(WS);
 
 // --- клон без ссылок origin, обе локальные ветки на разных коммитах ------------
 //

@@ -95,7 +95,7 @@ function withExit(fn) {
   if (!isThenable(value)) { back(); return { failed: false, value }; }
   return value.then(
     (v) => { back(); return { failed: false, value: v }; },
-    => { back(); return { failed: true, value: undefined }; },
+    (e) => { back(); return { failed: true, value: undefined }; },
   );
 }
 

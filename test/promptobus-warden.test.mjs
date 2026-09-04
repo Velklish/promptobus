@@ -1177,7 +1177,7 @@ check('замечание ревью: маршрут исчезнувшего р
   && /не сдана/.test(goneRoute), goneRoute);
 check(`: маршрут исчезнувшего reviewer'а — promptobus review по его клону, а не spawn`,
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n')
-    .includes(`promptobus promptobus review "/tmp/klon" --task ${DIAG}`),
+    .includes(`promptobus review "/tmp/klon" --task ${DIAG}`),
   stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n'));
 check(': строка исчезнувшего — своя, не «встал» и не «числится»',
   stallLine(goneSeen[0], DIAG).includes('ИСЧЕЗ: записи сессии в claude agents нет')

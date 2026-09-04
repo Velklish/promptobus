@@ -45,7 +45,6 @@ const {
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
-const { KNOWN_UTILS, resolveUtilBin } = await import(path.join(here, '..', 'lib', 'tools.js'));
 
 const TASK = 'cursorbus-t20260903-000000';
 const WORKER = 'worker:cur';
@@ -224,11 +223,13 @@ check(': бинарь старше проверенной версии — от�
 // usage'ом и кодом 1, версию печатает только `-V`. Спроси общим флагом — и версия «не
 // определена», то есть гейт `minVersion` не срабатывает НИКОГДА. Стенд отвечает ровно на
 // `-V`, поэтому вердикт ниже краснеет, если аргументы пробы разъедутся с объявлением.
-const utilFound = resolveUtilBin('tmux', { fresh: true });
-check(': adapter резолвит tmux по имени от driver’а и читает версию тем флагом, который тот объявил',
-  utilFound.ok === true && utilFound.version === '3.6' && KNOWN_UTILS.tmux.minVersion === '3.0'
-  && JSON.stringify(KNOWN_UTILS.tmux.versionArgs) === JSON.stringify(['-V']),
-  JSON.stringify(utilFound));
+const driverSrc = readFileSync(path.join(here, '..', 'lib', 'driver-cursor.js'), 'utf8');
+const tmuxFound = cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION }, {
+  util: () => ({ ok: true, version: '3.6' }),
+});
+check(': driver Cursor спрашивает tmux флагом -V и принимает найденную версию',
+  /run\('tmux', \['-V'\]/.test(driverSrc) && tmuxFound === null,
+  `${tmuxFound} · ${/run\('tmux', \['-V'\]/.test(driverSrc)}`);
 
 // Второй отказ того же гейта: tmux. Спрашивается он ровно там же, до первой записи на диск,
 // иначе подъём упирался бы в «панель-поставщик pty не поднялась» уже с worktree и веткой.

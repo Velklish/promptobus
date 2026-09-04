@@ -132,7 +132,7 @@ function keepUntilExit(dir) {
     const clean = () => { for (const d of sandboxes.splice(0)) rmSync(d, { recursive: true, force: true }); };
     process.on('exit', clean);
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-      process.on(sig, => { clean(); exit0.call(process, 130); });
+      process.on(sig, () => { clean(); exit0.call(process, 130); });
     }
   }
   return dir;

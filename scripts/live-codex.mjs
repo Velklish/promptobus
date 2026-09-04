@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Живая проверка driver'а Codex на настоящем `codex app-server`. Запуск:
 //
-//   node cli/scripts/live-codex.mjs [--model <id>]
+//   node scripts/live-codex.mjs [--model <id>]
 //
 // В `npm test` и в релизный гейт не входит: тратит лимит аккаунта Codex (он же
 // ChatGPT.app владельца) и говорит с живым бинарём. Рабочее место — временное,
@@ -17,14 +17,13 @@ import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { makeSandbox, writeHostConfig } from '../test/sandbox.mjs';
+import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 
 const { codexDriver, DEFAULT_MODEL } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const { readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
-const { resolveToolBin } = await import(path.join(MECHANISM_ROOT, 'lib', 'tools.js'));
 
 const RELIED = [
   'initialize',
