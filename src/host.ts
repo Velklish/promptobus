@@ -159,6 +159,16 @@ export interface PromptobusHost {
   formatCommand(args: string[]): string;
   formatNpx(args: string[]): string;
   busCommand(args: string[]): string;
+  /**
+   * Чем ЗАПУСТИТЬ подкоманду шины: argv целиком, без `node` впереди.
+   *
+   * `busCommand` рядом — для печати человеку, и на запуск не годится: строку пришлось бы
+   * разбирать обратно. Пакет не вправе собирать argv сам: он не знает, лежат ли его
+   * подкоманды в корне бинаря потребителя или под своим словом. Собранное на этом
+   * предположении `[binPath(), 'mcp']` попадёт в справку потребителя, а не в шину —
+   * молча, потому что чужой CLI на неизвестную подкоманду отвечает справкой с кодом 0.
+   */
+  busArgv(args: string[]): string[];
   cloneHint(nsPath: string): string;
   syncHint(): string;
   workerPreamble(ctx: { taskId: string; nsPath: string; branch: string }): string;
