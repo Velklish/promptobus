@@ -1,48 +1,50 @@
-// Standalone-проверка package: собранный dist импортируется сам по себе, без CLI,
-// без рабочего места и без чужих зависимостей. Запуск — своя команда package:
-// `npm test`.
+// Standalone check of the package: the built dist is imported on its own,
+// without the CLI, without a workplace, and without foreign dependencies.
+// Run with the package's own command: `npm test`.
 //
-// Файл лежит в package намеренно: package обязан проверяться
-// отдельно от потребителя — иначе «собирается standalone» держалось бы на слове.
+// The file lives in the package on purpose: the package must be checked
+// separately from the consumer — otherwise "it builds standalone" would rest
+// on a word.
 //
-// dist собирается скриптом pretest, поэтому чистый checkout проверяется без
-// подготовки: заранее созданного dist файл не ждёт.
+// dist is built by the pretest script, so a clean checkout is checked without
+// preparation: the file does not wait for a pre-created dist.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-// Импорт собранного модуля живёт ВНУТРИ теста, а не на верхнем уровне файла: не
-// собрался один entry point — краснеет его собственная проверка, а остальные
-// вердикты остаются. Импортом наверху такой файл обрывался бы целиком, и
-// вердиктов не было бы ни по одной проверке — оборванный файл от лживого не
-// отличить.
-test('entry point "." отдаёт версию протокола и имя package', async () => {
+// The import of the built module lives INSIDE the test, not at the top of the
+// file: if one entry point failed to build, its own check goes red, and the
+// other verdicts remain. An import at the top would abort the whole file, and
+// there would be no verdicts for any check — a broken file would be
+// indistinguishable from a lying one.
+test('entry point "." yields the protocol version and the package name', async () => {
   const index = await import('../dist/index.js');
   assert.equal(index.PROTOCOL_VERSION, 1);
   assert.equal(index.PACKAGE_NAME, 'promptobus');
 });
 
-test('entry point "./driver" собран отдельным модулем', async () => {
-  // Типы стираются компиляцией, поэтому у заглушки driver проверяется факт
-  // сборки отдельного модуля, а не его экспорты: их содержание живёт в контракте driver'а.
+test('entry point "./driver" is built as a separate module', async () => {
+  // Types are erased by compilation, so the driver stub is checked for the
+  // fact of being built as a separate module, not for its exports: their
+  // content lives in the driver contract.
   const driver = await import('../dist/driver.js');
   assert.equal(typeof driver, 'object');
 });
 
-test('entry point "./host" отдаёт контракт и standalone-реализацию', async () => {
+test('entry point "./host" yields the contract and the standalone implementation', async () => {
   const host = await import('../dist/host-index.js');
   assert.equal(typeof host.createStandaloneHost, 'function');
   assert.equal(typeof host.isPromptobusHost, 'function');
   assert.equal(typeof host.HOST_KIND, 'string');
 });
 
-test('entry point "./hooks" отдаёт план хуков', async () => {
+test('entry point "./hooks" yields the hook plan', async () => {
   const hooks = await import('../dist/hooks.js');
   assert.equal(typeof hooks.planPromptobusHooks, 'function');
   assert.equal(typeof hooks.renderBusHook, 'function');
 });
 
-test('declarations собраны рядом с кодом', async () => {
+test('declarations are built next to the code', async () => {
   const dts = await readFile(new URL('../dist/driver.d.ts', import.meta.url), 'utf8');
   assert.match(dts, /interface Driver\b/);
 });

@@ -1,11 +1,13 @@
-// Engine protocol v1: единственная дверь в store v1.
+// Engine protocol v1: the only door into store v1.
 //
-// Корень даёт вызывающий, routing policy — тоже, и оба обязательны при ОТКРЫТИИ. Policy
-// именно здесь, а не при первой отправке: engine без правила «кто кому вправе писать» — это
-// шина, у которой правило появится когда-нибудь потом, а до тех пор пройдёт всё.
+// The caller supplies the root, and the routing policy too, and both are
+// required at OPEN. The policy is here, not on the first send: an engine
+// without a "who may write to whom" rule is a bus whose rule will appear
+// someday, and until then everything goes through.
 //
-// К CLI engine подключён дверью механизма (adapter потребителя): она открывает его
-// с корнем рабочего места и routing policy потребителя, а модели отдаёт потребителям как есть.
+// The engine is wired to the CLI through the mechanism door (the consumer
+// adapter): that opens it with the workspace root and the consumer routing
+// policy, and hands the models to consumers as they are.
 import { linkSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -33,46 +35,48 @@ import {
 import type { BrokenTask, Clock, NewTask, ParticipantPatch } from './store.js';
 import { requireValid } from './validate.js';
 
-/** Решение routing policy: пропустить либо отказать с причиной. */
+/** Routing-policy decision: allow, or refuse with a reason. */
 export type RoutingDecision = { allow: true } | { deny: true; reason: string };
 
 /**
- * Routing policy — правило «кто кому вправе писать». Задаёт его потребитель: у CLI это
- * запрет «worker → worker», у другого adapter'а будет своё. Роли берутся из ЗАПИСЕЙ
- * участников: из id роль не выводится нигде.
+ * Routing policy — the "who may write to whom" rule. The consumer sets it: for
+ * the CLI that is the "worker → worker" ban; another adapter will have its
+ * own. Roles are taken from participant RECORDS: role is never derived from
+ * the id anywhere.
  */
 export type RoutingPolicy = (sender: ParticipantV1, recipient: ParticipantV1, task: TaskV1) => RoutingDecision;
 
-/** Что подаётся engine при открытии. */
+/** What is passed to the engine at open. */
 export interface EngineOptions {
   /**
-   * Корень рабочего места. Store лежит в `<root>/.promptobus`; сам корень package не ищет.
-   * Задаётся ровно один из двух: `root` либо `home`.
+   * Workspace root. The store lives at `<root>/.promptobus`; the package does
+   * not search for the root itself. Exactly one of `root` or `home` is set.
    */
   root?: string;
   /**
-   * Каталог store целиком. Нужен adapter'у, у которого путь приходит переменной окружения и
-   * `.promptobus` в конце может не стоять вовсе: adapter называет каталог, а не рабочее место,
-   * и склеивать его с именем root'а второй раз означало бы уводить store мимо того каталога,
-   * который назвал человек.
+   * The store directory whole. Needed by an adapter whose path arrives as an
+   * environment variable and may not end in `.promptobus` at all: the adapter
+   * names the directory, not the workspace, and gluing a root name on a second
+   * time would walk the store past the directory a person named.
    */
   home?: string;
   policy: RoutingPolicy;
-  /** Часы: набор подставляет свои, чтобы штампы были предсказуемы. */
+  /** Clock: the suite substitutes its own so stamps are predictable. */
   now?: Clock;
-  /** Шов fault injection. В production не подставляется. */
+  /** Fault-injection seam. Not supplied in production. */
   faults?: FaultHook;
-  /** Восстанавливать ли fan-out при открытии. Выключается только набором. */
+  /** Whether to recover fan-out at open. Turned off only by the suite. */
   recover?: boolean;
   /**
-   * Версия механизма, который читает журналы этим engine. Своей у package нет
-   * вовсе — её называет открывающий, как `home` и `policy`.
-   * Не названа — смесь версий не различается: запись с незнакомыми полями остаётся порчей.
+   * Version of the mechanism that reads journals through this engine. The
+   * package has none of its own — the opener names it, like `home` and
+   * `policy`. Unnamed — a mix of versions is not distinguished: a record with
+   * unfamiliar fields stays corruption.
    */
   cli?: string | null;
 }
 
-/** Что отправляется на шину. Артефакт кладётся ЗДЕСЬ же — иначе policy его не сторожит. */
+/** What is sent on the bus. The artifact is laid down HERE — otherwise the policy does not watch it. */
 export interface SendInput {
   from: string;
   to: string[];
@@ -82,9 +86,10 @@ export interface SendInput {
 }
 
 /**
- * То же синхронно. Источник артефакта здесь только файл, а имя ему даёт adapter — callback
- * зовётся ПОСЛЕ того, как blob лёг на диск, и получает его digest: adapter кладёт свои
- * человеческие имена рядом, а дедупликация имени без digest'а невозможна.
+ * The same, synchronously. The artifact source here is a file only, and the
+ * adapter names it — the callback is called AFTER the blob is on disk and
+ * receives its digest: the adapter lays its human names next to it, and name
+ * dedup without a digest is impossible.
  */
 export interface SendSyncInput {
   from: string;
@@ -94,21 +99,21 @@ export interface SendSyncInput {
   artifact?: { path: string; name?: (sha256: string, size: number) => string };
 }
 
-/** Исход отправки: канон, metadata артефакта и события «кого будить». */
+/** Send outcome: the canon, artifact metadata, and "who to wake" events. */
 export interface SendResult {
   message: MessageV1;
   artifact: ArtifactV1 | null;
   events: ActivationEvent[];
 }
 
-/** Исход восстановления: что починено и кого за это надо разбудить. */
+/** Recovery outcome: what was repaired and who must be woken for it. */
 export interface RecoverResult {
   repairs: Repair[];
   events: ActivationEvent[];
   broken: BrokenNote[];
 }
 
-/** Что унёс `prune`. */
+/** What `prune` took. */
 export interface PruneResult {
   task: string;
   blobs: number;
@@ -117,33 +122,36 @@ export interface PruneResult {
 
 const NO_FAULT: FaultHook = () => {};
 
-/** Engine v1. Все операции идут через него: сырых путей наружу package не отдаёт. */
+/** Engine v1. Every operation goes through it: the package does not hand raw paths out. */
 export interface Engine {
-  /** Каталог store: `<root>/.promptobus`. */
+  /** Store directory: `<root>/.promptobus`. */
   readonly home: string;
   createTask(input: NewTask): TaskV1;
   readTask(task: string): TaskV1;
   listTasks(): { tasks: TaskV1[]; broken: BrokenTask[] };
   taskExists(task: string): boolean;
   /**
-   * Закрыть задачу. `adapter` — поля adapter'а, которые ложатся ТЕМ ЖЕ ходом: отметку
-   * закрытия пишет он, и второй лок ради одного поля стоил бы задачи, закрытой без неё.
+   * Close the task. `adapter` — adapter fields laid down in THE SAME pass: the
+   * adapter writes the close mark, and a second lock for one field would cost
+   * a task closed without it.
    */
   closeTask(task: string, patch?: { adapter?: Record<string, unknown> }): TaskV1;
   /**
-   * Поправить журнал задачи: заголовок и поля adapter'а. Поля `adapter` СЛИВАЮТСЯ, а не
-   * заменяются: объект opaque, и замена целиком унесла бы соседние, дописанные тем временем.
+   * Patch the task journal: title and adapter fields. `adapter` fields are
+   * MERGED, not replaced: the object is opaque, and a whole replace would take
+   * neighbouring fields written in the meantime.
    */
   patchTask(task: string, patch: { title?: string; adapter?: Record<string, unknown> }): TaskV1;
   addParticipant(task: string, participant: ParticipantV1): ParticipantV1;
-  /** Положить запись участника целиком, заменив прежнюю: так пишет подъём участника. */
+  /** Put a participant record whole, replacing the former one: that is how lift writes. */
   putParticipant(task: string, participant: ParticipantV1): TaskV1;
   patchParticipant(task: string, id: string, patch: ParticipantPatch): ParticipantV1;
   /**
-   * Четыре пути, которые adapter'у нужны именами, а не операциями: файл журнала называет
-   * человеку диагностика «журнал не читается», за mailbox'ом следит слушатель шины
-   * (`fs.watch`), а прочитанное и отложенное показывает человеку живой прогон — по ним он
-   * и разбирает, куда делось сообщение. Остальная раскладка store наружу не выходит.
+   * Four paths the adapter needs by name, not by operation: diagnostics name
+   * the journal file to a person as "journal does not read"; the bus listener
+   * (`fs.watch`) watches the mailbox; and a live run shows a person what was
+   * read and what was set aside — that is how they tell where a message went.
+   * The rest of the store layout does not go out.
    */
   taskFile(task: string): string;
   inboxPath(task: string, participant: string): string;
@@ -153,17 +161,18 @@ export interface Engine {
   send(task: string, input: SendInput): Promise<SendResult>;
   sendSync(task: string, input: SendSyncInput): SendResult;
   read(task: string, participant: string): { messages: MessageV1[]; broken: BrokenNote[] };
-  /** Прочитать не забирая: ссылки остаются в inbox'е. Битое откладывается так же. */
+  /** Read without taking: refs stay in the inbox. Broken ones are set aside the same way. */
   peek(task: string, participant: string): { messages: MessageV1[]; broken: BrokenNote[] };
-  /** Заглянуть молча: ни ссылок не трогает, ни битого не откладывает. */
+  /** Glance in silence: touches no refs and sets no broken aside. */
   glance(task: string, participant: string): MessageV1[];
   unread(task: string, participant: string): number;
-  /** Когда участник в последний раз отправлял; `null` — не отправлял ещё ничего. */
+  /** When the participant last sent; `null` — they have sent nothing yet. */
   lastSentAt(task: string, participant: string): number | null;
   /**
-   * Жёсткая ссылка на blob под именем, которое выбрал adapter. `false` — имя занято, и
-   * выбирать следующее — дело вызывающего: содержимое дедуплицировано, и вторая ссылка на
-   * тот же inode лишнего байта не стоит. Путь blob'а наружу при этом не выходит.
+   * Hard link to a blob under a name the adapter chose. `false` — the name is
+   * taken, and picking the next one is the caller's job: the payload is
+   * deduplicated, and a second link to the same inode costs no extra byte.
+   * The blob path itself does not go out.
    */
   linkBlob(task: string, sha256: string, target: string): boolean;
   history(query?: HistoryQuery): HistoryPage;
@@ -176,58 +185,60 @@ export interface Engine {
 }
 
 /**
- * Открыть engine. Без routing policy — отказ ЗДЕСЬ, а не при первой отправке: шина, у
- * которой правило появится потом, до тех пор пропускает всё.
+ * Open the engine. Without a routing policy — a refusal HERE, not on the
+ * first send: a bus whose rule will appear later lets everything through
+ * until then.
  */
 export function openEngine({
   root, home: at, policy, now = () => new Date(), faults = NO_FAULT, recover = true, cli = null,
 }: EngineOptions): Engine {
   if (typeof policy !== 'function') {
-    fail('policy-required', 'routing policy обязательна: engine без правила «кто кому вправе писать» не открывается');
+    fail('policy-required', 'routing policy is required: an engine without a who-may-write-to-whom rule does not open');
   }
   if ((root === undefined) === (at === undefined)) {
-    fail('schema-invalid', 'engine открывается по одному из двух: root рабочего места либо home самого store');
+    fail('schema-invalid', 'the engine opens on exactly one of: the workspace root, or the store home itself');
   }
   const home = at ?? homeOf(root as string);
 
   function decide(sender: ParticipantV1, recipient: ParticipantV1, meta: TaskV1): void {
     const decision = policy(sender, recipient, meta);
     if (decision && (decision as { allow?: unknown }).allow === true) return;
-    // Не решение вовсе — тоже отказ: policy, вернувшая мусор, не имеет права читаться как
-    // разрешение. Молчаливый пропуск здесь стоил бы ровно того, ради чего policy обязательна.
+    // Not a decision at all is also a refusal: a policy that returned garbage
+    // must not be read as permission. A silent pass here would cost exactly
+    // what the policy is required for.
     const reason = decision && typeof (decision as { reason?: unknown }).reason === 'string'
       ? (decision as { reason: string }).reason
-      : 'policy не вернула решения';
+      : 'policy returned no decision';
     fail('policy-denied', `${sender.id} → ${recipient.id}: ${reason}`,
       { task: meta.id, sender: sender.id, recipient: recipient.id, reason });
   }
 
-  /** Шаг 1: всё, что проверяется ДО первого side effect. Один на обе ветки отправки. */
+  /** Step 1: everything checked BEFORE the first side effect. One for both send branches. */
   function prepare(task: string, input: { from: string; to: string[]; type: string; body: string }): {
     meta: TaskV1; sender: ParticipantV1; recipients: ParticipantV1[];
   } {
     const meta = requireActive(readTask(home, task, cli));
     const sender = requireParticipant(meta, input.from);
     if (!Array.isArray(input.to) || !input.to.length) {
-      fail('recipients-empty', 'список получателей пуст', { task });
+      fail('recipients-empty', 'recipient list is empty', { task });
     }
     if (new Set(input.to).size !== input.to.length) {
-      fail('recipients-duplicate', `дубли получателей: ${input.to.join(', ')}`, { task, to: input.to });
+      fail('recipients-duplicate', `duplicate recipients: ${input.to.join(', ')}`, { task, to: input.to });
     }
     const recipients = input.to.map((id) => requireParticipant(meta, id));
     if (typeof input.type !== 'string' || !MESSAGE_TYPES_V1.includes(input.type)) {
-      fail('message-type-unknown', `тип «${String(input.type)}» не из протокола v1: ${MESSAGE_TYPES_V1.join(', ')}`,
+      fail('message-type-unknown', `type «${String(input.type)}» is not a v1 protocol type: ${MESSAGE_TYPES_V1.join(', ')}`,
         { task, type: input.type });
     }
     if (typeof input.body !== 'string' || !input.body) {
-      fail('schema-invalid', 'body пуст — сообщение без текста не отправляется', { task });
+      fail('schema-invalid', 'body is empty — a message with no text is not sent', { task });
     }
     for (const recipient of recipients) decide(sender, recipient, meta);
     faults('validate', { task, message: null });
     return { meta, sender, recipients };
   }
 
-  /** Шаги 2–5: точка коммита, fan-out и события «кого будить». Тоже один на обе ветки. */
+  /** Steps 2–5: the commit point, fan-out, and "who to wake" events. Also one for both send branches. */
   function finish(task: string, meta: TaskV1, sender: ParticipantV1, recipients: ParticipantV1[],
     input: { to: string[]; type: string; body: string }, artifact: ArtifactV1 | null): SendResult {
     const draft = newMessage(task, sender.id, input.to, input.type, input.body, artifact?.id ?? null, now());
@@ -235,9 +246,9 @@ export function openEngine({
     const message = commitIntent(home, task, draft, now());
     faults('intent', { task, message: message.id });
     completeFanout(home, task, message, faults);
-    // Активация НЕ здесь: engine отдаёт список «кого будить», а будит supervisor через
-    // driver участника — и делает это независимо по получателям, уже после того, как
-    // fan-out лёг на диск.
+    // Activation is NOT here: the engine returns a "who to wake" list, and
+    // the supervisor wakes them through the participant's driver — independently
+    // per recipient, after the fan-out is on disk.
     return { message, artifact, events: recipients.map((r) => eventFor(home, task, r, [message])) };
   }
 
@@ -269,14 +280,15 @@ export function openEngine({
     async send(task, input) {
       const { sender, recipients, meta } = prepare(task, input);
 
-      // --- артефакт: после policy, до сообщения -----------------------------------------
-      // Порядок обязателен: отказ policy не имеет права оставить в задаче blob. Считается
-      // digest потоково, на проходе записи — источником бывает поток, и второго чтения у
-      // него нет вовсе.
+      // --- artifact: after policy, before the message -----------------------------------
+      // The order is required: a policy refusal must not leave a blob in the
+      // task. The digest is computed as a stream, on the write pass — the
+      // source may be a stream, and it has no second read at all.
       let artifact: ArtifactV1 | null = null;
       if (input.artifact) {
-        // Имя считается ДО записи blob'а: негодное, пойманное схемой уже после, оставило бы
-        // в задаче содержимое без metadata — orphan blob до самого `prune`.
+        // The name is computed BEFORE the blob is written: a bad one, caught
+        // by the schema only after, would leave payload in the task with no
+        // metadata — an orphan blob until `prune`.
         const filename = nameOf(input.artifact);
         const { sha256, size } = await stashBlob(home, task, input.artifact);
         faults('blob', { task, sha256 });
@@ -291,14 +303,15 @@ export function openEngine({
       let artifact: ArtifactV1 | null = null;
       if (input.artifact) {
         const source = input.artifact;
-        // Имя источника проверяется ДО записи blob'а — ровно как в потоковой ветке:
-        // негодное, пойманное уже после, оставило бы в задаче содержимое без metadata,
-        // то есть orphan blob на ровном месте.
+        // The source name is checked BEFORE the blob is written — the same as
+        // the streaming branch: a bad one, caught only after, would leave
+        // payload in the task with no metadata, an orphan blob on a flat path.
         nameOf({ path: source.path });
         const { sha256, size } = stashBlobSync(home, task, source.path);
         faults('blob', { task, sha256 });
-        // Имя, под которым запись увидит человек, даёт adapter и ПОСЛЕ blob'а:
-        // дедупликация имени без digest'а невозможна. Проверяется оно тем же `nameOf`.
+        // The name a person will see the record under is given by the adapter
+        // and AFTER the blob: name dedup without a digest is impossible. It
+        // is checked by the same `nameOf`.
         const filename = nameOf({ path: source.path, filename: source.name?.(sha256, size) });
         artifact = writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
         faults('artifact', { task, artifact: artifact.id });
@@ -307,8 +320,8 @@ export function openEngine({
     },
 
     read(task, participant) {
-      // Закрытую задачу читать законно: `requireActive` тут не при чём — переписка остаётся
-      // журналом и после закрытия.
+      // Reading a closed task is lawful: `requireActive` has nothing to do
+      // here — the correspondence stays a journal after close.
       requireParticipant(readTask(home, task, cli), participant);
       return readInbox(home, task, participant, faults);
     },
@@ -354,14 +367,14 @@ export function openEngine({
     orphanBlobs: (task) => orphanBlobs(home, task),
 
     /**
-     * Снести задачу целиком вместе с blob'ами. Blob дедуплицирован внутри задачи, и «ничей»
-     * он ровно до следующей отправки того же содержимого, — поэтому поштучно blob'ы не
-     * убираются никогда, а уходят с задачей.
+     * Wipe the task whole, blobs included. A blob is deduplicated inside the
+     * task, and it is "nobody's" only until the next send of the same
+     * payload — so blobs are never removed one by one, they leave with the task.
      */
     prune(task) {
       const meta = readTask(home, task, cli);
       if (meta.status === 'active') {
-        fail('task-active', `задача ${task} активна — prune сносит её переписку и blob'ы целиком`,
+        fail('task-active', `task ${task} is active — prune wipes its correspondence and blobs whole`,
           { task, status: meta.status });
       }
       const { count, bytes } = blobStats(home, task);

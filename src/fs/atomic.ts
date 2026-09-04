@@ -1,8 +1,8 @@
-// Атомарная запись файла — сырой примитив, общий у legacy store и protocol v1.
+// Atomic file write — a raw primitive shared by the legacy store and protocol v1.
 //
-// Наружу не экспортируется: экспортированный однажды хелпер становится
-// контрактом, а смысл границы в том, что снаружи виден protocol, а не диск. Копии второй
-// не бывает — v1 берёт этот же модуль.
+// Not exported: a helper exported once becomes a contract, and the point of the
+// boundary is that the outside sees protocol, not disk. There is no second copy
+// — v1 takes this same module.
 import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -10,10 +10,10 @@ import process from 'node:process';
 let atomicSeq = 0;
 
 /**
- * Записать файл целиком: временный сосед в той же директории и `rename` поверх.
+ * Write a file whole: a temporary neighbour in the same directory and `rename` over it.
  *
- * `writeFileSync` усекает файл до нуля — параллельный читатель застаёт его пустым, а
- * умерший посреди записи процесс оставляет обрезанный файл навсегда.
+ * `writeFileSync` truncates the file to zero — a parallel reader finds it empty,
+ * and a process that died mid-write leaves a truncated file forever.
  */
 export function writeFileAtomic(file: string, content: string, { mode = null }: { mode?: number | null } = {}): void {
   const dir = path.dirname(file);
@@ -22,19 +22,20 @@ export function writeFileAtomic(file: string, content: string, { mode = null }: 
   const tmp = path.join(dir, `.tmp-${path.basename(file)}-${process.pid}-${atomicSeq}`);
   try {
     writeFileSync(tmp, content, mode === null ? undefined : { mode });
-    // `mode` у `writeFileSync` режет umask: при штатном 022 просьба 0o660 приезжает 0o640.
-    // `chmod` после создания umask не касается.
+    // `mode` on `writeFileSync` is cut by umask: under a stock 022 a requested 0o660
+    // arrives as 0o640. `chmod` after create does not touch umask.
     if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } catch (e) {
-    // recursive: на месте tmp бывает каталог (оборванный проход, чужая ФС), одним `force`
-    // он не снимается, и следующая запись упиралась бы в него вечно.
+    // recursive: a directory can sit where tmp should be (an aborted pass, a
+    // foreign FS); `force` alone will not lift it, and the next write would
+    // hit it forever.
     rmSync(tmp, { force: true, recursive: true });
     throw e;
   }
 }
 
-/** Тот же приём — всем перезаписываемым JSON-файлам шины. */
+/** The same move — for every overwriteable JSON file on the bus. */
 export function writeJsonAtomic<T>(file: string, value: T): T {
   writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`);
   return value;

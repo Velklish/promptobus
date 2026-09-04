@@ -1,29 +1,33 @@
-// Многопроцессная конкуренция там, где её не закрывает engine: участники под локом журнала,
-// уникальность имён записей на диске, metadata артефактов и место надзирателя. Настоящими
-// процессами, а не промисами в одном: предмет проверки — атомарные примитивы файловой
-// системы (`mkdir` лока, `wx` журнала, `link` имени записи), а внутри одного процесса они
-// никогда не встречаются с собой.
+// Multi-process contention where the engine does not cover it: participants
+// under the journal lock, uniqueness of record names on disk, artifact
+// metadata, and the warden place. With real processes, not promises in one:
+// the subject is the atomic filesystem primitives (`mkdir` of the lock, `wx`
+// of the journal, `link` of the record name), and inside one process they
+// never meet themselves.
 //
-// Переехало вместе с кодом: разделы про read-modify-write двух процессов
-// и про атомарность («первый выигрывает»).
-// Запуск — своя команда package: `npm test`.
+// Moved with the code: the sections on two-process read-modify-write
+// and on atomicity ("the first one wins").
+// Run with the package's own command: `npm test`.
 //
-// **Три проверки сняты и не потеряны.** Они гоняли через слой совместимости ту же
-// конкуренцию, что [v1-races.test.mjs](v1-races.test.mjs) проверяет прямо на engine, и после
-// снятия слоя стали бы дословными копиями: «конкурентная запись двух процессов в один inbox»
-// покрыта там проверкой «два процесса шлют в один mailbox — ничего не потеряно и порядок
-// отправителя цел», «одну задачу заводит ровно один из восьми» — «восемь процессов заводят
-// одну задачу — успех ровно у одного», «два читателя одного mailbox'а» — «два читателя
-// одного mailbox'а — ни отказа, ни задвоенного сообщения».
+// **Three checks were removed and are not lost.** They ran the same contention
+// through the compatibility layer that [v1-races.test.mjs](v1-races.test.mjs)
+// checks directly on the engine, and after the layer was removed they would
+// have become verbatim copies: "two processes write concurrently into one
+// inbox" is covered there by "two processes send into one mailbox — nothing
+// is lost and the sender order is intact", "exactly one of eight creates a
+// task" — "eight processes create one task — success for exactly one", "two
+// readers of one mailbox" — "two readers of one mailbox — no refusal and no
+// duplicated message".
 //
-// **Многопроцессная гонка ИМЕНИ артефакта в папке файлов задачи снята, и замены ей нет.**
-// Имя занимает сама жёсткая ссылка: `linkSync` отказывает `EEXIST` на занятом имени, и
-// выбор следующего идёт циклом у двери механизма (`placeFile` в
-// adapter потребителя). Свойство держится этим
-// отказом ФС, а не проверкой перед записью, и покрыто оно последовательно —
-// набором adapter'а потребителя,
-// «артефакт: одноимённый не затирает прежний — имя занимает сама ссылка». Многопроцессного
-// стенда у двери нет: он стоил бы своего харнеса ради ветки, где сама ФС и есть арбитр.
+// **The multi-process race for an artifact NAME in the task files folder was
+// removed, and it has no replacement.** The name is taken by the hard link
+// itself: `linkSync` refuses `EEXIST` on a taken name, and the next one is
+// chosen in a loop at the mechanism door (`placeFile` in the consumer
+// adapter). The property is held by that FS refusal, not by a check before
+// the write, and it is covered sequentially — by the consumer adapter suite,
+// "artifact: a namesake does not overwrite the former — the link itself takes
+// the name". There is no multi-process stand at the door: it would have cost
+// its own harness for a branch where the FS itself is the arbiter.
 import assert from 'node:assert/strict';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -34,14 +38,16 @@ import test from 'node:test';
 
 const store = await import('../dist/index.js');
 
-// Routing policy обязательна при открытии engine, и правило её — дело adapter'а: здесь
-// adapter'а нет, и его играет набор. Пример policy («worker'у нельзя писать worker'у»)
-// живёт в CLI и проверяется там.
+// A routing policy is required when the engine opens, and its rule is the
+// adapter's business: there is no adapter here, and the suite plays it. The
+// example policy ("a worker must not write to a worker") lives in the CLI and
+// is checked there.
 const DIST = new URL('../dist/index.js', import.meta.url).href;
 
-// Adapter'а здесь нет, и его играет набор: перевод адреса в запись участника — его дело.
-// Тот же перевод уезжает и в дочерний процесс: он открывает свой engine и кладёт свои
-// записи, а имена и поля обязаны совпадать с родительскими.
+// There is no adapter here, and the suite plays it: turning an address into a
+// participant record is its business. The same turn goes into the child
+// process: it opens its own engine and lays its own records, and the names
+// and fields must match the parent's.
 const RECIPE = `const at = (home) => m.openEngine({ home, policy: () => ({ allow: true }) });
 const rec = (address, fields = {}) => ({
   id: m.addrDir(address), role: m.roleOf(address), harness: 'proba',
@@ -59,21 +65,26 @@ process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
 const J = JSON.stringify;
 
-// Доклад ребёнка «дошёл до барьера». Первая строка его stdout и в проверки не возвращается.
+// Child report "reached the barrier". The first line of its stdout is not
+// returned into the checks.
 const READY = '__ready__';
 
-// Дочерний процесс с кодом на входе: код выхода, stdout и stderr одним резолвом.
+// A child process with code on the input: exit code, stdout, and stderr in
+// one resolve.
 //
-// Код возврата берётся у КАЖДОГО ребёнка, а не только там, где его спрашивают. Тело упавшего
-// ребёнка не печатает ничего, и его молчание неотличимо от затёртой записи: проверка счёта
-// называла причиной следствие — «сообщение затёрто» вместо «процесс не отработал».
+// The return code is taken from EVERY child, not only where it is asked. The
+// body of a fallen child prints nothing, and its silence is indistinguishable
+// from an overwritten record: a count check named the consequence as the
+// cause — "the message was overwritten" instead of "the process did not run".
 //
-// Резолв по `close`, а не по `exit`: `exit` приходит до того, как дочитаны пайпы, и хвост
-// stderr упавшего ребёнка уезжал бы вместе с диагнозом, ради которого он и читается.
+// Resolve on `close`, not on `exit`: `exit` arrives before the pipes are
+// drained, and the stderr tail of a fallen child would leave with the
+// diagnosis it is read for.
 //
-// `ready` — хук барьера: зовётся ровно один раз, с stdin'ом ребёнка при докладе о готовности
-// либо с `null`, если ребёнок умер, не доложив. Второе обязательно: упавший ребёнок иначе
-// запирал бы барьер навсегда, а его код возврата нужен проверке живым.
+// `ready` is the barrier hook: it is called exactly once, with the child
+// stdin on the readiness report, or with `null` if the child died without
+// reporting. The second is required: a fallen child would otherwise lock the
+// barrier forever, and the check needs its return code live.
 function child(body, { ready = null } = {}) {
   const code = `const m = await import(${J(DIST)});\n${RECIPE}${body}`;
   return new Promise((resolve) => {
@@ -97,29 +108,33 @@ function child(body, { ready = null } = {}) {
   });
 }
 
-// Все дети вышли нулём — сверяется ПЕРЕД всяким счётом сообщений и артефактов. Деталь
-// называет упавшего и несёт его stderr: диагноз стоит там, а не в числе недосчитанных.
+// Every child exited zero — checked BEFORE any count of messages and
+// artifacts. The detail names the fallen one and carries its stderr: the
+// diagnosis lives there, not in the number of missing items.
 function exitedZero(kids, who = (i) => `#${i}`) {
   const dead = kids.map((k, i) => ({ ...k, who: who(i) })).filter((k) => k.code !== 0);
   assert.equal(dead.length, 0, dead
-    .map((k) => `ребёнок ${k.who} вышел кодом ${k.code}: ${k.err || 'stderr пуст'}`).join('\n'));
+    .map((k) => `child ${k.who} exited with code ${k.code}: ${k.err || 'stderr empty'}`).join('\n'));
 }
 
-// Барьер для гонок: дети докладывают о готовности и засыпают на чтении stdin, а родитель
-// отпускает всех разом, когда собрались все. Без барьера они выстраиваются в очередь по
-// времени запуска процесса, и окно между проверкой и записью — то самое, которое чинится, —
-// не наступает вовсе.
+// Barrier for races: children report readiness and sleep on a stdin read, and
+// the parent releases them all at once when everyone has gathered. Without
+// the barrier they queue by process-start time, and the window between the
+// check and the write — the one being fixed — never arrives at all.
 //
-// По готовности, а не по общей метке времени. Метка давала фору на запуск node и
-// импорт `dist`, и калибровалась она под спокойную машину: под нагрузкой (load average
-// 41–43) половина из восьми детей входила в барьер уже ПОСЛЕ метки, +27…−159 мс, и гонка
-// вырождалась в почти последовательный запуск. Доклад о нагрузке не знает вовсе: опоздавших
-// нет по построению, а замер восьми детей в 5 кругов дал разброс выхода из барьера 0…3 мс
-// против 7…28 мс у метки на той же машине.
+// By readiness, not by a shared time mark. The mark gave a head start on
+// launching node and importing `dist`, and it was calibrated for a quiet
+// machine: under load (load average 41–43) half of the eight children entered
+// the barrier AFTER the mark, +27…−159 ms, and the race degenerated into an
+// almost sequential start. The report knows nothing of load: there are no
+// latecomers by construction, and a measurement of eight children over 5
+// rounds gave a barrier-exit spread of 0…3 ms against 7…28 ms for the mark on
+// the same machine.
 //
-// Ожидание на stdin — блокировка, а не спин: процессорного времени оно не жжёт вовсе.
-// Снятие stdin с чтения после отпуска обязательно: оставленный в потоке, он держал бы цикл
-// событий ребёнка живым и после того, как тело гонки отработало.
+// Waiting on stdin is a block, not a spin: it burns no CPU time at all.
+// Taking stdin off the read after the release is required: left in the
+// stream, it would keep the child event loop alive after the race body had
+// finished.
 function racers(n, body) {
   const doors = [];
   let seen = 0;
@@ -127,8 +142,9 @@ function racers(n, body) {
   const all = new Promise((r) => { gathered = r; });
   const arrive = (stdin) => {
     if (stdin) {
-      // Слушатель ошибки — сразу при укладке двери, а не при отпуске: ребёнок, доложивший о
-      // готовности и тут же умерший, оставил бы пайп без слушателя, и EPIPE уронил бы набор.
+      // The error listener is attached as soon as the door is laid, not at
+      // release: a child that reported readiness and died at once would leave
+      // the pipe with no listener, and EPIPE would bring the suite down.
       stdin.on('error', () => {});
       doors.push(stdin);
     }
@@ -142,19 +158,21 @@ function racers(n, body) {
     { ready: arrive },
   ));
   return all.then(() => {
-    // Ребёнок мог умереть между докладом и отпуском: EPIPE здесь не отказ стенда, и
-    // слушатель ошибки на двери стоит с самой её укладки.
+    // A child could die between the report and the release: EPIPE here is not
+    // a stand refusal, and the error listener on the door stands from the
+    // moment it is laid.
     for (const door of doors) door.end('go\n');
     return Promise.all(kids);
   });
 }
 
-// --- read-modify-write двух процессов ---------------------------------
+// --- two-process read-modify-write ---------------------------------
 
-test('два процесса пишут участников — ни одна запись не потеряна', async () => {
-  // Без лока второй писатель кладёт список, прочитанный до чужой записи, и участник
-  // теряется молча — worker поднят, а в журнале его нет. Адреса у всех разные:
-  // потерянная запись не восстанавливается следующим кругом.
+test('two processes write participants — no record is lost', async () => {
+  // Without the lock the second writer lays the list it read before the
+  // foreign write, and the participant is lost in silence — the worker is up,
+  // and it is not in the journal. Addresses are all different: a lost record
+  // is not restored by the next round.
   const home = path.join(SB, 'race-participants');
   const RACE_N = 120;
   const raceTask = at(home).createTask({
@@ -166,20 +184,20 @@ test('два процесса пишут участников — ни одна 
   const joiners = await Promise.all([joiner('a'), joiner('b')]);
   const joined = at(home).readTask(raceTask.id).participants;
   exitedZero(joiners, (i) => ['a', 'b'][i]);
-  assert.equal(joined.length, RACE_N * 2 + 1, `участников ${joined.length} из ${RACE_N * 2 + 1}`);
-  assert.ok(!existsSync(path.join(store.taskDir(home, raceTask.id), '.lock')), 'лок снят');
+  assert.equal(joined.length, RACE_N * 2 + 1, `participants ${joined.length} of ${RACE_N * 2 + 1}`);
+  assert.ok(!existsSync(path.join(store.taskDir(home, raceTask.id), '.lock')), 'lock released');
   assert.ok(readdirSync(store.taskDir(home, raceTask.id)).every((n) => !n.startsWith('.tmp-')),
-    'временных файлов не осталось');
+    'no temporary files left');
 });
 
-// --- атомарность и «первый выигрывает» -------------------------------
+// --- atomicity and "the first one wins" -------------------------------
 
 const atomicHome = path.join(SB, 'race-atomic');
 
-test('имена сообщений уникальны на диске, а не в памяти процесса', async (t) => {
-  // `seq` свой у каждого процесса, и два отправителя под одним адресом в одну миллисекунду
-  // собирали одно имя, а `rename` перезаписывал молча. Адрес у всех детей один — в этом
-  // весь предмет.
+test('message names are unique on disk, not in process memory', async (t) => {
+  // `seq` is its own in each process, and two senders under one address in
+  // one millisecond assembled one name, and `rename` overwrote in silence.
+  // The address is the same for every child — that is the whole subject.
   const NAME_TASK = 'imena-t20260829-030100';
   const engine = at(atomicHome);
   engine.createTask({ id: NAME_TASK, title: 'уникальность имён', owner: rec(store.ORCHESTRATOR) });
@@ -191,23 +209,24 @@ test('имена сообщений уникальны на диске, а не 
     + `for (let k = 0; k < ${PER_WRITER}; k += 1) e.sendSync(${J(NAME_TASK)}, `
     + "{ from: 'worker-a', to: ['orchestrator'], type: 'status', body: i + '#' + k });");
   const { messages: sameFrom } = engine.peek(NAME_TASK, 'orchestrator');
-  await t.test('отправители под одним адресом — ни одно сообщение не затёрто', () => {
+  await t.test('senders under one address — no message is overwritten', () => {
     exitedZero(kids);
-    assert.equal(sameFrom.length, WRITERS * PER_WRITER, `${sameFrom.length} из ${WRITERS * PER_WRITER}`);
+    assert.equal(sameFrom.length, WRITERS * PER_WRITER, `${sameFrom.length} of ${WRITERS * PER_WRITER}`);
   });
-  await t.test('временных файлов после гонки имён не осталось', () => {
+  await t.test('no temporary files left after the name race', () => {
     exitedZero(kids);
     assert.equal(readdirSync(engine.inboxPath(NAME_TASK, 'orchestrator'))
       .filter((n) => n.startsWith('.tmp-')).length, 0);
   });
 });
 
-test('параллельные отправители одного содержимого не теряют записей', async (t) => {
-  // Имя записи занимала проверка перед копированием, и два отправителя, увидевшие одно
-  // свободное имя, клали файл друг поверх друга. В store v1 содержимое адресуется SHA-256 и
-  // дедуплицируется, а видимая часть — metadata-запись: тридцать отправок одного файла дают
-  // тридцать записей и один blob, и ни одна запись не теряется. Гонка ЧЕЛОВЕЧЕСКОГО имени в
-  // папке файлов задачи — дело adapter'а, и проверяется она у него.
+test('parallel senders of the same content do not lose records', async (t) => {
+  // The record name was taken by a check before the copy, and two senders
+  // that saw one free name laid the file over each other. In store v1 the
+  // content is addressed by SHA-256 and deduplicated, and the visible part is
+  // the metadata record: thirty sends of one file yield thirty records and
+  // one blob, and no record is lost. The race for the HUMAN name in the task
+  // files folder is the adapter's business, and it is checked there.
   const ART_TASK = 'artefakty-t20260829-030200';
   const engine = at(atomicHome);
   engine.createTask({ id: ART_TASK, title: 'гонка артефактов', owner: rec(store.ORCHESTRATOR) });
@@ -219,13 +238,13 @@ test('параллельные отправители одного содерж�
     + `for (let k = 0; k < 5; k += 1) e.sendSync(${J(ART_TASK)}, `
     + "{ from: 'worker-a', to: ['orchestrator'], type: 'artifact', body: 'a' + i + k, "
     + `artifact: { path: ${J(artRace)} } });`);
-  await t.test('параллельные отправители — metadata-записей столько же, сколько отправок', () => {
+  await t.test('parallel senders — as many metadata records as sends', () => {
     exitedZero(kids);
     const { artifacts, broken } = engine.listArtifacts(ART_TASK);
     assert.equal(broken.length, 0, broken.join(', '));
-    assert.equal(artifacts.length, 30, `${artifacts.length} из 30`);
+    assert.equal(artifacts.length, 30, `${artifacts.length} of 30`);
   });
-  await t.test('id записей не повторяются, а содержимое дедуплицировано в один blob', () => {
+  await t.test('record ids do not repeat, and the content is deduplicated into one blob', () => {
     exitedZero(kids);
     const seen = engine.peek(ART_TASK, 'orchestrator').messages.map((msg) => msg.artifact);
     assert.equal(new Set(seen).size, 30);
@@ -233,19 +252,20 @@ test('параллельные отправители одного содерж�
   });
 });
 
-test('отметка надзирателя не пишется поверх себя', async () => {
-  // Приезжает на место через rename, как журнал: жёсткая ссылка на прежний файл
-  // держит прежнее содержимое. Записанная поверх себя, она менялась бы и по ссылке — а
-  // между усечением и записью читатель видит пустой файл и отвечает «надзирателя нет», то
-  // есть противоположное правде.
+test('the warden mark is not written over itself', async () => {
+  // It arrives in place through rename, like the journal: a hard link to the
+  // former file holds the former content. Written over itself, it would
+  // change by the link too — and between the truncate and the write a reader
+  // sees an empty file and answers "there is no warden", which is the
+  // opposite of the truth.
   const MARK_TASK = 'otmetka-t20260829-030300';
   at(atomicHome).createTask({ id: MARK_TASK, title: 'атомарность отметки', owner: rec(store.ORCHESTRATOR) });
-  store.claimWarden(atomicHome, MARK_TASK, { cli: 'проба' });
+  store.claimWarden(atomicHome, MARK_TASK, { cli: 'probe' });
   const heldMark = path.join(SB, 'race-mark.json');
   linkSync(store.wardenMarkFile(atomicHome, MARK_TASK), heldMark);
   const heldBeat = JSON.parse(readFileSync(heldMark, 'utf8')).beat;
-  // Удар сердца несёт время: без паузы обе записи легли бы в одну миллисекунду, и
-  // сравнивать было бы нечего.
+  // The heartbeat carries time: without a pause both writes would land in one
+  // millisecond, and there would be nothing to compare.
   await new Promise((r) => { setTimeout(r, 5); });
   const beaten = store.beatWarden(atomicHome, MARK_TASK);
   assert.equal(JSON.parse(readFileSync(heldMark, 'utf8')).beat, heldBeat);
@@ -253,22 +273,25 @@ test('отметка надзирателя не пишется поверх с�
   assert.notEqual(beaten.beat, heldBeat);
 });
 
-test('место надзирателя занимает ровно один из восьми', async () => {
-  // Проверка живости и запись отметки — одно решение под локом. Без лока восемь
-  // параллельных команд шины видят «надзирателя нет» и поднимают восемь процессов: одну
-  // задачу стерегли бы восемь циклов доставки, и каждое сообщение уезжало бы адресату
-  // восемь раз.
+test('exactly one of eight takes the warden place', async () => {
+  // The liveness check and the mark write are one decision under the lock.
+  // Without the lock eight parallel bus commands see "there is no warden" and
+  // lift eight processes: one task would be watched by eight delivery loops,
+  // and every message would go to the recipient eight times.
   const CLAIM_TASK = 'nadziratel-t20260829-030400';
   at(atomicHome).createTask({ id: CLAIM_TASK, title: 'первый выигрывает место надзирателя', owner: rec(store.ORCHESTRATOR) });
-  // Отметка ставится на pid РОДИТЕЛЯ, а не свой у каждого ребёнка. Место
-  // держится живостью владельца: `liveWarden` спрашивает `pidAlive`, и вышедший победитель
-  // освобождает его по-настоящему. Пока дети метили себя, победителя приходилось держать
-  // живым сном, и под пулом раннера этот сон не покрывал разброса — первый выходил раньше,
-  // чем последний доходил до `claimWarden`, и тот занимал СВОБОДНОЕ место законно. Так
-  // файл и падал в общем прогоне, проходя в одиночку: `mark, busy, busy, busy, busy, mark,
-  // busy, busy`, тест 4,3 с при удержании 900 мс. Родительский pid жив весь тест, поэтому
-  // держать место сном больше не надо вовсе — и проверяется ровно то, что названо в
-  // заголовке: решение под локом, а не время жизни чужого процесса.
+  // The mark is set on the PARENT pid, not one of its own per child. The
+  // place is held by the owner being alive: `liveWarden` asks `pidAlive`, and
+  // an exited winner frees it for real. While the children marked themselves,
+  // the winner had to be held alive by a sleep, and under the runner pool
+  // that sleep did not cover the spread — the first exited before the last
+  // reached `claimWarden`, and that one took a FREE place lawfully. That is
+  // how the file failed in the shared run and passed alone: `mark, busy,
+  // busy, busy, busy, mark, busy, busy`, test 4.3 s with a 900 ms hold. The
+  // parent pid is alive for the whole test, so holding the place by sleep is
+  // no longer needed at all — and what is checked is exactly what the title
+  // names: the decision under the lock, not the lifetime of a foreign
+  // process.
   const kids = await racers(8,
     `const r = m.claimWarden(${J(atomicHome)}, ${J(CLAIM_TASK)}, { pid: ${process.pid} });\n`
     + "console.log(r.busy ? 'busy' : 'mark');");
@@ -277,11 +300,13 @@ test('место надзирателя занимает ровно один и�
   assert.equal(claims.filter((r) => r === 'mark').length, 1, claims.join(', '));
 });
 
-test('снятие отметки идёт под локом задачи', async (t) => {
-  // Снятие отметки — read-check-delete, и оно тоже под локом: между чтением «моя ли» и
-  // удалением помещается чужой `claimWarden`, и снялась бы свежая чужая отметка. Признак
-  // лока — само ожидание: держателя снимает посторонний процесс через 400 мс, и снятие
-  // столько же и досиживает. Держатель живой (наш pid), поэтому сиротой лок не считается.
+test('clearing the mark goes under the task lock', async (t) => {
+  // Clearing the mark is read-check-delete, and it is under the lock too:
+  // between reading "is it mine" and the delete a foreign `claimWarden` fits,
+  // and a fresh foreign mark would be cleared. The lock sign is the wait
+  // itself: a stranger drops the holder after 400 ms, and the clear sits that
+  // long too. The holder is live (our pid), so the lock is not counted as an
+  // orphan.
   const LOCK_TASK = 'snyatie-t20260829-030500';
   at(atomicHome).createTask({ id: LOCK_TASK, title: 'снятие под локом', owner: rec(store.ORCHESTRATOR) });
   store.claimWarden(atomicHome, LOCK_TASK);
@@ -296,15 +321,16 @@ test('снятие отметки идёт под локом задачи', asyn
   const cleared = store.clearWarden(atomicHome, LOCK_TASK);
   const clearMs = Date.now() - clearStart;
   await new Promise((r) => releaser.on('exit', r));
-  await t.test('снятие отметки ждёт лока задачи — read-check-delete не идёт мимо него', () => {
+  await t.test('clearing the mark waits for the task lock — read-check-delete does not bypass it', () => {
     assert.equal(cleared, true);
     assert.ok(clearMs >= 350, `${clearMs}ms`);
     assert.ok(!existsSync(store.wardenMarkFile(atomicHome, LOCK_TASK)));
   });
-  // Задачи на диске уже нет — снимать нечего, и лок брать не у чего: зовётся это из
-  // `finally` цикла надзирателя, и отказ оттуда унёс бы законный выход.
+  // The task is already gone from disk — there is nothing to clear, and
+  // nothing to take the lock on: this is called from the `finally` of the
+  // warden loop, and a refusal from there would take a lawful exit with it.
   rmSync(store.taskDir(atomicHome, LOCK_TASK), { recursive: true, force: true });
-  await t.test('снесённая с диска задача — снятие молчит, а не падает на локе', () => {
+  await t.test('a task wiped from disk — clear stays silent, it does not fail on the lock', () => {
     let threw = false;
     try { store.clearWarden(atomicHome, LOCK_TASK); } catch { threw = true; }
     assert.ok(!threw);

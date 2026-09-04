@@ -1,5 +1,5 @@
 {
   "tool_name": "mcp__promptobus__promptobus_send",
   "tool_input": { "body": "hello from the bus" },
-  "tool_response": "отправлено status → orchestrator · адрес orchestrator · id msg-1 · PROMPTOBUS_HOME=/tmp/promptobus"
+  "tool_response": "sent status → orchestrator · address orchestrator · id msg-1 · PROMPTOBUS_HOME=/tmp/promptobus"
 }

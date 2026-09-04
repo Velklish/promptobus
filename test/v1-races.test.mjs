@@ -1,11 +1,13 @@
-// Многопроцессная конкуренция protocol v1: отправка, чтение и восстановление
-// настоящими процессами, и настоящее падение процесса посреди fan-out'а.
+// Multi-process contention of protocol v1: send, read, and recovery by real
+// processes, and a real process death mid-fan-out.
 //
-// Настоящими, а не промисами в одном процессе: предмет проверки — атомарные примитивы
-// файловой системы (`wx` у intent'а, `link` у ссылок, `rename` у чтения), а внутри одного
-// процесса они никогда не встречаются с собой. Тем же приёмом устроен набор legacy store
-// ([races.test.mjs](races.test.mjs)), и барьер здесь тот же: без него дети выстраиваются в
-// очередь по времени запуска, и окно, которое чинится, не наступает вовсе.
+// Real ones, not promises in one process: the subject of the check is the
+// atomic file-system primitives (`wx` on the intent, `link` on the links,
+// `rename` on a read), and inside one process they never meet themselves.
+// The legacy store suite is built the same way
+// ([races.test.mjs](races.test.mjs)), and the barrier here is the same:
+// without it the children line up by start time, and the window that is
+// being fixed never arrives at all.
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -27,8 +29,8 @@ const person = (id, role) => ({
 });
 const allowAll = () => ({ allow: true });
 
-// Незакрытые fan-out'ы задачи. Считаются записи intent'ов, а не содержимое каталога: рядом
-// с каждой лежит лизинг владельца `<id>.owner`.
+// Unclosed fan-outs of the task. Intent records are counted, not the
+// directory contents: next to each sits the owner lease `<id>.owner`.
 const openIntents = (dir) => readdirSync(dir).filter((n) => n.endsWith('.json'));
 
 let sandboxes = 0;
@@ -49,21 +51,25 @@ function taskWith(engine, id) {
   return id;
 }
 
-// Доклад ребёнка «дошёл до барьера». Первая строка его stdout и в проверки не возвращается.
+// Child report "reached the barrier". The first line of its stdout is not
+// returned into the checks.
 const READY = '__ready__';
 
-// Дочерний процесс с кодом на входе: код выхода, stdout и stderr одним резолвом. `open`
-// внутри собирается той же строкой, что и здесь: engine у ребёнка настоящий, и правило
-// routing policy ему тоже нужно.
+// A child process with code on stdin: exit code, stdout, and stderr in one
+// resolve. `open` inside is assembled by the same line as here: the engine
+// at the child is real, and it needs a routing-policy rule too.
 //
-// Код возврата берётся у КАЖДОГО ребёнка, а не только там, где его спрашивают: тело упавшего
-// ребёнка не печатает ничего, и его молчание неотличимо от потерянного сообщения — проверка
-// счёта называла причиной следствие. Резолв по `close`, а не по `exit`: `exit`
-// приходит до того, как дочитаны пайпы, и хвост stderr уезжал бы вместе с диагнозом.
+// The return code is taken from EVERY child, not only where it is asked:
+// the body of a fallen child prints nothing, and its silence is
+// indistinguishable from a lost message — a count check named the
+// consequence as the cause. Resolve on `close`, not on `exit`: `exit`
+// arrives before the pipes are read through, and the stderr tail would
+// leave with the diagnosis.
 //
-// `ready` — хук барьера: зовётся ровно один раз, с stdin'ом ребёнка при докладе о готовности
-// либо с `null`, если ребёнок умер, не доложив. Второе обязательно: упавший ребёнок иначе
-// запирал бы барьер навсегда.
+// `ready` is the barrier hook: called exactly once, with the child stdin
+// on the ready report, or with `null` if the child died without reporting.
+// The second is required: a fallen child would otherwise lock the barrier
+// forever.
 function child(body, { ready = null } = {}) {
   const code = `const m = await import(${J(DIST)});\n`
     + 'const open = (root, extra = {}) => m.openEngine({ root, policy: () => ({ allow: true }), ...extra });\n'
@@ -89,23 +95,26 @@ function child(body, { ready = null } = {}) {
   });
 }
 
-// Все дети вышли нулём — сверяется ПЕРЕД всяким счётом сообщений, ссылок и intent'ов. Деталь
-// называет упавшего и несёт его stderr: диагноз стоит там, а не в числе недосчитанных.
+// All children exited zero — checked BEFORE any count of messages, links,
+// and intents. The detail names the fallen one and carries its stderr: the
+// diagnosis sits there, not in the undercount number.
 function exitedZero(kids, who = (i) => `#${i}`) {
   const dead = kids.map((k, i) => ({ ...k, who: who(i) })).filter((k) => k.code !== 0);
   assert.equal(dead.length, 0, dead
-    .map((k) => `ребёнок ${k.who} вышел кодом ${k.code}: ${k.err || 'stderr пуст'}`).join('\n'));
+    .map((k) => `child ${k.who} exited with code ${k.code}: ${k.err || 'stderr empty'}`).join('\n'));
 }
 
-// Барьер: дети докладывают о готовности и засыпают на чтении stdin, а родитель отпускает всех
-// разом, когда собрались все.
+// Barrier: children report ready and sleep on a stdin read, and the parent
+// releases everyone at once when all have gathered.
 //
-// По готовности, а не по общей метке времени. Метка давала фору на запуск node и
-// импорт `dist`, и калибровалась под спокойную машину: под нагрузкой (load average 40) часть
-// детей входила в барьер уже ПОСЛЕ метки, и гонка вырождалась в почти последовательный
-// запуск. Ожидание на stdin — блокировка, а не спин: прежний `while (Date.now() < at) {}` жёг
-// процессорное время каждого ребёнка до самой метки. Снятие stdin с чтения после отпуска
-// обязательно: оставленный в потоке, он держал бы цикл событий ребёнка живым и после гонки.
+// By readiness, not by a shared time mark. A mark gave a head start for
+// node launch and the `dist` import, and was calibrated for a quiet
+// machine: under load (load average 40) some children entered the barrier
+// already AFTER the mark, and the race degenerated into an almost
+// sequential start. Waiting on stdin is a block, not a spin: the former
+// `while (Date.now() < at) {}` burned each child's CPU until the mark.
+// Taking stdin off the read after the release is required: left in the
+// stream, it would hold the child event loop alive after the race too.
 function racers(n, body) {
   const doors = [];
   let seen = 0;
@@ -113,8 +122,9 @@ function racers(n, body) {
   const all = new Promise((r) => { gathered = r; });
   const arrive = (stdin) => {
     if (stdin) {
-      // Слушатель ошибки — сразу при укладке двери, а не при отпуске: ребёнок, доложивший о
-      // готовности и тут же умерший, оставил бы пайп без слушателя, и EPIPE уронил бы набор.
+      // The error listener — at once when the door is laid, not at
+      // release: a child that reported ready and died at once would leave
+      // a pipe without a listener, and EPIPE would bring the suite down.
       stdin.on('error', () => {});
       doors.push(stdin);
     }
@@ -128,16 +138,17 @@ function racers(n, body) {
     { ready: arrive },
   ));
   return all.then(() => {
-    // Ребёнок мог умереть между докладом и отпуском: EPIPE здесь не отказ стенда, и
-    // слушатель ошибки на двери стоит с самой её укладки.
+    // A child could die between the report and the release: EPIPE here is
+    // not a stand refusal, and the error listener on the door has stood
+    // since it was laid.
     for (const door of doors) door.end('go\n');
     return Promise.all(kids);
   });
 }
 
-// ── Конкурентная отправка ─────────────────────────────────────────────────────────────
+// ── Concurrent send ─────────────────────────────────────────────────────────────
 
-test('два процесса шлют в один mailbox — ничего не потеряно и порядок отправителя цел', async (t) => {
+test('two processes send into one mailbox — nothing is lost and sender order is intact', async (t) => {
   const root = sandbox();
   const id = taskWith(open(root), 'otpravka-t20260902-110000');
   const PER = 20;
@@ -148,11 +159,11 @@ test('два процесса шлют в один mailbox — ничего не
     + '}\n');
   const { messages } = open(root).read(id, 'owner');
   const sender = (i) => ['w-api', 'w-docs'][i];
-  await t.test('конкурентная отправка: оба процесса записали, ничего не потеряно', () => {
+  await t.test('concurrent send: both processes wrote, nothing is lost', () => {
     exitedZero(kids, sender);
     assert.equal(messages.length, PER * 2);
   });
-  await t.test('конкурентная отправка: у каждого отправителя порядок сохранён', () => {
+  await t.test('concurrent send: each sender order is preserved', () => {
     exitedZero(kids, sender);
     for (const line of [0, 1]) {
       const own = messages.filter((m) => m.body.startsWith(`${line}#`)).map((m) => Number(m.body.split('#')[1]));
@@ -160,7 +171,7 @@ test('два процесса шлют в один mailbox — ничего не
       assert.deepEqual(own, own.map((_, k) => k));
     }
   });
-  await t.test('конкурентная отправка: незакрытых intent\'ов и временных файлов не осталось', () => {
+  await t.test('concurrent send: no unclosed intents or temp files left', () => {
     exitedZero(kids, sender);
     const taskRoot = path.join(open(root).home, 'tasks', id);
     assert.deepEqual(readdirSync(path.join(taskRoot, 'intents')), []);
@@ -168,7 +179,7 @@ test('два процесса шлют в один mailbox — ничего не
   });
 });
 
-test('восемь процессов заводят одну задачу — успех ровно у одного', async () => {
+test('eight processes create one task — success for exactly one', async () => {
   const root = sandbox();
   const id = 'sozdanie-t20260902-110100';
   const owner = J(person('owner', 'orchestrator'));
@@ -184,9 +195,9 @@ test('восемь процессов заводят одну задачу — �
   assert.equal(open(root).readTask(id).title, `линия ${winners[0].split(' ')[1]}`);
 });
 
-// ── Конкурентное чтение ───────────────────────────────────────────────────────────────
+// ── Concurrent read ───────────────────────────────────────────────────────────────
 
-test('два читателя одного mailbox\'а — ни отказа, ни задвоенного сообщения', async (t) => {
+test('two readers of one mailbox — neither a refusal nor a doubled message', async (t) => {
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine, 'chtenie-t20260902-110200');
@@ -199,44 +210,46 @@ test('два читателя одного mailbox\'а — ни отказа, н
     + "  console.log(r.messages.map((x) => x.body).join(' '));\n"
     + "} catch (e) { console.log('ОТКАЗ ' + (e.code || e.message)); }");
   const readers = kids.map((k) => k.out);
-  // Отказавшего читателя в счёт не берём: его выход — не сообщения, а диагноз, и в сумме
-  // он врал бы вверх ровно на той мутации, ради которой проверка и стоит.
+  // A refusing reader is not taken into the count: its output is not
+  // messages, it is a diagnosis, and in the sum it would lie upward on
+  // exactly the mutation this check stands for.
   const delivered = readers.filter((r) => !r.startsWith('ОТКАЗ')).flatMap((r) => r.split(' ')).filter(Boolean);
-  await t.test('два читателя: отказа нет, ни одно сообщение не потеряно', () => {
+  await t.test('two readers: no refusal, not one message is lost', () => {
     exitedZero(kids);
     assert.ok(!readers.some((r) => r.startsWith('ОТКАЗ')), readers.filter((r) => r.startsWith('ОТКАЗ')).join(', '));
     assert.equal(delivered.length, LETTERS);
   });
-  await t.test('два читателя: ни одно сообщение не досталось обоим', () => {
+  await t.test('two readers: not one message went to both', () => {
     exitedZero(kids);
     assert.equal(new Set(delivered).size, LETTERS);
   });
-  await t.test('два читателя: mailbox пуст, а прочитанное всё лежит в history', () => {
+  await t.test('two readers: the mailbox is empty, and everything read sits in history', () => {
     exitedZero(kids);
     assert.equal(open(root).unread(id, 'w-api'), 0);
     assert.equal(open(root).history({ task: id, participant: 'w-api', all: true }).entries.length, LETTERS);
   });
 });
 
-// ── Настоящее падение процесса посреди fan-out'а ──────────────────────────────────────
+// ── A real process death mid-fan-out ──────────────────────────────────────
 
-test('процесс умирает посреди fan-out\'а — восстановление доводит доставку', async (t) => {
-  // Ровно то состояние, что даёт бросок из шва в одном процессе, — но полученное настоящей
-  // смертью процесса: без этого «падение» оставалось бы моделью падения.
+test('a process dies mid-fan-out — recovery takes delivery to the end', async (t) => {
+  // Exactly the state a throw from the seam in one process gives — but
+  // obtained by a real process death: without this, a "crash" would stay
+  // a model of a crash.
   const root = sandbox();
   const id = taskWith(open(root), 'padenie-t20260902-110300');
   const died = await child(
     `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
     + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' });\n`);
-  await t.test('падение: процесс умер в точке ref', () => {
-    assert.equal(died.code, 7, died.err || 'stderr пуст');
+  await t.test('crash: the process died at the ref point', () => {
+    assert.equal(died.code, 7, died.err || 'stderr empty');
   });
-  await t.test('падение: на диске остался незакрытый intent и одна ссылка из двух', () => {
+  await t.test('crash: an unclosed intent and one link of two stayed on disk', () => {
     const noHeal = openEngine({ root, policy: allowAll, recover: false });
     assert.equal(openIntents(path.join(noHeal.home, 'tasks', id, 'intents')).length, 1);
     assert.equal(noHeal.unread(id, 'w-api') + noHeal.unread(id, 'w-docs'), 1);
   });
-  await t.test('падение: открытие engine дописывает недостающее', () => {
+  await t.test('crash: opening the engine appends what is missing', () => {
     const healed = open(root);
     assert.equal(healed.unread(id, 'w-api'), 1);
     assert.equal(healed.unread(id, 'w-docs'), 1);
@@ -244,17 +257,18 @@ test('процесс умирает посреди fan-out\'а — восста�
   });
 });
 
-test('конкурентное восстановление из четырёх процессов не задваивает доставку', async (t) => {
+test('concurrent recovery from four processes does not double delivery', async (t) => {
   const root = sandbox();
   const id = taskWith(open(root), 'vosstanovlenie-t20260902-110400');
-  // Пять недоставленных fan-out'ов: каждый умирает после первой ссылки. Код выхода сверяется
-  // у каждого: не умерший, а не стартовавший ребёнок дал бы недостачу intent'ов с диагнозом
-  // «восстановление не сработало» вместо «процесс не отработал».
+  // Five undelivered fan-outs: each dies after the first link. The exit
+  // code is checked on each: a child that did not start, rather than die,
+  // would give a shortage of intents with the diagnosis "recovery did not
+  // work" instead of "the process did not run".
   for (let k = 0; k < 5; k += 1) {
     const killed = await child(
       `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
       + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'п${k}' });\n`);
-    assert.equal(killed.code, 7, `отправитель п${k}: ${killed.err || 'stderr пуст'}`);
+    assert.equal(killed.code, 7, `sender п${k}: ${killed.err || 'stderr empty'}`);
   }
   const before = openEngine({ root, policy: allowAll, recover: false });
   assert.equal(openIntents(path.join(before.home, 'tasks', id, 'intents')).length, 5);
@@ -263,46 +277,48 @@ test('конкурентное восстановление из четырёх 
     `const r = open(${J(root)}, { recover: false }).recover(${J(id)});\n`
     + "console.log(r.repairs.flatMap((x) => x.recipients.map((p) => x.message + ':' + p)).join(','));");
   const healers = kids.map((k) => k.out);
-  await t.test('конкурентное восстановление: ни один процесс не отказал', () => {
+  await t.test('concurrent recovery: not one process refused', () => {
     exitedZero(kids);
     assert.ok(healers.every((r) => !r.startsWith('ОТКАЗ')), healers.join(' | '));
   });
-  await t.test('конкурентное восстановление: у каждого получателя ровно пять ссылок', () => {
+  await t.test('concurrent recovery: each recipient has exactly five links', () => {
     exitedZero(kids);
     const healed = open(root);
     assert.equal(healed.unread(id, 'w-api'), 5);
     assert.equal(healed.unread(id, 'w-docs'), 5);
     assert.deepEqual(readdirSync(path.join(healed.home, 'tasks', id, 'intents')), []);
   });
-  await t.test('конкурентное восстановление: каждого получателя свежим назвал ровно один процесс', () => {
+  await t.test('concurrent recovery: each recipient was named fresh by exactly one process', () => {
     exitedZero(kids);
-    // Пять отправителей умерли после первой ссылки: восстановлению осталось по одной ссылке на
-    // сообщение, и свежим её получателя вправе назвать только тот процесс, чья ссылка легла.
-    // Двое, прошедшие `delivered()` до чужого `link`, иначе назвали бы его оба — и надзиратель
-    // разослал бы два notification на одно сообщение.
+    // Five senders died after the first link: recovery was left one link
+    // per message, and only the process whose link landed is entitled to
+    // name its recipient as fresh. Two who passed `delivered()` before
+    // the other's `link` would otherwise name it both — and the warden
+    // would send two notifications on one message.
     const pairs = healers.flatMap((r) => r.trim().split(',').filter(Boolean));
     assert.equal(pairs.length, 5, pairs.join(' '));
     assert.equal(new Set(pairs).size, 5, pairs.join(' '));
   });
-  await t.test('конкурентное восстановление: чтение отдаёт каждое сообщение по разу', () => {
+  await t.test('concurrent recovery: a read returns each message once', () => {
     const healed = open(root);
     const bodies = healed.read(id, 'w-docs').messages.map((m) => m.body).sort();
     assert.deepEqual(bodies, ['п0', 'п1', 'п2', 'п3', 'п4']);
   });
 });
 
-test('восстановление рядом с чтением не возвращает уже прочитанное', async () => {
+test('recovery next to a read does not return what was already read', async () => {
   const root = sandbox();
   const id = taskWith(open(root), 'gonka-chteniya-t20260902-110500');
   for (let k = 0; k < 8; k += 1) {
     const killed = await child(
       `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
       + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'п${k}' });\n`);
-    assert.equal(killed.code, 7, `отправитель п${k}: ${killed.err || 'stderr пуст'}`);
+    assert.equal(killed.code, 7, `sender п${k}: ${killed.err || 'stderr empty'}`);
   }
-  // Три восстановителя и один читатель разом: читатель уносит ссылки в history, а
-  // восстановители в это же время дописывают недостающие. Сверка ДВУХ мест — inbox и
-  // history — здесь и работает: без неё прочитанное вернулось бы читателю второй раз.
+  // Three recoverers and one reader at once: the reader takes links into
+  // history, and the recoverers at the same time append the missing.
+  // Checking TWO places — inbox and history — is what works here: without
+  // it what was read would return to the reader a second time.
   const kids = await racers(4,
     `const e = open(${J(root)}, { recover: false });\n`
     + `if (i === 0) { const r = e.read(${J(id)}, 'w-api'); console.log('read ' + r.messages.map((m) => m.body).join(' ')); }\n`
@@ -314,17 +330,20 @@ test('восстановление рядом с чтением не возвр�
   const engine = open(root);
   const gotSecond = engine.read(id, 'w-api').messages.map((m) => m.body);
   const all = [...gotFirst, ...gotSecond];
-  assert.equal(new Set(all).size, all.length, `сообщение доставлено дважды: ${all.join(' ')}`);
+  assert.equal(new Set(all).size, all.length, `message delivered twice: ${all.join(' ')}`);
   assert.deepEqual([...all].sort(), ['п0', 'п1', 'п2', 'п3', 'п4', 'п5', 'п6', 'п7']);
 });
 
-test('открытие engine у соседа не рвёт идущую отправку', async (t) => {
-  // Дом с несколькими пишущими процессами — обычный run: оркестратор и worker'ы. Engine
-  // открывается лениво, и открытие прогоняет восстановление по всем задачам дома; без
-  // лизинга оно подбирало не брошенный fan-out мёртвого, а идущий fan-out живого — снимало
-  // intent из-под владельца, и тот получал `ENOENT` на `link`, то есть отказ на уже
-  // доставленном сообщении. Здесь четверо шлют, четверо открывают engine раз за разом:
-  // отказ отправителя виден кодом возврата, а не только недостачей в счёте.
+test('opening the engine at a neighbour does not break an in-flight send', async (t) => {
+  // A home with several writing processes is an ordinary run: the
+  // orchestrator and the workers. The engine opens lazily, and open runs
+  // recovery across all tasks of the home; without a lease it would pick
+  // up not an abandoned fan-out of the dead, but an in-flight fan-out of
+  // the live — take the intent down from under the owner, and they would
+  // get `ENOENT` on `link`, that is a refusal on a message already
+  // delivered. Here four send, four open the engine over and over: a
+  // sender refusal is visible by the return code, not only by a shortage
+  // in the count.
   const root = sandbox();
   const id = taskWith(open(root), 'lizing-t20260902-110700');
   const PER = 25;
@@ -337,34 +356,37 @@ test('открытие engine у соседа не рвёт идущую отп�
     + '} else {\n'
     + `  for (let k = 0; k < ${PER}; k += 1) open(${J(root)});\n`
     + '}\n');
-  await t.test('ни один отправитель не отказал', () => {
+  await t.test('not one sender refused', () => {
     exitedZero(kids);
   });
-  await t.test('доставлено всё, что отправлено', () => {
+  await t.test('everything that was sent was delivered', () => {
     exitedZero(kids);
     assert.equal(open(root).unread(id, 'owner'), 4 * PER);
   });
-  await t.test('незакрытых intent\'ов и осиротевших лизингов не осталось', () => {
+  await t.test('no unclosed intents or orphaned leases left', () => {
     exitedZero(kids);
     assert.deepEqual(readdirSync(path.join(open(root).home, 'tasks', id, 'intents')), []);
   });
 });
 
-// ── Отказ жёсткой ссылки ──────────────────────────────────────────────────────────────
+// ── Hard-link refusal ──────────────────────────────────────────────────────────────
 
-test('ФС отказала в жёсткой ссылке — типизированный код, а не половинчатая запись', async (t) => {
-  // Требование к ФС наследуется целиком: жёсткие ссылки внутри одного тома.
-  // Отсутствие их — законное условие среды, и различаться оно обязано от поломки механизма.
-  // Изображается оно каталогом без права записи: `link` отдаёт `EACCES` там же, где чужой
-  // том отдал бы `EXDEV`.
+test('the FS refused a hard link — a typed code, not a half-written record', async (t) => {
+  // The FS requirement is inherited whole: hard links inside one volume.
+  // Their absence is a lawful environment condition, and it must be
+  // distinct from a mechanism breakage. It is pictured as a directory
+  // without write permission: `link` returns `EACCES` where a foreign
+  // volume would return `EXDEV`.
   //
-  // Под root прав каталога нет вовсе — `link` проходит, и отказ изобразить нечем. Способа
-  // получить отказ, который root не обходит, у стенда нет: второго тома под тестом не
-  // держат, а `chattr`/`chflags` непереносимы. Поэтому под `uid 0` проверка пропускает себя
-  // вслух, а не зеленеет ни на чём. `getuid` есть не везде — на Windows его нет, и там
-  // проверка идёт как шла.
+  // Under root directory permissions do not apply at all — `link` goes
+  // through, and there is nothing to picture the refusal with. The stand
+  // has no way to get a refusal that root does not bypass: a second volume
+  // is not kept under the test, and `chattr`/`chflags` are not portable.
+  // So under `uid 0` the check skips itself out loud, rather than go green
+  // on nothing. `getuid` is not everywhere — Windows does not have it, and
+  // there the check runs as it did.
   if (process.getuid?.() === 0) {
-    t.skip('под root права каталога не действуют, отказ ссылки не изобразить; проверка идёт под непривилегированным пользователем');
+    t.skip('under root directory permissions do not apply, a link refusal cannot be pictured; the check runs under an unprivileged user');
     return;
   }
   const root = sandbox();
@@ -379,22 +401,23 @@ test('ФС отказала в жёсткой ссылке — типизиро�
   } catch (e) {
     refused = e;
   }
-  await t.test('отказ ссылки: типизированный код и errno в контексте', () => {
+  await t.test('link refusal: a typed code and errno in the context', () => {
     assert.ok(refused instanceof PromptobusError, String(refused));
     assert.equal(refused.code, 'link-refused');
     assert.ok(ERROR_CODES.includes(refused.code));
     assert.match(String(refused.context.errno), /^E[A-Z]+$/);
   });
-  await t.test('отказ ссылки: fan-out не наполовину — intent открыт и доводится потом', () => {
+  await t.test('link refusal: the fan-out is not half — the intent is open and is taken through later', () => {
     const stuck = openEngine({ root, policy: allowAll, recover: false });
     assert.equal(openIntents(path.join(stuck.home, 'tasks', id, 'intents')).length, 1);
-    assert.equal(stuck.unread(id, 'w-docs'), 0, 'второй получатель ссылки не получил');
+    assert.equal(stuck.unread(id, 'w-docs'), 0, 'the second recipient did not get a link');
     chmodSync(box, 0o700);
     const healed = open(root);
     assert.equal(healed.unread(id, 'w-api'), 1);
     assert.equal(healed.unread(id, 'w-docs'), 1);
     assert.deepEqual(readdirSync(path.join(healed.home, 'tasks', id, 'intents')), []);
   });
-  // Права возвращаются в любом случае: иначе уборка песочницы упрётся в закрытый каталог.
+  // Permissions are restored in any case: otherwise sandbox cleanup would
+  // hit a closed directory.
   if (existsSync(box)) chmodSync(box, 0o700);
 });

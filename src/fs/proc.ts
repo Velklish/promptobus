@@ -1,11 +1,12 @@
-// Живость процесса и синхронная пауза. Внутренний модуль package: наружу эти примитивы не
-// экспортируются — `pidAlive` уходит из `store.ts`, потому что он часть его
-// поверхности с прежних времён.
+// Process liveness and a synchronous pause. An internal package module: these
+// primitives are not exported — `pidAlive` goes out from `store.ts`, because it
+// has been part of that surface since earlier times.
 import process from 'node:process';
 
 /**
- * Жив ли процесс. Сигнал 0 ничего не шлёт, а только проверяет доступность цели; `EPERM`
- * означает «процесс есть, но чужой» — тоже жив.
+ * Whether the process is alive. Signal 0 sends nothing, it only checks that the
+ * target is reachable; `EPERM` means "the process exists, but it is not ours" —
+ * also alive.
  */
 export function pidAlive(pid: unknown): boolean {
   if (!Number.isInteger(pid) || (pid as number) <= 0) return false;
@@ -17,7 +18,7 @@ export function pidAlive(pid: unknown): boolean {
   }
 }
 
-/** Синхронная пауза: лок берётся из синхронного кода, и уступить ход событий там нечему. */
+/** Synchronous pause: the lock is taken from synchronous code, and there is no event loop to yield to there. */
 export function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

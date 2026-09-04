@@ -1,12 +1,12 @@
-// Protocol и store v1 — production store механизма с cutover'а
-// и единственная его поверхность: слоя с прежними именами над engine больше нет,
-// и потребители зовут эти модели напрямую.
+// Protocol and store v1 — the production store since cutover
+// and its only surface: there is no longer a layer of former names over the
+// engine, and consumers call these models directly.
 //
-// Наружу имена уходят ПЛОСКО, из `../index.ts` (`export * from './v1/index.js'`): поверхность
-// v1 по-прежнему из главного entry point; отдельно уходят `./driver`, `./host` и `./hooks`.
-// Сырые пути store
-// наружу не выходят — снаружи виден protocol, а не диск; исключение объявлено самим
-// engine (`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) и названо там же.
+// Names go out FLAT, from `../index.ts` (`export * from './v1/index.js'`): the
+// v1 surface is still from the main entry point; `./driver`, `./host`, and
+// `./hooks` go out separately. Raw store paths do not go out — the outside
+// sees protocol, not disk; the exception is declared by the engine itself
+// (`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) and named there.
 export { ERROR_CODES, PromptobusError } from './errors.js';
 export type { ErrorCode, ErrorContext } from './errors.js';
 export {

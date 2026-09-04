@@ -1,6 +1,6 @@
-// Standalone host: рабочее место из cwd, Git и promptobus.json. Раскладки чужого
-// механизма, удалённых namespace и серверов памяти здесь нет — это дело реализации
-// потребителя.
+// Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
+// foreign-mechanism layout, no remote namespaces, and no memory servers here —
+// that is a consumer implementation's business.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -143,7 +143,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     },
     moduleNote: (): HostModuleNote => ({
       level: 'info',
-      text: 'модуль рабочего места не применяется — host standalone',
+      text: 'workspace module does not apply — standalone host',
     }),
     resolveRepoModule: (): HostRepoModule | null => null,
     reviewSkillDir: (name) => path.join(root, '.promptobus', 'skills', name),
@@ -155,16 +155,16 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     memorySection: () => null,
 
     resolveRepo: async (query: string): Promise<HostRepo> => {
-      if (!query) throw new HostResolveError('нужно имя или путь репозитория');
+      if (!query) throw new HostResolveError('a repository name or path is required');
       const abs = isDiskPath(query) ? path.resolve(query) : path.resolve(root, query);
       if (!existsSync(abs)) {
-        throw new HostResolveError(`«${query}» не найден на диске (${abs})`);
+        throw new HostResolveError(`«${query}» was not found on disk (${abs})`);
       }
       const rel = path.relative(root, abs);
       const nsPath = (!rel || rel.startsWith('..') || path.isAbsolute(rel))
         ? path.basename(abs)
         : rel.split(path.sep).join('/');
-      return { nsPath, abs, via: 'путь на диске' };
+      return { nsPath, abs, via: 'path on disk' };
     },
     repoAbsPath: (nsPath) => (path.isAbsolute(nsPath) ? nsPath : path.join(root, nsPath)),
     isClone: (abs) => existsSync(path.join(abs, '.git')),
@@ -176,15 +176,15 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     reviewLayoutError: (kind, ctx = {}) => {
       switch (kind) {
         case 'not-clone':
-          return `${ctx.targetDir}: не клон — своего .git здесь нет (ближайший репозиторий выше: ${ctx.repoDir})`;
+          return `${ctx.targetDir}: not a clone — there is no .git of its own here (nearest repository above: ${ctx.repoDir})`;
         case 'outside':
-          return `${ctx.repoDir}: вне рабочего места`;
+          return `${ctx.repoDir}: outside the workspace`;
         case 'no-clone':
-          return `${ctx.repoDir}: клон не найден`;
+          return `${ctx.repoDir}: clone not found`;
         case 'cwd-outside':
-          return 'вне рабочего места';
+          return 'outside the workspace';
         case 'ask-path':
-          return 'Назови путь к git-репозиторию внутри рабочего места.';
+          return 'Name a path to a git repository inside the workspace.';
         default:
           return null;
       }
@@ -204,7 +204,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (fetch.status !== 0) {
-        res.warnings.push(`fetch origin не удался: ${(fetch.stderr ?? '').toString().trim() || `exited ${fetch.status}`}`);
+        res.warnings.push(`fetch origin failed: ${(fetch.stderr ?? '').toString().trim() || `exited ${fetch.status}`}`);
         return res;
       }
       res.updated = true;
@@ -215,7 +215,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       return res;
     },
     reportFresh: () => {
-      // Package не пишет в stdout/stderr: доклад свежести — дело CLI-адаптера.
+      // The package does not write to stdout/stderr: freshness reporting is the CLI adapter's business.
     },
 
     extraEnv: () => ({ ...extra }),
@@ -230,9 +230,9 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     cloneHint: (nsPath) => `git clone <url> ${nsPath}`,
     syncHint: () => `${commandName} install`,
     workerPreamble: ({ taskId, nsPath, branch }) => (
-      `Ты — worker задачи ${taskId}. Твоя рабочая директория — изолированный git worktree `
-      + `репозитория ${nsPath} (ветка ${branch}); правишь только его. Основное дерево репозитория `
-      + 'не трогай: твой результат остаётся в этой ветке, забирает его оркестратор.'
+      `You are a worker on task ${taskId}. Your working directory is an isolated git worktree `
+      + `of repository ${nsPath} (branch ${branch}); you edit only that. Do not touch the main `
+      + 'repository tree: your result stays on this branch, and the orchestrator collects it.'
     ),
     liveRunNote: () => '',
   };
