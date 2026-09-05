@@ -49,13 +49,24 @@ import { sweepPreviousRuns, sweptLine } from '../scripts/canary-runs.mjs';
 export { sweptLine };
 
 // Prefixes the suite creates ITSELF — only those we sweep. Collected
-// by grepping `makeSandbox('…')` and
-// `mkdtempSync(path.join(os.tmpdir(), '…'))` literals in `test/` and
-// in the nested-package suite; list completeness is watched by
+// by grepping `makeSandbox('…')` and the `mkdtemp` of a temp directory
+// literals in `test/` and in the nested-package suite; list
+// completeness is watched by
 // [tmpdir-sweep.test.mjs](tmpdir-sweep.test.mjs) — the same grep over
 // the directory, the way [runner.test.mjs](runner.test.mjs) watches
 // `SERIAL` membership. Without the check a new prefix would leak in
 // silence: the list is hand-built.
+//
+// The `mkdtemp` grep takes BOTH spellings of the temp directory — the
+// qualified `os.tmpdir()` and the imported `tmpdir()`, with `path.join`
+// or a bare `join`. While it required the qualified one, a file that
+// imported `tmpdir` was invisible: its prefix was never demanded and
+// never swept, and the check stayed green. Live case, measured
+// 2026-09-05 on this tree: the qualified pattern found 44 literals and
+// nothing uncovered, the widened one 61 and eight uncovered prefixes —
+// `promptobus-routing-`, `promptobus-legacy-`, `pb-hooks-`,
+// `pb-hooks-home-`, `pb-home-`, `pb-install-` and the two
+// `promptobus-routing-a-`/`-b-` that the family entry covers.
 //
 // An entry covers everything that starts with it, so families are
 // given by a shared start: `promptobus-promptobus` is `-review-`,
@@ -87,16 +98,26 @@ export const SUITE_PREFIXES = [
   // per-harness one would have to be added again for every driver that gains an
   // adapter, and the sweep does not care which harness left the directory.
   'promptobus-adapter-',
+  // Three prefixes without the package name, and they stay as the files spell
+  // them: `hooks.test.mjs` and `install.test.mjs` write `pb-`, and renaming
+  // their literals to match the list would be an edit in someone else's file
+  // for the sweep's convenience. Each is specific enough not to catch a
+  // stranger in a shared `$TMPDIR`; `pb-hooks-` covers `pb-hooks-home-`.
+  'pb-home-', 'pb-hooks-', 'pb-install-',
   'promptobus-activation-', 'promptobus-ambient-', 'promptobus-archive-',
   'promptobus-base-', 'promptobus-bgsess-', 'promptobus-bootstrap-', 'promptobus-bushook-',
   'promptobus-check-', 'promptobus-cli-flags-', 'promptobus-codex-', 'promptobus-console-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-doctor-', 'promptobus-driver-',
   'promptobus-e2e-', 'promptobus-env-', 'promptobus-exec-', 'promptobus-external-',
   'promptobus-fresh-', 'promptobus-harness-', 'promptobus-home-', 'promptobus-homedir-',
-  'promptobus-hooks-test-', 'promptobus-host-', 'promptobus-lint-', 'promptobus-manifest-',
+  'promptobus-hooks-test-', 'promptobus-host-', 'promptobus-legacy-', 'promptobus-lint-',
+  'promptobus-manifest-',
   'promptobus-mcp-', 'promptobus-migration-', 'promptobus-modules-', 'promptobus-package-',
   'promptobus-plugin-', 'promptobus-promptobus', 'promptobus-publish-', 'promptobus-races-',
-  'promptobus-refs-', 'promptobus-review-', 'promptobus-root-', 'promptobus-routing-',
+  'promptobus-refs-', 'promptobus-review-', 'promptobus-root-',
+  // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
+  // that starts with it.
+  'promptobus-routing-',
   'promptobus-rules-',
   'promptobus-runner-', 'promptobus-setup-', 'promptobus-skills-', 'promptobus-smoke-',
   'promptobus-store-', 'promptobus-sweep-', 'promptobus-sync-', 'promptobus-test-',

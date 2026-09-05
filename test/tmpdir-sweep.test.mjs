@@ -245,11 +245,22 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
 //
 // The list is hand-built by grepping the directory, and a new prefix
 // would leak past the sweep in silence. The check repeats the same
-// grep: every `makeSandbox('…')` and
-// `mkdtempSync(path.join(os.tmpdir(), '…'))` literal in `test/` must
-// be covered by the list. The same way
-// [runner.test.mjs](runner.test.mjs) checks `SERIAL` against the
+// grep: every `makeSandbox('…')` and every `mkdtemp` of a temp
+// directory literal in `test/` must be covered by the list. The same
+// way [runner.test.mjs](runner.test.mjs) checks `SERIAL` against the
 // directory.
+//
+// **The temp directory is spelled two ways, and the pattern takes
+// both.** While it demanded the qualified `os.tmpdir()`, a file that
+// did `import { tmpdir } from 'node:os'` and wrote
+// `join(tmpdir(), '…')` was invisible to the sentinel: its prefix was
+// never demanded of the list and never swept, and the check stayed
+// green on an incomplete list. Measured 2026-09-05 on this tree: the
+// qualified pattern found 44 literals and reported nothing uncovered;
+// the widened one finds 61 and reported eight uncovered prefixes,
+// among them `promptobus-routing-`, which four files were already
+// creating. So the `os.` qualifier is optional, and so is the `path.`
+// on `join`.
 //
 // Non-literal arguments (the `prefix` variable in
 // [sandbox.mjs](sandbox.mjs) itself) grep does not take by
@@ -269,7 +280,7 @@ for (const dir of SCAN) {
     // sentinel in silence — and they are moved in this repository
     // in batches, whole waves.
     for (const m of src.matchAll(/makeSandbox\(\s*(['"`])([^'"`]+)\1/g)) declared.push([file, m[2]]);
-    for (const m of src.matchAll(/mkdtempSync\(path\.join\(os\.tmpdir\(\),\s*(['"`])([^'"`]+)\1/g)) {
+    for (const m of src.matchAll(/mkdtempSync\(\s*(?:path\.)?join\(\s*(?:os\.)?tmpdir\(\)\s*,\s*(['"`])([^'"`]+)\1/g)) {
       declared.push([file, m[2]]);
     }
   }

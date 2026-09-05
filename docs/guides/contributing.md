@@ -56,6 +56,12 @@ A task reaches the default branch as one commit. Intermediate worker and review 
 | [orchestrate](../../skills/orchestrate/SKILL.md) | Split work across worker sessions on this bus |
 | [solo-review](../../skills/solo-review/SKILL.md) | Isolated read-only review of one diff |
 
+## Suite isolation
+
+The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. Three rules keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.
+
+**Every sandbox prefix is on the sweep list.** A run that is cut off — Ctrl-C, a file taken down at the file timeout, a crash — never reaches its own cleanup, and the leftovers are removed by the sweep at the start of the next run ([test/tmpdir-sweep.mjs](../../test/tmpdir-sweep.mjs)). The sweep only knows the prefixes in `SUITE_PREFIXES`, and that list is hand-built, so a sentinel in `tmpdir-sweep.test.mjs` greps `test/` for every `makeSandbox('…')` and every `mkdtemp` of a temp directory and demands the list cover them. The grep takes both spellings of the directory — `os.tmpdir()` and an imported `tmpdir()`, `path.join` and a bare `join` — because while it demanded the qualified one, a file that imported `tmpdir` was invisible to it and its prefix leaked past the sweep with the check green. Adding a sandbox with a new prefix means adding the prefix; the sentinel says so on the next run.
+
 ## Public surface
 
 Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. See the publicity checks in the project gates when they land.
