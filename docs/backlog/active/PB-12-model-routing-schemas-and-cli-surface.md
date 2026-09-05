@@ -1,9 +1,9 @@
 # PB-12 · Model routing schemas, CLI surface, error codes, and golden tests before the resolver
 
-- **Order:** 20
 - **Scope:** [03-cli](../../reference/03-cli.md), [04-protocol](../../reference/04-protocol.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-11
+- **Taken:** 2026-09-05
 
 ## Context
 

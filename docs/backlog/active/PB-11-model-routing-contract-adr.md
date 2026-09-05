@@ -1,9 +1,9 @@
 # PB-11 · ADR-003: model routing — strategies, catalog, availability snapshot, resolver, host needs
 
-- **Order:** 10
 - **Scope:** [02-host](../../reference/02-host.md), [03-cli](../../reference/03-cli.md), [04-protocol](../../reference/04-protocol.md)
 - **Created:** 2026-09-05
 - **Dependencies:** none
+- **Taken:** 2026-09-05
 
 ## Context
 
