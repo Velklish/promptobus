@@ -15,7 +15,7 @@
 // that line: it is handed over on purpose so that the checks can prove it reaches
 // neither the verdict nor the cache file.
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { afterEach } from 'node:test';
@@ -122,6 +122,25 @@ function machine({
       if (!bin || name !== CURSOR_TOOL) return { ok: false, reason: 'not found' };
       return { ok: true, bin: path.join(binDir, name), ...(version ? { version } : {}) };
     },
+  };
+}
+
+/**
+ * A machine whose `cursor-agent` is a plain shell script rather than the usual node
+ * stub. Exactly one check needs it, and it needs it because of how the node stub is
+ * launched: `stubCommand` writes `exec node …`, so the stub REPLACES the shell and
+ * leaves no wrapper behind — the case that does NOT put a grandchild on the inherited
+ * pipe. A script whose `sleep` is forked does, which is the shape the live probe hit.
+ * POSIX only, like every stub here.
+ */
+function shellMachine(body) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-adapter-cursor-'));
+  const bin = path.join(dir, CURSOR_TOOL);
+  writeFileSync(bin, `#!/bin/sh\n${body}\n`);
+  chmodSync(bin, 0o755);
+  return {
+    routingPaths: () => ({ cacheFile: path.join(dir, 'model-routing', 'cache.json'), overlays: [] }),
+    resolveToolBin: () => ({ ok: true, bin, version: STUB_VERSION }),
   };
 }
 
@@ -317,6 +336,40 @@ test('the probe does not block the event loop, so the preflight budget can still
   assert.equal(verdict.reason, 'quota_unknown', verdict.message);
   assert.ok(took > 150, `the two stub calls answered in ${took} ms — too fast to prove anything`);
   assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${took} ms probe ran`);
+});
+
+test('the deadline holds when a grandchild keeps the output pipe open, and the pipe is let go', async () => {
+  // `close` fires when the last stdio pipe closes, not when the child dies, so a
+  // process the harness left behind holding the inherited pipe would keep the probe
+  // pending long past the kill. Measured 2026-09-05 against this wrapper: the
+  // verdict was already answered at the deadline — the timeout handler resolves
+  // rather than waiting for `close` — and the RUN was held 5.2 s past it by the
+  // pipe nobody was reading any more (two runs in three; whether `/bin/sh` has
+  // forked its `sleep` by the deadline is a race, so the hold is intermittent and
+  // the check below is green when it did not happen at all).
+  //
+  // Mutation probe: take `finish` out of the timeout handler so it waits for
+  // `close` again — the wall clock goes red at ~5 s. Take `destroy`/`unref` out and
+  // the pipe count goes red instead. They are two lines for two symptoms, and
+  // deleting either as redundant reads as safe and is not.
+  // A destroyed stream does not leave the list on the next tick: measured, the
+  // handle goes within ~50 ms, so the settle is a short timer rather than
+  // `setImmediate`. A pipe a grandchild still holds is there for five seconds and
+  // no settle hides it.
+  const settled = () => new Promise((r) => { setTimeout(r, 150); });
+  await settled();
+  // `PipeWrap` is what libuv calls a child's stdio pipe in this list; a stream
+  // destroyed and unref'd leaves none behind, an unread one that a grandchild still
+  // holds stays until that process dies.
+  const pipes = () => process.getActiveResourcesInfo().filter((r) => r === 'PipeWrap').length;
+  const before = pipes();
+  const started = Date.now();
+  const verdict = await ask(shellMachine('sleep 5'), 700);
+  const took = Date.now() - started;
+  await settled();
+  assert.equal(verdict.reason, 'probe_timeout', verdict.message);
+  assert.ok(took < 2000, `the probe answered ${took} ms after a 700 ms deadline`);
+  assert.equal(pipes(), before, 'the probe left an unread pipe holding the event loop open');
 });
 
 test('the binary comes from the request: this adapter resolves none of its own', async () => {

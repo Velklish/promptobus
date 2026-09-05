@@ -21,7 +21,7 @@
 //     every case here, not only its own, so a reading of stderr would redden the
 //     file rather than one check in it.
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
@@ -82,6 +82,23 @@ async function probe({ flags = '', limit = false, timeoutMs = 10_000, using = ho
     delete process.env[PROBE_VAR];
     delete process.env[LIMIT_VAR];
   }
+}
+
+/**
+ * A host whose `codex` is a plain shell script rather than the stub app-server.
+ * Exactly one check needs it, and it needs it because of how the stub is launched:
+ * `stubCommand` writes `exec node …`, so the stub REPLACES the shell and leaves no
+ * wrapper behind — the case that does NOT put a grandchild on the inherited pipe. A
+ * script whose `sleep` is forked does, which is the shape the live probe hit. POSIX
+ * only, like every stub here.
+ */
+function shellHost(body) {
+  const dir = path.join(SB, `shell-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  const bin = path.join(dir, 'codex');
+  writeFileSync(bin, `#!/bin/sh\n${body}\n`);
+  chmodSync(bin, 0o755);
+  return { resolveToolBin: () => ({ ok: true, bin, version: HARNESS_VERSION }) };
 }
 
 const names = (verdict) => (verdict.models ?? []).map((m) => m.model);
@@ -341,6 +358,38 @@ test('the probe does not block the event loop, so the preflight budget can still
   assert.equal(verdict.state, 'available', verdict.message);
   assert.ok(took > 150, `app-server answered in ${took} ms — too fast to prove anything`);
   assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${took} ms probe ran`);
+});
+
+test('the deadline holds when a grandchild keeps the pipe open, and the pipes are let go', async () => {
+  // `close` fires when the last stdio pipe closes, not when the child dies, so a
+  // process app-server left behind holding the inherited pipe keeps that pipe open
+  // past the kill. Measured 2026-09-05 against this wrapper: the verdict was
+  // already answered on the deadline — the RPC request rejects on its own timer —
+  // and the RUN was held 5.2 s past it by pipes nobody was reading any more
+  // (`rpc.close()` settles the pending requests and touches no stream). Whether
+  // `/bin/sh` has forked its `sleep` by the deadline is a race, so the hold is
+  // intermittent and this check is green when it did not happen at all.
+  //
+  // Mutation probe: take `stdout.destroy()` / `stdin.destroy()` / `unref()` out of
+  // the `finally` and the pipe count goes red on the runs where the fork happened.
+  // A destroyed stream does not leave the list on the next tick: measured, the
+  // handle goes within ~50 ms, so the settle is a short timer rather than
+  // `setImmediate`. A pipe a grandchild still holds is there for five seconds and
+  // no settle hides it.
+  const settled = () => new Promise((r) => { setTimeout(r, 150); });
+  await settled();
+  // `PipeWrap` is what libuv calls a child's stdio pipe in this list; a stream
+  // destroyed and unref'd leaves none behind, an unread one that a grandchild still
+  // holds stays until that process dies.
+  const pipes = () => process.getActiveResourcesInfo().filter((r) => r === 'PipeWrap').length;
+  const before = pipes();
+  const started = Date.now();
+  const verdict = await probe({ timeoutMs: 700, using: shellHost('sleep 5') });
+  const took = Date.now() - started;
+  await settled();
+  assert.equal(verdict.reason, 'probe_timeout', verdict.message);
+  assert.ok(took < 2000, `the probe answered ${took} ms after a 700 ms deadline`);
+  assert.equal(pipes(), before, 'the probe left unread pipes holding the event loop open');
 });
 
 test('the stderr line a healthy app-server writes is never a verdict', async () => {
