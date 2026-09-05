@@ -100,7 +100,7 @@ if (args[0] === 'status') {
  * more would be visible here rather than hidden behind a full stand-in host.
  */
 function machine({
-  mode = 'ok', version = STUB_VERSION, bin = true, executable = true, resolveBlocksMs = 0,
+  mode = 'ok', version = STUB_VERSION, bin = true, executable = true,
 } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-adapter-cursor-'));
   const binDir = path.join(dir, 'bin');
@@ -119,14 +119,6 @@ function machine({
       return { cacheFile: path.join(dir, 'model-routing', 'cache.json'), overlays: [] };
     },
     resolveToolBin(name) {
-      // A host that starts a process while resolving — this package's own driver
-      // says `resolveToolBin` asks `--version` with a ceiling of its own — and does
-      // it synchronously, which is what a `spawnSync` costs. Spun rather than
-      // awaited on purpose: the point is that the adapter cannot yield through it.
-      if (resolveBlocksMs) {
-        const until = Date.now() + resolveBlocksMs;
-        while (Date.now() < until) { /* the event loop is held, exactly as spawnSync holds it */ }
-      }
       if (!bin || name !== CURSOR_TOOL) return { ok: false, reason: 'not found' };
       return { ok: true, bin: path.join(binDir, name), ...(version ? { version } : {}) };
     },
@@ -139,8 +131,15 @@ afterEach(() => {
   delete process.env.STUB_CURSOR_ACCOUNT;
 });
 
-const ask = (host, timeoutMs = 10_000) => cursorAvailability(CURSOR_TOOL)
-  .probe({ host, timeoutMs, refresh: false });
+/**
+ * Call the adapter the way the preflight does: the binary is resolved ONCE, before
+ * the probe, and travels in the request ([preflight.js](../lib/model-routing/preflight.js)).
+ * The host is still handed over, so a module reaching for it stays visible here.
+ */
+const ask = (host, timeoutMs = 10_000) => {
+  const adapter = cursorAvailability(CURSOR_TOOL);
+  return adapter.probe({ host, toolBin: host.resolveToolBin(adapter.tool), timeoutMs, refresh: false });
+};
 
 // --- the driver declares it --------------------------------------------------
 
@@ -293,19 +292,52 @@ test('the budget covers both calls, not each of them', async () => {
   assert.ok(elapsed < 2750, `the second call was given a budget of its own (${elapsed} ms)`);
 });
 
-test('the budget covers the binary resolve too', async () => {
-  // A host may start a process inside `resolveToolBin` — this package's own Cursor
-  // driver says it does, with a 15 s ceiling — so resolving is part of the probe.
-  // A deadline taken after it would let one adapter spend that ceiling AND the
-  // whole budget; taken before it, the resolve comes out of the same 1500 ms.
-  // (That a synchronous resolve also holds the event loop is a host-contract
-  // problem no adapter can fix from its own side — filed as PB-16.2.)
-  const host = machine({ mode: 'slow-models', resolveBlocksMs: 1000 });
+test('the probe does not block the event loop, so the preflight budget can still fire', async () => {
+  // The contract says a probe must not hold the event loop, and the preflight holds
+  // ONE budget for every adapter as a timer racing their promises: a `spawnSync`
+  // here would stop that timer while this adapter worked, and the ceiling of the run
+  // would become the sum of the blocking adapters instead of one budget. What is
+  // asserted is not this probe's duration but that OTHER work ran while it was in
+  // flight.
+  //
+  // Mutation probe: put `run()` from lib/exec.js back in place of `runOut`'s spawn
+  // and this goes red while every other check in the file stays green.
+  // Counted rather than timed: the file runs in the pool, and a threshold in
+  // milliseconds would measure the machine's neighbours. A blocked loop fires a
+  // 20 ms interval once, however long the block — node coalesces the periods it
+  // missed into a single callback — while a probe that yields lets it tick on every
+  // turn. Five is a fifth of what an unloaded run counts here.
+  const host = machine();
   const started = Date.now();
-  const verdict = await ask(host, 1500);
-  const elapsed = Date.now() - started;
-  assert.equal(verdict.reason, 'probe_timeout');
-  assert.ok(elapsed < 2100, `the resolve was spent outside the budget (${elapsed} ms)`);
+  let ticks = 0;
+  const beat = setInterval(() => { ticks += 1; }, 20);
+  const verdict = await ask(host);
+  clearInterval(beat);
+  const took = Date.now() - started;
+  assert.equal(verdict.reason, 'quota_unknown', verdict.message);
+  assert.ok(took > 150, `the two stub calls answered in ${took} ms — too fast to prove anything`);
+  assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${took} ms probe ran`);
+});
+
+test('the binary comes from the request: this adapter resolves none of its own', async () => {
+  // A host may start a process inside `resolveToolBin` — this package's own Cursor
+  // driver says it does, with a 15 s ceiling — and the call is synchronous, so an
+  // adapter making it would hold the event loop and stop the timer that bounds the
+  // whole preflight. No adapter could fix that from its own side, so the preflight
+  // resolves every binary once, before the race, and hands the answer over.
+  //
+  // Mutation probe: put `host.resolveToolBin(tool)` back at the top of `probe` and
+  // this reddens on the throw while every other check in the file stays green.
+  const host = machine();
+  const resolved = host.resolveToolBin(CURSOR_TOOL);
+  const hostile = {
+    ...host,
+    resolveToolBin: () => { throw new Error('the preflight resolved this already'); },
+  };
+  const verdict = await cursorAvailability(CURSOR_TOOL)
+    .probe({ host: hostile, toolBin: resolved, timeoutMs: 10_000, refresh: false });
+  assert.equal(verdict.reason, 'quota_unknown', verdict.message);
+  assert.equal(verdict.version, STUB_VERSION);
 });
 
 // --- the listing that came back wrong ----------------------------------------

@@ -144,13 +144,14 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 
 The harness-neutral half: the adapter contract, the budgeted preflight and the cache. Each adapter has its own subsection below; a driver that declares none answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks.
 
-**The adapter** is one method a driver declares as `availability` (`src/model-routing.ts`, `src/driver.ts`):
+**The adapter** is a `tool` name and one method, declared by a driver as `availability` (`src/model-routing.ts`, `src/driver.ts`):
 
 ```ts
-probe({ host, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdict>
+tool?: string
+probe({ host, toolBin, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdict>
 ```
 
-`timeoutMs` is the whole preflight budget — adapters run in parallel, so each may use all of it. The verdict is one harness entry of the availability snapshot, so nothing translates between a probe and the file:
+`toolBin` is the binary of `tool`, resolved by the preflight **before any adapter started**; an adapter that declares no `tool` is handed `null`. **An adapter does not call `resolveToolBin` itself**, and the reason is the next rule. `timeoutMs` is what is left of the preflight budget when the adapters start — they run in parallel, so each may use all of it. The verdict is one harness entry of the availability snapshot, so nothing translates between a probe and the file:
 
 | Field | Meaning |
 |---|---|
@@ -164,6 +165,8 @@ probe({ host, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdict>
 | `models` | the inventory the account exposes. An adapter does not fill `rated` — it knows the harness, not the catalog |
 | `windows` | normalised limit windows. A harness that exposes none reports none; the remaining limit is then unknown, never modelled |
 
+**A probe must not block the event loop**, and that is a rule of the contract rather than a style. The preflight runs every adapter at once and bounds them with a timer beside their promises: a probe that holds the loop stops that timer from firing, stops its neighbours from making progress, and stops its own kill timer — the 15 s ceiling then becomes the sum of the blocking probes, and the mechanism meant to cap it cannot run while it is blocked. So no `spawnSync`, no synchronous host call, no busy wait. A synchronous **return** is still lawful and is what an immediate answer looks like: the rule is about holding the loop, not about returning a promise. `resolveToolBin` is the call this rule took out of the adapters — it is synchronous by contract and a host may start a process inside it, which no adapter could have fixed from its own side.
+
 An adapter that **throws** is `unknown` / `probe_failed`, and the thrown text is discarded rather than written: an adapter wrapping harness output in an error would otherwise put it on disk. An adapter with something to say answers with a verdict.
 
 An adapter that **answers outside the contract** is `probe_failed` too, and the diagnosis names the field. All three closed lists are checked — the state, the reason and the source — plus a `checkedAt` that cannot be read; a reason is required for every state but `available`, which is the only one none of the nine codes accompanies. The written cache promises to validate against its schema, and a misspelt `quota-unknown` would break that promise from inside: the command would report success and leave a document nothing can read back. The offending value is quoted back only when it has the shape of a code, so the message can show a typo without becoming a second route for harness output.
@@ -171,6 +174,8 @@ An adapter that **answers outside the contract** is `probe_failed` too, and the 
 Inside `models` and `windows` the check is by value and it **drops the element, not the verdict**: a blank model name, a `usedPercent` outside 0…100, a `lengthSec` of zero, a repeated flag. An adapter that garbles one row of an inventory still knows whether the account is logged in, and nothing here repairs a value — a number invented by the mechanism would validate while saying what no harness said. A `resetAt` that cannot be read becomes `null`, the schema's own word for unknown.
 
 **The preflight** (`lib/model-routing/preflight.js`) runs every adapter at once under one total budget of 15 s (`PREFLIGHT_BUDGET_MS`). A harness that has not answered by then is `unknown` / `probe_timeout` and does not hold the command: the person waits once for the slowest harness, never three times in a row. The result is the availability snapshot, valid against `schemas/model-routing/snapshot.schema.json`.
+
+**It resolves the binaries first, once each, and the budget covers that too.** Every adapter's `tool` is resolved before the race — one call per binary name, so two harnesses naming one binary cost one resolve — and each probe is handed its answer. A host that has no `resolveToolBin`, or whose call throws, yields `null` for that harness, and the adapter says in its own words what a missing binary means. The resolve runs under the same deadline as the probes: when it is spent, no further binary is resolved and the harnesses that were never reached report `probe_timeout` saying the budget went on resolving — a slow harness and a slow host send a person to different places. A synchronous call cannot be interrupted, so a run may outlive its budget by the one resolve already in flight, and by no more.
 
 What is asked, and what is taken from the cache:
 
@@ -223,7 +228,7 @@ Implemented (PB-15). The adapter is declared as `availability` on the Claude Cod
 
 | Fact | Where it comes from |
 |---|---|
-| binary, version | `host.resolveToolBin('claude')` — the adapter never searches `PATH` itself |
+| binary, version | the preflight's resolve of `claude`, handed over as `toolBin` — the adapter neither searches `PATH` nor resolves anything itself |
 | auth | `claude auth status --json` |
 | models | the driver's own alias set plus its `DEFAULT_MODEL` (`lib/driver-claude.js`) |
 | remaining limit | nowhere. There is none |
@@ -248,9 +253,9 @@ The verdict, by what was found:
 
 **`available` is a state this harness cannot reach in v1, and that is deliberate.** The word means auth, model *and* limit confirmed; Claude Code exposes no stable, documented source for the remaining subscription limit, and an adapter that cannot obtain one answers `unknown` rather than modelling a value. So a healthy logged-in account is `unknown` / `quota_unknown` with no `windows` at all, which the resolver penalises with `unknown-availability` (−10, the limit counted as a neutral 50 %) and reports as the `unknown-remaining` warning — never a block. An unreadable answer is not `not_authenticated`: a guessed logout would take every tuple of the harness out of routing on no evidence.
 
-`timeoutMs` is the whole preflight budget. The adapter takes its deadline as the first thing it does, and what is left of it after the host resolved the binary is what the auth check is given: the workspace host runs `--version` inside `resolveToolBin` with a ceiling of its own, and handing the full budget on afterwards would let one adapter outlive the run.
+`timeoutMs` is what is left of the preflight budget once the binaries are resolved, and the adapter takes its deadline from it on its first line. The resolve itself is no longer this adapter's: the workspace host runs `--version` inside `resolveToolBin` with a ceiling of its own, and that call is synchronous, so it is made once by the preflight, outside the race.
 
-**The auth check is spawned asynchronously**, and that is a requirement rather than a style. The preflight holds one budget for every adapter as a timer racing their promises, so an adapter that blocked the event loop would stop that timer from firing while it worked, and each blocking adapter would get the whole budget again after its neighbours — the ceiling of the run would become their sum. The adapter kills its own child when its deadline passes, and only that kill is `probe_timeout`: a signal it did not send is `probe_failed` naming the signal, because a harness that dies on every probe must not hide behind a code that reads as "the machine was busy".
+**The auth check is spawned asynchronously**, and that is a requirement rather than a style — the contract's "a probe must not block the event loop", from this adapter's side. The adapter kills its own child when its deadline passes, and only that kill is `probe_timeout`: a signal it did not send is `probe_failed` naming the signal, because a harness that dies on every probe must not hide behind a code that reads as "the machine was busy".
 
 **The late-start hook.** A lift that fails on a spent limit is classified by the driver's own `LIMIT_DETAIL` pattern — the same one that reads a live session's stall, because a limit refusal reads alike whether the session wrote it after a turn or the binary wrote it instead of starting. Which half of that pattern matched chooses the code: the harness saying the limit **resets** makes the exhaustion the subscription's, `subscription_exhausted`; a refusal that explains nothing is `manual_exhaustion`.
 
@@ -276,7 +281,8 @@ What the answers become:
 
 | What app-server said | Verdict |
 |---|---|
-| the host says there is no `codex` binary | `unavailable` / `binary_missing` |
+| the preflight resolved no `codex` binary — the host has no `resolveToolBin`, or its call threw | `unknown` / `probe_failed` |
+| the host says there is no such binary | `unavailable` / `binary_missing` |
 | the host says there is one and app-server does not start | `unknown` / `probe_failed` — the shipped standalone host answers `{ ok: true }` for any name, so a machine without `codex` arrives here rather than at `binary_missing` |
 | the limit read refuses, and not for a missing method | `unavailable` / `not_authenticated` |
 | a snapshot with `rateLimitReached` — a named `rateLimitReachedType`, or a window at 100 % | `exhausted` / `subscription_exhausted`, `resetAt` from the window that was reached |
@@ -293,11 +299,12 @@ What the answers become:
 
 ### Cursor
 
-Implemented (PB-16). The adapter is `lib/model-routing/adapter-cursor.js`, declared by `lib/driver-cursor.js` as its `availability`. It runs two commands and nothing else — `status` for auth, `models` for the inventory — on the binary `host.resolveToolBin('cursor')` names, the same one the driver lifts a session with. It starts no session, writes nothing, and never touches the persist/tmux path: an adapter answers about the account, before any session exists.
+Implemented (PB-16). The adapter is `lib/model-routing/adapter-cursor.js`, declared by `lib/driver-cursor.js` as its `availability`. It runs two commands and nothing else — `status` for auth, `models` for the inventory — on the binary the preflight resolved for it, the same one the driver lifts a session with. It starts no session, writes nothing, and never touches the persist/tmux path: an adapter answers about the account, before any session exists.
 
 | What the probe sees | Verdict |
 |---|---|
-| the host resolves no binary, or the one it named is gone | `unavailable` / `binary_missing` |
+| the preflight resolved nothing — the host has no `resolveToolBin`, or its call threw | `unknown` / `probe_failed` |
+| the host says there is no such binary, or the one it named is gone | `unavailable` / `binary_missing` |
 | the binary is there and will not run — no permission, an argument the platform cannot carry | `unknown` / `probe_failed` |
 | either command outlives what is left of the budget | `unknown` / `probe_timeout` |
 | `status` says the account is not logged in | `unavailable` / `not_authenticated` |
@@ -307,7 +314,7 @@ Implemented (PB-16). The adapter is `lib/model-routing/adapter-cursor.js`, decla
 
 **A successful probe is `unknown`, not `available`.** Cursor exposes no limit API, no usage subcommand and no window the binary will name, so the remaining limit cannot be established at all; `available` would claim it was confirmed. No `windows` are reported either — an empty list would age the entry at the 60 s window TTL for a fact nothing measured, and a number invented here would read as a measurement. `unknown` is penalised by the resolver rather than blocking, so the harness stays a candidate.
 
-**A slow binary is a timeout, never an unavailable account.** `timeoutMs` is the whole preflight budget and both calls share it: what is left of the budget is the ceiling of the next call, and a binary still running when it ends is killed. The deadline starts before the binary is resolved, because resolving is part of the probe — a host is free to run `--version` inside `resolveToolBin`, and a deadline started after it would let one adapter spend that ceiling plus the whole budget. A launch that fails outright is `probe_failed` rather than a timeout: a binary that never started did not fail to answer in time. Calling a slow `cursor-agent` `unavailable` would drop every Cursor tuple out of a run on a machine where the account is perfectly fine.
+**A slow binary is a timeout, never an unavailable account.** `timeoutMs` is what is left of the preflight budget and both calls share it: what remains is the ceiling of the next call, and a binary still running when it ends is killed. The binary was resolved before the probe started, so the ceiling a host spends inside `resolveToolBin` is already out of this adapter's way. A launch that fails outright is `probe_failed` rather than a timeout: a binary that never started did not fail to answer in time. Calling a slow `cursor-agent` `unavailable` would drop every Cursor tuple out of a run on a machine where the account is perfectly fine.
 
 **What the parse relies on**, measured on `cursor-agent` 2026.09.02-c22c1a3 (2026-09-05). Both commands colour their output even when stdout is not a terminal, so ANSI is stripped before anything is looked at. `status` answers `✓ Logged in as <account>` and exits 0 in both the signed-in and the signed-out case, so **the text is the answer and the exit code is never consulted** — a non-zero code beside a line the adapter can read says nothing about the login. The signed-out line is matched separately, because "not logged in" contains "logged in". Output that says neither thing is a third answer rather than a second: it is `probe_failed`, because calling it a logged-out account would send the person to `cursor-agent login` for a parse fault and cost them the real diagnosis. `models` answers a header line, `<id> - <Display Name>` rows — about 210 of them, `auto` first — and a trailing `Tip:` line, so a row is recognised by the shape of its id next to a literal ` - `, not by being a line with two fields in it. **The model id is taken whole, effort suffix included**: in Cursor the effort level is a flat suffix of the id (`claude-opus-5-thinking-max`, `cursor-grok-4.6-xhigh-fast`) and not a separate flag, so a stripped suffix would name a model the binary does not have.
 

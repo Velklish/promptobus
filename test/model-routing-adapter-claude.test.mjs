@@ -105,7 +105,20 @@ function shellSandbox(body) {
 
 /** The adapter as the driver declares it — the object the preflight would reach through the registry. */
 const adapter = () => claudeDriver.availability;
-const probe = (host, timeoutMs = 15_000) => adapter().probe({ host, timeoutMs, refresh: false });
+
+/**
+ * Call an adapter the way the preflight does: the binary is resolved ONCE, before
+ * the probe, and travels in the request ([preflight.js](../lib/model-routing/preflight.js)).
+ * A host with no `resolveToolBin` resolves to nothing, which is the `null` the
+ * preflight hands over for a host that cannot answer.
+ */
+const ask = (adapterObj, host, timeoutMs) => adapterObj.probe({
+  host,
+  toolBin: typeof host?.resolveToolBin === 'function' ? host.resolveToolBin(adapterObj.tool) : null,
+  timeoutMs,
+  refresh: false,
+});
+const probe = (host, timeoutMs = 15_000) => ask(adapter(), host, timeoutMs);
 
 // --- the states --------------------------------------------------------------
 
@@ -227,6 +240,25 @@ test('the probe does not block the event loop, so the preflight budget can still
     `a timer set for 20 ms fired at ${tickedAt} ms while a ${probeTook} ms probe ran`);
 });
 
+test('the binary comes from the request: this adapter resolves none of its own', async () => {
+  // `resolveToolBin` is synchronous and a host is free to start a process inside
+  // it, so an adapter that called it would hold the event loop and stop the timer
+  // that bounds the whole preflight — no adapter can fix that from its own side.
+  // The preflight resolves once, before the race, and hands the answer over.
+  //
+  // Mutation probe: put `host.resolveToolBin(TOOL)` back at the top of `probe` and
+  // this reddens on the throw while every other check in the file stays green.
+  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
+  const resolved = box.host.resolveToolBin(CLAUDE);
+  const hostile = {
+    resolveToolBin: () => { throw new Error('the preflight resolved this already'); },
+    routingPaths: box.host.routingPaths,
+  };
+  const verdict = await adapter().probe({ host: hostile, toolBin: resolved, timeoutMs: 15_000, refresh: false });
+  assert.equal(verdict.reason, 'quota_unknown', verdict.message);
+  assert.equal(verdict.version, '2.1.251');
+});
+
 test('a signal this adapter did not send is probe_failed, not probe_timeout', async () => {
   // Only our own kill is the budget. A harness that dies on every probe would
   // otherwise hide behind a code that reads as "the machine was busy", and the
@@ -296,7 +328,7 @@ test('the inventory the driver hands over is what the adapter reports, not a lis
   // and the default model stay in one file — the driver's. A copy inside the
   // adapter would drift, and this is what would notice.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
-  const verdict = await claudeAvailability(['only-this-one']).probe({ host: box.host, timeoutMs: 15_000, refresh: false });
+  const verdict = await ask(claudeAvailability(['only-this-one']), box.host, 15_000);
   assert.deepEqual(verdict.models, [{ model: 'only-this-one' }]);
 });
 
@@ -372,7 +404,7 @@ test('the hook survives a host that cannot be written to, and says so by adding 
 test('the driver declares the adapter, and the registry door hands out that one', async () => {
   const { adapterOf } = await import('../lib/drivers.js');
   assert.equal(typeof claudeDriver.availability?.probe, 'function');
-  const verdict = await adapterOf(CLAUDE).probe({ host: null, timeoutMs: 1, refresh: false });
+  const verdict = await ask(adapterOf(CLAUDE), null, 1);
   // Not the registry's stand-in for a driver with no adapter: that one says so in
   // its message, and this one is the driver's own.
   assert.ok(!verdict.message.includes('no availability adapter'), verdict.message);

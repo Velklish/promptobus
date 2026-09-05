@@ -16,7 +16,7 @@
 // CLOSED, which is the mechanism that keeps a token off disk: the writer projects
 // a verdict onto the declared fields, and anything an adapter added beside them
 // never reaches the file.
-import type { PromptobusHost } from './host.js';
+import type { HostToolBin, PromptobusHost } from './host.js';
 
 /**
  * What the account can do with this harness.
@@ -90,13 +90,30 @@ export interface ProbeWindow {
 
 /** What an adapter is asked. */
 export interface ProbeRequest {
-  /** The workspace interface. `resolveToolBin` says whether the binary is there at all. */
+  /**
+   * The workspace interface, for whatever an adapter needs beyond its binary.
+   * **The binary is not asked for here**: `toolBin` below already carries it.
+   */
   host: PromptobusHost;
   /**
-   * The adapter's own ceiling in milliseconds. It is the whole preflight budget:
-   * adapters run in parallel, so each may use all of it. An adapter that misses it
-   * is not waited for — the preflight reports `probe_timeout` for that harness and
-   * does not hold the command.
+   * The binary of `AvailabilityAdapter.tool`, resolved by the preflight before any
+   * adapter started — or `null` when there was no resolve at all: the adapter
+   * declared no `tool`, the host has no `resolveToolBin`, or the call threw.
+   *
+   * A host may start a process inside its synchronous `resolveToolBin`, so an
+   * adapter that called it would block the event loop and stop the very timer that
+   * bounds it. Resolving once, up front, takes that call out of the race; an
+   * adapter reads the answer and never asks for it again.
+   *
+   * `ok: false` is the host saying there is no such binary — the `binary_missing`
+   * verdict is still the adapter's to write, because the wording is the harness's.
+   */
+  toolBin: HostToolBin | null;
+  /**
+   * The adapter's own ceiling in milliseconds. It is what is left of the whole
+   * preflight budget when the adapters start: they run in parallel, so each may use
+   * all of it. An adapter that misses it is not waited for — the preflight reports
+   * `probe_timeout` for that harness and does not hold the command.
    */
   timeoutMs: number;
   /**
@@ -144,5 +161,22 @@ export interface ProbeVerdict {
  * touch the availability cache: the cache is read and written around it.
  */
 export interface AvailabilityAdapter {
+  /**
+   * The binary this adapter answers about, by the name the host resolves. The
+   * preflight resolves it ONCE per declared binary before the adapters start and
+   * hands the answer over as `ProbeRequest.toolBin`. An adapter that needs none
+   * declares none and is handed `null`.
+   */
+  tool?: string;
+  /**
+   * **A probe must not block the event loop.** The preflight runs every adapter at
+   * once and bounds them with a timer beside their promises; a probe that holds the
+   * loop stops that timer from firing, stops its neighbours from making progress,
+   * and stops its own kill timer — the ceiling the person was promised then becomes
+   * the sum of the blocking probes instead of one budget. So: no `spawnSync`, no
+   * synchronous host call, no busy wait. A synchronous RETURN is still lawful and
+   * is what an immediate answer looks like — the rule is about holding the loop,
+   * not about returning a promise.
+   */
   probe(request: ProbeRequest): Promise<ProbeVerdict> | ProbeVerdict;
 }

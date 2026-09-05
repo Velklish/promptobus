@@ -35,7 +35,7 @@ import { PREFLIGHT_BUDGET_MS, preflight } from '../lib/model-routing/preflight.j
 import { REGISTRY, adapterOf, standInAdapter } from '../lib/drivers.js';
 import {
   FAKE_TOKEN, adapterMap, answeringStub, availableStub, counter, exhaustedStub, slowStub,
-  throwingStub, unauthenticatedStub,
+  throwingStub, toolStub, unauthenticatedStub,
 } from './routing-stubs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -153,6 +153,208 @@ test('a slow adapter does not hold the preflight: the run ends by the budget and
   assert.equal(snapshot.harnesses.spent.state, 'exhausted');
   assert.equal(count.probes, 3, 'all three adapters were started, in parallel');
   assert.equal(validates(snapshot), true);
+});
+
+test('a probe in flight does not stop the budget timer beside it', async () => {
+  // The contract's rule, from the preflight's side: a probe must not block the
+  // event loop. What is asserted is not the probe's own duration but that OTHER
+  // work ran while it was in flight — a timer set for 20 ms fires long before a
+  // 400 ms probe answers. The shipped adapters are pinned against the same rule in
+  // their own files; this one pins the mechanism that would have to survive a third
+  // party's adapter.
+  // Counted rather than timed: the file runs in the pool, and a threshold in
+  // milliseconds would measure the machine's neighbours. A blocked loop fires a
+  // 20 ms interval once, however long the block — node coalesces the periods it
+  // missed into a single callback — while a run that yields lets it tick on every
+  // turn.
+  const host = sandboxHost();
+  const started = Date.now();
+  let ticks = 0;
+  const beat = setInterval(() => { ticks += 1; }, 20);
+  const snapshot = await preflight({
+    host,
+    harnesses: ['slowish'],
+    adapterFor: adapterMap({ slowish: toolStub('slowish-bin', { delayMs: 400 }) }),
+    budgetMs: 5_000,
+  });
+  clearInterval(beat);
+  const took = Date.now() - started;
+  assert.equal(snapshot.harnesses.slowish.reason, 'quota_unknown');
+  assert.ok(took > 250, `the stub answered in ${took} ms — too fast to prove anything`);
+  assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${took} ms run took place`);
+});
+
+test('a harness the registry cannot answer for is one probe_failed, and its neighbours are still probed', async () => {
+  // `adapterFor` is the caller's map, and the names reaching it come from
+  // `host.declaredTools()` — a workspace declaration nothing here validated. A name
+  // no driver answers for makes that call throw, and a map taken in one expression
+  // sends that throw out of the whole preflight: three harnesses lost to one bad
+  // line in a config file.
+  //
+  // Mutation probe: take the per-name `try` out of `adaptersOf` and this rejects
+  // instead of answering, carrying the healthy neighbour down with it.
+  const host = sandboxHost();
+  const count = counter();
+  const good = adapterMap({ ok: availableStub(count) });
+  const snapshot = await preflight({
+    host,
+    harnesses: ['ok', 'not-a-harness'],
+    adapterFor: (harness) => {
+      if (harness === 'not-a-harness') throw new Error('no driver for /home/someone/promptobus.json');
+      return good(harness);
+    },
+    budgetMs: 500,
+  });
+  const missing = snapshot.harnesses['not-a-harness'];
+  assert.equal(missing.state, 'unknown');
+  assert.equal(missing.reason, 'probe_failed');
+  assert.match(missing.message, /no adapter could be taken/);
+  // The registry's own text does not travel: it is free to name a path or a config
+  // line, and `message` is the one free-text field that reaches disk.
+  assert.ok(!missing.message.includes('promptobus.json'), missing.message);
+  assert.equal(snapshot.harnesses.ok.state, 'available', 'the neighbour was still probed');
+  assert.equal(count.probes, 1, 'and it was probed once — the broken one never reached a probe');
+  assert.equal(validates(snapshot), true);
+});
+
+// --- the binaries, resolved before the race ----------------------------------
+
+test('each declared binary is resolved once, before the adapters, and handed to its probe', async () => {
+  // `resolveToolBin` is synchronous and a host may start a process inside it, so an
+  // adapter calling it would hold the event loop and stop the budget timer that
+  // bounds the run — no adapter can fix that from its own side (PB-16.2). The
+  // resolve therefore happens here, once per binary, before anything races.
+  //
+  // Mutation probe: take the resolve out of the preflight and hand the adapters the
+  // host instead — `calls` comes back empty and this reddens.
+  const host = sandboxHost();
+  const calls = [];
+  const seen = [];
+  const resolving = {
+    ...host,
+    resolveToolBin(name) {
+      calls.push(name);
+      return { ok: true, bin: path.join(host.dir, name), version: '1.2.3' };
+    },
+  };
+  const snapshot = await preflight({
+    host: resolving,
+    harnesses: ['alpha', 'beta'],
+    adapterFor: adapterMap({
+      alpha: toolStub('alpha-bin', { seen }),
+      beta: toolStub('beta-bin', { seen }),
+    }),
+    budgetMs: 5_000,
+  });
+  assert.deepEqual(calls, ['alpha-bin', 'beta-bin'], 'one resolve per declared binary, and no probe asked again');
+  assert.deepEqual(seen.map((s) => s.toolBin?.bin),
+    [path.join(host.dir, 'alpha-bin'), path.join(host.dir, 'beta-bin')]);
+  assert.equal(seen[0].toolBin.version, '1.2.3', 'the whole HostToolBin travels, version included');
+  assert.equal(snapshot.harnesses.alpha.reason, 'quota_unknown');
+});
+
+test('a binary two harnesses name is resolved once, not once per adapter', async () => {
+  // A host resolve can cost seconds — this package's own Cursor driver says its
+  // host asks `--version` with a 15 s ceiling — so the answer is memoised by tool
+  // name. Blocking the loop for a second is what that costs, and the check is that
+  // the run pays it once rather than once per adapter.
+  //
+  // Mutation probe: drop the `byTool` memo and this pays 1 s three times.
+  const host = sandboxHost();
+  const calls = [];
+  const blocking = {
+    ...host,
+    resolveToolBin(name) {
+      calls.push(name);
+      // Spun rather than awaited on purpose: this is what a synchronous
+      // `spawnSync` inside a host's resolve costs the event loop.
+      const until = Date.now() + 1000;
+      while (Date.now() < until) { /* held, exactly as spawnSync holds it */ }
+      return { ok: true, bin: path.join(host.dir, name) };
+    },
+  };
+  const started = Date.now();
+  const snapshot = await preflight({
+    host: blocking,
+    harnesses: ['one', 'two', 'three'],
+    adapterFor: adapterMap({
+      one: toolStub('shared-bin'), two: toolStub('shared-bin'), three: toolStub('shared-bin'),
+    }),
+    budgetMs: 10_000,
+  });
+  const elapsed = Date.now() - started;
+  assert.deepEqual(calls, ['shared-bin'], 'three adapters, one binary, one resolve');
+  assert.ok(elapsed < 2_000, `three adapters paid the 1 s resolve ${elapsed} ms worth of times`);
+  for (const harness of ['one', 'two', 'three']) {
+    assert.equal(snapshot.harnesses[harness].reason, 'quota_unknown', harness);
+  }
+});
+
+test('a resolve that spends the budget stops the run, and the harness it never reached says so', async () => {
+  // The resolve is paid under the same deadline as the probes, because it is the
+  // half nothing else bounds. Three binaries at 400 ms of blocked loop each against
+  // a 500 ms budget: the first two are resolved — the second one overshoots, since
+  // nothing interrupts a synchronous call — and the third is never asked at all.
+  //
+  // It is reported rather than waited for, and it is reported as a resolve: an
+  // adapter that missed the budget is a slow harness, a resolve that missed it is a
+  // slow HOST, and the person would look in different places.
+  //
+  // Mutation probe: drop the deadline check from `resolveBins` and all three
+  // binaries are resolved — `calls` grows and the third harness answers a verdict
+  // instead of saying it was never asked.
+  const host = sandboxHost();
+  const calls = [];
+  const blocking = {
+    ...host,
+    resolveToolBin(name) {
+      calls.push(name);
+      const until = Date.now() + 400;
+      while (Date.now() < until) { /* held */ }
+      return { ok: true, bin: path.join(host.dir, name) };
+    },
+  };
+  const started = Date.now();
+  const snapshot = await preflight({
+    host: blocking,
+    harnesses: ['alpha', 'beta', 'gamma'],
+    adapterFor: adapterMap({
+      alpha: toolStub('alpha-bin'), beta: toolStub('beta-bin'), gamma: toolStub('gamma-bin'),
+    }),
+    budgetMs: 500,
+  });
+  const elapsed = Date.now() - started;
+  assert.deepEqual(calls, ['alpha-bin', 'beta-bin'], 'the third binary was never resolved');
+  assert.equal(snapshot.harnesses.gamma.state, 'unknown');
+  assert.equal(snapshot.harnesses.gamma.reason, 'probe_timeout');
+  assert.match(snapshot.harnesses.gamma.message, /resolving harness binaries/);
+  // The two that were resolved still answered: a budget spent on the tail does not
+  // throw away the head.
+  assert.equal(snapshot.harnesses.alpha.reason, 'quota_unknown');
+  assert.equal(validates(snapshot), true);
+  // A loose guard beside the deterministic assertions above: the run may outlive
+  // its budget by the one resolve already in flight, and by no more.
+  assert.ok(elapsed < 2_000, `the run took ${elapsed} ms on a 500 ms budget with 400 ms resolves`);
+});
+
+test('a host that throws while resolving is not a crash: the adapter is asked with no binary', async () => {
+  // The host is somebody else's implementation. A throw from it must not take the
+  // command down, and it must not become a verdict here either: what a missing
+  // binary means is the adapter's sentence to write, so `null` travels and the
+  // adapter answers.
+  const host = sandboxHost();
+  const seen = [];
+  const throwing = { ...host, resolveToolBin: () => { throw new Error('the host blew up'); } };
+  const snapshot = await preflight({
+    host: throwing,
+    harnesses: ['alpha'],
+    adapterFor: adapterMap({ alpha: toolStub('alpha-bin', { seen }) }),
+    budgetMs: 5_000,
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].toolBin, null);
+  assert.equal(snapshot.harnesses.alpha.reason, 'quota_unknown');
+  assert.ok(!snapshot.harnesses.alpha.message.includes('blew up'), 'the host text must not travel');
 });
 
 test('an adapter that throws, and one that answers outside the contract, are both probe_failed', async () => {

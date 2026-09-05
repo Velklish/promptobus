@@ -125,6 +125,34 @@ export function answeringStub(verdict, count = null) {
   };
 }
 
+/**
+ * Declares a binary and records what it was handed. The seam for the checks about
+ * WHERE the binary is resolved: an adapter names its `tool`, the preflight resolves
+ * it once before the race, and the answer arrives as `ProbeRequest.toolBin`. A stub
+ * that did not declare one is handed `null` — which is what every stub above is.
+ *
+ * `delayMs` answers late; the timer is unref'd, so a stub the budget outran must not
+ * keep the run alive after it.
+ */
+export function toolStub(tool, { seen = null, delayMs = 0 } = {}) {
+  return {
+    tool,
+    probe(request) {
+      if (seen) seen.push({ tool, toolBin: request.toolBin, timeoutMs: request.timeoutMs });
+      const answer = {
+        state: 'unknown',
+        reason: 'quota_unknown',
+        message: 'stand-in; the binary came from the request',
+        checkedAt: new Date().toISOString(),
+        source: 'probe',
+        resetAt: null,
+      };
+      if (!delayMs) return answer;
+      return new Promise((resolve) => { setTimeout(() => resolve(answer), delayMs).unref(); });
+    },
+  };
+}
+
 /** Maps a harness name to its stub — the `adapterFor` the preflight takes. */
 export function adapterMap(stubs) {
   return (harness) => {

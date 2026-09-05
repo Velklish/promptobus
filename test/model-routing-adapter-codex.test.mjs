@@ -65,7 +65,19 @@ async function probe({ flags = '', limit = false, timeoutMs = 10_000, using = ho
   process.env[PROBE_VAR] = ['stderr', ...(flags ? flags.split(',') : [])].join(',');
   if (limit) process.env[LIMIT_VAR] = '1';
   try {
-    return await codexDriver.availability.probe({ host: using, timeoutMs, refresh: false });
+    // Called the way the preflight calls it: the binary is resolved ONCE, before the
+    // probe, and travels in the request ([preflight.js](../lib/model-routing/preflight.js)).
+    // A host with no `resolveToolBin`, or one whose call throws, is `null` there —
+    // the same reading the preflight applies, so what the checks below see is what
+    // a real run would hand this adapter.
+    const adapter = codexDriver.availability;
+    let toolBin = null;
+    try {
+      if (typeof using?.resolveToolBin === 'function') toolBin = using.resolveToolBin(adapter.tool);
+    } catch {
+      toolBin = null;
+    }
+    return await adapter.probe({ host: using, toolBin, timeoutMs, refresh: false });
   } finally {
     delete process.env[PROBE_VAR];
     delete process.env[LIMIT_VAR];
@@ -190,10 +202,13 @@ test('a host that says ok about a binary that is not there answers, and does not
   assert.match(verdict.message, /could not be started/);
 });
 
-test('a host that throws is answered with a verdict, not with a throw', async () => {
-  // The contract's channel is a verdict. A thrown error reaches the preflight as
-  // `probe_failed` with its text discarded — and the text is the one thing a
-  // person would have wanted, so the adapter writes its own.
+test('a binary the preflight could not resolve is answered with a verdict, not with a throw', async () => {
+  // The adapter no longer resolves anything itself: a synchronous `resolveToolBin`
+  // holds the event loop, so the preflight makes that call once, before the race,
+  // and a host with no method — or one whose call threw — arrives here as `null`.
+  // The contract's channel is still a verdict, and the text is the adapter's own:
+  // the host's would be the one thing a person wanted and the one thing that must
+  // not travel into the field that reaches disk.
   const verdict = await probe({
     using: { resolveToolBin: () => { throw new Error('the host blew up'); } },
   });
@@ -301,6 +316,31 @@ test('an app-server that never answers ends on the budget as unknown / probe_tim
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'probe_timeout');
   assert.ok(spent < 10_000, `the probe held ${spent} ms past a 400 ms budget`);
+});
+
+test('the probe does not block the event loop, so the preflight budget can still fire', async () => {
+  // The contract says a probe must not hold the event loop, and the preflight holds
+  // ONE budget for every adapter as a timer racing their promises: an adapter that
+  // blocked would stop that timer while it worked, and the ceiling of the run would
+  // become the sum of the blocking adapters instead of one budget. What is asserted
+  // is not this probe's duration but that OTHER work ran while it was in flight.
+  //
+  // Mutation probe: make the app-server exchange synchronous and this goes red
+  // while every other check in the file stays green.
+  // Counted rather than timed: the file runs in the pool, and a threshold in
+  // milliseconds would measure the machine's neighbours. A blocked loop fires a
+  // 20 ms interval once, however long the block — node coalesces the periods it
+  // missed into a single callback — while a probe that yields lets it tick on every
+  // turn. Five is a fifth of what an unloaded run counts here.
+  const started = Date.now();
+  let ticks = 0;
+  const beat = setInterval(() => { ticks += 1; }, 20);
+  const verdict = await probe();
+  clearInterval(beat);
+  const took = Date.now() - started;
+  assert.equal(verdict.state, 'available', verdict.message);
+  assert.ok(took > 150, `app-server answered in ${took} ms — too fast to prove anything`);
+  assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${took} ms probe ran`);
 });
 
 test('the stderr line a healthy app-server writes is never a verdict', async () => {
