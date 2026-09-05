@@ -37,9 +37,10 @@ test/model-routing.test.mjs:330         (a path substitution in a golden compari
 Four hits, all of them assertions about the paths a host answers — none of them
 about a package module computing a home path at load time.
 
-The audit's link checker does not reach this: it follows markdown-style `](…)`
-links (`scripts/audit-public.mjs`, the `LINK` pattern), and a bare filename in
-prose is not one. So the citation can name anything.
+The audit's link checker does not reach this: it follows markdown inline links — a
+bracketed label with a parenthesised target (`scripts/audit-public.mjs`, the `LINK`
+pattern) — and a bare filename in prose is not one. So the citation can name
+anything.
 
 Why it matters rather than being a stale comment. PB-2.2 made
 [test/home.mjs](../../../test/home.mjs) the one apply point of the home diversion
