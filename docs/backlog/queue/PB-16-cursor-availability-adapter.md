@@ -20,6 +20,12 @@ Cursor's `agent` CLI has `agent status` (auth) and `agent models` (inventory wit
 
 - `cursor-agent status` → `✓ Logged in as <account>`, exit 0. `cursor-agent models` (also `--list-models`) → exit 0, plain text `<id> - <Display Name>` lines, ANSI-coloured, first line `Available models`, `auto - Auto (default)` first; about 210 concrete ids with effort as a flat suffix (`claude-opus-5-thinking-max`, `cursor-grok-4.6-xhigh-fast`). Strip ANSI before parsing; no descriptions.
 
+## Contract rules from PB-14 (2026-09-05)
+
+- The adapter contract is `src/model-routing.ts`; `verdictOf` in `lib/model-routing/preflight.js` refuses a verdict whose `state`, `reason` or `source` is outside the closed lists, whose `checkedAt` is unreadable, or whose `reason` is null on a non-available state — and a non-null reason on `available` is a breach too.
+- Answer with a verdict, never throw: a thrown error becomes `probe_failed` and its text is discarded (the merged finding PB-14.2 — the verdict `message` is the person's only diagnostic channel). Never put harness output verbatim into `message`.
+- `timeoutMs` is the whole preflight budget; do not fill `rated`; report no `windows` where no stable limit source exists; garbled `models`/`windows` elements are dropped by the projection, not repaired.
+
 ## Out of scope
 
 - Liveness of a running Cursor participant — PB-7.

@@ -22,6 +22,12 @@ The Claude Code driver (`lib/driver-claude.js`) starts a participant but knows n
 - There is no non-interactive model listing: `claude --help` has no `models` subcommand and no `--list-models` (`claude --list-models` → `error: unknown option`, exit 1). Do not run `claude models` / `claude model list` as a probe: an unknown word is taken as a prompt and starts a turn.
 - The only model names the binary publishes are in the `--model` help text (aliases `fable`, `opus`, `sonnet`, full names like `claude-fable-5`); effort levels come from `claude --effort <level>` help (low, medium, high, xhigh, max; `ultracode` is driver-only). Inventory therefore rests on the driver's alias set plus `DEFAULT_MODEL`, not on a listing.
 
+## Contract rules from PB-14 (2026-09-05)
+
+- The adapter contract is `src/model-routing.ts`; `verdictOf` in `lib/model-routing/preflight.js` refuses a verdict whose `state`, `reason` or `source` is outside the closed lists, whose `checkedAt` is unreadable, or whose `reason` is null on a non-available state — and a non-null reason on `available` is a breach too.
+- Answer with a verdict, never throw: a thrown error becomes `probe_failed` and its text is discarded (the merged finding PB-14.2 — the verdict `message` is the person's only diagnostic channel). Never put harness output verbatim into `message`.
+- `timeoutMs` is the whole preflight budget; do not fill `rated`; report no `windows` where no stable limit source exists; garbled `models`/`windows` elements are dropped by the projection, not repaired.
+
 ## Out of scope
 
 - Cursor and Codex — PB-16, PB-17.
