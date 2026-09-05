@@ -7,7 +7,7 @@
 
 ## Context
 
-ADR-003 merges overlay lists by replacement per selector kind: a higher layer's `deny.tuples` replaces a lower one's. The first consumer measured the cost (its BL-545.1): to make its policy bans hold it had to sit on top of the person's workspace file and erase the person's own `deny.tuples`; rules by role ("the reviewer never runs here") and by model flag (`no-zdr` in the Cursor inventory) could not be written at all. ADR-004 decision 5 changes the merge to union and adds the two selectors.
+ADR-003 merges overlay lists by replacement per selector kind: a higher layer's `deny.tuples` replaces a lower one's. The first consumer measured the cost (a finding in its own tracker): to make its policy bans hold it had to sit on top of the person's workspace file and erase the person's own `deny.tuples`; rules by role ("the reviewer never runs here") and by model flag (`no-zdr` in the Cursor inventory) could not be written at all. ADR-004 decision 5 changes the merge to union and adds the two selectors.
 
 ## Work to do
 

@@ -15,7 +15,7 @@ ADR-003 built routing as scoring by rating with availability as a filter, and it
 - **Codex** — `account/read` → `planType: "plus"`; `account/rateLimits/read` (already used) also carries `planType`, `credits`, `spendControlReached`, `rateLimitResetCredits.availableCount`; `model/list` marks hidden rows (`gpt-reserve`, `codex-auto-review`) and lists `ultra` among efforts and `fast` among `additionalSpeedTiers`.
 - **Cursor** — the keychain item `cursor-access-token`; `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` (Connect protocol, JSON, `connect-protocol-version: 1`) returns **one monthly window with two pools**: `planUsage.autoPercentUsed` for Cursor's own models (`autoBucketModels`: composer, cursor-grok, vega) and `planUsage.apiPercentUsed` for named third-party models, plus `billingCycleStart/End`, `includedSpend`/`limit` in cents (7000 on this plan), `bonusSpend`. No method names the plan; the included amount is the tier proxy.
 
-The current catalog (`models/catalog.json`) was an initial assessment by description, lists Cursor rows for models that Claude Code and Codex already serve, and has no `fable`. The overlay merge replaces lists by selector kind, so a consumer policy can only stand by sitting on top and erasing the person's own `deny.tuples` (BL-545.1 in the first consumer's tracker).
+The current catalog (`models/catalog.json`) was an initial assessment by description, lists Cursor rows for models that Claude Code and Codex already serve, and has no `fable`. The overlay merge replaces lists by selector kind, so a consumer policy can only stand by sitting on top and erasing the person's own `deny.tuples` (a finding the first consumer filed in its own tracker).
 
 ## Work to do
 
