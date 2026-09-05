@@ -17,7 +17,7 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 - `promptobus status` prints strategy, tuple, snapshot age and warnings for each routed participant.
 - `promptobus models` (text and `--json`, `--strategy`, `--role`, `--refresh`), `models validate` (PB-13), `models --clear-exhausted <harness>` (PB-14).
 - `--help`: the `models` line and `--strategy` / `--allow-payg` on `spawn` and `review`, turning PB-12's pending help check green; routing error codes registered in `ERROR_CODES` (`src/v1/errors.ts`) so the reference-vs-enum drift check covers them.
-- `--dry-run` on `spawn`, `review` and `models`: reads the cache only, prints the decision with the snapshot age and a `stale_cache` warning when due, writes neither cache nor task state; live probes only with `--refresh`, and `--refresh --dry-run` still writes nothing (owner's decision 2026-09-05).
+- `--dry-run` on `spawn` and `review` only: reads the cache, prints the decision with the snapshot age and a `stale_cache` warning when due, writes neither cache nor task state; live probes only with `--refresh`, and `--refresh --dry-run` still writes nothing (owner's decision 2026-09-05). `models` has no `--dry-run`: it reads the cache by default and probes (and writes) only under `--refresh` (orchestrator, resolving PB-19.1).
 
 ## Notes from PB-18 (2026-09-05)
 
