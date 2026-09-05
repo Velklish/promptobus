@@ -166,7 +166,7 @@ const plan = await planSpawn(WS, opts);
 const SESSION_ID = 'sess-0001';
 claudeSays([{ id: SESSION_ID, name: plan.name, state: 'working', pid: 4242 }]);
 
-await quiet(() => spawnWorker(WS, opts));
+const lifted = await capture(() => spawnWorker(WS, opts));
 
 // Mechanism fields live in the v1 record `metadata`: the adapter writes them and
 // reads them.
@@ -217,6 +217,61 @@ check(': started — lift time in ISO', typeof written?.started === 'string'
 check(': the record agrees with git — the worktree directory is on the recorded branch',
   spawnSync('git', ['-C', written.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' })
     .stdout.trim() === written.branch);
+
+// --- : the brief stays with the task ------------------------------------------------
+//
+// The file `--brief` names belongs to the orchestrator and is temporary; the assignment
+// itself is the one document that explains a branch months later. After the lift the bus
+// holds its own copy in the task files folder, next to the review diffs, and the lift
+// output names the path — otherwise a person reading the journal has the diff and not
+// what it was made by.
+const briefKept = path.join(store.filesDir(HOME, TASK), 'brief-cargos-api.md');
+check(': the brief is kept in the task files, and the text is the one that was passed',
+  existsSync(briefKept)
+  && readFileSync(briefKept, 'utf8').trim() === readFileSync(BRIEF, 'utf8').trim(),
+  existsSync(briefKept) ? readFileSync(briefKept, 'utf8') : `${briefKept} does not exist`);
+check(': the lift output names the path the brief landed at',
+  lifted.includes(briefKept), lifted.split('\n').filter((l) => /brief/.test(l)).join(' | '));
+
+// The copy is made when the worker is ALREADY up, and it is the last thing spawn does:
+// after the warden. A write refusal there must not end the command with a running
+// session, no report and no route back — what is lost is a copy, the orchestrator still
+// holds the file it passed. `chmod` is the only way to refuse the write, and on Windows
+// a read-only directory does not stop one — there the case is unreachable, not skipped
+// silently.
+if (process.platform !== 'win32') {
+  const RO_TASK = 'readonly-t20260902-110000';
+  store.createTask(HOME, {
+    id: RO_TASK, title: 'a files folder that cannot be written', slug: 'readonly', stamp: 't20260902-110000',
+  });
+  const roOpts = { repo: 'cargos-api', brief: BRIEF, task: RO_TASK, worker: 'kept' };
+  const roPlan = await planSpawn(WS, roOpts);
+  claudeSays([{ id: 'sess-ro', name: roPlan.name, state: 'working', pid: 4711 }]);
+  resetCliCaches();
+  const roFiles = store.filesDir(HOME, RO_TASK);
+  chmodSync(roFiles, 0o500);
+  let roText = '';
+  let roThrew = '';
+  try {
+    roText = await capture(() => spawnWorker(WS, roOpts));
+  } catch (e) {
+    roThrew = e.message;
+  } finally {
+    chmodSync(roFiles, 0o700);
+  }
+  check(': a files folder that cannot be written costs the brief, not the lift',
+    !roThrew && /the brief was not kept: /.test(roText)
+    && /the participant is up, spawn is not rolled back for this/.test(roText),
+    roThrew || roText.split('\n').filter((l) => /brief/.test(l)).join(' | ') || roText);
+  // The warden stands BEFORE the copy, and the driver's liftoff line AFTER it: the line
+  // being printed is the proof the tail of the command ran past the failed write, rather
+  // than the process leaving through the throw.
+  check(': after the failed copy the command runs to the end — the warden and the liftoff line are past it',
+    roText.includes('backgrounded') && !existsSync(path.join(roFiles, 'brief-kept.md')),
+    roText.split('\n').slice(-4).join(' | '));
+  resetCliCaches();
+  claudeSays([{ id: SESSION_ID, name: plan.name, state: 'working', pid: 4242 }]);
+}
 
 
 // --- : participant mcp-config permissions --------------------------------------
@@ -749,6 +804,13 @@ check(': the refusal names the route — repeat the same command',
 const failedWt = afterFail?.worktree;
 check(`: the worktree directory of the failed spawn stayed on disk`,
   !!failedWt && existsSync(failedWt), String(failedWt));
+// The brief is the mirror image of the record: the participant is written BEFORE the
+// launch so a repeat sits in its own directory, and the brief is kept AFTER it — an
+// assignment of a worker that never came up explains nothing and would be read as one
+// somebody is working by.
+const failedFiles = readdirSync(store.filesDir(HOME, FAIL_TASK)).filter((n) => n.startsWith('brief-'));
+check(': a refused spawn keeps no brief — the copy is made after the lift, not before it',
+  failedFiles.length === 0, failedFiles.join(', '));
 // A refusal here is not a test crash, it is a found trouble: without a journal
 // record planSpawn throws "the name collided with a foreign one", and the check
 // must name that, not take the process away.
@@ -906,6 +968,17 @@ check(': sessionRef is rewritten together with the name — participants are loo
 check(`: the task title is recalculated from participant lines on a repeat spawn too`,
   store.readTask(HOME, TASK453).title === TITLE_NEW_STORED,
   store.readTask(HOME, TASK453).title);
+// A repeat lift at the same address is a NEW assignment, and the previous one is the
+// only record of what the previous session worked by: the copy takes the next number
+// instead of overwriting. Both files are read, not just counted — an overwrite would
+// leave one file of the right name with the wrong text.
+const briefFirst = path.join(store.filesDir(HOME, TASK453), 'brief-store.md');
+const briefSecond = path.join(store.filesDir(HOME, TASK453), 'brief-store-2.md');
+check(': a repeat spawn with another brief keeps both — the previous one is not overwritten',
+  existsSync(briefFirst) && existsSync(briefSecond)
+  && readFileSync(briefFirst, 'utf8').trim() === readFileSync(BRIEF_OLD, 'utf8').trim()
+  && readFileSync(briefSecond, 'utf8').trim() === readFileSync(BRIEF_NEW, 'utf8').trim(),
+  readdirSync(store.filesDir(HOME, TASK453)).join(', '));
 // The `--dry-run` promise and the live run must match: the plan is printed to a
 // person before lift, and if they drifted a dry run would check not what will
 // be lifted.

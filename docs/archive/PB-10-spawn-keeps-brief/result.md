@@ -1,0 +1,5 @@
+# PB-10 · Result
+
+**Closed 2026-09-05.** Done — worker `brief` (Claude Opus 5, effort high), reviewer Claude Opus 5 xhigh (five notes, all closed); accepted by the orchestrator.
+
+`spawn` keeps the brief it was given under the task's `files/` as `brief-<worker>.md`; every lift stores its own copy, a repeat at the same address takes the next number and never overwrites; a refused spawn keeps nothing. The copy is the last step of the lift — after the warden — and a failed write costs the brief, not the participant (a warn, never a throw over a live worker). The task files folder owns its numbering (`numberedName`, `occupyTaskFile` in the store); review diffs and bus artifacts go through the same helper. `review` has no counterpart: it composes no assignment text of its own. Verified: six new checks in the spawn suite (kept text, path in the output, refused spawn keeps nothing, repeat keeps both, unwritable folder → warn, tail runs past a failed copy), two mutation probes (store call removed → 4 red; try/catch dropped → the two order checks red), 38/38 test files, publicity audit clean. Released as v0.2.1.

@@ -1,6 +1,6 @@
 # Overview
 
-The npm package name is `promptobus`. Version in `package.json` is `0.1.0`. License is MIT. Node.js `>=20`.
+The npm package name is `promptobus`. Version in `package.json` is `0.2.1`. License is MIT. Node.js `>=20`.
 
 ## Entry points
 
@@ -32,7 +32,10 @@ Layout of one task:
   history/<participant-id>/
   blobs/
   artifacts/
+  files/
 ```
+
+`files/` is the folder a person opens, and it holds two kinds of file: artifacts that arrived through the bus — hard links to their blobs under the names they came with — and what the mechanism puts there itself, the `review` diff (`review-<worker>.diff`) and the `spawn` brief (`brief-<worker>.md`). A taken name is never overwritten: the next file of that stem takes the following number (`brief-<worker>-2.md`).
 
 Sidecar files the CLI writes (warden, wake, health, worker catalogs) sit in the same task directory. The engine API does not own them.
 

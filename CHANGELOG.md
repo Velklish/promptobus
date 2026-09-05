@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-09-05
+
+### Changed
+
+- **`spawn` keeps the brief as a task artifact.** The assignment file the orchestrator passes was read into the participant prompt and forgotten, so orchestrators invented a home for brief files outside the bus. After a successful lift the brief is copied into the task files folder as `brief-<worker>.md` — next to the review diffs — and the lift output names the path. Every lift stores the brief it was given: a repeat at the same address takes the next number instead of overwriting the previous assignment, and a refused spawn keeps nothing (PB-10).
+
 ## [0.2.0] — 2026-09-05
 
 ### Changed
