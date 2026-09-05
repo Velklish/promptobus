@@ -33,7 +33,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { CATALOG_FILE, mergeRouting } from '../lib/model-routing/catalog.js';
 import { NEUTRAL_REMAINING_PERCENT, resolve } from '../lib/model-routing/resolver.js';
-import { render } from '../lib/model-routing/render.js';
+import { render, RUNTIME_ROWS_PER_HARNESS } from '../lib/model-routing/render.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -723,4 +723,22 @@ test('render names the field a document is missing rather than failing halfway d
 test('an unknown strategy or role is refused before anything is scored', () => {
   assert.throws(() => decide({ strategy: 'auto' }), /unknown strategy "auto"/);
   assert.throws(() => decide({ role: 'orchestrator' }), /unknown role "orchestrator"/);
+});
+
+
+test('the text form caps the unrated rows per harness and counts the rest; the document keeps every row', () => {
+  // PB-20.1: an account that lists two hundred models the catalog does not rate
+  // would push the decision and the warnings to the two ends of a page. The cap
+  // is the text form's alone — `--json` is the contract and keeps every row.
+  const many = Array.from({ length: RUNTIME_ROWS_PER_HARNESS + 4 }, (_, i) => `example / unrated-${i}`);
+  const snapshot = structuredClone(SNAPSHOT);
+  snapshot.harnesses.example.models = [...snapshot.harnesses.example.models,
+    ...many.map((m) => ({ model: m.split(' / ')[1], rated: false }))];
+  const decision = decide({ snapshot });
+  const printed = decision.runtime.filter((r) => r.harness === 'example').length;
+  assert.ok(printed >= RUNTIME_ROWS_PER_HARNESS + 4, `the document carries ${printed} example rows`);
+  const text = render(decision);
+  const rows = text.split('\n').filter((l) => /^    example \/ /.test(l));
+  assert.equal(rows.length, RUNTIME_ROWS_PER_HARNESS, text);
+  assert.match(text, new RegExp(`^    example: … and ${printed - RUNTIME_ROWS_PER_HARNESS} more — every row is in --json$`, 'm'));
 });

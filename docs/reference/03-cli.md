@@ -69,7 +69,7 @@ promptobus spawn  … [--strategy <quality|balanced|speed|economy>] [--allow-pay
 promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-payg] [--refresh]
 ```
 
-`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--strategy` defaults to `balanced` and `--role` to `worker`.
+`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--strategy` defaults to `balanced` and `--role` to `worker`. The text form prints at most eight unrated rows per harness and counts the rest (`… and N more`); `--json` carries every row, so the two outputs cannot drift.
 
 **`models` has no `--dry-run`, because it is one.** It reads the availability cache and asks no harness anything; `--refresh` is the only flag that makes it probe, and therefore the only one that writes a cache entry. The reason is the ADR's: this is the command a person types to ask a question, and a question that starts three harness binaries and waits out the preflight budget is not one. `--dry-run` belongs to `spawn` and `review`, where the alternative to a dry run is a lift.
 
