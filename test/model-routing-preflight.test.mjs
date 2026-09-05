@@ -19,7 +19,10 @@
 // replace the closed-shape projection with a spread and the fake token appears on
 // disk.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -28,7 +31,8 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
-  AUTH_TTL_MS, CACHE_MODE, NEVER_CHECKED, TRANSIENT_TTL_MS, WINDOW_TTL_MS,
+  AUTH_TTL_MS, CACHE_MODE, LOCK_STALE_MS, LOCK_SUFFIX, LOCK_WAIT_MS, NEVER_CHECKED, TRANSIENT_TTL_MS,
+  WINDOW_TTL_MS,
   clearExhausted, entryLive, isoStamp, markExhausted, readSnapshot, snapshotEntry, stickyExhaustion,
   writeEntries,
 } from '../lib/model-routing/cache.js';
@@ -514,6 +518,85 @@ test('the projection is field-by-field: an undeclared field cannot reach the sna
   assert.equal(JSON.stringify(projected).includes(FAKE_TOKEN), false);
   assert.deepEqual(Object.keys(projected.models[0]).sort(), ['flags', 'model', 'rated']);
   assert.deepEqual(Object.keys(projected.windows[0]).sort(), ['id', 'lengthSec', 'usedPercent']);
+});
+
+// --- two commands writing at once --------------------------------------------
+
+test('a writer waits for a lock somebody else holds, and takes it back when that lock is litter', () => {
+  // The write is already a temp-file-plus-rename, so nobody ever reads half a
+  // document. What the rename cannot do is make the READ-merge-write one step: two
+  // commands probing at once both read the same document and the second rename
+  // wins, and the loser's entries are gone. The lock is what makes those three one
+  // step, and this is the check that the writer respects one it did not take.
+  //
+  // Mutation probe: take `withCacheLock` out of `writeEntries` and the wait is 0 ms.
+  const host = sandboxHost();
+  const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
+  mkdirSync(path.dirname(host.cacheFile), { recursive: true });
+  writeFileSync(lock, '');
+  // Held by somebody alive: the writer waits it out rather than walking through it.
+  const started = Date.now();
+  writeEntries(host, { held: entry() });
+  const waited = Date.now() - started;
+  assert.ok(waited >= LOCK_WAIT_MS - 100, `the writer waited ${waited} ms for a lock it did not take`);
+  // And it writes anyway: a cache that refused to write because a neighbour is slow
+  // would lose the entries the lock exists to keep.
+  assert.equal(readSnapshot(host).harnesses.held.state, 'available');
+  // The lock it did not take is not removed by it either.
+  assert.equal(existsSync(lock), true, 'a lock the writer never took must not be cleared by it');
+
+  // A lock older than the ceiling is a process that died between its read and its
+  // rename. Waiting the full ceiling for it on every command afterwards would be a
+  // permanent tax for a crash that happened once.
+  utimesSync(lock, new Date(Date.now() - LOCK_STALE_MS - 1000), new Date(Date.now() - LOCK_STALE_MS - 1000));
+  const again = Date.now();
+  writeEntries(host, { fresh: entry() });
+  assert.ok(Date.now() - again < LOCK_WAIT_MS / 2, 'a stale lock was waited out instead of broken');
+  assert.equal(readSnapshot(host).harnesses.fresh.state, 'available');
+  assert.equal(existsSync(lock), false, 'the lock it broke and took is released again');
+});
+
+test('four preflights writing at once all land, each with its own harness', async () => {
+  // The failure this closes: `spawn` and `models --refresh` in another terminal
+  // both read the same document, both merge their own harness into it, and the
+  // second rename wins. One process cannot reproduce it — the race is between
+  // processes — so four are started and told to write at the same instant.
+  //
+  // Mutation probe: take `withCacheLock` out of `writeEntries` and at least one
+  // harness is missing from the file. That probe is a race and not a certainty,
+  // which is why four writers are used rather than two.
+  const host = sandboxHost();
+  const script = path.join(host.dir, 'writer.mjs');
+  writeFileSync(script, `
+import { preflight } from ${JSON.stringify(path.join(ROOT, 'lib', 'model-routing', 'preflight.js'))};
+const [cacheFile, harness, startAt] = process.argv.slice(2);
+const host = { routingPaths: () => ({ cacheFile, overlays: [] }) };
+const probe = () => ({
+  state: 'available', reason: null, message: 'concurrent stand-in',
+  checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+});
+// Slept off first and spun only at the very end: four processes spinning for a
+// second would starve the machine the suite shares and measure that instead.
+const left = Number(startAt) - Date.now() - 20;
+if (left > 0) await new Promise((r) => { setTimeout(r, left); });
+while (Date.now() < Number(startAt)) { /* line up on one instant */ }
+await preflight({ host, harnesses: [harness], adapterFor: () => ({ probe }), budgetMs: 2000 });
+`);
+  const names = ['alpha', 'beta', 'gamma', 'delta'];
+  // Far enough ahead that every child is up and spinning before any of them writes.
+  const startAt = Date.now() + 1500;
+  const runs = names.map((name) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, host.cacheFile, name, String(startAt)], { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${name} exited ${code}`))));
+  }));
+  await Promise.all(runs);
+
+  const stored = readSnapshot(host);
+  assert.deepEqual(Object.keys(stored.harnesses).sort(), names.slice().sort(),
+    'a writer lost its entry to a neighbour that renamed second');
+  assert.equal(validates(stored), true);
+  assert.equal(existsSync(`${host.cacheFile}${LOCK_SUFFIX}`), false, 'the last writer left its lock behind');
 });
 
 // --- the TTLs ----------------------------------------------------------------
