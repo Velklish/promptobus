@@ -28,6 +28,12 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | harnesses field | harnesses | Array in `promptobus.json` written by `promptobus install`: the last installed hook list. Not the same as `tools`. | [guides/install.md](guides/install.md) |
 | claim | claim | Take ownership of the orchestrator mailbox after the previous session dies. | `src/mcp/tools.ts` (`claim`) |
 | store | store | On-disk home of tasks, usually `<workspace>/.promptobus`. | `src/v1/layout.ts` (`ROOT_DIR`) |
+| strategy | strategy | Named priority of quality, speed and subscription spend a routed run is picked by: `quality`, `balanced`, `speed`, `economy`. `auto` is a skill decision, never a CLI value. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| model catalog | model catalog | The maintainers' rating of tuples, shipped with the package. Only rated tuples enter automatic selection. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| tuple | tuple | The unit of the catalog and of a routing decision: `role + harness + model + effort`, with a stable id. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| availability snapshot | availability snapshot | What the local account can run right now, per harness: state `available`, `exhausted`, `unavailable` or `unknown` with a reason code and `checkedAt`. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| subscription limit | subscription limit | The remaining allowance of a harness account in its own windows. Unknown is a state, not zero: it is penalised, never blocking. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| overlay | overlay | A JSON layer above the catalog that changes weights, ratings, allow/deny rules or PAYG policy. The host names the layers and their order. | `src/host.ts` (`routingPaths`) |
 
 ## Retired terms
 

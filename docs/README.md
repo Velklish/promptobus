@@ -15,6 +15,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [archive/](archive/README.md) | Closed tasks: task definition and result in separate files | Living |
 | [adr/adr-001-process.md](adr/adr-001-process.md) | Tasks and decisions are managed with backslop | Accepted |
 | [adr/adr-002-standalone-host-contract.md](adr/adr-002-standalone-host-contract.md) | The bus does not know the workspace; the caller passes a host | Accepted |
+| [adr/adr-003-model-routing.md](adr/adr-003-model-routing.md) | Model routing: strategies, catalog, availability snapshot, resolver | Accepted |
 
 ## Cross-cutting principles
 

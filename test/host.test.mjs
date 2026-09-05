@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
@@ -77,6 +77,51 @@ test('createStandaloneHost lifts two independent hosts in one process', async ()
   assert.equal(a.formatNpx(['clone', 'x']), 'npx alpha clone x');
   assert.equal(a.installManifestRel(), path.join('.promptobus', 'manifest.json'));
   assert.equal(a.promptobusHome(), path.join(dirA, '.promptobus'));
+});
+
+test('the routing types leave the package through both entry points', () => {
+  // A type declared in `src/host.ts` and forgotten in an entry point is invisible
+  // to `tsc` — the interface compiles, the package builds, and only a consumer
+  // writing `import type { … } from 'promptobus/host'` finds out. That is the
+  // same shape of drift the `bin` field of HostToolBin carries a comment about.
+  // Checked on the emitted declarations, not the source: the entry point's job
+  // is what reaches `dist/`.
+  for (const entry of ['host-index.d.ts', 'index.d.ts']) {
+    const text = readFileSync(path.join(ROOT, 'dist', entry), 'utf8');
+    for (const name of ['HostRoutingPaths', 'HostRoutingOverlay']) {
+      assert.match(text, new RegExp(`\\b${name}\\b`), `${entry} does not re-export ${name}`);
+    }
+  }
+});
+
+test('routingPaths keeps the account files out of the per-workspace store', async () => {
+  // Two hosts, two workspace roots, one machine account. The cache and the
+  // `user` overlay must be the SAME file for both — that is what makes the
+  // preflight of the second checkout free — while the `workspace` overlay
+  // follows the root. A routing path that drifted into `promptobusHome()`
+  // would pass every other check in this file and only show up as three
+  // harnesses re-probed per clone.
+  const { createStandaloneHost } = await import('../dist/host-index.js');
+  const dirA = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-a-'));
+  const dirB = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-b-'));
+  process.on('exit', () => {
+    rmSync(dirA, { recursive: true, force: true });
+    rmSync(dirB, { recursive: true, force: true });
+  });
+  const a = createStandaloneHost({ cwd: dirA, commandName: 'alpha' });
+  const b = createStandaloneHost({ cwd: dirB, commandName: 'beta' });
+  const pa = a.routingPaths();
+  const pb = b.routingPaths();
+
+  assert.equal(pa.cacheFile, path.join(homedir(), '.promptobus', 'model-routing', 'cache.json'));
+  assert.equal(pa.cacheFile, pb.cacheFile);
+  assert.equal(pa.cacheFile.startsWith(a.promptobusHome()), false);
+
+  assert.deepEqual(pa.overlays.map((o) => o.id), ['user', 'workspace']);
+  assert.equal(pa.overlays[0].path, path.join(homedir(), '.promptobus', 'model-routing.json'));
+  assert.equal(pa.overlays[0].path, pb.overlays[0].path);
+  assert.equal(pa.overlays[1].path, path.join(dirA, 'model-routing.local.json'));
+  assert.equal(pb.overlays[1].path, path.join(dirB, 'model-routing.local.json'));
 });
 
 test('entry point ./hooks returns a plan without a foreign workspace layout', async () => {

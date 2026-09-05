@@ -4,6 +4,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {
@@ -11,11 +12,20 @@ import {
 } from './host.js';
 import type {
   HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
-  HostServers, HostToolBin, PromptobusHost,
+  HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
   HostClone,
 } from './host.js';
 
 export const HOST_CONFIG = 'promptobus.json';
+
+// Model-routing file names of the standalone host. Names, not a path: the two
+// homes they hang off differ — the user home for what belongs to the account,
+// the workspace root for the person's local exception.
+const ROUTING_HOME = '.promptobus';
+const ROUTING_DIR = 'model-routing';
+const ROUTING_CACHE = 'cache.json';
+const ROUTING_OVERLAY = 'model-routing.json';
+const ROUTING_LOCAL_OVERLAY = 'model-routing.local.json';
 
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_OUTPUT = 32 * 1024 * 1024;
@@ -134,6 +144,18 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       const hit = findConfig(cwd);
       return existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
     },
+    // Routing files of a standalone workspace. The user home carries the cache
+    // and the `user` overlay — they are the account's, and the same account is
+    // reached from every checkout on this machine; the workspace root carries
+    // the local exception. Standalone ships no product policy, so there is no
+    // third layer here: a consumer inserts its own between these two.
+    routingPaths: (): HostRoutingPaths => ({
+      cacheFile: path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR, ROUTING_CACHE),
+      overlays: [
+        { id: 'user', path: path.join(os.homedir(), ROUTING_HOME, ROUTING_OVERLAY) },
+        { id: 'workspace', path: path.join(root, ROUTING_LOCAL_OVERLAY) },
+      ],
+    }),
 
     nodePath: () => nodePath,
     binPath: () => binPath,

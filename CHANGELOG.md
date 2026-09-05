@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **ADR-003 fixes the model-routing contract before any of its code.** Four strategies and their weight table, the catalog unit `role + harness + model + effort`, the overlay layers and their precedence, the four availability states with their reason codes and TTLs, the resolver rules and tie-break, and the rule that no task, worktree or participant is written before a candidate exists. The routing decision lives in participant `metadata`, so the protocol version does not move. Nine tasks build on it; the contract is fixed once instead of re-derived nine times (PB-11).
+
+### Changed
+
+- **Host contract: `PromptobusHost` gains a required `routingPaths()`.** The host names the availability cache and the ordered overlay layers; an existing host implementation must add the method, and `tsc` refuses until it does. Those files are account-scoped, not workspace-scoped, so they do not hang off `promptobusHome()` — a per-store cache would re-probe three harnesses for every checkout of the same account. An ordered list rather than a getter per layer, so a consumer can insert its own policy layer without another change to the interface. No release is cut until the routing series ends, so a consumer meets this once, at the closing tag (PB-11).
+
 ## [0.2.1] — 2026-09-05
 
 ### Changed

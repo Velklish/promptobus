@@ -4,7 +4,7 @@ export {
 } from './host.js';
 export type {
   HostFreshness, HostLegacyLayout, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
-  HostServers, HostToolBin, PromptobusHost,
+  HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
 } from './host.js';
 export { HOST_CONFIG, createStandaloneHost } from './standalone.js';
 export type { StandaloneHostOptions } from './standalone.js';

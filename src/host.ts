@@ -107,6 +107,37 @@ export interface HostLegacyLayout {
   done: string;
 }
 
+/** One model-routing overlay layer: `id` names it in diagnostics, `path` is the file. */
+export interface HostRoutingOverlay {
+  id: string;
+  path: string;
+}
+
+/**
+ * Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
+ * scoped, and that is why they do not come from `promptobusHome()`: that home is
+ * the task store of one workspace, while auth, model inventory and the remaining
+ * subscription limit belong to the account the harness binary is logged into. A
+ * per-store cache would re-probe three harnesses for every checkout of the same
+ * account.
+ *
+ * `overlays` is ordered LOWEST precedence first, and the order is the host's to
+ * choose. One method with a list rather than a getter per layer, because a
+ * consumer will want a layer of its own — its shipped deny lists and defaults —
+ * between the person's user-wide and workspace-local files: with a list that is
+ * a host-side choice, with getters it is another change to this interface and a
+ * repin for every consumer. `id` is what the decision output and `models
+ * validate` name a layer by, so a refusal reads `denied by overlay "workspace"`
+ * and not a path the reader has to place themselves.
+ *
+ * A missing overlay file is normal. The host names paths; it does not promise
+ * they exist.
+ */
+export interface HostRoutingPaths {
+  cacheFile: string;
+  overlays: HostRoutingOverlay[];
+}
+
 export interface PromptobusHost {
   readonly kind: typeof HOST_KIND;
   readonly id: string;
@@ -117,6 +148,12 @@ export interface PromptobusHost {
   workspaceRoot(): string;
   promptobusHome(): string;
   findRoot(cwd: string): string | null;
+  /**
+   * Model-routing files: the availability cache and the overlay layers, lowest
+   * precedence first. See `HostRoutingPaths` — these are account-scoped, and
+   * `promptobusHome()` is not used for routing.
+   */
+  routingPaths(): HostRoutingPaths;
 
   nodePath(): string;
   /** CLI entry this call was lifted with — it is how the participant bus stdio server is declared. */
