@@ -1,5 +1,6 @@
 # PB-4 · The import scanner mistakes a string constant for a specifier and drops the rest of the file
 
+- **Order:** 190
 - **Scope:** [reference/03](../../reference/03-cli.md)
 - **Created:** 2026-09-04
 - **Dependencies:** none

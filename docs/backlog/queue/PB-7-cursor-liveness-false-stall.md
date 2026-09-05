@@ -1,5 +1,6 @@
 # PB-7 · Cursor liveness check declares a stall while the session is editing files
 
+- **Order:** 210
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** none

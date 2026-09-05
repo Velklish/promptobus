@@ -1,5 +1,6 @@
 # PB-9 · Suite check titles and comments are still Russian in an English package
 
+- **Order:** 150
 - **Scope:** [README](../../reference/README.md)
 - **Created:** 2026-09-05
 - **Dependencies:** none

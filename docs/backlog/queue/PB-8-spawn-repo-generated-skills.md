@@ -1,5 +1,6 @@
 # PB-8 · spawn lays out the workspace canon but not the repository's own generated process skills
 
+- **Order:** 220
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** none

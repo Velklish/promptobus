@@ -1,5 +1,6 @@
 # PB-1 · Spawn error points at a tools subcommand that does not exist
 
+- **Order:** 160
 - **Scope:** [reference/03](../../reference/03-cli.md)
 - **Created:** 2026-09-04
 - **Dependencies:** none

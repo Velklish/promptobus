@@ -1,5 +1,6 @@
 # PB-3 · The Codex MCP key prefix is baked into the package, not asked of the host
 
+- **Order:** 180
 - **Scope:** [reference/02](../../reference/02-host.md)
 - **Created:** 2026-09-04
 - **Dependencies:** none
