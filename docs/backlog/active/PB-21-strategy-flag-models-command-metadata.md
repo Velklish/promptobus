@@ -1,9 +1,9 @@
 # PB-21 · --strategy on spawn and review, the models command, and routing metadata on the participant
 
-- **Order:** 90
 - **Scope:** [03-cli](../../reference/03-cli.md), [04-protocol](../../reference/04-protocol.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-18
+- **Taken:** 2026-09-05
 
 ## Context
 
