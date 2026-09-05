@@ -32,7 +32,7 @@ import {
   clearExhausted, entryLive, isoStamp, markExhausted, readSnapshot, snapshotEntry, writeEntries,
 } from '../lib/model-routing/cache.js';
 import { PREFLIGHT_BUDGET_MS, preflight } from '../lib/model-routing/preflight.js';
-import { REGISTRY, adapterOf } from '../lib/drivers.js';
+import { REGISTRY, adapterOf, standInAdapter } from '../lib/drivers.js';
 import {
   FAKE_TOKEN, adapterMap, answeringStub, availableStub, counter, exhaustedStub, slowStub,
   throwingStub, unauthenticatedStub,
@@ -97,11 +97,20 @@ test('the adapter contract names the same states and reasons as the snapshot sch
 });
 
 test('a driver that declares no availability adapter answers unknown / probe_failed', async () => {
-  // The three shipped drivers are exactly in that state until PB-15…PB-17, and it
-  // must be a state rather than a crash: the resolver penalises `unknown`, and a
-  // throwing registry would take every routed command with it.
-  for (const harness of Object.keys(REGISTRY.drivers)) {
-    const verdict = await adapterOf(harness).probe({ host: null, timeoutMs: 1, refresh: false });
+  // The subject is the registry's stand-in, not the shipped drivers: those gain
+  // real adapters one by one (PB-15…PB-17), so the check pins the stand-in on a
+  // bare driver and, separately, that every shipped driver WITHOUT an adapter
+  // still gets it. It must be a state rather than a crash: the resolver
+  // penalises `unknown`, and a throwing registry would take every routed command
+  // with it.
+  const request = { host: null, timeoutMs: 1, refresh: false };
+  const bare = await standInAdapter({ id: 'stand-in' }).probe(request);
+  assert.equal(bare.state, 'unknown');
+  assert.equal(bare.reason, 'probe_failed');
+  assert.match(bare.message, /stand-in/);
+  for (const [harness, driver] of Object.entries(REGISTRY.drivers)) {
+    if (driver.availability) continue;
+    const verdict = await adapterOf(harness).probe(request);
     assert.equal(verdict.state, 'unknown', harness);
     assert.equal(verdict.reason, 'probe_failed', harness);
   }
