@@ -18,6 +18,10 @@ The hint is a leftover from the parent project, where that subcommand does exist
 - Decide which is true here: the bus owns a `tools` subcommand, or declaring a harness is a hand edit of `promptobus.json`.
 - Make the message say the true one. If it stays a hand edit, name the file and the field rather than a command.
 
+## Owner's decision (2026-09-05)
+
+Declaring a harness is a hand edit of `promptobus.json` (`tools`). The message names the file and the field; a consumer with its own command substitutes it through the host (`formatCommand`). No `tools` subcommand in the package.
+
 ## Out of scope
 
 - The `tools` allow-list itself and how spawn reads it. Only the remedy text is wrong, not the gate.
