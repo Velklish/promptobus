@@ -12,6 +12,7 @@ Closing task of the routing series: the documentation set, the manual acceptance
 ## Work to do
 
 - Reference: host methods in [02-host](../../reference/02-host.md); `models`, `--strategy`, `--allow-payg`, `--dry-run`, `--refresh`, `--clear-exhausted` in [03-cli](../../reference/03-cli.md); `metadata.routing` in [04-protocol](../../reference/04-protocol.md). Guides: overlay files and where they live for standalone. README: a `models` section. GLOSSARY: the PB-11 terms with evidence lines. ROADMAP: evidence for the goal.
+- `docs/reference/01-overview.md` line 3 hard-codes the package version in prose and drifts on every release with no gate — bump it with the version.
 - CHANGELOG entry; `package.json` version; tag (next minor). **Owner's rule (2026-09-05): the tag is cut only when the whole series is done and `queue/` and `active/` are empty** — no intermediate release for the host contract or any single task; consumers repin once, after this tag.
 - Manual acceptance, recorded in the result with commands and output: `models --refresh` on Claude, Cursor (after the owner's `agent login`) and Codex; cache content free of secrets and mode 0600; an exhausted harness excluded (real or staged); one full bus round with an agent-chosen strategy, a worker and a reviewer.
 
