@@ -13,7 +13,7 @@ The bus has since moved into this package, so everything harness-neutral in that
 
 Decisions the owner already took on 2026-09-05, to be recorded rather than reopened:
 
-- overlay and cache paths come from the host: cache and the global overlay under `promptobusHome()`, the workspace overlay path from a new host method; the standalone host answers `~/.promptobus/…`, a consumer maps to its own home;
+- overlay and cache paths come from the host, through one method that answers the cache file and the ordered overlay layers; the standalone host answers `~/.promptobus/…`, a consumer maps to its own user home. (`promptobusHome()` is the per-store home `<workspaceRoot>/.promptobus` and carries nothing account-scoped — an earlier wording of this bullet named it by mistake; corrected by the orchestrator on 2026-09-05.)
 - the `auto → concrete strategy` rubric lives in this package's `skills/orchestrate`; consumers reference it and add only their own policy;
 - all three adapters (Claude, Cursor, Codex) are in v1;
 - no consumer-side alias for the command; consumers reach `models` through their passthrough.
