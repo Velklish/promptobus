@@ -40,20 +40,71 @@ A foreign-mailbox header means the originals stay with the owner. If the mail is
 ## CLI
 
 ```bash
-promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--harness <h>] [--dry-run]
+promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--harness <h>] [--strategy <s>] [--allow-payg] [--dry-run]
 promptobus status [--task <id>]
 promptobus done [--task <id>]
 promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
-promptobus review <path> [--task <id> | --title <name>] [--harness <h>]
+promptobus review <path> [--task <id> | --title <name>] [--harness <h>] [--strategy <s>] [--allow-payg]
+promptobus models [--strategy <s>] [--role <worker|reviewer>] [--refresh] [--json]
 ```
 
 `--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
 
+`--strategy` is one of `quality`, `balanced`, `speed`, `economy`. Without it the command routes nothing and takes the defaults. See [Model routing](#model-routing).
+
 `--repo` is a path on disk. `--brief` is required.
 
 Read the worker branch from `promptobus status` or `promptobus_task`. Do not rebuild it from a name template. The worker may have switched branches. Publish the branch git reports.
+
+## Model routing
+
+`auto` is not a CLI value. You classify the task and hand `spawn` or `review` one concrete `--strategy`.
+
+### The rubric
+
+| The track is | Strategy |
+|---|---|
+| A contract, an architecture change, security, a data migration, an incident — or a task whose statement is still ambiguous | `quality` |
+| Ordinary development: a feature in a known subsystem, a bug with a repro, tests for behaviour that already exists | `balanced` |
+| Reconnaissance, reading a subsystem, and a small precise change in a named file | `speed` |
+| Bulk low-risk routine: a mechanical rename, a mass import rewrite, a formatting sweep | `economy` |
+
+**The price of a mistake moves a track up one row**, in that order: `economy` → `speed` → `balanced` → `quality`. A mechanical rename that touches a published surface is `speed`. A small precise change in a payment or auth path is `balanced`. Ambiguity is already priced in — an unclear statement is `quality` outright, not one row up from where its subject would sit.
+
+Classify each track on its own. One run may spawn `quality` and `economy` side by side.
+
+### The strategy envelope
+
+Agree the envelope with the user before the first spawn, in the same approval as the split. It names three things:
+
+- the strategy of each track;
+- the harnesses the run may use;
+- whether pay-as-you-go is allowed (`--allow-payg`).
+
+A fallback **inside** the envelope needs no second approval: a preflight that excludes the first candidate moves to the next one on an allowed harness, and the user already approved that. **Leaving** the envelope does need one — another harness, pay-as-you-go they did not allow, a strategy other than the one agreed for that track. Ask; do not widen it yourself.
+
+`promptobus models [--strategy <s>] [--role <worker|reviewer>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
+
+`promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start.
+
+### Constraints the user named
+
+An explicit `--harness`, `--model` or `--effort` from the user travels to the CLI unweakened. **Never rewrite a named model into a strategy**, and never pass a strategy as its alternative: a named value is a constraint the resolver applies, and the CLI ends with diagnostics rather than substituting when it cannot be met. Report those diagnostics to the user; do not pick something else for them.
+
+### Step up after two rounds
+
+Two review rounds on one worker with no progress — the same findings return, or a fix breaks what it fixed — mean the model is under the task. Step up once, and only once, without asking again if it stays inside the envelope:
+
+1. the next strategy up the rubric, or
+2. an explicit `--harness` / `--model` / `--effort` tuple you name.
+
+Re-spawn that track. Name the step-up and its reason in the run's result: a run that quietly cost more than its envelope is not auditable.
+
+A consumer layers its own policy on top of this rubric — which models it forbids, where its reviewer runs. That belongs in the consumer's own skills, not here.
+
+Flags, reason codes and error codes: [reference/03-cli.md](../../docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](../../docs/guides/model-routing.md).
 
 ## Mail
 

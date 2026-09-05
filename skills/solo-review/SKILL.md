@@ -17,7 +17,17 @@ The path is required. There is no resolve from the current directory. An error w
 
 Default diff base is the repository default branch. In a worker worktree it is the merge base with that branch, recomputed at review time. Set `--base <sha|ref>` when you review work on top of another accepted branch.
 
-`--dry-run` prints the plan. `--harness` selects the runtime (must be in `promptobus.json` `tools`). `--model` and `--effort` are harness-specific.
+`--dry-run` prints the plan. `--harness` selects the runtime (must be in `promptobus.json` `tools`). `--model` and `--effort` are harness-specific. `--strategy` picks the model for you; see [Reviewer strategy](#reviewer-strategy).
+
+## Reviewer strategy
+
+`--strategy quality` is the reviewer's default. Pass it unless the user named something else: a reviewer that misses a defect is paid for by the next round, and reading a diff is cheap next to writing it.
+
+**Diversity.** A reviewer whose harness or model differs from the worker's scores higher — the resolver gives it a bonus, because a second reading with the same blind spot is not a review. Prefer a different harness when the workspace declares more than one and the user allowed it. Stay on the worker's harness only when the user pinned it, or when nothing else is available.
+
+`promptobus models --strategy quality --role reviewer` prints what that would pick before you start the reviewer. `--strategy` is one of `quality`, `balanced`, `speed`, `economy`; without it the command routes nothing and takes the defaults. `--harness`, `--model` and `--effort` stay constraints — a value the user named is never replaced by a strategy.
+
+The rubric that turns a task into one strategy is in [orchestrate](../orchestrate/SKILL.md) § Model routing.
 
 ## Collect the report
 

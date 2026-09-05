@@ -29,6 +29,7 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | claim | claim | Take ownership of the orchestrator mailbox after the previous session dies. | `src/mcp/tools.ts` (`claim`) |
 | store | store | On-disk home of tasks, usually `<workspace>/.promptobus`. | `src/v1/layout.ts` (`ROOT_DIR`) |
 | strategy | strategy | Named priority of quality, speed and subscription spend a routed run is picked by: `quality`, `balanced`, `speed`, `economy`. `auto` is a skill decision, never a CLI value. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
+| strategy envelope | strategy envelope | What the person approved before the first spawn: the strategy of each track, the harnesses the run may use, and the PAYG policy. A fallback inside it needs no second approval; leaving it does. | `docs/adr/adr-003-model-routing.md` § Start behaviour, `skills/orchestrate/SKILL.md` § Model routing |
 | model catalog | model catalog | The maintainers' rating of tuples, shipped with the package. Only rated tuples enter automatic selection. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
 | tuple | tuple | The unit of the catalog and of a routing decision: `role + harness + model + effort`, with a stable id. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
 | availability snapshot | availability snapshot | What the local account can run right now, per harness: state `available`, `exhausted`, `unavailable` or `unknown` with a reason code and `checkedAt`. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
