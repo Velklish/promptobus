@@ -189,6 +189,36 @@ Three library entry points, all in `lib/model-routing/`:
 
 A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
 
+### Cursor
+
+Implemented (PB-16). The adapter is `lib/model-routing/adapter-cursor.js`, declared by `lib/driver-cursor.js` as its `availability`. It runs two commands and nothing else — `status` for auth, `models` for the inventory — on the binary `host.resolveToolBin('cursor')` names, the same one the driver lifts a session with. It starts no session, writes nothing, and never touches the persist/tmux path: an adapter answers about the account, before any session exists.
+
+| What the probe sees | Verdict |
+|---|---|
+| the host resolves no binary, or the one it named is gone | `unavailable` / `binary_missing` |
+| the binary is there and will not run — no permission, an argument the platform cannot carry | `unknown` / `probe_failed` |
+| either command outlives what is left of the budget | `unknown` / `probe_timeout` |
+| `status` says the account is not logged in | `unavailable` / `not_authenticated` |
+| `status` says neither thing, whatever its exit code | `unknown` / `probe_failed` |
+| logged in, but the listing refused or came back unreadable | `unknown` / `probe_failed` |
+| logged in, inventory in hand | `unknown` / `quota_unknown`, with `models` and `version` |
+
+**A successful probe is `unknown`, not `available`.** Cursor exposes no limit API, no usage subcommand and no window the binary will name, so the remaining limit cannot be established at all; `available` would claim it was confirmed. No `windows` are reported either — an empty list would age the entry at the 60 s window TTL for a fact nothing measured, and a number invented here would read as a measurement. `unknown` is penalised by the resolver rather than blocking, so the harness stays a candidate.
+
+**A slow binary is a timeout, never an unavailable account.** `timeoutMs` is the whole preflight budget and both calls share it: what is left of the budget is the ceiling of the next call, and a binary still running when it ends is killed. The deadline starts before the binary is resolved, because resolving is part of the probe — a host is free to run `--version` inside `resolveToolBin`, and a deadline started after it would let one adapter spend that ceiling plus the whole budget. A launch that fails outright is `probe_failed` rather than a timeout: a binary that never started did not fail to answer in time. Calling a slow `cursor-agent` `unavailable` would drop every Cursor tuple out of a run on a machine where the account is perfectly fine.
+
+**What the parse relies on**, measured on `cursor-agent` 2026.09.02-c22c1a3 (2026-09-05). Both commands colour their output even when stdout is not a terminal, so ANSI is stripped before anything is looked at. `status` answers `✓ Logged in as <account>` and exits 0 in both the signed-in and the signed-out case, so **the text is the answer and the exit code is never consulted** — a non-zero code beside a line the adapter can read says nothing about the login. The signed-out line is matched separately, because "not logged in" contains "logged in". Output that says neither thing is a third answer rather than a second: it is `probe_failed`, because calling it a logged-out account would send the person to `cursor-agent login` for a parse fault and cost them the real diagnosis. `models` answers a header line, `<id> - <Display Name>` rows — about 210 of them, `auto` first — and a trailing `Tip:` line, so a row is recognised by the shape of its id next to a literal ` - `, not by being a line with two fields in it. **The model id is taken whole, effort suffix included**: in Cursor the effort level is a flat suffix of the id (`claude-opus-5-thinking-max`, `cursor-grok-4.6-xhigh-fast`) and not a separate flag, so a stripped suffix would name a model the binary does not have.
+
+A `(NO ZDR)` mark on a row travels as `flags: ['no-zdr']` on that model and **is not judged here**. The package carries what the harness said; a consumer that must not use a model outside zero-data-retention denies it in an overlay, and it can only do that if the mark arrived.
+
+A listing that refused, or one nothing in it parses, is `probe_failed` rather than an inventory of none. Every account with a subscription lists about 210 models, so an empty result is a parse fault, and reporting it as an empty inventory would exclude every Cursor tuple as `model-not-in-inventory` and send the person to the catalog for a fault that is not there.
+
+`version` is whatever the host read while resolving the binary; nothing is asked for it, because resolve already runs `--version` and the driver reads the same field at option refuse. A host that reports none leaves the field out.
+
+Nothing the binary printed reaches `message`. `status` prints the account address on the one line the adapter reads, and the adapter counts and classifies instead of quoting.
+
+**Late-start classification is not implemented for Cursor, and the gap is deliberate.** The other harnesses hand `markExhausted` a limit their start path named; Cursor's start path names nothing. The only text `spawn` gets back from a failed lift is a string the package itself composes, and the driver says so in its own words next to the `failed` stall route — *a wrong model id and an expired Cursor login look the same*. Hooking a mark to it would fire a sticky `manual_exhaustion` — which only `--clear-exhausted` lifts — on a typo in `--model`. So a Cursor limit hit at start is not marked in the cache today, and the follow-up finding on PB-16 carries the two candidate routes to a real signal.
+
 ### Resolver
 
 A library, like the two subsections above it: `promptobus models`, `--strategy` and `--allow-payg` are PB-21's. Two entry points, both in `lib/model-routing/`:

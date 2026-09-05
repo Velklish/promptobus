@@ -83,7 +83,7 @@ export { sweptLine };
 // The package does not need its own start point for this: leftovers
 // of its hand run will leave on the next repository `npm test`.
 export const SUITE_PREFIXES = [
-  'promptobus-activation-', 'promptobus-ambient-', 'promptobus-archive-',
+  'promptobus-activation-', 'promptobus-adapter-', 'promptobus-ambient-', 'promptobus-archive-',
   'promptobus-base-', 'promptobus-bgsess-', 'promptobus-bootstrap-', 'promptobus-bushook-',
   'promptobus-check-', 'promptobus-cli-flags-', 'promptobus-codex-', 'promptobus-console-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-doctor-', 'promptobus-driver-',
