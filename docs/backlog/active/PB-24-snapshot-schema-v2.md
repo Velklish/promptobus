@@ -11,7 +11,7 @@ The v1 snapshot (`schemas/model-routing/snapshot.schema.json`) knows a harness a
 
 ## Work to do
 
-- Extend the schema, additively: a window gains `kind` (`session` | `weekly` | `monthly`) and `scope` (`null`, `{ model }`, or `{ pool: "auto" | "api", models: [...] }`); a harness gains `tier: { name, source } | null` and, for Codex, `credits` / `resetCredits` as informational fields; a model gains `hidden: boolean`. Old cache files (schemaVersion 1) are read and migrated in memory or discarded with `stale_cache` — choose per ADR-004 and say which in the reference.
+- Extend the schema, additively: a window gains `kind` (`session` | `weekly` | `monthly`), a mandatory `lengthSec`, and `scope` (`null`; `{ model, models: [...] }` — the display name and the model ids the adapter resolved it to, `models` absent when unresolved; or `{ pool: "auto", models: [...] }` / `{ pool: "api" }` — the `api` pool carries no list, it is the complement) — the shapes ADR-004 records; a harness gains `tier: { name, source } | null` and, for Codex, `credits` / `resetCredits` as informational fields; a model gains `hidden: boolean`. Old cache files (schemaVersion 1) are discarded with `stale_cache`, not migrated (ADR-004: the longest TTL in the file is an hour, the windows live a minute); the reference says so.
 - `cache.js`: TTL for limit data stays 60 s; the tier follows the auth TTL (1 h). The cache still holds no token, email or account id — the tier name is not an identifier.
 - `render.js` / `models` text and `--json`: per harness, one line per window with kind, scope, used percent, reset time; the tier on the harness line.
 - `validate.js`: the new fields validated; a window with `kind: monthly` needs `lengthSec` from the cycle; a scoped window needs its scope.
