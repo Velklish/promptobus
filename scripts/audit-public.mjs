@@ -52,8 +52,13 @@ for (const rel of tracked) {
 // comment lines are, because `](` also occurs inside regular expressions and
 // string literals, and a gate that reported those would be answered by muting it.
 const LINK = /\]\(([^)#\s]+?)\)/g;
+// In markdown a fenced block or an inline code span is not prose either: a sentence
+// that QUOTES the link pattern would otherwise be read as a link to its example.
+const mdProse = (text) => text
+  .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, '')
+  .replace(/`[^`\n]*`/g, '');
 const proseOf = (rel, text) => (rel.endsWith('.md')
-  ? text
+  ? mdProse(text)
   : text.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n'));
 for (const rel of tracked) {
   if (!/\.(md|m?js|ts)$/.test(rel)) continue;
