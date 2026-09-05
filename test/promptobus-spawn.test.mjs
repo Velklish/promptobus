@@ -41,7 +41,10 @@ import { check } from './check.mjs';
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus spawn-')));
 const here = path.dirname(fileURLToPath(import.meta.url));
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
-const { planSpawn, spawn: spawnRaw, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings } = await import(spawnUrl);
+const {
+  planSpawn, spawn: spawnRaw, repoSkillsLine, runRepoGenerator, sayWorktreeDeps, writeSecret,
+  SKILL_KEYS, skillSettings,
+} = await import(spawnUrl);
 const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const spawnWorker = (root, opts = {}) => spawnRaw(root, {
   tool: { ok: true, bin: stubClaude() },
@@ -1179,6 +1182,220 @@ await quiet(() => spawnRaw(contractHost, contractOpts));
 const contractRec = store.participantOf(store.readTask(HOME, CONTRACT_TASK), 'worker:binonly');
 check('HostToolBin: resolveToolBin returning only `bin` launches the worker',
   contractRec?.metadata?.session === 'sess-bin', JSON.stringify(contractRec?.metadata));
+
+// --- PB-8: the repository declares how to restore its generated process skills ------
+//
+// A repository that GENERATES its process skills — this one does: `backslop init` writes
+// them and `.gitignore` keeps them out of git — handed a participant a worktree without
+// them. Three workers came up that way; one noticed and two did not. The repository now
+// declares the command in its own `promptobus.json`, spawn runs it in the fresh worktree,
+// and the preamble says what happened either way.
+//
+// Every generator here is `node`, which is on the suite's reachable-binary list: a fixture
+// reaching for anything else would not resolve under the sealed PATH at all.
+const GENERATED = 'generated-skill.md';
+const GEN_TASK = 'generator-t20260905-000000';
+store.createTask(HOME, {
+  id: GEN_TASK, title: 'репозиторий со своим генератором', slug: 'generator', stamp: 't20260905-000000',
+});
+// The generator copies the task journal as it sees it. That is the ORDER under test: the
+// participant record must already be in the journal when a long generator starts, or a
+// Ctrl+C inside one leaves a directory the next spawn refuses to reuse.
+const ORDER_MARK = path.join(SB, 'generator-saw-journal.json');
+const GEN_SCRIPT = [
+  "const fs = require('node:fs');",
+  `fs.writeFileSync(${JSON.stringify(GENERATED)}, 'repository process skills');`,
+  `fs.copyFileSync(${JSON.stringify(store.taskFile(HOME, GEN_TASK))}, ${JSON.stringify(ORDER_MARK)});`,
+].join('');
+
+const GEN_REPO = path.join(WS, 'gen-svc');
+spawnSync('git', ['clone', '-q', ORIGIN, GEN_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(GEN_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', GEN_SCRIPT],
+}, null, 2)}\n`);
+// The generated file is ignored, which is the whole point of the field: a repository that
+// kept its skills in git would need no generator.
+writeFileSync(path.join(GEN_REPO, '.gitignore'), `${GENERATED}\n`);
+g(GEN_REPO, 'add', '.');
+g(GEN_REPO, 'commit', '-m', 'declare a process-skill generator', '-q');
+
+const genOpts = { repo: 'gen-svc', brief: BRIEF, task: GEN_TASK, worker: 'gen' };
+const genPlan = await planSpawn(WS, genOpts);
+check(': the plan names the declared generator and does not run it',
+  genPlan.repoSkills?.kind === 'planned' && genPlan.repoSkills.argv?.[0] === 'node'
+  && /declares a generator/.test(genPlan.prompt)
+  && !existsSync(path.join(genPlan.worktreePath, GENERATED)),
+  JSON.stringify(genPlan.repoSkills?.kind));
+
+claudeSays([{ id: 'sess-gen', name: genPlan.name, state: 'working', pid: 4700 }]);
+resetCliCaches();
+let genRun = null;
+const genOut = await capture(() => spawnWorker(WS, genOpts).then((r) => { genRun = r; }));
+check(': the generator ran in the fresh worktree and its files are there',
+  existsSync(path.join(genPlan.worktreePath, GENERATED))
+  && /repository skills generated in the worktree/.test(genOut), genOut.slice(-400));
+const genStatus = spawnSync('git', ['-C', genPlan.worktreePath, 'status', '--porcelain'], { encoding: 'utf8' });
+check(': git status in the worktree is clean — what the generator wrote is ignored',
+  genStatus.status === 0 && genStatus.stdout.trim() === '', `${genStatus.stdout}${genStatus.stderr}`);
+check(': the preamble the participant was lifted with says the skills were laid out',
+  /Repository process skills were laid out in this worktree/.test(String(genRun?.prompt))
+  && genRun?.repoSkills?.kind === 'ok'
+  && String(genRun?.argv?.[genRun.argv.length - 1]) === genRun?.prompt,
+  String(genRun?.prompt ?? '').split('\n').slice(0, 6).join(' / '));
+
+// The ordering, read from the journal the generator itself saw. A generator may block for
+// minutes (`npx` over the network), and a Ctrl+C inside one used to leave a worktree
+// directory with no record in the journal — after which a repeat spawn refuses with "the
+// directory is taken, and the journal has no such worker" (review, major).
+const sawJournal = existsSync(ORDER_MARK)
+  ? JSON.parse(readFileSync(ORDER_MARK, 'utf8')) : null;
+// The id in the v1 journal is the address with its separator flattened for the file
+// system (`worker:gen` → `worker-gen`); the address itself is what the bus talks in.
+const sawGen = sawJournal?.participants?.find((x) => x.id === 'worker-gen');
+check(': the participant was already in the journal when the generator started',
+  Array.isArray(sawJournal?.participants) && !!sawGen,
+  JSON.stringify(sawJournal?.participants?.map((x) => x.id)));
+// And the worktree it saw was already made — the pair is what makes the window empty.
+check(': the journal the generator saw already carried the worktree of that participant',
+  sawGen?.metadata?.worktree === genPlan.worktreePath,
+  `${JSON.stringify(sawGen?.metadata?.worktree)} · ${genPlan.worktreePath}`);
+
+// A repeat lift into a SURVIVING worktree does not run the generator again: it would be a
+// write into a working tree nobody asked for. The branch is checked against the real
+// directory rather than through a second lift — the seam is the `fresh` flag, and a lift
+// is not what decides it.
+rmSync(path.join(genPlan.worktreePath, GENERATED), { force: true });
+const keptGen = runRepoGenerator({ worktreePath: genPlan.worktreePath }, { fresh: false });
+check(': a repeat lift into a surviving worktree does not re-run the generator',
+  keptGen.kind === 'kept' && keptGen.argv?.[0] === 'node'
+  && !existsSync(path.join(genPlan.worktreePath, GENERATED)),
+  JSON.stringify(keptGen.kind));
+check(': and the preamble for that lift claims nothing about what is still there',
+  /were not regenerated on this lift/.test(repoSkillsLine(keptGen))
+  && /was not checked/.test(repoSkillsLine(keptGen)),
+  repoSkillsLine(keptGen));
+
+// The declaration is read from the WORKTREE, not from the clone. The worktree is checked
+// out from the base BRANCH, so an uncommitted edit in the clone — an orchestrator working
+// in it while a worker is lifted — is not what the participant will see. The fixture makes
+// the two disagree on purpose: the clone's working file declares a different generator,
+// and the branch still declares the first one.
+const CLONE_ONLY = 'from-the-clone.md';
+writeFileSync(path.join(GEN_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(CLONE_ONLY)}, 'x')`],
+}, null, 2)}\n`);
+const GEN2_TASK = 'generator-two-t20260905-000000';
+store.createTask(HOME, {
+  id: GEN2_TASK, title: 'клон и рабочее дерево разошлись', slug: 'generator-two', stamp: 't20260905-000000',
+});
+const gen2Opts = { repo: 'gen-svc', brief: BRIEF, task: GEN2_TASK, worker: 'gentwo' };
+const gen2Plan = await planSpawn(WS, gen2Opts);
+claudeSays([{ id: 'sess-gen2', name: gen2Plan.name, state: 'working', pid: 4704 }]);
+resetCliCaches();
+await quiet(() => spawnWorker(WS, gen2Opts));
+check(': the generator comes from the worktree, not from an uncommitted edit in the clone',
+  existsSync(path.join(gen2Plan.worktreePath, GENERATED))
+  && !existsSync(path.join(gen2Plan.worktreePath, CLONE_ONLY)),
+  `${GENERATED}=${existsSync(path.join(gen2Plan.worktreePath, GENERATED))} · `
+  + `${CLONE_ONLY}=${existsSync(path.join(gen2Plan.worktreePath, CLONE_ONLY))}`);
+
+// A generator that refuses does NOT refuse the lift: the participant comes up and is told
+// the exit code, and decides. Killing a lift over missing skills costs more than the skills.
+const BAD_REPO = path.join(WS, 'gen-bad');
+spawnSync('git', ['clone', '-q', ORIGIN, BAD_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(BAD_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', 'process.stderr.write("no network"); process.exit(3)'],
+}, null, 2)}\n`);
+g(BAD_REPO, 'add', '.');
+g(BAD_REPO, 'commit', '-m', 'declare a generator that refuses', '-q');
+
+const BAD_TASK = 'generator-bad-t20260905-000000';
+store.createTask(HOME, {
+  id: BAD_TASK, title: 'генератор, который отказал', slug: 'generator-bad', stamp: 't20260905-000000',
+});
+const badOpts = { repo: 'gen-bad', brief: BRIEF, task: BAD_TASK, worker: 'genbad' };
+const badPlan = await planSpawn(WS, badOpts);
+claudeSays([{ id: 'sess-genbad', name: badPlan.name, state: 'working', pid: 4701 }]);
+resetCliCaches();
+let badRun = null;
+const badOut = await capture(() => spawnWorker(WS, badOpts).then((r) => { badRun = r; }));
+const badRecord = store.participantOf(store.readTask(HOME, BAD_TASK), 'worker:genbad');
+check(': a refusing generator does not refuse the lift, and the operator is warned',
+  /repository skills NOT generated/.test(badOut) && /exited with code 3/.test(badOut)
+  && !!badRecord?.metadata?.session, `${badOut.slice(-400)} · ${JSON.stringify(badRecord?.metadata?.session)}`);
+check(': the preamble names the failure and the exit code',
+  badRun?.repoSkills?.kind === 'failed' && badRun?.repoSkills?.code === 3
+  && /Repository process skills were NOT laid out/.test(String(badRun?.prompt))
+  && /exited with code 3/.test(String(badRun?.prompt)),
+  String(badRun?.prompt ?? '').split('\n').slice(0, 6).join(' / '));
+
+// A declaration that is there but unusable is its own state, in the plan and in the
+// preamble alike. Reading it as "no generator" would print the opposite of what the
+// participant is told, and hide the reason a repository's skills went missing (review).
+const ILL_REPO = path.join(WS, 'gen-ill');
+spawnSync('git', ['clone', '-q', ORIGIN, ILL_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(ILL_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: 'npx --yes some-tool init',
+}, null, 2)}\n`);
+g(ILL_REPO, 'add', '.');
+g(ILL_REPO, 'commit', '-m', 'declare a generator as a shell line', '-q');
+
+const ILL_TASK = 'generator-ill-t20260905-000000';
+store.createTask(HOME, {
+  id: ILL_TASK, title: 'генератор строкой, а не argv', slug: 'generator-ill', stamp: 't20260905-000000',
+});
+const illOpts = { repo: 'gen-ill', brief: BRIEF, task: ILL_TASK, worker: 'genill' };
+const illPlan = await planSpawn(WS, illOpts);
+const illDry = await capture(() => spawnWorker(WS, { ...illOpts, dryRun: true }));
+check(': a shell line where argv is required is its own state, and dry-run names the reason',
+  illPlan.repoSkills?.kind === 'invalid'
+  && /must be a non-empty array of strings/.test(String(illPlan.repoSkills?.why))
+  && /repository skills: .*must be a non-empty array of strings/.test(illDry)
+  && !/no generator declared/.test(illDry),
+  illDry.split('\n').find((l) => l.includes('repository skills')) ?? illDry.slice(-300));
+claudeSays([{ id: 'sess-genill', name: illPlan.name, state: 'working', pid: 4702 }]);
+resetCliCaches();
+let illRun = null;
+await capture(() => spawnWorker(WS, illOpts).then((r) => { illRun = r; }));
+check(': the lift happens anyway and the preamble names the broken declaration',
+  illRun?.repoSkills?.kind === 'failed'
+  && /Repository process skills were NOT laid out/.test(String(illRun?.prompt))
+  && /must be a non-empty array of strings/.test(String(illRun?.prompt))
+  && !!store.participantOf(store.readTask(HOME, ILL_TASK), 'worker:genill')?.metadata?.session,
+  String(illRun?.repoSkills?.why));
+
+// A generator whose output the repository does NOT ignore hands the worker a branch dirty
+// from its first second, and `done` never sweeps a dirty directory. It is not a refusal —
+// the files are there and useful — but it must be said out loud (review).
+const DIRT_REPO = path.join(WS, 'gen-dirt');
+spawnSync('git', ['clone', '-q', ORIGIN, DIRT_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(DIRT_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', "require('node:fs').writeFileSync('not-ignored.md', 'skills')"],
+}, null, 2)}\n`);
+g(DIRT_REPO, 'add', '.');
+g(DIRT_REPO, 'commit', '-m', 'declare a generator whose output is not ignored', '-q');
+
+const DIRT_TASK = 'generator-dirt-t20260905-000000';
+store.createTask(HOME, {
+  id: DIRT_TASK, title: 'генератор оставляет грязь', slug: 'generator-dirt', stamp: 't20260905-000000',
+});
+const dirtOpts = { repo: 'gen-dirt', brief: BRIEF, task: DIRT_TASK, worker: 'gendirt' };
+const dirtPlan = await planSpawn(WS, dirtOpts);
+claudeSays([{ id: 'sess-gendirt', name: dirtPlan.name, state: 'working', pid: 4703 }]);
+resetCliCaches();
+const dirtOut = await capture(() => spawnWorker(WS, dirtOpts));
+check(': a generator that leaves untracked files is reported, and the lift still passes',
+  /repository skills generated in the worktree/.test(dirtOut)
+  && /the generator left 1 change\(s\) git can see in the worktree/.test(dirtOut)
+  && /not-ignored\.md/.test(dirtOut)
+  && /done will never sweep the directory/.test(dirtOut),
+  dirtOut.slice(-500));
+
+// And the default: a repository that declares nothing says so, so a participant that
+// SHOULD have had a generator can see there was none.
+check(': a repository with no declaration says so in the preamble, and nothing is run',
+  plan.repoSkills?.kind === 'none' && /declares no generator/.test(plan.prompt),
+  JSON.stringify(plan.repoSkills));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

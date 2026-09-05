@@ -36,7 +36,19 @@ Create `promptobus.json` at the workspace root:
 
 `tools` is the spawn allow-list. `--harness` checks this list (`lib/spawn.js`). The standalone host walks up from the current directory to find the file. The store is `.promptobus/` beside it.
 
+Adding a harness to that list is a hand edit of this file. There is no `tools` subcommand, and an undeclared `--harness` is refused with the file and the field named. Run `promptobus install` after the edit.
+
 `promptobus install` writes a second field, `harnesses`: the last installed hook list. Do not invent that field by hand on the first install. Pass `--harnesses` instead.
+
+### A repository that generates its process skills
+
+A worker repository may have its own `promptobus.json` — separate from the workspace one — with an optional `generate` field: the argv of a command that restores the process skills the repository does not keep in git.
+
+```json
+{ "generate": ["npx", "--yes", "github:owner/tool", "init"] }
+```
+
+`spawn` runs it in the fresh worktree after the checkout, and the participant preamble says whether the skills were laid out. It runs **before** dependencies are installed, so the worktree has no `node_modules`: an `npx …` generator works, an `npm run …` one does not. **Ignore what it generates** — files git can see leave the worker's branch dirty from its first second, and `promptobus done` never sweeps a dirty worktree; the lift warns when it finds them. Skills committed to git stay the default: a repository that has them in the checkout declares nothing. Details in [reference/03-cli](../reference/03-cli.md) § Spawn.
 
 ## 3. MCP server for the orchestrator
 

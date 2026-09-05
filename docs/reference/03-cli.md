@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`.
+Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels and fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -10,6 +10,8 @@ Required: `--repo`, `--brief`. `--brief` is a file (`lib/spawn.js`). The file it
 
 `--harness` must be in `host.declaredTools()` when present. Without the flag the registry fallback is `claude` (`lib/drivers.js`). Unknown harness names fail before any disk write.
 
+Declaring a harness is a hand edit of the tool manifest — under the standalone host, the `tools` array in `promptobus.json` — and the refusal for an undeclared one names that file and that field. There is no `tools` subcommand; the only command the refusal prints is the host's own sync (`promptobus install` standalone), which lays out the adapters after the edit. A consumer whose CLI does have a declaration command says so through its own host.
+
 `--strategy` routes the lift instead: the resolver picks the harness, the model and the effort, and `--harness`, `--model` and `--effort` become constraints on that choice rather than values ([Model routing](#model-routing)). Routing joins the same gate order — everything before any disk write — so a strategy with no candidate leaves no task, no worktree and no participant behind. It routes a LIFT: a repeat spawn at an address already in the journal keeps the harness that address was lifted with, and says the flag was ignored.
 
 `--new-task` and `--task` conflict. Without `--task`, spawn joins the only active task, or opens a new one when several actives exist and this session has no binding. A task owned by another session refuses a silent join.
@@ -17,6 +19,20 @@ Required: `--repo`, `--brief`. `--brief` is a file (`lib/spawn.js`). The file it
 `--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan.
 
 The worker gets an isolated git worktree. The main tree is not edited. Read the branch from `promptobus status` or `promptobus_task`, not from the worktree name.
+
+**A repository that generates its process skills** rather than committing them declares the command in its own `promptobus.json`, in the optional `generate` field, as an argv array and never a shell line:
+
+```json
+{ "generate": ["npx", "--yes", "github:owner/tool", "init"] }
+```
+
+This is the **repository's** file, and it is read by path — the host is not asked, because a generator belongs to the repository being spawned into and a host describes a workspace. `--dry-run` reads the declaration from the clone, because the worktree does not exist yet; the run reads it from the **worktree**, which is what the participant will see, so the two can disagree and the worktree decides.
+
+Where it runs in the order matters three times over. It runs **after the participant record is in the task journal**, so an interrupted generator — `npx` over the network can block for minutes — cannot leave a worktree directory that the next spawn refuses to reuse. It runs **before the launch files**, so a generator writing into the harness config directories is not the last writer. And it runs **before dependencies are installed**, so the worktree has no `node_modules` yet: an `npx …` generator works, an `npm run …` one does not.
+
+Skills in git stay the default and cost this step nothing. A repeat spawn into a surviving worktree does not run it again, and says so without claiming what is still there. A refusal does not refuse the lift — the operator gets a warning with the exit code and a log beside the worktree (`<worktree>.generate.log`); a `generate` that is present but is not an argv array of strings is reported as a broken declaration rather than as no declaration at all. What the generator leaves is checked once it succeeds: files git can see make the worker's branch dirty from its first second and stop `done` from ever sweeping the directory, so the repository must ignore what it generates and the lift says so out loud when it does not.
+
+The participant preamble names the outcome in every case, including "no generator declared": a participant that is never told cannot notice that its repository's rules are missing.
 
 ## Review
 
@@ -346,7 +362,11 @@ The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reprodu
 
 `status` lists active tasks, participants, unread counts, and warden health. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
 
+A Cursor participant's liveness is judged by **three** signals, and a stall verdict needs all three quiet: the chat transcript growing, an instrumental process under the session's tmux pane, and a write in the participant's own worktree — the newest mtime among `git ls-files -mo --exclude-standard` plus its HEAD commit time (`lib/cursor-persist.js`). The third exists because the agent edits files inside one long call and spawns nothing, so the first two see a session that is working as one that is silent. It is **positive only**: a recent write lifts the verdict, its absence never raises one, and a session nothing writes for still stalls once the threshold passes. The verdict names each measurement and its span, so a silent transcript can be told from a dead session without opening the panel.
+
 `done` closes the task. The mailbox owner may call it. Sessions the bus started are stopped unless `--keep-sessions`. Journals of tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed on that last call.
+
+It also sweeps the worktrees of every closed task, and a directory goes only when the branch's work is proven to be in the repository's default branch. The judgement is about **content, not ancestry**: a squash merge leaves none of the branch's commits in the base by construction, so the commit count says nothing on its own. Two measurements answer it (`lib/worktree.js`): whether merging the branch into the base would add anything (`git merge-tree --write-tree`), and whether the base holds a commit carrying the branch's own patch (`git patch-id --stable` over `git diff <fork> <branch>`). The second exists because the first stops answering once the base moves over the same lines — which is exactly what the next worker landing on the same file does. Everything else keeps the directory, and the report names the state it measured: `merged as a squash`, `is entirely in <base>`, or `is not merged`. A squash whose content was edited while merging, and work taken as a series of cherry-picks, are not recognised and keep the directory: it is cheap to delete and impossible to return.
 
 `dismiss <address>` drops a finished participant from watch.
 

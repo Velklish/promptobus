@@ -25,7 +25,7 @@ import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  CURSOR_HOME_VAR, HANG_CHILD_VAR, HANG_VAR, diagnoseTrace, installHarness, planParticipant,
+  CURSOR_HOME_VAR, HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
   readTrace,
 } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
@@ -650,8 +650,9 @@ store.createTask(home, { id: TASK, title: 'проба driver’а Cursor', owner
 const bare = path.join(SB, 'bare-ws');
 writeHostConfig(bare, { tools: ['claude'] });
 const undeclared = thrown(() => liftHarness(bare, 'cursor'));
-check(': a harness outside promptobus.json is refused before lift and names the route',
-  undeclared.threw && /tools add cursor/.test(undeclared.msg), undeclared.msg);
+check(': a harness outside promptobus.json is refused before lift and names the file and the field',
+  undeclared.threw && /promptobus\.json/.test(undeclared.msg) && /"tools" array/.test(undeclared.msg)
+  && /"cursor"/.test(undeclared.msg) && !/tools add/.test(undeclared.msg), undeclared.msg);
 check(': a declared harness passes the same gate',
   liftHarness(ws, 'cursor').id === 'cursor');
 
@@ -1016,6 +1017,65 @@ check(': status on silence with live processes does not say STALLED',
   livingLine);
 
 cli([ 'done', '--task', HANG_CHILD_TASK], { cwd: ws, env });
+
+// The third liveness signal, and the shape the first two are blind to (PB-7): the turn
+// edits files inside one long call, so the transcript does not grow AND nothing was
+// spawned — yet the session is working. Twice on live runs this was reported as a stall
+// while the owner's panel showed sixteen files edited.
+const HANG_WRITE_TASK = 'cursorhangwrite-t20260903-000000';
+const HANG_WRITE_WORKER = 'worker:hangwrite';
+store.createTask(home, { id: HANG_WRITE_TASK, title: 'молчащий ход, который правит файлы', owner: ORCH_SESSION });
+const hangWriteEnv = { ...env, [HANG_WRITE_VAR]: '1' };
+const hangWriteBrief = path.join(SB, 'hang-write-brief.md');
+writeFileSync(hangWriteBrief, '# Silent Cursor turn that edits files\n\nEdit.\n');
+const hangWriteSpawn = cli([ 'spawn', '--repo', repo, '--brief', hangWriteBrief,
+  '--task', HANG_WRITE_TASK, '--worker', 'hangwrite', '--harness', 'cursor'],
+{ cwd: ws, env: hangWriteEnv });
+const hangWriteRef = store.participantOf(store.readTask(home, HANG_WRITE_TASK), HANG_WRITE_WORKER)
+  ?.sessionRef ?? '';
+check(': a participant that edits files with neither transcript growth nor a tool process is up',
+  hangWriteSpawn.status === 0 && !!hangWriteRef, `${hangWriteSpawn.out.slice(-200)} · ${hangWriteRef}`);
+
+// The wait is on the TRANSCRIPT being silent past the threshold first: without that a
+// green verdict would only mean the turn had not been silent long enough yet, which is
+// true of every session in its first seconds.
+const working = await waitFor(() => {
+  const seen = turnState(readSession(hangWriteRef, env), env);
+  if (!seen.silent) return null;
+  const view = cursorDriver.inspect(hangWriteRef);
+  return view?.busy ? view : null;
+}, { timeoutMs: 30000 });
+check(': a silent turn writing in its worktree is not a stall, and the line says how recently',
+  working?.state === 'alive' && working?.stall === null
+  && /silent for \d+ s, and the worktree was written \d+ s ago/.test(String(working?.note)),
+  JSON.stringify(working));
+
+const workingStatus = cli([ 'status', '--task', HANG_WRITE_TASK], { cwd: ws, env });
+const workingLine = workingStatus.out.split('\n').find((l) => l.includes(HANG_WRITE_WORKER))
+  ?? workingStatus.out;
+check(': status does not call an editing participant STALLED',
+  workingStatus.status === 0 && !/STALLED/.test(workingLine) && /worktree was written/.test(workingLine),
+  workingLine);
+
+cli([ 'done', '--task', HANG_WRITE_TASK], { cwd: ws, env });
+
+// And the other end of the same criterion: a session nothing writes for still stalls,
+// and the verdict names each of the three measurements with its span.
+check(': the stall verdict names what was measured and for how long',
+  /transcript has been silent for \d+ s \(threshold \d+ s\)/.test(String(silent?.stall?.reason))
+  && /no tool processes under the pane/.test(String(silent?.stall?.reason))
+  && /nothing was written in the worktree for \d+ s|the worktree could not be read/
+    .test(String(silent?.stall?.reason)),
+  String(silent?.stall?.reason));
+
+check(': the route names the three signals without claiming a measurement it cannot see', (() => {
+  // The route is handed the stall KIND and nothing else — not the numbers, and not whether
+  // the worktree could be read at all. A reviewer's cwd is a sandbox with no commits, so
+  // "could not be read" is its permanent state, and a route asserting the worktree "is not
+  // being written" would be stating a measurement nobody made.
+  const route = cursorDriver.stallRoute({ kind: 'watchdog', address: HANG_WORKER, repoAbs: wt }, 'x');
+  return /or it could not be read/.test(route) && /no write was detected/.test(route);
+})(), cursorDriver.stallRoute({ kind: 'watchdog', address: HANG_WORKER, repoAbs: wt }, 'x'));
 
 check(': the silence really happened — the stand marked it in the participant trace',
   readTrace(HARNESS, HANG_WORKER).some((e) => e.kind === 'hang'),

@@ -234,8 +234,9 @@ store.createTask(home, { id: TASK, title: 'проба driver’а Codex', owner:
 const bare = path.join(SB, 'bare-ws');
 writeHostConfig(bare, { tools: ['claude'] });
 const undeclared = thrown(() => liftHarness(bare, 'codex'));
-check(': a harness outside promptobus.json is refused before lift',
-  undeclared.threw && /tools add codex/.test(undeclared.msg), undeclared.msg);
+check(': a harness outside promptobus.json is refused before lift and names the file and the field',
+  undeclared.threw && /promptobus\.json/.test(undeclared.msg) && /"tools" array/.test(undeclared.msg)
+  && /"codex"/.test(undeclared.msg) && !/tools add/.test(undeclared.msg), undeclared.msg);
 check(': a declared harness passes the same gate',
   liftHarness(ws, 'codex').id === 'codex');
 

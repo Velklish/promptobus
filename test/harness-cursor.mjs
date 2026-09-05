@@ -60,6 +60,19 @@ export const HANG_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG';
 export const HANG_CHILD_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG_CHILD';
 
 /**
+ * The same hang with NO child at all, but the turn keeps writing a file in its own
+ * worktree. This is the live shape of PB-7: the agent edits files inside one long call,
+ * so the transcript does not grow and no tool process exists — and the session is
+ * working. The stand writes every `HANG_WRITE_STEP_MS` because the silence threshold in
+ * the suite is measured in seconds: one write would age past it like anything else.
+ */
+export const HANG_WRITE_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG_WRITE';
+
+/** Name and cadence of that write. Untracked and not ignored — git must call it changed. */
+export const HANG_WRITE_FILE = 'edited-by-the-turn.txt';
+const HANG_WRITE_STEP_MS = 250;
+
+/**
  * Enter-loss threshold. Live measurement: without a pause Enter is lost, with 0.3–0.4 s
  * it always goes through (REPORT §4.3). The stand takes the middle: a driver with its
  * own 400 ms pause passes, a driver without a pause does not, and two messages glued
@@ -840,13 +853,26 @@ async function playTurn({
   // `promptobus mcp` on a live persist session. Stop must still be set then: the filter
   // cuts it. A live tool child (a long gate) is a separate flag.
   spawnWorkerServer(home);
-  if (env[HANG_CHILD_VAR] || !env[HANG_VAR]) spawnToolChild();
+  if (env[HANG_CHILD_VAR] || !(env[HANG_VAR] || env[HANG_WRITE_VAR])) spawnToolChild();
   const outcome = await runScript({ home, address, cfg, turn, chatId, workspace, transcript, env });
   if (outcome === 'hang') {
     // Hang: the turn does not end, the transcript does not grow. Exactly the sign the
     // watchdog uses to judge silence — and the process is alive, as it is in a live hang.
     note(home, address, { kind: 'hang' });
+    // …and under HANG_WRITE it also works: files change in the worktree while the
+    // transcript stays silent and nothing is spawned.
+    const writing = env[HANG_WRITE_VAR]
+      ? setInterval(() => {
+        try {
+          writeFileSync(path.join(workspace, HANG_WRITE_FILE), `${Date.now()}\n`);
+        } catch {
+          // The worktree went away under a `done` — the hang is being torn down anyway.
+        }
+      }, HANG_WRITE_STEP_MS)
+      : null;
+    if (writing) note(home, address, { kind: 'hang-write', file: HANG_WRITE_FILE });
     await new Promise((r) => { setTimeout(r, 600_000); });
+    if (writing) clearInterval(writing);
     return;
   }
   appendFileSync(transcript, `${JSON.stringify({
@@ -886,7 +912,7 @@ function nextTurn(home, address) {
 // Turn from the script: the same actions the scripted participant of the stub `claude`
 // plays ([participant.mjs](participant.mjs)).
 async function runScript({ home, address, cfg, turn, workspace, env }) {
-  if (env[HANG_VAR] || env[HANG_CHILD_VAR]) return 'hang';
+  if (env[HANG_VAR] || env[HANG_CHILD_VAR] || env[HANG_WRITE_VAR]) return 'hang';
   let script = { turns: [] };
   try {
     script = JSON.parse(readFileSync(scriptFile(home, address), 'utf8'));

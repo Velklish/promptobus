@@ -243,6 +243,41 @@ check('squashed branch: the directory is removed, the branch remains and is name
   && rmSq.branchKept === null, JSON.stringify(rmSq));
 git(REPO, 'branch', '-D', 'worktree-a2a-squashed');
 
+// --- squash merge, and then the base moves over the same file --------------------
+//
+// The reported live shape (PB-6): the orchestrator squashes a worker branch, the next
+// worker lands on the same file, `done` runs after both. `merge-tree` then conflicts —
+// both sides changed the same lines, and one of the two sides IS the squash of this very
+// branch — so the merge measurement says "don't know", and on it alone the directory of
+// an accepted branch stays behind while the report names a conflict that decides nothing.
+// Patch identity does not care what the base did after the squash.
+const SQ2 = path.join(REPO, '.claude', 'worktrees', 'squashed-then-moved');
+git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-squashed-2', SQ2);
+writeFileSync(path.join(SQ2, 'shared'), 'общий файл\nстрока ветки\n');
+git(SQ2, 'add', '.'); git(SQ2, 'commit', '-qm', 'работа ветки в общем файле');
+git(REPO, 'merge', '-q', '--squash', 'worktree-a2a-squashed-2');
+// The squash commit carries something else as well — an edit the orchestrator made while
+// merging, in a file the branch never touched. The patch-id comparison is restricted to
+// the BRANCH's own paths, so a wider commit must still be recognised as carrying it; an
+// unrestricted comparison would not match this commit at all.
+writeFileSync(path.join(REPO, 'unrelated'), 'правка рядом с мержем\n');
+git(REPO, 'add', '.');
+git(REPO, 'commit', '-qm', 'squash: работа второй ветки и правка рядом');
+// The next worker lands on the same file, in the same place.
+writeFileSync(path.join(REPO, 'shared'), 'общий файл\nстрока ветки\nстрока следующего воркера\n');
+git(REPO, 'add', '.'); git(REPO, 'commit', '-qm', 'следующая работа в том же файле');
+const sq2 = inspectWorktree(REPO, SQ2, 'master');
+check('fixture: the base moved over the same file, and the merge measurement can no longer answer',
+  sq2.unmerged === 1 && sq2.adds === null, JSON.stringify(sq2));
+check('a squash the merge cannot see: patch identity finds the branch\'s own patch in the base',
+  sq2.squashed === true, JSON.stringify(sq2));
+check('the directory goes, the report says "merged as a squash", and no conflict is named', (() => {
+  const d = worktreeDisposition(sq2);
+  return d.action === 'remove' && /merged as a squash/.test(d.reason) && !/conflict/.test(d.reason);
+})(), JSON.stringify(worktreeDisposition(sq2)));
+git(REPO, 'worktree', 'remove', '--force', SQ2);
+git(REPO, 'branch', '-D', 'worktree-a2a-squashed-2');
+
 // A third state: it cannot be merged — a conflict. That is "don't know", and it must
 // resolve in favor of "keep", naming the reason.
 const CF = path.join(REPO, '.claude', 'worktrees', 'conflict');
@@ -253,9 +288,15 @@ writeFileSync(path.join(REPO, 'f'), 'версия master\n');
 git(REPO, 'add', '.'); git(REPO, 'commit', '-qm', 'другая версия того же файла');
 const cf = inspectWorktree(REPO, CF, 'master');
 check('merge conflict — "don\'t know", not "nothing to merge in"', cf.adds === null, String(cf.adds));
-check('uncertainty resolves in favor of "keep", and the reason is named', (() => {
+check('a branch the base never took: patch identity does not find its patch either',
+  cf.squashed === false, JSON.stringify(cf));
+check('uncertainty resolves in favor of "keep", and the report says what was measured', (() => {
   const d = worktreeDisposition(cf);
-  return d.action === 'keep' && /conflict or old git/.test(d.reason);
+  // The branch is NAMED `…-conflict` here, so the word is subtracted before looking for
+  // it: what must be gone is a conflict offered as the REASON, not the fixture's name.
+  const said = d.reason.split(cf.branch).join('');
+  return d.action === 'keep' && /is not merged/.test(d.reason)
+    && /patch-id/.test(d.reason) && !said.includes('conflict');
 })(), JSON.stringify(worktreeDisposition(cf)));
 git(REPO, 'worktree', 'remove', '--force', CF);
 git(REPO, 'branch', '-D', 'worktree-a2a-conflict');
