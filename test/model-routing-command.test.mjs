@@ -136,7 +136,7 @@ function seedCache(harnesses) {
 /** Every harness authenticated, with a limit window — the ordinary case a pick is made in. */
 const HEALTHY = () => ({
   claude: entry('available', null, {
-    models: [{ model: 'opus', rated: true }, { model: 'sonnet', rated: true }],
+    models: [{ model: 'claude-opus-5', rated: true }, { model: 'claude-sonnet-5', rated: true }],
     windows: [{ id: '5h', usedPercent: 20, lengthSec: 18000, resetAt: null }],
   }),
   cursor: entry('unavailable', 'not_authenticated'),
@@ -160,7 +160,7 @@ const probeSet = (probes) => adapterMap({
     checkedAt: new Date().toISOString(),
     source: 'probe',
     resetAt: null,
-    models: [{ model: 'opus' }, { model: 'sonnet' }],
+    models: [{ model: 'claude-opus-5' }, { model: 'claude-sonnet-5' }],
     windows: [{ id: '5h', usedPercent: 20, lengthSec: 18000, resetAt: null }],
   }, probes),
   cursor: unauthenticatedStub(probes),
@@ -428,7 +428,7 @@ test('the decision is aged from the oldest entry, not from the freshest one', as
   const old = new Date(Date.now() - 3600_000).toISOString();
   seedCache({
     claude: { ...entry('available', null, {
-      models: [{ model: 'opus', rated: true }, { model: 'sonnet', rated: true }],
+      models: [{ model: 'claude-opus-5', rated: true }, { model: 'claude-sonnet-5', rated: true }],
     }), checkedAt: old },
     cursor: entry('unavailable', 'not_authenticated'),
     codex: entry('unavailable', 'not_authenticated'),

@@ -281,16 +281,20 @@ test('the probe sends one declared subcommand and never a bare word', async () =
   assert.deepEqual(box.argv(), ['auth', 'status', '--json']);
 });
 
-test('the inventory is the alias set the binary publishes, plus the driver default', async () => {
-  // The three names are pinned LITERALLY, not computed from `MODEL_ALIASES`: an
-  // expectation derived from the constant under test passes whatever that constant
-  // becomes, and the first mutation probe caught exactly that. These are what
-  // `claude --help` prints under `--model` on 2.1.251, measured 2026-09-05, and
-  // this list is what the reported inventory has to be — so both the alias set and
-  // the default model that feed it are pinned through one check.
+test('the inventory is the pinned ids and the alias set the binary publishes, plus the driver default', async () => {
+  // Every name is pinned LITERALLY, not computed from `MODEL_IDS` or
+  // `MODEL_ALIASES`: an expectation derived from the constant under test passes
+  // whatever that constant becomes, and the first mutation probe caught exactly
+  // that. The two ids are the full names the catalog rates — a catalog row and an
+  // inventory that disagreed would exclude every Claude tuple as
+  // `model-not-in-inventory` and blame the catalog for it (PB-13.1) — and the three
+  // aliases are what `claude --help` prints under `--model` on 2.1.251, measured
+  // 2026-09-05. So the ids, the alias set and the default model that feed the
+  // inventory are pinned through one check.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const verdict = await probe(box.host);
-  assert.deepEqual(verdict.models.map((m) => m.model), ['fable', 'opus', 'sonnet']);
+  assert.deepEqual(verdict.models.map((m) => m.model),
+    ['claude-opus-5', 'claude-sonnet-5', 'fable', 'opus', 'sonnet']);
   // And the default is in there whatever the alias set says: it is the model every
   // spawn without a `--model` flag asks for.
   assert.ok(verdict.models.some((m) => m.model === DEFAULT_MODEL), DEFAULT_MODEL);

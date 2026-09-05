@@ -31,6 +31,7 @@ import {
 import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
 } from '../lib/model-routing/validate.js';
+import { MODEL_ALIASES, MODEL_IDS } from '../lib/driver-claude.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -119,6 +120,33 @@ test('every Cursor model id appears verbatim in the listing the binary printed',
   }
 });
 
+test('every Claude model id is one the driver reports, and no Claude row names an alias', () => {
+  // The Claude sibling of the Cursor check above, and it needs a different source
+  // because the harness has none: `claude` publishes no model listing at all — no
+  // `models` subcommand, no `--list-models` (measured 2026-09-05 on 2.1.251) — so
+  // what a row is checked against is the set the DRIVER accepts and reports as its
+  // inventory. That set is the one the adapter hands the preflight, so a row and an
+  // inventory that drifted apart would exclude every Claude tuple as
+  // `model-not-in-inventory` and send the person to the catalog for it.
+  //
+  // The second half is PB-13.1 itself. `claude --model` takes an alias ('fable',
+  // 'opus', 'sonnet') as readily as a full name, and a row keyed on one is a rating
+  // of whatever the vendor points that alias at today: when it moves, the row keeps
+  // its ratings, its `assessedAt` and its evidence and starts describing a model
+  // nobody assessed, with nothing going red — the staleness warning fires on the
+  // calendar, not on a re-point. This is where a row that goes back to an alias
+  // reddens instead.
+  const accepted = new Set(MODEL_IDS);
+  const claudeTuples = CATALOG.tuples.filter((t) => t.harness === 'claude');
+  assert.ok(claudeTuples.length, 'no Claude tuple to check');
+  for (const tuple of claudeTuples) {
+    assert.ok(!MODEL_ALIASES.includes(tuple.model),
+      `${tuple.id}: model "${tuple.model}" is an alias, and an alias re-points under the rating`);
+    assert.ok(accepted.has(tuple.model),
+      `${tuple.id}: model "${tuple.model}" is not one of MODEL_IDS in lib/driver-claude.js (${[...accepted].join(', ')})`);
+  }
+});
+
 test('the shipped catalog passes validate with no overlay present', () => {
   const verdict = validate({ host: hostWith([{ id: 'user', path: '/nowhere/user.json' }]) });
   assert.deepEqual(verdict.errors, []);
@@ -151,7 +179,7 @@ test('every layer overrides the one below it, field by field', () => {
     penalties: { unknownAvailability: 20 },
     bonuses: { reviewerDiversity: 9 },
     reviewerQualityFloor: 3,
-    deny: { models: ['opus'] },
+    deny: { models: ['claude-opus-5'] },
     ratings: { 'codex-sol-high': { quality: 2 } },
     priority: { 'codex-sol-high': 999 },
     payg: { allow: true },
@@ -160,7 +188,7 @@ test('every layer overrides the one below it, field by field', () => {
     schemaVersion: 1,
     penalties: { unknownAvailability: 30 },
     reviewerQualityFloor: 5,
-    deny: { models: ['sonnet'] },
+    deny: { models: ['claude-sonnet-5'] },
     ratings: { 'codex-sol-high': { speed: 1 } },
   });
 
@@ -169,7 +197,7 @@ test('every layer overrides the one below it, field by field', () => {
   // Taken from the higher layer.
   assert.equal(merged.policy.penalties.unknownAvailability, 30);
   assert.equal(merged.policy.reviewerQualityFloor, 5);
-  assert.deepEqual(merged.policy.deny.models, ['sonnet']);
+  assert.deepEqual(merged.policy.deny.models, ['claude-sonnet-5']);
   // Left alone by the higher layer, so the lower one still holds.
   assert.deepEqual(merged.policy.weights.balanced, { quality: 50, speed: 20, quotaCost: 15, remaining: 15 });
   assert.equal(merged.policy.bonuses.reviewerDiversity, 9);
@@ -368,8 +396,8 @@ test('validate refuses weights that do not sum to 100, and rules that both allow
   const acrossLayers = validateLayers({
     canonical: canonicalLayer(),
     overlays: [
-      overlayLayer('user', { schemaVersion: 1, allow: { models: ['opus'] } }),
-      overlayLayer('workspace', { schemaVersion: 1, deny: { models: ['opus'] } }),
+      overlayLayer('user', { schemaVersion: 1, allow: { models: ['claude-opus-5'] } }),
+      overlayLayer('workspace', { schemaVersion: 1, deny: { models: ['claude-opus-5'] } }),
     ],
   });
   assert.equal(acrossLayers.ok, false);
@@ -496,8 +524,8 @@ test('a finding names the layer that wrote the key it is about', () => {
   const contradiction = validateLayers({
     canonical: canonicalLayer(),
     overlays: [
-      overlayLayer('user', { schemaVersion: 1, allow: { models: ['opus'] } }),
-      overlayLayer('workspace', { schemaVersion: 1, deny: { models: ['opus'] } }),
+      overlayLayer('user', { schemaVersion: 1, allow: { models: ['claude-opus-5'] } }),
+      overlayLayer('workspace', { schemaVersion: 1, deny: { models: ['claude-opus-5'] } }),
     ],
   });
   const denyError = contradiction.errors.find((e) => e.at === 'deny.models');
@@ -586,7 +614,7 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1 },
     { schemaVersion: 1, note: 'a person wrote this' },
     { schemaVersion: 1, weights: { balanced: { quality: 50, speed: 20, quotaCost: 15, remaining: 15 } } },
-    { schemaVersion: 1, allow: { harnesses: ['claude'] }, deny: { models: ['opus'] } },
+    { schemaVersion: 1, allow: { harnesses: ['claude'] }, deny: { models: ['claude-opus-5'] } },
     { schemaVersion: 1, ratings: { 'codex-sol-high': { speed: 4 } }, priority: { 'codex-sol-high': 5 } },
     { schemaVersion: 1, payg: { allow: true } },
     { schemaVersion: 2 },
@@ -598,7 +626,7 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, reviewerQualityFloor: 2.5 },
     { schemaVersion: 1, deny: {} },
     { schemaVersion: 1, deny: { models: [] } },
-    { schemaVersion: 1, deny: { models: ['opus', 'opus'] } },
+    { schemaVersion: 1, deny: { models: ['claude-opus-5', 'claude-opus-5'] } },
     { schemaVersion: 1, deny: { providers: ['x'] } },
     { schemaVersion: 1, payg: { allow: 'yes' } },
     { schemaVersion: 1, payg: { enabled: true } },

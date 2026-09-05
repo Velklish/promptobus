@@ -31,7 +31,7 @@ Three combining rules, and they differ on purpose.
 
 "Everything else" is `penalties`, `bonuses`, `reviewerQualityFloor`, `payg.allow`, one rating of one tuple (`ratings.<tupleId>.<rating>`) and one tuple's canonical priority (`priority.<tupleId>`).
 
-**Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["opus"] }` admits the Claude tuples that run `opus` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny, which is the order `validate` assumes when it reports a name that is in both as a contradiction.
+**Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["claude-opus-5"] }` admits the Claude tuples that run `claude-opus-5` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny, which is the order `validate` assumes when it reports a name that is in both as a contradiction.
 
 **A higher layer can replace a list; it cannot clear one.** The overlay schema has no empty list and no reset — `deny: {}` and `deny: { models: [] }` are both refused — and every denied name must exist, so there is no way to write "deny nothing". A layer above can therefore swap a ban for a different ban, but a ban from the layer below survives any file that does not name that selector kind. For a consumer policy layer that is the intended behaviour: its bans are meant to hold whatever a person writes in their workspace file. For a person who wants to try a model their consumer forbids, it is a wall. Whether an explicit reset belongs in the overlay schema is PB-13.3.
 
@@ -48,6 +48,19 @@ Two things about the rows are worth knowing before reading them.
 **Cursor carries effort inside the model id.** `lib/driver-cursor.js` appends `-<level>` to `--model` when it is given an effort, and the level is a flat suffix of the id — `claude-opus-5-thinking-max`, `gpt-5.6-sol-high`. So a Cursor tuple's `model` is the full id and its `effort` is `null`; the resolver must not add an effort for it, or the run would lift `…-max-max`. Claude and Codex take the level as a separate flag, and their tuples name it.
 
 Read the id, never the display name: `cursor-agent models` prints `claude-opus-5-thinking-high` under the name "Claude Opus 5 1M Thinking", with no level word in it, while `gpt-5.6-sol-high` is printed as "GPT-5.6 Sol 1M High". Nothing checks a Cursor id before liftoff — a wrong one dies in about two seconds with empty stdout and reads as a harness fault — so the listing is captured in [test/fixtures/model-catalog/](../../test/fixtures/model-catalog/README.md) and every Cursor row is pinned against it.
+
+**Claude rows name a full model id, never an alias.** `claude --model` takes both — its own help says "an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g. 'claude-fable-5')" — and the alias is the trap. A row keyed on `opus` is a rating of whatever the vendor points that alias at today: when it moves to a new model, the row keeps its `quality`, its `speed`, its `quotaCost`, its `assessedAt` and its evidence, and starts describing a model nobody assessed. Nothing goes red — the staleness warning fires on the calendar rather than on a re-point, and this harness publishes no inventory for `models validate` to compare against (no `models` subcommand, no `--list-models` on 2.1.251). So the rows name `claude-opus-5` and `claude-sonnet-5`, the "latest" behaviour of an alias is given up on purpose, and a new model gets a new rated row.
+
+A pinned id is only worth pinning if the binary takes it, and there is no listing to check that against — so each one was **run** once, on 2.1.251 on 2026-09-05:
+
+```text
+claude -p --model claude-opus-5   --max-turns 1 'reply with the single word ok'   → ok
+claude -p --model claude-sonnet-5 --max-turns 1 'reply with the single word ok'   → ok
+```
+
+That is the check to repeat when a row is added: one minimal turn per id, and the answer recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it.
+
+The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
 
 **An unrated model is not a tuple.** The catalog holds only what the maintainers rated from a source they named: each rating carries `source` and `evidence`, and a rating without one is a hypothesis that stays out. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
 
