@@ -1,43 +1,46 @@
-// Регресс на порядок локальной лесенки default-ветки. Запуск: npm test
+// Regression on the local ladder order of the default branch. Run: npm test
 //
-// Предмет — фолбэк `localDefault` в [review.js](../lib/review.js). Достижим он в одном
-// раскладе: ссылок origin в клоне нет вовсе (репозиторий собран `git init`, без remote), и
-// `defaultBranch` имени не даёт. Тогда база диффа угадывается по лесенке ЛОКАЛЬНЫХ веток
-// `['master', 'main']`.
+// Subject — the `localDefault` fallback in [review.js](../lib/review.js). It is reachable in
+// one setup: the clone has no origin refs at all (the repository was built with `git init`,
+// no remote), and `defaultBranch` gives no name. Then the diff base is guessed from the
+// LOCAL branch ladder `['master', 'main']`.
 //
-// Чем важен порядок именно здесь. Spawn в этом раскладе лесенки не спрашивает вовсе — он
-// берёт за базу `HEAD` и пишет точку ветвления в журнал. Лесенка остаётся reviewer'у на
-// случай, когда записанной точки взять неоткуда: запись сделал прежний CLI, или ветку
-// перебазировали. Угадать она обязана ту ветку, на которой `HEAD` и стоял: промахнись
-// она — `merge-base` уходит к общему предку, и в дифф worker'а возвращается чужая
-// незапушенная работа, беда .
+// Why the order matters specifically here. Spawn in this setup does not ask the ladder at
+// all — it takes `HEAD` as the base and writes the branch point into the journal. The ladder
+// is left to the reviewer for the case when the recorded point has nowhere to come from: the
+// record was made by a previous CLI, or the branch was rebased. It must guess the very
+// branch `HEAD` stood on: if it misses, `merge-base` walks up to the common ancestor, and the
+// worker's diff gets someone else's unpushed work pulled back into it, trouble.
 //
-// Лесенка `defaultBranch` (`fresh.js`) — origin'овая (`origin/HEAD` →
-// `origin/master` → `origin/main`), и в этом раскладе она не работает вовсе: спорить двум
-// лесенкам в одном прогоне не о чем. Порядок написан одинаково с ней по другой причине —
-// чтобы два детекта читались одним правилом и ответы не разъехались, когда ссылки origin у
-// клона появятся.
+// The `defaultBranch` ladder (`fresh.js`) is origin-based (`origin/HEAD` →
+// `origin/master` → `origin/main`), and in this setup it does not work at all: the two
+// ladders have nothing to disagree about in one run. The order is written to match it for a
+// different reason — so the two detections read as one rule and the answers do not diverge
+// once the clone gets origin refs.
 //
-// Что пиннят проверки. Главная — ИНВАРИАНТ, а не устройство: база ревью равна коммиту, от
-// которого `worktree add` завёл ветку. Он переживёт законную замену механизма (скажем, на
-// явное чтение `HEAD`), а перестановку лесенки ловит не хуже имени ветки — угаданная ветка
-// меняется, вместе с ней меняется база. Третья проверка читает имя ветки прямо из строки
-// базы: на замене механизма покраснеет только она, и это сигнал перечитать этот файл, а не
-// признак поломки.
+// What the checks pin down. The main one is an INVARIANT, not a mechanism: the review base
+// equals the commit `worktree add` branched the branch from. It survives a legitimate swap of
+// the mechanism (say, to an explicit `HEAD` read), and it catches a reordering of the ladder
+// no worse than the branch name does — the guessed branch changes, and the base changes with
+// it. The third check reads the branch name straight out of the base line: on a mechanism
+// swap only this one goes red, and that's a signal to re-read this file, not a sign of
+// breakage.
 //
-// Файл отдельный, потому что расклад нужен свой: клон без ссылок origin, где есть ОБЕ
-// локальные ветки и стоят они на разных коммитах. Фикстуры promptobus-review.test.mjs до фолбэка
-// доходят (`rebase-api`, `merged-api`), но каждая с одной локальной веткой — по одной ветке
-// очерёдность не наблюдаема, и перестановка `['main', 'master']` оставляет их зелёными.
+// The file is separate because it needs its own setup: a clone with no origin refs, where
+// BOTH local branches exist and sit on different commits. The fixtures in
+// promptobus-review.test.mjs do reach the fallback (`rebase-api`, `merged-api`), but each has
+// only one local branch — with one branch the ordering is not observable, and reordering to
+// `['main', 'master']` leaves them green.
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { check } from './check.mjs';
 
-// realpath: план канонизирует корень (macOS: /var → /private/var), и ожидания проверок
-// сравниваются с каноническими путями. Уборка — на `makeSandbox`: упавшая
-// проверка уносит процесс через `process.exit`, и хвостовой `rmSync` до неё не доходит.
+// realpath: the plan canonicalizes the root (macOS: /var → /private/var), and check
+// expectations are compared against the canonical paths. Cleanup is on `makeSandbox`: a
+// failing check takes the process down via `process.exit`, and the trailing `rmSync` never
+// runs.
 const SB = realpathSync(makeSandbox('promptobus-promptobus-ladder-'));
 const { planReview } = await import(new URL('../lib/review.js', import.meta.url).href);
 const { createStandaloneHost } = await import(new URL('../lib/host.js', import.meta.url).href);
@@ -48,18 +51,18 @@ const g = (cwd, ...args) => {
   return r.stdout.trim();
 };
 
-// --- workspace: минимум, который читает план ------------------------------
+// --- workspace: the minimum the plan reads ------------------------------
 const WS = path.join(SB, 'ws');
 mkdirSync(WS, { recursive: true });
 writeFileSync(path.join(WS, 'AGENTS.md'), 'workspace\n');
 writeHostConfig(WS);
 
-// --- клон без ссылок origin, обе локальные ветки на разных коммитах ------------
+// --- clone with no origin refs, both local branches on different commits ------------
 //
-// `main` осталась на первом коммите, `master` ушла вперёд на работу оркестратора —
-// незапушенную, ту самую, ради которой база и считается от ЛОКАЛЬНОЙ ветки.
-// Ветка worker'а заводится от `master`, поэтому её точка ветвления — вершина `master`, и
-// промах лесенки на `main` виден и в базе, и в составе диффа.
+// `main` stayed on the first commit, `master` moved ahead with the orchestrator's work —
+// unpushed, the very thing the base is computed from the LOCAL branch for. The worker's
+// branch is founded from `master`, so its branch point is the tip of `master`, and a ladder
+// miss onto `main` shows up both in the base and in the contents of the diff.
 const REPO = path.join(WS, 'repos', 'loads_search', 'ladder-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'master');
@@ -80,23 +83,23 @@ g(WT, 'commit', '-m', 'работа', '-q');
 
 const heads = g(REPO, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').split('\n');
 const remotes = g(REPO, 'for-each-ref', '--format=%(refname:short)', 'refs/remotes/');
-check('фикстура: в клоне обе локальные ветки и ни одной ссылки origin — фолбэк достижим',
+check('fixture: the clone has both local branches and no origin ref — the fallback is reachable',
   heads.includes('master') && heads.includes('main') && remotes === '',
   `${heads.join(',')} · remotes=[${remotes}]`);
-check('фикстура: ветку завели от master, и точка ветвления с main другая — промах виден',
+check('fixture: the branch was founded from master, and its branch point differs from main — the miss is visible',
   FORK !== OLD && g(WT, 'merge-base', 'master', 'HEAD') === FORK
   && g(WT, 'merge-base', 'main', 'HEAD') === OLD, `master=${FORK} main=${OLD}`);
 
-// --- сама проверка ------------------------------------------------------------
+// --- the check itself ------------------------------------------------------------
 // Standalone defaultBranch falls back to HEAD when origin refs are absent, which would
 // name the worktree branch itself and skip review.js's local ['master','main'] ladder.
 // This file pins that ladder, so the host here reports no named default.
 const host = createStandaloneHost({ cwd: WS });
 host.defaultBranch = () => null;
 const plan = planReview(host, { target: WT, title: 'лесенка' });
-check(': база ревью — коммит, от которого worktree add завёл ветку',
-  plan.baseRef === FORK, `${plan.baseRef} · ветвились от ${FORK}, у main ${OLD}`);
-check(': при перестановке лесенки в дифф вернулась бы работа оркестратора — её там нет',
+check(': the review base is the commit worktree add founded the branch from',
+  plan.baseRef === FORK, `${plan.baseRef} · founded from ${FORK}, main is at ${OLD}`);
+check(': reordering the ladder would bring the orchestrator\'s work back into the diff — it is not there',
   plan.diff.includes('rabota.txt') && !plan.diff.includes('orkestrator.txt'), plan.stat);
-check(': угаданная ветка названа вслух, и это master — прямое чтение порядка лесенки',
+check(': the guessed branch is named out loud, and it is master — a direct read of the ladder order',
   /merge-base with master /.test(String(plan.baseLine)), String(plan.baseLine));

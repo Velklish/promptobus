@@ -116,7 +116,7 @@ check(': shadowedUserServers is empty — the personal set is not isolated, conf
 // checked, and at `worker:mcp` — what actually went into `thread/start`.
 const translated = codexMcpServers({
   'es-mcp-prod': { type: 'http', url: 'http://es.invalid/mcp' },
-  'ati-kaiten-mcp': { type: 'http', url: 'http://kaiten.invalid/mcp', headers: { api_key: 'ТОКЕН' } },
+  'ati-kaiten-mcp': { type: 'http', url: 'http://kaiten.invalid/mcp', headers: { api_key: 'TOKEN' } },
   promptobus: { type: 'stdio', command: 'node', args: ['bin.js'], env: { PROMPTOBUS_ROLE: WORKER } },
   'sse-legacy': { type: 'sse', url: 'http://sse.invalid/mcp' },
   'bez-komandy': { type: 'stdio', args: [], env: {} },
@@ -126,7 +126,7 @@ const fieldsOf = (name) => Object.keys(translated.servers[codexMcpName(name)] ??
 check(': a url-server goes out in url form — no args, no env, no command',
   fieldsOf('es-mcp-prod') === 'url'
   && fieldsOf('ati-kaiten-mcp') === 'http_headers,url'
-  && translated.servers[codexMcpName('ati-kaiten-mcp')].http_headers.api_key === 'ТОКЕН',
+  && translated.servers[codexMcpName('ati-kaiten-mcp')].http_headers.api_key === 'TOKEN',
   JSON.stringify(translated.servers));
 
 check(': a stdio-server goes out in stdio form — no url is attached to it',
@@ -156,7 +156,7 @@ check(': toolName and phrases.tool call the override key, not the canonical name
 
 const ctx = {
   mcp: { servers: { promptobus: { command: 'node', args: ['x'], env: {} } } },
-  prompt: 'ПРОМПТ',
+  prompt: 'PROMPT',
   model: DEFAULT_MODEL,
   cwd: '/tmp/wt',
   addDirs: ['/tmp/rules'],
@@ -164,7 +164,7 @@ const ctx = {
 const workerPlan = codexDriver.prepare(ctx);
 check(': argv is app-server --stdio, prompt last; no files on disk',
   workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
-  && workerPlan.argv.at(-1) === 'ПРОМПТ' && workerPlan.files.length === 0
+  && workerPlan.argv.at(-1) === 'PROMPT' && workerPlan.files.length === 0
   && workerPlan.settings.sandbox === 'workspace-write'
   && workerPlan.settings.approvalPolicy === 'on-request',
   JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files.length, settings: workerPlan.settings }));
@@ -179,9 +179,9 @@ check(': the wake text calls the mailbox by the Codex name',
   (() => {
     const text = codexDriver.renderNotification({
       kind: 'unread', task: 'T', address: 'worker:a', unread: 1,
-      messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'ТЕЛО' }],
+      messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'BODY' }],
     });
-    return text.includes(`mcp__${codexMcpName('promptobus')}__promptobus_mailbox`) && text.includes('ТЕЛО');
+    return text.includes(`mcp__${codexMcpName('promptobus')}__promptobus_mailbox`) && text.includes('BODY');
   })());
 
 const { ws, repoAbs, repo } = buildWorkspace(SB);
@@ -214,7 +214,7 @@ planParticipant(HARNESS, REVIEWER, {
   turns: [
     {
       do: [
-        { write: { path: FORBIDDEN, text: 'не должно появиться\n' } },
+        { write: { path: FORBIDDEN, text: 'must not appear\n' } },
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${REVIEW_MARK}: замечаний нет` } },
       ],
     },
@@ -381,11 +381,11 @@ if (rev?.sessionRef) await codexDriver.stop(rev.sessionRef);
 const deadRef = 'dead-probe';
 writeSession({
   ref: deadRef, state: 'dead', threadId: 't-dead', holderPid: process.pid,
-  error: 'app-server завершился (9)',
+  error: 'app-server exited (9)',
 }, process.env);
 const deadView = codexDriver.inspect(deadRef);
 check(': inspect at state=dead — stall, even if holderPid is alive',
-  deadView.state === 'stale' && deadView.stall?.kind === 'stale' && /умер|завершился/.test(deadView.stall.reason),
+  deadView.state === 'stale' && deadView.stall?.kind === 'stale' && /died|exited/.test(deadView.stall.reason),
   JSON.stringify(deadView));
 dropSession(deadRef, process.env);
 
@@ -483,7 +483,7 @@ if (slowPart?.sessionRef) await codexDriver.stop(slowPart.sessionRef);
 writeHostConfig(ws, {
   tools: ['claude', 'codex'],
   mcp: {
-    'probe-http': { type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'ПРОБНЫЙ-ТОКЕН' } },
+    'probe-http': { type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'PROBE-TOKEN' } },
   },
 });
 
@@ -509,7 +509,7 @@ const busKey = codexMcpName('promptobus');
 const httpKey = codexMcpName('probe-http');
 check(': in thread/start the url-server went out in url form, the bus in stdio form',
   Object.keys(started[httpKey] ?? {}).sort().join(',') === 'http_headers,url'
-  && started[httpKey].http_headers.api_key === 'ПРОБНЫЙ-ТОКЕН'
+  && started[httpKey].http_headers.api_key === 'PROBE-TOKEN'
   && Object.keys(started[busKey] ?? {}).sort().join(',') === 'args,command,env',
   JSON.stringify(started));
 check(': in thread/start there are no canonical names — the bus went out under the prefix',

@@ -850,7 +850,7 @@ async function playTurn({
     return;
   }
   appendFileSync(transcript, `${JSON.stringify({
-    role: 'assistant', message: { content: [{ type: 'text', text: `ход ${turn} сыгран (${outcome})` }] },
+    role: 'assistant', message: { content: [{ type: 'text', text: `turn ${turn} played (${outcome})` }] },
   })}\n`);
   appendFileSync(transcript, `${JSON.stringify({ type: 'turn_ended', status: outcome === 'error' ? 'error' : 'success' })}\n`);
   if (persistent) setBusy(home, name, false);

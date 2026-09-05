@@ -112,10 +112,10 @@ if (gatesPresent) {
 // verdict are given as numbers, not derived from constants: otherwise
 // it would pass at any value of them.
 check(': an empty sweep summary names both thresholds, and at keep = 0 — only age',
-  /nothing to sweep: everything is within 3 kept or younger than 60 minutes/.test(sweptLine('к', [], { keep: 3 }))
-  && /nothing to sweep: everything is younger than 60 minutes/.test(sweptLine('п', [], { keep: 0 }))
-  && !/kept/.test(sweptLine('п', [], { keep: 0 })),
-  `${sweptLine('к', [], { keep: 3 })} · ${sweptLine('п', [], { keep: 0 })}`);
+  /nothing to sweep: everything is within 3 kept or younger than 60 minutes/.test(sweptLine('a', [], { keep: 3 }))
+  && /nothing to sweep: everything is younger than 60 minutes/.test(sweptLine('b', [], { keep: 0 }))
+  && !/kept/.test(sweptLine('b', [], { keep: 0 })),
+  `${sweptLine('a', [], { keep: 3 })} · ${sweptLine('b', [], { keep: 0 })}`);
 
 // ── Suite sandboxes: everything of ours older than the cut-off is swept ────────────────────────────────
 //
@@ -212,7 +212,7 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
   const stuck = plant(LOCKED, 'promptobus-sync-locked', 3 * DAY);
   const lock = path.join(stuck, 'lock');
   mkdirSync(lock, { recursive: true });
-  writeFileSync(path.join(lock, 'held'), 'занято\n');
+  writeFileSync(path.join(lock, 'held'), 'held\n');
   chmodSync(lock, 0o555);
   // Directory time is set AFTER contents were put into it: directory
   // mtime grows on every write inside, and a planted age without

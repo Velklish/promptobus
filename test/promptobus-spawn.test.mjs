@@ -650,7 +650,7 @@ claudeSays([], 0, '2.1.100 (Claude Code)');
 // tool object spawn already accepts: pass the declared HostToolBin refusal.
 const oldTool = {
   ok: false, found: true, version: '2.1.100',
-  reason: 'Claude Code: найдена версия 2.1.100, нужна 2.1.169 или новее',
+  reason: 'Claude Code: found version 2.1.100, need 2.1.169 or newer',
 };
 const oldRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
@@ -663,7 +663,7 @@ check(': the refusal names the version, not an unknown flag',
 // The same text must not arrive twice in a row, ⚠ and ✖: for `note` `sayTool`
 // moved in front of the refusal, but the reason is printed by `fail`, not by it.
 check(': the refusal reason is printed once, not as a warning and a refusal in a row',
-  (oldText.match(/найдена версия 2\.1\.100/g) ?? []).length === 1,
+  (oldText.match(/found version 2\.1\.100/g) ?? []).length === 1,
   oldText.split('\n').filter((l) => /2\.1\.100/.test(l)).join(' | '));
 check(': nothing is opened on disk — neither a participant nor a worktree',
   !store.readTask(HOME, OLD_TASK).participants.some((p) => store.addressOf(p) === 'worker:staryy')
@@ -738,7 +738,7 @@ if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n');
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]))}); process.exit(0); }
 process.stdout.write('backgrounded · sess-0003\\n');`);
 const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
-const foundNote = `claude не найден в PATH — взят из ${offPathBin}`;
+const foundNote = `claude not found in PATH — taken from ${offPathBin}`;
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
@@ -751,13 +751,13 @@ check(`: the binary is not on PATH — spawn lifts the worker with the absolute 
   foundRun.status === 0 && store.readTask(HOME, FOUND_TASK).participants.some((p) => store.addressOf(p) === 'worker:naydennyy'),
   `status=${foundRun.status} ${foundText}`);
 check(': the found binary is named in the output together with the directory',
-  foundText.includes(offPathBin) && /не найден в PATH/.test(foundText), foundText);
+  foundText.includes(offPathBin) && /not found in PATH/.test(foundText), foundText);
 
 const NONE_TASK = 'nekem-t20260827-160000';
 store.createTask(HOME, {
   id: NONE_TASK, title: 'spawn без бинаря', slug: 'nekem', stamp: 't20260827-160000',
 });
-const noneReason = 'claude: не найден в PATH. Поставь: npm install -g @anthropic-ai/claude-code';
+const noneReason = 'claude: not found in PATH. Install: npm install -g @anthropic-ai/claude-code';
 const noneRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({

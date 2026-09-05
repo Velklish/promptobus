@@ -1,14 +1,16 @@
-// Регресс на правду о worktree и о живости сессии (). Запуск: npm test
+// Regression suite for worktree truth and session liveness (). Run: npm test
 //
-// Два предмета. Первый — git как источник правды: имя ветки берётся у него, а не из
-// журнала задачи, и по нему же решается судьба каталога при закрытии задачи. Фикстуры
-// настоящие: репозиторий с worktree во временной папке, моков git нет — проверяем ровно
-// то, что он делает. Второй — разбор записи сессии из `claude agents --json`: тут наоборот,
-// записи синтетические, потому что интересна логика, а не живой claude.
+// Two subjects. First — git as the source of truth: the branch name is taken from it, not
+// from the task journal, and it also decides the directory's fate when the task closes. The
+// fixtures are real: a repository with a worktree in a temp folder, no git mocks — we verify
+// exactly what it does. Second — parsing a session record from `claude agents --json`: here
+// it's the opposite, the records are synthetic, because what matters is the logic, not a
+// live claude.
 //
-// **Имена вида `a2a-…` в фикстурах оставлены намеренно**: так называл ветки,
-// каталоги worktree и сессии прежний CLI, и на них проверяется, что hard rename не сломал
-// уже заведённое. Разбор — в `promptobus.test.mjs`, шапка файла.
+// **Names of the form `a2a-…` in fixtures are left in place on purpose**: that's what the
+// previous CLI called branches, worktree directories, and sessions, and they verify that the
+// hard rename didn't break what was already established. Details — in `promptobus.test.mjs`,
+// the file's header comment.
 import {
   writeFileSync, readFileSync, chmodSync, linkSync, mkdirSync, mkdtempSync, readdirSync, rmSync, existsSync, statSync,
 } from 'node:fs';
@@ -24,16 +26,16 @@ const {
   branchLine, createWorktree, defaultRefs, excludeWorktrees, inspectWorktree,
   removeWorktree, worktreeBranch, worktreeDisposition,
 } = await import(path.join(here, '..', 'lib', 'worktree.js'));
-// Реестр сессий и подъём живут за контрактом driver'а: `spawn.js` их больше не
-// реэкспортирует — он вообще не импортирует ни `liftoff.js`, ни driver, и это сторожит гейт
-// границы adapter'а. Набор берёт их из их собственного дома.
+// The session registry and liftoff live behind the driver's contract: `spawn.js` no longer
+// re-exports them — it doesn't import `liftoff.js` or the driver at all, and this guards the
+// adapter boundary gate. The suite takes them from their own home.
 const {
   sessionLiveness, awaitSession, findSession, spawnedSessionId, parseSessionId,
 } = await import(path.join(here, '..', 'lib', 'liftoff.js'));
 
 const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
 
-// --- фикстура: репозиторий с двумя worktree ------------------------------------
+// --- fixture: a repository with two worktrees ------------------------------------
 const REPO = path.join(SB, 'repo');
 mkdirSync(REPO, { recursive: true });
 git(REPO, 'init', '-q', '-b', 'master');
@@ -41,27 +43,27 @@ writeFileSync(path.join(REPO, 'f'), 'первый\n');
 git(REPO, 'add', '.');
 git(REPO, 'commit', '-qm', 'первый');
 
-// Worktree worker'а, который ничего не менял: ветка целиком в master.
+// A worker's worktree that changed nothing: its branch is entirely contained in master.
 const CLEAN = path.join(REPO, '.claude', 'worktrees', 'clean');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-clean', CLEAN);
-// Worktree worker'а со своей работой: коммит, которого в master нет.
+// A worker's worktree with its own work: a commit that master doesn't have.
 const AHEAD = path.join(REPO, '.claude', 'worktrees', 'ahead');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-ahead', AHEAD);
 writeFileSync(path.join(AHEAD, 'f'), `работа worker'а\n`);
 git(AHEAD, 'add', '.');
 git(AHEAD, 'commit', '-qm', 'работа');
-// Worktree, который worker увёл на собственную ветку по просьбе брифа — тот самый
-// случай, из-за которого MR !37 открылся пустым.
+// A worktree that the worker moved to its own branch per the brief's request — the exact
+// case that made MR !37 open up empty.
 const MOVED = path.join(REPO, '.claude', 'worktrees', 'moved');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-moved', MOVED);
 git(MOVED, 'checkout', '-q', '-b', 'feat/diagnostics-domain');
 
-// --- ветка: у git, а не по конвенции имени ----------------------------
-check('ветка worktree берётся у git', worktreeBranch(CLEAN) === 'worktree-a2a-clean', String(worktreeBranch(CLEAN)));
-check('worker сменил ветку — git отдаёт ту, на которой он стоит сейчас',
+// --- branch: from git, not by naming convention ----------------------------
+check('worktree branch is taken from git', worktreeBranch(CLEAN) === 'worktree-a2a-clean', String(worktreeBranch(CLEAN)));
+check('worker changed branch — git returns the one it is currently on',
   worktreeBranch(MOVED) === 'feat/diagnostics-domain', String(worktreeBranch(MOVED)));
-check('каталога нет — null, а не выдуманная ветка', worktreeBranch(path.join(REPO, 'нет')) === null);
-check('отсоединённый HEAD — null, а не строка «HEAD»', (() => {
+check('no directory — null, not a made-up branch', worktreeBranch(path.join(REPO, 'нет')) === null);
+check('detached HEAD — null, not the string «HEAD»', (() => {
   const head = git(MOVED, 'rev-parse', 'HEAD').stdout.trim();
   git(MOVED, 'checkout', '-q', head);
   const got = worktreeBranch(MOVED);
@@ -69,117 +71,123 @@ check('отсоединённый HEAD — null, а не строка «HEAD»',
   return got === null;
 })());
 
-check('строка ветки: журнал и git совпали — без шума', branchLine('worktree-a2a-clean', 'worktree-a2a-clean') === 'branch worktree-a2a-clean');
-check('строка ветки: расхождение названо громко и с обеими ветками', (() => {
+check('branch line: journal and git agree — no noise', branchLine('worktree-a2a-clean', 'worktree-a2a-clean') === 'branch worktree-a2a-clean');
+check('branch line: a mismatch is called out loudly, naming both branches', (() => {
   const line = branchLine('worktree-a2a-moved', 'feat/diagnostics-domain');
   return line.includes('WORKER CHANGED BRANCH') && line.includes('worktree-a2a-moved') && line.includes('feat/diagnostics-domain');
 })(), branchLine('worktree-a2a-moved', 'feat/diagnostics-domain'));
-check('строка ветки: git молчит — говорим это, а не печатаем журнальную как факт',
+check('branch line: git stays silent — we say so, rather than printing the journal one as fact',
   branchLine('worktree-a2a-clean', null).includes('git did not answer'), branchLine('worktree-a2a-clean', null));
 
-// --- судьба каталога при закрытии задачи ------------------------------
+// --- directory fate when the task closes ------------------------------
 const disp = (p) => worktreeDisposition(inspectWorktree(REPO, p, 'master'));
-check('слитый и чистый worktree — снять', disp(CLEAN).action === 'remove', JSON.stringify(disp(CLEAN)));
-check('есть свои коммиты — оставить и назвать, сколько их', (() => {
+check('merged and clean worktree — remove', disp(CLEAN).action === 'remove', JSON.stringify(disp(CLEAN)));
+check('has its own commits — keep it and name how many', (() => {
   const d = disp(AHEAD);
   return d.action === 'keep' && d.reason.includes('1 commit');
 })(), JSON.stringify(disp(AHEAD)));
-check('сверка идёт по ветке от git, а не по журнальной: уведённый worktree не снимается', (() => {
+check('the check goes by git\'s branch, not the journal\'s: a moved-off worktree is not removed', (() => {
   writeFileSync(path.join(MOVED, 'f'), 'правка на своей ветке\n');
   git(MOVED, 'add', '.');
   git(MOVED, 'commit', '-qm', 'своя ветка');
   const d = disp(MOVED);
   return d.action === 'keep' && d.reason.includes('feat/diagnostics-domain');
 })(), JSON.stringify(disp(MOVED)));
-check('незакоммиченные правки — оставить', (() => {
+check('uncommitted changes — keep', (() => {
   writeFileSync(path.join(CLEAN, 'f'), 'недописанное\n');
   const d = disp(CLEAN);
   writeFileSync(path.join(CLEAN, 'f'), 'первый\n');
   return d.action === 'keep' && d.reason.includes('uncommitted');
 })());
-// Тристейт `adds` держится честно: `false` означает «сверили merge-tree, вливать
-// нечего» — приговор каталогу. Там, где сверки не было (грязное дерево, молчание git,
-// слитая ветка), ответ обязан быть `null` — «не знаю».
-check('adds не выдумывает «вливать нечего» там, где не сверял', (() => {
+// The `adds` tri-state is kept honest: `false` means "we checked merge-tree, there's
+// nothing to merge in" — a verdict against the directory. Wherever no check was made (a
+// dirty tree, git staying silent, a merged branch), the answer must be `null` — "don't
+// know".
+check('adds does not invent "nothing to merge in" where it never checked', (() => {
   const clean = inspectWorktree(REPO, CLEAN, 'master');
   writeFileSync(path.join(AHEAD, 'f'), 'недописанное\n');
   const dirty = inspectWorktree(REPO, AHEAD, 'master');
   writeFileSync(path.join(AHEAD, 'f'), `работа worker'а\n`);
   return clean.adds === null && dirty.adds === null && worktreeDisposition(dirty).action === 'keep';
 })(), JSON.stringify(inspectWorktree(REPO, CLEAN, 'master')));
-// Каталога нет — тот же ответ, что на молчание git: «не знаю» → `keep`.
-// Отдельного вердикта 'gone' у решателя больше нет, и это не косметика: боевой
-// потребитель (уборка в spawn.js) отсеивает несуществующий каталог раньше, а всё, что
-// не 'keep', он ведёт в `removeWorktree` — то есть прежняя ветка была миной.
-check('каталога нет — оставить, а не вести в снос', (() => {
+// No directory — the same answer as git staying silent: "don't know" → `keep`.
+// The resolver no longer has a separate 'gone' verdict, and that's not cosmetic: the
+// production consumer (cleanup in spawn.js) filters out a nonexistent directory earlier,
+// and drives everything that isn't 'keep' into `removeWorktree` — meaning the old branch
+// was a landmine.
+check('no directory — keep it, do not drive it into removal', (() => {
   const d = worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'));
   return d.action === 'keep' && /git did not answer/.test(d.reason);
 })(), JSON.stringify(worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'))));
-check('сверить не с чем — оставить, а не снести на всякий случай',
+check('nothing to compare against — keep it, do not remove it just in case',
   worktreeDisposition(inspectWorktree(REPO, CLEAN, 'нет-такой-ветки')).action === 'keep',
   JSON.stringify(inspectWorktree(REPO, CLEAN, 'нет-такой-ветки')));
 
-// Само снятие: каталог уходит, слитая ветка уходит с ним. Каталог залочен нарочно —
-// `claude --bg --worktree` лочит свои worktree, и живой `promptobus done` спотыкался ровно об это.
+// The removal itself: the directory goes, and the merged branch goes with it. The directory
+// is locked on purpose — `claude --bg --worktree` locks its own worktrees, and a live
+// `promptobus done` used to trip on exactly this.
 git(REPO, 'worktree', 'lock', CLEAN);
 const rm = removeWorktree(REPO, CLEAN, 'worktree-a2a-clean');
-check('снятие: каталога больше нет', rm.removed && !existsSync(CLEAN), JSON.stringify(rm));
-check('снятие: слитая ветка удалена вместе с каталогом',
+check('removal: the directory is gone', rm.removed && !existsSync(CLEAN), JSON.stringify(rm));
+check('removal: the merged branch was deleted along with the directory',
   rm.branchDeleted && !git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-clean').stdout.trim());
-// Ветку с невзятой работой git не отдаст даже по прямой просьбе: `-d` — второй гейт
-// поверх нашей сверки, и если они разойдутся, побеждает git.
+// git will not give up a branch with work not yet taken in, even on direct request: `-d`
+// is a second gate on top of our own check, and if the two disagree, git wins.
 const rmAhead = removeWorktree(REPO, AHEAD, 'worktree-a2a-ahead');
-check('снятие несведённой ветки: каталог снят, но ветка с работой цела',
+check('removal of an unmerged branch: the directory is removed, but the branch with the work survives',
   rmAhead.removed && rmAhead.branchDeleted === false
   && !!git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-ahead').stdout.trim(), JSON.stringify(rmAhead));
 
-// Ветку, которую завёл не spawn, снятие каталога не трогает: worker уехал на неё по
-// просьбе задания, человек её для чего-то назвал, и слитость тут ничего не решает.
+// Directory removal does not touch a branch that spawn did not create: the worker moved
+// onto it at the task's request, a human named it for some reason, and whether it's merged
+// decides nothing here.
 const movedBranch = 'feat/diagnostics-domain';
 git(REPO, 'merge', '-q', '--no-edit', movedBranch);
-// Слитость проверяем явно, а не считаем достигнутой: без неё `-d` отказал бы сам, и
-// проверка ниже прошла бы по ложной причине — «ветку не тронули» вместо «не стали».
-check('фикстура: чужая ветка действительно слита в master',
+// We check that it is merged explicitly, rather than assuming it: without this, `-d` would
+// have refused on its own, and the check below would pass for the wrong reason — "the
+// branch was not touched" instead of "we chose not to touch it".
+check('fixture: the foreign branch really is merged into master',
   git(REPO, 'branch', '--merged', 'master').stdout.includes(movedBranch),
   git(REPO, 'branch', '--merged', 'master').stdout);
 const rmMoved = removeWorktree(REPO, MOVED, movedBranch);
-check('снятие: чужую ветку не удаляем, даже слитую — и говорим, что оставили',
+check('removal: we do not delete a foreign branch, even a merged one — and we say we kept it',
   rmMoved.removed && rmMoved.branchKept === movedBranch && rmMoved.branchDeleted === false
   && !!git(REPO, 'rev-parse', '--verify', '-q', movedBranch).stdout.trim(), JSON.stringify(rmMoved));
 
-// --- лок каталога: свой снимаем, чужой не трогаем ---------------------
+// --- directory lock: lift our own, leave someone else's alone ---------------------
 //
-// Лок бывает двух пород. Без причины — след прежнего механизма (`claude --bg --worktree`
-// лочил свои каталоги), его уборка снимает и каталог уносит: это проверено снятием CLEAN
-// выше. С причиной — поставил человек, и его замок, объяснённый вслух, уборка не трогает.
+// A lock comes in two breeds. Without a reason — a trace of the old mechanism (`claude
+// --bg --worktree` used to lock its own directories), cleanup lifts it and takes the
+// directory with it: proven above by removing CLEAN. With a reason — a human set it, and
+// cleanup leaves alone a lock that explains itself out loud.
 const LOCKED = path.join(REPO, '.claude', 'worktrees', 'locked');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-locked', LOCKED);
 git(REPO, 'worktree', 'lock', '--reason', 'разбираю руками', LOCKED);
 const rmLocked = removeWorktree(REPO, LOCKED, 'worktree-a2a-locked');
-check('лок с причиной — отказ, и причина человека названа в нём',
+check('lock with a reason — refusal, and the human\'s reason is named in it',
   !rmLocked.removed && String(rmLocked.error).includes('разбираю руками') && existsSync(LOCKED),
   JSON.stringify(rmLocked));
-check('чужой лок остался на месте — уборка его не снимала',
+check('someone else\'s lock stayed put — cleanup did not lift it',
   git(REPO, 'worktree', 'unlock', LOCKED).status === 0);
 git(REPO, 'worktree', 'remove', '--force', LOCKED);
 git(REPO, 'branch', '-D', 'worktree-a2a-locked');
 
-// Лок без причины сняли, а снять каталог всё равно не вышло — лок возвращается на место:
-// уборка его не ставила, и оставленный расстёгнутым каталог означал бы молча снятую
-// чужую защиту.
+// A reasonless lock was lifted, but removing the directory still failed — the lock goes
+// back in place: cleanup did not set it, and leaving the directory unlocked would mean
+// silently lifting someone else's protection.
 const STUCK = path.join(REPO, '.claude', 'worktrees', 'stuck');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-stuck', STUCK);
 writeFileSync(path.join(STUCK, 'новый'), 'незакоммиченное\n');
 git(REPO, 'worktree', 'lock', STUCK);
 const rmStuck = removeWorktree(REPO, STUCK, 'worktree-a2a-stuck');
-check('снять не вышло — лок вернули на место, а не оставили снятым',
+check('removal failed — the lock was put back, not left lifted',
   !rmStuck.removed && git(REPO, 'worktree', 'unlock', STUCK).status === 0, JSON.stringify(rmStuck));
-check('причина отказа непуста и на обычном отказе git',
+check('the refusal reason is non-empty even on an ordinary git refusal',
   typeof rmStuck.error === 'string' && rmStuck.error.length > 0, JSON.stringify(rmStuck.error));
-// Пустой stderr — не теория: убитый по таймауту или не запустившийся вовсе git не
-// оставляет ни строки, и потребитель печатал «убрать не вышло: » без причины.
-// Воспроизводим прямо: PATH без git, значит ENOENT и пустой stderr.
-check('git не запустился вовсе — причина всё равно названа, а не пустая строка', (() => {
+// An empty stderr is not just theory: a git killed by timeout, or one that never started
+// at all, leaves no line at all, and the consumer used to print "removal failed: " with no
+// reason. We reproduce it directly: a PATH without git, meaning ENOENT and an empty stderr.
+check('git never started at all — the reason is still named, not an empty string', (() => {
   const noGit = path.join(SB, 'без-git');
   mkdirSync(noGit, { recursive: true });
   const saved = process.env.PATH;
@@ -191,50 +199,52 @@ check('git не запустился вовсе — причина всё рав
 git(REPO, 'worktree', 'remove', '--force', STUCK);
 git(REPO, 'branch', '-D', 'worktree-a2a-stuck');
 
-// --- squash-мерж: коммитов в базе нет, а вливать нечего ---------------
+// --- squash merge: no commits in the base, but nothing to merge in ---------------
 //
-// Проверка опирается на `git merge-tree --write-tree` — это git 2.38 и новее. Версию
-// называем отдельной проверкой: иначе на старом git блок падает невнятно, и читатель
-// гадает, дело в логике или в окружении.
+// The check relies on `git merge-tree --write-tree` — that's git 2.38 and newer. We name
+// the version in a separate check: otherwise the block fails unintelligibly on old git, and
+// the reader has to guess whether it's the logic or the environment.
 const gitVer = (git(REPO, '--version').stdout.match(/(\d+)\.(\d+)/) ?? []).slice(1).map(Number);
 const mergeTreeOk = gitVer.length === 2 && (gitVer[0] > 2 || (gitVer[0] === 2 && gitVer[1] >= 38));
-check('окружение: git умеет merge-tree --write-tree (2.38+) — иначе сквош не распознать',
+check('environment: git supports merge-tree --write-tree (2.38+) — otherwise a squash cannot be recognized',
   mergeTreeOk, git(REPO, '--version').stdout.trim());
 //
-// Живой случай: MR !37 канона смержен сквошем — в master один коммит со всем содержимым,
-// а десять коммитов ветки навсегда числятся «вне master». Сверки по предкам тут мало.
+// A live case: MR !37 of the canon was merged as a squash — master has one commit with all
+// the content, while the branch's ten commits are permanently listed as "outside master".
+// Checking by ancestry alone is not enough here.
 const SQ = path.join(REPO, '.claude', 'worktrees', 'squashed');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-squashed', SQ);
 writeFileSync(path.join(SQ, 'sq1'), 'первая часть работы\n');
 git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'часть 1');
 writeFileSync(path.join(SQ, 'sq2'), 'вторая часть работы\n');
 git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'часть 2');
-// До сквоша вливать есть что — и это надо зафиксировать, иначе проверка ниже зелёная
-// по любой причине, включая «функция всегда отвечает false».
-check('невзятая работа: вливать есть что — каталог остаётся',
+// Before the squash there is something to merge in — and that needs to be pinned down,
+// otherwise the check below would pass green for any reason at all, including "the
+// function always answers false".
+check('work not yet taken in: there is something to merge — the directory stays',
   inspectWorktree(REPO, SQ, 'master').adds === true
   && worktreeDisposition(inspectWorktree(REPO, SQ, 'master')).action === 'keep',
   JSON.stringify(inspectWorktree(REPO, SQ, 'master')));
-// Сквош: содержимое ветки уезжает в master одним коммитом, история — нет.
+// Squash: the branch's content moves into master as one commit, the history does not.
 git(REPO, 'merge', '-q', '--squash', 'worktree-a2a-squashed');
 git(REPO, 'commit', '-qm', 'squash: работа ветки одним коммитом');
 const sq = inspectWorktree(REPO, SQ, 'master');
-check('фикстура: после сквоша коммиты ветки по-прежнему числятся вне master',
+check('fixture: after the squash, the branch\'s commits are still listed outside master',
   sq.unmerged === 2, String(sq.unmerged));
-check('squash-мерж: ветка не добавляет к базе ничего — каталог снимается',
+check('squash merge: the branch adds nothing to the base — the directory is removed',
   sq.adds === false && worktreeDisposition(sq).action === 'remove'
   && /squash/.test(worktreeDisposition(sq).reason), JSON.stringify(worktreeDisposition(sq)));
-// Снятие идёт продукционным путём: у сквошенной ветки `git branch -d` слитости не видит
-// (он считает по предкам), поэтому каталог уходит, а ветка остаётся — и обязана быть
-// названа, иначе ветки копятся молча.
+// Removal goes through the production path: for a squashed branch, `git branch -d` cannot
+// see that it is merged (it counts by ancestry), so the directory goes but the branch stays
+// — and it must be named, otherwise branches pile up silently.
 const rmSq = removeWorktree(REPO, SQ, 'worktree-a2a-squashed');
-check('сквошенная ветка: каталог снят, ветка осталась и названа',
+check('squashed branch: the directory is removed, the branch remains and is named',
   rmSq.removed && rmSq.branchDeleted === false && rmSq.branchStuck === 'worktree-a2a-squashed'
   && rmSq.branchKept === null, JSON.stringify(rmSq));
 git(REPO, 'branch', '-D', 'worktree-a2a-squashed');
 
-// Третье состояние: слить нельзя — конфликт. Это «не знаю», и решать оно должно в пользу
-// «оставить», назвав причину.
+// A third state: it cannot be merged — a conflict. That is "don't know", and it must
+// resolve in favor of "keep", naming the reason.
 const CF = path.join(REPO, '.claude', 'worktrees', 'conflict');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-conflict', CF);
 writeFileSync(path.join(CF, 'f'), 'версия ветки\n');
@@ -242,19 +252,19 @@ git(CF, 'add', '.'); git(CF, 'commit', '-qm', 'своя версия общег�
 writeFileSync(path.join(REPO, 'f'), 'версия master\n');
 git(REPO, 'add', '.'); git(REPO, 'commit', '-qm', 'другая версия того же файла');
 const cf = inspectWorktree(REPO, CF, 'master');
-check('конфликт слияния — «не знаю», а не «вливать нечего»', cf.adds === null, String(cf.adds));
-check('неизвестность решает в пользу «оставить», и причина названа', (() => {
+check('merge conflict — "don\'t know", not "nothing to merge in"', cf.adds === null, String(cf.adds));
+check('uncertainty resolves in favor of "keep", and the reason is named', (() => {
   const d = worktreeDisposition(cf);
   return d.action === 'keep' && /conflict or old git/.test(d.reason);
 })(), JSON.stringify(worktreeDisposition(cf)));
 git(REPO, 'worktree', 'remove', '--force', CF);
 git(REPO, 'branch', '-D', 'worktree-a2a-conflict');
 
-// --- база нового worktree: локальная default впереди origin -----------
+// --- base of a new worktree: local default ahead of origin -----------
 //
-// Главная развилка задачи: worker обязан видеть коммиты, которые человек ещё не запушил.
-// Фикстура ставит origin/master намеренно позади локального master — ровно та картина,
-// на которой прошлый worker не увидел кода оркестратора.
+// The task's central fork: a worker must see commits that a human has not pushed yet. The
+// fixture deliberately puts origin/master behind local master — exactly the picture under
+// which a past worker never saw the orchestrator's code.
 const OLD = git(REPO, 'rev-parse', 'master').stdout.trim();
 writeFileSync(path.join(REPO, 'f'), 'незапушенная работа\n');
 git(REPO, 'add', '.');
@@ -262,92 +272,98 @@ git(REPO, 'commit', '-qm', 'локальный коммит поверх origin'
 const AHEAD_SHA = git(REPO, 'rev-parse', 'master').stdout.trim();
 git(REPO, 'update-ref', 'refs/remotes/origin/master', OLD);
 
-check('порядок предпочтения: локальная default впереди origin-версии',
+check('preference order: local default ahead of the origin version',
   defaultRefs(REPO, 'master')[0] === 'master'
   && defaultRefs(REPO, 'master')[1] === 'origin/master', JSON.stringify(defaultRefs(REPO, 'master')));
-check('несуществующие ref не отдаются', defaultRefs(REPO, 'нет-такой').length === 0);
+check('nonexistent refs are not returned', defaultRefs(REPO, 'нет-такой').length === 0);
 
 const FRESH = path.join(REPO, '.claude', 'worktrees', 'fresh');
 const madeFresh = createWorktree(REPO, FRESH, 'worktree-a2a-fresh', defaultRefs(REPO, 'master')[0]);
-check('новый worktree заводится от локальной default-ветки, а не от origin/<default>',
+check('a new worktree is created from the local default branch, not from origin/<default>',
   madeFresh.created && !madeFresh.reused
   && git(FRESH, 'rev-parse', 'HEAD').stdout.trim() === AHEAD_SHA,
-  `${JSON.stringify(madeFresh)} · ожидали ${AHEAD_SHA.slice(0, 7)}`);
-// Точка ветвления — sha, а не имя базы: имя догоняет чужие коммиты, а дифф
-// worker'а `promptobus review` обязан считать ровно от того, что worker унаследовал. Именно
-// это `master` и делает в этой фикстуре: origin/master стоит позади него.
-check('createWorktree называет точку ветвления sha, а не именем базы',
+  `${JSON.stringify(madeFresh)} · expected ${AHEAD_SHA.slice(0, 7)}`);
+// The branch point is a sha, not the base's name: a name catches up on someone else's
+// commits, while the worker's diff `promptobus review` must be computed from exactly what
+// the worker inherited. That is exactly what `master` does in this fixture: origin/master
+// sits behind it.
+check('createWorktree names the branch point as a sha, not as the base\'s name',
   madeFresh.baseSha === AHEAD_SHA, `${madeFresh.baseSha} vs ${AHEAD_SHA}`);
 
-// Перезапуск умершего worker'а тем же адресом: ветка уцелела, каталога нет. `-b` на такой
-// ветке отказал бы — дерево должно завестись НА ней, а не рядом.
+// Restarting a dead worker at the same address: the branch survived, the directory did not.
+// `-b` on such a branch would refuse — the tree must be set up ON it, not next to it.
 git(REPO, 'worktree', 'remove', FRESH);
 const remade = createWorktree(REPO, FRESH, 'worktree-a2a-fresh', 'master');
-check(`ветка уцелела с прошлого run'а — заводимся на ней, а не отказываем`,
+check(`the branch survived from a past run — we set up on it, rather than refusing`,
   remade.created && remade.reused === true
   && worktreeBranch(FRESH) === 'worktree-a2a-fresh', JSON.stringify(remade));
-// HEAD уцелевшей ветки точкой ветвления уже не является: worker на ней работал. Выдать
-// его за точку значило бы обрезать его же работу из диффа reviewer'а — здесь честнее
-// «не знаю»: точку такой ветки знает только журнал задачи.
-check('уцелевшая ветка: точку ветвления createWorktree не выдумывает',
+// The HEAD of a surviving branch is no longer the branch point: the worker worked on it.
+// Passing it off as the point would mean cutting the worker's own work out of the
+// reviewer's diff — here it is more honest to say "don't know": only the task journal
+// knows such a branch's point.
+check('surviving branch: createWorktree does not invent a branch point',
   remade.baseSha === null, String(remade.baseSha));
-check('осиротевшая регистрация не мешает: каталог снесён руками — заводим заново', (() => {
+check('an orphaned registration does not get in the way: the directory was removed by hand — we set it up again', (() => {
   rmSync(FRESH, { recursive: true, force: true });
   const again = createWorktree(REPO, FRESH, 'worktree-a2a-fresh', 'master');
   return again.created && existsSync(FRESH);
 })());
 git(REPO, 'worktree', 'remove', '--force', FRESH);
 
-// --- служебный каталог не грязнит клон --------------------------------
+// --- the service directory does not dirty the clone --------------------------------
 const DIRT = path.join(REPO, '.claude', 'worktrees', 'dirt');
 createWorktree(REPO, DIRT, 'worktree-a2a-dirt', 'master');
-check('фикстура: до исключения служебный каталог виден как незакоммиченная правка',
+check('fixture: before exclusion, the service directory shows up as an uncommitted change',
   git(REPO, 'status', '--porcelain').stdout.includes('.claude'),
   git(REPO, 'status', '--porcelain').stdout.trim());
-check('после excludeWorktrees git status каталога не видит',
+check('after excludeWorktrees, git status does not see the directory',
   excludeWorktrees(REPO).status === 'added'
   && !git(REPO, 'status', '--porcelain').stdout.includes('.claude'),
   git(REPO, 'status', '--porcelain').stdout.trim());
-// Тристейт, а не булево: «уже стоит» и «записать не вышло» — разные исходы, и
-// одинаковый ответ на них прятал от человека ровно тот, ради которого шаг заведён.
-check('повторный вызов ничего не дописывает и говорит это своим исходом',
+// A tri-state, not a boolean: "already there" and "the write failed" are different
+// outcomes, and giving them the same answer used to hide from the human exactly the
+// failure this step was set up to catch.
+check('a repeat call appends nothing and says so through its own outcome',
   excludeWorktrees(REPO).status === 'present', JSON.stringify(excludeWorktrees(REPO)));
-check('строка помечена своим маркером — видно, кто её поставил',
+check('the line is marked with its own marker — you can see who put it there',
   readFileSync(path.join(REPO, '.git', 'info', 'exclude'), 'utf8').includes('# promptobus:'));
-check('отказ записи — свой исход, и с причиной, а не молчаливое «уже стоит»', (() => {
+check('a write failure is its own outcome, with a reason, not a silent "already there"', (() => {
   const notRepo = path.join(SB, 'не-репозиторий');
   mkdirSync(notRepo, { recursive: true });
   const r = excludeWorktrees(notRepo);
   return r.status === 'failed' && typeof r.error === 'string' && r.error.length > 0;
 })(), JSON.stringify(excludeWorktrees(path.join(SB, 'не-репозиторий'))));
 
-// Файл чужой: в нём лежат exclude-строки человека, и переписывался он на месте.
-// Проверяем и сохранность чужих строк, и права — `rename` подменяет файл целиком.
+// The file belongs to someone else: it holds a human's own exclude lines, and it used to
+// get rewritten in place. We check both that the foreign lines survive and the
+// permissions — `rename` swaps out the whole file.
 const EXCL = path.join(SB, 'excl');
 mkdirSync(EXCL, { recursive: true });
 git(EXCL, 'init', '-q', '-b', 'master');
 const exclFile = path.join(EXCL, '.git', 'info', 'exclude');
 mkdirSync(path.dirname(exclFile), { recursive: true });
 writeFileSync(exclFile, '# строка человека\nмой-мусор/\n');
-// `mode` у writeFileSync работает только на СОЗДАНИИ файла, а `git init` уже положил
-// свой `info/exclude` — права ставим отдельным chmod (тот же приём, что у writeSecret).
+// `mode` on writeFileSync only takes effect when the file is CREATED, and `git init`
+// already laid down its own `info/exclude` — we set the permissions with a separate
+// chmod (the same trick as writeSecret).
 chmodSync(exclFile, 0o600);
 const exclAdded = excludeWorktrees(EXCL);
-check('чужие строки exclude переживают дозапись',
+check('someone else\'s exclude lines survive the append',
   exclAdded.status === 'added'
   && readFileSync(exclFile, 'utf8').includes('мой-мусор/')
   && readFileSync(exclFile, 'utf8').includes('**/.claude/worktrees/'),
   readFileSync(exclFile, 'utf8'));
-check('права чужого файла не съезжают на дефолтные после подмены',
+check('someone else\'s file permissions do not slide to the defaults after the swap',
   (statSync(exclFile).mode & 0o777) === 0o600, (statSync(exclFile).mode & 0o777).toString(8));
-check('временного файла записи после себя не остаётся',
+check('no temp write file is left behind',
   !readdirSync(path.dirname(exclFile)).some((f) => f.startsWith('.tmp-exclude')),
   readdirSync(path.dirname(exclFile)).join(', '));
 
-// Атомарность записи — через жёсткую ссылку на прежний файл. `rename` подменяет
-// запись в каталоге: старый inode, а с ним и ссылка, остаётся с прежним содержимым.
-// Запись на месте изменила бы и ссылку — то есть переписала бы файл под тем, кто его
-// в этот момент читает, и смерть процесса посреди неё унесла бы чужие строки.
+// Write atomicity — via a hard link to the previous file. `rename` swaps out the
+// directory entry: the old inode, and the link along with it, keeps its previous content.
+// Writing in place would also change the link — that is, it would rewrite the file out
+// from under whoever is reading it at that moment, and a process death in the middle of it
+// would carry away someone else's lines.
 const EXCL2 = path.join(SB, 'excl2');
 mkdirSync(EXCL2, { recursive: true });
 git(EXCL2, 'init', '-q', '-b', 'master');
@@ -356,19 +372,19 @@ mkdirSync(path.dirname(excl2File), { recursive: true });
 writeFileSync(excl2File, '# строка человека\n');
 const excl2Alias = path.join(SB, 'exclude-до-записи');
 linkSync(excl2File, excl2Alias);
-check('запись идёт через tmp+rename, а не поверх чужого файла',
+check('the write goes through tmp+rename, not over someone else\'s file',
   excludeWorktrees(EXCL2).status === 'added'
   && readFileSync(excl2Alias, 'utf8') === '# строка человека\n'
   && readFileSync(excl2File, 'utf8').includes('**/.claude/worktrees/'),
   readFileSync(excl2Alias, 'utf8'));
 
-// --- потолок вывода git -----------------------------------------------
+// --- git output ceiling -----------------------------------------------
 //
-// Дефолтный мегабайт `spawnSync` подменяет ответ ровно на самом нужном каталоге:
-// по-настоящему грязный worktree перебирает его, процесс убивается, и клон читается как
-// «git did not answer» вместо «с незакоммиченным». Фикстура настоящая: пять тысяч файлов с
-// длинными именами дают больше мегабайта `status --porcelain` (замер — 1.2 МБ, вся
-// проверка около 0.4 с).
+// `spawnSync`'s default megabyte cap swaps out the answer on exactly the directory that
+// needs it most: a truly dirty worktree exceeds it, the process gets killed, and the clone
+// reads as "git did not answer" instead of "has uncommitted changes". The fixture is real:
+// five thousand files with long names produce more than a megabyte of `status --porcelain`
+// (measured at 1.2 MB, the whole check takes about 0.4 s).
 const BIG = path.join(SB, 'big');
 mkdirSync(BIG, { recursive: true });
 git(BIG, 'init', '-q', '-b', 'master');
@@ -380,73 +396,76 @@ git(BIG, 'worktree', 'add', '-q', '-b', 'worktree-a2a-big', BIGWT);
 const longName = 'x'.repeat(240);
 for (let i = 0; i < 5000; i += 1) writeFileSync(path.join(BIGWT, `${longName}-${i}`), '');
 const bigStatus = git(BIGWT, 'status', '--porcelain');
-check('фикстура: вывод status перебирает дефолтный мегабайт',
+check('fixture: status output exceeds the default megabyte',
   bigStatus.stdout.length > 1024 * 1024, String(bigStatus.stdout.length));
 const bigInfo = inspectWorktree(BIG, BIGWT, 'master');
-check('очень грязный worktree читается как грязный, а не как «git did not answer»',
+check('a very dirty worktree reads as dirty, not as "git did not answer"',
   bigInfo.dirty === true, JSON.stringify(bigInfo));
 
-// --- живость сессии: «жива» против «числится» -------------------------
-// Живая фоновая сессия печатает pid; запись, пережившая свой демон, — нет (снято
-// живым spawn'ом и стопом на claude 2.1.241).
+// --- session liveness: "alive" versus "stale" -------------------------
+// A live background session prints a pid; a record that has outlived its daemon does not
+// (captured from a live spawn and stop on claude 2.1.241).
 const LIVE = { id: 'a6110205', kind: 'background', pid: 7506, status: 'idle', state: 'done' };
 const GHOST = { id: '72c77534', kind: 'background', state: 'blocked' };
-check('запись с pid — жива', sessionLiveness(LIVE, [LIVE, GHOST]) === 'alive');
-check('запись без pid там, где pid печатается, — числится',
+check('a record with a pid — alive', sessionLiveness(LIVE, [LIVE, GHOST]) === 'alive');
+check('a record without a pid, where pid is otherwise printed — stale',
   sessionLiveness(GHOST, [LIVE, GHOST]) === 'stale', sessionLiveness(GHOST, [LIVE, GHOST]));
-check('записи нет вовсе — мертва', sessionLiveness(null, [LIVE]) === 'dead');
-// Самокалибровка: сборка claude, которая pid не печатает, не должна превращать всех
-// живых в призраков — признака нет, значит улики нет.
-check('pid не печатает никто — прежнее поведение, а не поголовная смерть',
+check('no record at all — dead', sessionLiveness(null, [LIVE]) === 'dead');
+// Self-calibration: a claude build that does not print pid at all must not turn every live
+// session into a ghost — no signal means no evidence.
+check('nobody prints a pid — the previous behavior, not mass death',
   sessionLiveness({ name: 'x', status: 'running' }, [{ name: 'x', status: 'running' }]) === 'alive');
-check('список не передан — тоже прежнее поведение', sessionLiveness({ name: 'x' }) === 'alive');
+check('no list passed — also the previous behavior', sessionLiveness({ name: 'x' }) === 'alive');
 
-// Имя сессии детерминировано, а призрак из списка не исчезает: после перезапуска
-// worker'а тем же адресом под одним именем лежат две записи. Взять первую совпавшую
-// значит отдать призрака — spawn отчитается его id, а status назовёт живого «числится».
+// The session name is deterministic, and a ghost does not vanish from the list: after
+// restarting a worker at the same address, two records sit under one name. Taking the
+// first match means handing back the ghost — spawn would report its id, and status would
+// call the live one "stale".
 const DUP = 'a2a · задача · repo · 0826-1048';
 const dupList = [{ id: 'старая', name: DUP, state: 'blocked' }, { id: 'новая', name: DUP, pid: 999, state: 'working' }];
-check('две записи под одним именем: выбирается живая, а не первая совпавшая',
+check('two records under one name: the live one is chosen, not the first match',
   findSession(dupList, DUP)?.id === 'новая', JSON.stringify(findSession(dupList, DUP)));
-check('живой записи среди совпавших нет — отдаём что есть, а не null',
+check('no live record among the matches — return what is there, not null',
   findSession([dupList[0], { id: 'x', pid: 7, name: 'другая' }], DUP)?.id === 'старая');
 
-// --- подтверждение подъёма сессии -------------------------------------
+// --- confirming a session's liftoff -------------------------------------
 const seenAfter = (n) => { let i = 0; return () => (i++ < n ? [] : [{ id: 'z', name: 'a2a · тест', pid: 5 }]); };
-check('spawn: сессия появилась не сразу — дожидаемся, а не хороним',
+check('spawn: the session did not appear right away — we wait for it, rather than burying it',
   (await awaitSession('a2a · тест', { tries: 3, delayMs: 1, sessions: seenAfter(2) })).state === 'alive');
 const ghostOnly = () => [{ id: 'призрак', name: 'a2a · тест', state: 'blocked' }, { id: 'чужой', name: 'другая', pid: 3 }];
 const onlyGhost = await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: ghostOnly });
-check('spawn: под именем лежит только призрак — это НЕ «поднят»',
+check('spawn: only a ghost sits under the name — that is NOT "raised"',
   onlyGhost.state === 'dead' && onlyGhost.ghost?.id === 'призрак', JSON.stringify(onlyGhost));
 
-check('spawn: сессии нет за все попытки — мертва',
+check('spawn: no session across every attempt — dead',
   (await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: () => [] })).state === 'dead');
-check('spawn: вывод claude agents не разобран — неизвестно, а не мертва',
+check('spawn: claude agents output was not parsed — unknown, not dead',
   (await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: () => null })).state === 'unknown');
-check('spawn: сессия найдена — awaitSession отдаёт саму запись, а не только состояние',
+check('spawn: session found — awaitSession returns the record itself, not just the state',
   (await awaitSession('a2a · тест', { tries: 1, delayMs: 1, sessions: seenAfter(0) })).session?.id === 'z');
-// Двум источникам id нужен порядок, а не наличие: разбор вывода `claude --bg` угадывает
-// id в свободном тексте, запись из списка сессий его знает. Перевёрнутый порядок молча
-// пишет в участника угаданное — при живой записи под рукой.
+// Two sources of id need an order, not just presence: parsing `claude --bg` output guesses
+// the id from free text, while a record from the session list actually knows it. A
+// reversed order would silently write the guessed value into the participant — with a live
+// record right there for the taking.
 const BG_OUT = 'backgrounded · cafe12 · a2a-worker';
-check('spawn: id сессии берётся из списка, а не из разбора вывода',
+check('spawn: the session id comes from the list, not from parsing output',
   spawnedSessionId({ state: 'alive', session: { id: 'z' } }, BG_OUT) === 'z'
   && parseSessionId(BG_OUT) !== 'z',
   `${spawnedSessionId({ state: 'alive', session: { id: 'z' } }, BG_OUT)} vs ${parseSessionId(BG_OUT)}`);
-check('spawn: списка нет — id остаётся разбором вывода, а не пропадает',
+check('spawn: no list — the id still comes from parsing output, it does not vanish',
   spawnedSessionId({ state: 'unknown', session: null }, BG_OUT) === parseSessionId(BG_OUT),
   String(spawnedSessionId({ state: 'unknown', session: null }, BG_OUT)));
 
-// Замечание ревью: реестр сессий переехал в liftoff.js, чтобы два файла не импортировали
-// друг друга. Цикл в ESM сегодня безвреден, и набор с ним зелёный — увидеть его нечем,
-// кроме как посмотреть на импорты. Поэтому проверка механическая: она и держит границу
-// дальше, а цена цикла — первая же правка, читающая чужой модуль на верхнем уровне,
-// упрётся в TDZ. Имена при этом остались доступны из spawn.js: их берёт отсюда сам этот
-// файл (импорт выше), то есть реэкспорт проверен всеми проверками этого блока.
+// Review note: the session registry moved into liftoff.js so the two files would not
+// import each other. A cycle in ESM is harmless today, and the suite is green with it —
+// there is no way to see it except by looking at the imports. So the check is mechanical:
+// it is what keeps the boundary going forward, and the price of the cycle is that the very
+// first edit reading the other module at the top level will hit a TDZ. The names, though,
+// remain available from spawn.js: this very file takes them from there (the import above),
+// meaning the re-export is verified by every check in this block.
 const liftoffSrc = readFileSync(path.join(here, '..', 'lib', 'liftoff.js'), 'utf8');
-check('замечание ревью: liftoff.js не импортирует spawn.js — цикла между ними нет',
+check('review note: liftoff.js does not import spawn.js — there is no cycle between them',
   !/^\s*import\s[^;]*from\s+'\.\/spawn\.js'/m.test(liftoffSrc),
-  liftoffSrc.split('\n').filter((l) => /from '\.\/spawn\.js'/.test(l)).join(' | ') || 'импортов нет');
+  liftoffSrc.split('\n').filter((l) => /from '\.\/spawn\.js'/.test(l)).join(' | ') || 'no imports');
 
 rmSync(SB, { recursive: true, force: true });

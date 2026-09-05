@@ -1,42 +1,47 @@
-// Гейт амбиентного состояния package Promptobus. Запуск: npm test
+// Ambient-state gate for the Promptobus package. Run: npm test
 //
-// Предмет — граница «package получает контекст АРГУМЕНТАМИ, а не подстановкой».  снял
-// из package швы `useHost` и `useRouting`, через которые adapter отдавал внутрь диагностику,
-// идентичность сессии и routing policy; мутационная проба при приёмке дописала ту же форму
-// под другим именем — `let ambientNote = null; export function useNote(fn) { ambientNote = fn; }`
-// — и ни один гейт не покраснел. Объяснимо: гейт окружения
-// ([promptobus-package.test.mjs](promptobus-package.test.mjs)) ищет `process.env` и потоки
-// регексом, а амбиентная подстановка не требует ни того, ни другого — это чистый JS, и
-// standalone-копии она не мешает. Граница держалась на дисциплине автора.
+// Subject — the boundary «the package receives context via ARGUMENTS, not by substitution».
+// removed the `useHost` and `useRouting` seams from the package, through which the adapter used
+// to hand in diagnostics, session identity, and routing policy from outside; the mutation probe
+// at acceptance re-added the same shape under a different name — `let ambientNote = null; export
+// function useNote(fn) { ambientNote = fn; }` — and no gate went red. Explainable: the
+// environment gate ([promptobus-package.test.mjs](promptobus-package.test.mjs)) regex-searches
+// for `process.env` and streams, and ambient substitution needs neither — it is plain JS, and it
+// does not interfere with the standalone copy. The boundary held on the author's discipline
+// alone.
 //
-// **Дешёвый гейт здесь холостой.** «В `index.ts` нет экспорта на `use[A-Z]`» ловит одну снятую
-// форму и промахивается мимо любой другой — внутреннего сеттера без экспорта, поля объекта,
-// замыкания, — оставаясь зелёным и выглядя рабочим. Честный предикат регексом не выражается:
-// у package есть законные копилки того же вида, и отличить их от моста умеет только разбор
-// дерева. Отсюда `ast-grep` и явный список законных.
+// **A cheap gate here is idle.** «No export on `use[A-Z]` in `index.ts`» catches one removed
+// form and misses every other one — an internal setter without an export, an object field, a
+// closure — while staying green and looking like it works. An honest predicate cannot be
+// expressed as a regex: the package has legitimate stashes of the same shape, and only a tree
+// parse can tell them apart from a bridge. Hence `ast-grep` and an explicit allowlist.
 //
-// **Предикат — два правила и соединение по имени.** `ast-grep` не соединяет два совпадения
-// сам, поэтому объявления и записи снимаются порознь и сводятся здесь, ПОФАЙЛОВО: одноимённая
-// локальная переменная соседнего модуля иначе слилась бы с копилкой этого.
-//   • объявление — `let`/`const`/`var` на уровне модуля: не внутри тела функции и не в теле
-//     класса;
-//   • запись — присваивание имени, инкремент, присваивание его свойства (`x.y = …` и
-//     вычисляемого `x[k] = …` наравне: реестр по имени — самая естественная форма моста) или
-//     мутирующий вызов ИЗ ФУНКЦИИ. Инициализация на уровне модуля записью не считается:
-//     копилку заводит сам модуль, мостом её делает запись извне.
+// **The predicate is two rules joined by name.** `ast-grep` does not join two matches itself,
+// so declarations and writes are picked up separately and reconciled here, PER FILE: a
+// same-named local variable in a neighboring module would otherwise merge with this one's
+// stash.
+//   • declaration — a module-level `let`/`const`/`var`: not inside a function body and not
+//     inside a class body;
+//   • write — assignment to the name, an increment, assignment to its property (`x.y = …` and
+//     computed `x[k] = …` alike: a registry keyed by name is the most natural bridge shape) or
+//     a mutating call FROM A FUNCTION. Module-level initialization does not count as a write:
+//     the module itself sets up the stash, and a write from outside is what turns it into a
+//     bridge.
 //
-// **Список законных копилок живёт здесь и с причиной у каждой.** Добавление в него — правка
-// этого файла, то есть предмет ревью, а не молчаливое исключение. Причина одна и та же по
-// форме: копилка держит СВОЁ состояние процесса — счётчик, кэш, реестр, — и значение в неё
-// кладёт сам package. Мост держит ЧУЖОЕ: значение в него кладёт adapter снаружи.
+// **The allowlist of legitimate stashes lives here, each with a reason.** Adding to it is an
+// edit to this file — a subject for review, not a silent exclusion. The reason has the same
+// shape every time: a stash holds ITS OWN process state — a counter, a cache, a registry — and
+// the package itself puts the value into it. A bridge holds SOMEONE ELSE'S: the adapter puts the
+// value into it from outside.
 //
-// **Гейт живёт в интеграционном наборе.** Резолв `ast-grep` — PATH и известные префиксы
-// ([sandbox.mjs](sandbox.mjs)); ядро не зависит от внешнего бинаря. Бинаря нет — красный
-// вердикт с командой установки, а не пропуск: гейт, который молчит без инструмента, зелёный
-// при любой реализации.
+// **The gate lives in the integration suite.** Resolving `ast-grep` — PATH and known prefixes
+// ([sandbox.mjs](sandbox.mjs)); the core does not depend on the external binary. No binary — a
+// red verdict with the install command, not a skip: a gate that stays silent without the tool is
+// green for any implementation.
 //
-// Дерево репозитория файл только читает. Фикстуры мутационной пробы — своя песочница: ими же
-// проверяется, что гейт не только ловит мост, но и НЕ красит законную копилку.
+// The file only reads the repository tree. The mutation probe's fixtures get their own sandbox:
+// the same fixtures verify that the gate not only catches a bridge but also does NOT flag a
+// legitimate stash red.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -50,11 +55,12 @@ const PKG = path.join(here, '..');
 const DECL = 'module-binding';
 const WRITE = 'fn-write';
 
-// Правила `ast-grep`, оба на TypeScript. Совпадение отдаёт имя метапеременной `$NAME` — по
-// нему объявления и записи и соединяются. Обратный слеш в регексе правила экранируется
-// ДВАЖДЫ: строка шаблонная, и `\b` в ней — символ забоя, а не граница слова; ast-grep на
-// таком правиле отказывает «Cannot parse rule INLINE_RULES», то есть краснеет разбором, а не
-// молча, — но диагноз уводит в YAML, которого человек в файле не видит.
+// The `ast-grep` rules, both in TypeScript. A match yields the metavariable `$NAME` — it is
+// what joins declarations and writes. The backslash in the rule's regex is escaped TWICE: the
+// string is a template literal, and `\b` inside it is a backspace character, not a word
+// boundary; ast-grep rejects such a rule with «Cannot parse rule INLINE_RULES», i.e. it goes red
+// on parsing, not silently — but the diagnostic points into the YAML, which a person does not
+// see in this file.
 const RULES = `
 id: ${DECL}
 language: ts
@@ -114,41 +120,43 @@ rule:
     stopBy: end
 `;
 
-// Законные копилки package: ключ и причина. Все до одной держат состояние СВОЕГО процесса и
-// наполняются самим package — снаружи в них не кладёт никто. Перечень сверен по дереву, а не
-// переписан из постановки: названный ею `migrated` — это `const MARK = 'migrated.json'`
-// (migrate.ts), строка, а не копилка, и разбор её не находит.
+// The package's legitimate stashes: key and reason. Every single one holds the state of ITS OWN
+// process and is filled by the package itself — no one puts anything into them from outside. The
+// list was checked against the tree, not copied from the spec: the `migrated` the spec names is
+// `const MARK = 'migrated.json'` (migrate.ts) — a string, not a stash, and the parse does not
+// find it.
 const ALLOWED = [
   ['src/fs/atomic.ts::atomicSeq',
-    'счётчик суффикса временного соседа атомарной записи: имена внутри процесса не должны совпасть'],
+    "suffix counter for the atomic write's temporary neighbor: names within the process must not collide"],
   ['src/fs/lock.ts::held',
-    'учёт локов, взятых ЭТИМ процессом: без него вложенный вызов досиживал бы waitMs на самом себе'],
+    'tracks locks taken by THIS process: without it a nested call would sit out waitMs against itself'],
   ['src/legacy-store.ts::seq',
-    'счётчик id записи legacy store: номер уезжает в имя файла и держит порядок отправки'],
+    'legacy store record id counter: the number ends up in the file name and preserves send order'],
   ['src/legacy-store.ts::tmpSeq',
-    'счётчик временных имён legacy store, свой от seq: тот уезжает в имя записи'],
+    'legacy store temporary-name counter, separate from seq: that one ends up in the record name'],
   ['src/legacy-store.ts::taskCache',
-    'кэш журнала на один запрос: одна команда читает task.json по четыре-шесть раз; гасят его writeTask и withTaskLock'],
+    'single-request journal cache: one command reads task.json four to six times; writeTask and withTaskLock invalidate it'],
   ['src/sidecar.ts::suspenders',
-    'реестр обёрток onTaskLock: store в package два, и второй регистратор не вправе отменить первого'],
+    'registry of onTaskLock wrappers: there are two stores in the package, and the second registrar has no right to cancel the first'],
   ['src/v1/artifacts.ts::tmpSeq',
-    'счётчик временных имён blob-файлов v1'],
+    'v1 blob-file temporary-name counter'],
   ['src/v1/messages.ts::seq',
-    'счётчик отправителя в id записи v1: сортировка строк равна порядку отправки'],
+    'v1 sender counter in the record id: string sort order equals send order'],
   ['src/v1/messages.ts::sentSeen',
-    'инкрементальный разбор отправок: каждая запись читается один раз за жизнь процесса, канон неизменяем'],
+    'incremental parse of sends: each record is read once per process lifetime, the canon is immutable'],
 ];
 
-// Разбор дерева: `<dir>/src` в имена «файл::имя» с местом объявления и местами записи.
-// Каталог зовётся из `cwd`, а не абсолютным путём, — тогда `file` в ответе приходит вида
-// `src/…` и у дерева package, и у фикстур, то есть ключ у обоих один по форме.
+// Tree parse: `<dir>/src` into «file::name» keys with the declaration site and write sites. The
+// directory is invoked from `cwd`, not an absolute path — that way `file` in the response comes
+// back as `src/…` for both the package's tree and the fixtures, so the key has the same shape
+// for both.
 function ambientState(dir) {
   const r = spawnSync(AG, ['scan', '--inline-rules', RULES, '--json=compact', 'src'],
     { cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   let matches = null;
-  try { matches = JSON.parse(r.stdout ?? ''); } catch { /* не разобралось — ниже */ }
+  try { matches = JSON.parse(r.stdout ?? ''); } catch { /* did not parse — handled below */ }
   if (!Array.isArray(matches)) {
-    return { failed: `ast-grep не отдал разбор (код ${r.status}): ${String(r.stderr ?? r.error?.message ?? '').slice(0, 300)}`, found: new Map() };
+    return { failed: `ast-grep did not return a parse (status ${r.status}): ${String(r.stderr ?? r.error?.message ?? '').slice(0, 300)}`, found: new Map() };
   }
   const decls = new Map();
   const writes = new Map();
@@ -156,9 +164,9 @@ function ambientState(dir) {
     const name = m?.metaVariables?.single?.NAME?.text;
     if (!name) continue;
     const bin = m.ruleId === DECL ? decls : writes;
-    // Разделитель пути нормализуется: на win32 `ast-grep` отдаёт `src\\fs\\atomic.ts`, и
-    // ключ разошёлся бы со списком, записанным через `/`, — оба вердикта краснели бы разом
-    // на исправном дереве.
+    // The path separator is normalized: on win32 `ast-grep` returns `src\\fs\\atomic.ts`, and
+    // the key would then diverge from the list, which is written with `/` — both verdicts
+    // would go red at once on a correct tree.
     const key = `${m.file.split(path.sep).join('/')}::${name}`;
     bin.set(key, [...(bin.get(key) ?? []), (m.range?.start?.line ?? 0) + 1]);
   }
@@ -169,61 +177,61 @@ function ambientState(dir) {
   return { failed: null, found };
 }
 
-const where = (found, keys) => keys.map((k) => `${k} (объявлено на ${found.get(k)?.at}, пишут на ${found.get(k)?.writes.join(', ')})`).join('; ');
+const where = (found, keys) => keys.map((k) => `${k} (declared at ${found.get(k)?.at}, written at ${found.get(k)?.writes.join(', ')})`).join('; ');
 
 const AG = findAstGrep();
-check(': ast-grep на машине найден — без него гейт краснеет, а не молчит',
-  AG, `бинаря нет ни в PATH, ни в известных местах установки — поставь: ${AST_GREP_INSTALL}`);
+check(': ast-grep is found on the machine — without it the gate goes red, not silent',
+  AG, `no binary in PATH or in the known install locations — install it: ${AST_GREP_INSTALL}`);
 
 if (AG) {
-  // ── дерево package ────────────────────────────────────────────────────────────────────
+  // ── package tree ──────────────────────────────────────────────────────────────────────
   const pkg = ambientState(PKG);
-  check(': разбор исходников package прошёл — ast-grep ответил JSON', !pkg.failed, pkg.failed ?? '');
+  check(': package source parse succeeded — ast-grep returned JSON', !pkg.failed, pkg.failed ?? '');
 
   const allowed = new Set(ALLOWED.map(([key]) => key));
   const unlisted = [...pkg.found.keys()].filter((key) => !allowed.has(key));
-  check(': амбиентного состояния в исходниках package нет — только копилки списка',
+  check(': no ambient state in the package sources — only allowlisted stashes',
     unlisted.length === 0,
-    `не в списке законных: ${where(pkg.found, unlisted)}`);
+    `not in the allowlist: ${where(pkg.found, unlisted)}`);
 
-  // Список без этой проверки протухает молча: снятая копилка оставляет в нём запись, а
-  // ослепший разбор (сломанное правило, не тот каталог) делает гейт зелёным на пустом месте.
-  // Она же — положительный контроль: девять записей обязаны найтись в дереве.
+  // Without this check the list rots silently: a removed stash leaves an entry behind, and a
+  // blinded parse (a broken rule, the wrong directory) makes the gate green over nothing. It
+  // also serves as a positive control: all nine entries must be found in the tree.
   const stale = [...allowed].filter((key) => !pkg.found.has(key));
-  check(': список законных копилок не протух — каждая его запись нашлась в дереве',
-    stale.length === 0, `в списке есть, в дереве нет: ${stale.join(', ')}`);
+  check(': the allowlist has not rotted — every one of its entries was found in the tree',
+    stale.length === 0, `in the list but not in the tree: ${stale.join(', ')}`);
 
-  // ── мутационная проба на фикстурах ────────────────────────────────────────────────────
+  // ── mutation probe on fixtures ────────────────────────────────────────────────────────
   //
-  // Три формы из постановки  разом и тем же разбором, каким судится дерево package.
-  // Третья — проверка на ложное срабатывание: она и есть мишень второго хода пробы (наивная
-  // редакция «любой module-level let — отказ» обязана покрасить именно её).
+  // The three forms from the spec  at once, with the same parse that judges the package tree.
+  // The third is a false-positive check: it is the very target of the probe's second move (a
+  // naive edit of «any module-level let is a failure» must flag exactly this one red).
   const FIX = makeSandbox('promptobus-ambient-');
   mkdirSync(path.join(FIX, 'src'), { recursive: true });
   const fixture = (name, body) => writeFileSync(path.join(FIX, 'src', name), body);
 
-  // Форма, оставшаяся зелёной при приёмке , — экспортируемый сеттер.
+  // The form that stayed green at acceptance , — an exported setter.
   fixture('bridge-exported.ts', `let ambientNote: unknown = null;
 export function useNote(fn: unknown): void { ambientNote = fn; }
 export function note(): unknown { return ambientNote; }
 `);
-  // Тот же мост без экспорта: сеттер внутренний, а подставляет в него значение соседний
-  // экспортируемый вызов. Дешёвый гейт «нет экспорта на use[A-Z]» эту форму пропускает.
+  // The same bridge without an export: the setter is internal, and a neighboring exported call
+  // is what feeds it the value. The cheap gate «no export on use[A-Z]» misses this form.
   fixture('bridge-quiet.ts', `let ambientHost: unknown = null;
 function useHostQuietly(fn: unknown): void { ambientHost = fn; }
 export function adopt(fn: unknown): void { useHostQuietly(fn); }
 `);
-  // Реестр подстановок — две формы, которых нет у двух фикстур выше и которые правило ловит
-  // каждую своей веткой. `ambient[name] = fn` в дереве не `member_expression`, а
-  // `subscript_expression`; `chain.unshift(fn)` — мутатор из хвоста перечня. Обе стоят в
-  // одной фикстуре нарочно: сузь правило с любого конца, и вердикт краснеет.
+  // A substitution registry — two forms absent from the two fixtures above, each caught by the
+  // rule's own branch. `ambient[name] = fn` in the tree is a `subscript_expression`, not a
+  // `member_expression`; `chain.unshift(fn)` is a mutator from the tail of the list. Both sit in
+  // one fixture on purpose: narrow the rule from either end, and the verdict goes red.
   fixture('bridge-registry.ts', `const ambient: Record<string, unknown> = {};
 export function use(name: string, fn: unknown): void { ambient[name] = fn; }
 const chain: unknown[] = [];
 export function prepend(fn: unknown): void { chain.unshift(fn); }
 `);
-  // Законная копилка — та же форма, что у `seq` в v1/messages.ts: счётчик процесса, который
-  // наполняет сам модуль.
+  // A legitimate stash — the same shape as `seq` in v1/messages.ts: a process counter that the
+  // module fills itself.
   fixture('counter.ts', `let seq = 0;
 export function nextId(): string { seq = (seq + 1) % 10000; return String(seq); }
 `);
@@ -232,19 +240,20 @@ export function nextId(): string { seq = (seq + 1) % 10000; return String(seq); 
   const fixAllowed = new Set(['src/counter.ts::seq']);
   const fixUnlisted = [...fix.found.keys()].filter((key) => !fixAllowed.has(key));
 
-  check(': проба — экспортируемый сеттер (форма useNote) гейт ловит',
+  check(': probe — the gate catches an exported setter (the useNote form)',
     fixUnlisted.includes('src/bridge-exported.ts::ambientNote'),
-    `отказы гейта на фикстурах: ${fixUnlisted.join(', ') || 'ни одного'}`);
-  check(': проба — внутренний сеттер без экспорта гейт ловит наравне с экспортируемым',
+    `gate failures on fixtures: ${fixUnlisted.join(', ') || 'none'}`);
+  check(': probe — the gate catches an internal setter without an export just like an exported one',
     fixUnlisted.includes('src/bridge-quiet.ts::ambientHost'),
-    `отказы гейта на фикстурах: ${fixUnlisted.join(', ') || 'ни одного'}`);
-  check(': проба — реестр подстановок гейт ловит обеими формами: ambient[name] = fn и chain.unshift(fn)',
+    `gate failures on fixtures: ${fixUnlisted.join(', ') || 'none'}`);
+  check(': probe — the gate catches a substitution registry in both forms: ambient[name] = fn and chain.unshift(fn)',
     fixUnlisted.includes('src/bridge-registry.ts::ambient')
       && fixUnlisted.includes('src/bridge-registry.ts::chain'),
-    `отказы гейта на фикстурах: ${fixUnlisted.join(', ') || 'ни одного'}`);
-  // Обе половины обязательны. Первая — разбор копилку ВИДИТ: без неё вердикт был бы зелёным
-  // и у гейта, ослепшего вовсе. Вторая — зелёной её делает список, а не слепота.
-  check(': проба — законная копилка из списка гейт не красит',
+    `gate failures on fixtures: ${fixUnlisted.join(', ') || 'none'}`);
+  // Both halves are required. The first — the parse SEES the stash: without it the verdict
+  // would be green even for a gate that is fully blind. The second — it is the allowlist that
+  // makes it green, not blindness.
+  check(': probe — the gate does not flag a legitimate allowlisted stash',
     fix.found.has('src/counter.ts::seq') && !fixUnlisted.includes('src/counter.ts::seq'),
-    `разбор увидел копилку: ${fix.found.has('src/counter.ts::seq')} · отказы: ${fixUnlisted.join(', ') || 'ни одного'}`);
+    `parse saw the stash: ${fix.found.has('src/counter.ts::seq')} · failures: ${fixUnlisted.join(', ') || 'none'}`);
 }

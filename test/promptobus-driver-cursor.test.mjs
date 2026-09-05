@@ -247,10 +247,10 @@ check(': the Cursor driver asks tmux with -V and accepts the found version',
 // before the first write to disk, otherwise lift would stall on "pty provider pane did
 // not lift" already with a worktree and a branch.
 const noTmux = cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION }, {
-  util: () => ({ ok: false, reason: 'tmux (tmux): не найден в PATH и в известных местах установки (~/.local/bin).' }),
+  util: () => ({ ok: false, reason: 'tmux (tmux): not found in PATH or in the known install locations (~/.local/bin).' }),
 });
 check(': tmux not found — refuse before lift, in the same words as doctor',
-  /tmux/.test(String(noTmux)) && /не найден в PATH/.test(String(noTmux)),
+  /tmux/.test(String(noTmux)) && /not found in PATH/.test(String(noTmux)),
   String(noTmux));
 
 // --- lift plan ----------------------------------------------------------------------

@@ -1,18 +1,19 @@
-// Миграция `legacy/a2a` → `.promptobus` ( §7).
+// Migration `legacy/a2a` → `.promptobus` (§7).
 //
-// Вход — golden-срез `v0.61.0` ([fixtures/promptobus/legacy-v061](fixtures/promptobus/legacy-v061)),
-// снятый генератором через store текущего релиза. Срез намеренно не покрывает файлы
-// adapter'а: `wake/`, `waits/` и `stalls.json` заводятся по ходу работы, и в git от них не
-// остаётся ничего. Дописывает их сюда сам набор — ТЕМ ЖЕ store API, каким их пишет живой
-// механизм ([MANIFEST](fixtures/promptobus/MANIFEST.md)); правкой самого среза этого делать
-// нельзя, он снят пересъёмкой байт в байт и правка меняет его смысл.
+// Input — a golden slice of `v0.61.0` ([fixtures/promptobus/legacy-v061](fixtures/promptobus/legacy-v061)),
+// captured by the generator through the current release's store. The slice deliberately does not
+// cover adapter files: `wake/`, `waits/` and `stalls.json` are created as work proceeds, and none
+// of them end up in git. This suite appends them itself — through the SAME store API the live
+// mechanism writes them with ([MANIFEST](fixtures/promptobus/MANIFEST.md)); editing the slice
+// itself is not allowed for this, it was captured byte-for-byte and an edit would change its
+// meaning.
 //
-// Предмет проверки — три свойства, и каждое стоит отдельного раздела:
+// The subject under test is three properties, and each gets its own section:
 //
-// 1. **Полный перенос.** Счётчики inbox и `read/`, владение, история, digest артефактов.
-// 2. **Отказ ДО мутации.** Активные задачи, оба root'а сразу, повреждённый корень.
-// 3. **Восстановимость.** Падение на каждом шаге до атомарного переключения оставляет
-//    legacy-каталог нетронутым, а повтор доводит перенос до конца.
+// 1. **Full transfer.** inbox and `read/` counters, ownership, history, artifact digest.
+// 2. **Refusal BEFORE mutation.** Active tasks, both roots at once, a corrupted root.
+// 3. **Recoverability.** A crash at any step before the atomic switch leaves the legacy
+//    directory untouched, and a retry carries the transfer through to completion.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,11 +27,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-// Дверь механизма — она и запускает перенос при первом обращении к store, и подаёт ему то,
-// чего package знать не вправе: идентичность сессии и harness записей прежнего CLI (у них
-// поля `harness` нет вовсе, а v1 требует его в каждой записи участника). Без неё миграция
-// писала бы «harness не объявлен» — то самое, что она обязана закрыть значением driver
-// registry (: шва подстановки у package больше нет, всё приходит аргументом).
+// The mechanism's doorway — it both triggers the transfer on the store's first access and feeds
+// it what the package has no right to know: session identity and the harness for the previous
+// CLI's records (their `harness` field is absent entirely, while v1 requires it on every
+// participant record). Without it the migration would write "harness not declared" — exactly
+// what it must close with a value from the driver registry (the package no longer has a
+// substitution seam for this: everything now arrives as an argument).
 const store = await import('../lib/store.js');
 const bus = await import('../dist/index.js');
 const { legacy, preflight: preflightOf, ROOT_DIR } = bus;
@@ -52,20 +54,20 @@ const CLOSED = 't20260830-140000';
 
 let nth = 0;
 
-/** Рабочее место со срезом `v0.61.0` внутри. Каждый раздел берёт своё — миграция разрушительна. */
+/** A workspace with the `v0.61.0` slice inside. Each section takes its own — migration is destructive. */
 function workspace({ close = true } = {}) {
   nth += 1;
   const root = path.join(SB, `ws-${nth}`);
   const home = path.join(root, 'legacy', 'a2a');
   mkdirSync(path.dirname(home), { recursive: true });
   cpSync(FIXTURE, home, { recursive: true });
-  // Активная задача блокирует переход по построению. Закрываем её тем же store, каким
-  // её закрыл бы прежний CLI, — так же, как это придётся сделать человеку.
+  // An active task blocks the switch by design. We close it with the same store the previous
+  // CLI would have closed it with — the same way a human would have to.
   if (close) legacy.closeTask(home, ACTIVE);
   return { root, home, target: path.join(root, ROOT_DIR) };
 }
 
-/** Отпечаток дерева: относительные пути и содержимое. Им сверяется «legacy не тронут». */
+/** Tree fingerprint: relative paths and content. Used to verify "legacy untouched". */
 function treeDigest(dir) {
   const hash = createHash('sha256');
   const walk = (at, rel) => {
@@ -107,84 +109,84 @@ function thrown(fn) {
   }
 }
 
-// --- отказы до мутации ---------------------------------------------------------
+// --- refusals before mutation ---------------------------------------------------------
 
-test('preflight: активные задачи — отказ без единого изменения и с командой старой версии', async (t) => {
+test('preflight: active tasks — refusal without a single change and with the old version\'s command', async (t) => {
   const { root, home, target } = workspace({ close: false });
   const before = treeDigest(home);
   const plan = preflight(root);
 
-  await t.test('отказ назван, и в нём перечислены активные задачи', () => {
+  await t.test('the refusal is named, and it lists the active tasks', () => {
     assert.equal(plan.needed, true);
-    assert.ok(plan.refusal, 'отказа нет');
+    assert.ok(plan.refusal, 'no refusal');
     assert.deepEqual(plan.active, [ACTIVE]);
     assert.match(plan.refusal, new RegExp(ACTIVE));
   });
 
-  await t.test('в отказе — точная команда закрытия прежним CLI', () => {
+  await t.test('the refusal contains the exact close command from the previous CLI', () => {
     assert.ok(plan.refusal.includes(LEGACY_DONE.replace('<id>', ACTIVE)),
       plan.refusal);
   });
 
-  await t.test('сама миграция отказывает тем же текстом и классом гейта', () => {
+  await t.test('the migration itself refuses with the same text and gate class', () => {
     const said = thrown(() => migrate(root));
     assert.equal(said.name, 'GateError');
     assert.match(said.msg, new RegExp(ACTIVE));
   });
 
-  await t.test('legacy store не тронут, нового каталога не появилось', () => {
+  await t.test('legacy store untouched, no new directory appeared', () => {
     assert.equal(treeDigest(home), before);
     assert.equal(existsSync(target), false);
     assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating`)), false);
   });
 });
 
-test('preflight: оба root\'а сразу — отказ без merge', async (t) => {
+test('preflight: both roots at once — refusal without a merge', async (t) => {
   const { root, home, target } = workspace();
   mkdirSync(path.join(target, 'tasks'), { recursive: true });
   const before = treeDigest(home);
   const plan = preflight(root);
 
-  await t.test('отказ называет оба каталога и не берётся их сливать', () => {
-    assert.ok(plan.refusal, 'отказа нет');
+  await t.test('the refusal names both directories and does not attempt to merge them', () => {
+    assert.ok(plan.refusal, 'no refusal');
     assert.ok(plan.refusal.includes(target) && plan.refusal.includes(home), plan.refusal);
     assert.match(plan.refusal, /The mechanism will not merge them/);
   });
 
-  await t.test('legacy store не тронут', () => {
+  await t.test('legacy store untouched', () => {
     assert.equal(treeDigest(home), before);
   });
 });
 
-test('preflight: повреждённый корень — отказ без мутации', async (t) => {
+test('preflight: a corrupted root — refusal without mutation', async (t) => {
   const root = path.join(SB, 'ws-broken-root');
   mkdirSync(path.join(root, 'legacy'), { recursive: true });
-  writeFileSync(path.join(root, 'legacy', 'a2a'), 'это файл, а не каталог\n');
+  writeFileSync(path.join(root, 'legacy', 'a2a'), 'this is a file, not a directory\n');
 
-  await t.test('корень-файл: отказ, а не попытка чтения', () => {
+  await t.test('root-as-a-file: refusal, not an attempted read', () => {
     const plan = preflight(root);
-    assert.ok(plan.refusal, 'отказа нет');
+    assert.ok(plan.refusal, 'no refusal');
     assert.equal(plan.needed, false);
     assert.match(plan.refusal, /is not a directory/);
   });
 
-  await t.test('tasks/ файлом вместо каталога — тот же отказ', () => {
+  await t.test('tasks/ as a file instead of a directory — the same refusal', () => {
     const other = path.join(SB, 'ws-broken-tasks');
     mkdirSync(path.join(other, 'legacy', 'a2a'), { recursive: true });
-    writeFileSync(path.join(other, 'legacy', 'a2a', 'tasks'), 'подмена\n');
+    writeFileSync(path.join(other, 'legacy', 'a2a', 'tasks'), 'substitute\n');
     const plan = preflight(other);
-    assert.ok(plan.refusal, 'отказа нет');
+    assert.ok(plan.refusal, 'no refusal');
     assert.match(plan.refusal, /is not a directory/);
     assert.equal(existsSync(path.join(other, ROOT_DIR)), false);
   });
 });
 
-// --- полный перенос ------------------------------------------------------------
+// --- full transfer ------------------------------------------------------------
 
-test('golden: срез v0.61.0 переносится целиком', async (t) => {
+test('golden: the v0.61.0 slice transfers in full', async (t) => {
   const { root, home, target } = workspace();
-  // Файлы adapter'а, которых в срезе нет вовсе, дописываем тем же store API: contact
-  // point'ы, отметку конца хода и отметку доложенного стопа.
+  // Adapter files that are absent from the slice entirely, we append with the same store
+  // API: contact points, the end-of-turn mark, and the reported-stop mark.
   legacy.writeWake(home, ACTIVE, 'worker:demo', { socket: '/tmp/promptobus-demo/worker-demo.sock', pid: 424243 });
   legacy.markTurn(home, ACTIVE, 'worker:demo', '2026-08-31T10:05:00.000Z');
   legacy.writeStalls(home, ACTIVE, { 'worker:demo': { reason: 'permission', at: '2026-08-31T10:06:00.000Z', tries: 1 } });
@@ -193,78 +195,78 @@ test('golden: срез v0.61.0 переносится целиком', async (t)
 
   const report = migrate(root);
 
-  await t.test('обе задачи перенесены, повреждённых нет', () => {
+  await t.test('both tasks transferred, none broken', () => {
     assert.deepEqual(report.tasks.map((x) => x.id).sort(), [CLOSED, ACTIVE]);
     assert.deepEqual(report.brokenTasks, []);
   });
 
-  await t.test('legacy-каталог снят только после переключения', () => {
+  await t.test('legacy directory removed only after the switch', () => {
     assert.equal(existsSync(home), false);
     assert.equal(existsSync(path.join(target, 'tasks', ACTIVE, 'task.json')), true);
   });
 
-  await t.test('участники: legacy ID сохранены, роль лежит полем, harness проставлен', () => {
+  await t.test('participants: legacy IDs preserved, role sits in a field, harness is set', () => {
     const meta = readJson(path.join(target, 'tasks', ACTIVE, 'task.json'));
     assert.deepEqual(meta.participants.map((p) => p.id).sort(), ['orchestrator', 'reviewer-demo', 'worker-demo']);
     assert.deepEqual(meta.participants.map((p) => p.role).sort(), ['orchestrator', 'reviewer', 'worker']);
-    assert.ok(meta.participants.every((p) => p.harness === 'claude'), 'harness не у всех');
-    // Адрес не разбирается из id обратно — он лежит в metadata записи.
+    assert.ok(meta.participants.every((p) => p.harness === 'claude'), 'not all have harness');
+    // The address is not parsed back out of the id — it sits in the record's metadata.
     assert.deepEqual(meta.participants.map((p) => p.metadata.address).sort(),
       ['orchestrator', 'reviewer:demo', 'worker:demo']);
   });
 
-  await t.test('владение задачей: owner — участник, сессия-владелец осталась полем записи', () => {
+  await t.test('task ownership: owner is a participant, the owning session stays a field on the record', () => {
     const meta = readJson(path.join(target, 'tasks', ACTIVE, 'task.json'));
     assert.equal(meta.owner, 'orchestrator');
     assert.equal(meta.participants.find((p) => p.id === 'orchestrator').metadata.owner,
       '00000000-0000-4000-8000-000000000001');
   });
 
-  await t.test('поля adapter\'а из журнала уцелели', () => {
+  await t.test('adapter fields from the journal survived', () => {
     const meta = readJson(path.join(target, 'tasks', ACTIVE, 'task.json'));
     assert.equal(meta.title, 'демо: активная задача');
     assert.equal(meta.adapter.slug, 'demo');
     assert.equal(meta.adapter.stamp, ACTIVE);
-    assert.equal(meta.status, 'done', 'закрытая задача обязана остаться закрытой');
+    assert.equal(meta.status, 'done', 'a closed task must remain closed');
   });
 
-  await t.test('счётчики inbox: непрочитанное осталось непрочитанным', () => {
+  await t.test('inbox counters: unread stayed unread', () => {
     const one = report.tasks.find((x) => x.id === ACTIVE);
-    assert.equal(one.unread, 3, `непрочитанных ${one.unread}`);
+    assert.equal(one.unread, 3, `unread: ${one.unread}`);
     assert.equal(names(path.join(target, 'tasks', ACTIVE, 'inbox', 'orchestrator')).length, 1);
     assert.equal(names(path.join(target, 'tasks', ACTIVE, 'inbox', 'worker-demo')).length, 2);
   });
 
-  await t.test('счётчики history: прочитанное осталось прочитанным', () => {
+  await t.test('history counters: read stayed read', () => {
     const one = report.tasks.find((x) => x.id === ACTIVE);
-    assert.equal(one.read, 4, `прочитанных ${one.read}`);
+    assert.equal(one.read, 4, `read: ${one.read}`);
     assert.equal(names(path.join(target, 'tasks', ACTIVE, 'history', 'orchestrator')).length, 3);
     assert.equal(names(path.join(target, 'tasks', ACTIVE, 'history', 'reviewer-demo')).length, 1);
   });
 
-  await t.test('канон один на сообщение, а ссылка — тот же inode', () => {
+  await t.test('one canonical file per message, and the link is the same inode', () => {
     const canon = names(path.join(target, 'tasks', ACTIVE, 'messages'));
-    assert.equal(canon.length, 7, `канонических ${canon.length}`);
+    assert.equal(canon.length, 7, `canonical: ${canon.length}`);
     const ref = names(path.join(target, 'tasks', ACTIVE, 'inbox', 'orchestrator'))[0];
     const a = statSync(path.join(target, 'tasks', ACTIVE, 'messages', ref));
     const b = statSync(path.join(target, 'tasks', ACTIVE, 'inbox', 'orchestrator', ref));
-    assert.equal(a.ino, b.ino, 'ссылка в inbox не тот же inode');
+    assert.equal(a.ino, b.ino, 'inbox link is not the same inode');
   });
 
-  await t.test('порядок сообщений сохранён: сортировка имён — порядок отправки', () => {
+  await t.test('message order preserved: name sort order is send order', () => {
     const canon = names(path.join(target, 'tasks', ACTIVE, 'messages'));
     const stamps = canon.map((n) => readJson(path.join(target, 'tasks', ACTIVE, 'messages', n)).ts);
     assert.deepEqual(stamps, [...stamps].sort(), stamps.join(' '));
   });
 
-  await t.test('битая запись уехала в broken, остальные сообщения дошли', () => {
+  await t.test('the broken record moved to broken, the rest of the messages arrived', () => {
     const one = report.tasks.find((x) => x.id === ACTIVE);
     assert.equal(one.broken.length, 1, one.broken.join('; '));
     assert.deepEqual(names(path.join(target, 'tasks', ACTIVE, 'broken', 'inbox', 'worker-demo')),
       ['20260831T095500000-0009-orchestrator.json']);
   });
 
-  await t.test('артефакт: blob по SHA-256, metadata, имя файла человеку', () => {
+  await t.test('artifact: blob by SHA-256, metadata, a human-readable filename', () => {
     const one = report.tasks.find((x) => x.id === ACTIVE);
     assert.equal(one.artifacts, 1);
     assert.deepEqual(names(path.join(target, 'tasks', ACTIVE, 'blobs')), [artifactSha]);
@@ -275,7 +277,7 @@ test('golden: срез v0.61.0 переносится целиком', async (t)
     assert.deepEqual(names(path.join(target, 'tasks', ACTIVE, 'files')), ['demo-diff.patch']);
   });
 
-  await t.test('ссылка на артефакт в сообщении переписана на id записи', () => {
+  await t.test('the artifact reference in the message is rewritten to the record id', () => {
     const dir = path.join(target, 'tasks', ACTIVE, 'history', 'orchestrator');
     const withArt = names(dir).map((n) => readJson(path.join(dir, n))).find((m) => m.artifact);
     const meta = readJson(path.join(target, 'tasks', ACTIVE, 'artifacts',
@@ -283,7 +285,7 @@ test('golden: срез v0.61.0 переносится целиком', async (t)
     assert.equal(withArt.artifact, meta.id);
   });
 
-  await t.test('файлы adapter\'а перенесены как есть', () => {
+  await t.test('adapter files transferred as-is', () => {
     const at = path.join(target, 'tasks', ACTIVE);
     assert.equal(existsSync(path.join(at, 'health.json')), true);
     assert.equal(existsSync(path.join(at, 'supervisor.json')), true);
@@ -292,17 +294,17 @@ test('golden: срез v0.61.0 переносится целиком', async (t)
     assert.equal(readJson(path.join(at, 'waits', 'worker-demo.turn.json')).at, '2026-08-31T10:05:00.000Z');
   });
 
-  await t.test('contact point\'ы не переносятся: их пересдают живые сессии', () => {
+  await t.test('contact points are not transferred: live sessions re-issue them', () => {
     assert.equal(existsSync(path.join(target, 'tasks', ACTIVE, 'wake')), false);
   });
 
-  await t.test('привязки сессий перенесены', () => {
+  await t.test('session bindings transferred', () => {
     assert.equal(report.bindings, 1);
     assert.deepEqual(names(path.join(target, 'sessions')),
       ['00000000-0000-4000-8000-000000000001.json']);
   });
 
-  await t.test('закрытая задача: обе стороны переписки на месте', () => {
+  await t.test('closed task: both sides of the correspondence are in place', () => {
     const one = report.tasks.find((x) => x.id === CLOSED);
     assert.equal(one.read, 2);
     assert.equal(one.unread, 0);
@@ -311,57 +313,58 @@ test('golden: срез v0.61.0 переносится целиком', async (t)
   });
 });
 
-test('golden: перенесённое читается механизмом', async (t) => {
+test('golden: the transferred data is readable by the mechanism', async (t) => {
   const { root, home, target } = workspace();
   migrate(root);
 
-  await t.test('счётчик непрочитанного тот же, что был в legacy', () => {
+  await t.test('the unread counter is the same as it was in legacy', () => {
     assert.equal(store.countInbox(target, ACTIVE, 'worker:demo'), 2);
     assert.equal(store.countInbox(target, ACTIVE, 'orchestrator'), 1);
   });
 
-  await t.test('участники читаются адресами, а не id участников v1', () => {
+  await t.test('participants are read by address, not by v1 participant id', () => {
     const meta = store.readTask(target, ACTIVE);
     assert.deepEqual(store.addressesOf(meta).sort(),
       ['orchestrator', 'reviewer:demo', 'worker:demo']);
     assert.equal(store.participantOf(meta, 'worker:demo').metadata.repo, 'demo-group/demo-api');
   });
 
-  await t.test('владение mailbox\'ом сохранилось', () => {
+  await t.test('mailbox ownership preserved', () => {
     assert.equal(store.taskOwner(target, ACTIVE), '00000000-0000-4000-8000-000000000001');
   });
 
-  await t.test('mailbox отдаёт перенесённое, а отправитель и получатель — id участников', () => {
+  await t.test('the mailbox returns the transferred data, and sender/recipient are participant ids', () => {
     const { messages } = store.readInbox(target, ACTIVE, 'worker:demo');
     assert.equal(messages.length, 2);
     assert.ok(messages.every((m) => m.sender === 'orchestrator' && m.recipients.join(',') === 'worker-demo'),
       JSON.stringify(messages.map((m) => [m.sender, m.recipients])));
   });
 
-  await t.test('история отдаёт ровно прочитанное, и порядок в ней тот же', () => {
-    // История v1 строится ТОЛЬКО по `history/`: недоставленное в неё не попадает, и на
-    // этом различии стоит восстановление fan-out'а.
+  await t.test('history returns exactly what was read, and its order is the same', () => {
+    // v1 history is built ONLY from `history/`: undelivered messages don't land in it, and
+    // fan-out recovery rests on that exact difference.
     const page = store.history(target, { task: ACTIVE, participant: 'orchestrator', all: true });
-    assert.equal(page.entries.length, 3, `записей ${page.entries.length}`);
+    assert.equal(page.entries.length, 3, `entries: ${page.entries.length}`);
     const stamps = page.entries.map((e) => e.message.ts);
     assert.deepEqual(stamps, [...stamps].sort(), stamps.join(' '));
     assert.deepEqual(page.broken, []);
   });
 
-  await t.test('артефакт находится по имени в папке задачи', () => {
+  await t.test('the artifact is found by name in the task folder', () => {
     assert.equal(existsSync(path.join(store.filesDir(target, ACTIVE), 'demo-diff.patch')), true);
   });
 
-  await t.test('legacy-каталог снесён', () => {
+  await t.test('legacy directory removed', () => {
     assert.equal(existsSync(home), false);
   });
 });
 
-test('одноимённые legacy-записи в разных mailbox\'ах не съедают друг друга', async (t) => {
-  // Имена прежнего store уникальны в пределах ОДНОГО mailbox'а, а не задачи: два
-  // отправителя под одним адресом из двух процессов собирали одно имя, и разводил их `link`
-  // внутри своего каталога. Посев id одним именем файла дал бы им один id на всю
-  // задачу — и тело второго исчезло бы молча, а миграция необратима.
+test('same-named legacy records in different mailboxes do not clobber each other', async (t) => {
+  // The previous store's names are unique within ONE mailbox, not within a task: two senders
+  // under one address from two processes could collide on the same name, and `link` resolved
+  // them within its own directory. Seeding the id from the filename alone would give them a
+  // single id for the whole task — and the second body would vanish silently, while the
+  // migration is irreversible.
   const { root, home, target } = workspace();
   const NAME = '20260831T091500000-0042-orchestrator.json';
   const twin = (to, body) => ({
@@ -377,40 +380,41 @@ test('одноимённые legacy-записи в разных mailbox\'ах �
 
   const report = migrate(root);
 
-  await t.test('оба близнеца доехали: два разных канона, оба с телом', () => {
+  await t.test('both twins arrived: two distinct canonical files, both with a body', () => {
     const dir = path.join(target, 'tasks', ACTIVE, 'messages');
     const bodies = names(dir).map((n) => readJson(path.join(dir, n)))
       .filter((m) => m.body.startsWith('близнец')).map((m) => m.body).sort();
     assert.deepEqual(bodies, ['близнец reviewer\'у', 'близнец worker\'у'], bodies.join(' | '));
   });
 
-  await t.test('id у них разные, и лежат они каждый в своём mailbox\'е', () => {
+  await t.test('their ids differ, and each lives in its own mailbox', () => {
     const at = (box) => names(path.join(target, 'tasks', ACTIVE, 'inbox', box));
     const mine = at('worker-demo').filter((n) => n.startsWith('20260831T091500000-0042'));
     const theirs = at('reviewer-demo').filter((n) => n.startsWith('20260831T091500000-0042'));
     assert.equal(mine.length, 1, at('worker-demo').join(','));
     assert.equal(theirs.length, 1, at('reviewer-demo').join(','));
-    assert.notEqual(mine[0], theirs[0], `id совпали: ${mine[0]}`);
+    assert.notEqual(mine[0], theirs[0], `ids collided: ${mine[0]}`);
   });
 
-  await t.test('счётчик задачи их посчитал обоих', () => {
+  await t.test('the task counter counted both of them', () => {
     const one = report.tasks.find((x) => x.id === ACTIVE);
-    assert.equal(one.unread, 5, `непрочитанных ${one.unread}`);
+    assert.equal(one.unread, 5, `unread: ${one.unread}`);
   });
 });
 
-// --- параллельный запуск ---------------------------------------------------------
+// --- concurrent run ---------------------------------------------------------
 
-// Двумя настоящими процессами, а не промисами в одном: предмет — лок-каталог и `rename`,
-// а внутри одного процесса они с собой не встречаются. Барьер обязателен — без него дети
-// выстраиваются по времени запуска, и окно не наступает вовсе.
+// With two real processes, not promises inside one: the subject is the lock directory and
+// `rename`, and within a single process they never collide with themselves. The barrier is
+// mandatory — without it the children line up by their launch time, and the window never
+// opens at all.
 //
-// Ждут они СНОМ, а не спином: ловимое окно меряется секундой с лишним (сам переезд — 1,45 с
-// на 36 МБ), точность спина здесь не нужна, а полсекунды сожжённого CPU в каждом процессе
-// набор платит из своего бюджета.
+// They wait by SLEEPING, not by spinning: the window we're trying to catch is measured in
+// just over a second (the move itself takes 1.45s for 36MB), spin-precision isn't needed
+// here, and half a second of burned CPU per process is paid out of the suite's own budget.
 function racers(n, body) {
   const at = Date.now() + 700;
-  // `a` — adapter CLI (он же ставит шов package'у), `m` — сам package.
+  // `a` — the adapter CLI (the one that fits the package's seam), `m` — the package itself.
   const code = (i) => `const path = await import('node:path');\n`
     + `const a = await import(${JSON.stringify(path.join(process.cwd(), 'lib', 'store.js'))});\n`
     + `const m = await import(${JSON.stringify(path.join(process.cwd(), 'dist', 'index.js'))});\n`
@@ -428,36 +432,37 @@ function racers(n, body) {
   })));
 }
 
-test('доклад о переезде печатает тот, кто переехал, — и только он', async (t) => {
-  // Печатает его adapter, а не package: он же и молчит, когда переносить было нечего.
-  // Без этой ветки проигравший рапортовал бы «0 tasks, 0 messages, former directory»
-  // на рабочем месте, где сосед перенёс всё, — врала бы ровно та строка, которая обещана
-  // пользователю как доклад числами.
+test('the move report is printed by whoever moved — and only them', async (t) => {
+  // The adapter prints it, not the package: it's also the one that stays quiet when there
+  // was nothing to transfer. Without this branch the loser would report "0 tasks, 0 messages,
+  // former directory" on a workspace where its neighbor had transferred everything — the very
+  // line promised to the user as a numeric report would be lying.
   const { root, home } = workspace();
   const before = names(path.join(home, 'tasks')).length;
   const runs = await racers(2, `a.promptobusHome(${JSON.stringify(root)}, { legacyLayout: () => layout });`);
 
-  await t.test('оба процесса ушли успехом', () => {
+  await t.test('both processes exited successfully', () => {
     assert.deepEqual(runs.map((r) => r.code), [0, 0], JSON.stringify(runs));
   });
 
-  await t.test('строка "the bus moved" ровно одна — у того, кто переехал', () => {
+  await t.test('the "the bus moved" line appears exactly once — for whoever moved', () => {
     const said = runs.filter((r) => r.err.includes('the bus moved'));
     assert.equal(said.length, 1, runs.map((r) => `«${r.err}»`).join(' | '));
     assert.match(said[0].err, new RegExp(`${before} tasks`), said[0].err);
   });
 
-  await t.test('второй молчит вовсе — пустого доклада не бывает', () => {
+  await t.test('the other one stays silent entirely — there is no such thing as an empty report', () => {
     const quiet = runs.filter((r) => !r.err.includes('the bus moved'));
     assert.equal(quiet.length, 1);
     assert.equal(quiet[0].err, '', `«${quiet[0].err}»`);
   });
 });
 
-test('два процесса переезжают одновременно — переносит один, оба уходят с полным store', async (t) => {
+test('two processes move at the same time — one transfers, both end up with the full store', async (t) => {
   const { root, home, target } = workspace();
-  // Тела берём ДО переезда: сверять надо их, а не счётчики. Счётчик считает ссылки, и обе
-  // ссылки на месте даже тогда, когда указывают на один inode — потерю он не видит.
+  // We take the bodies BEFORE the move: they're what must be checked, not the counters. A
+  // counter counts links, and both links are in place even when they point at one inode —
+  // it doesn't see a loss.
   const bodies = [];
   for (const box of ['inbox', 'read']) {
     for (const dir of names(path.join(home, 'tasks', ACTIVE, box))) {
@@ -465,7 +470,8 @@ test('два процесса переезжают одновременно — 
         try {
           bodies.push(readJson(path.join(home, 'tasks', ACTIVE, box, dir, n)).body);
         } catch {
-          // Битая запись тела не имеет — она уедет в broken, и сверять по ней нечего.
+          // A broken record has no body — it will move to broken, and there's nothing to
+          // check it against.
         }
       }
     }
@@ -474,65 +480,67 @@ test('два процесса переезжают одновременно — 
   const runs = await racers(2, `const r = m.migrate(${JSON.stringify(root)}, { harness: a.FALLBACK_HARNESS, layout });\n`
     + `process.stdout.write(JSON.stringify({ tasks: r.tasks.length, moved: r.moved, resumed: r.resumed }));`);
 
-  await t.test('оба процесса ушли успехом — проигравший не отказывает', () => {
+  await t.test('both processes exited successfully — the loser does not refuse', () => {
     assert.deepEqual(runs.map((r) => r.code), [0, 0], JSON.stringify(runs));
   });
 
-  await t.test('перенёс ровно один, второй увидел уже переехавший корень', () => {
+  await t.test('exactly one transferred, the other saw a root that had already moved', () => {
     const moved = runs.filter((r) => JSON.parse(r.out).tasks > 0);
     assert.equal(moved.length, 1, runs.map((r) => r.out).join(' | '));
   });
 
-  await t.test('проигравший говорит «ничего не делал», а не пустой перенос', () => {
-    // Без этого поля пустой отчёт неотличим от удавшегося переноса, и доклад числами
-    // сказал бы «0 tasks, 0 messages, former directory» на месте, где сосед перенёс всё.
+  await t.test('the loser says "did nothing", not an empty transfer', () => {
+    // Without this field, an empty report is indistinguishable from a successful transfer, and
+    // the numeric report would say "0 tasks, 0 messages, former directory" on a workspace where
+    // its neighbor had transferred everything.
     const said = runs.map((r) => JSON.parse(r.out));
     assert.deepEqual(said.map((r) => r.moved).sort(), [false, true], JSON.stringify(said));
     assert.equal(said.find((r) => !r.moved).tasks, 0);
   });
 
-  await t.test('в новом корне ПОЛНЫЙ store — сверка тел, а не счётчиков', () => {
+  await t.test('the new root holds the FULL store — checking bodies, not counters', () => {
     const after = [];
     const dir = path.join(target, 'tasks', ACTIVE, 'messages');
     for (const n of names(dir)) after.push(readJson(path.join(dir, n)).body);
-    assert.deepEqual(after.sort(), bodies.sort(), `${after.length} тел из ${bodies.length}`);
+    assert.deepEqual(after.sort(), bodies.sort(), `${after.length} bodies out of ${bodies.length}`);
   });
 
-  await t.test('прежний корень снят, временного каталога и лока не осталось', () => {
-    assert.equal(existsSync(home), false, 'прежний корень на месте');
-    assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating`)), false, 'остался временный каталог');
-    assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating.lock`)), false, 'остался лок');
+  await t.test('the previous root is removed, no temp directory or lock remains', () => {
+    assert.equal(existsSync(home), false, 'previous root still in place');
+    assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating`)), false, 'a temp directory remains');
+    assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating.lock`)), false, 'a lock remains');
   });
 });
 
-// --- восстановимость -----------------------------------------------------------
+// --- recoverability -----------------------------------------------------------
 
 const BEFORE_SWITCH = ['scan', 'temp', 'artifacts', 'messages', 'task', 'sidecar', 'sessions', 'mark'];
 
-test('fault injection: падение до атомарного переключения не трогает legacy', async (t) => {
+test('fault injection: a crash before the atomic switch does not touch legacy', async (t) => {
   for (const step of BEFORE_SWITCH) {
-    await t.test(`падение на «${step}»: legacy цел, нового каталога нет, повтор доводит`, () => {
+    await t.test(`crash at "${step}": legacy intact, no new directory, a retry finishes the job`, () => {
       const { root, home, target } = workspace();
       const before = treeDigest(home);
-      // Цель спрашивается ИЗНУТРИ падения, а не после него: снаружи её отсутствие
-      // обеспечила бы и уборка в catch, а предмет проверки другой — пока сборка идёт,
-      // на месте цели нет ничего. Настоящая смерть процесса уборки не делает вовсе.
+      // The target is checked FROM INSIDE the fault, not after it: from the outside, its
+      // absence could just as well be produced by cleanup in a catch block, and that's not
+      // what's under test — while the build is in progress, nothing exists at the target's
+      // location yet. A real process death does no cleanup at all.
       const seen = [];
       const said = thrown(() => migrate(root, {
         fault: (at) => {
           seen.push([at, existsSync(target)]);
-          if (at === step) throw new Error(`подставное падение на ${at}`);
+          if (at === step) throw new Error(`synthetic fault at ${at}`);
         },
       }));
-      assert.equal(said.threw, true, 'падения не случилось');
-      assert.match(said.msg, /подставное падение/);
+      assert.equal(said.threw, true, 'no crash happened');
+      assert.match(said.msg, /synthetic fault/);
       assert.deepEqual(seen.filter(([, there]) => there), [],
-        `цель существовала во время сборки: ${JSON.stringify(seen)}`);
-      assert.equal(treeDigest(home), before, 'legacy store изменился');
-      assert.equal(existsSync(target), false, 'цель появилась до переключения');
-      assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating`)), false, 'остался временный каталог');
+        `target existed during the build: ${JSON.stringify(seen)}`);
+      assert.equal(treeDigest(home), before, 'legacy store changed');
+      assert.equal(existsSync(target), false, 'target appeared before the switch');
+      assert.equal(existsSync(path.join(root, `${ROOT_DIR}.migrating`)), false, 'a temp directory remains');
 
-      // Повтор после прерывания идемпотентен: перенос доходит до конца.
+      // A retry after interruption is idempotent: the transfer runs to completion.
       const report = migrate(root);
       assert.equal(report.tasks.length, 2);
       assert.equal(existsSync(home), false);
@@ -541,21 +549,21 @@ test('fault injection: падение до атомарного переключ
   }
 });
 
-test('fault injection: падение ПОСЛЕ переключения доводится повтором, а не отказом', async (t) => {
+test('fault injection: a crash AFTER the switch is finished by a retry, not by a refusal', async (t) => {
   const { root, home, target } = workspace();
   const said = thrown(() => migrate(root, {
     fault: (at) => {
-      if (at === 'switch') throw new Error('подставное падение после rename');
+      if (at === 'switch') throw new Error('synthetic fault after rename');
     },
   }));
 
-  await t.test('оба каталога на месте — окно между переключением и уборкой', () => {
+  await t.test('both directories are in place — the window between the switch and cleanup', () => {
     assert.equal(said.threw, true);
     assert.equal(existsSync(home), true);
     assert.equal(existsSync(target), true);
   });
 
-  await t.test('повторный запуск не отказывает «оба root\'а», а доделывает уборку', () => {
+  await t.test('a retry does not refuse with "both roots", it finishes the cleanup', () => {
     const plan = preflight(root);
     assert.equal(plan.refusal, null, plan.refusal ?? '');
     const report = migrate(root);
@@ -565,43 +573,43 @@ test('fault injection: падение ПОСЛЕ переключения дов
   });
 });
 
-test('повторный запуск на перенесённом рабочем месте не делает ничего', async (t) => {
+test('a retry on an already-transferred workspace does nothing', async (t) => {
   const { root, target } = workspace();
   migrate(root);
   const after = treeDigest(target);
 
-  await t.test('preflight больше не просит миграции', () => {
+  await t.test('preflight no longer asks for a migration', () => {
     const plan = preflight(root);
     assert.equal(plan.needed, false);
     assert.equal(plan.refusal, null);
   });
 
-  await t.test('повторная миграция ничего не делает и говорит об этом', () => {
+  await t.test('a repeat migration does nothing and says so', () => {
     const report = migrate(root);
     assert.deepEqual(report.tasks, []);
-    assert.equal(report.moved, false, 'пустой отчёт выдан за перенос');
+    assert.equal(report.moved, false, 'an empty report was passed off as a transfer');
     assert.equal(treeDigest(target), after);
   });
 });
 
-test('повреждённая задача уезжает в migration-broken и не активируется', async (t) => {
+test('a corrupted task moves to migration-broken and is not activated', async (t) => {
   const { root, home, target } = workspace();
-  writeFileSync(path.join(home, 'tasks', CLOSED, 'task.json'), '{"id": "обрез');
+  writeFileSync(path.join(home, 'tasks', CLOSED, 'task.json'), '{"id": "cut');
   const report = migrate(root);
 
-  await t.test('битая задача названа отдельно и в tasks/ не попала', () => {
+  await t.test('the broken task is named separately and did not end up in tasks/', () => {
     assert.deepEqual(report.brokenTasks, [CLOSED]);
     assert.deepEqual(report.tasks.map((x) => x.id), [ACTIVE]);
     assert.equal(existsSync(path.join(target, 'tasks', CLOSED)), false);
   });
 
-  await t.test('её каталог сохранён целиком, с причиной рядом', () => {
+  await t.test('its directory is preserved in full, with the reason alongside', () => {
     assert.equal(existsSync(path.join(target, 'migration-broken', CLOSED, 'task.json')), true);
     assert.match(readFileSync(path.join(target, 'migration-broken', `${CLOSED}.txt`), 'utf8'),
       /journal did not parse/);
   });
 
-  await t.test('здоровая задача при этом читается', () => {
+  await t.test('meanwhile the healthy task reads fine', () => {
     assert.equal(store.readTask(target, ACTIVE).id, ACTIVE);
   });
 });

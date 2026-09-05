@@ -411,7 +411,7 @@ test('a driver without inspect is also unknown: a live session is not given out 
 
 test('the stall record names the participant harness — the consumer takes the route driver by it', () => {
   const task = newTask();
-  const stall = { state: 'alive', busy: false, stall: { kind: 'permission', reason: 'диалог' }, id: 'id-a' };
+  const stall = { state: 'alive', busy: false, stall: { kind: 'permission', reason: 'permission prompt' }, id: 'id-a' };
   const registry = bus.createRegistry({
     drivers: { fake: fakeDriver('fake', { view: () => stall }) },
     fallback: 'fake',
@@ -488,7 +488,7 @@ test('an activation refusal of one participant does not block the others', async
   const task = newTask();
   const driver = fakeDriver('fake', {
     reply: (target) => {
-      if (target.ref === 'sess-a') throw new Error('канал оборван');
+      if (target.ref === 'sess-a') throw new Error('channel severed');
       return { ok: true };
     },
   });
@@ -506,14 +506,14 @@ test('an activation refusal of one participant does not block the others', async
   await t.test('the fallen one got a channel fallback with the reason', () => {
     const h = bus.readHealth(home, task);
     assert.equal(h['worker:a'].channel, 'self-wake');
-    assert.equal(h['worker:a'].knockError, 'канал оборван');
+    assert.equal(h['worker:a'].knockError, 'channel severed');
     // A successful knock writes `options.knockChannel`; on the stand-in
     // driver the default is `socket`, as on Claude Code.
     assert.equal(h['worker:b'].channel, 'socket');
     assert.equal(h['worker:b'].knocks, 1);
     // The refusal journal for channel `socket` is still the word "socket" —
     // the Claude Code form.
-    assert.ok(r.events.some((e) => /socket did not accept the notification \(канал оборван\)/.test(e)),
+    assert.ok(r.events.some((e) => /socket did not accept the notification \(channel severed\)/.test(e)),
       r.events.join('\n'));
   });
 });
@@ -541,7 +541,7 @@ test('a failed knock writes the driver knockChannel, not the socket literal', as
   const task = newTask();
   const inject = fakeDriver('cursor-like', {
     knockChannel: 'inject',
-    reply: () => ({ ok: false, error: 'канал оборван' }),
+    reply: () => ({ ok: false, error: 'channel severed' }),
   });
   const rpc = fakeDriver('codex-like', {
     knockChannel: 'rpc',
@@ -560,7 +560,7 @@ test('a failed knock writes the driver knockChannel, not the socket literal', as
   const h = bus.readHealth(home, task);
   assert.equal(h['worker:a'].channel, 'self-wake');
   assert.equal(h['worker:b'].channel, 'self-wake');
-  assert.ok(r.events.some((e) => /worker:a: inject did not accept the notification \(канал оборван\)/.test(e)),
+  assert.ok(r.events.some((e) => /worker:a: inject did not accept the notification \(channel severed\)/.test(e)),
     r.events.join('\n'));
   assert.ok(r.events.some((e) => /worker:b: rpc did not accept the notification \(holder gone\)/.test(e)),
     r.events.join('\n'));
@@ -651,7 +651,7 @@ test('a stall is written to the journal and does not activate the owner', async 
 test('without a contact point the mark is set at once — there is nothing to deliver', async () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
-    reply: () => ({ ok: false, error: 'сокет не ответил' }),
+    reply: () => ({ ok: false, error: 'socket did not reply' }),
     view: (ref) => (ref === 'sess-a'
       ? { state: 'alive', busy: false, stall: { kind: 'permission', reason: 'permission prompt' }, id: 'id-a' }
       : { state: 'alive', busy: false, stall: null, id: null }),

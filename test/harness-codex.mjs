@@ -503,7 +503,7 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   live.rollout = true;
   live.status = 'idle';
   writeThread(home, live);
-  notify('item/completed', { type: 'agentMessage', item: { type: 'agentMessage', text: 'ход сыгран' } });
+  notify('item/completed', { type: 'agentMessage', item: { type: 'agentMessage', text: 'turn played' } });
   notify('turn/completed', { id: turnId, status: 'completed' });
   notify('thread/status/changed', { type: 'idle' });
   note(home, address, { kind: 'turn-end', turnId, steered: live.steered ?? 0 });
