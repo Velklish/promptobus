@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:v1:task",
   "title": "Task",
-  "description": "Журнал задачи protocol v1. Owner — ID участника; участники лежат здесь же.",
+  "description": "A protocol v1 task record. Owner is a participant ID; the participants live right here.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "title", "status", "owner", "created", "updated", "participants", "adapter"],
   "properties": {
     "schemaVersion": {
-      "description": "Версия схемы записи. Более новая блокирует запись, не меняя store.",
+      "description": "The record's schema version. A newer one blocks the record without changing the store.",
       "const": 1
     },
     "id": {
@@ -22,7 +22,7 @@
     },
     "status": { "enum": ["active", "done"] },
     "owner": {
-      "description": "ID участника-владельца. Их всегда ровно один, смена — явным claim.",
+      "description": "The owning participant's ID. There is always exactly one; changing it takes an explicit claim.",
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
     },
@@ -34,13 +34,13 @@
       "items": { "$ref": "urn:promptobus:v1:participant" }
     },
     "adapter": {
-      "description": "Метаданные adapter'а как opaque объект: core в них не заглядывает.",
+      "description": "The adapter's metadata as an opaque object: the core never looks inside it.",
       "type": "object"
     }
   },
   "$defs": {
     "timestamp": {
-      "description": "Ровно то, что печатает Date#toISOString: формата date-time мало — он допускает смещения.",
+      "description": "Exactly what Date#toISOString prints: the date-time format alone is not enough — it allows offsets.",
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     }

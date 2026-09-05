@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:v1:artifact",
   "title": "Artifact",
-  "description": "Metadata артефакта. Blob адресуется SHA-256 и дедуплицируется внутри задачи.",
+  "description": "Artifact metadata. The blob is addressed by SHA-256 and deduplicated within a task.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "sha256", "filename", "size", "blob"],
@@ -13,12 +13,12 @@
       "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
     },
     "sha256": {
-      "description": "Digest содержимого, считанный потоково.",
+      "description": "Digest of the content, read as a stream.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
     "filename": {
-      "description": "Исходное имя файла. Одно содержимое живёт под несколькими именами — записей несколько, blob один.",
+      "description": "The original file name. One piece of content can live under several names — several records, one blob.",
       "type": "string",
       "minLength": 1,
       "maxLength": 255,
@@ -30,7 +30,7 @@
       "minimum": 0
     },
     "blob": {
-      "description": "Путь blob'а внутри каталога задачи.",
+      "description": "The blob's path inside the task directory.",
       "type": "string",
       "pattern": "^blobs/[0-9a-f]{64}$"
     }

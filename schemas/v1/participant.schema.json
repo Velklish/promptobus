@@ -2,37 +2,37 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:v1:participant",
   "title": "Participant",
-  "description": "Участник задачи protocol v1. ID независим, роль объявлена полем и из ID не выводится.",
+  "description": "A protocol v1 task participant. The ID is independent; the role is declared as its own field, not derived from the ID.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "role", "harness", "mode", "sessionRef", "capabilities", "metadata"],
   "properties": {
     "id": {
-      "description": "Независимый ID участника. Роль из него не выводится нигде.",
+      "description": "The participant's independent ID. A role is never derived from it.",
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
     },
     "role": {
-      "description": "Расширяемый slug роли: core список ролей не держит.",
+      "description": "An extensible role slug: the core does not keep a list of roles.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$"
     },
     "harness": {
-      "description": "Инструмент, в котором живёт сессия участника. Обязателен: fallback'а в v1 нет.",
+      "description": "The tool the participant's session lives in. Required: v1 has no fallback.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$"
     },
     "mode": {
-      "description": "managed — сессию поднял driver, attached — она подключилась сама.",
+      "description": "managed — the driver spawned the session; attached — it connected on its own.",
       "enum": ["managed", "attached"]
     },
     "sessionRef": {
-      "description": "Opaque session reference driver'а. Явный null, а не отсутствие поля.",
+      "description": "The driver's opaque session reference. An explicit null, not a missing field.",
       "type": ["string", "null"],
       "minLength": 1
     },
     "capabilities": {
-      "description": "Снимок capabilities driver'а на момент подъёма. Четыре последних поля необязательны: более ранние записи без них лежат в живых журналах и обязаны читаться.",
+      "description": "A snapshot of the driver's capabilities at spawn time. The last four fields are optional: older records without them sit in live journals and must remain readable.",
       "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["spawn", "attach", "activation", "inspect", "stop"],
@@ -49,7 +49,7 @@
       }
     },
     "metadata": {
-      "description": "Метаданные adapter'а: core в них не заглядывает.",
+      "description": "The adapter's metadata: the core never looks inside it.",
       "type": "object"
     }
   }
