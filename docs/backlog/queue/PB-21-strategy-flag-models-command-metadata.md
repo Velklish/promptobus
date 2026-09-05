@@ -19,6 +19,12 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 - `--help`: the `models` line and `--strategy` / `--allow-payg` on `spawn` and `review`, turning PB-12's pending help check green; routing error codes registered in `ERROR_CODES` (`src/v1/errors.ts`) so the reference-vs-enum drift check covers them.
 - `--dry-run` on `spawn`, `review` and `models`: reads the cache only, prints the decision with the snapshot age and a `stale_cache` warning when due, writes neither cache nor task state; live probes only with `--refresh`, and `--refresh --dry-run` still writes nothing (owner's decision 2026-09-05).
 
+## Notes from PB-18 (2026-09-05)
+
+- `resolve({ role, strategy, constraints, policy, snapshot, liveParticipants, now })` and `render(decision)` in `lib/model-routing/{resolver,render}.js` are pure; `policy` is the whole answer of `loadCatalog()`, `constraints` is `{ harness, model, effort, allowPayg }`, `liveParticipants` is `[{ harness, model, role }]`. `resolve` throws `GateError` with codes `role-unknown` / `strategy-unknown` — register them in `ERROR_CODES` with the routing codes. `chosen: null` is the `candidates-empty` case and the document is still complete for the diagnostics printed before refusing.
+- `--allow-payg` is read from both `policy.policy.payg.allow` and `constraints.allowPayg`; tuples of a harness the snapshot does not carry are filtered, not listed as excluded (the snapshot's harness set is the declaration).
+- Warning order in a decision: merge-copied first, then snapshot-derived per harness in name order, then `reviewer-floor-not-met`; `live-participant` is one adjustment row carrying the capped total.
+
 ## Notes from PB-14 (2026-09-05)
 
 - A `stale_cache` entry carries no `models` and no `windows`: `models --dry-run` on a cold or expired cache lists no runtime models for that harness and reports the old `checkedAt` as the age. If the text output is expected to still list stale inventory, the change is in `lib/model-routing/cache.js` (`snapshotEntry`), not in the command.
