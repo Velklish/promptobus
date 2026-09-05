@@ -77,7 +77,23 @@ export const HARNESS_VERSION = `${PROVEN_CURSOR_VERSION}-e2estub`;
 
 // --- stand layout ----------------------------------------------------------------
 
-function serverDir(home, server) {
+/**
+ * Where the stand keeps the sessions of one tmux server. The name of the server is
+ * only a key inside the stand home, and the home is a fresh `mkdtemp` per file — so
+ * two runs on one machine asking the same `cursor-agent` server look at two different
+ * directories, and neither can stop the other's session. That is the whole per-run
+ * scoping of the tmux side, and it is why the production name stays `cursor-agent`:
+ * the mechanism must keep sharing the server with a person's own persist sessions
+ * (`CURSOR_TMUX_SERVER` in [cursor-persist.js](../lib/cursor-persist.js)), and only
+ * the stand is allowed to know better.
+ *
+ * The one route out of this scoping is a suite process whose PATH lost the stand's
+ * stub `tmux`: it would reach the machine's real binary and the real, shared
+ * `cursor-agent` server. That route is closed by the sealed PATH (PB-2), and
+ * [promptobus-cursor-wake.test.mjs](promptobus-cursor-wake.test.mjs) checks the seal
+ * from the other end — that the `tmux` its run resolved is this stand's.
+ */
+export function serverDir(home, server) {
   return path.join(home, 'tmux', String(server).replace(/[^A-Za-z0-9._-]+/g, '-'));
 }
 

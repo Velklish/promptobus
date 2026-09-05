@@ -27,7 +27,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs, turnWaitMs,
-  codexMcpServers, codexMcpName, CODEX_MCP_PREFIX,
+  codexMcpServers, codexMcpName, sessionsDir, CODEX_MCP_PREFIX,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
@@ -389,23 +389,56 @@ check(': inspect at state=dead — stall, even if holderPid is alive',
   JSON.stringify(deadView));
 dropSession(deadRef, process.env);
 
+// Holder and app-server processes of THIS file, and nobody else's.
+//
+// `pgrep -f` reads the whole machine, and the patterns here used to be
+// `codex-hold.js` and `app-server --stdio` — names every run on the machine
+// carries. A worker run by tracks puts a second `npm test` on the same machine as
+// a matter of course, and its holders then counted against this file's verdict.
+// Reproduced deliberately 2026-09-05: two runs started 3.2 s apart, and the check
+// below went red in BOTH — one saw `app 19472`, the other `hold 24233,25179 ·
+// app 24653`, each of them the neighbour's pids (PB-14.4).
+//
+// The scope is the file's own sandbox, and each process carries it in its own
+// argv: the holder is started as `codex-hold.js <session file>`, and that file
+// lives under this stand's state home (`promptobus-codex-…/state`); the app-server
+// is the stub binary, started from this file's own `bin` directory inside the file
+// sandbox. So each pattern is a path this run alone owns, not a program name — a
+// neighbouring run has other directories and cannot match either of them.
+//
+// The snapshot-and-subtract around the spawn (`beforeHold` / `beforeApp`) stays.
+// It answers a different question — processes of THIS file that were already up
+// before the refusal — and holders leaked by an earlier run of this same suite are
+// exactly what it filters out.
+const ere = (s) => s.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+const HOLD_PATTERN = `codex-hold\\.js ${ere(sessionsDir(env))}`;
+const APP_PATTERN = ere(`${path.join(SB, 'bin')}/codex.stub.mjs app-server --stdio`);
+
 function pgrep(pattern) {
   const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
   return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
 }
 
+// Sentinel over the two patterns above. Widening one back to a bare program name
+// is a one-word edit, and its cost is a red verdict in someone else's run days
+// later — so the sandbox path is required to be in both, here, where the edit
+// happens.
+check(': both process reads are scoped to this file\'s own directories, not to a program name',
+  HOLD_PATTERN.includes(ere(stateHome)) && APP_PATTERN.includes(ere(SB)),
+  `hold ${HOLD_PATTERN} · app ${APP_PATTERN}`);
+
 planParticipant(HARNESS, 'worker:hang', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'HANG' } }] }],
 });
-const beforeHold = pgrep('codex-hold.js');
-const beforeApp = pgrep('app-server --stdio');
+const beforeHold = pgrep(HOLD_PATTERN);
+const beforeApp = pgrep(APP_PATTERN);
 const hangEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '3000', [HANG_FIRST_VAR]: '1' };
 const hung = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'hang', '--harness', 'codex'], { cwd: ws, env: hangEnv });
 check(': a lift refusal on timeout — non-zero code',
   hung.status !== 0 && /did not lift/.test(hung.out), hung.out.slice(-400));
-const extraHold = pgrep('codex-hold.js').filter((p) => !beforeHold.includes(p));
-const extraApp = pgrep('app-server --stdio').filter((p) => !beforeApp.includes(p));
+const extraHold = pgrep(HOLD_PATTERN).filter((p) => !beforeHold.includes(p));
+const extraApp = pgrep(APP_PATTERN).filter((p) => !beforeApp.includes(p));
 check(': after a lift refusal there are no holder processes',
   extraHold.length === 0 && extraApp.length === 0,
   `hold ${extraHold.join(',')} · app ${extraApp.join(',')}`);

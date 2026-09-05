@@ -21,13 +21,13 @@
 // turn is held by a pause, the warden loop runs once a second, and under pool load those
 // thresholds either go red on working code or go green on nothing.
 import { spawn } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { PROMPTOBUS_BIN, buildWorkspace, cli, store } from './scenario.mjs';
-import { diagnoseTrace, installHarness, planParticipant } from './harness-cursor.mjs';
+import { diagnoseTrace, installHarness, planParticipant, serverDir } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,32 @@ const SB = makeSandbox('promptobus-cursor-wake-');
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 
 const { cursorDriver } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
-const { listSessions, readSession } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
+const {
+  listSessions, readSession, CURSOR_TMUX_SERVER,
+} = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
+
+// --- the run talks to ITS tmux, not to the machine's --------------------------------
+//
+// The mechanism asks for the server by a name the whole machine shares:
+// `tmux -L cursor-agent`, with `TMUX_TMPDIR=/tmp`, deliberately, so a person finds
+// participant sessions next to their own with `agent persist list`. Under the suite
+// that name must never reach a real tmux — it would put this file's stand-in session
+// on the one server every other run and the person themself are using, and a session
+// that disappeared from under the wake loop reads as a mechanism failure. The stand's
+// stub keys sessions by its own home instead ([harness-cursor.mjs](harness-cursor.mjs)),
+// so the scoping holds as long as the `tmux` this run resolves is the stub.
+//
+// Both halves are checked, because each fails on its own: the binary (a lost stub on
+// PATH reaches the machine) and the state (a stub that wrote outside its home would
+// share a directory with a neighbour). Filed as PB-14.4, whose other member — the
+// machine-wide `pgrep` in promptobus-driver-codex.test.mjs — reproduced on purpose
+// with two concurrent runs 2026-09-05.
+const BIN_DIR = path.join(SB, 'bin');
+const resolvedTmux = (process.env.PATH ?? '').split(path.delimiter)
+  .map((dir) => path.join(dir, 'tmux')).find((file) => existsSync(file)) ?? null;
+check('step 0: the tmux this run resolves is the stand\'s stub, not the machine\'s binary',
+  resolvedTmux !== null && path.dirname(resolvedTmux) === BIN_DIR,
+  `${resolvedTmux} · stand bin ${BIN_DIR}`);
 
 const TASK = 'cursorwake-t20260903-000000';
 const WORKER = 'worker:wake';
@@ -114,6 +139,12 @@ check('step 2: the participant capabilities snapshot declares push — the warde
 
 const record = readSession(ref, env);
 const panePid = record?.panePid ?? null;
+check('step 2: the session state sits in THIS run\'s stand home — a neighbouring run has its own',
+  !!record?.sessionName
+  && existsSync(path.join(serverDir(HARNESS, CURSOR_TMUX_SERVER), 'sessions',
+    `${record.sessionName}.json`)),
+  `${record?.sessionName} · ${path.join(serverDir(HARNESS, CURSOR_TMUX_SERVER), 'sessions')}`);
+
 const wake0 = await waitFor(() => store.readWake(home, TASK, WORKER), { timeoutMs: 30000 });
 check('step 3: end of turn handed over a contact point with a turn counter — that is how the warden sees the change',
   typeof wake0?.socket === 'string' && /#\d+$/.test(wake0.socket) && wake0.session === record?.chatId,

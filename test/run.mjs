@@ -205,6 +205,41 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // The group is a list of names: a file renamed past this list would
 // slip into the pool in silence. [runner.test.mjs](runner.test.mjs)
 // watches that — it checks the list against the directory.
+//
+// **A second run on the same machine is the normal state, not an
+// accident.** A worker run by tracks puts one `npm test` per worktree,
+// and they overlap. The pool, the run directory and the per-file
+// sandboxes separate two runs by construction; what does NOT separate
+// them is any read of a machine-wide resource — the process table, a
+// tmux server, a socket directory under `/tmp`. The register of such
+// reads in the suite, and what each is scoped by:
+//
+// - `promptobus-driver-codex.test.mjs` — the holder and app-server
+//   count after a refused lift. Scoped by the FILE'S OWN PATHS in the
+//   process argv: the holder carries its session file (this stand's
+//   state home), the stub app-server its bin directory (this file's
+//   sandbox). It read `codex-hold.js` and `app-server --stdio` by
+//   program name until 2026-09-05, and two runs started 3.2 s apart
+//   reddened the check in BOTH at once — each counting the other's
+//   pids (PB-14.4);
+// - `promptobus-driver-cursor.test.mjs` — the orphan `worker-server`
+//   and the pane's tool children. Scoped already: the orphan by the
+//   session mark in the process environment (`ps eww`), the children
+//   by the pane pid they hang off;
+// - `promptobus-cursor-wake.test.mjs` and every Cursor file — the
+//   tmux server `cursor-agent`. That name is machine-wide on purpose
+//   in production, so the suite never reaches a real tmux: the stand
+//   stubs the binary and keys sessions by its own home
+//   ([harness-cursor.mjs](harness-cursor.mjs)). The wake file checks
+//   both halves — that the resolved `tmux` is the stub, and that the
+//   session state is in this run's stand home;
+// - sockets under `/tmp` — a private `mkdtemp` root per file
+//   ([sandbox.mjs](sandbox.mjs)), swept by prefix by the release
+//   gates, never by name.
+//
+// The rule for a new one: read the machine only through something
+// this run alone owns — a path, a pid it started, a mark it wrote.
+// A program name is not that.
 const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'runner.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
