@@ -3,6 +3,7 @@
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** none
+- **Taken:** 2026-09-05
 
 ## Context
 
