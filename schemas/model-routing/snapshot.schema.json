@@ -36,7 +36,6 @@
       "enum": [
         "binary_missing",
         "not_authenticated",
-        "model_not_available",
         "subscription_exhausted",
         "probe_timeout",
         "probe_failed",

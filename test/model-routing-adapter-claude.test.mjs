@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { CLAUDE, DEFAULT_MODEL, claudeDriver, markLimitAtStart } from '../lib/driver-claude.js';
+import { liftoffParticipant } from '../lib/liftoff.js';
 import { claudeAvailability } from '../lib/model-routing/adapter-claude.js';
 import { entryLive, readSnapshot, stickyExhaustion } from '../lib/model-routing/cache.js';
 import { preflight } from '../lib/model-routing/preflight.js';
@@ -414,6 +415,43 @@ test('the driver declares the adapter, and the registry door hands out that one'
   assert.ok(!verdict.message.includes('no availability adapter'), verdict.message);
 });
 
+test('a lift refused on a spent limit leaves as a typed limit-hit-at-start', async () => {
+  // The code was published in `ERROR_CODES` and in the reference and nothing raised
+  // it: the refusal ended through `fail()`, so a consumer had a vocabulary it could
+  // not branch on (PB-21.1). What the PERSON reads is unchanged — the CLI catch
+  // prints a `PromptobusError` as one line and exits 1, exactly as `fail` does — so
+  // this is the check that says the code is on it.
+  //
+  // Mutation probe: put `fail(said)` back on the limit branch and the whole FILE
+  // goes red (measured: `node --test` exits 1 with "test failed" and no summary) —
+  // `fail` is `process.exit(1)`, so the run dies inside this check instead of a
+  // refusal reaching it, which is the same reason the classification cannot live in
+  // a caller.
+  const box = sandbox('process.stderr.write("Claude usage limit reached — you\'ve hit your weekly limit.");\n'
+    + 'process.exit(1);');
+  const refusal = await liftoffParticipant({
+    tool: box.host.resolveToolBin(CLAUDE),
+    argv: ['--bg', 'prompt'],
+    cwd: box.dir,
+    env: process.env,
+    name: 'worker-limit',
+    role: 'worker',
+    persist: () => {},
+    awaitOptions: { tries: 1, delayMs: 0, sessions: () => [] },
+    sayLimit: (output) => markLimitAtStart(box.host, output),
+  }).then(() => null, (e) => e);
+
+  assert.ok(refusal, 'the lift did not refuse at all');
+  assert.equal(refusal.constructor.name, 'PromptobusError');
+  assert.equal(refusal.code, 'limit-hit-at-start');
+  // The diagnosis is the whole message, mark and all: the code is added to what the
+  // person was already told, not put in place of it.
+  assert.match(refusal.message, /exited with code 1/);
+  assert.match(refusal.message, /--clear-exhausted/);
+  // And the mark the refusal names is really there.
+  assert.equal(readSnapshot(box.host).harnesses[CLAUDE].state, 'exhausted');
+});
+
 test('the lift passes the late-start hook down to the launcher and appends what it returns', () => {
   // The hook has to be handed to `liftoffParticipant`, not called by a caller
   // catching a refusal: `fail` ends the process, and past that line there is
@@ -427,6 +465,12 @@ test('the lift passes the late-start hook down to the launcher and appends what 
   assert.match(driver, /sayLimit: \(output\) => markLimitAtStart\(host, output\)/);
   const liftoff = readFileSync(path.join(here, '..', 'lib', 'liftoff.js'), 'utf8');
   assert.equal((liftoff.match(/sayLimit\?\.\(output\)/g) ?? []).length, 2, 'both refusal branches report');
-  assert.equal((liftoff.match(/limitNote/g) ?? []).length, 4,
-    'both branches take the returned line AND put it in their refusal');
+  assert.equal((liftoff.match(/\$\{limitNote\}|\+ deadNote \+ limitNote/g) ?? []).length, 2,
+    'both branches put the returned line in their refusal');
+  // And both leave with the code when there was something to mark: a published
+  // routing code nothing raises is a vocabulary a consumer cannot branch on
+  // (PB-21.1). The refusal a person reads is unchanged — the CLI catch prints a
+  // `PromptobusError` as one line and exits 1, exactly as `fail` does.
+  assert.equal((liftoff.match(/if \(limitNote\) throw new PromptobusError\('limit-hit-at-start', said\);/g) ?? []).length, 2,
+    'both branches raise the code when the hook marked something');
 });

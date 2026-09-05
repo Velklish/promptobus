@@ -111,7 +111,7 @@ export function throwingStub(count = null) {
 
 /**
  * Answers exactly what it is given, contract or not. The seam for the checks that
- * ask what the preflight does with an answer outside the four states, the nine
+ * ask what the preflight does with an answer outside the four states, the eight
  * reasons and the three sources — a misspelt `quota-unknown` is the mistake an
  * adapter author actually makes, and it must not reach a file that promises to
  * validate.

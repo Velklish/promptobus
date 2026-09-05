@@ -1,0 +1,7 @@
+# PB-21.1 · Result
+
+**Closed 2026-09-05.** Completed. `limit-hit-at-start` has a raiser: the two lift branches that hold the harness's own words throw `PromptobusError('limit-hit-at-start')` when the late-start hook marked the cache (the code means limit hit AND harness marked; a refusal whose mark could not be written leaves through `fail` without it — the person's output is identical either way). `model_not_available` is retired — from the snapshot schema enum, `AVAILABILITY_REASONS` and the reference table in one pass — by the orchestrator's decision: a model the account does not expose is a per-tuple fact carried by `model-not-in-inventory` with the better diagnosis, and no writer for the harness-level code existed without contradicting ADR-003; the ADR keeps its argument with a dated clarification note, and the CHANGELOG `### Removed` says the code lived in `[Unreleased]` only and never reached a cache. Track `routing`, same worker and review round.
+
+**Verification.** A stub binary refusing with limit words → a `PromptobusError` with the code, the exit code and the `--clear-exhausted` route in the message, the harness marked; probe: `fail(said)` back on that branch → the file red. The code back in the schema alone → the drift check red. Gates re-run on the merged `main` tree by the approver.
+
+**Documentation in the same pass.** `docs/reference/03-cli.md` (the error-code paragraph and row, the Codex subsection sentence), `docs/adr/adr-003-model-routing.md` (the note), `CHANGELOG.md`.

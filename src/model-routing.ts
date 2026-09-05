@@ -32,16 +32,22 @@ export type AvailabilityState = (typeof AVAILABILITY_STATES)[number];
 
 /**
  * Stable reason codes. The list is fixed and is written once in prose, in
- * `docs/reference/03-cli.md`; the same nine are the `reason` enum of the snapshot
+ * `docs/reference/03-cli.md`; the same eight are the `reason` enum of the snapshot
  * schema, and the suite compares the two lists rather than trusting them.
  *
  * `snake_case` — the snapshot vocabulary keeps the spelling the decision fixed,
  * while package error codes are `kebab-case`.
+ *
+ * ADR-003 named a ninth, `model_not_available`, and it was retired before it was
+ * ever written: the state in a snapshot entry is the HARNESS's, so the code could
+ * only have been carried by an `unavailable` that took every tuple of that harness
+ * with it — which is exactly what the ADR forbade for a model absence, and which the
+ * per-candidate `model-not-in-inventory` exclusion already reports, per tuple and
+ * with the better diagnosis. Nothing ever wrote it, so no cache file can carry it.
  */
 export const AVAILABILITY_REASONS = [
   'binary_missing',
   'not_authenticated',
-  'model_not_available',
   'subscription_exhausted',
   'probe_timeout',
   'probe_failed',

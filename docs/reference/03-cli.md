@@ -80,11 +80,12 @@ promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-pay
 
 The state of one harness in the availability snapshot, with its reason. `snake_case`, quoted verbatim from ADR-003 — the snapshot vocabulary keeps the spelling the decision fixed, while package error codes below follow the `kebab-case` of `ERROR_CODES` (`src/v1/errors.ts`).
 
+Eight codes, and ADR-003 named a ninth. `model_not_available` was **retired before anything ever wrote it** (PB-21.1): a snapshot entry's state is the HARNESS's, so the only state that code could have accompanied is an `unavailable` that takes every tuple of that harness with it — which is precisely what the decision forbade for a model absence. The fact it was meant to carry is per tuple and is already reported per candidate, as the `model-not-in-inventory` exclusion below, with the better diagnosis. It is gone from the schema enum and from `AVAILABILITY_REASONS` together with this table; the drift check reads the two and keeps them one list.
+
 | Code | State it accompanies | Meaning |
 |---|---|---|
 | `binary_missing` | `unavailable` | The host's `resolveToolBin` found no binary for that harness |
 | `not_authenticated` | `unavailable` | The binary is there, the account is not logged in |
-| `model_not_available` | `unavailable` | The account does not expose the model an explicit `--model` named. **Only that path**: this state is the harness's, so setting it for a model would drop every tuple of that harness. The per-tuple fact is the `model-not-in-inventory` exclusion below |
 | `subscription_exhausted` | `exhausted` | The limit is confirmably spent; `resetAt` when the harness gives one |
 | `probe_timeout` | `unknown` | The adapter did not answer inside the 15 s preflight budget |
 | `probe_failed` | `unknown` | The adapter answered with an error that is not one of the above |
@@ -118,7 +119,9 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 
 Routing failures end the command. Every one of them happens **before any write**: no task, worktree or participant exists when they fire — except `limit-hit-at-start`, which is the one case where the store is already written and the command says so.
 
-They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) — which is why they are `kebab-case` while the snapshot's reason codes above keep the `snake_case` the decision fixed. The drift check reads this table against that list, so the two cannot part. `limit-hit-at-start` is the one whose refusal is still raised as a plain lift failure: the late-start hook marks the cache and the lift ends with the diagnosis (`lib/liftoff.js`), and the code names that case for a consumer rather than a second exit path.
+They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) — which is why they are `kebab-case` while the snapshot's reason codes above keep the `snake_case` the decision fixed. The drift check reads this table against that list, so the two cannot part.
+
+`limit-hit-at-start` is raised by the lift itself (`lib/liftoff.js`): the two refusal branches that hold the harness's own words — a non-zero exit and a session that never came up — throw a `PromptobusError` with that code **when the late-start hook marked the cache**, and end through `fail()` when it did not. So the code means both halves at once: the limit was hit AND the harness is now marked exhausted. A limit refusal whose mark could not be written — an unreadable routing path, a read-only directory — leaves through `fail()` with no code, because there is no mark for a consumer to act on and the person still gets the same diagnosis. What a person reads does not change either way: the CLI catch prints a `PromptobusError` as one line and exits 1, exactly as `fail()` does.
 
 | Code | When |
 |---|---|
@@ -130,7 +133,7 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 | `constraint-unknown` | An explicit `--harness`, `--model` or `--effort` matches no tuple in the merged catalog. A `--harness` the workspace never declared is refused by `harness-unknown` before this one: "you do not have that harness" is the more useful of the two answers |
 | `constraint-unavailable` | The explicitly named tuple exists but its harness is `unavailable` or `exhausted` |
 | `candidates-empty` | Nothing survived filtering. The decision document is still printed, with `chosen: null`. It ends `spawn` and `review`; `models` prints the document and exits 0, because answering the question is what that command is for |
-| `limit-hit-at-start` | The limit was hit between preflight and start. The cache is marked exhausted; the command does not retry |
+| `limit-hit-at-start` | The limit was hit between preflight and start **and** the cache was marked exhausted; the command does not retry. A mark that could not be written leaves through `fail()` without the code |
 
 ### Files
 
@@ -156,7 +159,7 @@ probe({ host, toolBin, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdic
 | Field | Meaning |
 |---|---|
 | `state` | `available`, `exhausted`, `unavailable` or `unknown` |
-| `reason` | one of the nine codes above, `null` exactly when the state is `available` and nothing qualifies it |
+| `reason` | one of the eight codes above, `null` exactly when the state is `available` and nothing qualifies it |
 | `message` | a human diagnosis. **Never harness output verbatim**: this is the one free-text field that reaches disk |
 | `checkedAt` | ISO-8601 with milliseconds; the preflight stamps one if the adapter omits it |
 | `source` | `probe` — this run asked the harness; `cache` — a live entry was reused; `manual` — a person marked it. Nothing in v1 writes `manual`: it is reserved for a person marking a harness by hand, and no command does that yet |
@@ -171,7 +174,7 @@ probe({ host, toolBin, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdic
 
 An adapter that **throws** is `unknown` / `probe_failed`, and the thrown text is discarded rather than written: an adapter wrapping harness output in an error would otherwise put it on disk. An adapter with something to say answers with a verdict.
 
-An adapter that **answers outside the contract** is `probe_failed` too, and the diagnosis names the field. All three closed lists are checked — the state, the reason and the source — plus a `checkedAt` that cannot be read; a reason is required for every state but `available`, which is the only one none of the nine codes accompanies. The written cache promises to validate against its schema, and a misspelt `quota-unknown` would break that promise from inside: the command would report success and leave a document nothing can read back. The offending value is quoted back only when it has the shape of a code, so the message can show a typo without becoming a second route for harness output.
+An adapter that **answers outside the contract** is `probe_failed` too, and the diagnosis names the field. All three closed lists are checked — the state, the reason and the source — plus a `checkedAt` that cannot be read; a reason is required for every state but `available`, which is the only one none of the eight codes accompanies. The written cache promises to validate against its schema, and a misspelt `quota-unknown` would break that promise from inside: the command would report success and leave a document nothing can read back. The offending value is quoted back only when it has the shape of a code, so the message can show a typo without becoming a second route for harness output.
 
 Inside `models` and `windows` the check is by value and it **drops the element, not the verdict**: a blank model name, a `usedPercent` outside 0…100, a `lengthSec` of zero, a repeated flag. An adapter that garbles one row of an inventory still knows whether the account is logged in, and nothing here repairs a value — a number invented by the mechanism would validate while saying what no harness said. A `resetAt` that cannot be read becomes `null`, the schema's own word for unknown.
 
@@ -299,7 +302,7 @@ What the answers become:
 
 **Windows** are `primary` and `secondary`, under the names the payload gives them: `usedPercent` as it stands, `lengthSec` from `windowDurationMins` × 60, and `resetAt` from `resetsAt` — unix **seconds** on the request, an ISO string on the notification, and `null` when it is neither. Nothing is renamed into hours and days: the length is a number the harness states, and a label invented from it would be a second, quieter claim about the same fact. A snapshot that names no window but carries the numbers at its own top level is ONE window and it is `primary` — that is not an invention either: `rateLimitReached` counts the snapshot itself among the windows it checks and `rateLimitNote` reads `snap.usedPercent`, so the flat form has always been the primary window written without its name, and reading it as "no window" would publish a spent limit as an exhaustion with no reset — the sticky kind — over a limit the harness had timed. A `resetsAt` outside the range a timestamp can have (milliseconds handed over where seconds were meant) is `null` rather than a value divided by a thousand: the repaired one would validate and be a time nothing said. `planType`, `credits` and `individualLimit` are read by nothing and reach no verdict.
 
-**Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **left out**: it hides what it does not offer, and an inventory carrying them would hand the resolver candidates the harness itself declines to show. No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. This adapter never answers `model_not_available`: it publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's.
+**Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **left out**: it hides what it does not offer, and an inventory carrying them would hand the resolver candidates the harness itself declines to show. No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. An adapter publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's — which is why the snapshot vocabulary has no code for it at all.
 
 **The budget** is the preflight's whole `timeoutMs`, spent as a deadline rather than divided: each request is capped by the smaller of its own ceiling (`INIT_TIMEOUT_MS`, `LIMIT_READ_TIMEOUT_MS`, `MODEL_LIST_TIMEOUT_MS`) and what is left of it, and the notification fallback by the smaller of `limitWaitMs()` and the same remainder. An app-server that dies is not waited for at all — it answers `probe_failed` at once instead of holding a budget three harnesses are sharing.
 
