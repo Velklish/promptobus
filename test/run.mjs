@@ -44,7 +44,7 @@
 import {
   closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync,
 } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,10 +81,10 @@ const RUN_TMP = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
 // timeout, process crash. Measured 2026-09-03 on the owner's machine —
 // 126 directories in system `$TMPDIR`.
 //
-// Sweep lives here, not in the shared helper [check.mjs](check.mjs):
+// Sweep lives here, not in the home diversion [home.mjs](home.mjs):
 // the runner is the only suite process that sees the real `$TMPDIR`;
 // it sends children `TMPDIR` into the run directory on the line above.
-// From `check.mjs` it would sweep the run directory with live sandboxes
+// From `home.mjs` it would sweep the run directory with live sandboxes
 // of neighbouring files, and would not touch what piled up in system
 // `$TMPDIR` at all. Thresholds, prefix list, and rationale —
 // [tmpdir-sweep.mjs](tmpdir-sweep.mjs); a run going on nearby is held
@@ -98,6 +98,10 @@ const RAISED_LOG = 'wardens-raised.log';
 // Every command `run` resolved under this run, appended by every child at once
 // ([exec.js](../lib/exec.js)). Read by the sealed-PATH gate at the tail.
 const RESOLVED_LOG = 'commands-resolved.log';
+// Every Codex holder started under this run, appended by the driver at the moment
+// it starts one ([codex-session.js](../lib/codex-session.js)). Read by the
+// holder gate at the tail: a holder may live during a run, not past it.
+const HOLDERS_LOG = 'holders-started.log';
 // Sealed PATH of the run: one directory of symlinks to the binaries the suite may
 // reach, and nothing else. Built by [hygiene.mjs](hygiene.mjs), which also carries
 // the list and the reason. It sits beside the output buffers rather than among the
@@ -112,7 +116,7 @@ const OUT_DIR = path.join(RUN_TMP, 'out');
 mkdirSync(OUT_DIR, { recursive: true });
 
 // Environment of a suite file. The list of "what the suite must not
-// touch" is shared with [check.mjs](check.mjs) and lives in one place
+// touch" is shared with [home.mjs](home.mjs) and lives in one place
 // in [hygiene.mjs](hygiene.mjs): that file also says why it holds the
 // warden switch, the session contact point, the user home, and the
 // memory-hook lever. The runner adds its own — the sandbox directory
@@ -138,6 +142,7 @@ function testEnv(tmp) {
     TEMP: tmp,
     PROMPTOBUS_WARDEN_TRACE: path.join(tmp, RAISED_LOG),
     PROMPTOBUS_EXEC_TRACE: path.join(tmp, RESOLVED_LOG),
+    PROMPTOBUS_HOLDER_TRACE: path.join(tmp, HOLDERS_LOG),
   }, { home, seal: SEAL_DIR });
 }
 
@@ -245,7 +250,12 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 //   session state is in this run's stand home;
 // - sockets under `/tmp` — a private `mkdtemp` root per file
 //   ([sandbox.mjs](sandbox.mjs)), swept by prefix by the release
-//   gates, never by name.
+//   gates, never by name;
+// - the holder gate at the tail of this file — one `ps` of the whole
+//   process table, matched against the pids this run's own holder
+//   trace names AND the session file each of them was started for.
+//   Both, not the pid alone: the system reuses process numbers, and a
+//   recycled one would put a stranger's program in the verdict.
 //
 // The rule for a new one: read the machine only through something
 // this run alone owns — a path, a pid it started, a mark it wrote.
@@ -413,6 +423,61 @@ if (!interrupted) await runGroup(serial, 1);
 // buffers — exactly what the buffers were created for. There is no
 // further work, the event loop is empty, and the process will exit
 // itself after flushing.
+// Gate: a run must not leave a Codex holder behind.
+//
+// The sibling of the warden gate below, and its mirror image. A warden may not be
+// raised AT ALL, so that one judges the act; a holder is raised on purpose — the
+// Codex file starts real ones and stops them — so this one judges the moment: any
+// holder this run started and still holding a live session record when it ended.
+//
+// **Before the interrupt branch, not inside the clean one.** Ctrl-C is one of the
+// two routes that leaks — the runner answers it with `child.kill('SIGKILL')`, and
+// no cleanup hook of a file survives that — so a gate that only ran on a clean
+// finish would miss the case its own reproduction names first.
+//
+// Established by reproduction rather than by reading (PB-2.1). Running the Codex
+// file and taking it down three ways: SIGKILL leaves the holder and its
+// app-server, SIGTERM leaves nothing, a clean finish leaves nothing. SIGKILL is
+// what the runner itself uses, on both of its take-down routes — the file timeout
+// and Ctrl-C. A 2026-09-04 run left twelve such processes alive into the next day.
+//
+// Judged on the pid AND on the session file the trace recorded for it, matched in
+// the live argv. A pid alone is reused by the system, and a run of tracks puts a
+// second `npm test` on the machine as a matter of course — the rule in the
+// register above. `ps` is on the reachable-binaries list; a machine without it
+// reports no holders rather than a false accusation.
+//
+// What it measures is the record, not the lifetime. A holder reaps ITSELF once its
+// session record goes, and the record goes with the run directory this process
+// removes on exit — so every holder named here is about to die anyway. What is
+// wrong is not that it is alive; it is that at the end of the run it was still
+// holding a session nobody had stopped. It reports; it does not kill. Killing from
+// here would need the same care as the start-of-run sweep, and by the time the
+// reaper has run there is nothing left to kill.
+let heldOver = [];
+try {
+  const started = readFileSync(path.join(RUN_TMP, HOLDERS_LOG), 'utf8')
+    .split('\n').filter(Boolean).map((line) => line.split('\t'));
+  if (started.length) {
+    const argv = new Map(execFileSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' })
+      .split('\n').map((line) => line.trim().match(/^(\d+)\s+(.*)$/)).filter(Boolean)
+      .map((m) => [m[1], m[2]]));
+    heldOver = started
+      .filter(([pid, session]) => session && (argv.get(pid) ?? '').includes(session))
+      .map(([pid, session]) => `${pid} → ${session}`);
+  }
+} catch {
+  // No trace — no holder was started under this run, which is most runs. An
+  // unreadable process table is the same answer: this gate does not invent one.
+}
+if (heldOver.length) {
+  console.error(`\n✖ ${heldOver.length} Codex holder(s) started under this run were still holding`
+    + ' a live session record when the run ended:');
+  for (const line of heldOver) console.error(`  ✖ ${line}`);
+  console.error('  a holder exits when its session record goes (codex-session.js); one still holding'
+    + ' a live record was never stopped and no cleanup hook reached it');
+}
+
 if (interrupted) {
   const on = interruptedOn.length ? `on ${interruptedOn.join(', ')}` : 'between files';
   console.error(`\n✖ run interrupted (${interrupted}) ${on}`
@@ -500,6 +565,6 @@ if (interrupted) {
     console.error(`  the run directory is ${RUN_TMP}; the sealed PATH is ${SEAL_DIR},`
       + ' and its contents are the REACHABLE_BINARIES list in hygiene.mjs');
   }
-  if (failed.length || raised.length || escaped.length) process.exitCode = 1;
+  if (failed.length || raised.length || escaped.length || heldOver.length) process.exitCode = 1;
   else console.log(`\n${passed}/${files.length} test files passed`);
 }

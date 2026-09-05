@@ -32,6 +32,10 @@
 // comparison normalises them; which run produces the files, and exactly what is
 // normalised, is [README.md](fixtures/model-routing/README.md) next to them.
 // Normalised, not excluded: an excluded field is an unpinned field.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -278,16 +282,6 @@ test('argv with none of the routing flags takes exactly today\'s path', () => {
  * directory, so "the real home" here holds no person's overlay file and the
  * golden's "no overlay present at either layer" is true by construction.
  */
-// Home is diverted for the whole file, not per box. The availability cache the
-// standalone host names hangs off `os.homedir()`, and this file writes one: run
-// under the suite runner home already sits inside the run directory, but run by
-// hand (`node --test test/model-routing.test.mjs`) it would be the person's, and
-// a check must not write into it. Diverting here makes the two ways of running
-// the file agree, and the directory is swept by its prefix like every other.
-const SANDBOX_HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-routing-home-'));
-process.env.HOME = SANDBOX_HOME;
-process.env.USERPROFILE = SANDBOX_HOME;
-
 function goldenBox() {
   const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-routing-'));
   writeFileSync(path.join(root, 'promptobus.json'), `${JSON.stringify({ tools: ['example', 'other'] }, null, 2)}\n`);

@@ -11,8 +11,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { stubCommand } from './sandbox.mjs';
 import { check } from './check.mjs';
+import { stubCommand } from './sandbox.mjs';
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus-mcp-'));
 const ROOT = realpathSync(SB);
@@ -238,35 +238,22 @@ check(': the orchestrator has no session name — the header names it by the pla
 const again = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('inbox: a message already read is not delivered again', text(again).startsWith('empty'), text(again));
 
-// : nobody carries the "run the wait again" hint anymore. The protocol doesn't require
-// re-arming the wait: there's exactly one alarm per task, and it's the warden. A line
-// telling a session to do something the protocol doesn't ask for costs more than its absence —
-// a session following it would set up a second alarm on every turn.
-// dead: the hint no longer exists in any language — PB-9.1
-check(': a mailbox that was fetched does not call for re-arming the wait (dead branch, PB-9.1)',
-  !/запусти ожидание снова/.test(text(got)) && !/mailbox забран/.test(text(got)), text(got));
-check(': and neither does an empty mailbox (dead branch, PB-9.1)',
-  !/запусти ожидание снова/.test(text(again)), text(again));
-
 // For the reviewer, `mailbox` is the only way to get messages: Bash is stripped from it
 // by a deny-list, and it can't reach its own correspondence via the bus command at all.
 await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'единственным каналом' },
 });
 const onlyChannel = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
-// dead: the re-arm hint no longer exists in any language — PB-9.1
-check(': mailbox delivered the content and does not call for re-arming the wait (dead branch, PB-9.1)',
-  text(onlyChannel).includes('единственным каналом')
-  && !/запусти ожидание снова/.test(text(onlyChannel)), text(onlyChannel));
+check(': mailbox is the only channel there is, and it delivered the body',
+  text(onlyChannel).includes('единственным каналом'), text(onlyChannel));
 
-const taskNoHint = await worker.call('tools/call', { name: 'promptobus_task', arguments: {} });
-const sendNoHint = await worker.call('tools/call', {
+// A read and a send from the worker, then the orchestrator drains what the send left:
+// the scenario below starts from an empty orchestrator mailbox. Nothing is asserted about
+// these two responses here — their shape is checked where they are the subject.
+await worker.call('tools/call', { name: 'promptobus_task', arguments: {} });
+await worker.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body: 'подсказка тут не нужна' },
 });
-// dead: the re-arm hint no longer exists in any language — PB-9.1
-check(': task and send do not call for re-arming the wait (dead branch, PB-9.1)',
-  !/запусти ожидание снова/.test(text(taskNoHint)) && !/запусти ожидание снова/.test(text(sendNoHint)),
-  `${text(taskNoHint)} | ${text(sendNoHint)}`);
 await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 
 // Full regression for : tasks in the two workspaces share the same id and differ only by title.
@@ -511,9 +498,6 @@ const alienInbox = await alien.call('tools/call', { name: 'promptobus_mailbox', 
 check(': a foreign session gets a copy with a loud header, both ids, and a route',
   /FOREIGN MAILBOX/.test(text(alienInbox)) && text(alienInbox).includes(OWNER) && text(alienInbox).includes(STRANGER)
   && text(alienInbox).includes('оригинал владельца') && /claim/.test(text(alienInbox)), text(alienInbox));
-// dead: the re-arm hint no longer exists in any language — PB-9.1
-check(': a foreign mailbox carries no hint about the wait (dead branch, PB-9.1)',
-  !/запусти ожидание снова/.test(text(alienInbox)), text(alienInbox));
 check(`: the original stayed in the owner's mailbox`,
   store.countInbox(HOME, OWNED, 'orchestrator') === 1,
   String(store.countInbox(HOME, OWNED, 'orchestrator')));
@@ -808,9 +792,6 @@ check(': inbox reports the stalled participant — in the same words as the comm
   && /claude logs ghost9/.test(stalledInbox) && /each has its own route/.test(stalledInbox), stalledInbox);
 // The report arrives in the tool's response, not only in the stdout of a finished command: it's
 // read by the agent, and the route for a stalled participant must reach it.
-// dead: the re-arm hint no longer exists in any language — PB-9.1
-check(': the report does not call for re-arming the wait — each has its own route (dead branch, PB-9.1)',
-  !/запусти ожидание снова/.test(stalledInbox), stalledInbox);
 check('review note: the mailbox response does not call stalled someone who just sent a message',
   !/worker:sdal stalled/.test(stalledInbox) && /worker:cargos-api LISTED/.test(stalledInbox), stalledInbox);
 watcher.stop();

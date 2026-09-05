@@ -267,6 +267,20 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     },
 
     extraEnv: () => ({ ...extra }),
+    // No `version`, deliberately. This host does not search for the binary at
+    // all — it hands the name back and lets `PATH` decide — so the only way to
+    // learn a version here is to START the binary, and `resolveToolBin` is
+    // synchronous: that is `spawnSync` on the lift path and inside the
+    // availability preflight, where a blocking resolve stops the one budget
+    // timer that caps the whole probe. Paying that on every resolve to fill a
+    // field nothing refuses on is the wrong trade for the host that ships with
+    // the package.
+    //
+    // The consequence is named in docs/reference/02-host.md and in
+    // `HostToolBin.version`: under this host the `ultracode` refusal never
+    // refuses, the two proven-version warnings never warn, and an availability
+    // verdict carries no version. A consumer host that probes fills the field
+    // and gets all three back.
     resolveToolBin: (name): HostToolBin => ({ ok: true, bin: name }),
     substituteVars: (value) => value,
     legacyLayout: () => null,

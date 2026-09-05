@@ -67,8 +67,8 @@ export interface HostFreshness {
 export interface HostToolBin {
   ok: boolean;
   /**
-   * How to launch the tool. This is the ONLY field consumers read —
-   * `liftoffParticipant` and the drivers pass it straight into the process spawn.
+   * How to launch the tool. This is the only field that reaches a process spawn —
+   * `liftoffParticipant` and the drivers pass it straight into it.
    *
    * A bare name (`PATH` resolve) and an absolute path are equally lawful: the
    * host chooses. The field has no other name. An implementation that returned
@@ -80,6 +80,25 @@ export interface HostToolBin {
    * first suite run.
    */
   bin?: string;
+  /**
+   * The binary's own version string as the host read it — the raw `--version`
+   * line, not something normalised. Optional, and its absence means UNREAD: a
+   * host that does not probe versions returns none, and a consumer may never
+   * read that as "old".
+   *
+   * The shipped standalone host is such a host. It hands the name back without
+   * searching (`src/standalone.ts`), so under it the `ultracode` refusal never
+   * refuses, the two proven-version warnings never warn, and an availability
+   * verdict carries no version at all — that is the DEFAULT, not a rare case.
+   *
+   * Declared here because four readers already exist and none of them could
+   * name the field they read: the three drivers' `optionRefusal` and the three
+   * availability adapters, which report it to a person as the verdict's
+   * `version`. It is the drift `bin` above carries its comment about, one field
+   * over — and load-bearing for a diagnosis rather than for a launch, which is
+   * why it survived longer.
+   */
+  version?: string;
   note?: string;
   warn?: string;
   reason?: string;

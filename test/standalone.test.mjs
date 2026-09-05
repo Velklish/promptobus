@@ -8,6 +8,10 @@
 //
 // dist is built by the pretest script, so a clean checkout is checked without
 // preparation: the file does not wait for a pre-created dist.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';

@@ -20,6 +20,10 @@
 //    moves with it. A literal in the resolver goes red here.
 // 4. **Determinism.** The same inputs in another order give the same document,
 //    which is the property the whole tie-break exists for.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';

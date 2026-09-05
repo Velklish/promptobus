@@ -5,7 +5,7 @@
 // turn in progress, review/start, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, FIRST_DELAY_VAR, HANG_FIRST_VAR, LIMIT_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, FIRST_DELAY_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
@@ -27,10 +27,18 @@ const {
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs, turnWaitMs,
-  codexMcpServers, codexMcpName, sessionsDir, CODEX_MCP_PREFIX,
+  codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
+
+// The override key prefix is the CONSUMER's name, so it comes from a host and not from
+// a constant. `HOST` stands in for the workspace everywhere below; `OTHER` is a second
+// consumer in the same process, which is what the prefix has to keep separate.
+const HOST = createStandaloneHost({ cwd: SB, commandName: 'promptobus' });
+const OTHER = createStandaloneHost({ cwd: SB, commandName: 'otherbus' });
+const PREFIX = codexMcpPrefix(HOST);
 
 const TASK = 'codexbus-t20260903-000000';
 const WORKER = 'worker:cdx';
@@ -93,9 +101,9 @@ check(': the Codex vocabulary is its own — binary, model, reviewer sandbox',
   JSON.stringify(codexDriver.options));
 
 check(': bus tool names are mcp__<override key>__name',
-  PHRASES.tool('promptobus', 'promptobus_send') === `mcp__${codexMcpName('promptobus')}__promptobus_send`
-  && PHRASES.tool('promptobus', 'promptobus_send') !== 'mcp__promptobus__promptobus_send',
-  PHRASES.tool('promptobus', 'promptobus_send'));
+  PHRASES.tool('promptobus', 'promptobus_send', HOST) === `mcp__${codexMcpName('promptobus', PREFIX)}__promptobus_send`
+  && PHRASES.tool('promptobus', 'promptobus_send', HOST) !== 'mcp__promptobus__promptobus_send',
+  PHRASES.tool('promptobus', 'promptobus_send', HOST));
 
 check(': harness rules forbid questions and require the mailbox on every turn',
   /Do not ask questions/.test(PHRASES.promptRules) && /Fetch the mailbox at the start of every turn/.test(PHRASES.promptRules));
@@ -120,39 +128,63 @@ const translated = codexMcpServers({
   promptobus: { type: 'stdio', command: 'node', args: ['bin.js'], env: { PROMPTOBUS_ROLE: WORKER } },
   'sse-legacy': { type: 'sse', url: 'http://sse.invalid/mcp' },
   'bez-komandy': { type: 'stdio', args: [], env: {} },
-});
-const fieldsOf = (name) => Object.keys(translated.servers[codexMcpName(name)] ?? {}).sort().join(',');
+}, PREFIX);
+const fieldsOf = (name) => Object.keys(translated.servers[codexMcpName(name, PREFIX)] ?? {}).sort().join(',');
 
 check(': a url-server goes out in url form — no args, no env, no command',
   fieldsOf('es-mcp-prod') === 'url'
   && fieldsOf('ati-kaiten-mcp') === 'http_headers,url'
-  && translated.servers[codexMcpName('ati-kaiten-mcp')].http_headers.api_key === 'TOKEN',
+  && translated.servers[codexMcpName('ati-kaiten-mcp', PREFIX)].http_headers.api_key === 'TOKEN',
   JSON.stringify(translated.servers));
 
 check(': a stdio-server goes out in stdio form — no url is attached to it',
   fieldsOf('promptobus') === 'args,command,env'
-  && translated.servers[codexMcpName('promptobus')].env.PROMPTOBUS_ROLE === WORKER,
-  JSON.stringify(translated.servers[codexMcpName('promptobus')]));
+  && translated.servers[codexMcpName('promptobus', PREFIX)].env.PROMPTOBUS_ROLE === WORKER,
+  JSON.stringify(translated.servers[codexMcpName('promptobus', PREFIX)]));
 
 check(': a transport Codex does not have, and a half-record, are not given out at all',
-  !(codexMcpName('sse-legacy') in translated.servers) && !(codexMcpName('bez-komandy') in translated.servers)
+  !(codexMcpName('sse-legacy', PREFIX) in translated.servers) && !(codexMcpName('bez-komandy', PREFIX) in translated.servers)
   && translated.skipped.slice().sort().join(',') === 'bez-komandy,sse-legacy',
   JSON.stringify(translated.skipped));
 
 check(': override keys carry the prefix — canonical names do not go into the config',
-  CODEX_MCP_PREFIX === 'promptobus-'
+  PREFIX === 'promptobus-'
   && !('promptobus' in translated.servers) && !('es-mcp-prod' in translated.servers)
-  && codexMcpName('promptobus') in translated.servers
-  && codexMcpName('es-mcp-prod') in translated.servers
-  && codexMcpName('promptobus') === `${CODEX_MCP_PREFIX}promptobus`
-  && codexMcpName(`${CODEX_MCP_PREFIX}promptobus`) === `${CODEX_MCP_PREFIX}promptobus`,
+  && codexMcpName('promptobus', PREFIX) in translated.servers
+  && codexMcpName('es-mcp-prod', PREFIX) in translated.servers
+  && codexMcpName('promptobus', PREFIX) === `${PREFIX}promptobus`
+  && codexMcpName(`${PREFIX}promptobus`, PREFIX) === `${PREFIX}promptobus`,
   JSON.stringify(Object.keys(translated.servers)));
 
 check(': toolName and phrases.tool call the override key, not the canonical name',
-  toolName(codexDriver, 'promptobus', 'promptobus_send') === `mcp__${CODEX_MCP_PREFIX}promptobus__promptobus_send`
-  && toolName(codexDriver, 'promptobus', 'promptobus_mailbox') === PHRASES.tool('promptobus', 'promptobus_mailbox')
-  && toolName(codexDriver, 'memory-hooks', 'search_facts') === `mcp__${CODEX_MCP_PREFIX}memory-hooks__search_facts`,
-  toolName(codexDriver, 'promptobus', 'promptobus_send'));
+  toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === `mcp__${PREFIX}promptobus__promptobus_send`
+  && toolName(codexDriver, 'promptobus', 'promptobus_mailbox', HOST) === PHRASES.tool('promptobus', 'promptobus_mailbox', HOST)
+  && toolName(codexDriver, 'memory-hooks', 'search_facts', HOST) === `mcp__${PREFIX}memory-hooks__search_facts`,
+  toolName(codexDriver, 'promptobus', 'promptobus_send', HOST));
+
+// The prefix is the consumer's identity, and two consumers in one process are lawful:
+// the host contract forbids a process-wide host. What has to hold for each of them
+// separately is that the config key the holder writes and the tool name the prompt
+// hands the participant are THE SAME string. They agree today only because they are
+// one function called twice, and this is the check that keeps it one.
+check(': two hosts in one process — different keys, and each prompt names its own config key',
+  (() => {
+    const set = { promptobus: { type: 'stdio', command: 'node', args: [], env: {} } };
+    const myKey = Object.keys(codexMcpServers(set, codexMcpPrefix(HOST)).servers)[0];
+    const theirKey = Object.keys(codexMcpServers(set, codexMcpPrefix(OTHER)).servers)[0];
+    return myKey === 'promptobus-promptobus' && theirKey === 'otherbus-promptobus'
+      && toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === `mcp__${myKey}__promptobus_send`
+      && toolName(codexDriver, 'promptobus', 'promptobus_send', OTHER) === `mcp__${theirKey}__promptobus_send`;
+  })(),
+  `${toolName(codexDriver, 'promptobus', 'promptobus_send', HOST)} / ${toolName(codexDriver, 'promptobus', 'promptobus_send', OTHER)}`);
+
+// A key built with no prefix is the collision the whole mechanism exists for, and it
+// fails in silence at both ends: the Codex config load dies whole, and a participant is
+// told a tool name it does not have. So it refuses instead of handing back the bare name.
+check(': a name built without a prefix refuses rather than falling back to the canonical one',
+  thrown(() => codexMcpName('promptobus')).threw
+  && /prefix/.test(thrown(() => codexMcpName('promptobus')).msg),
+  thrown(() => codexMcpName('promptobus')).msg);
 
 const ctx = {
   mcp: { servers: { promptobus: { command: 'node', args: ['x'], env: {} } } },
@@ -175,14 +207,36 @@ check(': reviewer — sandbox read-only, same cwd, no files',
   && reviewerPlan.files.length === 0,
   JSON.stringify(reviewerPlan.settings));
 
-check(': the wake text calls the mailbox by the Codex name',
+// `renderNotification` takes ONE argument — the arity the driver contract declares —
+// and finds the override key prefix on the session record, the same channel the
+// holder reads it from. A `Notification` carries no host and no ref, so the record
+// is found by the task and address it does name.
+const SEAM_REF = 'seam-render-probe';
+writeSession({
+  ref: SEAM_REF, task: 'T', address: 'worker:a', mcpPrefix: PREFIX, state: 'alive',
+});
+const seamNote = {
+  kind: 'unread', task: 'T', address: 'worker:a', unread: 1,
+  messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'BODY' }],
+};
+check(': the wake text calls the mailbox by the Codex name, taken off the session record',
   (() => {
-    const text = codexDriver.renderNotification({
-      kind: 'unread', task: 'T', address: 'worker:a', unread: 1,
-      messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'BODY' }],
-    });
-    return text.includes(`mcp__${codexMcpName('promptobus')}__promptobus_mailbox`) && text.includes('BODY');
+    const text = codexDriver.renderNotification(seamNote);
+    return text.includes(`mcp__${codexMcpName('promptobus', PREFIX)}__promptobus_mailbox`) && text.includes('BODY');
   })());
+
+// The seam has to return a string. A registry that holds no such record cannot know
+// the key, and naming a key it guessed would be worse than naming none — so the tool
+// is named without one, and nothing throws. A live session never reaches this branch:
+// `activate` refuses first, with the record in hand.
+dropSession(SEAM_REF);
+check(': with no record behind it the seam names the tool without a key, and does not throw',
+  (() => {
+    const r = thrown(() => codexDriver.renderNotification(seamNote));
+    if (r.threw) return false;
+    const text = codexDriver.renderNotification(seamNote);
+    return !text.includes('mcp__') && /mailbox tool/.test(text) && text.includes('BODY');
+  })(), thrown(() => codexDriver.renderNotification(seamNote)).msg);
 
 const { ws, repoAbs, repo } = buildWorkspace(SB);
 writeHostConfig(ws, { tools: ['claude', 'codex'] });
@@ -506,8 +560,8 @@ const mcpThread = (() => {
   }
 })();
 const started = mcpThread?.config?.mcp_servers ?? {};
-const busKey = codexMcpName('promptobus');
-const httpKey = codexMcpName('probe-http');
+const busKey = codexMcpName('promptobus', PREFIX);
+const httpKey = codexMcpName('probe-http', PREFIX);
 check(': in thread/start the url-server went out in url form, the bus in stdio form',
   Object.keys(started[httpKey] ?? {}).sort().join(',') === 'http_headers,url'
   && started[httpKey].http_headers.api_key === 'PROBE-TOKEN'
@@ -518,5 +572,61 @@ check(': in thread/start there are no canonical names — the bus went out under
   && busKey in started && httpKey in started,
   JSON.stringify(Object.keys(started)));
 if (mcpPart?.sessionRef) await codexDriver.stop(mcpPart.sessionRef);
+
+// ── A holder dies with its session ────────────────────────────────────────────
+//
+// The holder is detached on purpose: `promptobus spawn` returns after the first
+// turn and someone has to hold the app-server stdio. What it must NOT outlive is
+// its own session. Every other reap hangs off a cleanup hook — `stop`, and the
+// stand's `armCleanup` — and the one take-down that leaks reaches no hook at all:
+// the runner takes a file down with SIGKILL both at the file timeout and on
+// Ctrl-C. Reproduced on this file 2026-09-05: SIGKILL leaves the holder and its
+// app-server alive, SIGTERM leaves nothing, a clean finish leaves nothing. A
+// 2026-09-04 run left twelve such processes alive into the next day, each holding
+// a session file in a directory that had since been removed.
+//
+// So the record is removed here with the participant alive — which is what
+// removing the run directory does to it — and the holder is expected to reap
+// itself and its app-server. The wait is generous against the watch interval; the
+// pids come from the record, so nothing machine-wide is read.
+planParticipant(HARNESS, 'worker:reap', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-REAP' } }] }],
+});
+// Its own registry, and the whole of it is removed below — which is what removing a
+// run directory does to a holder. A registry of its own so the removal reaches this
+// participant and nothing else: the stand reaps on exit from the records it can
+// read, and taking the shared registry out from under it would leave a neighbour
+// unreaped. `stderr-loop` makes the app-server write on stderr every 200 ms, so the
+// holder is logging inside the window the watch has yet to close.
+const reapHome = path.join(SB, 'reap-state');
+const reapEnv = { ...env, PROMPTOBUS_CODEX_HOME: reapHome, [PROBE_VAR]: 'stderr-loop' };
+const reapUp = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'reap', '--harness', 'codex'], { cwd: ws, env: reapEnv });
+const reapRef = store.participantOf(store.readTask(home, TASK), 'worker:reap')?.sessionRef;
+const reapRec = readSession(reapRef ?? '', reapEnv);
+check(': the participant whose registry is about to go is up, with a holder and an app-server',
+  reapUp.status === 0 && pidAlive(reapRec?.holderPid) && pidAlive(reapRec?.appPid),
+  `${reapUp.status} · holder ${reapRec?.holderPid} app ${reapRec?.appPid}`);
+
+rmSync(reapHome, { recursive: true, force: true });
+const reaped = await waitFor(() => !pidAlive(reapRec?.holderPid) && !pidAlive(reapRec?.appPid),
+  { timeoutMs: 20_000, stepMs: 500 });
+check(': the registry is gone — the holder reaps itself and its app-server, with nobody to reap it',
+  reaped, `holder ${reapRec?.holderPid} alive=${pidAlive(reapRec?.holderPid)} · `
+  + `app ${reapRec?.appPid} alive=${pidAlive(reapRec?.appPid)}`);
+
+// The holder logs its app-server's stderr, and the log used to create its own
+// directory on the way in. Under a removed registry that write would rebuild the
+// tree the holder is dying with — one directory per leaked run, forever.
+check(': a log write under a removed registry does not rebuild the tree',
+  !existsSync(reapHome), reapHome);
+
+// If the reap did not happen the checks above are already red; leaving the processes
+// behind would redden the run gate too, and about the wrong thing.
+for (const pid of [reapRec?.holderPid, reapRec?.appPid]) {
+  if (pidAlive(pid)) {
+    try { process.kill(pid, 'SIGKILL'); } catch { /* gone between the read and the kill */ }
+  }
+}
 
 restore();

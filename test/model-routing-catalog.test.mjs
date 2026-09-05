@@ -16,6 +16,10 @@
 //    hand-written from the same schemas. Two descriptions of one contract
 //    drift, so the parity check below runs both over one corpus of documents:
 //    edit one, edit the other.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

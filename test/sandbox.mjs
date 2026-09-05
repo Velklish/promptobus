@@ -49,7 +49,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-// Static CLI import — before HOME hygiene in check.mjs and before the
+// Static CLI import — before HOME hygiene in home.mjs and before the
 // swap in the suite file. A module that computes os.homedir() into a
 // load-time constant would see the real home (home paths are computed
 // at call time; the class is caught by homedir-module.test.mjs).

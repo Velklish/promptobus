@@ -28,9 +28,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { check } from './check.mjs';
 import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
-import { check } from './check.mjs';
 
 // realpath: the planner canonicalizes the root (macOS: /var → /private/var), and the
 // test expectations must be compared to canonical paths.

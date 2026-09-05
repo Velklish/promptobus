@@ -11,6 +11,10 @@
 // The reference validator is `ajv`, a package devDependency
 // pinned exactly. It does not ship in the tarball, and the package still has
 // zero runtime dependencies — that is a separate gate of the package suite.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';

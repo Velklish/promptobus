@@ -27,33 +27,17 @@
 //   • `writeSync` is synchronous on any stdout, while
 //     `process.stdout.write` on macOS writes to a pipe asynchronously —
 //     output from the `exit` handler is lost there entirely.
+//
+// The home diversion and the rest of the shared hygiene list are applied
+// by [home.mjs](home.mjs), and importing it is the whole of it here.
+// They used to live in this file, which reached only the files that want
+// a verdict printer — half the suite is written against `node:test` and
+// wants none, and got no diversion either. It is FIRST, before anything
+// this file pulls in: a module that resolved a home path at load would
+// see the real one, and the sentinel in tmpdir-sweep.test.mjs says so.
+import './home.mjs';
 import { writeSync } from 'node:fs';
-import os from 'node:os';
 import process from 'node:process';
-import { makeSandbox } from './sandbox.mjs';
-import { HOME_VARS, applyHygiene } from './hygiene.mjs';
-
-// The list of "what the suite must not touch" is shared with the runner
-// and lives in one place — [hygiene.mjs](hygiene.mjs). That file also
-// says why each variable is in it: warden auto-lift, this session's
-// contact point, the user home, the memory-hook lever.
-//
-// It is applied here, not only in the runner: a suite file is also run
-// alone — by hand, while debugging — and that is when a miss costs the
-// most. A `process.env` edit is inherited by every process the file
-// starts later, so one apply covers the whole tree.
-//
-// Home is swapped only if the environment holds the real one. The
-// signal comes from the system, not the environment: under the runner
-// home is already diverted, and swapping it a second time is pointless.
-// On Windows `os.userInfo()` reads the same `USERPROFILE`, so the
-// signal also fires under the runner — the file gets its own sandbox
-// instead of the issued one, both inside the run directory, and there
-// is no harm in that.
-const REAL_HOME = os.userInfo().homedir;
-const home = HOME_VARS.some((name) => process.env[name] === REAL_HOME)
-  ? makeSandbox('promptobus-home-') : null;
-applyHygiene(process.env, { home });
 
 const results = [];
 // `beforeExit` fires only on a natural finish — when the event loop

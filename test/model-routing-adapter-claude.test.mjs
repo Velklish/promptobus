@@ -13,6 +13,10 @@
 // the one that keeps a probe from starting a paid turn; and make the probe
 // synchronous again and the event-loop check reddens, which is the one that keeps
 // one adapter from eating the whole preflight budget on its own.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

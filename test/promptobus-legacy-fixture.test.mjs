@@ -10,9 +10,9 @@
 import { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { captureSplit, quiet } from './console.mjs';
-import { check } from './check.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(here, 'fixtures', 'promptobus', 'legacy-v061');

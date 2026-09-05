@@ -44,6 +44,10 @@ export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 //   no-models       — `model/list` refuses; the limit is still known
 //   stderr          — the `base_instructions` cache ERROR a healthy app-server
 //                     writes on every start
+//   stderr-loop     — the same line every 200 ms. For the window between a
+//                     removed registry and the holder's record watch: the holder
+//                     logs every stderr chunk, and what is checked is that logging
+//                     does not recreate the tree that was just removed
 export const PROBE_VAR = 'CODEX_STUB_PROBE';
 
 // Verbatim from codex-cli 0.146.0 on a run that then answered everything correctly.
@@ -243,6 +247,8 @@ async function appServer() {
   }
   const probe = new Set(String(process.env[PROBE_VAR] ?? '').split(',').map((s) => s.trim()).filter(Boolean));
   if (probe.has('stderr')) process.stderr.write(`${STDERR_NOISE}\n`);
+  // `unref` so the noise is never the reason this process is alive: stdin is.
+  if (probe.has('stderr-loop')) setInterval(() => process.stderr.write(`${STDERR_NOISE}\n`), 200).unref();
   let buf = '';
   const pendingApprovals = new Map();
   const emit = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);

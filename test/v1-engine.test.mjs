@@ -5,6 +5,10 @@
 // subject of the check on a par with the rest: core must work without them.
 // Everything the engine knows about the outside world arrives as two open
 // arguments — the root and the routing policy.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';

@@ -29,6 +29,10 @@
 // the lift (the same helper the spawn and review files use), and every
 // availability adapter is a stand-in ([routing-stubs.mjs](routing-stubs.mjs))
 // handed in through the seam the two commands declare for it.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
@@ -42,15 +46,6 @@ import { fileURLToPath } from 'node:url';
 import { captureSplit, quiet } from './console.mjs';
 import { adapterMap, answeringStub, counter, unauthenticatedStub } from './routing-stubs.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
-
-// Home is diverted for the whole file, and before anything reads it: the
-// availability cache the standalone host names hangs off `os.homedir()`, and
-// these checks write one. Under the suite runner home already sits inside the
-// run directory; run by hand it would be the person's, and a check must not
-// write into that.
-const SANDBOX_HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-routing-home-'));
-process.env.HOME = SANDBOX_HOME;
-process.env.USERPROFILE = SANDBOX_HOME;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { models, routingContext, routingLine } = await import(path.join(here, '..', 'lib', 'models.js'));

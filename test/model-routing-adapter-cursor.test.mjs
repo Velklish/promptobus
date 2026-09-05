@@ -14,6 +14,10 @@
 // `Tip:` line. `STUB_ACCOUNT` is the account address the real binary prints on
 // that line: it is handed over on purpose so that the checks can prove it reaches
 // neither the verdict nor the cache file.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

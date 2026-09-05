@@ -21,8 +21,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { makeSandbox } from './sandbox.mjs';
 import { check } from './check.mjs';
+import { makeSandbox } from './sandbox.mjs';
 
 const SB = makeSandbox('promptobus-runner-');
 const here = path.dirname(fileURLToPath(import.meta.url));

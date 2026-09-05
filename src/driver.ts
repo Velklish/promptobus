@@ -11,6 +11,7 @@
 // Constraint invisible from this file: no harness name is here and none can be —
 // the package set gate watches for that.
 import { addressOf, GateError } from './protocol.js';
+import type { PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
@@ -237,8 +238,14 @@ export interface DriverPhrases {
    * a participant prompt that names bus and memory tools must take the spelling
    * from here, otherwise the participant looks for a tool it does not have under
    * that name.
+   *
+   * The host is passed because for one harness the spelling carries the consumer's
+   * identity: its MCP config keys are namespaced to avoid colliding with the
+   * operator's personal set, the tool name is built out of the config key, and the
+   * namespace is `commandName`. A driver whose spelling does not depend on the
+   * workspace ignores the argument.
    */
-  tool(server: string, name: string): string;
+  tool(server: string, name: string, host: PromptobusHost): string;
   /**
    * Rules of THIS harness appended to the participant prompt: what belongs to the
    * tool, not the assignment — its headless habits. Empty — nothing to append, and

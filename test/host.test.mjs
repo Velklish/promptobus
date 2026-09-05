@@ -1,5 +1,9 @@
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -79,19 +83,83 @@ test('createStandaloneHost lifts two independent hosts in one process', async ()
   assert.equal(a.promptobusHome(), path.join(dirA, '.promptobus'));
 });
 
-test('the routing types leave the package through both entry points', () => {
+test('every type src/host.ts exports leaves through both entry points', () => {
   // A type declared in `src/host.ts` and forgotten in an entry point is invisible
   // to `tsc` — the interface compiles, the package builds, and only a consumer
   // writing `import type { … } from 'promptobus/host'` finds out. That is the
   // same shape of drift the `bin` field of HostToolBin carries a comment about.
   // Checked on the emitted declarations, not the source: the entry point's job
   // is what reaches `dist/`.
+  //
+  // The names are READ from the source, not listed here. A list is a second place
+  // to remember, and it was already forgotten once: this check named two types on
+  // purpose while `HostClone` — older than both — was in neither entry point.
+  const src = readFileSync(path.join(ROOT, 'src', 'host.ts'), 'utf8');
+  const declared = [...src.matchAll(/^export (?:interface|type) (\w+)/gm)].map((m) => m[1]);
+  // The floor is the count at the time of writing: a regex that stopped matching
+  // would leave the loop below with nothing to check and the file green.
+  assert.ok(declared.length >= 12, declared.join(' '));
   for (const entry of ['host-index.d.ts', 'index.d.ts']) {
     const text = readFileSync(path.join(ROOT, 'dist', entry), 'utf8');
-    for (const name of ['HostRoutingPaths', 'HostRoutingOverlay']) {
+    for (const name of declared) {
       assert.match(text, new RegExp(`\\b${name}\\b`), `${entry} does not re-export ${name}`);
     }
   }
+});
+
+/**
+ * Fields an `export interface` declares, doc comments stripped. Two-space indent
+ * only, which is what keeps a nested object literal's keys out of the set.
+ */
+function interfaceFields(src, name) {
+  const start = src.indexOf(`export interface ${name} {`);
+  assert.notEqual(start, -1, `src/host.ts declares no interface ${name}`);
+  const body = src.slice(start, src.indexOf('\n}', start)).replace(/\/\*[\s\S]*?\*\//g, '');
+  return new Set([...body.matchAll(/^ {2}([A-Za-z_$][\w$]*)\??\s*:/gm)].map((m) => m[1]));
+}
+
+test('every HostToolBin field a driver or an adapter reads is declared', () => {
+  // The drift `HostToolBin.bin` carries its own comment about, checked instead of
+  // described. `lib/**` is JavaScript: a driver reading `tool.whatever` compiles,
+  // builds and ships, and a host implementor is never told to fill the field —
+  // `version` lived that way through three drivers and three adapters.
+  //
+  // Holders are found rather than listed: an identifier this file binds from
+  // `resolveToolBin`, plus the parameter named `tool` of `optionRefusal`, which is
+  // the driver-contract member (src/driver.ts) the resolved bin is HANDED to — the
+  // resolve happened in the caller, so no binding in the driver can reveal it.
+  const declared = interfaceFields(readFileSync(path.join(ROOT, 'src', 'host.ts'), 'utf8'), 'HostToolBin');
+  const readers = [
+    ...readdirSync(path.join(ROOT, 'lib'))
+      .filter((n) => /^driver-.+\.js$/.test(n)).map((n) => path.join('lib', n)),
+    ...readdirSync(path.join(ROOT, 'lib', 'model-routing'))
+      .filter((n) => /^adapter-.+\.js$/.test(n)).map((n) => path.join('lib', 'model-routing', n)),
+  ].sort();
+
+  const seen = new Map();
+  for (const rel of readers) {
+    const src = readFileSync(path.join(ROOT, rel), 'utf8');
+    const holders = new Set();
+    for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\bresolveToolBin\b/g)) holders.add(m[1]);
+    if (/\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src)) holders.add('tool');
+    assert.ok(holders.size, `${rel} holds no tool bin — the scan lost a reader`);
+    for (const holder of holders) {
+      for (const m of src.matchAll(new RegExp(`\\b${holder}\\??\\.([A-Za-z_$][\\w$]*)`, 'g'))) {
+        assert.ok(declared.has(m[1]),
+          `${rel} reads \`${holder}.${m[1]}\` off a HostToolBin, and src/host.ts declares no such field`);
+        seen.set(m[1], (seen.get(m[1]) ?? new Set()).add(rel));
+      }
+    }
+  }
+
+  // The scan must have FOUND the readers, not merely failed to find a violation:
+  // a regex that stopped matching would leave every assert above unreached and the
+  // check green on an empty set. Six reader files, and `version` — the field this
+  // check exists for — read in every one of them.
+  assert.equal(readers.length, 6, readers.join(' '));
+  assert.equal(seen.get('version')?.size, 6, [...seen.get('version') ?? []].join(' '));
+  assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,
+    [...seen].map(([f, files]) => `${f}:${files.size}`).join(' '));
 });
 
 test('routingPaths keeps the account files out of the per-workspace store', async () => {

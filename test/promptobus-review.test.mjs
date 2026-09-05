@@ -15,9 +15,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
-import { check } from './check.mjs';
 
 // realpath: the scheduler canonicalizes the root (macOS: /var → /private/var), and the
 // test's expectations must be compared against canonical paths.

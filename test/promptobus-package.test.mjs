@@ -8,8 +8,8 @@ import { isBuiltin } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { run } from '../lib/exec.js';
 import { check } from './check.mjs';
+import { run } from '../lib/exec.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(here, '..');

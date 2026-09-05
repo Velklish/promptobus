@@ -58,6 +58,20 @@ The host is bound for the process by `runPromptobus` (and by `hostOf` for the pa
 
 `resolveToolBin(name)` receives the name a driver DECLARES, and that is the name of the binary, not of the harness. For Cursor those differ: the harness is `cursor`, the binary is `cursor-agent`. It said `cursor` until 2026-09-05, and the standalone host — which hands a name back without searching — sent that through `PATH` into an operator's own `~/.local/bin/cursor`. A host that switches on the name meets `cursor-agent` at the release that closes the routing series; `--harness cursor` and the `tools` list are unchanged.
 
+`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional and its absence means UNREAD, never "old".** It holds the binary's own version string as the host read it — the raw `--version` line — and a host that does not probe versions returns none.
+
+**The standalone host is one of those, deliberately.** It does not search for the binary, so the only way to learn a version would be to start it, and `resolveToolBin` is synchronous: that means `spawnSync` on the lift path and inside the availability preflight, where a blocking resolve stops the single budget timer that caps the whole probe. So under the standalone host the `ultracode` refusal never refuses, the two proven-version warnings (`PROVEN_CURSOR_VERSION`, `PROVEN_CODEX_VERSION`) never warn, and an availability verdict carries no version. The drivers' comments say "version unread — we do not refuse", and this is which host that is: the shipped one, by default, not a rare case. A consumer host that probes fills the field and gets all three back.
+
+## Consumer identity inside a harness
+
+`commandName` is not only what a printed command line says. For Codex it is the namespace the participant's own MCP tools live in: the `config.mcp_servers` override merges with the operator's personal config **by field**, so one name carrying two transports fails the whole config load, and the package moves its records into a namespace the personal file does not use. That namespace is `<commandName>-`, so a participant reads `mcp__<commandName>-promptobus__promptobus_send` and sees the CLI it is running under.
+
+Two values have to be the same string: the config key the detached holder writes, and the tool name the prompt tells the participant to call. They are one function called twice — the driver builds both from `codexMcpPrefix(host)`. The prefix reaches the holder through the **session record**, not through a host: the holder is a separate process handed one record file, and there is no host in it to ask.
+
+A third place names the same key: the wake text, which tells a participant to fetch its mailbox. It has no host either — a notification carries a task and an address and nothing else — so it takes the prefix off the same record. A record written before the prefix moved onto it carries none, and waking it refuses with the line the stale-holder branch beside it uses: lift the participant again. Nothing guesses a prefix, because a guessed key names a tool the session does not have.
+
+That is why `DriverPhrases.tool(server, name, host)` takes a host. A driver whose spelling does not depend on the workspace ignores the argument — Claude Code and Cursor do. Two hosts with different `commandName` in one process produce two different namespaces, which is the property that makes a process-wide host unnecessary here as everywhere else.
+
 ## Passing the host
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.

@@ -3,9 +3,10 @@
 // the directory, so this file is not in the run.
 //
 // Four readers. The runner [run.mjs](run.mjs) builds the environment
-// for each file of the run; the shared helper [check.mjs](check.mjs)
-// covers running one file by hand — i.e. debugging, where there is no
-// runner at all; and the live scripts —
+// for each file of the run; [home.mjs](home.mjs) covers running one
+// file by hand — i.e. debugging, where there is no runner at all —
+// and every suite file imports it, the verdict helper
+// [check.mjs](check.mjs) included; and the live scripts —
 // [live-e2e.mjs](../scripts/live-e2e.mjs),
 // [live-canary.mjs](../scripts/live-canary.mjs) and
 // `release-gates.mjs` — strip session

@@ -8,6 +8,10 @@
 // ([races.test.mjs](races.test.mjs)), and the barrier here is the same:
 // without it the children line up by start time, and the window that is
 // being fixed never arrives at all.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';

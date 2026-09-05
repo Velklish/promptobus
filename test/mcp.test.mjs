@@ -11,6 +11,10 @@
 // It was taken from a live `v0.61.0` server by the same stdio conversation
 // Claude Code uses, and rewritten by hand on the hard rename to the new names
 // — nothing else: a mismatch with it means the surface has moved.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';

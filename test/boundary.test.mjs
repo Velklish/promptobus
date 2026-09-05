@@ -1,5 +1,9 @@
 // Package boundaries: imports, environment, harness-neutrality, publicity and exports.
 // Run with `npm test`. dist is built by pretest.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { isBuiltin } from 'node:module';

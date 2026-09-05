@@ -16,6 +16,10 @@
 // Diagnostics and session identity arrive as ARGUMENTS: the package does not
 // read the environment and does not write to process streams, and it no longer
 // has a seam for substitution at all.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,

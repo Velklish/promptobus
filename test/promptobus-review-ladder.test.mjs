@@ -34,8 +34,8 @@
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { check } from './check.mjs';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // realpath: the plan canonicalizes the root (macOS: /var → /private/var), and check
 // expectations are compared against the canonical paths. Cleanup is on `makeSandbox`: a

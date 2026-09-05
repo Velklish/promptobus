@@ -225,6 +225,8 @@ Three library entry points, all in `lib/model-routing/`:
 
 `--harness`, `--model` and `--effort` reach the merge as constraints and are carried through untouched — the resolver applies them. `--allow-payg` is the one constraint that changes policy at that layer, and it is opt-in: its absence does not undo an overlay that opted pay-as-you-go in.
 
+**A ban is final from below.** A layer replaces an allow or deny list whole, per selector kind, and it cannot clear one: the overlay schema refuses `deny: {}` and `deny: { models: [] }` alike, and every denied name must exist in the merged catalog, so "deny nothing" cannot be written. A higher layer swaps a ban for a different ban or leaves it standing; nothing above lifts it. Read ADR-003's layer ordering with that in mind — the workspace layer sits above a consumer policy layer and can restate any rule, but a consumer's ban survives a workspace file that does not name that selector kind. Lifting one means changing the layer that wrote it.
+
 `validate` covers the shape of every layer, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, weights that do not sum to 100, references to a tuple, model, harness or effort that does not exist, and a name that is both allowed and denied. Its warnings are `stale-rating` — a rating older than `STALE_RATING_DAYS` (90), never an exclusion — and two of its own, `priority-duplicate` and `priority-not-canonical`, which check the canonical-priority convention the guide documents and never reach a decision.
 
 A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
@@ -395,6 +397,14 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 `guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
 
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
+
+## The Codex holder
+
+A Codex participant is a thread inside a `codex app-server --stdio` process, and stdio is held by whoever opened it. `promptobus spawn` returns after the first turn, so it starts a detached holder (`lib/codex-hold.js`) and leaves; the holder answers approvals and listens on the unix socket the driver writes turns into.
+
+**A holder outlives the command that started it. It does not outlive its session.** Its session record is its identity — the file it was handed and reads on every decision — and it watches for that file every five seconds. Gone means there is nothing left to hold: the holder kills its app-server and exits, without writing to its log, because a log write would recreate the directory tree that was just removed. The record disappears in two ways, and both mean the same thing: `promptobus done` and the driver's `stop` remove it (after reaping the holder, so the watch usually has nothing to do), and so does anyone who removes the tree it lives in.
+
+That last case is the one this exists for. A cleanup hook reaps a holder only where a hook can run, and the take-down that leaks reaches none: measured 2026-09-05, a suite file taken down with SIGKILL leaves its holder and app-server alive, while SIGTERM and a clean finish leave nothing — and SIGKILL is what the suite runner itself uses, at the file timeout and on Ctrl-C alike. One 2026-09-04 run left twelve such processes alive into the next day, each holding a session file under a directory that had since been removed. Nothing but the holder itself was in a position to notice.
 
 ## MCP
 

@@ -330,3 +330,70 @@ if (gatesPresent) {
     && /younger\('\/tmp',\s*SOCK_PREFIXES\)/.test(gatesSrc),
     `import: ${/sock-prefixes/.test(gatesSrc)} · younger: ${/younger\('\/tmp'/.test(gatesSrc)}`);
 }
+
+// ── Home-diversion sentinel ───────────────────────────────────────────────
+//
+// The third footprint of the suite on a machine, after `$TMPDIR` sandboxes and
+// sockets: the operator's HOME. It is diverted in two places, and only one of
+// them covers a file run BY HAND — [run.mjs](run.mjs) builds a per-file home for
+// every child of a run, and [home.mjs](home.mjs) applies the shared hygiene list
+// at module load for whoever imports it. A file that imports neither sees
+// `os.homedir()` and writes there.
+//
+// The apply is not visible from the outside — no directory, no trace file, just
+// an import — so this is a source check, like the two sentinels above, and like
+// them it reads the directory rather than a list. Comment lines are stripped:
+// prose in this repository quotes these imports, and a quoted import diverts
+// nothing.
+//
+// `check.mjs` is accepted in place of `home.mjs` because it imports it, and the
+// second check is what makes that a fact rather than a claim. Without it the
+// first check would go on passing after someone moved the apply back out of the
+// verdict helper, and half the suite names only the helper.
+const suiteFiles = readdirSync(here).filter((n) => n.endsWith('.test.mjs'));
+// Every static import of a file, in source order, with what it names. Comment
+// lines are stripped first: prose in this repository quotes these imports, and a
+// quoted import diverts nothing.
+const importsOf = (name) => [...readFileSync(path.join(here, name), 'utf8')
+  .replace(/^\s*\/\/.*$/gm, '')
+  .matchAll(/^import\s+(?:[^;]*?\s+from\s+)?'([^']+)';/gm)].map((m) => m[1]);
+const APPLY = ['./home.mjs', './check.mjs'];
+const placed = suiteFiles.map((name) => [name, importsOf(name)]);
+const noApply = placed.filter(([, imports]) => !imports.some((i) => APPLY.includes(i))).map(([n]) => n);
+
+check(': every suite file reaches the home diversion — by home.mjs or by check.mjs',
+  suiteFiles.length > 20 && noApply.length === 0,
+  `suite files: ${suiteFiles.length} · with no apply: ${noApply.join(', ') || '—'}`);
+
+// Reaching it is not enough — it has to be reached FIRST. A module that resolved a
+// home path at load would capture the real one, and an import placed after such a
+// module diverts nothing that module already read. Node built-ins are not the
+// hazard: importing `node:os` captures nothing, `os.homedir()` is a function. The
+// rule is therefore about everything else, which is the set that can hold state.
+const tooLate = placed
+  .filter(([, imports]) => {
+    const at = imports.findIndex((i) => APPLY.includes(i));
+    return at >= 0 && imports.slice(0, at).some((i) => !i.startsWith('node:'));
+  })
+  .map(([name, imports]) => `${name} (${imports.slice(0, imports.findIndex((i) => APPLY.includes(i)))
+    .filter((i) => !i.startsWith('node:')).join(', ')})`);
+
+check(': the apply point is imported before any module that is not a Node built-in',
+  placed.length > 20 && tooLate.length === 0,
+  `late in: ${tooLate.join(' · ') || '—'}`);
+
+check(': check.mjs reaches the diversion by importing home.mjs, so naming the helper is enough',
+  importsOf('check.mjs')[0] === './home.mjs', importsOf('check.mjs').join(', '));
+
+// And `home.mjs` itself borrows nothing that could read home before it runs. It is
+// the first thing every suite file loads, so its own imports are evaluated before
+// the diversion: one suite module, which carries the shared list and imports only
+// built-ins itself. `makeSandbox` would be the natural reuse and is the thing this
+// forbids — sandbox.mjs statically imports three package modules.
+const homeImports = importsOf('home.mjs');
+const hygieneImports = importsOf('hygiene.mjs');
+check(': home.mjs imports only built-ins and hygiene.mjs, which imports only built-ins',
+  homeImports.length > 0
+  && homeImports.every((i) => i.startsWith('node:') || i === './hygiene.mjs')
+  && hygieneImports.every((i) => i.startsWith('node:')),
+  `home.mjs: ${homeImports.join(', ')} · hygiene.mjs: ${hygieneImports.join(', ')}`);

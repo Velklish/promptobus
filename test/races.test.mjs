@@ -28,6 +28,10 @@
 // "artifact: a namesake does not overwrite the former — the link itself takes
 // the name". There is no multi-process stand at the door: it would have cost
 // its own harness for a branch where the FS itself is the arbiter.
+// Home diversion before any import that is not a Node built-in: a module that
+// resolved a home path at load would see the real one. [home.mjs](home.mjs) says
+// what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
