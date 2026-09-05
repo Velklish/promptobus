@@ -1,9 +1,9 @@
 # PB-14 · Adapter contract, budgeted parallel preflight, and the availability cache with TTL
 
-- **Order:** 40
 - **Scope:** [03-cli](../../reference/03-cli.md), [02-host](../../reference/02-host.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-12
+- **Taken:** 2026-09-05
 
 ## Context
 
