@@ -18,7 +18,7 @@ The Codex driver already gates a start on the limit: `lib/codex-session.js` wait
 
 ## Evidence from the catalog track's inventory (2026-09-05, `codex-cli` 0.146.0)
 
-- `model/list` over `codex app-server --stdio` after `initialize` only (no `thread/start`) answers `{ data: [{ id, model, displayName, description, hidden, supportedReasoningEfforts: [{ reasoningEffort, description }], defaultReasoningEffort, inputModalities, additionalSpeedTiers, serviceTiers, isDefault }] }` — 5 models that day, `gpt-5.6-sol` default. The probe script is kept as a task artifact of the routing run (`codex-models.mjs`).
+- `model/list` over `codex app-server --stdio` after `initialize` only (no `thread/start`) answers `{ data: [{ id, model, displayName, description, hidden, supportedReasoningEfforts: [{ reasoningEffort, description }], defaultReasoningEffort, inputModalities, additionalSpeedTiers, serviceTiers, isDefault }] }` — 5 models that day, `gpt-5.6-sol` default. The probe script is kept as a task artifact of the routing run: `.promptobus/tasks/model-routing-v1-in-t20260905-091407/files/codex-model-list-probe.mjs` in the consumer workspace (`node codex-model-list-probe.mjs <checkout> [codex-bin]`, reuses `lib/codex-rpc.js`, `initialize` + `model/list` only).
 - app-server writes `ERROR codex_models_manager::cache: failed to load models cache: missing field 'base_instructions'` to stderr and still answers correctly — the adapter must not read that stderr line as a probe failure.
 
 ## Out of scope
