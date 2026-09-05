@@ -381,7 +381,10 @@ check(': посторонний каталог рядом с задачами о
 // гейт краснеет с именем файла и именем импортируемого модуля.
 
 // Файлы самих driver'ов: карта, два driver'а и их реестры сессий. Им импорт друг друга
-// законен — это один предмет, разложенный по файлам.
+// законен — это один предмет, разложенный по файлам. Adapter доступности harness'а —
+// того же предмета файл: он спрашивает у harness'а про АККАУНТ его же протоколом, driver
+// объявляет его полем `availability`, и наружу он не торчит ничем — карта остаётся
+// единственной дверью (`adapterOf` в `drivers.js`).
 const DRIVER_OWN = new Set([
   'lib/drivers.js',
   'lib/driver-claude.js',
@@ -392,11 +395,12 @@ const DRIVER_OWN = new Set([
   'lib/codex-rpc.js',
   'lib/codex-session.js',
   'lib/codex-hold.js',
+  'lib/model-routing/adapter-codex.js',
 ]);
 
 // Модули, которых снаружи не касаются вовсе: сами driver'ы и их реестры сессий. Карта
 // (`drivers.js`) в перечень не входит — она и есть дверь, и её импортируют все.
-const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold)\.js$/;
+const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold|adapter-codex)\.js$/;
 
 // Спецификатор модуля в статическом импорте, реэкспорте и динамическом `import(...)`.
 // Прозы это не касается: перед кавычкой обязано стоять `from` или `import`.

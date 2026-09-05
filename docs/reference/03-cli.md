@@ -189,6 +189,37 @@ Three library entry points, all in `lib/model-routing/`:
 
 A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
 
+### Codex availability
+
+The Codex adapter (`lib/model-routing/adapter-codex.js`, carried by the driver as `availability`). It opens a fresh `codex app-server --stdio` under the same isolated environment a lift uses (`sessionEnv`, which drops `CODEX_HOME`), sends `initialize`, asks two questions, and kills the process. **It never sends `thread/start` and never starts a turn** — a preflight that cost a thread would cost what it exists to save, and the suite asserts the stub's thread directory is still empty after every probe.
+
+Codex gates a lift on the limit twice, and the two gates are meant to stay two. This one asks about the ACCOUNT before a harness is chosen; the refusal in `lib/codex-session.js` still stands where it always did, inside the lift. What they share is the reading of the protocol — `rateLimitReached` and `listedModels` — not a copy of it.
+
+**Where the limit comes from.** `account/rateLimits/read` is a request that answers at once, with no thread. Measured on codex-cli 0.146.0: the `account/rateLimits/updated` notification the lift waits for does **not** arrive after `initialize` alone — waits of 10 s and 30 s on a live account saw only `remoteControl/status/changed` — so a probe built on the notification alone would report no window, ever. The bounded wait for the notification is kept as the path for a binary that does not have the request: an error saying serde's `unknown variant` is a missing method and sends the probe there, and every other refusal of that call is the one a logged-out account gives.
+
+**What it never asks.** `getAuthStatus` would be a crisper auth signal and answers `{ authMethod, authToken, requiresOpenaiAuth }` — it hands back a **token**, and `message` is the one free-text field of this module that reaches disk. `account/read` answers the account **e-mail**. Neither is called, and neither should be added: the verdict is built from limit numbers and model names, which are the only two things a snapshot may carry.
+
+**Stderr is not a channel.** app-server writes ``ERROR codex_models_manager::cache: failed to load models cache: missing field `base_instructions` `` on a perfectly healthy start and answers everything correctly afterwards. The child is given no stderr pipe at all, so there is nothing to misread.
+
+What the answers become:
+
+| What app-server said | Verdict |
+|---|---|
+| the host says there is no `codex` binary | `unavailable` / `binary_missing` |
+| the host says there is one and app-server does not start | `unknown` / `probe_failed` — the shipped standalone host answers `{ ok: true }` for any name, so a machine without `codex` arrives here rather than at `binary_missing` |
+| the limit read refuses, and not for a missing method | `unavailable` / `not_authenticated` |
+| a snapshot with `rateLimitReached` — a named `rateLimitReachedType`, or a window at 100 % | `exhausted` / `subscription_exhausted`, `resetAt` from the window that was reached |
+| a snapshot with room left | `available`, with `windows` and `models` |
+| no snapshot from the request and none from the notification | `unknown` / `quota_unknown` — "no notification" has never been a refusal, and `unknown` is penalised by the resolver rather than blocking |
+| app-server did not answer inside the budget | `unknown` / `probe_timeout` |
+| app-server exited, refused `initialize`, lost the channel, or the probe itself broke | `unknown` / `probe_failed`, each with its own wording — a budget that ran out and a pipe that died ask a person for different things |
+
+**Windows** are `primary` and `secondary`, under the names the payload gives them: `usedPercent` as it stands, `lengthSec` from `windowDurationMins` × 60, and `resetAt` from `resetsAt` — unix **seconds** on the request, an ISO string on the notification, and `null` when it is neither. Nothing is renamed into hours and days: the length is a number the harness states, and a label invented from it would be a second, quieter claim about the same fact. A snapshot that names no window but carries the numbers at its own top level is ONE window and it is `primary` — that is not an invention either: `rateLimitReached` counts the snapshot itself among the windows it checks and `rateLimitNote` reads `snap.usedPercent`, so the flat form has always been the primary window written without its name, and reading it as "no window" would publish a spent limit as an exhaustion with no reset — the sticky kind — over a limit the harness had timed. A `resetsAt` outside the range a timestamp can have (milliseconds handed over where seconds were meant) is `null` rather than a value divided by a thousand: the repaired one would validate and be a time nothing said. `planType`, `credits` and `individualLimit` are read by nothing and reach no verdict.
+
+**Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **left out**: it hides what it does not offer, and an inventory carrying them would hand the resolver candidates the harness itself declines to show. No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. This adapter never answers `model_not_available`: it publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's.
+
+**The budget** is the preflight's whole `timeoutMs`, spent as a deadline rather than divided: each request is capped by the smaller of its own ceiling (`INIT_TIMEOUT_MS`, `LIMIT_READ_TIMEOUT_MS`, `MODEL_LIST_TIMEOUT_MS`) and what is left of it, and the notification fallback by the smaller of `limitWaitMs()` and the same remainder. An app-server that dies is not waited for at all — it answers `probe_failed` at once instead of holding a budget three harnesses are sharing.
+
 ### Cursor
 
 Implemented (PB-16). The adapter is `lib/model-routing/adapter-cursor.js`, declared by `lib/driver-cursor.js` as its `availability`. It runs two commands and nothing else — `status` for auth, `models` for the inventory — on the binary `host.resolveToolBin('cursor')` names, the same one the driver lifts a session with. It starts no session, writes nothing, and never touches the persist/tmux path: an adapter answers about the account, before any session exists.

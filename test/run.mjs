@@ -181,6 +181,15 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // load moves the measurement nowhere near the verdict. Everything
 // else in the file is file contents, permissions and TTL arithmetic
 // against a fixed instant, which load does not touch.
+// `model-routing-adapter-codex.test.mjs` has one threshold, written to
+// the same shape: the probe of an app-server that never answers runs
+// under a 400 ms budget and must end inside 10 000 ms — the same
+// twenty-five-fold margin. What it catches is a probe that spent its
+// OWN ceiling instead of the preflight's budget, and that ceiling is
+// `INIT_TIMEOUT_MS` (30 s), three times past the verdict: load has to
+// move the measurement by an order of magnitude before it reaches
+// either side. Everything else in the file is verdict fields against
+// a stub app-server, which load does not touch.
 // `promptobus.test.mjs` left the group with its rationale: the races it
 // sat there for moved into the nested package, and in the file itself
 // `Date.now()` only builds fixture age — the same case as `install` and

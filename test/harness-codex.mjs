@@ -25,6 +25,39 @@ export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
 export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 
+// What the availability probe meets before any thread exists. One variable with a
+// comma-separated set rather than six switches: these are all shapes of the same
+// preamble, they combine (a run is `stderr` AND `hidden` at once), and a stand
+// that grows one env var per case stops being readable at the fourth.
+//
+//   hang            — never answer `initialize`; the probe must end on its budget
+//   unsupported     — `account/rateLimits/read` refuses the way a binary WITHOUT
+//                     the method refuses (serde `unknown variant`), which is what
+//                     sends the probe to the notification
+//   unauthenticated — the same call refuses the way it refuses on an account
+//                     nobody is logged into (measured with an empty CODEX_HOME)
+//   no-notify       — no `account/rateLimits/updated` at all
+//   flat            — the notification carries the limit at its own top level,
+//                     naming no window, which is the shape `rateLimitReached`
+//                     and `rateLimitNote` have always also accepted
+//   hidden          — `model/list` also lists a model app-server hides
+//   no-models       — `model/list` refuses; the limit is still known
+//   stderr          — the `base_instructions` cache ERROR a healthy app-server
+//                     writes on every start
+export const PROBE_VAR = 'CODEX_STUB_PROBE';
+
+// Verbatim from codex-cli 0.146.0 on a run that then answered everything correctly.
+export const STDERR_NOISE = 'ERROR codex_models_manager::cache: failed to load models cache: '
+  + 'missing field `base_instructions` at line 132 column 5';
+
+// The limit snapshot `account/rateLimits/read` answers, in the shape measured on
+// codex-cli 0.146.0: the snapshot under `rateLimits`, `resetsAt` in unix SECONDS,
+// the window length in minutes. The reset moments are fixed so a check can name
+// them; the notification below keeps the ISO string it has always sent, and the
+// adapter reads both.
+export const STUB_RESET_PRIMARY = 4102444800;
+export const STUB_RESET_SECONDARY = 4102531200;
+
 export function addrKey(address) {
   return String(address).replace(/[^A-Za-z0-9._-]+/g, '-');
 }
@@ -208,6 +241,8 @@ async function appServer() {
     process.stderr.write('codex-stub: PROMPTOBUS_E2E_CODEX is missing\n');
     process.exit(2);
   }
+  const probe = new Set(String(process.env[PROBE_VAR] ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  if (probe.has('stderr')) process.stderr.write(`${STDERR_NOISE}\n`);
   let buf = '';
   const pendingApprovals = new Map();
   const emit = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -253,20 +288,61 @@ async function appServer() {
   async function handle(msg) {
     const { id, method, params = {} } = msg;
     if (method === 'initialize') {
+      // A binary that never answers: the probe has to end on its own budget, not
+      // on a reply. The stand does not close stdin either — a closed stream is a
+      // different failure and has its own case.
+      if (probe.has('hang')) return;
       reply(id, { userAgent: 'codex-stub', platformOs: process.platform, experimentalApi: true });
       const exhausted = process.env[LIMIT_VAR] === '1';
+      if (probe.has('no-notify')) return;
       setTimeout(() => {
-        notify('account/rateLimits/updated', {
-          usedPercent: exhausted ? 100 : 12,
-          primary: { usedPercent: exhausted ? 100 : 12, resetsAt: '2099-01-01T00:00:00Z' },
-          planType: 'plus',
-          rateLimitReachedType: exhausted ? 'primary' : null,
-        });
+        const used = exhausted ? 100 : 12;
+        notify('account/rateLimits/updated', probe.has('flat')
+          ? { usedPercent: used, resetsAt: '2099-01-01T00:00:00Z', planType: 'plus' }
+          : {
+            usedPercent: used,
+            primary: { usedPercent: used, resetsAt: '2099-01-01T00:00:00Z' },
+            planType: 'plus',
+            rateLimitReachedType: exhausted ? 'primary' : null,
+          });
       }, 20);
       return;
     }
+    if (method === 'account/rateLimits/read') {
+      if (probe.has('unsupported')) {
+        fail(id, -32600, 'Invalid request: unknown variant `account/rateLimits/read`, '
+          + 'expected one of `initialize`, `thread/start`, `model/list`');
+        return;
+      }
+      if (probe.has('unauthenticated')) {
+        fail(id, -32600, 'codex account authentication required to read rate limits');
+        return;
+      }
+      const exhausted = process.env[LIMIT_VAR] === '1';
+      reply(id, {
+        rateLimits: {
+          limitId: 'codex',
+          primary: {
+            usedPercent: exhausted ? 100 : 12,
+            windowDurationMins: 300,
+            resetsAt: STUB_RESET_PRIMARY,
+          },
+          secondary: { usedPercent: 46, windowDurationMins: 10080, resetsAt: STUB_RESET_SECONDARY },
+          credits: { hasCredits: false, unlimited: false, balance: '0' },
+          planType: 'plus',
+          rateLimitReachedType: exhausted ? 'primary' : null,
+        },
+      });
+      return;
+    }
     if (method === 'model/list') {
-      reply(id, { data: [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.4-mini' }] });
+      if (probe.has('no-models')) {
+        fail(id, -32000, 'the model catalog is unavailable');
+        return;
+      }
+      const data = [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.4-mini' }];
+      if (probe.has('hidden')) data.push({ id: 'gpt-5.6-internal', hidden: true });
+      reply(id, { data });
       return;
     }
     if (method === 'thread/items/list') {
