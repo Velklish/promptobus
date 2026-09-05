@@ -86,7 +86,6 @@ function subcommands() {
  * will decide it — an exemption with nowhere to lead is a hole shaped exactly like the
  * thing being looked for.
  */
-const CONSUMER_ONLY = new Map([['clone', 'PB-1.1']]);
 
 test('no message names a command the CLI does not have', () => {
   // `promptobus tools add <harness>` was printed at the one moment an operator most
@@ -103,7 +102,7 @@ test('no message names a command the CLI does not have', () => {
   // top level would be green about the half of the runtime it never opened.
   for (const file of jsFiles(LIB)) {
     for (const m of readFileSync(file, 'utf8').matchAll(HEAD)) {
-      if (!known.has(m[1]) && !CONSUMER_ONLY.has(m[1])) {
+      if (!known.has(m[1])) {
         stray.push(`${path.relative(path.join(LIB, '..'), file)}: ${m[1]}`);
       }
     }
