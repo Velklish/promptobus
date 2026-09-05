@@ -142,6 +142,15 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
     const holders = new Set();
     for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\bresolveToolBin\b/g)) holders.add(m[1]);
     if (/\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src)) holders.add('tool');
+    // Since the preflight resolves binaries once up front (PB-16.2), an adapter is
+    // HANDED its bin as `request.toolBin`: the identifier it binds that field to, or
+    // the field itself where it is read in place, is the holder there.
+    for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\btoolBin\b/g)) holders.add(m[1]);
+    for (const m of src.matchAll(/\{[^}]*\btoolBin\b[^}]*\}\s*=/g)) holders.add('toolBin');
+    if (/\btoolBin\s*\./.test(src)) holders.add('toolBin');
+    // The three adapters destructure it with a rename in the parameter list:
+    // `{ toolBin: tool, timeoutMs }`.
+    for (const m of src.matchAll(/\btoolBin\s*:\s*([A-Za-z_$][\w$]*)/g)) holders.add(m[1]);
     assert.ok(holders.size, `${rel} holds no tool bin — the scan lost a reader`);
     for (const holder of holders) {
       for (const m of src.matchAll(new RegExp(`\\b${holder}\\??\\.([A-Za-z_$][\\w$]*)`, 'g'))) {
