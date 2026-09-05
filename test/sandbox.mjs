@@ -52,7 +52,9 @@ import process from 'node:process';
 // Static CLI import — before HOME hygiene in home.mjs and before the
 // swap in the suite file. A module that computes os.homedir() into a
 // load-time constant would see the real home (home paths are computed
-// at call time; the class is caught by homedir-module.test.mjs).
+// at call time; the load order that makes this safe is pinned by the
+// sentinels in tmpdir-sweep.test.mjs: the apply point in home.mjs is
+// imported before any module that is not a Node built-in).
 import { resetBgSessionsCache } from '../lib/liftoff.js';
 import { claudeDriver } from '../lib/driver-claude.js';
 import { addressOf } from '../lib/store.js';
