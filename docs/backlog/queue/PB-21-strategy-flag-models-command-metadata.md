@@ -19,6 +19,11 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 - `--help`: the `models` line and `--strategy` / `--allow-payg` on `spawn` and `review`, turning PB-12's pending help check green; routing error codes registered in `ERROR_CODES` (`src/v1/errors.ts`) so the reference-vs-enum drift check covers them.
 - `--dry-run` on `spawn`, `review` and `models`: reads the cache only, prints the decision with the snapshot age and a `stale_cache` warning when due, writes neither cache nor task state; live probes only with `--refresh`, and `--refresh --dry-run` still writes nothing (owner's decision 2026-09-05).
 
+## Notes from PB-14 (2026-09-05)
+
+- A `stale_cache` entry carries no `models` and no `windows`: `models --dry-run` on a cold or expired cache lists no runtime models for that harness and reports the old `checkedAt` as the age. If the text output is expected to still list stale inventory, the change is in `lib/model-routing/cache.js` (`snapshotEntry`), not in the command.
+- `preflight` takes `adapterFor` and `harnesses` as parameters: pass `adapterOf` from `lib/drivers.js` and `host.declaredTools()`; `rated` is the predicate from the merged catalog. A verdict's `source` is taken as the adapter gave it — the command may want to guard against an adapter labelling its own answer `cache`.
+
 ## Out of scope
 
 - Changing a live participant's model; migrating running participants.
