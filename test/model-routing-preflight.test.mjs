@@ -29,7 +29,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
   AUTH_TTL_MS, CACHE_MODE, NEVER_CHECKED, TRANSIENT_TTL_MS, WINDOW_TTL_MS,
-  clearExhausted, entryLive, isoStamp, markExhausted, readSnapshot, snapshotEntry, writeEntries,
+  clearExhausted, entryLive, isoStamp, markExhausted, readSnapshot, snapshotEntry, stickyExhaustion,
+  writeEntries,
 } from '../lib/model-routing/cache.js';
 import { PREFLIGHT_BUDGET_MS, preflight } from '../lib/model-routing/preflight.js';
 import { REGISTRY, adapterOf, standInAdapter } from '../lib/drivers.js';
@@ -656,6 +657,23 @@ test('a limit hit at start marks the harness exhausted: with a reset by evidence
   const blind = markExhausted(host, 'quiet', {});
   assert.equal(blind.reason, 'manual_exhaustion');
   assert.equal(blind.resetAt, null);
+
+  // The evidence a caller has and this helper cannot see: a harness that said the
+  // limit RESETS and named the time in a person's words ("resets at 3pm") is a
+  // subscription limit with a reset nothing may parse. Derivation alone reads
+  // `resetAt` and would call that a `manual_exhaustion`; the stated reason is what
+  // keeps the one caller with that evidence — the Claude driver's late-start mark —
+  // from opening a second door into the cache.
+  //
+  // Mutation probe: drop `reason` from `markExhausted` and this line goes red, and
+  // so does the driver's own `subscription_exhausted` check next door.
+  const said = markExhausted(host, 'worded', { reason: 'subscription_exhausted' });
+  assert.equal(said.reason, 'subscription_exhausted');
+  assert.equal(said.resetAt, null, 'a reason states the evidence; it invents no reset');
+  assert.equal(stickyExhaustion(said), true, 'with no reset it is the sticky kind, whichever reason it carries');
+  // A reason outside the two is not a third state: it falls back to the derivation
+  // rather than writing a code the snapshot schema does not have.
+  assert.equal(markExhausted(host, 'wrong', { reason: 'quota_unknown' }).reason, 'manual_exhaustion');
 
   assert.equal(validates(readSnapshot(host)), true);
 
