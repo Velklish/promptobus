@@ -16,7 +16,7 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 - Decision stored in participant `metadata.routing` (strategy, tuple, score, snapshot age, warnings, whether constraints applied); core does not read it, `status` does, through the driver-side accessor pattern of `src/protocol.ts` line 212.
 - `promptobus status` prints strategy, tuple, snapshot age and warnings for each routed participant.
 - `promptobus models` (text and `--json`, `--strategy`, `--role`, `--refresh`), `models validate` (PB-13), `models --clear-exhausted <harness>` (PB-14).
-- `--dry-run` on `spawn`, `review` and `models`: live probes, printed decision, no cache write, no task state.
+- `--dry-run` on `spawn`, `review` and `models`: reads the cache only, prints the decision with the snapshot age and a `stale_cache` warning when due, writes neither cache nor task state; live probes only with `--refresh`, and `--refresh --dry-run` still writes nothing (owner's decision 2026-09-05).
 
 ## Out of scope
 
@@ -26,4 +26,4 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 ## Verification
 
 - Suite: no-candidate leaves the store untouched (compare the store directory before and after); dry-run writes nothing; metadata round-trips through `status`; the golden fixtures of PB-12 turn green.
-- Live: one `spawn --strategy balanced --dry-run` and one `models --json` on the owner's machine, output attached to the result.
+- Live: one `spawn --strategy balanced --dry-run --refresh` and one `models --json` on the owner's machine, output attached to the result.
