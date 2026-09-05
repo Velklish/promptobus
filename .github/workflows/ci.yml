@@ -58,7 +58,7 @@ jobs:
       # fresh checkout has none of them and the gate would fail on their absence.
       # Regenerating first is what the tool expects: templates are the only source.
       - name: backslop init
-        run: npx --yes github:Velklish/backslop#v0.3.0 init --prefix PB --lang en --tools claude,cursor,codex
+        run: npx --yes github:Velklish/backslop#v0.4.0 init --prefix PB --lang en --tools claude,cursor,codex
 
       - name: backslop lint
         run: npm run lint:backslop
