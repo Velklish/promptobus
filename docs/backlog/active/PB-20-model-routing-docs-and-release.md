@@ -1,9 +1,9 @@
 # PB-20 · Model routing docs, glossary, CHANGELOG, and the release tag
 
-- **Order:** 110
 - **Scope:** [README](../../reference/README.md), [02-host](../../reference/02-host.md), [03-cli](../../reference/03-cli.md), [04-protocol](../../reference/04-protocol.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-13, PB-15, PB-16, PB-17, PB-19, PB-21
+- **Taken:** 2026-09-05
 
 ## Context
 
