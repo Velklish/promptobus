@@ -1,9 +1,9 @@
 # PB-19 · Orchestrate skill: auto → concrete strategy rubric and the strategy envelope
 
-- **Order:** 100
 - **Scope:** [03-cli](../../reference/03-cli.md), `skills/orchestrate/SKILL.md`, `skills/solo-review/SKILL.md`
 - **Created:** 2026-09-05
 - **Dependencies:** PB-21
+- **Taken:** 2026-09-05
 
 ## Context
 
