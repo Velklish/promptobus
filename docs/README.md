@@ -7,6 +7,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [../README.md](../README.md) | What Promptobus is, why it exists, install, first commands | Living |
 | [guides/install.md](guides/install.md) | Package install and `promptobus install --harnesses …` | Living |
 | [guides/hooks-and-trust.md](guides/hooks-and-trust.md) | Hooks, trust, and troubleshooting for Claude Code, Cursor, and Codex | Living |
+| [guides/model-routing.md](guides/model-routing.md) | The model catalog, the overlay layers, and the file a person copies | Living |
 | [guides/contributing.md](guides/contributing.md) | Contribution workflow through backslop | Living |
 | [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
 | [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
