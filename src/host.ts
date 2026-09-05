@@ -154,6 +154,27 @@ export interface PromptobusHost {
    * `promptobusHome()` is not used for routing.
    */
   routingPaths(): HostRoutingPaths;
+  /**
+   * Where the package keeps its own session registry for one harness — the
+   * records `inspect`, `stop` and the wake path read and write. Account-scoped
+   * like `routingPaths()`, and for the same reason: a session a harness keeps
+   * alive belongs to the account its binary is logged into, not to one
+   * workspace. `null` means the host names none, and then a run refuses.
+   *
+   * It refuses instead of guessing because the guess was measured. The package
+   * used to fall back to `~/.promptobus/<harness>` when the per-harness
+   * environment variable was unset. A consumer that had named its own
+   * variables instead therefore had two harness registries writing into the
+   * operator's REAL home while `inspect` read the sandbox — two halves of one
+   * test looking at different directories, with no error anywhere and nothing
+   * in either log to say so (PB-2). A named refusal costs one message; a
+   * silent guess cost a day.
+   *
+   * Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
+   * environment, then this method, then the refusal — which names both, so
+   * the reader is not left to find out which of the two to set.
+   */
+  harnessStateHome(harness: string): string | null;
 
   nodePath(): string;
   /** CLI entry this call was lifted with — it is how the participant bus stdio server is declared. */

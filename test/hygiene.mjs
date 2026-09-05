@@ -77,7 +77,27 @@
 //   the same place as home: `<run home>/.claude`; without a home —
 //   dropped.
 
+//
+// The list has a second half that is not a variable at all — **PATH**. Sandboxing
+// `HOME` and `TMPDIR` seals nothing by itself: a child process escapes through PATH.
+// Live case 2026-09-04: a driver test hung because `spawn` resolved the declared tool
+// name through the standalone host, which hands the name back without searching, and
+// `run('cursor')` then found the operator's own `~/.local/bin/cursor` and waited on
+// `cursor mcp enable`. The stand had stubbed `agent`, the name the driver documents,
+// so nothing intercepted `cursor`. Nothing detectable was damaged, and that was luck
+// about which subcommand ran, not a property of the suite (PB-2).
+//
+// So the suite runs with PATH SEALED: one directory, holding a symlink per binary the
+// suite is allowed to reach, and nothing else. A name nobody stubbed does not resolve
+// — the spawn fails with ENOENT and names the command instead of launching whatever
+// the operator has installed. Stub directories are PREPENDED to that
+// (`withStubPath` in [sandbox.mjs](sandbox.mjs)), and suite files that compose their
+// own `${BIN}${delimiter}${PATH}` compose it from the sealed one they were handed, so
+// one seal covers every file without an edit in any of them.
+
+import { existsSync, mkdirSync, statSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 // Auto-lift switch: the variable name and its value under the suite.
 const WARDEN_SWITCH = 'PROMPTOBUS_WARDEN';
@@ -126,6 +146,88 @@ const CONFIG_DIR_VAR = 'CLAUDE_CONFIG_DIR';
 const E2E_PREFIX = 'PROMPTOBUS_E2E_';
 
 /**
+ * Binaries the suite may reach on the machine, and why each is here. The list is
+ * short on purpose: every name on it is a name a test can call without stubbing,
+ * and the whole point of the seal is that the set of those names is closed and
+ * written down.
+ *
+ * - `node` — `npm` and every `#!/usr/bin/env node` script it runs resolve the
+ *   interpreter through PATH. The suite's own children get `process.execPath`, an
+ *   absolute path, and do not need this;
+ * - `npm` — `promptobus-package.test.mjs` runs the nested package suite as a child
+ *   `npm test --prefix …`, and `installWorktreeDeps` runs `npm ci`;
+ * - `git` — clones, worktrees and diffs, in a dozen files;
+ * - `sh` — the POSIX stub launcher is `#!/bin/sh`, and `spawnSync('sh', …)` is used
+ *   directly; `env` — the Cursor launch script is `exec env -u … <bin>`;
+ * - `ps`, `pgrep` — the process reads the suite makes about ITSELF (the register of
+ *   them is in [run.mjs](run.mjs));
+ * - `tar` — the packaging check unpacks what `npm pack` produced;
+ * - `sleep` — shell fixtures hold a pipe open with it. Measured 2026-09-05: without
+ *   it the deadline check in `model-routing-adapter-claude.test.mjs`, whose stub
+ *   binary is `#!/bin/sh` + `sleep 5`, became a coin flip — the fixture exited 127
+ *   instead of holding, and the verdict raced the deadline (one red in three runs of
+ *   the file, and one in six full concurrent runs);
+ * - `ast-grep` — the ambient gate refuses rather than skips when it is missing, so
+ *   it must be reachable.
+ *
+ * Deliberately absent: `claude`, `cursor`, `cursor-agent`, `agent`, `codex`, `tmux`.
+ * Those are the harness binaries and the harness utility — the things a run must
+ * never touch on a person's machine. A file that needs one stubs it; a file that
+ * forgot gets ENOENT, which is the whole point.
+ */
+export const REACHABLE_BINARIES = [
+  'ast-grep', 'env', 'git', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
+];
+
+/** Set once the seal is built, so a nested apply keeps the directory instead of rebuilding it. */
+const SEAL_VAR = 'PROMPTOBUS_TEST_PATH_SEAL';
+
+function firstOnPath(name, pathValue) {
+  for (const dir of String(pathValue ?? '').split(path.delimiter)) {
+    if (!dir) continue;
+    const file = path.join(dir.replace(/^"|"$/g, ''), name);
+    try {
+      if (existsSync(file) && (statSync(file).mode & 0o111)) return file;
+    } catch {
+      // Vanished between the two calls, or unreadable — the next directory answers.
+    }
+  }
+  return null;
+}
+
+/**
+ * Build the sealed PATH in `dir` and put it in `env`. Returns the directory.
+ *
+ * Symlinks, not copies: a copy of `npm` would lose the installation it resolves
+ * relative to its own realpath, and a copy of anything is a second version of it on
+ * disk. A name that is not on the machine at all is simply not linked — the seal is
+ * not a dependency check, and the gate that wants `ast-grep` refuses on its own with
+ * its own install line.
+ *
+ * POSIX only. On Windows resolution walks PATH × PATHEXT and a symlink needs a
+ * privilege the run may not have; there is nowhere to run the suite there today
+ * ([sandbox.mjs](sandbox.mjs) says the same about the stub launcher), and a half seal
+ * that reads as a whole one is worse than none.
+ */
+export function sealPath(env, dir) {
+  if (process.platform === 'win32') return null;
+  mkdirSync(dir, { recursive: true });
+  for (const name of REACHABLE_BINARIES) {
+    const found = firstOnPath(name, env.PATH ?? process.env.PATH);
+    if (!found) continue;
+    try {
+      symlinkSync(found, path.join(dir, name));
+    } catch {
+      // Already linked by a neighbour of the same run — the link is what matters,
+      // not who made it.
+    }
+  }
+  env.PATH = dir;
+  env[SEAL_VAR] = dir;
+  return dir;
+}
+
+/**
  * SESSION identity in the environment: the bus triple and the contact
  * point. Five names, and anyone who raises the mechanism as a child
  * process must drop them.
@@ -161,7 +263,7 @@ export function dropSessionLeaks(env) {
 // argument: its path is different for each (the run directory for
 // the runner, a sandbox for the helper); what is shared is the list
 // of names.
-export function applyHygiene(env, { home } = {}) {
+export function applyHygiene(env, { home, seal } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
   dropSessionLeaks(env);
   for (const name of Object.keys(env)) {
@@ -173,5 +275,27 @@ export function applyHygiene(env, { home } = {}) {
   } else {
     delete env[CONFIG_DIR_VAR];
   }
+  // The seal directory is the caller's to place, for the same reason home is: the
+  // runner puts it in the run directory it removes, and a file run by hand puts it
+  // in the sandbox it was given. A caller that names neither and is already sealed
+  // (a file under the runner) keeps the PATH it was handed — `sealPath` returns the
+  // standing directory rather than building a second one.
+  //
+  // Two branches, and which one runs is decided HERE rather than inside `sealPath`:
+  // that function has one behaviour — build the named directory and rewrite PATH to
+  // it — and no opinion about a seal that already exists.
+  //
+  // A caller that NAMES a directory always gets a fresh seal in it. A nested runner
+  // needs that: [runner.test.mjs](runner.test.mjs) runs a copy of the runner in a
+  // sandbox, the copy has its own run directory, and inheriting the outer seal would
+  // put every binary it resolves outside its own run — which is exactly what its
+  // escape gate calls a hole.
+  //
+  // A caller that names NEITHER a seal nor a home keeps the standing one, if the
+  // environment carries a live one. That is a suite file run by hand UNDER the
+  // runner: its PATH is sealed already, and a second seal would be pure cost.
+  const sealDir = seal ?? (home ? path.join(home, 'path-seal') : null);
+  if (sealDir) sealPath(env, sealDir);
+  else if (env[SEAL_VAR] && existsSync(env[SEAL_VAR])) env.PATH = env[SEAL_VAR];
   return env;
 }

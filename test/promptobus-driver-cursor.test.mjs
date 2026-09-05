@@ -191,8 +191,13 @@ check(': the wake text calls the mailbox by the Cursor NAME and carries a messag
       && text.includes('worker:a');
   })(), cursorDriver.renderNotification({ kind: 'unread', task: 'T', address: 'worker:a', unread: 0, messages: [] }).slice(0, 90));
 
+// The declared binary is `cursor-agent`, not the harness name `cursor`: the name
+// travels to `host.resolveToolBin` and from there straight to `run`, so it must be
+// the name of the binary that actually starts. It said `cursor` until 2026-09-05,
+// and a standalone host — which hands a name back without searching — sent that
+// through PATH into the operator's own `~/.local/bin/cursor` (PB-2).
 check(': the Cursor vocabulary is its own — binary, default model and read-only participant denies',
-  cursorDriver.options.tool === 'cursor' && cursorDriver.options.defaultModel === 'composer-2.5'
+  cursorDriver.options.tool === 'cursor-agent' && cursorDriver.options.defaultModel === 'composer-2.5'
   && JSON.stringify(cursorDriver.options.denyTools) === JSON.stringify(['Write(**)', 'Shell(**)'])
   && cursorDriver.options.skillsDir === false,
   JSON.stringify(cursorDriver.options));

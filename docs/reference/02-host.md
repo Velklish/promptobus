@@ -19,6 +19,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 - `resolveRepo`, freshness, extra env, tool binaries
 - `legacyLayout()` — former store, or `null`
 - `routingPaths()` — model-routing files: the availability cache and the overlay layers, lowest precedence first
+- `harnessStateHome(harness)` — where the package keeps its session registry for one harness, or `null`
 - Command formatting and worker preamble text
 
 ## Standalone host
@@ -31,6 +32,8 @@ It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`.
 
 `routingPaths()` answers `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<workspaceRoot>/model-routing.local.json`. Standalone declares no product-policy layer; a consumer inserts its own between those two.
 
+`harnessStateHome(harness)` answers `~/.promptobus/<harness>` — the path the package used to guess — so a single-user checkout sets no variable and notices no change.
+
 `syncHint()` returns `<commandName> install`.
 
 ## Model-routing paths
@@ -40,6 +43,20 @@ It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`.
 `routingPaths()` is a required member of `PromptobusHost`, not an optional one: an existing host implementation must add it, and `tsc` says so at the call site rather than at the first routed run. Consumers meet that once, at the release that closes the routing series.
 
 See [adr-003-model-routing.md](../adr/adr-003-model-routing.md).
+
+## Harness state homes
+
+`harnessStateHome(harness)` names where the package keeps its own session registry for that harness — the records `inspect`, `stop` and the wake path read and write. Account-scoped for the same reason the routing cache is: a session a harness keeps alive belongs to the account its binary is logged into, not to one workspace.
+
+Precedence at the call site is `PROMPTOBUS_<HARNESS>_HOME` from the environment, then this method, then a refusal that names both. There is no default. The default is what went wrong: the package fell back to `~/.promptobus/<harness>` when the variable was unset, and a consumer that had named its own variables instead had two harness registries writing into the operator's real home while `inspect` read the sandbox — two halves of one test in different directories, with no error anywhere. A named refusal costs one message.
+
+`harnessStateHome()` is a required member of `PromptobusHost`, the second the routing series adds: an existing host implementation must add it, and `tsc` says so. Consumers meet both once, at the release that closes the series.
+
+The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the **first** one wins — a host bound later cannot move the registries out from under a run already going. It is the one exception to "no process-wide singleton", and it is written at the top of `lib/cli.js`.
+
+## Tool binaries
+
+`resolveToolBin(name)` receives the name a driver DECLARES, and that is the name of the binary, not of the harness. For Cursor those differ: the harness is `cursor`, the binary is `cursor-agent`. It said `cursor` until 2026-09-05, and the standalone host — which hands a name back without searching — sent that through `PATH` into an operator's own `~/.local/bin/cursor`. A host that switches on the name meets `cursor-agent` at the release that closes the routing series; `--harness cursor` and the `tools` list are unchanged.
 
 ## Passing the host
 

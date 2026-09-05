@@ -157,6 +157,14 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       ],
     }),
 
+    // Session registry of one harness. Standalone answers the same path the
+    // package used to fall back to, so a single-user checkout keeps working
+    // with no variable set: the refusal is for a host that names nothing, not
+    // for the ordinary case.
+    harnessStateHome: (harness: string): string | null => (harness
+      ? path.join(os.homedir(), ROUTING_HOME, harness)
+      : null),
+
     nodePath: () => nodePath,
     binPath: () => binPath,
     layoutBinPath: () => binPath,

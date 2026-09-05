@@ -42,7 +42,7 @@
 // the shared helper [check.mjs](check.mjs) as they accumulate, so a
 // cut-off file shows what passed and where it stopped.
 import {
-  closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync,
+  closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync,
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
@@ -95,6 +95,15 @@ if (sweptBoxes.length) console.log(`▸ ${sweptLine('previous-run sandboxes', sw
 if (refusedBoxes.length) console.log(`▸ sweep refused (in use or foreign permissions): ${refusedBoxes.join(', ')}`);
 
 const RAISED_LOG = 'wardens-raised.log';
+// Every command `run` resolved under this run, appended by every child at once
+// ([exec.js](../lib/exec.js)). Read by the sealed-PATH gate at the tail.
+const RESOLVED_LOG = 'commands-resolved.log';
+// Sealed PATH of the run: one directory of symlinks to the binaries the suite may
+// reach, and nothing else. Built by [hygiene.mjs](hygiene.mjs), which also carries
+// the list and the reason. It sits beside the output buffers rather than among the
+// sandboxes, for the same reason they do — the run directory is TMPDIR for the
+// children.
+const SEAL_DIR = path.join(RUN_TMP, 'seal');
 const HOME_PREFIX = 'home-';
 // Output buffers live in a separate folder: the run directory itself
 // is TMPDIR for the children, and a file next to their sandboxes would
@@ -128,7 +137,8 @@ function testEnv(tmp) {
     TMP: tmp,
     TEMP: tmp,
     PROMPTOBUS_WARDEN_TRACE: path.join(tmp, RAISED_LOG),
-  }, { home });
+    PROMPTOBUS_EXEC_TRACE: path.join(tmp, RESOLVED_LOG),
+  }, { home, seal: SEAL_DIR });
 }
 
 // Pool width. Two cores are left for the machine: suite files themselves
@@ -240,6 +250,18 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // The rule for a new one: read the machine only through something
 // this run alone owns — a path, a pid it started, a mark it wrote.
 // A program name is not that.
+//
+// The same register, other direction: what a run may LAUNCH. PATH is
+// sealed to one directory of symlinks — the list and the reason are
+// in [hygiene.mjs](hygiene.mjs) — so a harness binary nobody stubbed
+// resolves to nothing instead of finding the operator's install. Two
+// consequences worth knowing rather than rediscovering: a refusal
+// branch that used to reach a real binary now says "not found in
+// PATH" under the suite (the Cursor driver's `tmux` resolve is the
+// visible one, and that is the intended reading of the branch), and
+// the seal itself is watched by the gate at the tail of this file —
+// whose boundary is `run` in [exec.js](../lib/exec.js), not a test
+// file's own `spawnSync`.
 const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'runner.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
@@ -421,6 +443,47 @@ if (interrupted) {
     // no trace — nobody was raised
   }
 
+  // Gate: no process started from outside this run's own directory.
+  //
+  // The suite runs with PATH sealed to `SEAL_DIR` — one directory of symlinks to the
+  // binaries [hygiene.mjs](hygiene.mjs) lists, and nothing else — so a tool name
+  // nobody stubbed cannot resolve. This gate is what watches that the seal held:
+  // every command `run` resolved was appended to the trace by the child that ran it,
+  // and every resolved path must be inside the run directory. Stub binaries are there
+  // (each file's sandbox lives in it) and so are the seal's symlinks; what is not
+  // there is the operator's machine.
+  //
+  // Judged on the resolved PATH, not on a pid: the resolve is what decides which
+  // binary starts, and it is the step that used to reach `~/.local/bin/cursor`
+  // (PB-2). A `(unresolved)` line is not a failure — that is exactly the seal
+  // working, a name that found nothing and came back ENOENT.
+  //
+  // The boundary is `run` itself: a test file that calls `spawnSync` on its own does
+  // not pass through it and is not in the trace. Those calls are `process.execPath`
+  // and stub binaries in the file's own sandbox; the escape route the gate exists for
+  // is the one through the bus boundary.
+  //
+  // Both spellings of the run directory are accepted, and that is not slack: on macOS
+  // `os.tmpdir()` answers `/var/folders/…` while the real path is `/private/var/…`,
+  // and a resolve that went through `realpathSync` anywhere on the way comes back in
+  // the second spelling. Comparing against one of them called every stub binary in
+  // the suite an escape — measured 2026-09-05, twelve of them, all inside the run.
+  const insideRun = [RUN_TMP, realpathSync(RUN_TMP)]
+    .map((root) => `${root}${path.sep}`);
+  let escaped = [];
+  try {
+    escaped = [...new Set(readFileSync(path.join(RUN_TMP, RESOLVED_LOG), 'utf8')
+      .split('\n').filter(Boolean))]
+      .map((line) => line.split('\t'))
+      .filter(([, file]) => file && file !== '(unresolved)'
+        && !insideRun.some((root) => file.startsWith(root)))
+      .map(([cmd, file]) => `${cmd} → ${file}`)
+      .sort();
+  } catch {
+    // No trace — no command went through `run` at all. That is a broken run, and the
+    // file count below says so; an empty gate must not add a second diagnosis.
+  }
+
   const passed = files.length - failed.length;
   if (failed.length) {
     console.error(`\n✖ ${failed.length} of ${files.length} files failed, ${passed} passed:`);
@@ -431,6 +494,12 @@ if (interrupted) {
     for (const line of raised) console.error(`  ✖ ${line}`);
     console.error('  the PROMPTOBUS_WARDEN=off switch is in the shared hygiene.mjs list — the bus command did not read it');
   }
-  if (failed.length || raised.length) process.exitCode = 1;
+  if (escaped.length) {
+    console.error(`\n✖ ${escaped.length} command(s) started from outside the run directory — the PATH seal has a hole:`);
+    for (const line of escaped) console.error(`  ✖ ${line}`);
+    console.error(`  the run directory is ${RUN_TMP}; the sealed PATH is ${SEAL_DIR},`
+      + ' and its contents are the REACHABLE_BINARIES list in hygiene.mjs');
+  }
+  if (failed.length || raised.length || escaped.length) process.exitCode = 1;
   else console.log(`\n${passed}/${files.length} test files passed`);
 }

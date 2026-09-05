@@ -224,10 +224,13 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   }
   const agentStub = `import { agentMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
     + 'await agentMain(process.argv.slice(2));\n';
-  // Dest `cursorDriver.options.tool` is `cursor`. Host resolveToolBin returns
-  // `{ ok: true, bin: name }` with no PATH search, so spawn runs that name.
-  // Stub every dest lookup name; otherwise `cursor` falls through to a real
-  // install dir on PATH and the suite hangs in that binary.
+  // `cursorDriver.options.tool` says `cursor-agent`, and the host's resolveToolBin
+  // returns `{ ok: true, bin: name }` with no PATH search, so spawn runs that name.
+  // All three lookup names are stubbed anyway: the driver's own `CURSOR_BINS`
+  // search tries `agent` and `cursor` too, and a name nobody stubbed must not be
+  // the thing that decides a verdict. It can no longer reach a real install dir —
+  // PATH is sealed ([hygiene.mjs](hygiene.mjs)) — but ENOENT in the middle of a
+  // scenario is a worse diagnosis than a stand that answers.
   stubCommand(binDir, 'agent', agentStub);
   stubCommand(binDir, 'cursor', agentStub);
   stubCommand(binDir, 'cursor-agent', agentStub);

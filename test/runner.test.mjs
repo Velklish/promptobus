@@ -158,7 +158,21 @@ writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   + "${process.env.PROMPTOBUS_E2E_ROOT ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_ROLE ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_TASK ?? '(dropped)'} :: "
-  + "${process.env.PROMPTOBUS_HOME ?? '(dropped)'}`);\n");
+  + "${process.env.PROMPTOBUS_HOME ?? '(dropped)'}`);\n"
+  // The sealed PATH, asked from inside a suite file for the same reason home is:
+  // this file's own PATH was sealed by the same runner, and a check against itself
+  // would pass without the seal. The file reports the PATH it was handed and, for
+  // two lists of names, which of them actually resolve on it — a harness binary
+  // must resolve NOWHERE, and the reachable ones must still be there, otherwise the
+  // seal would be "green because the suite cannot run anything at all".
+  + "import { existsSync } from 'node:fs';\n"
+  + "import path from 'node:path';\n"
+  + "const resolves = (n) => process.env.PATH.split(path.delimiter)\n"
+  + "  .some((d) => d && existsSync(path.join(d, n)));\n"
+  + "const hit = (names) => names.filter(resolves).join(',') || '(none)';\n"
+  + "console.log(`SEAL: ${process.env.PATH} :: "
+  + "${hit(['claude', 'cursor', 'cursor-agent', 'agent', 'codex', 'tmux'])} :: "
+  + "${hit(['git', 'node', 'sh'])}`);\n");
 
 const raised = await runCopy(SB2, {
   PROMPTOBUS_WARDEN: 'on',
@@ -214,6 +228,63 @@ check(': USERPROFILE is diverted to the same place as HOME',
 check(': CLAUDE_CONFIG_DIR is diverted into the run directory — stall parse does not read a person home',
   homeSeen !== '' && cfgSeen === path.join(homeSeen, '.claude'),
   `CLAUDE_CONFIG_DIR=${cfgSeen || '(unnamed)'} · home ${homeSeen || '(unnamed)'}`);
+
+// --- PATH is sealed: an unstubbed name reaches nothing ---------------
+//
+// Sandboxing `HOME` and `TMPDIR` seals nothing by itself — a child escapes through
+// PATH. The live case: `spawn` resolved the Cursor driver's declared tool name
+// through the standalone host, which hands the name back without searching, and
+// `run('cursor')` found the operator's own `~/.local/bin/cursor` and waited on
+// `cursor mcp enable`. The stand had stubbed `agent`, the name the driver documents
+// (PB-2).
+//
+// So the runner hands children a PATH of exactly ONE directory — the seal, holding a
+// symlink per binary `REACHABLE_BINARIES` names. Stub directories are prepended to
+// that, and files that compose their own `${BIN}:${PATH}` compose it from the sealed
+// one. Three things are asked, and each fails on its own: that the PATH is the seal
+// and nothing else, that no harness binary resolves on it, and that the reachable
+// ones still do — without the last one a seal that linked nothing would read as a
+// success.
+const [pathSeen = '', harnessSeen = '', reachableSeen = ''] = (raised.out.match(/SEAL: (.+)/)?.[1] ?? '').split(' :: ');
+check(': the runner hands a suite file one PATH directory — the seal, inside the run',
+  pathSeen !== '' && !pathSeen.includes(path.delimiter)
+  && /promptobus-test-run-[^\n]*[\\/]seal$/.test(pathSeen),
+  `PATH: ${pathSeen || '(unnamed)'}`);
+check(': no harness binary resolves on the sealed PATH — an unstubbed name fails, it does not find the machine',
+  harnessSeen === '(none)', `resolved harness binaries: ${harnessSeen || '(unnamed)'}`);
+check(': the binaries the suite may reach are still there — the seal links, it does not empty',
+  reachableSeen === 'git,node,sh', `resolved reachable binaries: ${reachableSeen || '(unnamed)'}`);
+
+// --- nothing started from outside the run directory -----------------
+//
+// The seal is a property, and this is the gate that watches it: every command `run`
+// resolved is appended to `PROMPTOBUS_EXEC_TRACE` by the child that ran it
+// ([exec.js](../lib/exec.js)), and the runner refuses a run in which any of those
+// paths lies outside its own run directory. Its own sandbox, like the auto-lift
+// probe above: a real escape cannot be staged without launching something from the
+// machine, which is the thing forbidden — so the stub writes the trace line itself,
+// exactly as `run` writes it.
+const SBESC = makeSandbox('promptobus-runner-escaped-');
+plant(SBESC, copy);
+writeFileSync(path.join(SBESC, 'a-escaped.test.mjs'),
+  "import { appendFileSync } from 'node:fs';\n"
+  + "appendFileSync(process.env.PROMPTOBUS_EXEC_TRACE, 'cursor\\t/Users/probe/.local/bin/cursor\\n');\n"
+  + "appendFileSync(process.env.PROMPTOBUS_EXEC_TRACE, 'git\\t(unresolved)\\n');\n"
+  + "console.log('file with an escape reached the end');\n");
+const escapedRun = await runCopy(SBESC);
+check(': a command resolved outside the run directory paints the run red, even though the files passed',
+  escapedRun.status === 1 && /file with an escape reached the end/.test(escapedRun.out)
+  && !/files failed/.test(escapedRun.out), `status=${escapedRun.status} ${escapedRun.out.slice(-400)}`);
+check(': the escape gate names the count, the command and the path it resolved to',
+  /1 command\(s\) started from outside the run directory/.test(escapedRun.out)
+  && /cursor → \/Users\/probe\/\.local\/bin\/cursor/.test(escapedRun.out),
+  escapedRun.out.slice(-400));
+// Negative control: a name that resolved NOWHERE is the seal working, not a hole.
+// Without this the gate could be "everything in the trace is an escape", and a run
+// in which the seal did its job would go red for doing it.
+check(': a name that resolved nowhere is not counted — that is the seal working',
+  !/git → /.test(escapedRun.out) && /1 command\(s\)/.test(escapedRun.out),
+  escapedRun.out.slice(-400));
 
 // --- the hygiene list is applied in full ------------------
 //

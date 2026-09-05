@@ -155,3 +155,63 @@ test('an explicit cwd reads promptobus.json; options.config overlays it', async 
   assert.equal(over.commandName, 'over');
   assert.deepEqual(over.declaredTools(), ['alpha']);
 });
+
+// --- harness state homes: named, or refused ------------------------------------------
+//
+// The package used to fall back to `~/.promptobus/<harness>` when
+// `PROMPTOBUS_CURSOR_HOME` / `PROMPTOBUS_CODEX_HOME` were unset. A consumer that had
+// named its own variables instead therefore had the Cursor and Codex registries writing
+// into the operator's REAL home while `inspect` read the sandbox — two halves of one
+// test in different directories, with no error anywhere (PB-2). The fallback is gone;
+// the host answers, and a host that answers nothing gets a refusal by name.
+
+test('standalone answers harnessStateHome for every harness it is asked about', async () => {
+  const { createStandaloneHost } = await import('../dist/host-index.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-harness-home-'));
+  process.on('exit', () => { rmSync(dir, { recursive: true, force: true }); });
+  const host = createStandaloneHost({ cwd: dir });
+  // The same path the package used to guess: a single-user checkout sets no variable
+  // and notices no change. What moved is WHO says it.
+  assert.equal(host.harnessStateHome('cursor'), path.join(homedir(), '.promptobus', 'cursor'));
+  assert.equal(host.harnessStateHome('codex'), path.join(homedir(), '.promptobus', 'codex'));
+});
+
+test('the environment wins over the host, and a host that names none refuses by name', async () => {
+  const { bindHarnessHomes, harnessStateHome } = await import('../lib/harness-home.js');
+  const { cursorStateHome } = await import('../lib/cursor-persist.js');
+  const { codexStateHome } = await import('../lib/codex-session.js');
+  try {
+    bindHarnessHomes({ harnessStateHome: (h) => `/from-host/${h}` });
+    assert.equal(cursorStateHome({ PROMPTOBUS_CURSOR_HOME: '/from-env' }), '/from-env',
+      'the environment is the most local thing anyone said, and it wins');
+    assert.equal(cursorStateHome({}), '/from-host/cursor');
+    assert.equal(codexStateHome({}), '/from-host/codex');
+
+    // The FIRST binding of a process wins: a second host is ignored rather than
+    // moving the registries out from under a run already going. `hostOf` builds a
+    // standalone host for a bare root string, and inside a process that entered
+    // through `runPromptobus` with a consumer's host that overwrite would send
+    // `inspect` somewhere the writes never went.
+    bindHarnessHomes({ harnessStateHome: () => '/second-host' });
+    assert.equal(cursorStateHome({}), '/from-host/cursor', 'the second binding is ignored');
+
+    // A host that answers `null` is the consumer case the refusal exists for: it named
+    // its own variables, the package sees neither, and a guess would land in the real
+    // home in silence. Unbinding first is how a caller that MEANS to rebind says so.
+    bindHarnessHomes(null);
+    bindHarnessHomes({ harnessStateHome: () => null });
+    assert.throws(() => cursorStateHome({}), (e) => {
+      assert.equal(e.constructor.name, 'GateError');
+      assert.match(e.message, /PROMPTOBUS_CURSOR_HOME/, 'the refusal names the variable');
+      assert.match(e.message, /harnessStateHome\('cursor'\)/, 'and the host method');
+      return true;
+    });
+    assert.throws(() => codexStateHome({}), /PROMPTOBUS_CODEX_HOME/);
+    // No host bound at all is the same refusal: a host was never asked, not asked and
+    // silent — the reader needs the same two names either way.
+    bindHarnessHomes(null);
+    assert.throws(() => harnessStateHome('cursor', {}), /PROMPTOBUS_CURSOR_HOME/);
+  } finally {
+    bindHarnessHomes(null);
+  }
+});

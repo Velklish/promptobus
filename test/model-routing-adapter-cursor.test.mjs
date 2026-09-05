@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { authState, cursorAvailability, parseModels } from '../lib/model-routing/adapter-cursor.js';
-import { CURSOR, cursorDriver } from '../lib/driver-cursor.js';
+import { CURSOR, CURSOR_TOOL, cursorDriver } from '../lib/driver-cursor.js';
 import { adapterOf } from '../lib/drivers.js';
 import { preflight } from '../lib/model-routing/preflight.js';
 import { stubCommand } from './sandbox.mjs';
@@ -105,10 +105,10 @@ function machine({
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-adapter-cursor-'));
   const binDir = path.join(dir, 'bin');
   if (bin) {
-    stubCommand(binDir, CURSOR, STUB_BODY);
+    stubCommand(binDir, CURSOR_TOOL, STUB_BODY);
     // A file that is there and will not run. Not a missing binary and not a slow
     // one — the third way a launch fails, and the one with no reason code of its own.
-    if (!executable) chmodSync(path.join(binDir, CURSOR), 0o644);
+    if (!executable) chmodSync(path.join(binDir, CURSOR_TOOL), 0o644);
     process.env.STUB_CURSOR_MODE = mode;
     process.env.STUB_CURSOR_ACCOUNT = STUB_ACCOUNT;
   }
@@ -127,7 +127,7 @@ function machine({
         const until = Date.now() + resolveBlocksMs;
         while (Date.now() < until) { /* the event loop is held, exactly as spawnSync holds it */ }
       }
-      if (!bin || name !== CURSOR) return { ok: false, reason: 'not found' };
+      if (!bin || name !== CURSOR_TOOL) return { ok: false, reason: 'not found' };
       return { ok: true, bin: path.join(binDir, name), ...(version ? { version } : {}) };
     },
   };
@@ -139,7 +139,7 @@ afterEach(() => {
   delete process.env.STUB_CURSOR_ACCOUNT;
 });
 
-const ask = (host, timeoutMs = 10_000) => cursorAvailability(CURSOR)
+const ask = (host, timeoutMs = 10_000) => cursorAvailability(CURSOR_TOOL)
   .probe({ host, timeoutMs, refresh: false });
 
 // --- the driver declares it --------------------------------------------------

@@ -119,6 +119,15 @@ const pgrepBefore = { cask: pgrep('Caskroom/codex'), app: pgrep('app-server --st
 // left there after the loop is what the run compares by compositions before
 // and after. Person sessions nearby are legal, and they must be subtracted: an
 // "empty list" would be a wrong verdict on a machine where the person works.
+//
+// Both paths are NAMED rather than left to a default, and they are the same
+// paths the package used to fall back to. The fallback is gone: with no
+// variable and no host bound, the registry helpers refuse by name rather than
+// guess a directory under someone's real home (PB-2). A live run is exactly the
+// case that WANTS the real one, so it says so.
+for (const [name, harness] of [['PROMPTOBUS_CURSOR_HOME', 'cursor'], ['PROMPTOBUS_CODEX_HOME', 'codex']]) {
+  process.env[name] = process.env[name] ?? path.join(homedir(), '.promptobus', harness);
+}
 const CURSOR_STATE = cursorPersist.sessionsDir();
 const CODEX_STATE = codexSession.sessionsDir();
 const listing = (dir) => {

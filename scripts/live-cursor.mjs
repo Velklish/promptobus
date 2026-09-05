@@ -100,6 +100,15 @@ const before = snapshotHome();
 // in a live run: the subject is how this works for the user. That nothing is
 // left there after the loop is what the run compares — compositions before and
 // after.
+//
+// The path is NAMED here rather than left to a default, and it is the same path
+// the package used to fall back to. The fallback is gone: with no variable and
+// no host bound, the registry helpers refuse by name rather than guess a
+// directory under someone's real home (PB-2). A live run is exactly the case
+// that WANTS the real one, so it says so — the way `live-codex.mjs` names its
+// own state home, and nothing else in this process binds a host.
+process.env.PROMPTOBUS_CURSOR_HOME = process.env.PROMPTOBUS_CURSOR_HOME
+  ?? path.join(homedir(), '.promptobus', 'cursor');
 const STATE_HOME = cursorStateHome();
 function snapshotState() {
   try {
