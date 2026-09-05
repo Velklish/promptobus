@@ -84,7 +84,9 @@ export type { DecorateParticipant } from './mcp/render.js';
 // the driver also has its own `./driver` entry point — the contract is declared
 // there — and here the same surface arrives together with the store, because
 // the consumer takes them together: the registry is passed into the state
-// machine, and the state machine reads the task store.
+// machine, and the state machine reads the task store. The availability adapter
+// contract ([model-routing.ts](model-routing.ts)) rides the same star: a driver
+// declares it as `availability`, and the two are read together.
 export * from './driver.js';
 export * from './supervisor.js';
 

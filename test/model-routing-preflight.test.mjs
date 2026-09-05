@@ -1,0 +1,588 @@
+// Availability preflight and cache: the adapter contract, the budget, the TTLs,
+// and the rules that keep the cache file honest. Run: npm test
+//
+// The neighbouring [model-routing.test.mjs](model-routing.test.mjs) pins the
+// CONTRACT — schemas, code lists, golden fixtures. This file is the first
+// BEHAVIOUR under it, and the two do not overlap: what is asserted here is what
+// running code does, and the shapes it produces are handed to the same schema the
+// contract file pins rather than to a second copy of it.
+//
+// Nothing here starts a harness binary. Every probe is a stand-in adapter
+// ([routing-stubs.mjs](routing-stubs.mjs)) — the states a preflight must handle
+// (never answers, limit spent, nobody logged in) are states no live account is
+// asked to be in for a test run.
+//
+// Two checks exist to be broken rather than to pass, and the mutation probes
+// (result.md) name them: raising `PREFLIGHT_BUDGET_MS` reddens the budget check,
+// dropping the `0600` reddens the permissions check, and making `dryRun` write
+// reddens the no-write checks. The leak check has a substitution probe of its own:
+// replace the closed-shape projection with a spread and the fake token appears on
+// disk.
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import Ajv2020 from 'ajv/dist/2020.js';
+
+import {
+  AUTH_TTL_MS, CACHE_MODE, NEVER_CHECKED, TRANSIENT_TTL_MS, WINDOW_TTL_MS,
+  clearExhausted, entryLive, isoStamp, markExhausted, readSnapshot, snapshotEntry, writeEntries,
+} from '../lib/model-routing/cache.js';
+import { PREFLIGHT_BUDGET_MS, preflight } from '../lib/model-routing/preflight.js';
+import { REGISTRY, adapterOf } from '../lib/drivers.js';
+import {
+  FAKE_TOKEN, adapterMap, answeringStub, availableStub, counter, exhaustedStub, slowStub,
+  throwingStub, unauthenticatedStub,
+} from './routing-stubs.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(here, '..');
+const SNAPSHOT_SCHEMA = path.join(ROOT, 'schemas', 'model-routing', 'snapshot.schema.json');
+
+// `strict: false` for the reason the contract file states: the schema's own
+// vocabulary (`$defs` cross-references, `oneOf` beside `null`) is suspicious to ajv
+// in strict mode, and the subject is the verdict.
+const ajv = new Ajv2020({ strict: false, allErrors: true });
+const validSnapshot = ajv.compile(JSON.parse(readFileSync(SNAPSHOT_SCHEMA, 'utf8')));
+const validates = (doc) => (validSnapshot(doc) ? true : ajv.errorsText(validSnapshot.errors));
+
+/**
+ * A host that answers nothing but the routing paths. The preflight and the cache
+ * ask for exactly one thing — `routingPaths().cacheFile` — and a stand-in that
+ * answers more would hide a module reaching for the store home.
+ */
+function sandboxHost() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-'));
+  return {
+    kind: 'promptobus-host',
+    dir,
+    cacheFile: path.join(dir, 'model-routing', 'cache.json'),
+    routingPaths() {
+      return { cacheFile: path.join(dir, 'model-routing', 'cache.json'), overlays: [] };
+    },
+  };
+}
+
+/** Seed the cache directly — the only way to age an entry without waiting out its TTL. */
+function seed(host, harnesses, at = Date.now()) {
+  writeEntries(host, harnesses, { at });
+  return readSnapshot(host);
+}
+
+const entry = (over = {}) => ({
+  state: 'available',
+  reason: null,
+  message: 'seeded',
+  checkedAt: isoStamp(),
+  source: 'probe',
+  resetAt: null,
+  ...over,
+});
+
+// --- the contract ------------------------------------------------------------
+
+test('the adapter contract names the same states and reasons as the snapshot schema', async () => {
+  // Two lists that must not drift: one is what an adapter author reads
+  // (src/model-routing.ts), the other is what a written cache is validated
+  // against. The reference table is compared to the schema by the contract file,
+  // so all three are one list through this pair.
+  const { AVAILABILITY_REASONS, AVAILABILITY_SOURCES, AVAILABILITY_STATES } = await import('../dist/index.js');
+  const schema = JSON.parse(readFileSync(SNAPSHOT_SCHEMA, 'utf8'));
+  assert.deepEqual([...AVAILABILITY_STATES], schema.$defs.state.enum);
+  assert.deepEqual([...AVAILABILITY_REASONS], schema.$defs.reason.enum);
+  assert.deepEqual([...AVAILABILITY_SOURCES], schema.$defs.harness.properties.source.enum);
+});
+
+test('a driver that declares no availability adapter answers unknown / probe_failed', async () => {
+  // The three shipped drivers are exactly in that state until PB-15…PB-17, and it
+  // must be a state rather than a crash: the resolver penalises `unknown`, and a
+  // throwing registry would take every routed command with it.
+  for (const harness of Object.keys(REGISTRY.drivers)) {
+    const verdict = await adapterOf(harness).probe({ host: null, timeoutMs: 1, refresh: false });
+    assert.equal(verdict.state, 'unknown', harness);
+    assert.equal(verdict.reason, 'probe_failed', harness);
+  }
+});
+
+// --- the budget --------------------------------------------------------------
+
+test('the preflight budget is the 15 s ADR-003 fixed', () => {
+  // A number in prose and a number in code are two numbers until something
+  // compares them. This is the one that reddens when the budget is raised.
+  assert.equal(PREFLIGHT_BUDGET_MS, 15_000);
+});
+
+test('a slow adapter does not hold the preflight: the run ends by the budget and that harness is probe_timeout', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  const budgetMs = 200;
+  const started = Date.now();
+  const snapshot = await preflight({
+    host,
+    harnesses: ['quick', 'slow', 'spent'],
+    adapterFor: adapterMap({
+      quick: availableStub(count),
+      slow: slowStub(count, { delayMs: 30_000 }),
+      spent: exhaustedStub(count, { resetAt: isoStamp(Date.now() + 3_600_000) }),
+    }),
+    budgetMs,
+  });
+  const elapsed = Date.now() - started;
+
+  // Twenty-five-fold, the margin `fresh.test.mjs` uses for the same reason: the
+  // file runs in the pool, and a tight wall-clock threshold measures the
+  // machine's neighbours rather than the budget. The slow stub answers at 30 s,
+  // so five seconds still proves the preflight did not wait for it.
+  assert.ok(elapsed < budgetMs * 25, `the preflight ran ${elapsed} ms on a ${budgetMs} ms budget`);
+  assert.equal(snapshot.harnesses.slow.state, 'unknown');
+  assert.equal(snapshot.harnesses.slow.reason, 'probe_timeout');
+  // The neighbours are not punished for it: they answered, and their answers stand.
+  assert.equal(snapshot.harnesses.quick.state, 'available');
+  assert.equal(snapshot.harnesses.spent.state, 'exhausted');
+  assert.equal(count.probes, 3, 'all three adapters were started, in parallel');
+  assert.equal(validates(snapshot), true);
+});
+
+test('an adapter that throws, and one that answers outside the contract, are both probe_failed', async () => {
+  const host = sandboxHost();
+  const snapshot = await preflight({
+    host,
+    harnesses: ['broken', 'confused', 'locked'],
+    adapterFor: adapterMap({
+      broken: throwingStub(),
+      confused: { probe: () => ({ state: 'fine, thanks', message: 'nonsense' }) },
+      locked: unauthenticatedStub(),
+    }),
+    budgetMs: 500,
+  });
+  for (const harness of ['broken', 'confused']) {
+    assert.equal(snapshot.harnesses[harness].state, 'unknown', harness);
+    assert.equal(snapshot.harnesses[harness].reason, 'probe_failed', harness);
+  }
+  assert.equal(snapshot.harnesses.locked.state, 'unavailable');
+  assert.equal(snapshot.harnesses.locked.reason, 'not_authenticated');
+  assert.equal(validates(snapshot), true);
+});
+
+test('an answer outside the three closed lists is refused, and the diagnosis names the field', async () => {
+  // The written cache promises to validate against the snapshot schema. A
+  // misspelt reason or a source the enum does not carry would break that promise
+  // from inside — the run would report success and leave a document nothing can
+  // read back. This is the gate a typo in an adapter meets.
+  const stamp = isoStamp();
+  const breaches = {
+    'misspelt-reason': { state: 'unknown', reason: 'quota-unknown', message: 'x', checkedAt: stamp, source: 'probe' },
+    'unknown-source': { state: 'unknown', reason: 'quota_unknown', message: 'x', checkedAt: stamp, source: 'disk' },
+    'reason-missing': { state: 'exhausted', reason: null, message: 'x', checkedAt: stamp, source: 'probe' },
+    'stamp-unreadable': { state: 'available', reason: null, message: 'x', checkedAt: 'yesterday', source: 'probe' },
+    'nothing-at-all': null,
+  };
+  const host = sandboxHost();
+  const snapshot = await preflight({
+    host,
+    harnesses: [...Object.keys(breaches), 'fine'],
+    adapterFor: adapterMap({
+      ...Object.fromEntries(Object.entries(breaches).map(([k, v]) => [k, answeringStub(v)])),
+      // An answer that omits what the contract lets it omit is not a breach: the
+      // preflight stamps `checkedAt` and defaults `source`, as the contract says.
+      fine: answeringStub({ state: 'available', reason: null, message: 'ok' }),
+    }),
+    budgetMs: 500,
+  });
+
+  for (const harness of Object.keys(breaches)) {
+    assert.equal(snapshot.harnesses[harness].state, 'unknown', harness);
+    assert.equal(snapshot.harnesses[harness].reason, 'probe_failed', harness);
+  }
+  assert.match(snapshot.harnesses['misspelt-reason'].message, /reason "quota-unknown"/);
+  assert.match(snapshot.harnesses['unknown-source'].message, /source "disk"/);
+  assert.match(snapshot.harnesses['reason-missing'].message, /exhausted with no reason/);
+  assert.match(snapshot.harnesses['stamp-unreadable'].message, /checkedAt/);
+
+  assert.equal(snapshot.harnesses.fine.state, 'available');
+  assert.equal(snapshot.harnesses.fine.source, 'probe');
+  assert.notEqual(snapshot.harnesses.fine.checkedAt, NEVER_CHECKED);
+  assert.equal(validates(snapshot), true);
+  assert.equal(validates(readSnapshot(host)), true, 'and what reached the file validates too');
+});
+
+test('a value the adapter garbled is dropped, and only that value', () => {
+  // Dropped, never repaired: the resolver reads `usedPercent` as a measurement,
+  // and a number invented here would validate while saying what no harness said.
+  // Dropped by element, never by verdict: an adapter that garbles one row of an
+  // inventory still knows whether the account is logged in.
+  const projected = snapshotEntry({
+    state: 'available',
+    reason: null,
+    message: 'still a usable answer',
+    checkedAt: isoStamp(),
+    source: 'probe',
+    models: [
+      { model: 'kept', flags: ['a', 'a', ' ', 'b'] },
+      { model: '   ' }, { model: null }, { model: 42 }, {},
+    ],
+    windows: [
+      { id: 'kept', usedPercent: 40, lengthSec: 0 },
+      { id: '', usedPercent: 1 },
+      { id: 'nan', usedPercent: Number.NaN },
+      { id: 'missing' },
+      { id: 'over', usedPercent: 101 },
+      { id: 'under', usedPercent: -1 },
+      { id: 'unreadable-reset', usedPercent: 5, resetAt: 'soon' },
+    ],
+  });
+  assert.deepEqual(projected.models, [{ model: 'kept', rated: false, flags: ['a', 'b'] }]);
+  assert.deepEqual(projected.windows, [
+    { id: 'kept', usedPercent: 40 },
+    { id: 'unreadable-reset', usedPercent: 5, resetAt: null },
+  ]);
+  assert.equal(projected.message, 'still a usable answer', 'the verdict itself survives');
+  assert.equal(validates({ schemaVersion: 1, takenAt: isoStamp(), harnesses: { h: projected } }), true);
+});
+
+test('a stamp that cannot be read is expired, never fresh', () => {
+  // Both halves of the same rule. On the way in, an unreadable stamp becomes the
+  // epoch rather than "now" — "now" would hold the entry live for a whole TTL on
+  // a value nobody can date. On the way out, an entry the cache is already
+  // holding with such a stamp is not live at any moment.
+  const projected = snapshotEntry({ ...entry(), checkedAt: 'yesterday' });
+  assert.equal(projected.checkedAt, NEVER_CHECKED);
+  assert.equal(entryLive(projected, Date.now()), false);
+  assert.equal(entryLive(entry({ checkedAt: 'yesterday' }), Date.now()), false);
+  assert.equal(entryLive(entry({ checkedAt: NEVER_CHECKED }), Date.now()), false);
+  // A resetAt nobody can read is unknown, not "now": the sticky kind, cleared by
+  // hand, rather than an exhaustion that quietly expires a moment later.
+  const spent = snapshotEntry({ ...entry({ state: 'exhausted', reason: 'subscription_exhausted' }), resetAt: 'soon' });
+  assert.equal(spent.resetAt, null);
+  assert.equal(entryLive(spent, Date.now() + 10 * AUTH_TTL_MS), true);
+});
+
+// --- the cache file ----------------------------------------------------------
+
+test('the cache is 0600, is written whole, and carries nothing the adapter attached beside the contract', async () => {
+  const host = sandboxHost();
+  await preflight({
+    host,
+    harnesses: ['leaky', 'broken'],
+    adapterFor: adapterMap({ leaky: availableStub(), broken: throwingStub() }),
+    budgetMs: 500,
+  });
+
+  // The literal, not the constant: comparing the file to `CACHE_MODE` would pass
+  // for any value both moved to at once, which is exactly what a mutation probe
+  // does. The constant is pinned to the same literal on its own line.
+  const mode = statSync(host.cacheFile).mode & 0o777;
+  assert.equal(mode, 0o600, `cache mode is 0${mode.toString(8)}`);
+  assert.equal(CACHE_MODE, 0o600);
+
+  const text = readFileSync(host.cacheFile, 'utf8');
+  // Both stubs handed the token over, and by two different routes: one attached it
+  // to the verdict in undeclared fields, the other threw it inside an error.
+  assert.equal(text.includes(FAKE_TOKEN), false, 'the fake token reached the cache file');
+  assert.equal(text.includes('example.invalid'), false, 'an account address reached the cache file');
+  assert.equal(text.includes('rawOutput'), false, 'raw harness output reached the cache file');
+  assert.equal(validates(JSON.parse(text)), true);
+
+  // tmp+rename leaves nothing behind: a stray temp neighbour is a half-written
+  // snapshot the next reader would have to guess about.
+  const strays = readdirSync(path.dirname(host.cacheFile)).filter((n) => n.startsWith('.tmp-'));
+  assert.deepEqual(strays, []);
+});
+
+test('the projection is field-by-field: an undeclared field cannot reach the snapshot', () => {
+  const projected = snapshotEntry({
+    ...entry(),
+    token: FAKE_TOKEN,
+    models: [{ model: 'm', flags: ['x'], secret: FAKE_TOKEN }],
+    windows: [{ id: '5h', usedPercent: 10, lengthSec: 18000, secret: FAKE_TOKEN }],
+  });
+  assert.equal(JSON.stringify(projected).includes(FAKE_TOKEN), false);
+  assert.deepEqual(Object.keys(projected.models[0]).sort(), ['flags', 'model', 'rated']);
+  assert.deepEqual(Object.keys(projected.windows[0]).sort(), ['id', 'lengthSec', 'usedPercent']);
+});
+
+// --- the TTLs ----------------------------------------------------------------
+
+test('each TTL is the one the reference states', () => {
+  assert.equal(AUTH_TTL_MS, 60 * 60 * 1000);
+  assert.equal(WINDOW_TTL_MS, 60 * 1000);
+  assert.equal(TRANSIENT_TTL_MS, 5 * 60 * 1000);
+
+  const now = Date.parse('2026-09-05T12:00:00.000Z');
+  const ago = (ms) => isoStamp(now - ms);
+
+  // auth and model inventory — an hour
+  const auth = entry({ checkedAt: ago(AUTH_TTL_MS - 1000) });
+  assert.equal(entryLive(auth, now), true);
+  assert.equal(entryLive(entry({ checkedAt: ago(AUTH_TTL_MS + 1000) }), now), false);
+
+  // limit windows — a minute. An entry carrying any ages at that speed, even
+  // though its auth half would have held for an hour: an entry is only as fresh
+  // as the fastest fact inside it.
+  const windowed = { windows: [{ id: '5h', usedPercent: 40 }] };
+  assert.equal(entryLive(entry({ checkedAt: ago(WINDOW_TTL_MS - 1000), ...windowed }), now), true);
+  assert.equal(entryLive(entry({ checkedAt: ago(WINDOW_TTL_MS + 1000), ...windowed }), now), false);
+  assert.equal(entryLive(entry({ checkedAt: ago(WINDOW_TTL_MS + 1000) }), now), true,
+    'without windows the same age is still inside the auth TTL');
+
+  // a transient failure — five minutes
+  for (const reason of ['probe_timeout', 'probe_failed']) {
+    const fresh = entry({ state: 'unknown', reason, checkedAt: ago(TRANSIENT_TTL_MS - 1000) });
+    const old = entry({ state: 'unknown', reason, checkedAt: ago(TRANSIENT_TTL_MS + 1000) });
+    assert.equal(entryLive(fresh, now), true, reason);
+    assert.equal(entryLive(old, now), false, reason);
+  }
+
+  // a confirmed exhaustion — until its reset, whatever its TTL would have been
+  const resetting = entry({
+    state: 'exhausted', reason: 'subscription_exhausted',
+    checkedAt: ago(2 * AUTH_TTL_MS), resetAt: isoStamp(now + 60_000),
+  });
+  assert.equal(entryLive(resetting, now), true, 'held past every TTL while the reset is in the future');
+  assert.equal(entryLive(resetting, now + 120_000), false, 'and expired once the reset has passed');
+
+  // an exhaustion with no reset — until a person clears it
+  const sticky = entry({
+    state: 'exhausted', reason: 'manual_exhaustion', checkedAt: ago(2 * AUTH_TTL_MS), resetAt: null,
+  });
+  assert.equal(entryLive(sticky, now + 100 * 365 * 24 * 3600 * 1000), true);
+});
+
+test('a live entry is reused without a probe; an expired one is probed again', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  seed(host, { warm: entry({ message: 'from the cache' }), cold: entry({ checkedAt: isoStamp(Date.now() - AUTH_TTL_MS - 1000) }) });
+
+  const snapshot = await preflight({
+    host,
+    harnesses: ['warm', 'cold'],
+    adapterFor: adapterMap({ warm: availableStub(count), cold: availableStub(count) }),
+    budgetMs: 500,
+  });
+  assert.equal(count.probes, 1, 'only the expired harness was asked');
+  assert.equal(snapshot.harnesses.warm.source, 'cache');
+  assert.equal(snapshot.harnesses.warm.message, 'from the cache');
+  assert.equal(snapshot.harnesses.cold.source, 'probe');
+});
+
+// --- refresh and clear-exhausted ---------------------------------------------
+
+test('--refresh probes past a live entry, and does not clear an exhaustion with no reset', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  seed(host, {
+    warm: entry({ message: 'from the cache' }),
+    sticky: entry({ state: 'exhausted', reason: 'manual_exhaustion', message: 'spent, no reset', resetAt: null }),
+    resetting: entry({
+      state: 'exhausted', reason: 'subscription_exhausted', message: 'spent until noon',
+      resetAt: isoStamp(Date.now() + 3_600_000),
+    }),
+  });
+
+  const snapshot = await preflight({
+    host,
+    harnesses: ['warm', 'sticky', 'resetting'],
+    adapterFor: adapterMap({
+      warm: availableStub(count),
+      sticky: availableStub(count),
+      resetting: availableStub(count),
+    }),
+    refresh: true,
+    budgetMs: 500,
+  });
+
+  assert.equal(snapshot.harnesses.warm.source, 'probe', 'a live entry gives way to --refresh');
+  assert.equal(snapshot.harnesses.resetting.source, 'probe', 'so does an exhaustion that names its reset');
+  // The one exception: nothing but --clear-exhausted lifts a reset-less
+  // exhaustion, so that harness is not even asked.
+  assert.equal(snapshot.harnesses.sticky.state, 'exhausted');
+  assert.equal(snapshot.harnesses.sticky.reason, 'manual_exhaustion');
+  assert.equal(snapshot.harnesses.sticky.source, 'cache');
+  assert.equal(count.probes, 2);
+});
+
+test('clearExhausted drops a reset-less exhaustion and nothing else, and the harness is probed next time', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  seed(host, {
+    sticky: entry({ state: 'exhausted', reason: 'manual_exhaustion', resetAt: null }),
+    resetting: entry({
+      state: 'exhausted', reason: 'subscription_exhausted', resetAt: isoStamp(Date.now() + 3_600_000),
+    }),
+    fine: entry(),
+  });
+
+  assert.equal(clearExhausted(host, 'fine'), false, 'a harness that is not exhausted holds nothing to clear');
+  assert.equal(clearExhausted(host, 'resetting'), false, 'an exhaustion that names its reset expires by itself');
+  assert.equal(clearExhausted(host, 'nobody'), false, 'a harness the cache never heard of');
+  assert.equal(clearExhausted(host, 'sticky'), true);
+  assert.equal(readSnapshot(host).harnesses.sticky, undefined);
+  assert.equal(readSnapshot(host).harnesses.resetting.state, 'exhausted', 'the neighbours are untouched');
+
+  const snapshot = await preflight({
+    host, harnesses: ['sticky'], adapterFor: adapterMap({ sticky: availableStub(count) }), budgetMs: 500,
+  });
+  assert.equal(count.probes, 1);
+  assert.equal(snapshot.harnesses.sticky.state, 'available');
+});
+
+// --- the late-start hook -----------------------------------------------------
+
+test('a limit hit at start marks the harness exhausted: with a reset by evidence, without one until it is cleared', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  const resetAt = isoStamp(Date.now() + 3_600_000);
+
+  const known = markExhausted(host, 'metered', { resetAt });
+  assert.equal(known.state, 'exhausted');
+  assert.equal(known.reason, 'subscription_exhausted');
+  assert.equal(known.resetAt, resetAt);
+  assert.equal(known.source, 'probe', 'the harness itself said so — it was asked to start and answered');
+
+  const blind = markExhausted(host, 'quiet', {});
+  assert.equal(blind.reason, 'manual_exhaustion');
+  assert.equal(blind.resetAt, null);
+
+  assert.equal(validates(readSnapshot(host)), true);
+
+  // Both are held past a probe; only the reset-less one is held past --refresh.
+  const snapshot = await preflight({
+    host,
+    harnesses: ['metered', 'quiet'],
+    adapterFor: adapterMap({ metered: availableStub(count), quiet: availableStub(count) }),
+    refresh: true,
+    budgetMs: 500,
+  });
+  assert.equal(snapshot.harnesses.quiet.state, 'exhausted');
+  assert.equal(snapshot.harnesses.metered.state, 'available');
+  assert.equal(count.probes, 1);
+
+  assert.equal(clearExhausted(host, 'quiet'), true);
+  assert.equal(readSnapshot(host).harnesses.quiet, undefined);
+});
+
+// --- dry run -----------------------------------------------------------------
+
+test('a dry run without --refresh asks nothing and reports stale_cache on a cold cache', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  seed(host, { stale: entry({ checkedAt: isoStamp(Date.now() - AUTH_TTL_MS - 1000) }) });
+
+  const snapshot = await preflight({
+    host,
+    harnesses: ['stale', 'absent'],
+    adapterFor: adapterMap({ stale: availableStub(count), absent: availableStub(count) }),
+    dryRun: true,
+    budgetMs: 500,
+  });
+
+  assert.equal(count.probes, 0, 'a dry run without --refresh starts nothing');
+  for (const harness of ['stale', 'absent']) {
+    assert.equal(snapshot.harnesses[harness].state, 'unknown', harness);
+    assert.equal(snapshot.harnesses[harness].reason, 'stale_cache', harness);
+    assert.equal(snapshot.harnesses[harness].source, 'cache', harness);
+  }
+  // The age of what the cache held is reported, not replaced by "just now": a
+  // decision prints it next to its snapshot-stale warning. A harness the cache
+  // never held has no age at all and says so — the run stamp would have given it
+  // the freshest reading on the page.
+  assert.equal(snapshot.harnesses.absent.checkedAt, NEVER_CHECKED);
+  assert.notEqual(snapshot.harnesses.stale.checkedAt, NEVER_CHECKED);
+  assert.notEqual(snapshot.harnesses.stale.checkedAt, snapshot.harnesses.absent.checkedAt);
+  assert.equal(validates(snapshot), true);
+});
+
+test('a dry run writes nothing — in either mode', async () => {
+  const cold = sandboxHost();
+  await preflight({
+    host: cold,
+    harnesses: ['a'],
+    adapterFor: adapterMap({ a: availableStub() }),
+    dryRun: true,
+    refresh: true,
+    budgetMs: 500,
+  });
+  assert.equal(readSnapshot(cold), null, '--refresh --dry-run probes and still writes nothing');
+  assert.deepEqual(readdirSync(cold.dir), [], 'not even the directory is created');
+
+  const warm = sandboxHost();
+  seed(warm, { a: entry({ message: 'untouched' }) });
+  const before = readFileSync(warm.cacheFile, 'utf8');
+  await preflight({
+    host: warm,
+    harnesses: ['a', 'b'],
+    adapterFor: adapterMap({ a: availableStub(), b: availableStub() }),
+    dryRun: true,
+    refresh: true,
+    budgetMs: 500,
+  });
+  assert.equal(readFileSync(warm.cacheFile, 'utf8'), before, 'an existing cache is left byte for byte');
+
+  markExhausted(warm, 'c', { dryRun: true });
+  assert.equal(readFileSync(warm.cacheFile, 'utf8'), before, 'the late-start hook honours it too');
+  clearExhausted(warm, 'a', { dryRun: true });
+  assert.equal(readFileSync(warm.cacheFile, 'utf8'), before, 'and so does clearing an exhaustion');
+});
+
+// --- state transitions -------------------------------------------------------
+
+test('one harness through every state: available, exhausted at start, cleared, available again', async () => {
+  const host = sandboxHost();
+  const count = counter();
+  const states = [];
+  const ask = async (stub, options = {}) => {
+    const snapshot = await preflight({
+      host, harnesses: ['one'], adapterFor: adapterMap({ one: stub }), budgetMs: 500, ...options,
+    });
+    states.push([snapshot.harnesses.one.state, snapshot.harnesses.one.reason]);
+    return snapshot;
+  };
+
+  await ask(availableStub(count));
+  markExhausted(host, 'one', {});
+  await ask(availableStub(count), { refresh: true });
+  clearExhausted(host, 'one');
+  await ask(unauthenticatedStub(count), { refresh: true });
+  await ask(throwingStub(count), { refresh: true });
+
+  assert.deepEqual(states, [
+    ['available', null],
+    ['exhausted', 'manual_exhaustion'],
+    ['unavailable', 'not_authenticated'],
+    ['unknown', 'probe_failed'],
+  ]);
+  assert.equal(count.probes, 3, 'the exhausted round asked nothing');
+  assert.equal(validates(readSnapshot(host)), true);
+});
+
+// --- the file the host names --------------------------------------------------
+
+test('the cache lives where the host says and nowhere else', async () => {
+  // A hard-coded path is the failure this check exists for: the cache is
+  // account-scoped, the store home is per workspace, and a module that assembled
+  // one from the other would re-probe every harness for every checkout.
+  const host = sandboxHost();
+  const elsewhere = path.join(host.dir, 'named', 'by', 'the', 'host.json');
+  host.routingPaths = () => ({ cacheFile: elsewhere, overlays: [] });
+  await preflight({
+    host, harnesses: ['a'], adapterFor: adapterMap({ a: availableStub() }), budgetMs: 500,
+  });
+  assert.equal(validates(JSON.parse(readFileSync(elsewhere, 'utf8'))), true);
+  assert.equal(statSync(elsewhere).mode & 0o777, 0o600);
+});
+
+test('a cache that cannot be read is the same as no cache', () => {
+  // Not a crash and not an empty snapshot taken as fact: a half-written or
+  // hand-edited file must send the next run back to the adapters.
+  const host = sandboxHost();
+  assert.equal(readSnapshot(host), null, 'no file at all');
+
+  mkdirSync(path.dirname(host.cacheFile), { recursive: true });
+  for (const junk of ['', 'not json at all', '[]', '{"schemaVersion":1}']) {
+    writeFileSync(host.cacheFile, junk);
+    assert.equal(readSnapshot(host), null, JSON.stringify(junk));
+  }
+});

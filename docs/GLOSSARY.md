@@ -34,6 +34,9 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | availability snapshot | availability snapshot | What the local account can run right now, per harness: state `available`, `exhausted`, `unavailable` or `unknown` with a reason code and `checkedAt`. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
 | subscription limit | subscription limit | The remaining allowance of a harness account in its own windows. Unknown is a state, not zero: it is penalised, never blocking. | [adr-003-model-routing.md](adr/adr-003-model-routing.md) |
 | overlay | overlay | A JSON layer above the catalog that changes weights, ratings, allow/deny rules or PAYG policy. The host names the layers and their order. | `src/host.ts` (`routingPaths`) |
+| availability adapter | availability adapter | One method a driver declares, answering what the account can do with its harness before any session exists. A driver without one answers `unknown`. | `src/model-routing.ts` (`AvailabilityAdapter`) |
+| preflight | preflight | One run of every availability adapter, in parallel under a single total budget. Its result is the availability snapshot. | `lib/model-routing/preflight.js` |
+| availability cache | availability cache | The last availability snapshot on disk, at the file the host names, mode `0600`. Account-scoped, and every entry has its own TTL. | `lib/model-routing/cache.js` |
 
 ## Retired terms
 

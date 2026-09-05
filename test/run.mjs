@@ -174,6 +174,13 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // In `install.test.mjs` and `zone.test.mjs` `Date.now()` builds fixture
 // age, and there is no clock threshold at all: load does not move
 // those files.
+// `model-routing-preflight.test.mjs` has one threshold — the whole
+// preflight under a 200 ms budget must end inside 5 000 ms, the same
+// twenty-five-fold margin as `fresh.test.mjs` — and the stand-in
+// adapter it is measured against answers at 30 s, so a machine under
+// load moves the measurement nowhere near the verdict. Everything
+// else in the file is file contents, permissions and TTL arithmetic
+// against a fixed instant, which load does not touch.
 // `promptobus.test.mjs` left the group with its rationale: the races it
 // sat there for moved into the nested package, and in the file itself
 // `Date.now()` only builds fixture age — the same case as `install` and

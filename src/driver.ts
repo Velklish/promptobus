@@ -11,6 +11,7 @@
 // Constraint invisible from this file: no harness name is here and none can be —
 // the package set gate watches for that.
 import { addressOf, GateError } from './protocol.js';
+import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
 import { putParticipant } from './v1/store.js';
@@ -467,6 +468,16 @@ export interface Driver {
    * session in the same call.
    */
   stop?(ref: string): StopResult | Promise<StopResult>;
+  /**
+   * Availability adapter of this harness: what the ACCOUNT can do, asked before
+   * any session exists ([model-routing.ts](model-routing.ts)).
+   *
+   * Optional, and its absence is a state rather than an error: the registry
+   * answers `unknown` / `probe_failed` for a driver that declares none, and the
+   * resolver penalises `unknown` instead of blocking on it. That is what lets the
+   * preflight ship before the adapters do.
+   */
+  readonly availability?: AvailabilityAdapter;
 }
 
 /**
@@ -712,3 +723,8 @@ export function snapshotSessions(participants: ParticipantV1[] | null | undefine
   }
   return view;
 }
+
+// Availability adapter contract, declared next door ([model-routing.ts](model-routing.ts))
+// and re-exported here: a driver implements both, and an author of one harness
+// should not have to find out that its two halves live behind two imports.
+export * from './model-routing.js';

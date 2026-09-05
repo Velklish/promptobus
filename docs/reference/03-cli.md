@@ -24,7 +24,7 @@ The reviewer is read-only. A harness that cannot deny tools must fail before spa
 
 ## Model routing
 
-**Not implemented yet.** This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implement against; the running version has no `models` command and no `--strategy` flag, and `--help` does not name them. It is written here first so that the shapes, the flags and the codes are decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` have something to be golden against.
+**The command surface does not exist yet.** There is no `models` command, no `--strategy` and no `--allow-payg`, and `--help` names none of them; PB-21 adds them. What is below them does exist and is marked where it does — [Availability](#availability-the-adapter-the-preflight-and-the-cache) runs today. This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implement against, written here first so that the shapes, the flags and the codes are decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` have something to be golden against.
 
 ### Commands
 
@@ -63,7 +63,7 @@ The state of one harness in the availability snapshot, with its reason. `snake_c
 | `probe_timeout` | `unknown` | The adapter did not answer inside the 15 s preflight budget |
 | `probe_failed` | `unknown` | The adapter answered with an error that is not one of the above |
 | `quota_unknown` | `unknown` | Auth is fine; this harness exposes no stable source for the remaining limit |
-| `stale_cache` | `unknown` | The cache entry is absent or outlived its TTL and no probe ran — `--dry-run` without `--refresh`, or the preflight budget was spent |
+| `stale_cache` | `unknown` | The cache entry is absent or outlived its TTL and no probe ran — `--dry-run` without `--refresh`, or the preflight budget was spent. The two cases are told apart by the stamp, not by a second code: an entry that expired keeps its own `checkedAt`, one the cache never held carries the epoch — never checked. `source` stays `cache` for both, because the cache is what was consulted and the enum has no fourth value |
 | `manual_exhaustion` | `exhausted` | A person marked the harness exhausted; cleared only by `--clear-exhausted` |
 
 ### Exclusion, adjustment and warning codes
@@ -113,6 +113,85 @@ They are `PromptobusError` codes, and PB-21 registers them in `ERROR_CODES` (`sr
 | catalog | `models/catalog.json`, shipped with the package | `schemas/model-routing/catalog.schema.json` |
 | overlays | `host.routingPaths().overlays`, lowest precedence first | standalone: `user`, then `workspace` ([02-host](02-host.md)) |
 | availability cache | `host.routingPaths().cacheFile` | mode `0600`; no prompt, token, email or open account id |
+
+### Availability: the adapter, the preflight and the cache
+
+Implemented, and the only routing part that is: PB-14 shipped the harness-neutral half — the adapter contract, the budgeted preflight and the cache — while the three real adapters (PB-15…PB-17), the resolver (PB-18) and the flags (PB-21) are still ahead. Until an adapter exists for a harness, that harness answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks.
+
+**The adapter** is one method a driver declares as `availability` (`src/model-routing.ts`, `src/driver.ts`):
+
+```ts
+probe({ host, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdict>
+```
+
+`timeoutMs` is the whole preflight budget — adapters run in parallel, so each may use all of it. The verdict is one harness entry of the availability snapshot, so nothing translates between a probe and the file:
+
+| Field | Meaning |
+|---|---|
+| `state` | `available`, `exhausted`, `unavailable` or `unknown` |
+| `reason` | one of the nine codes above, `null` exactly when the state is `available` and nothing qualifies it |
+| `message` | a human diagnosis. **Never harness output verbatim**: this is the one free-text field that reaches disk |
+| `checkedAt` | ISO-8601 with milliseconds; the preflight stamps one if the adapter omits it |
+| `source` | `probe` — this run asked the harness; `cache` — a live entry was reused; `manual` — a person marked it. Nothing in v1 writes `manual`: it is reserved for a person marking a harness by hand, and no command does that yet |
+| `resetAt` | when an exhausted limit is known to reset; `null` means unknown |
+| `version` | the harness binary version, when the probe read it |
+| `models` | the inventory the account exposes. An adapter does not fill `rated` — it knows the harness, not the catalog |
+| `windows` | normalised limit windows. A harness that exposes none reports none; the remaining limit is then unknown, never modelled |
+
+An adapter that **throws** is `unknown` / `probe_failed`, and the thrown text is discarded rather than written: an adapter wrapping harness output in an error would otherwise put it on disk. An adapter with something to say answers with a verdict.
+
+An adapter that **answers outside the contract** is `probe_failed` too, and the diagnosis names the field. All three closed lists are checked — the state, the reason and the source — plus a `checkedAt` that cannot be read; a reason is required for every state but `available`, which is the only one none of the nine codes accompanies. The written cache promises to validate against its schema, and a misspelt `quota-unknown` would break that promise from inside: the command would report success and leave a document nothing can read back. The offending value is quoted back only when it has the shape of a code, so the message can show a typo without becoming a second route for harness output.
+
+Inside `models` and `windows` the check is by value and it **drops the element, not the verdict**: a blank model name, a `usedPercent` outside 0…100, a `lengthSec` of zero, a repeated flag. An adapter that garbles one row of an inventory still knows whether the account is logged in, and nothing here repairs a value — a number invented by the mechanism would validate while saying what no harness said. A `resetAt` that cannot be read becomes `null`, the schema's own word for unknown.
+
+**The preflight** (`lib/model-routing/preflight.js`) runs every adapter at once under one total budget of 15 s (`PREFLIGHT_BUDGET_MS`). A harness that has not answered by then is `unknown` / `probe_timeout` and does not hold the command: the person waits once for the slowest harness, never three times in a row. The result is the availability snapshot, valid against `schemas/model-routing/snapshot.schema.json`.
+
+What is asked, and what is taken from the cache:
+
+| Run | Probed | Taken from the cache |
+|---|---|---|
+| plain | harnesses with no live entry | every live entry |
+| `--refresh` | everything except a reset-less exhaustion | a reset-less exhaustion, which no probe can lift |
+| `--dry-run` | nothing | every live entry; the rest is `unknown` / `stale_cache` |
+| `--refresh --dry-run` | as `--refresh` | as `--refresh` — and nothing is written |
+
+**The cache** (`lib/model-routing/cache.js`) sits at `host.routingPaths().cacheFile`, mode `0600`, written as a temporary neighbour and renamed over, with its directory created as needed. Entries are merged, never replaced wholesale: a late-start mark writes one harness without re-probing the others.
+
+TTLs, as a cascade — the first line that matches an entry wins:
+
+| Entry | Live until |
+|---|---|
+| `exhausted` with a `resetAt` | that reset |
+| `exhausted` with no `resetAt` | `--clear-exhausted`, and nothing else. `--refresh` does not lift it, and such a harness is not even probed |
+| `probe_timeout` or `probe_failed` | `checkedAt` + 5 min |
+| carries `windows` | `checkedAt` + 60 s — an entry is only as fresh as the fastest fact inside it |
+| anything else | `checkedAt` + 1 h — auth and model inventory |
+
+The file holds **no prompt, no token, no email and no open account id**. The mechanism is not a filter but the shape: a verdict is projected field by field onto the closed snapshot schema before it is written, so anything an adapter attached beside the declared fields never travels. v1 assumes one locally authenticated account per harness, so the file carries no account key at all; the schema keeps a `fingerprint` slot for the day that changes, and the rule that comes with it is that the key must be opaque and one-way.
+
+Two library entry points have no flag of their own yet. `clearExhausted(host, harness)` is the `--clear-exhausted` half: it drops a reset-less exhaustion and reports whether there was one, and it leaves an exhaustion that names its reset alone. `markExhausted(host, harness, { resetAt })` is the late-start hook — a driver whose session failed to start on a limit calls it, and the harness is `subscription_exhausted` with that reset, or `manual_exhaustion` without one. Its `source` is `probe`, not `manual`, and the two words are about different things: the harness itself said so — it was asked to start and answered — while `manual` means a person typed it, which nothing in v1 does. The reason code is what carries "only a person clears this"; the source carries who learned it. The mark is per harness, not per tuple: the snapshot has no tuple dimension, and a limit is an account fact. A `dryRun` option makes every one of these writes a no-op.
+
+## Status, done, dismiss, history, prune
+
+`status` lists active tasks, participants, unread counts, and warden health.
+
+`done` closes the task. The mailbox owner may call it. Sessions the bus started are stopped unless `--keep-sessions`. Journals of tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed on that last call.
+
+`dismiss <address>` drops a finished participant from watch.
+
+`history` prints **read** mail, oldest first. Default limit 50. `--all` drops the limit. It does not mark mail read.
+
+`prune` previews deletions. `--yes` deletes. `--older-than <days>` changes the age.
+
+## Guard and warden
+
+`guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
+
+`warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
+
+## MCP
+
+`promptobus mcp` serves stdio JSON-RPC. It must not write logs to stdout. The bus server name is `promptobus`.
 
 ### Catalog and overlays
 
