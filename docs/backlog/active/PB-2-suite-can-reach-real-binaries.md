@@ -1,9 +1,9 @@
 # PB-2 · The suite can execute a real user binary when a stub name is missed
 
-- **Order:** 170
 - **Scope:** [reference/03](../../reference/03-cli.md)
 - **Created:** 2026-09-04
 - **Dependencies:** none
+- **Taken:** 2026-09-05
 
 ## Context
 
