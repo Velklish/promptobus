@@ -23,6 +23,7 @@ The user-facing half of the plan: `spawn` and `review` accept a strategy and let
 
 - `resolve({ role, strategy, constraints, policy, snapshot, liveParticipants, now })` and `render(decision)` in `lib/model-routing/{resolver,render}.js` are pure; `policy` is the whole answer of `loadCatalog()`, `constraints` is `{ harness, model, effort, allowPayg }`, `liveParticipants` is `[{ harness, model, role }]`. `resolve` throws `GateError` with codes `role-unknown` / `strategy-unknown` — register them in `ERROR_CODES` with the routing codes. `chosen: null` is the `candidates-empty` case and the document is still complete for the diagnostics printed before refusing.
 - `--allow-payg` is read from both `policy.policy.payg.allow` and `constraints.allowPayg`; tuples of a harness the snapshot does not carry are filtered, not listed as excluded (the snapshot's harness set is the declaration).
+- The command validates explicit constraints BEFORE calling `resolve`: a `--harness` the workspace never declared (not in `host.declaredTools()`) raises `harness-unknown`, a value outside the closed lists `constraint-unknown` — `resolve` itself silently drops tuples of a harness absent from the snapshot and would report an empty candidate list instead.
 - Warning order in a decision: merge-copied first, then snapshot-derived per harness in name order, then `reviewer-floor-not-met`; `live-participant` is one adjustment row carrying the capped total.
 
 ## Notes from PB-14 (2026-09-05)
