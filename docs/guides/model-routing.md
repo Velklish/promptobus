@@ -19,6 +19,8 @@ The host names the overlays and their order — `routingPaths().overlays`, lowes
 
 A consumer that ships its own policy inserts a layer of its own between them; that is a host-side choice and needs no change here. **A missing overlay file is normal**, not an error: the host names paths, it does not promise they exist.
 
+The host names a third routing file beside the two overlays, and it is not a layer: the availability cache, `~/.promptobus/model-routing/cache.json` under standalone, mode `0600`. Nothing in it is edited by hand — it holds what the harnesses last answered, and the one command that changes it deliberately is `promptobus models --clear-exhausted <harness>`. Both overlays and the cache sit under the home directory rather than the workspace because they follow the **account** the harness binaries are logged into, not one checkout ([reference/02-host.md](../reference/02-host.md) § Model-routing paths).
+
 ## What a layer may change, and how it combines
 
 Three combining rules, and they differ on purpose.
@@ -61,6 +63,8 @@ claude -p --model claude-sonnet-5 --max-turns 1 'reply with the single word ok' 
 That is the check to repeat when a row is added: one minimal turn per id, and the answer recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it.
 
 The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
+
+**Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–5 judgement of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null` — no price could be cited from a source a maintainer could name, and an invented number would score. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent.
 
 **An unrated model is not a tuple.** The catalog holds only what the maintainers rated from a source they named: each rating carries `source` and `evidence`, and a rating without one is a hypothesis that stays out. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
 

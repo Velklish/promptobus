@@ -46,6 +46,19 @@ The reviewer is read-only. A harness that cannot deny tools must fail before spa
 
 The whole surface runs: `models`, `--strategy` and `--allow-payg` on `spawn` and `review`, and the libraries under them — [Availability](#availability-the-adapter-the-preflight-and-the-cache), [Catalog and overlays](#catalog-and-overlays) and the [Resolver](#resolver). This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implemented against, written here before any of it so that the shapes, the flags and the codes were decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` had something to be golden against. It is still written contract-first: what a reader needs is what the surface promises, not the order the promises were kept in.
 
+**Six things this section keeps apart.** They are six different facts about one run, they are decided by different parties, and collapsing any two of them is how a routed pick stops being explainable.
+
+| The fact | Where it is stated | Whose it is | Not the same as |
+|---|---|---|---|
+| rating of a tuple | `ratings` in `models/catalog.json` ([guides/model-routing.md](../guides/model-routing.md)) | the maintainers, from a named source | anything this account measured |
+| runtime availability | the availability snapshot: `available`, `exhausted`, `unavailable`, `unknown` ([Availability](#availability-the-adapter-the-preflight-and-the-cache)) | the local account, as its harness answers | a rating, and never a permanent property |
+| remaining subscription limit | `windows[].usedPercent`, scored as `remaining` ([Resolver](#resolver)) | the harness account, in its own windows | zero — unknown is a state, penalised, never blocking |
+| money cost | `prices` and `billing` of a catalog row; the gate is `payg-not-allowed` / `--allow-payg` | the plan the account is on | `quotaCost`, which rates subscription spend and carries no money |
+| an explicit constraint | `--harness`, `--model`, `--effort` | the person who typed it | a preference — a named value is never replaced |
+| the two decisions | the **strategy** is chosen by the agent from the task (`skills/orchestrate/SKILL.md` § Model routing); the **tuple** is chosen by the CLI ([Resolver](#resolver)) | one each | each other — neither party decides the other's half |
+
+**Maintainer note: this section is read as data.** `test/model-routing.test.mjs` (`docSection`) slices this file at four of the `###` headings below, by exact text — `Reason codes`, `Exclusion, adjustment and warning codes`, `Error codes`, `Files` — and reads every table row inside a slice as a declared code, comparing the result against the schema enums in both directions. Three rules follow. A `###` heading added between those four, or one of them renamed, feeds its own tables into a code list: **new subsections go after the `Files` heading**, where every one added since PB-14 has gone. Prose above them must not spell a sliced heading with its `###` prefix, or the slice starts at the mention instead of the heading — which is why this paragraph names them without one. And the failure is loud rather than silent, `a code table came back empty — the headings moved`, but it still costs a confused run to read.
+
 ### Commands
 
 ```text
@@ -91,7 +104,7 @@ Eight codes, and ADR-003 named a ninth. `model_not_available` was **retired befo
 | `probe_failed` | `unknown` | The adapter answered with an error that is not one of the above |
 | `quota_unknown` | `unknown` | Auth is fine; this harness exposes no stable source for the remaining limit |
 | `stale_cache` | `unknown` | The cache entry is absent or outlived its TTL and no probe ran — `--dry-run` without `--refresh`, or the preflight budget was spent. The two cases are told apart by the stamp, not by a second code: an entry that expired keeps its own `checkedAt`, one the cache never held carries the epoch — never checked. `source` stays `cache` for both, because the cache is what was consulted and the enum has no fourth value |
-| `manual_exhaustion` | `exhausted` | A person marked the harness exhausted; cleared only by `--clear-exhausted` |
+| `manual_exhaustion` | `exhausted` | A limit the machine observed and no reset time is known for. `markExhausted` writes it when a lift was refused on a spent limit and the harness named no reset; nothing else writes it, and **no person marks a harness in v1**. The code says who may clear it — only `--clear-exhausted` — not who wrote it |
 
 ### Exclusion, adjustment and warning codes
 
@@ -162,7 +175,7 @@ probe({ host, toolBin, timeoutMs, refresh }): ProbeVerdict | Promise<ProbeVerdic
 | `reason` | one of the eight codes above, `null` exactly when the state is `available` and nothing qualifies it |
 | `message` | a human diagnosis. **Never harness output verbatim**: this is the one free-text field that reaches disk |
 | `checkedAt` | ISO-8601 with milliseconds; the preflight stamps one if the adapter omits it |
-| `source` | `probe` — this run asked the harness; `cache` — a live entry was reused; `manual` — a person marked it. Nothing in v1 writes `manual`: it is reserved for a person marking a harness by hand, and no command does that yet |
+| `source` | `probe` — this run asked the harness; `cache` — a live entry was reused; `manual` — a person marked it. **Nothing in v1 writes `manual`**, the late-start mark included: it is written under `probe`, because the harness itself said so when it refused to start. The slot is reserved for a person typing it, which no command offers. Do not read `manual_exhaustion` as this value — the reason says who may clear the entry, the source says who learned it |
 | `resetAt` | when an exhausted limit is known to reset; `null` means unknown |
 | `version` | the harness binary version, when the probe read it |
 | `models` | the inventory the account exposes. An adapter does not fill `rated` — it knows the harness, not the catalog |

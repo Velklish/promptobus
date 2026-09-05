@@ -10,6 +10,7 @@
     "lib",
     "models",
     "schemas",
+    "skills",
     "templates",
     "LICENSE",
     "README.md",

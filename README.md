@@ -29,7 +29,7 @@ npm run build
 node bin/promptobus.js --version
 ```
 
-The command prints `promptobus 0.1.0`. After a global or `npx` install the same binary is `promptobus`.
+The command prints `promptobus` and the version in `package.json`. After a global or `npx` install the same binary is `promptobus`.
 
 As a library:
 
@@ -105,14 +105,42 @@ promptobus review ./my-repo --title "Review the change"
 
 The path is required. `--title` is required to open a new review task. Repeat with `--task <id>` to send a new diff to the same reviewer.
 
-Let the CLI pick the model:
+## Model routing
+
+Name an intent — a strategy — instead of a model, and the CLI picks the `role + harness + model + effort` tuple for you: the rated catalog it ships, intersected with what your accounts can actually run right now, with every candidate and every reason printed.
 
 ```bash
 promptobus models --strategy balanced          # what the resolver would pick, and why
 promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
 ```
 
-`models` reads the availability cache and asks no harness anything; `--refresh` probes. On `spawn` and `review`, `--strategy` hands the resolver an intent and `--harness`, `--model` and `--effort` become constraints on its choice rather than values. Without `--strategy` nothing is routed. See [Model routing](docs/reference/03-cli.md#model-routing).
+Real output on a machine with all three harnesses logged in, abridged at the `…` lines — nineteen candidates and the account's unrated models follow in the same shape:
+
+```text
+$ promptobus models --refresh
+strategy: balanced · role: worker
+snapshot: 2026-09-05T16:32:23.972Z · 0 s old · source probe
+overlays: user (absent) · workspace (absent)
+chosen: codex-luna-medium · codex / gpt-5.6-luna medium · score 73.10
+
+candidates:
+  * codex-luna-medium             codex / gpt-5.6-luna medium            available     73.10
+    codex-sol-medium              codex / gpt-5.6-sol medium             available     71.85
+    codex-mini-medium             codex / gpt-5.4-mini medium            available     63.10
+    claude-sonnet-medium          claude / claude-sonnet-5 medium        unknown       62.50  (-10 unknown-availability)
+    …
+
+runtime models — not rated, never chosen automatically:
+    claude / opus
+    …
+
+warnings:
+  ! unknown-remaining: claude exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points
+```
+
+The four strategies are `quality`, `balanced`, `speed` and `economy`. `models` reads the availability cache and asks no harness anything — `--refresh` is the only flag that probes, and therefore the only one that writes a cache entry. On `spawn` and `review`, `--strategy` hands the resolver an intent, while `--harness`, `--model` and `--effort` stay **constraints** on its choice and are never replaced by one. Without `--strategy` nothing is routed and the command takes its usual path.
+
+`models validate` checks the shipped catalog and every overlay layer; `models --clear-exhausted <harness>` lifts an exhaustion the cache is holding with no known reset. The command surface is [Model routing](docs/reference/03-cli.md#model-routing); the catalog, the layers and the overlay file to copy are in [docs/guides/model-routing.md](docs/guides/model-routing.md).
 
 ## Commands
 
@@ -148,6 +176,7 @@ import { planPromptobusHooks } from 'promptobus/hooks';
 
 - [Install](docs/guides/install.md)
 - [Hooks, trust, troubleshooting](docs/guides/hooks-and-trust.md)
+- [Model routing: the catalog and overlays](docs/guides/model-routing.md)
 - [Contribute (backslop)](docs/guides/contributing.md)
 - [Host contract](docs/adr/adr-002-standalone-host-contract.md)
 - [Glossary](docs/GLOSSARY.md)

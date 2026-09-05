@@ -51,6 +51,15 @@ interface HostFile {
   rules?: string[];
   mcp?: Record<string, unknown>;
   skills?: string;
+  /**
+   * Argv of the command that restores the process skills a repository does not
+   * keep in git, never a shell line. Read by `spawn` from the SPAWNED
+   * REPOSITORY's own `promptobus.json` by path — the standalone host does not
+   * answer it for the workspace, and no host method exists for it, because a
+   * generator belongs to the repository and a host describes a workspace
+   * (`GENERATOR_FIELD` in `lib/spawn.js`; docs/reference/03-cli.md § Spawn).
+   */
+  generate?: string[];
 }
 
 function readConfig(file: string): HostFile {

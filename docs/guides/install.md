@@ -14,7 +14,7 @@ npm run build
 node bin/promptobus.js --version
 ```
 
-The command must print `promptobus 0.1.0`.
+It prints `promptobus` and the version in `package.json`. No version is written out here: a number in a guide drifts at every release with nothing to catch it.
 
 As a dependency:
 
@@ -120,4 +120,4 @@ Review: Codex requires /hooks; project hooks also depend on workspace trust.
 
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).
 
-This worktree's `promptobus help` does not yet list `install`. The command form above is the public installer. It lands with the hook track. After merge, `promptobus help` must show `install` and `uninstall`.
+`promptobus help` lists `install` and `uninstall` with the flags above; it is the same list this guide describes.

@@ -29,7 +29,7 @@ npm run build
 node bin/promptobus.js --version
 ```
 
-Команда печатает `promptobus 0.1.0`. После глобальной установки или `npx` тот же бинарь — `promptobus`.
+Команда печатает `promptobus` и версию из `package.json`. После глобальной установки или `npx` тот же бинарь — `promptobus`.
 
 Как библиотека:
 
@@ -105,14 +105,42 @@ promptobus review ./my-repo --title "Review the change"
 
 Путь обязателен. `--title` обязателен, чтобы открыть новую задачу ревью. Повтор с `--task <id>` шлёт новый дифф на тот же адрес.
 
-Пусть CLI сам выберет модель:
+## Model routing
+
+Назовите намерение — стратегию — вместо модели, и CLI сам подберёт кортеж `role + harness + model + effort`: рейтинговый каталог из пакета, пересечённый с тем, что аккаунты действительно могут запустить прямо сейчас, с печатью всех кандидатов и причин.
 
 ```bash
 promptobus models --strategy balanced          # что выбрал бы резолвер и почему
 promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
 ```
 
-`models` читает кэш доступности и ни о чём не спрашивает harness; `--refresh` опрашивает. У `spawn` и `review` `--strategy` отдаёт резолверу намерение, а `--harness`, `--model` и `--effort` становятся ограничениями его выбора, а не значениями. Без `--strategy` маршрутизации нет. См. [Model routing](docs/reference/03-cli.md#model-routing).
+Реальный вывод на машине, где залогинены все три harness; сокращено по строкам `…` — дальше идут остальные из девятнадцати кандидатов и модели аккаунта без рейтинга:
+
+```text
+$ promptobus models --refresh
+strategy: balanced · role: worker
+snapshot: 2026-09-05T16:32:23.972Z · 0 s old · source probe
+overlays: user (absent) · workspace (absent)
+chosen: codex-luna-medium · codex / gpt-5.6-luna medium · score 73.10
+
+candidates:
+  * codex-luna-medium             codex / gpt-5.6-luna medium            available     73.10
+    codex-sol-medium              codex / gpt-5.6-sol medium             available     71.85
+    codex-mini-medium             codex / gpt-5.4-mini medium            available     63.10
+    claude-sonnet-medium          claude / claude-sonnet-5 medium        unknown       62.50  (-10 unknown-availability)
+    …
+
+runtime models — not rated, never chosen automatically:
+    claude / opus
+    …
+
+warnings:
+  ! unknown-remaining: claude exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points
+```
+
+Стратегии четыре: `quality`, `balanced`, `speed`, `economy`. `models` читает кэш доступности и ни о чём не спрашивает harness — опрашивает только `--refresh`, и он же единственный, кто пишет запись в кэш. У `spawn` и `review` `--strategy` отдаёт резолверу намерение, а `--harness`, `--model` и `--effort` остаются **ограничениями** его выбора, и подменить названное значение нельзя. Без `--strategy` маршрутизации нет, команда идёт обычным путём.
+
+`models validate` проверяет каталог из пакета и каждый слой overlay; `models --clear-exhausted <harness>` снимает отметку об исчерпании, у которой нет известного времени сброса. Поверхность команд — [Model routing](docs/reference/03-cli.md#model-routing); каталог, слои и файл overlay для копирования — [docs/guides/model-routing.md](docs/guides/model-routing.md).
 
 ## Команды
 
@@ -148,6 +176,7 @@ import { planPromptobusHooks } from 'promptobus/hooks';
 
 - [Установка](docs/guides/install.md)
 - [Hooks, доверие, разбор проблем](docs/guides/hooks-and-trust.md)
+- [Model routing: каталог и overlays](docs/guides/model-routing.md)
 - [Как контрибутить (backslop)](docs/guides/contributing.md)
 - [Контракт host](docs/adr/adr-002-standalone-host-contract.md)
 - [Глоссарий](docs/GLOSSARY.md)
