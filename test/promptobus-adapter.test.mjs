@@ -400,7 +400,11 @@ const DRIVER_OWN = new Set([
 
 // Модули, которых снаружи не касаются вовсе: сами driver'ы и их реестры сессий. Карта
 // (`drivers.js`) в перечень не входит — она и есть дверь, и её импортируют все.
-const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold|adapter-codex)\.js$/;
+// `adapter-claude` is here and NOT in `DRIVER_OWN` above: the Claude availability
+// adapter imports no driver module at all, so it needs no exemption — but the
+// driver's own dictionary reaches it as an argument, and nothing else in the
+// mechanism has business calling a harness probe directly.
+const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|adapter-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold|adapter-codex)\.js$/;
 
 // Спецификатор модуля в статическом импорте, реэкспорте и динамическом `import(...)`.
 // Прозы это не касается: перед кавычкой обязано стоять `from` или `import`.

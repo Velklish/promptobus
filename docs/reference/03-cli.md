@@ -116,7 +116,7 @@ They are `PromptobusError` codes, and PB-21 registers them in `ERROR_CODES` (`sr
 
 ### Availability: the adapter, the preflight and the cache
 
-Implemented, and the only routing part that is: PB-14 shipped the harness-neutral half — the adapter contract, the budgeted preflight and the cache — while the three real adapters (PB-15…PB-17), the resolver (PB-18) and the flags (PB-21) are still ahead. Until an adapter exists for a harness, that harness answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks.
+The harness-neutral half is implemented: the adapter contract, the budgeted preflight and the cache. Adapters land one harness at a time, and each one that exists has its own subsection below; a harness with no adapter yet answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks. The resolver that reads all this, and the flags that print it, are still ahead.
 
 **The adapter** is one method a driver declares as `availability` (`src/model-routing.ts`, `src/driver.ts`):
 
@@ -188,6 +188,49 @@ Three library entry points, all in `lib/model-routing/`:
 `validate` covers the shape of every layer, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, weights that do not sum to 100, references to a tuple, model, harness or effort that does not exist, and a name that is both allowed and denied. Its warnings are `stale-rating` — a rating older than `STALE_RATING_DAYS` (90), never an exclusion — and two of its own, `priority-duplicate` and `priority-not-canonical`, which check the canonical-priority convention the guide documents and never reach a decision.
 
 A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
+
+### Claude Code: what its adapter asks
+
+Implemented (PB-15). The adapter is declared as `availability` on the Claude Code driver and lives in `lib/model-routing/adapter-claude.js`. One probe is **two reads and no turn**: the binary from the host, then one auth check.
+
+| Fact | Where it comes from |
+|---|---|
+| binary, version | `host.resolveToolBin('claude')` — the adapter never searches `PATH` itself |
+| auth | `claude auth status --json` |
+| models | the driver's own alias set plus its `DEFAULT_MODEL` (`lib/driver-claude.js`) |
+| remaining limit | nowhere. There is none |
+
+**Nothing runs `claude` with a bare word.** An unrecognised word after the binary name is not an unknown subcommand — it is taken as a PROMPT and starts a turn on the person's plan. So the argv is a subcommand `claude --help` lists with flags that subcommand's own `--help` lists, and the suite pins it whole.
+
+**The inventory is not a listing.** On `claude` 2.1.251 the binary publishes no model list at all: no `models` subcommand and no `--list-models` (`claude --list-models` → `error: unknown option`, exit 1). The only names it publishes are the `--model` aliases in its help text, so the inventory is the driver's dictionary — `MODEL_ALIASES` together with `DEFAULT_MODEL` — handed to the adapter by the driver rather than imported back out of it, because a module of the mechanism reaching into a driver is the crossing the adapter-boundary gate refuses. **This adapter imports no driver module at all** — the dependency runs one way, `driver-claude.js` → `adapter-claude.js` — so it passes that gate on its own and is deliberately absent from the gate's `DRIVER_OWN` exemption list: an exemption a file does not need would hide the crossing the list exists to catch. It is in `DRIVER_PRIVATE` instead, which is the other half of the same rule — the driver may import it, and nothing else in `lib/**` may. A name in that list the catalog does not rate is not a mistake: it becomes an unrated runtime row.
+
+**`claude auth status --json`** is the whole auth check, and it is the one non-interactive check the binary offers today (measured 2026-09-05 on 2.1.251: three runs at 0.86 / 1.17 / 1.36 s, exit 0, one JSON object). Its keys are `loggedIn`, `authMethod`, `apiProvider`, `analyticsDisabled`, `projectsDirectory`, `email`, `orgId`, `orgName`, `subscriptionType`. **Exactly one of them is read** — the `loggedIn` boolean. Three of the rest are an email address and an open account id, which the cache promises never to hold, so they stop at the adapter and the suite greps the written snapshot for them.
+
+The verdict, by what was found:
+
+| Found | Verdict |
+|---|---|
+| no binary | `unavailable` / `binary_missing` |
+| `loggedIn: false` | `unavailable` / `not_authenticated` |
+| `loggedIn: true` | `unknown` / `quota_unknown`, with `version` and `models` |
+| an answer the adapter cannot read — an older build with no `auth` subcommand, a moved shape, empty output | `unknown` / `quota_unknown`, and the message says auth could not be verified |
+| the check was killed by the adapter's own deadline, or `ETIMEDOUT` | `unknown` / `probe_timeout` |
+| the check was killed by a signal the adapter did not send | `unknown` / `probe_failed`, naming the signal |
+| the check would not run at all | `unknown` / `probe_failed` |
+
+**`available` is a state this harness cannot reach in v1, and that is deliberate.** The word means auth, model *and* limit confirmed; Claude Code exposes no stable, documented source for the remaining subscription limit, and an adapter that cannot obtain one answers `unknown` rather than modelling a value. So a healthy logged-in account is `unknown` / `quota_unknown` with no `windows` at all, which the resolver penalises with `unknown-availability` (−10, the limit counted as a neutral 50 %) and reports as the `unknown-remaining` warning — never a block. An unreadable answer is not `not_authenticated`: a guessed logout would take every tuple of the harness out of routing on no evidence.
+
+`timeoutMs` is the whole preflight budget. The adapter takes its deadline as the first thing it does, and what is left of it after the host resolved the binary is what the auth check is given: the workspace host runs `--version` inside `resolveToolBin` with a ceiling of its own, and handing the full budget on afterwards would let one adapter outlive the run.
+
+**The auth check is spawned asynchronously**, and that is a requirement rather than a style. The preflight holds one budget for every adapter as a timer racing their promises, so an adapter that blocked the event loop would stop that timer from firing while it worked, and each blocking adapter would get the whole budget again after its neighbours — the ceiling of the run would become their sum. The adapter kills its own child when its deadline passes, and only that kill is `probe_timeout`: a signal it did not send is `probe_failed` naming the signal, because a harness that dies on every probe must not hide behind a code that reads as "the machine was busy".
+
+**The late-start hook.** A lift that fails on a spent limit is classified by the driver's own `LIMIT_DETAIL` pattern — the same one that reads a live session's stall, because a limit refusal reads alike whether the session wrote it after a turn or the binary wrote it instead of starting. Which half of that pattern matched chooses the code: the harness saying the limit **resets** makes the exhaustion the subscription's, `subscription_exhausted`; a refusal that explains nothing is `manual_exhaustion`.
+
+**Both are written with `resetAt: null`, and both are therefore sticky.** No reset time is parsed out of that text — the harness names one in a person's words and a person's timezone ("resets 3pm"), and a timestamp read out of that would be invented rather than measured. An exhaustion that expires at a made-up moment is worse than one that waits for a person: it lifts itself, and nobody learns the account was out. So `--clear-exhausted` is the only door for both, which is what the reason codes above mean by it, and `subscription_exhausted` here names the limit's owner rather than a known reset.
+
+The mark is written through `writeEntries` rather than `markExhausted`, because that helper derives its reason from `resetAt` alone and so cannot say "the subscription named a reset this adapter refuses to parse"; both are the cache's own doors and both merge one harness into the stored snapshot.
+
+**The lift refusal names the mark.** Nothing reads the availability cache yet and no flag clears it yet, so a refusal that stayed silent would leave a person with a state they never saw. The hook returns a line, and the lift appends it: the harness, the cache file it was written to, that neither time nor a later probe lifts it, and the two ways out — `promptobus models --clear-exhausted claude` once that command exists, or deleting the entry by hand. The hook is handed down to the launcher rather than called by a caller catching the refusal: the lift ends the process, and past that line there is nobody left to classify anything. A cache write that fails adds no line and is otherwise swallowed — the person is about to read why their participant did not start, and that diagnosis must not be lost to it.
 
 ### Codex availability
 

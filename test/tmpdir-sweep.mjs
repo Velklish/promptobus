@@ -83,7 +83,11 @@ export { sweptLine };
 // The package does not need its own start point for this: leftovers
 // of its hand run will leave on the next repository `npm test`.
 export const SUITE_PREFIXES = [
-  'promptobus-activation-', 'promptobus-adapter-', 'promptobus-ambient-', 'promptobus-archive-',
+  // The availability-adapter suites: one prefix covers all three, because a
+  // per-harness one would have to be added again for every driver that gains an
+  // adapter, and the sweep does not care which harness left the directory.
+  'promptobus-adapter-',
+  'promptobus-activation-', 'promptobus-ambient-', 'promptobus-archive-',
   'promptobus-base-', 'promptobus-bgsess-', 'promptobus-bootstrap-', 'promptobus-bushook-',
   'promptobus-check-', 'promptobus-cli-flags-', 'promptobus-codex-', 'promptobus-console-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-doctor-', 'promptobus-driver-',
