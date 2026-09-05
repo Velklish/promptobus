@@ -16,6 +16,10 @@ Cursor's `agent` CLI has `agent status` (auth) and `agent models` (inventory wit
 - Remaining limit → `unknown` / `quota_unknown`.
 - Late-start quota errors from the driver's start path update the cache (PB-14 hook).
 
+## Evidence from the catalog track's inventory (2026-09-05, `cursor-agent` 2026.09.02-c22c1a3)
+
+- `cursor-agent status` → `✓ Logged in as <account>`, exit 0. `cursor-agent models` (also `--list-models`) → exit 0, plain text `<id> - <Display Name>` lines, ANSI-coloured, first line `Available models`, `auto - Auto (default)` first; about 210 concrete ids with effort as a flat suffix (`claude-opus-5-thinking-max`, `cursor-grok-4.6-xhigh-fast`). Strip ANSI before parsing; no descriptions.
+
 ## Out of scope
 
 - Liveness of a running Cursor participant — PB-7.

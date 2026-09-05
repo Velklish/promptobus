@@ -17,6 +17,11 @@ The Claude Code driver (`lib/driver-claude.js`) starts a participant but knows n
 - Remaining limit: `unknown` unless the binary or its files expose a stable, documented source; never model an exact value.
 - Late-start: the driver's start path recognises limit refusals in the harness output and reports them to the cache (PB-14 hook).
 
+## Evidence from the catalog track's inventory (2026-09-05, `claude` 2.1.251)
+
+- There is no non-interactive model listing: `claude --help` has no `models` subcommand and no `--list-models` (`claude --list-models` → `error: unknown option`, exit 1). Do not run `claude models` / `claude model list` as a probe: an unknown word is taken as a prompt and starts a turn.
+- The only model names the binary publishes are in the `--model` help text (aliases `fable`, `opus`, `sonnet`, full names like `claude-fable-5`); effort levels come from `claude --effort <level>` help (low, medium, high, xhigh, max; `ultracode` is driver-only). Inventory therefore rests on the driver's alias set plus `DEFAULT_MODEL`, not on a listing.
+
 ## Out of scope
 
 - Cursor and Codex — PB-16, PB-17.

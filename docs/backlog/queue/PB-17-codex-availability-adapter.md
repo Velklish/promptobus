@@ -16,6 +16,11 @@ The Codex driver already gates a start on the limit: `lib/codex-session.js` wait
 - Keep the start-path refusal unchanged; the adapter and the start path share the classification code, not copies.
 - Timeouts: the adapter respects the preflight budget and reports `probe_timeout` rather than hanging on a missing notification (the driver already treats "no notification" as "not a refusal", line 824 — keep that meaning: `unknown` / `quota_unknown`).
 
+## Evidence from the catalog track's inventory (2026-09-05, `codex-cli` 0.146.0)
+
+- `model/list` over `codex app-server --stdio` after `initialize` only (no `thread/start`) answers `{ data: [{ id, model, displayName, description, hidden, supportedReasoningEfforts: [{ reasoningEffort, description }], defaultReasoningEffort, inputModalities, additionalSpeedTiers, serviceTiers, isDefault }] }` — 5 models that day, `gpt-5.6-sol` default. The probe script is kept as a task artifact of the routing run (`codex-models.mjs`).
+- app-server writes `ERROR codex_models_manager::cache: failed to load models cache: missing field 'base_instructions'` to stderr and still answers correctly — the adapter must not read that stderr line as a probe failure.
+
 ## Out of scope
 
 - Changing which MCP servers or config the Codex participant gets.
