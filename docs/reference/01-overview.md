@@ -2,7 +2,7 @@
 
 The npm package name is `promptobus`. Version in `package.json` is `0.2.1`. License is MIT. Node.js `>=20`.
 
-That number is written out by hand and no gate compares it to `package.json`: it moves in the commit that cuts a release, and in no other. A reader who needs the version of the tree in front of them asks the tree — `promptobus --version` prints it without a host file.
+That number is written out by hand, and the suite compares it to `package.json` (`test/promptobus-package.test.mjs`): it moves in the commit that cuts a release, and in no other. A reader who needs the version of the tree in front of them asks the tree — `promptobus --version` prints it without a host file.
 
 ## Entry points
 
