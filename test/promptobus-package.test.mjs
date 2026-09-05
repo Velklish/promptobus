@@ -358,6 +358,13 @@ check('tarball contains all four protocol v1 schemas',
   packed.ok && missingSchemas.length === 0, `missing: ${missingSchemas.join(', ')}`);
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+// The overview writes the version out by hand and says it moves only with a release
+// (PB-20.2): this is the gate that line said it did not have. Both READMEs and the
+// install guide had drifted a whole minor version before anything noticed.
+const overview = readFileSync(path.join(REPO, 'docs', 'reference', '01-overview.md'), 'utf8');
+const overviewVersion = overview.match(/Version in `package\.json` is `([^`]+)`/)?.[1] ?? null;
+check('docs/reference/01-overview.md names the version package.json carries',
+  overviewVersion === pkg.version, `overview says ${overviewVersion}, package.json says ${pkg.version}`);
 const runtimeDeps = ['dependencies', 'peerDependencies', 'optionalDependencies', 'bundleDependencies']
   .flatMap((field) => Object.keys(pkg[field] ?? {}));
 check('package has no runtime dependencies', runtimeDeps.length === 0, runtimeDeps.join(', '));
