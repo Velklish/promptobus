@@ -31,6 +31,8 @@ Three combining rules, and they differ on purpose.
 
 "Everything else" is `penalties`, `bonuses`, `reviewerQualityFloor`, `payg.allow`, one rating of one tuple (`ratings.<tupleId>.<rating>`) and one tuple's canonical priority (`priority.<tupleId>`).
 
+**Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["opus"] }` admits the Claude tuples that run `opus` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny, which is the order `validate` assumes when it reports a name that is in both as a contradiction.
+
 **A higher layer can replace a list; it cannot clear one.** The overlay schema has no empty list and no reset — `deny: {}` and `deny: { models: [] }` are both refused — and every denied name must exist, so there is no way to write "deny nothing". A layer above can therefore swap a ban for a different ban, but a ban from the layer below survives any file that does not name that selector kind. For a consumer policy layer that is the intended behaviour: its bans are meant to hold whatever a person writes in their workspace file. For a person who wants to try a model their consumer forbids, it is a wall. Whether an explicit reset belongs in the overlay schema is PB-13.3.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.

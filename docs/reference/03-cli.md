@@ -24,7 +24,7 @@ The reviewer is read-only. A harness that cannot deny tools must fail before spa
 
 ## Model routing
 
-**The command surface does not exist yet.** There is no `models` command, no `--strategy` and no `--allow-payg`, and `--help` names none of them; PB-21 adds them. What is below them does exist and is marked where it does — [Availability](#availability-the-adapter-the-preflight-and-the-cache) runs today. This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implement against, written here first so that the shapes, the flags and the codes are decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` have something to be golden against.
+**The command surface does not exist yet.** There is no `models` command, no `--strategy` and no `--allow-payg`, and `--help` names none of them; PB-21 adds them. What is below them does exist and is marked where it does — [Availability](#availability-the-adapter-the-preflight-and-the-cache), [Catalog and overlays](#catalog-and-overlays) and the [Resolver](#resolver) run today, as libraries with no command in front of them. This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implement against, written here first so that the shapes, the flags and the codes are decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` have something to be golden against.
 
 ### Commands
 
@@ -188,6 +188,43 @@ Three library entry points, all in `lib/model-routing/`:
 `validate` covers the shape of every layer, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, weights that do not sum to 100, references to a tuple, model, harness or effort that does not exist, and a name that is both allowed and denied. Its warnings are `stale-rating` — a rating older than `STALE_RATING_DAYS` (90), never an exclusion — and two of its own, `priority-duplicate` and `priority-not-canonical`, which check the canonical-priority convention the guide documents and never reach a decision.
 
 A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
+
+### Resolver
+
+A library, like the two subsections above it: `promptobus models`, `--strategy` and `--allow-payg` are PB-21's. Two entry points, both in `lib/model-routing/`:
+
+| Call | What it answers |
+|---|---|
+| `resolve({ role, strategy, constraints, policy, snapshot, liveParticipants, now })` | one decision, valid against `schemas/model-routing/decision.schema.json`. `policy` is the answer of `loadCatalog`, `snapshot` the answer of `preflight`, `constraints` the caller's `--harness`, `--model`, `--effort` and `--allow-payg`, `liveParticipants` the participants already up as `{ harness, model, role }`, and `now` a clock in milliseconds whose only product is `snapshot.ageSec` |
+| `render(decision)` | that decision as the text `models` prints. It reads the document and nothing else, so the two outputs of one command cannot drift |
+
+Both are pure — no disk, no harness, no clock of their own — because determinism is the contract: the same inputs give the same tuple whatever order they arrive in.
+
+**Filtering**, in [ADR-003](../adr/adr-003-model-routing.md)'s order, and the first step that matches is the reason reported:
+
+1. the tuples of the merged catalog;
+2. the allow and deny lists of the merged policy, then `--harness`, `--model` and `--effort` — `denied-by-policy`, whose `detail` names the layer that wrote the list, then `constraint-mismatch`. Allow lists of different selector kinds hold at once: a tuple must be named by every allow list there is, and the first one that does not name it is the one reported;
+3. tuples not rated for the role — `role-not-allowed`;
+4. tuples whose model the account does not expose — `model-not-in-inventory`. A harness that reported no inventory at all excludes nothing: silence is not absence;
+5. `unavailable` and `exhausted` harnesses — `harness-unavailable`, `harness-exhausted`;
+6. pay-as-you-go without `--allow-payg` — `payg-not-allowed`;
+7. scoring;
+8. the reviewer rules;
+9. the tie-break.
+
+**A harness the snapshot does not carry is filtered out, not excluded.** The preflight is asked about the harnesses the workspace declared, so the snapshot's harness set is that declaration, and ADR-003 says the catalog is filtered by it. On a workspace that declares only `claude`, the Cursor and Codex tuples are absent from `candidates` rather than listed with a reason — they were never considered, and the exclusion list has no code that would be true of them. The cost is that `resolve` alone cannot tell "you named a harness this workspace never declared" from "nothing survived filtering": both end with `chosen: null`. Telling them apart is the command's job and it happens before the call — an explicit `--harness`, `--model` or `--effort` that matches no tuple of the merged catalog is `constraint-unknown`, and a `--clear-exhausted` naming an undeclared harness is `harness-unknown`, both from the table above.
+
+**Scoring** is the weight table of the merged policy over four values. `quality` and `speed` are 1–5 ratings normalised as `(r − 1) / 4 × 100`; `quotaCost` is inverted, `(5 − r) / 4 × 100`, so a smaller spend contributes more; `remaining` is not a rating but `100 − max(usedPercent)` over the harness's windows. A tuple's `roleRatings` override its ratings for the role being routed. A component is its weight over 100 times that value, and all four are published, so a reader can divide one back by its weight and recover the input.
+
+A harness that is `unknown`, or that exposes no window at all, has no remaining limit to read: it counts as a neutral 50 % and the candidate loses the `unknown-availability` points. Penalised, never blocked — that is the fourth row of the ADR's decision table.
+
+**The extra rules** are the ADR's, and every number in them comes from the merged policy, so an overlay moves it: `live-participant` costs points for each participant already up on that harness and is capped; `reviewer-diversity` adds points to a reviewer whose harness or model differs from every live worker's — with no live worker there is nothing to differ from and no bonus; and the reviewer quality floor is a **choice rule, not a filter**. A candidate below the floor keeps its place in the list with its score, and only the pick moves past it; when nothing reaches the floor the best remaining candidate is taken with a `reviewer-floor-not-met` warning rather than the run refusing.
+
+**The tie-break** is effective score, then confirmed availability, then canonical priority, then the tuple id. It is total, because two tuples cannot share an id — which is why a duplicate id is an error in `models validate` and not a warning.
+
+The decision reports what the caller pinned in `constraints`, and `applied` there is literal: it is true when a named value actually narrowed the list, so `--harness claude` against a claude-only catalog reports `false`. Warnings taken from the merge are copied with their `code` and `message` and nothing else; `unknown-remaining`, `snapshot-stale` and `probe-incomplete` are the resolver's own and are raised once per harness whose candidates were scored.
+
+The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reproduced from `catalog.json` and `snapshot.json` by `test/model-routing-resolver.test.mjs` — the JSON after the normalisation [its README](../../test/fixtures/model-routing/README.md) states, the text byte for byte.
 
 ## Status, done, dismiss, history, prune
 

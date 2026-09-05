@@ -37,6 +37,8 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | availability adapter | availability adapter | One method a driver declares, answering what the account can do with its harness before any session exists. A driver without one answers `unknown`. | `src/model-routing.ts` (`AvailabilityAdapter`) |
 | preflight | preflight | One run of every availability adapter, in parallel under a single total budget. Its result is the availability snapshot. | `lib/model-routing/preflight.js` |
 | availability cache | availability cache | The last availability snapshot on disk, at the file the host names, mode `0600`. Account-scoped, and every entry has its own TTL. | `lib/model-routing/cache.js` |
+| resolver | resolver | The pure function that turns a role, a strategy, the merged catalog and an availability snapshot into one decision. It reads no disk and no clock of its own. | `lib/model-routing/resolver.js` (`resolve`) |
+| routing decision | decision | What the resolver answers: the chosen tuple, every candidate it considered with its score components or exclusion reason, the unrated runtime rows, and the warnings. Kept in the participant's `metadata` for a routed run. | `schemas/model-routing/decision.schema.json` |
 
 ## Retired terms
 
