@@ -231,18 +231,23 @@ test('the probe does not block the event loop, so the preflight budget can still
   //
   // Mutation probe: put `run()` from lib/exec.js back in place of the spawn and
   // this goes red while every other check in the file stays green.
+  // Counted rather than timed (PB-15.7): the file runs in the pool, and a threshold
+  // in milliseconds would measure the machine's neighbours — measured red once at
+  // 760 ms under load with the adapter behaving. A blocked loop fires a 20 ms
+  // interval once, however long the block (node coalesces the missed periods into
+  // one callback); a probe that yields lets it tick on every turn. Five is a fifth
+  // of what an unloaded run counts here.
   const box = sandbox(`await new Promise((r) => setTimeout(r, 400));\n`
     + `process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const started = Date.now();
-  let tickedAt = null;
-  const beat = setTimeout(() => { tickedAt = Date.now() - started; }, 20);
+  let ticks = 0;
+  const beat = setInterval(() => { ticks += 1; }, 20);
   const verdict = await probe(box.host, 15_000);
-  clearTimeout(beat);
+  clearInterval(beat);
   assert.equal(verdict.reason, 'quota_unknown', verdict.message);
   const probeTook = Date.now() - started;
   assert.ok(probeTook > 250, `the stub answered in ${probeTook} ms — too fast to prove anything`);
-  assert.ok(tickedAt !== null && tickedAt < 250,
-    `a timer set for 20 ms fired at ${tickedAt} ms while a ${probeTook} ms probe ran`);
+  assert.ok(ticks >= 5, `a 20 ms interval ticked ${ticks} times while a ${probeTook} ms probe ran`);
 });
 
 test('the binary comes from the request: this adapter resolves none of its own', async () => {
