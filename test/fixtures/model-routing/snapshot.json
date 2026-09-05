@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "takenAt": "2026-09-05T09:00:00.000Z",
+  "harnesses": {
+    "example": {
+      "state": "available",
+      "reason": null,
+      "message": "authenticated; 3 models listed",
+      "checkedAt": "2026-09-05T09:00:00.000Z",
+      "source": "cache",
+      "resetAt": null,
+      "version": "0.0.0",
+      "models": [
+        { "model": "example-deep", "rated": true },
+        { "model": "example-quick", "rated": true },
+        { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] }
+      ],
+      "windows": [
+        { "id": "5h", "usedPercent": 40, "lengthSec": 18000, "resetAt": "2026-09-05T13:00:00.000Z" }
+      ]
+    },
+    "other": {
+      "state": "unknown",
+      "reason": "quota_unknown",
+      "message": "authenticated, but this harness exposes no limit source",
+      "checkedAt": "2026-09-05T09:00:00.000Z",
+      "source": "cache",
+      "resetAt": null,
+      "models": [
+        { "model": "other-steady", "rated": true },
+        { "model": "other-metered", "rated": true }
+      ]
+    }
+  }
+}

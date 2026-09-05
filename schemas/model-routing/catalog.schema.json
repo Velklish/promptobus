@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:catalog",
+  "title": "Model catalog",
+  "description": "The maintainers' rating of tuples, shipped with the package. One row per thing that can actually be launched; only rated tuples enter automatic selection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "updated", "tuples"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of the catalog format. A newer one blocks the load rather than being read half-understood.",
+      "const": 1
+    },
+    "updated": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
+    "tuples": {
+      "description": "Rated tuples. An id occurs once: the resolver's last tie-break is the id, and a duplicate would make the pick order-dependent.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/tuple" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "description": "Exactly what Date#toISOString prints: date-time alone would admit offsets.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "rating": {
+      "description": "Maintainer rating on the 1-5 scale. Integers: half a point is a judgement the source cannot support.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "ratings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "speed", "quotaCost"],
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "speed": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "quotaCost": {
+          "description": "Spend against the subscription. Inverted when scored: a smaller spend contributes more.",
+          "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating"
+        }
+      }
+    },
+    "price": {
+      "description": "USD per 1M tokens, or null when the billing mode makes it meaningless or the price is not published.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "tuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "harness", "model", "effort", "roles", "ratings", "prices", "billing", "priority", "assessedAt", "source"],
+      "properties": {
+        "id": {
+          "description": "Stable id. It survives a model rename, and it is the resolver's final tie-break.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+        },
+        "harness": {
+          "description": "Harness the tuple runs on. Checked against the host's declaredTools() at load.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "model": {
+          "description": "Model id as the harness binary names it. For a harness that carries effort inside the id, the full id including that suffix.",
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "description": "Effort level passed to the driver, from that driver's EFFORT_LEVELS; null for a harness that takes no separate effort flag.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "roles": {
+          "description": "Roles this tuple may be picked for. A reviewer-only or worker-only tuple is normal.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["worker", "reviewer"] }
+        },
+        "ratings": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/ratings" },
+        "roleRatings": {
+          "description": "Per-role overrides of the ratings above. Only the named keys are replaced.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "worker": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
+            "reviewer": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" }
+          }
+        },
+        "prices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputPerMTok", "cachedInputPerMTok", "outputPerMTok"],
+          "properties": {
+            "inputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" },
+            "cachedInputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" },
+            "outputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" }
+          }
+        },
+        "billing": {
+          "description": "subscription — the spend is against a plan; payg — it is money per token, and the tuple stays out of automatic selection without --allow-payg.",
+          "enum": ["subscription", "payg"]
+        },
+        "priority": {
+          "description": "Canonical priority, used only as a tie-break. Lower comes first.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "assessedAt": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
+        "source": {
+          "description": "Where the rating came from. A rating with no source is a hypothesis and stays out of the catalog.",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "description": "Short note a later maintainer can check the rating against.",
+          "type": "string"
+        }
+      }
+    },
+    "partialRatings": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "speed": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "quotaCost": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "updated": "2026-09-05T00:00:00.000Z",
+      "tuples": [
+        {
+          "id": "example-deep",
+          "harness": "example",
+          "model": "example-deep",
+          "effort": "high",
+          "roles": ["worker", "reviewer"],
+          "ratings": { "quality": 5, "speed": 2, "quotaCost": 5 },
+          "roleRatings": { "reviewer": { "quality": 5 } },
+          "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+          "billing": "subscription",
+          "priority": 10,
+          "assessedAt": "2026-09-05T00:00:00.000Z",
+          "source": "schema example — not a rating of any real model",
+          "evidence": "placeholder row; the shipped catalog is PB-13"
+        },
+        {
+          "id": "example-quick",
+          "harness": "example",
+          "model": "example-quick",
+          "effort": null,
+          "roles": ["worker"],
+          "ratings": { "quality": 3, "speed": 5, "quotaCost": 2 },
+          "prices": { "inputPerMTok": 1.5, "cachedInputPerMTok": 0.15, "outputPerMTok": 7.5 },
+          "billing": "payg",
+          "priority": 20,
+          "assessedAt": "2026-09-05T00:00:00.000Z",
+          "source": "schema example — not a rating of any real model"
+        }
+      ]
+    }
+  ]
+}

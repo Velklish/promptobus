@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:snapshot",
+  "title": "Availability snapshot",
+  "description": "What the local account can run right now, per harness — and, on disk, the cache file the host names (src/host.ts routingPaths cacheFile), mode 0600. Every object here is closed: an implementation cannot quietly add a token, an email or an open account id, because a document carrying one stops validating.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "takenAt", "harnesses"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "takenAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+    "fingerprint": {
+      "description": "Opaque local key, present only when accounts must be told apart. Hex, and one-way: the original identifier must not be recoverable from it.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16,64}$"
+    },
+    "harnesses": {
+      "description": "One entry per harness probed. A harness the workspace does not declare is absent, not 'unavailable'.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+      "additionalProperties": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/harness" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "state": {
+      "description": "available — auth, model and limit confirmed; exhausted — the limit is confirmably spent; unavailable — no binary, no auth, no model, or the harness is broken; unknown — the state could not be established.",
+      "enum": ["available", "exhausted", "unavailable", "unknown"]
+    },
+    "reason": {
+      "description": "Stable reason code. The list is fixed in ADR-003 and written once in docs/reference/03-cli.md.",
+      "enum": [
+        "binary_missing",
+        "not_authenticated",
+        "model_not_available",
+        "subscription_exhausted",
+        "probe_timeout",
+        "probe_failed",
+        "quota_unknown",
+        "stale_cache",
+        "manual_exhaustion"
+      ]
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason", "message", "checkedAt", "source"],
+      "properties": {
+        "state": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/state" },
+        "reason": {
+          "description": "null exactly when the state is available and nothing qualifies it.",
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/reason" },
+            { "type": "null" }
+          ]
+        },
+        "message": {
+          "description": "Human-readable diagnosis. Never the harness output verbatim: that is where a token would arrive.",
+          "type": "string"
+        },
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "source": {
+          "description": "probe — this run asked the harness; cache — a live entry was reused; manual — a person marked it.",
+          "enum": ["probe", "cache", "manual"]
+        },
+        "resetAt": {
+          "description": "When an exhausted limit is known to reset. null means unknown, and an exhaustion with no reset is cleared only by --clear-exhausted.",
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "version": {
+          "description": "Harness binary version, when the probe read it.",
+          "type": "string"
+        },
+        "models": {
+          "description": "Model inventory this account exposes. A model the catalog does not rate is carried with rated:false and is shown but never chosen automatically.",
+          "type": "array",
+          "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/model" }
+        },
+        "windows": {
+          "description": "Normalised subscription windows. Absent when the harness exposes none; the resolver then treats remaining as unknown.",
+          "type": "array",
+          "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/window" }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "rated"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "rated": {
+          "description": "Whether the merged catalog carries a tuple for this model.",
+          "type": "boolean"
+        },
+        "flags": {
+          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the model in an overlay.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "usedPercent"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "usedPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "lengthSec": { "type": "integer", "minimum": 1 },
+        "resetAt": {
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "takenAt": "2026-09-05T09:00:00.000Z",
+      "harnesses": {
+        "example": {
+          "state": "available",
+          "reason": null,
+          "message": "authenticated; 2 models listed",
+          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "source": "probe",
+          "resetAt": null,
+          "version": "0.0.0",
+          "models": [
+            { "model": "example-deep", "rated": true },
+            { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] }
+          ],
+          "windows": [
+            { "id": "5h", "usedPercent": 40, "lengthSec": 18000, "resetAt": "2026-09-05T13:00:00.000Z" }
+          ]
+        },
+        "example-out": {
+          "state": "exhausted",
+          "reason": "subscription_exhausted",
+          "message": "limit spent; resets at 13:00Z",
+          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "source": "probe",
+          "resetAt": "2026-09-05T13:00:00.000Z"
+        },
+        "example-quiet": {
+          "state": "unknown",
+          "reason": "quota_unknown",
+          "message": "authenticated, but this harness exposes no limit source",
+          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "source": "cache",
+          "resetAt": null
+        }
+      }
+    }
+  ]
+}

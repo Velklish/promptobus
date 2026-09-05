@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "strategy": "balanced",
+  "role": "worker",
+  "weights": {
+    "quality": 40,
+    "speed": 25,
+    "quotaCost": 20,
+    "remaining": 15
+  },
+  "chosen": {
+    "tupleId": "example-quick",
+    "harness": "example",
+    "model": "example-quick",
+    "effort": null
+  },
+  "candidates": [
+    {
+      "tupleId": "example-quick",
+      "harness": "example",
+      "model": "example-quick",
+      "effort": null,
+      "availability": {
+        "state": "available",
+        "reason": null,
+        "checkedAt": "2026-09-05T09:00:00.000Z",
+        "source": "cache"
+      },
+      "score": {
+        "total": 69,
+        "base": 69,
+        "components": {
+          "quality": 20,
+          "speed": 25,
+          "quotaCost": 15,
+          "remaining": 9
+        },
+        "adjustments": []
+      },
+      "excluded": null,
+      "chosen": true
+    },
+    {
+      "tupleId": "other-steady",
+      "harness": "other",
+      "model": "other-steady",
+      "effort": "medium",
+      "availability": {
+        "state": "unknown",
+        "reason": "quota_unknown",
+        "checkedAt": "2026-09-05T09:00:00.000Z",
+        "source": "cache"
+      },
+      "score": {
+        "total": 56.25,
+        "base": 66.25,
+        "components": {
+          "quality": 30,
+          "speed": 18.75,
+          "quotaCost": 10,
+          "remaining": 7.5
+        },
+        "adjustments": [
+          {
+            "code": "unknown-availability",
+            "points": -10
+          }
+        ]
+      },
+      "excluded": null,
+      "chosen": false
+    },
+    {
+      "tupleId": "example-deep-high",
+      "harness": "example",
+      "model": "example-deep",
+      "effort": "high",
+      "availability": {
+        "state": "available",
+        "reason": null,
+        "checkedAt": "2026-09-05T09:00:00.000Z",
+        "source": "cache"
+      },
+      "score": {
+        "total": 55.25,
+        "base": 55.25,
+        "components": {
+          "quality": 40,
+          "speed": 6.25,
+          "quotaCost": 0,
+          "remaining": 9
+        },
+        "adjustments": []
+      },
+      "excluded": null,
+      "chosen": false
+    },
+    {
+      "tupleId": "other-metered",
+      "harness": "other",
+      "model": "other-metered",
+      "effort": null,
+      "availability": {
+        "state": "unknown",
+        "reason": "quota_unknown",
+        "checkedAt": "2026-09-05T09:00:00.000Z",
+        "source": "cache"
+      },
+      "score": null,
+      "chosen": false,
+      "excluded": {
+        "code": "payg-not-allowed",
+        "detail": "pay-as-you-go; pass --allow-payg to consider it"
+      }
+    },
+    {
+      "tupleId": "example-deep-max",
+      "harness": "example",
+      "model": "example-deep",
+      "effort": "max",
+      "availability": {
+        "state": "available",
+        "reason": null,
+        "checkedAt": "2026-09-05T09:00:00.000Z",
+        "source": "cache"
+      },
+      "score": null,
+      "chosen": false,
+      "excluded": {
+        "code": "role-not-allowed",
+        "detail": "rated for reviewer only"
+      }
+    }
+  ],
+  "runtime": [
+    {
+      "harness": "example",
+      "model": "example-runtime-only",
+      "flags": [
+        "no-zdr"
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "unknown-remaining",
+      "message": "other exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points"
+    }
+  ],
+  "constraints": {
+    "harness": null,
+    "model": null,
+    "effort": null,
+    "allowPayg": false,
+    "applied": false
+  },
+  "overlays": [
+    {
+      "id": "user",
+      "path": "~/.promptobus/model-routing.json",
+      "applied": false
+    },
+    {
+      "id": "workspace",
+      "path": "<workspaceRoot>/model-routing.local.json",
+      "applied": false
+    }
+  ],
+  "snapshot": {
+    "takenAt": "2026-09-05T09:00:00.000Z",
+    "ageSec": 12,
+    "source": "cache"
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:decision",
+  "title": "Routing decision",
+  "description": "The output of `promptobus models --json`, and the same document `spawn` and `review` keep in participant metadata. Stable from its first version: a golden fixture pins it before a resolver exists. It answers one question completely — why this tuple and not the others — so every candidate the resolver saw is here, chosen or excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "strategy", "role", "weights", "chosen", "candidates", "runtime", "warnings", "constraints", "overlays", "snapshot"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "strategy": {
+      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here.",
+      "enum": ["quality", "balanced", "speed", "economy"]
+    },
+    "role": { "enum": ["worker", "reviewer"] },
+    "weights": {
+      "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating.",
+      "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet"
+    },
+    "chosen": {
+      "description": "null when nothing survived filtering. The command then exits with candidates-empty and writes no task, worktree or participant.",
+      "oneOf": [
+        { "$ref": "urn:promptobus:model-routing:decision#/$defs/tupleRef" },
+        { "type": "null" }
+      ]
+    },
+    "candidates": {
+      "description": "Every tuple the resolver considered, scored ones first by descending total, then excluded ones. The order is part of the contract: the text renderer prints this array as it stands.",
+      "type": "array",
+      "items": { "$ref": "urn:promptobus:model-routing:decision#/$defs/candidate" }
+    },
+    "runtime": {
+      "description": "Models the account exposes that the merged catalog does not rate. Shown, never selected automatically.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["harness", "model"],
+        "properties": {
+          "harness": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "flags": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/warningCode" },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "constraints": {
+      "description": "What the caller pinned by hand. These are constraints on the resolver, never wishes: a named value is not replaced, and if it cannot be met the command fails instead of choosing something else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "model", "effort", "allowPayg", "applied"],
+      "properties": {
+        "harness": { "type": ["string", "null"], "minLength": 1 },
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 },
+        "allowPayg": { "type": "boolean" },
+        "applied": {
+          "description": "True when at least one of harness, model or effort narrowed the candidate list.",
+          "type": "boolean"
+        }
+      }
+    },
+    "overlays": {
+      "description": "The layers the host named, in the order they were merged, lowest precedence first. A layer whose file is missing is present here with applied:false — that is how a person sees the path they should create.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "applied"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "applied": { "type": "boolean" }
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takenAt", "ageSec", "source"],
+      "properties": {
+        "takenAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "ageSec": { "type": "integer", "minimum": 0 },
+        "source": {
+          "description": "mixed — some harnesses came from a live probe and some from the cache.",
+          "enum": ["probe", "cache", "mixed"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "tupleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tupleId", "harness", "model", "effort"],
+      "properties": {
+        "tupleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" },
+        "harness": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tupleId", "harness", "model", "effort", "availability", "score", "excluded", "chosen"],
+      "properties": {
+        "tupleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" },
+        "harness": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason", "checkedAt", "source"],
+          "properties": {
+            "state": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/state" },
+            "reason": {
+              "oneOf": [
+                { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/reason" },
+                { "type": "null" }
+              ]
+            },
+            "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+            "source": { "enum": ["probe", "cache", "manual"] }
+          }
+        },
+        "score": {
+          "description": "null exactly when the candidate was excluded before scoring.",
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:decision#/$defs/score" },
+            { "type": "null" }
+          ]
+        },
+        "excluded": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "detail"],
+              "properties": {
+                "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/exclusionCode" },
+                "detail": { "type": "string", "minLength": 1 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "chosen": { "type": "boolean" }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "base", "components", "adjustments"],
+      "properties": {
+        "total": {
+          "description": "base plus every adjustment. Rounded to two decimals — the tie-break reads this number, so it must be exactly what was printed.",
+          "type": "number"
+        },
+        "base": {
+          "description": "Sum of the four weighted components.",
+          "type": "number"
+        },
+        "components": {
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/4*100 of their 1-5 rating; quotaCost is inverted, (5-r)/4*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the harness's applicable windows, and 50 when the harness has no windows or its state is unknown — the unknown case also carries the unknown-availability adjustment.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quality", "speed", "quotaCost", "remaining"],
+          "properties": {
+            "quality": { "type": "number" },
+            "speed": { "type": "number" },
+            "quotaCost": { "type": "number" },
+            "remaining": { "type": "number" }
+          }
+        },
+        "adjustments": {
+          "description": "Penalties (negative) and bonuses (positive), in the order the resolver applied them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "points"],
+            "properties": {
+              "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/adjustmentCode" },
+              "points": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "exclusionCode": {
+      "description": "Why a tuple did not reach scoring. A model the account exposes but the catalog does not rate is not a tuple at all — it appears in `runtime`, not here. Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "model-not-in-inventory",
+        "role-not-allowed",
+        "constraint-mismatch",
+        "denied-by-policy",
+        "payg-not-allowed",
+        "harness-unavailable",
+        "harness-exhausted"
+      ]
+    },
+    "adjustmentCode": {
+      "description": "Penalties and bonuses. Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "unknown-availability",
+        "live-participant",
+        "reviewer-diversity"
+      ]
+    },
+    "warningCode": {
+      "description": "Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "stale-rating",
+        "unknown-remaining",
+        "reviewer-floor-not-met",
+        "snapshot-stale",
+        "probe-incomplete"
+      ]
+    }
+  }
+}

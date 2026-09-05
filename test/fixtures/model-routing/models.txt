@@ -1,0 +1,17 @@
+strategy: balanced · role: worker
+snapshot: 2026-09-05T09:00:00.000Z · 12 s old · source cache
+overlays: user (absent) · workspace (absent)
+chosen: example-quick · example / example-quick · score 69.00
+
+candidates:
+  * example-quick     example / example-quick       available     69.00
+    other-steady      other / other-steady medium   unknown       56.25  (-10 unknown-availability)
+    example-deep-high example / example-deep high   available     55.25
+  - other-metered     other / other-metered         unknown          --  payg-not-allowed: pay-as-you-go; pass --allow-payg to consider it
+  - example-deep-max  example / example-deep max    available        --  role-not-allowed: rated for reviewer only
+
+runtime models — not rated, never chosen automatically:
+    example / example-runtime-only  [no-zdr]
+
+warnings:
+  ! unknown-remaining: other exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points

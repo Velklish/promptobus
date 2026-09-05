@@ -23,6 +23,19 @@
 // and are listed in the end summary; the exit code stays non-zero on
 // any failure.
 //
+// A check for a contract that has no code yet is marked PENDING, not
+// commented out and not left red: a red suite stops being read, and a
+// commented check is forgotten. The mark is `node:test`'s own `todo`
+// — `test(name, { todo: 'why' }, fn)`. Such a check runs, its failure
+// is printed with the reason, and the file still exits 0, so the run
+// stays green while the pending work stays visible in the file's
+// `todo N` line. Two rules go with it: the title says which task turns
+// it green, and the `todo` reason says why it cannot be green yet.
+// Files that use the shared verdict helper ([check.mjs](check.mjs))
+// have no such mark — `check` has one axis, pass or fail — so a file
+// with pending checks is written against `node:test`.
+// Subject today: [model-routing.test.mjs](model-routing.test.mjs).
+//
 // Output is buffered per file and printed whole when the file ends:
 // `stdio: 'inherit'` in parallel would mash six files' lines into one
 // mess. Inside a file the order is unchanged — verdicts are printed by

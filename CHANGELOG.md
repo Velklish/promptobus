@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **ADR-003 fixes the model-routing contract before any of its code.** Four strategies and their weight table, the catalog unit `role + harness + model + effort`, the overlay layers and their precedence, the four availability states with their reason codes and TTLs, the resolver rules and tie-break, and the rule that no task, worktree or participant is written before a candidate exists. The routing decision lives in participant `metadata`, so the protocol version does not move. Nine tasks build on it; the contract is fixed once instead of re-derived nine times (PB-11).
+- **Model-routing contracts land before the resolver.** Four JSON schemas under `schemas/model-routing/` — catalog, overlay, availability snapshot and the `models --json` decision — with the CLI surface, the reason codes, the exclusion, adjustment and warning codes, and the error codes written once into the CLI reference. Golden fixtures pin an input pair (catalog, snapshot) and its output pair (decision JSON, `models` text), compared under the normalisation their README states, so the nine tasks that follow implement against fixed shapes instead of inventing them. A check pins that argv with none of the new flags takes today's path exactly, and the golden comparisons that need a command nobody has written yet are marked pending rather than red (PB-12).
 
 ### Changed
 
