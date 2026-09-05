@@ -1,9 +1,9 @@
 # PB-24 · Snapshot schema v2: generalised windows with kind, scope and pools, the harness tier, hidden models
 
-- **Order:** 20
 - **Scope:** `schemas/model-routing/snapshot.schema.json`, `lib/model-routing/{cache,preflight,render,validate}.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-23
+- **Taken:** 2026-09-06
 
 ## Context
 

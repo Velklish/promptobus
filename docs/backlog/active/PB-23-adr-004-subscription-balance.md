@@ -1,9 +1,9 @@
 # PB-23 · ADR-004: subscription balance — tier and remaining per window, the balance strategy, role floors, overlay merge by union
 
-- **Order:** 10
 - **Scope:** [ADR-003](../../adr/adr-003-model-routing.md), [02-host](../../reference/02-host.md), [03-cli](../../reference/03-cli.md), `lib/model-routing/`
 - **Created:** 2026-09-06
 - **Dependencies:** none — the contract comes first; PB-24…PB-33 implement it
+- **Taken:** 2026-09-06
 
 ## Context
 

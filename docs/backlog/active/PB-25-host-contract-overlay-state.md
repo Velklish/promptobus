@@ -1,9 +1,9 @@
 # PB-25 · Host contract: the workspace overlay is state — its path and the writable layer
 
-- **Order:** 30
 - **Scope:** `src/host.ts`, `lib/model-routing/catalog.js`, [02-host](../../reference/02-host.md), [ADR-002](../../adr/adr-002-standalone-host-contract.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-23
+- **Taken:** 2026-09-06
 
 ## Context
 
