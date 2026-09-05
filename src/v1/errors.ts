@@ -37,6 +37,21 @@ export const ERROR_CODES = [
   // disk
   'lock-busy',
   'link-refused',
+  // model routing. The adapter raises these, not the core: the codes belong to
+  // the CLI surface ADR-003 fixed, and they live here because the consumer
+  // branches on a code from one list — a second list beside this one would be
+  // a second vocabulary for the same kind of refusal. Their prose half is the
+  // error-code table of `docs/reference/03-cli.md`, and the suite reads the two
+  // as one list.
+  'strategy-unknown',
+  'role-unknown',
+  'harness-unknown',
+  'catalog-invalid',
+  'overlay-invalid',
+  'constraint-unknown',
+  'constraint-unavailable',
+  'candidates-empty',
+  'limit-hit-at-start',
 ] as const;
 
 /** v1 refusal code. */

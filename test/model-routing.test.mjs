@@ -5,19 +5,24 @@
 // against these files, and a shape decided wrong here is decided wrong nine
 // times. So the checks are of three kinds, and the kinds do not mix.
 //
-// 1. What is green today: every schema validates its own examples, the golden
-//    fixtures validate against their schemas, and the code lists in the schemas
-//    and in the reference are the SAME list read from two places. The last one
-//    is the "listed once" rule of the reference made mechanical — a code added
-//    to an enum and forgotten in the table (or the reverse) goes red here.
-// 2. What is green today and must stay green: argv with none of the new flags
-//    takes exactly today's path. That is the legacy check the plan asks for,
-//    and PB-21 is the task that must not break it.
-// 3. What is deliberately pending: the golden comparisons of `models --json`
-//    and of `models` text output, and the help text. Those are `node:test`
-//    todo entries — the runner reports them as todo and the file still exits 0
-//    (see the runner header in run.mjs). Their titles say which task turns them
-//    green, so a reader can tell "not written yet" from "forgotten".
+// 1. The shapes: every schema validates its own examples, the golden fixtures
+//    validate against their schemas, and the code lists in the schemas and in
+//    the reference are the SAME list read from two places. The last one is the
+//    "listed once" rule of the reference made mechanical — a code added to an
+//    enum and forgotten in the table (or the reverse) goes red here.
+// 2. What must stay green: argv with none of the new flags takes exactly
+//    today's path. That is the legacy check the plan asks for, and PB-21 is
+//    the task that had to not break it.
+// 3. The command against the goldens. Until PB-21 these four were `node:test`
+//    `todo` entries — the runner reported them as todo and the file still
+//    exited 0 (see the runner header in run.mjs) — because there was no
+//    `models` command to run. PB-21 wired one, and they run for real: the
+//    decision and the text are reproduced end to end from the fixture catalog
+//    and the fixture cache, the reference error-code table is a subset of the
+//    published `ERROR_CODES`, and `--help` names what the CLI now answers.
+//    Behaviour UNDER the command — the gates, the metadata, the no-write
+//    promises — is [model-routing-command.test.mjs](model-routing-command.test.mjs);
+//    this file stays the contract.
 //
 // The golden pair is input-and-output: `catalog.json` and `snapshot.json` are
 // the pinned inputs, `decision.json` and `models.txt` the pinned outputs. A
@@ -28,7 +33,8 @@
 // normalised, is [README.md](fixtures/model-routing/README.md) next to them.
 // Normalised, not excluded: an excluded field is an unpinned field.
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +42,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { liftHarness, resolveEffort, resolvePermissionMode } from '../lib/spawn.js';
 import { REGISTRY, liftDriver } from '../lib/drivers.js';
+import { models } from '../lib/models.js';
+import { createStandaloneHost } from '../dist/host-index.js';
+import { adapterMap, availableStub, counter } from './routing-stubs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -254,36 +263,123 @@ test('argv with none of the routing flags takes exactly today\'s path', () => {
   assert.throws(() => resolvePermissionMode('no-such-mode', driver), /unknown value/);
 });
 
-// --- pending: what PB-21 turns green -----------------------------------------
+// --- the command: the goldens, reproduced end to end -------------------------
 
-test('PENDING until PB-21 — `models --json` matches decision.json, normalised as the fixtures README says',
-  { todo: 'the models command does not exist yet; PB-21 wires it and turns this green' },
-  () => {
-    assert.fail('no models command to run yet');
-  });
+/**
+ * The workspace the golden run happens in: a real standalone host, the fixture
+ * snapshot seeded as its availability cache, and two placeholder harnesses in
+ * its declaration.
+ *
+ * A real host and not a stand-in, because the fixtures README says what this
+ * check is for: the overlay paths in the decision are the REAL ones this run
+ * has — `os.homedir()` and the workspace root — and the comparison substitutes
+ * them. A stand-in answering invented paths would test the substitution and not
+ * the host. The suite runner gives every file a home of its own inside the run
+ * directory, so "the real home" here holds no person's overlay file and the
+ * golden's "no overlay present at either layer" is true by construction.
+ */
+// Home is diverted for the whole file, not per box. The availability cache the
+// standalone host names hangs off `os.homedir()`, and this file writes one: run
+// under the suite runner home already sits inside the run directory, but run by
+// hand (`node --test test/model-routing.test.mjs`) it would be the person's, and
+// a check must not write into it. Diverting here makes the two ways of running
+// the file agree, and the directory is swept by its prefix like every other.
+const SANDBOX_HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-routing-home-'));
+process.env.HOME = SANDBOX_HOME;
+process.env.USERPROFILE = SANDBOX_HOME;
 
-test('PENDING until PB-21 — `models` text matches models.txt, normalised as the fixtures README says',
-  { todo: 'the models command does not exist yet; PB-21 wires it and turns this green' },
-  () => {
-    assert.fail('no models command to run yet');
-  });
+function goldenBox() {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-routing-'));
+  writeFileSync(path.join(root, 'promptobus.json'), `${JSON.stringify({ tools: ['example', 'other'] }, null, 2)}\n`);
+  const host = createStandaloneHost({ cwd: root, commandName: 'promptobus', version: '0.0.0' });
+  const { cacheFile } = host.routingPaths();
+  mkdirSync(path.dirname(cacheFile), { recursive: true });
+  writeFileSync(cacheFile, readFileSync(path.join(FIXTURES, 'snapshot.json'), 'utf8'), { mode: 0o600 });
+  return { root, host, cacheFile };
+}
 
-test('PENDING until PB-21 — the reference error-code table is a subset of ERROR_CODES',
-  { todo: 'PB-21 registers the routing codes in src/v1/errors.ts with the implementation; '
-    + 'registering them now would publish nine codes nothing can raise' },
-  async () => {
-    const { ERROR_CODES } = await import('../dist/index.js');
-    const documented = tableCodes(docSection('### Error codes', '### Files'));
-    assert.ok(documented.length, 'the error-code table came back empty');
-    assert.deepEqual(documented.filter((c) => !ERROR_CODES.includes(c)), []);
-  });
+/** A stream that keeps what the command wrote, so stdout can be compared byte for byte. */
+function sink() {
+  const chunks = [];
+  return { write: (c) => chunks.push(c), get text() { return chunks.join(''); } };
+}
 
-test('PENDING until PB-21 — --help names models, --strategy and --allow-payg',
-  { todo: 'help must not advertise a command that answers "unknown command"; PB-21 adds both together' },
-  async () => {
-    const { helpText } = await import('../lib/cli.js');
-    const text = helpText({ kind: 'promptobus-host', commandName: 'promptobus', version: '0.0.0' });
-    assert.match(text, /promptobus models /);
-    assert.match(text, /--strategy /);
-    assert.match(text, /--allow-payg/);
-  });
+/**
+ * The clock the fixtures README freezes — twelve seconds after the snapshot was
+ * taken, which is where `ageSec: 12` comes from.
+ *
+ * `Date.now` is replaced rather than a `now` argument passed, because the age is
+ * not the only thing the clock decides: the cache TTLs are read against it too,
+ * and an entry carrying limit windows is live for sixty seconds. With the real
+ * clock the fixture would be long expired and the run would resolve on
+ * `stale_cache` — a different document, and not the one pinned here.
+ */
+const FROZEN = Date.parse('2026-09-05T09:00:12.000Z');
+async function atFrozenClock(fn) {
+  const real = Date.now;
+  Date.now = () => FROZEN;
+  try {
+    return await fn();
+  } finally {
+    Date.now = real;
+  }
+}
+
+/** The README's two substitutions, longest prefix first. */
+function normalise(box, text) {
+  const pairs = [[box.host.workspaceRoot(), '<workspaceRoot>'], [os.homedir(), '~']]
+    .sort((a, b) => b[0].length - a[0].length);
+  let out = text;
+  for (const [from, to] of pairs) out = out.split(from).join(to);
+  return out;
+}
+
+/**
+ * The golden run: `models --strategy balanced --role worker`, against the fixture
+ * catalog and the fixture cache, with a probe counter in place of every adapter.
+ *
+ * The counter is the point of the stand-ins here rather than their answers: this
+ * command reads the cache and asks no harness anything, so the count must stay
+ * at zero — and a suite that started three real binaries to reproduce a fixture
+ * would be measuring the machine it runs on.
+ */
+async function goldenRun({ json = false } = {}) {
+  const box = goldenBox();
+  const probes = counter();
+  const out = sink();
+  await atFrozenClock(() => models(box.host, {
+    strategy: 'balanced',
+    role: 'worker',
+    json,
+    catalogFile: path.join(FIXTURES, 'catalog.json'),
+    adapterFor: adapterMap({ example: availableStub(probes), other: availableStub(probes) }),
+    output: out,
+  }));
+  assert.equal(probes.probes, 0, '`models` without --refresh must ask no harness anything');
+  return { box, text: out.text };
+}
+
+test('`models --json` matches decision.json, normalised as the fixtures README says', async () => {
+  const { box, text } = await goldenRun({ json: true });
+  assert.deepEqual(JSON.parse(normalise(box, text)), readJson(path.join(FIXTURES, 'decision.json')));
+});
+
+test('`models` text matches models.txt, normalised as the fixtures README says', async () => {
+  const { box, text } = await goldenRun();
+  assert.equal(normalise(box, text), readFileSync(path.join(FIXTURES, 'models.txt'), 'utf8'));
+});
+
+test('the reference error-code table is a subset of ERROR_CODES', async () => {
+  const { ERROR_CODES } = await import('../dist/index.js');
+  const documented = tableCodes(docSection('### Error codes', '### Files'));
+  assert.ok(documented.length, 'the error-code table came back empty');
+  assert.deepEqual(documented.filter((c) => !ERROR_CODES.includes(c)), []);
+});
+
+test('--help names models, --strategy and --allow-payg', async () => {
+  const { helpText } = await import('../lib/cli.js');
+  const text = helpText({ kind: 'promptobus-host', commandName: 'promptobus', version: '0.0.0' });
+  assert.match(text, /promptobus models /);
+  assert.match(text, /--strategy /);
+  assert.match(text, /--allow-payg/);
+});

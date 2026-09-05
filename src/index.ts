@@ -32,7 +32,7 @@ export {
   mechanismVersionOf, MESSAGE_TYPES, nameOf,
   newTaskIdentity, ORCHESTRATOR, ownerOf, participantFileStem, repoAbsOf, requireTaskId,
   foreignSessionOf,
-  reviewerAddress, roleOf, sameSession, sessionIdOf, sessionOf, SLUG_MAX, slugify, stampOfId,
+  reviewerAddress, roleOf, ROUTING_FIELD, routingOf, sameSession, sessionIdOf, sessionOf, SLUG_MAX, slugify, stampOfId,
   startedOf, TASK_ID_RE,
   TASK_TITLE_SEP, taskDir, tasksDir, UNDECLARED_HARNESS, UNDECLARED_ROLE, workerAddress,
 } from './protocol.js';

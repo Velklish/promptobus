@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `review`, `status`, `done`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`. The [Model routing](#model-routing) section below is the one part of this file that describes a surface the running version does not have yet.
+Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -9,6 +9,8 @@ Help and `--version` do not load the standalone host. Every other command does.
 Required: `--repo`, `--brief`. `--brief` is a file (`lib/spawn.js`). The file itself is the orchestrator's and temporary: after a successful lift the bus keeps its own copy in the task files folder as `brief-<worker>.md`, next to the review diffs, and names the path in the lift output. Every lift stores the brief it was given: a repeat at the same address takes the next number (`brief-<worker>-2.md`) and never overwrites the previous one. A refused spawn keeps nothing, and `--dry-run` does not predict the path: it writes nothing, and which number a name takes is the race's to decide at the write.
 
 `--harness` must be in `host.declaredTools()` when present. Without the flag the registry fallback is `claude` (`lib/drivers.js`). Unknown harness names fail before any disk write.
+
+`--strategy` routes the lift instead: the resolver picks the harness, the model and the effort, and `--harness`, `--model` and `--effort` become constraints on that choice rather than values ([Model routing](#model-routing)). Routing joins the same gate order — everything before any disk write — so a strategy with no candidate leaves no task, no worktree and no participant behind. It routes a LIFT: a repeat spawn at an address already in the journal keeps the harness that address was lifted with, and says the flag was ignored.
 
 `--new-task` and `--task` conflict. Without `--task`, spawn joins the only active task, or opens a new one when several actives exist and this session has no binding. A task owned by another session refuses a silent join.
 
@@ -22,9 +24,11 @@ The path is required. There is no cwd resolve. `--title` is required to open a n
 
 The reviewer is read-only. A harness that cannot deny tools must fail before spawn (`src/driver.ts` `denyTools`).
 
+`--strategy` routes the reviewer the same way it routes a worker, with `--role reviewer`'s rules — the quality floor and the diversity bonus ([Model routing](#model-routing)). The worker the review is about is the live participant the pick is measured against. A re-review sends a new diff to a reviewer that is already up, so there is nothing to route and the flag is reported ignored.
+
 ## Model routing
 
-**The command surface does not exist yet.** There is no `models` command, no `--strategy` and no `--allow-payg`, and `--help` names none of them; PB-21 adds them. What is below them does exist and is marked where it does — [Availability](#availability-the-adapter-the-preflight-and-the-cache), [Catalog and overlays](#catalog-and-overlays) and the [Resolver](#resolver) run today, as libraries with no command in front of them. This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implement against, written here first so that the shapes, the flags and the codes are decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` have something to be golden against.
+The whole surface runs: `models`, `--strategy` and `--allow-payg` on `spawn` and `review`, and the libraries under them — [Availability](#availability-the-adapter-the-preflight-and-the-cache), [Catalog and overlays](#catalog-and-overlays) and the [Resolver](#resolver). This section is the contract [ADR-003](../adr/adr-003-model-routing.md) fixed and PB-13…PB-21 implemented against, written here before any of it so that the shapes, the flags and the codes were decided once instead of nine times, and so the golden fixtures in `test/fixtures/model-routing/` had something to be golden against. It is still written contract-first: what a reader needs is what the surface promises, not the order the promises were kept in.
 
 ### Commands
 
@@ -32,11 +36,17 @@ The reviewer is read-only. A harness that cannot deny tools must fail before spa
 promptobus models [--strategy <quality|balanced|speed|economy>] [--role <worker|reviewer>] [--refresh] [--json]
 promptobus models validate
 promptobus models --clear-exhausted <harness>
-promptobus spawn  … [--strategy <quality|balanced|speed|economy>] [--allow-payg]
-promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-payg]
+promptobus spawn  … [--strategy <quality|balanced|speed|economy>] [--allow-payg] [--refresh]
+promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-payg] [--refresh]
 ```
 
-`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--role` defaults to `worker`. `--refresh` ignores live cache entries and probes again; under `--dry-run` it is the only thing that makes a probe run at all. `--json` prints the decision document; its shape is `schemas/model-routing/decision.schema.json` and it is pinned byte-for-byte by `test/fixtures/model-routing/decision.json`. The text output is pinned the same way by `models.txt` next to it: candidates are printed in the order the decision document lists them — scored first by descending total, then excluded ones by canonical priority.
+`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--strategy` defaults to `balanced` and `--role` to `worker`.
+
+**`models` has no `--dry-run`, because it is one.** It reads the availability cache and asks no harness anything; `--refresh` is the only flag that makes it probe, and therefore the only one that writes a cache entry. The reason is the ADR's: this is the command a person types to ask a question, and a question that starts three harness binaries and waits out the preflight budget is not one. `--dry-run` belongs to `spawn` and `review`, where the alternative to a dry run is a lift.
+
+**The age is the facts', not the run's.** `snapshot.takenAt` in a decision is the OLDEST entry's own `checkedAt`, and `ageSec` measures from it: a snapshot is only as fresh as the stalest thing inside it, which is the rule the cache TTL cascade already applies to a single entry. The moment the command ran is not it — a cache-only run would print `0 s old` over an entry from yesterday, and a mixed run, where one harness answered a second ago and two are hours old, would report the freshest of the three. A cache the run never held carries the epoch as its stamp, so a first run says its facts are ageless rather than freshly measured; `stale_cache` on every harness row says the same thing again. The text output prints that case as `snapshot: never checked · source cache` and no age — an age counted from the epoch is true and useless — while `--json` keeps the literal `takenAt` and `ageSec`, because a machine reader wants the number and a person does not.
+
+`--json` prints the decision document; its shape is `schemas/model-routing/decision.schema.json` and it is pinned by `test/fixtures/model-routing/decision.json`. The text output is pinned byte for byte by `models.txt` next to it: candidates are printed in the order the decision document lists them — scored first by descending total, then excluded ones by canonical priority.
 
 `models validate` checks the catalog and every overlay: schema, references to tuple, model and harness, rating ranges, weight sums, duplicate ids, and rules that both allow and deny the same name.
 
@@ -48,7 +58,7 @@ promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-pay
 
 `--harness`, `--model` and `--effort` remain **constraints, not wishes**: a named value is never replaced. If the named combination is unavailable or exhausted, the command ends with diagnostics.
 
-`--dry-run` **reads the cache and nothing else**: no probe, no binary started, no network, and no write. A probe happens only when `--refresh` asks for it, and `--refresh --dry-run` probes but still writes neither a cache entry nor task state. A snapshot that is stale or absent under `--dry-run` is reported in the decision — `stale_cache` on the harness, plus a `snapshot-stale` warning — never silently taken as fact. A dry run is how a person asks a question; a question that starts three harness binaries and waits fifteen seconds is not one, so the flag that costs time is the one that says so.
+`--dry-run` on `spawn` and `review` prints the decision as part of the plan and **reads the cache and nothing else**: no probe, no binary started, no network, and no write. A probe happens only when `--refresh` asks for it, and `--refresh --dry-run` probes but still writes neither a cache entry nor task state. A snapshot that is stale or absent is reported in the decision — `stale_cache` on the harness, plus a `snapshot-stale` warning — never silently taken as fact; a cache that was never written carries the epoch as its `checkedAt`, so "never checked" and "expired" read apart. A dry run is how a person asks a question; a question that starts three harness binaries and waits fifteen seconds is not one, so the flag that costs time is the one that says so.
 
 ### Reason codes
 
@@ -92,18 +102,18 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 
 Routing failures end the command. Every one of them happens **before any write**: no task, worktree or participant exists when they fire — except `limit-hit-at-start`, which is the one case where the store is already written and the command says so.
 
-They are `PromptobusError` codes, and PB-21 registers them in `ERROR_CODES` (`src/v1/errors.ts`) together with the implementation — which is why they are `kebab-case` while the snapshot's reason codes above keep the `snake_case` the decision fixed. Registering them now would put nine codes in the public list that nothing can raise; once PB-21 lands, the existing drift check covers them and this table stops being the only place they live.
+They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) — which is why they are `kebab-case` while the snapshot's reason codes above keep the `snake_case` the decision fixed. The drift check reads this table against that list, so the two cannot part. `limit-hit-at-start` is the one whose refusal is still raised as a plain lift failure: the late-start hook marks the cache and the lift ends with the diagnosis (`lib/liftoff.js`), and the code names that case for a consumer rather than a second exit path.
 
 | Code | When |
 |---|---|
 | `strategy-unknown` | `--strategy` is not one of the four values |
 | `role-unknown` | `--role` is not `worker` or `reviewer` |
-| `harness-unknown` | `--clear-exhausted` names a harness the workspace does not declare |
+| `harness-unknown` | A harness the workspace does not declare is named — by `--clear-exhausted`, or by `--harness` on a routed `spawn` or `review`. The routing catalog is filtered by the declaration, so a tuple of an undeclared harness is never in the snapshot to be chosen from |
 | `catalog-invalid` | The shipped catalog fails schema or reference validation |
 | `overlay-invalid` | An overlay fails schema, reference or contradiction validation; the message names the layer |
-| `constraint-unknown` | An explicit `--harness`, `--model` or `--effort` matches no tuple in the merged catalog |
+| `constraint-unknown` | An explicit `--harness`, `--model` or `--effort` matches no tuple in the merged catalog. A `--harness` the workspace never declared is refused by `harness-unknown` before this one: "you do not have that harness" is the more useful of the two answers |
 | `constraint-unavailable` | The explicitly named tuple exists but its harness is `unavailable` or `exhausted` |
-| `candidates-empty` | Nothing survived filtering. The decision document is still printed, with `chosen: null` |
+| `candidates-empty` | Nothing survived filtering. The decision document is still printed, with `chosen: null`. It ends `spawn` and `review`; `models` prints the document and exits 0, because answering the question is what that command is for |
 | `limit-hit-at-start` | The limit was hit between preflight and start. The cache is marked exhausted; the command does not retry |
 
 ### Files
@@ -116,7 +126,7 @@ They are `PromptobusError` codes, and PB-21 registers them in `ERROR_CODES` (`sr
 
 ### Availability: the adapter, the preflight and the cache
 
-The harness-neutral half is implemented: the adapter contract, the budgeted preflight and the cache. Adapters land one harness at a time, and each one that exists has its own subsection below; a harness with no adapter yet answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks. The resolver that reads all this, and the flags that print it, are still ahead.
+The harness-neutral half: the adapter contract, the budgeted preflight and the cache. Each adapter has its own subsection below; a driver that declares none answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks.
 
 **The adapter** is one method a driver declares as `availability` (`src/model-routing.ts`, `src/driver.ts`):
 
@@ -157,6 +167,8 @@ What is asked, and what is taken from the cache:
 
 **The cache** (`lib/model-routing/cache.js`) sits at `host.routingPaths().cacheFile`, mode `0600`, written as a temporary neighbour and renamed over, with its directory created as needed. Entries are merged, never replaced wholesale: a late-start mark writes one harness without re-probing the others.
 
+**A preflight that probed nothing writes nothing.** The merge re-stamps the document's `takenAt`, so a run served entirely from live cache entries used to rewrite the same entries under a fresh stamp — and a reader ageing a snapshot from that stamp would report the age of the last run rather than the age of the facts. A run with an empty answer set has learned nothing and has nothing to say about when.
+
 TTLs, as a cascade — the first line that matches an entry wins:
 
 | Entry | Live until |
@@ -169,11 +181,11 @@ TTLs, as a cascade — the first line that matches an entry wins:
 
 The file holds **no prompt, no token, no email and no open account id**. The mechanism is not a filter but the shape: a verdict is projected field by field onto the closed snapshot schema before it is written, so anything an adapter attached beside the declared fields never travels. v1 assumes one locally authenticated account per harness, so the file carries no account key at all; the schema keeps a `fingerprint` slot for the day that changes, and the rule that comes with it is that the key must be opaque and one-way.
 
-Two library entry points have no flag of their own yet. `clearExhausted(host, harness)` is the `--clear-exhausted` half: it drops a reset-less exhaustion and reports whether there was one, and it leaves an exhaustion that names its reset alone. `markExhausted(host, harness, { resetAt })` is the late-start hook — a driver whose session failed to start on a limit calls it, and the harness is `subscription_exhausted` with that reset, or `manual_exhaustion` without one. Its `source` is `probe`, not `manual`, and the two words are about different things: the harness itself said so — it was asked to start and answered — while `manual` means a person typed it, which nothing in v1 does. The reason code is what carries "only a person clears this"; the source carries who learned it. The mark is per harness, not per tuple: the snapshot has no tuple dimension, and a limit is an account fact. A `dryRun` option makes every one of these writes a no-op.
+Two library entry points sit behind the commands. `clearExhausted(host, harness)` is what `--clear-exhausted` calls: it drops a reset-less exhaustion and reports whether there was one, and it leaves an exhaustion that names its reset alone. `markExhausted(host, harness, { resetAt })` is the late-start hook — a driver whose session failed to start on a limit calls it, and the harness is `subscription_exhausted` with that reset, or `manual_exhaustion` without one. Its `source` is `probe`, not `manual`, and the two words are about different things: the harness itself said so — it was asked to start and answered — while `manual` means a person typed it, which nothing in v1 does. The reason code is what carries "only a person clears this"; the source carries who learned it. The mark is per harness, not per tuple: the snapshot has no tuple dimension, and a limit is an account fact. A `dryRun` option makes every one of these writes a no-op.
 
 ### Catalog and overlays
 
-The catalog file, the layer merge and the checks behind `models validate` exist today; the command that prints them is PB-21. The operational half — what is in a row, how the layers combine, the canonical-priority convention, and the overlay file a person copies — is [guides/model-routing.md](../guides/model-routing.md).
+The catalog file, the layer merge and the checks `models validate` prints. The operational half — what is in a row, how the layers combine, the canonical-priority convention, and the overlay file a person copies — is [guides/model-routing.md](../guides/model-routing.md).
 
 Three library entry points, all in `lib/model-routing/`:
 
@@ -230,7 +242,7 @@ The verdict, by what was found:
 
 The mark is written through `writeEntries` rather than `markExhausted`, because that helper derives its reason from `resetAt` alone and so cannot say "the subscription named a reset this adapter refuses to parse"; both are the cache's own doors and both merge one harness into the stored snapshot.
 
-**The lift refusal names the mark.** Nothing reads the availability cache yet and no flag clears it yet, so a refusal that stayed silent would leave a person with a state they never saw. The hook returns a line, and the lift appends it: the harness, the cache file it was written to, that neither time nor a later probe lifts it, and the two ways out — `promptobus models --clear-exhausted claude` once that command exists, or deleting the entry by hand. The hook is handed down to the launcher rather than called by a caller catching the refusal: the lift ends the process, and past that line there is nobody left to classify anything. A cache write that fails adds no line and is otherwise swallowed — the person is about to read why their participant did not start, and that diagnosis must not be lost to it.
+**The lift refusal names the mark.** A mark nothing announced would leave a person with a state they never saw: the file is not one anybody opens by habit, and neither time nor a later probe lifts this entry. The hook returns a line, and the lift appends it: the harness, the cache file it was written to, that the mark does not lift itself, and the two ways out — `promptobus models --clear-exhausted claude`, or deleting the entry by hand. The hook is handed down to the launcher rather than called by a caller catching the refusal: the lift ends the process, and past that line there is nobody left to classify anything. A cache write that fails adds no line and is otherwise swallowed — the person is about to read why their participant did not start, and that diagnosis must not be lost to it.
 
 ### Codex availability
 
@@ -295,7 +307,7 @@ Nothing the binary printed reaches `message`. `status` prints the account addres
 
 ### Resolver
 
-A library, like the two subsections above it: `promptobus models`, `--strategy` and `--allow-payg` are PB-21's. Two entry points, both in `lib/model-routing/`:
+A library, like the two subsections above it: `promptobus models` prints what it answers, and `--strategy` on `spawn` and `review` lifts on it. Two entry points, both in `lib/model-routing/`:
 
 | Call | What it answers |
 |---|---|
@@ -328,11 +340,11 @@ A harness that is `unknown`, or that exposes no window at all, has no remaining 
 
 The decision reports what the caller pinned in `constraints`, and `applied` there is literal: it is true when a named value actually narrowed the list, so `--harness claude` against a claude-only catalog reports `false`. Warnings taken from the merge are copied with their `code` and `message` and nothing else; `unknown-remaining`, `snapshot-stale` and `probe-incomplete` are the resolver's own and are raised once per harness whose candidates were scored.
 
-The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reproduced from `catalog.json` and `snapshot.json` by `test/model-routing-resolver.test.mjs` — the JSON after the normalisation [its README](../../test/fixtures/model-routing/README.md) states, the text byte for byte.
+The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reproduced from `catalog.json` and `snapshot.json` twice, and the two runs are not a duplicate of each other: `test/model-routing-resolver.test.mjs` calls the pure function with synthetic paths, and `test/model-routing.test.mjs` runs the `models` command itself against a real host and substitutes the paths that run actually has. Both compare the JSON after the normalisation [its README](../../test/fixtures/model-routing/README.md) states, and the text byte for byte.
 
 ## Status, done, dismiss, history, prune
 
-`status` lists active tasks, participants, unread counts, and warden health.
+`status` lists active tasks, participants, unread counts, and warden health. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
 
 `done` closes the task. The mailbox owner may call it. Sessions the bus started are stopped unless `--keep-sessions`. Journals of tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed on that last call.
 

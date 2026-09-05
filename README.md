@@ -105,12 +105,22 @@ promptobus review ./my-repo --title "Review the change"
 
 The path is required. `--title` is required to open a new review task. Repeat with `--task <id>` to send a new diff to the same reviewer.
 
+Let the CLI pick the model:
+
+```bash
+promptobus models --strategy balanced          # what the resolver would pick, and why
+promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
+```
+
+`models` reads the availability cache and asks no harness anything; `--refresh` probes. On `spawn` and `review`, `--strategy` hands the resolver an intent and `--harness`, `--model` and `--effort` become constraints on its choice rather than values. Without `--strategy` nothing is routed. See [Model routing](docs/reference/03-cli.md#model-routing).
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `promptobus spawn` | Start a worker in an isolated git worktree |
 | `promptobus review` | Start a read-only reviewer on a path |
+| `promptobus models` | What the resolver would pick now; `validate` checks the catalog, `--clear-exhausted <harness>` lifts a stuck exhaustion |
 | `promptobus status` | List active tasks, participants, unread counts |
 | `promptobus done` | Close a task. Stops sessions the bus started unless `--keep-sessions` |
 | `promptobus dismiss <address>` | Stop watching a finished participant |

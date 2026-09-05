@@ -105,12 +105,22 @@ promptobus review ./my-repo --title "Review the change"
 
 Путь обязателен. `--title` обязателен, чтобы открыть новую задачу ревью. Повтор с `--task <id>` шлёт новый дифф на тот же адрес.
 
+Пусть CLI сам выберет модель:
+
+```bash
+promptobus models --strategy balanced          # что выбрал бы резолвер и почему
+promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
+```
+
+`models` читает кэш доступности и ни о чём не спрашивает harness; `--refresh` опрашивает. У `spawn` и `review` `--strategy` отдаёт резолверу намерение, а `--harness`, `--model` и `--effort` становятся ограничениями его выбора, а не значениями. Без `--strategy` маршрутизации нет. См. [Model routing](docs/reference/03-cli.md#model-routing).
+
 ## Команды
 
 | Команда | Что делает |
 |---|---|
 | `promptobus spawn` | Поднять воркера в изолированном git worktree |
 | `promptobus review` | Поднять read-only ревьюера на путь |
+| `promptobus models` | Что резолвер выбрал бы сейчас; `validate` проверяет каталог, `--clear-exhausted <harness>` снимает залипшую отметку об исчерпании |
 | `promptobus status` | Список активных задач, участники, непрочитанное |
 | `promptobus done` | Закрыть задачу. Гасит сессии, которые подняла шина, если нет `--keep-sessions` |
 | `promptobus dismiss <address>` | Снять сданного участника с наблюдения |

@@ -251,6 +251,30 @@ export function mechanismVersionOf(p: WithMetadata | null | undefined): string |
   return field(p, MECHANISM_VERSION_FIELD);
 }
 
+/**
+ * Name of the field a routed lift leaves its decision in. The adapter writes the
+ * value and `promptobus status` reads it, so the name has one home — the same
+ * rule, and the same reason, as `MECHANISM_VERSION_FIELD` above.
+ */
+export const ROUTING_FIELD = 'routing';
+
+/**
+ * Routing decision of a participant lifted with `--strategy`: the strategy, the
+ * tuple, the score, the age of the availability snapshot the pick was made on,
+ * the warnings, and whether the explicit constraints narrowed anything.
+ *
+ * An object rather than a string, which is why it does not go through `field`
+ * above. Core does not look inside it — it is written by the adapter and read
+ * back by the adapter — and it lives in `metadata` for the reason `metadata`
+ * exists: the field is declared open, so a record carrying a decision is
+ * readable by a mechanism of any version and the protocol version is not raised
+ * for it (ADR-003).
+ */
+export function routingOf(p: WithMetadata | null | undefined): Record<string, unknown> | null {
+  const v = p?.metadata?.[ROUTING_FIELD];
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
 /** When the adapter lifted the participant session: the fresh-lift registration window. */
 export function startedOf(p: WithMetadata | null | undefined): string | null {
   return field(p, 'started');
