@@ -1,9 +1,9 @@
 # PB-17 · Codex availability adapter: rate-limit and model/list preflight without a turn
 
-- **Order:** 70
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-14
+- **Taken:** 2026-09-05
 
 ## Context
 

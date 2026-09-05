@@ -1,9 +1,9 @@
 # PB-15 · Claude availability adapter
 
-- **Order:** 50
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-14
+- **Taken:** 2026-09-05
 
 ## Context
 

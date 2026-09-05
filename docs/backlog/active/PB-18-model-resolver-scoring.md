@@ -1,9 +1,9 @@
 # PB-18 · Resolver: filtering, strategy scoring, reviewer rules, stable tie-break, explanation
 
-- **Order:** 80
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-05
 - **Dependencies:** PB-13, PB-14
+- **Taken:** 2026-09-05
 
 ## Context
 
