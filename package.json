@@ -1,6 +1,6 @@
 {
   "name": "promptobus",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
   "license": "MIT",
   "type": "module",

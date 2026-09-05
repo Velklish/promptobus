@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-05
+
 ### Added
 
 - **Model routing: name an intent, get a tuple.** `promptobus models [--strategy quality|balanced|speed|economy] [--role worker|reviewer] [--refresh] [--json]` prints what the resolver would pick right now — the chosen `role + harness + model + effort` tuple, every candidate it considered with its four score components or the reason it was excluded, the models the account exposes that the catalog does not rate, and the warnings — as text, or with `--json` as the document `schemas/model-routing/decision.schema.json` describes. The command has no `--dry-run` because it is one: it reads the availability cache and asks no harness anything, and `--refresh` is the only flag that probes and therefore the only one that writes a cache entry. A decision is aged from the OLDEST availability entry's own `checkedAt` rather than from the moment the command ran, so "12 s old" says how old the facts are, and a snapshot nothing in which was ever checked prints as `never checked` instead of an age counted from the epoch. `models validate` checks the shipped catalog and every overlay layer and names, for each finding, the layer that wrote the key it is about. The decision the whole surface implements is [ADR-003](docs/adr/adr-003-model-routing.md), fixed with its schemas and golden fixtures before any of the code (PB-11, PB-12, PB-18, PB-21). The text form prints at most eight unrated rows per harness and counts the rest; `--json` keeps every row.
