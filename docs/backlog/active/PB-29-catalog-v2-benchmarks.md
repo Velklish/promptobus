@@ -1,9 +1,9 @@
 # PB-29 · Catalog v2: live inventories, Cursor-unique families, fable, ratings from public benchmarks
 
-- **Order:** 70
 - **Scope:** `models/catalog.json`, `schemas/model-routing/catalog.schema.json`, `lib/model-routing/validate.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-23 (the rating rule), PB-28 (efforts and tiers per Codex model)
+- **Taken:** 2026-09-06
 
 ## Context
 

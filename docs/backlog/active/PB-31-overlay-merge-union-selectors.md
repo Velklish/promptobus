@@ -1,9 +1,9 @@
 # PB-31 · Overlay merge: deny and allow lists by union, selectors by role and by model flag
 
-- **Order:** 90
 - **Scope:** `lib/model-routing/catalog.js`, `lib/model-routing/validate.js`, `schemas/model-routing/overlay.schema.json`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-23
+- **Taken:** 2026-09-06
 
 ## Context
 

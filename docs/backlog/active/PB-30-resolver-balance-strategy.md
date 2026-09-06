@@ -1,9 +1,9 @@
 # PB-30 · Resolver: the balance strategy by pace of the window, role quality floors, reviewer in balance
 
-- **Order:** 80
 - **Scope:** `lib/model-routing/resolver.js`, `lib/models.js`, `lib/model-routing/render.js`, `schemas/model-routing/{decision,overlay}.schema.json`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-23, PB-24
+- **Taken:** 2026-09-06
 
 ## Context
 
@@ -18,7 +18,7 @@ ADR-003's four strategies score by rating with `remaining` at 15 % of the weight
 - Reviewer: the "reviewer stays on Claude Code" assumption is not in the package — confirm nothing in `resolver.js` or the skills pins the reviewer's harness; the diversity bonus stays.
 - `models` text: the pace table per harness (window, used, elapsed, underspend, penalty, effective) under the candidates; `--json` carries the same numbers.
 - `remaining` becomes per tuple for every strategy: the applicable windows are the account-wide ones plus the scope covering the tuple (ADR-004, "Every strategy gains from the scoped windows"); golden fixtures move with the snapshot version.
-- `decision.schema.json` extended additively.
+- `decision.schema.json`: `schemaVersion` → 2 (`DECISION_SCHEMA_VERSION` in `resolver.js`), the fifth `strategy` value, `candidates[].pace`, the two warning codes and `strategySource`; golden fixtures move with it (ADR-004: the bump belongs to this task; the top-level `harnesses` block of PB-24 is optional and already on `main`).
 
 ## Out of scope
 

@@ -1,9 +1,9 @@
 # PB-28 · Codex adapter reads the plan, credits and hidden rows; ultra effort and the fast tier in the inventory
 
-- **Order:** 60
 - **Scope:** `lib/model-routing/adapter-codex.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-24
+- **Taken:** 2026-09-06
 
 ## Context
 

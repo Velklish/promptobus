@@ -1,9 +1,9 @@
 # PB-26 · Claude Code adapter reads the tier and the remaining limits from the OAuth usage endpoint
 
-- **Order:** 40
 - **Scope:** `lib/model-routing/adapter-claude.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-24
+- **Taken:** 2026-09-06
 
 ## Context
 

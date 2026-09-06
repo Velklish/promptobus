@@ -1,9 +1,9 @@
 # PB-32 · Near-limit signal in models and the strategy default kept in the workspace overlay
 
-- **Order:** 100
 - **Scope:** `lib/models.js`, `lib/model-routing/{render,catalog}.js`, `lib/spawn.js`, `schemas/model-routing/overlay.schema.json`, `skills/orchestrate/SKILL.md`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-25 (the writable layer), PB-30 (pace)
+- **Taken:** 2026-09-06
 
 ## Context
 

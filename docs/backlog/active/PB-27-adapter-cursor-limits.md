@@ -1,9 +1,9 @@
 # PB-27 · Cursor adapter reads the monthly pools and the included usage from DashboardService
 
-- **Order:** 50
 - **Scope:** `lib/model-routing/adapter-cursor.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-24
+- **Taken:** 2026-09-06
 
 ## Context
 
