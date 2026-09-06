@@ -1,9 +1,9 @@
 # PB-36 · A telemetry record per routed participant at done: tuple, strategy, duration, review rounds, window deltas — local, no prompts
 
-- **Order:** 55
 - **Scope:** `lib/done.js` (or wherever `promptobus done` closes a task), new `lib/model-routing/telemetry.js`, new `schemas/model-routing/telemetry.schema.json`, [03-cli](../../reference/03-cli.md), [02-host](../../reference/02-host.md)
 - **Created:** 2026-09-06, owner's decision 2026-09-06
 - **Dependencies:** PB-24 (snapshot v2 on `main`), PB-30 (`metadata.routing` carries the decision; `strategySource` from PB-32 when present)
+- **Taken:** 2026-09-06
 
 ## Context
 
