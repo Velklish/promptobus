@@ -1,19 +1,21 @@
 // Codex driver — the third production bus driver. Run: npm test
 //
 // Subject — what Codex does differently from Claude Code and Cursor: an app-server
-// process per participant, a thread without a turn does not exist, turn/steer into a
-// turn in progress, review/start, the limit gate, denyTools as the sandbox, an empty
+// process per participant, a rollout appears at turn/started, turn/start queues behind
+// a turn in progress, review/start, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import net from 'node:net';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, FIRST_DELAY_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, FIRST_DELAY_VAR, HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
@@ -26,7 +28,8 @@ const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
-  readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs, turnWaitMs,
+  readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs,
+  TURN_STARTED_TIMEOUT_MS,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
@@ -67,8 +70,9 @@ check(': Codex capabilities are declared, all nine',
   && codexDriver.capabilities.attach === false && codexDriver.capabilities.activation === 'push',
   JSON.stringify(codexDriver.capabilities));
 
-check(': default readyMs = preamble + turn, not the old 60 s',
-  readyMs({}) === preambleMs({}) + turnWaitMs({}) && readyMs({}) > 180_000,
+check(': default readyMs = preamble + turn/started, independent of the full-turn override',
+  readyMs({ PROMPTOBUS_CODEX_TURN_MS: '999999' })
+    === preambleMs({ PROMPTOBUS_CODEX_TURN_MS: '999999' }) + TURN_STARTED_TIMEOUT_MS,
   String(readyMs({})));
 
 const patchRec = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
@@ -367,24 +371,22 @@ const second = await codexDriver.activate({ ref }, {
 check('step 4: activate while idle starts a turn', second.ok === true, JSON.stringify(second));
 
 await new Promise((r) => { setTimeout(r, 80); });
-const steered = await codexDriver.activate({ ref }, {
+const queued = await codexDriver.activate({ ref }, {
   kind: 'unread', task: TASK, address: WORKER, unread: 2,
   messages: [{ type: 'task', from: 'orchestrator', ts: 'now', body: 'steer' }],
 });
-check('step 4: activate during a turn — turn/steer, not a refusal',
-  steered.ok === true, JSON.stringify(steered));
-
-const steerTrace = await waitFor(() => {
-  const tr = readTrace(HARNESS, WORKER);
-  return tr.find((e) => e.kind === 'steer') ?? null;
-}, { timeoutMs: 15000 });
-check('step 4: the stand saw steer with the same turnId',
-  !!steerTrace && typeof steerTrace.turnId === 'string', JSON.stringify(steerTrace));
+check('step 4: activate during a turn queues a later turn, not a refusal',
+  queued.ok === true, JSON.stringify(queued));
 
 const secondSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(STEERED)) ?? null, { timeoutMs: 20000 });
 check('step 4: the second turn arrived as a result',
   !!secondSent, `${JSON.stringify(secondSent)} · ${diagnoseTrace(HARNESS, WORKER)}`);
+const queuedSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  .find((m) => String(m.body ?? '').includes(WOKE)) ?? null, { timeoutMs: 20000 });
+check('step 4: the queued wake ran only after the busy turn ended, without turn/steer',
+  !!queuedSent && !readTrace(HARNESS, WORKER).some((e) => e.kind === 'steer'),
+  `${JSON.stringify(queuedSent)} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
 const wt = wp?.metadata?.worktree ?? ws;
 const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex'], { cwd: ws, env });
@@ -432,6 +434,55 @@ const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
 if (apr?.sessionRef) await codexDriver.stop(apr.sessionRef);
 const rev = store.participantOf(store.readTask(home, TASK), REVIEWER);
 if (rev?.sessionRef) await codexDriver.stop(rev.sessionRef);
+
+// The wake's socket wait has to outlast the turn budget it declares. `activate` sends
+// `turn/start` with an inner `timeoutMs` of `turnWaitMs()`, and the outer `holderAsk`
+// wait used to sit at its 30 s default: any `PROMPTOBUS_CODEX_TURN_MS` above that was
+// silently truncated — the client hung up while the holder was still waiting on
+// app-server, and the wake was reported failed although the turn may already have been
+// queued. The stand's own 20 000 is below the default, which is why nothing caught it.
+//
+// The probe uses a SMALL budget rather than one above 30 s so the file does not spend
+// half a minute proving arithmetic: a holder that answers `status` and then goes deaf
+// makes the wait state its own length, and the length is the derived one, not the
+// default. That is the whole property — the outer wait follows the budget.
+const deafRef = 'deaf-holder-probe';
+// In tmpdir directly, and short, like the holder's own socket: under the suite runner
+// the sandbox sits several nested temp directories deep, and a unix path over the
+// 104-byte sun_path limit fails `listen` with EINVAL — which passes standalone and
+// aborts the file inside a run.
+const deafSock = path.join(tmpdir(), `pb-deaf-${process.pid}.sock`);
+const deafServer = net.createServer((conn) => {
+  conn.setEncoding('utf8');
+  conn.on('data', (chunk) => {
+    // Only `status` is answered. `rpc` is read and left without a reply, which is the
+    // holder still waiting on app-server.
+    if (JSON.parse(chunk.trim()).op === 'status') conn.write(`${JSON.stringify({ result: { rateLimits: null } })}\n`);
+  });
+  conn.on('error', () => {});
+});
+await new Promise((r) => { deafServer.listen(deafSock, r); });
+writeSession({
+  ref: deafRef, task: TASK, address: 'worker:deaf', mcpPrefix: PREFIX, state: 'alive',
+  threadId: 't-deaf', holderPid: process.pid, rpcSocket: deafSock,
+}, process.env);
+const wasTurnMs = process.env.PROMPTOBUS_CODEX_TURN_MS;
+process.env.PROMPTOBUS_CODEX_TURN_MS = '1200';
+const deafAt = Date.now();
+const deaf = await codexDriver.activate({ ref: deafRef }, {
+  kind: 'unread', task: TASK, address: 'worker:deaf', unread: 1,
+  messages: [{ type: 'task', from: 'orchestrator', ts: 'now', body: 'deaf' }],
+});
+const deafTook = Date.now() - deafAt;
+if (wasTurnMs === undefined) delete process.env.PROMPTOBUS_CODEX_TURN_MS;
+else process.env.PROMPTOBUS_CODEX_TURN_MS = wasTurnMs;
+check(': the wake socket waits the declared turn budget, not the 30 s socket default',
+  deaf.ok === false && / 2200 ms/.test(deaf.error ?? '') && !/ 30000 ms/.test(deaf.error ?? '')
+    && deafTook < 10_000,
+  `${JSON.stringify(deaf)} · took ${deafTook} ms`);
+deafServer.close();
+rmSync(deafSock, { force: true });
+dropSession(deafRef, process.env);
 
 const deadRef = 'dead-probe';
 writeSession({
@@ -482,6 +533,29 @@ check(': both process reads are scoped to this file\'s own directories, not to a
   HOLD_PATTERN.includes(ere(stateHome)) && APP_PATTERN.includes(ere(SB)),
   `hold ${HOLD_PATTERN} · app ${APP_PATTERN}`);
 
+planParticipant(HARNESS, 'worker:long-first', { turns: [{ do: [] }] });
+const longEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '3000', [HANG_AFTER_START_VAR]: '1' };
+const longFirst = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'long-first', '--harness', 'codex'], { cwd: ws, env: longEnv });
+const longPart = store.participantOf(store.readTask(home, TASK), 'worker:long-first');
+const longRec = readSession(longPart?.sessionRef ?? '', env);
+check(': a first turn that started and never ends still confirms lift',
+  longFirst.status === 0 && /worker worker:long-first lifted/.test(longFirst.out)
+    && longRec?.state === 'alive' && longRec.busy === true && longRec.turns === 0
+    && !!longRec.firstTurnStartedAt && !longRec.firstTurnEndedAt,
+  `${longFirst.out.slice(-300)} · ${JSON.stringify(longRec)}`);
+const longStatus = cli([ 'status', '--task', TASK], { cwd: ws, env: longEnv });
+const longLine = longStatus.out.split('\n').find((l) => l.includes('worker:long-first')) ?? '';
+check(': status calls the participant in its running first turn alive, not GONE',
+  /is alive/.test(longLine) && !/not in the list|GONE/.test(longLine), longLine);
+const queuedOnFirst = await codexDriver.activate({ ref: longPart?.sessionRef }, {
+  kind: 'unread', task: TASK, address: 'worker:long-first', unread: 1,
+  messages: [{ type: 'review', from: 'orchestrator', ts: 'now', body: 'queued review' }],
+});
+check(': a review arriving during the running first turn is accepted into the next-turn queue',
+  queuedOnFirst.ok === true, JSON.stringify(queuedOnFirst));
+if (longPart?.sessionRef) await codexDriver.stop(longPart.sessionRef);
+
 planParticipant(HARNESS, 'worker:hang', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'HANG' } }] }],
 });
@@ -490,7 +564,7 @@ const beforeApp = pgrep(APP_PATTERN);
 const hangEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '3000', [HANG_FIRST_VAR]: '1' };
 const hung = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'hang', '--harness', 'codex'], { cwd: ws, env: hangEnv });
-check(': a lift refusal on timeout — non-zero code',
+check(': a stream that never emits turn/started still refuses lift',
   hung.status !== 0 && /did not lift/.test(hung.out), hung.out.slice(-400));
 const extraHold = pgrep(HOLD_PATTERN).filter((p) => !beforeHold.includes(p));
 const extraApp = pgrep(APP_PATTERN).filter((p) => !beforeApp.includes(p));

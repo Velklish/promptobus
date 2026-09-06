@@ -33,7 +33,6 @@ const RELIED = [
   'thread/start',
   'thread/name/set',
   'turn/start',
-  'turn/steer',
   'review/start',
   'turn/interrupt',
 ];

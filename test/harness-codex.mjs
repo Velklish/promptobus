@@ -23,6 +23,7 @@ export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
+export const HANG_AFTER_START_VAR = 'CODEX_STUB_HANG_AFTER_START';
 export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 
 // What the availability probe meets before any thread exists. One variable with a
@@ -461,6 +462,12 @@ async function appServer() {
         return;
       }
       const turnId = newId();
+      if (t.busy) {
+        t.pending = [...(t.pending ?? []), { turnId, params }];
+        writeThread(home, t);
+        reply(id, { turn: { id: turnId, status: 'inProgress' } });
+        return;
+      }
       t.busy = true;
       t.turnStarted = false;
       t.turnId = turnId;
@@ -538,6 +545,10 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   writeThread(home, t);
   notify('thread/status/changed', { type: 'active', activeFlags: [] });
   notify('turn/started', { id: turnId, status: 'inProgress' });
+  if (process.env[HANG_AFTER_START_VAR] === '1' && !t.rollout) {
+    await new Promise(() => {});
+    return;
+  }
   const address = addressOf(t);
   const sandbox = t.sandbox;
   if (process.env[APPROVAL_VAR] === '1') {
@@ -558,6 +569,15 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   notify('turn/completed', { id: turnId, status: 'completed' });
   notify('thread/status/changed', { type: 'idle' });
   note(home, address, { kind: 'turn-end', turnId, steered: live.steered ?? 0 });
+  const next = live.pending?.shift();
+  if (next) {
+    live.busy = true;
+    live.turnStarted = false;
+    live.turnId = next.turnId;
+    live.status = 'active';
+    writeThread(home, live);
+    setTimeout(() => playTurn(home, live, next.turnId, next.params, ask, notify), 40);
+  }
 }
 
 async function runScript({ home, address, thread, sandbox }) {
