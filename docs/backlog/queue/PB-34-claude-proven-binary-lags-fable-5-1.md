@@ -1,5 +1,6 @@
 # PB-34 · The proven Claude binary (2.1.251) resolves fable to claude-fable-5 while newer builds run Fable 5.1 — the top model is unreachable through the driver
 
+- **Order:** 30
 - **Scope:** `lib/driver-claude.js` (`PROVEN_CLAUDE_VERSION`, `MODEL_IDS`), `models/catalog.json`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none

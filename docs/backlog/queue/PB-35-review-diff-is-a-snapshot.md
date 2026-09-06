@@ -1,5 +1,6 @@
 # PB-35 · The reviewer's diff file is a one-time snapshot while the worker keeps committing — the reviewer's brief should say so and offer a re-snapshot
 
+- **Order:** 40
 - **Scope:** `lib/review.js`, the reviewer prompt, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none

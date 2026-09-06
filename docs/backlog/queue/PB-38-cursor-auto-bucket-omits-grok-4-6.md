@@ -1,5 +1,6 @@
 # PB-38 · Cursor's autoBucketModels names grok-4.5 and not cursor-grok-4.6, so the 4.6 tuples are paced against the api pool while Cursor's own nudge calls Grok 4.6 a Cursor model
 
+- **Order:** 50
 - **Scope:** `lib/model-routing/adapter-cursor.js`, `models/catalog.json`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none
