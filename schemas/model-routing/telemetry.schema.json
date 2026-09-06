@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:telemetry",
+  "title": "Participant telemetry record",
+  "description": "One line of the JSON Lines file `telemetry.jsonl`, appended by `promptobus done` for each participant that lifted a session — the tuple it ran on, the strategy that chose it, how long it lived, how many review rounds it took, and how the account's limit windows moved around it. Local only: the file lives beside the availability cache the host names (src/host.ts routingPaths cacheFile), mode 0600, and nothing sends it anywhere. Every object here is closed for the reason the snapshot's are: the source is a participant record and a task journal, which hold a repository path, a worktree, a branch, a session ref and every message body of the run, and a record carrying one of them stops validating. The only identifier is `task`, an opaque local key rather than the id itself. Additive-only from version 1: PB-37 reads rows written by every build after this one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "recordedAt", "task", "role", "harness", "model", "effort", "tuple",
+    "strategy", "strategySource", "spawnedAt", "endedAt", "durationSec", "turns",
+    "reviewRounds", "questions", "resultCount", "windows", "concurrentParticipants",
+    "dismissedBeforeDone"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordedAt": { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/timestamp" },
+    "task": {
+      "description": "Opaque local key of the task: SHA-256 of its id, truncated, in the shape the snapshot's fingerprint fixes. It groups the records of one run, and the slug a person typed is not in the file. Unsalted on purpose, so the grouping holds across installs of one account — which means it is a key, not a secret: someone holding both this file and the workspace could match one back to a task id they already have.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "role": { "enum": ["worker", "reviewer"] },
+    "harness": { "type": "string", "minLength": 1 },
+    "model": { "type": "string", "minLength": 1 },
+    "effort": { "type": ["string", "null"], "minLength": 1 },
+    "tuple": {
+      "description": "The catalog tuple the participant ran on, or null when the run was not routed.",
+      "oneOf": [
+        { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" },
+        { "type": "null" }
+      ]
+    },
+    "strategy": {
+      "description": "null exactly when the participant carries no routing decision — a legacy lift or an explicit --model. Such a run is recorded too, so an explicit choice is measured alongside a routed one. The value is not an enum here: this file outlives the strategy list, and a record written by a build that knows a fifth strategy must stay readable by one that does not.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "strategySource": {
+      "description": "Where the strategy came from when the lift did not name one on the command line — `overlay:<layer>` (PB-32). null when the command named it, or when the build that wrote the record did not carry the field.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "spawnedAt": {
+      "description": "When the session was lifted. null for a record that carries no lift stamp at all — a participant of a former CLI.",
+      "oneOf": [
+        { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "endedAt": {
+      "description": "The participant's own end: its dismissal when it was dismissed mid-run, otherwise the moment the task was closed.",
+      "$ref": "urn:promptobus:model-routing:telemetry#/$defs/timestamp"
+    },
+    "durationSec": {
+      "description": "endedAt minus spawnedAt. null exactly when spawnedAt is null — a duration counted from an unknown start is not one.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "turns": {
+      "description": "Messages this participant sent on the bus. Counted from the canonical message records, not from history: history holds what a mailbox fetched, and a result nobody read is still a turn.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reviewRounds": {
+      "description": "Messages of type `review` addressed to this participant.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "questions": {
+      "description": "Messages of type `question` this participant sent.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "resultCount": {
+      "description": "Messages of type `result` this participant sent. More than one is the ordinary shape of a reviewed run, not an anomaly.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "windows": {
+      "description": "The limit windows that applied to the tuple when it was chosen — the account-wide ones plus the scope covering the model — with the reading at spawn and the reading at the end. Empty when the lift recorded none — an unrouted run, or one whose harness reported no window at all.",
+      "type": "array",
+      "items": { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/windowDelta" }
+    },
+    "concurrentParticipants": {
+      "description": "How many other participants of this task were live on the same harness at the moment this one spawned. It is why a positive window delta is the spend of the RUN and not of one participant: several overlap in time, and the split is PB-37's decision. null when this participant's spawn moment is unknown.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "dismissedBeforeDone": {
+      "description": "Whether the participant was dismissed from watch before the task closed. The record is written once, at done; this is how the dismissal reaches it.",
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "windowDelta": {
+      "description": "One window of the account, read twice. `usedPercentAtSpawn` is what the decision recorded; `usedPercentAtEnd` is the current cache when its entry may still be used, and null when it may not — a delta measured against a stale percentage is not a delta.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "scope", "usedPercentAtSpawn", "usedPercentAtEnd"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["session", "weekly", "monthly"] },
+        "scope": {
+          "description": "What the window binds, in the snapshot's own shapes. null — the whole account.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/modelScope" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/autoPoolScope" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/apiPoolScope" }
+          ]
+        },
+        "usedPercentAtSpawn": { "type": "number", "minimum": 0, "maximum": 100 },
+        "usedPercentAtEnd": {
+          "oneOf": [
+            { "type": "number", "minimum": 0, "maximum": 100 },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "recordedAt": "2026-09-06T12:30:00.000Z",
+      "task": "0123456789abcdef",
+      "role": "worker",
+      "harness": "example",
+      "model": "example-deep",
+      "effort": "high",
+      "tuple": "example.deep.high",
+      "strategy": "balance",
+      "strategySource": "overlay:workspace",
+      "spawnedAt": "2026-09-06T11:00:00.000Z",
+      "endedAt": "2026-09-06T12:30:00.000Z",
+      "durationSec": 5400,
+      "turns": 9,
+      "reviewRounds": 2,
+      "questions": 1,
+      "resultCount": 2,
+      "windows": [
+        {
+          "id": "session",
+          "kind": "session",
+          "scope": null,
+          "usedPercentAtSpawn": 40,
+          "usedPercentAtEnd": 52
+        },
+        {
+          "id": "weekly-example-deep",
+          "kind": "weekly",
+          "scope": { "model": "Example Deep", "models": ["example-deep"] },
+          "usedPercentAtSpawn": 12,
+          "usedPercentAtEnd": null
+        }
+      ],
+      "concurrentParticipants": 1,
+      "dismissedBeforeDone": true
+    },
+    {
+      "schemaVersion": 1,
+      "recordedAt": "2026-09-06T12:30:00.000Z",
+      "task": "0123456789abcdef",
+      "role": "reviewer",
+      "harness": "example-pooled",
+      "model": "example-own",
+      "effort": null,
+      "tuple": null,
+      "strategy": null,
+      "strategySource": null,
+      "spawnedAt": "2026-09-06T12:00:00.000Z",
+      "endedAt": "2026-09-06T12:30:00.000Z",
+      "durationSec": 1800,
+      "turns": 3,
+      "reviewRounds": 0,
+      "questions": 0,
+      "resultCount": 1,
+      "windows": [],
+      "concurrentParticipants": 0,
+      "dismissedBeforeDone": false
+    }
+  ]
+}

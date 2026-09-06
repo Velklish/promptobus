@@ -120,7 +120,11 @@ export const SUITE_PREFIXES = [
   'promptobus-routing-',
   'promptobus-rules-',
   'promptobus-runner-', 'promptobus-setup-', 'promptobus-skills-', 'promptobus-smoke-',
-  'promptobus-store-', 'promptobus-sweep-', 'promptobus-sync-', 'promptobus-test-',
+  'promptobus-store-', 'promptobus-sweep-', 'promptobus-sync-',
+  // Covers the five sandboxes of model-routing-telemetry.test.mjs: one
+  // workspace per case, and an entry sweeps everything that starts with it.
+  'promptobus-telemetry-',
+  'promptobus-test-',
   'promptobus-tools-', 'promptobus-util-', 'promptobus-v1-', 'promptobus-wt-',
   'promptobus-zone-',
 ];

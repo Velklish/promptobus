@@ -81,6 +81,8 @@ A `kind` is a **name** and `lengthSec` is the **number**, and the line prints bo
 
 `--json` prints the decision document; its shape is `schemas/model-routing/decision.schema.json` and it is pinned by `test/fixtures/model-routing/decision.json`. The text output is pinned byte for byte by `models.txt` next to it: candidates are printed in the order the decision document lists them — scored first by descending total, then excluded ones by canonical priority.
 
+**The text form ends with one line about the telemetry file** — how many records it holds and how large it is, and nothing read out of the records; reading them back is a later series. The line is printed beside the decision rather than inside it, and `--json` does not print it at all: that form is one document a machine parses, and the count is not a field of it. See [Participant telemetry](#participant-telemetry).
+
 `models validate` checks the catalog and every overlay: schema, references to tuple, model and harness, rating ranges, weight sums, duplicate ids, and rules that both allow and deny the same name.
 
 `models --clear-exhausted <harness>` drops an exhaustion the cache is holding with no known reset. Nothing else clears one: an exhaustion with a reset expires by itself.
@@ -162,6 +164,7 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 | catalog | `models/catalog.json`, shipped with the package | `schemas/model-routing/catalog.schema.json` |
 | overlays | `host.routingPaths().overlays`, lowest precedence first | standalone: `user`, then `workspace` ([02-host](02-host.md)) |
 | availability cache | `host.routingPaths().cacheFile` | mode `0600`; no prompt, token, email or open account id |
+| participant telemetry | `telemetry.jsonl` beside the cache | mode `0600`; JSON Lines, `schemas/model-routing/telemetry.schema.json`; the same rule, plus no path, no session id and no message body |
 
 ### Availability: the adapter, the preflight and the cache
 
@@ -476,6 +479,40 @@ The decision reports what the caller pinned in `constraints`, and `applied` ther
 
 The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reproduced from `catalog.json` and `snapshot.json` twice, and the two runs are not a duplicate of each other: `test/model-routing-resolver.test.mjs` calls the pure function with synthetic paths, and `test/model-routing.test.mjs` runs the `models` command itself against a real host and substitutes the paths that run actually has. Both compare the JSON after the normalisation [its README](../../test/fixtures/model-routing/README.md) states, and the text byte for byte.
 
+### Participant telemetry
+
+The catalog's ratings come from published benchmarks, and two frontier models a point apart on one leaderboard share a band; nothing else in the tool learns from what actually happens on this machine. So `promptobus done` appends one record per participant to `telemetry.jsonl`, JSON Lines, beside the availability cache the host names ([02-host](02-host.md)), mode `0600`. This is the collecting half only: nothing here scores, compares or proposes anything, and reading the records back — a finer scale, absolute bands, a calibration pass — is the next series.
+
+**Local, and only local.** Nothing sends the file anywhere, no command reads it but the count line of `models`, and the tool never rotates it.
+
+**Who gets a record.** Every participant that lifted a session: role `worker` or `reviewer`, with a model on its record. A participant WITHOUT a routing decision gets one too — a legacy lift or an explicit `--model` — with `strategy: null`, so a hand-picked tuple is measured beside a routed one. The task owner gets none: it has no session and no tuple. Neither does an address that only ever wrote to the task, the already-dismissed record `promptobus send` writes for a foreign session.
+
+**When.** At `done`, and not at `dismiss`. A dismissal is not the end of a participant — a new assignment to the same address puts it back under watch — so a record per dismissal would put several rows on one participant's run with nothing to merge them by, and the file is append-only. `done` is the one moment a run is over for good, and `dismissedBeforeDone` carries the dismissal into that single row.
+
+| Field | What it holds |
+|---|---|
+| `schemaVersion`, `recordedAt` | the record version, and when `done` wrote it |
+| `task` | an opaque local key made from the task id, so records of one run group together. The slug a person typed is not in the file. It is unsalted so the grouping holds across installs of one account, which makes it a key rather than a secret — someone holding this file and the workspace could match one back to an id they already have |
+| `role`, `harness`, `model`, `effort` | what actually ran |
+| `tuple`, `strategy`, `strategySource` | the routed pick, or `null` three times for an unrouted one |
+| `spawnedAt`, `endedAt`, `durationSec` | the lift, the participant's own end — its dismissal, otherwise the close — and the seconds between them |
+| `turns`, `reviewRounds`, `questions`, `resultCount` | the bus traffic: messages it sent, `review` messages it received, and the `question` and `result` messages among the ones it sent. Counted from the canonical message records, not from `history/`, which holds only what a mailbox fetched |
+| `windows` | one entry per limit window that applied to the tuple at spawn — `{ id, kind, scope, usedPercentAtSpawn, usedPercentAtEnd }` |
+| `concurrentParticipants` | how many other participants of the task were live on the same harness when this one spawned |
+| `dismissedBeforeDone` | whether the participant was dismissed from watch before the task closed |
+
+**The window delta is the evidence `quotaCost` never had.** A positive `usedPercentAtEnd − usedPercentAtSpawn` on the tuple's binding window is what that run spent, in the account's own unit rather than in money or in a rating. The spawn reading comes from the decision: a routed lift records `windows` on its participant — the applicable windows of the chosen tuple, the account-wide ones plus the scope covering the model, with the `usedPercent` they had at that moment ([Resolver](#resolver)). An unrouted lift records none, and its `windows` is empty rather than filled with something else. The end reading comes from the availability cache as it stands at the close, and **only while its entry may still be used**: past the TTL it is `null`, because a delta measured against an hour-old percentage is not a delta.
+
+**`done` does not probe, so the end reading is only as fresh as the cache.** The window TTL is sixty seconds and nothing in the close asks a harness anything — a probe inside `done` would put the preflight budget on the path that closes a run, and whether to pay it is a decision the calibration pass gets to make. Until then the rule for a person or an orchestrating agent is one line: **run `promptobus models --refresh` right before `promptobus done` to record the end value; otherwise the record carries the start value only.**
+
+**The delta belongs to the run, not to one participant.** Several participants of one account overlap in time, and a weekly window that moved four points while three of them worked does not say which of the three spent them. `concurrentParticipants` is that fact stated in the record rather than left to be guessed; how to divide it is the calibration pass's decision, not this file's.
+
+**What a record never holds.** No prompt text and no message body, no repository path, worktree or branch, no session id, no email, no token. The record passes the same publicity rule as the cache and for a sharper reason: it is assembled from a participant journal and a task journal, which hold every one of those. So it is projected field by field onto the closed shape above — nothing is spread into it — and the schema's objects are closed, so a document carrying such a field stops validating. The only identifier is `task`, and it is a digest.
+
+The terms this section introduces — participant telemetry, telemetry record, window delta — are added to [the glossary](../GLOSSARY.md) by the release task of this series (PB-33), together with the rest of ADR-004's vocabulary.
+
+**Growth and clearing.** One line per participant, a few hundred bytes each: a run of three participants a day is on the order of a megabyte a decade. `promptobus models` prints the count and the size so the number is visible without opening the file. There is no rotation and no expiry in this version — remove the file with `rm` and the tool starts a new one at the next `done`.
+
 ## Status, done, dismiss, history, prune
 
 `status` lists active tasks, participants, unread counts, and warden health. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. That record also keeps `windows`: the applicable windows of the chosen tuple with the `usedPercent` they had at the lift, which is the starting value a later reader needs to say what the run spent. It is the resolver's own applicable set, and it is empty when the harness reported no window. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
@@ -483,6 +520,8 @@ The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reprodu
 A Cursor participant's liveness is judged by **three** signals, and a stall verdict needs all three quiet: the chat transcript growing, an instrumental process under the session's tmux pane, and a write in the participant's own worktree — the newest mtime among `git ls-files -mo --exclude-standard` plus its HEAD commit time (`lib/cursor-persist.js`). The third exists because the agent edits files inside one long call and spawns nothing, so the first two see a session that is working as one that is silent. It is **positive only**: a recent write lifts the verdict, its absence never raises one, and a session nothing writes for still stalls once the threshold passes. The verdict names each measurement and its span, so a silent transcript can be told from a dead session without opening the panel.
 
 `done` closes the task. The mailbox owner may call it. Sessions the bus started are stopped unless `--keep-sessions`. Journals of tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed on that last call.
+
+Right after the close it appends one telemetry record per participant that lifted a session ([Participant telemetry](#participant-telemetry)) — before the sweeps, because the run is over at the close and everything after that line may lawfully end in a warning. A telemetry file that cannot be written is itself a warning and never a refusal: the task is already closed and there is no undo.
 
 It also sweeps the worktrees of every closed task, and a directory goes only when the branch's work is proven to be in the repository's default branch. The judgement is about **content, not ancestry**: a squash merge leaves none of the branch's commits in the base by construction, so the commit count says nothing on its own. Two measurements answer it (`lib/worktree.js`): whether merging the branch into the base would add anything (`git merge-tree --write-tree`), and whether the base holds a commit carrying the branch's own patch (`git patch-id --stable` over `git diff <fork> <branch>`). The second exists because the first stops answering once the base moves over the same lines — which is exactly what the next worker landing on the same file does. Everything else keeps the directory, and the report names the state it measured: `merged as a squash`, `is entirely in <base>`, or `is not merged`. A squash whose content was edited while merging, and work taken as a series of cherry-picks, are not recognised and keep the directory: it is cheap to delete and impossible to return.
 
