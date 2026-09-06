@@ -36,6 +36,7 @@ import { codexDriver } from '../lib/driver-codex.js';
 import { adapterOf } from '../lib/drivers.js';
 import { preflight } from '../lib/model-routing/preflight.js';
 import { listedModels } from '../lib/codex-session.js';
+import { isoStamp, snapshotEntry } from '../lib/model-routing/cache.js';
 import {
   rateLimitSnapshot, rateLimitWindows, reachedResetAt, resetIso, unsupportedMethod,
 } from '../lib/model-routing/adapter-codex.js';
@@ -53,6 +54,7 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 const validSnapshot = ajv.compile(JSON.parse(readFileSync(
   path.join(ROOT, 'schemas', 'model-routing', 'snapshot.schema.json'), 'utf8',
 )));
+const validates = (doc) => (validSnapshot(doc) ? true : ajv.errorsText(validSnapshot.errors));
 
 /** The one thing the adapter asks a host for. The version is read from the stub's own `--version`. */
 const host = { resolveToolBin: (name) => resolveToolBin(name) };
@@ -149,23 +151,33 @@ test('windows keep the harness names and the harness numbers', () => {
     tertiary: { usedPercent: 1 },
   });
   assert.deepEqual(windows, [
-    { id: 'primary', usedPercent: 12, lengthSec: 18_000, resetAt: '2100-01-01T00:00:00.000Z' },
-    { id: 'secondary', usedPercent: 46, lengthSec: 604_800, resetAt: null },
+    { id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 12, resetAt: '2100-01-01T00:00:00.000Z', scope: null },
+    { id: 'secondary', kind: 'weekly', lengthSec: 604_800, usedPercent: 46, resetAt: null, scope: null },
   ]);
 });
 
-test('a snapshot that names no window is the primary window written without its name', () => {
+test('a snapshot that names no window is the primary window, and it needs a length like any other', () => {
   // `rateLimitReached` counts the snapshot itself among the windows it checks and
   // `rateLimitNote` reads `snap.usedPercent` — the flat form has always been the
-  // primary window. Losing it here would publish an exhaustion with no window and
-  // no reset, i.e. a sticky one, over a limit the harness had timed.
-  assert.deepEqual(rateLimitWindows({ usedPercent: 100, resetsAt: '2099-01-01T00:00:00Z' }),
-    [{ id: 'primary', usedPercent: 100, resetAt: '2099-01-01T00:00:00.000Z' }]);
+  // primary window, so it is READ as one.
+  //
+  // What it is not given is a length it did not state. ADR-004 made `lengthSec`
+  // required, because without it there is no pace and the cache projection drops
+  // the window on the way to disk — invisibly. So a flat form that names a
+  // duration is a window, and one that does not is none.
+  assert.deepEqual(rateLimitWindows({ usedPercent: 100, windowDurationMins: 300, resetsAt: '2099-01-01T00:00:00Z' }),
+    [{ id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 100, resetAt: '2099-01-01T00:00:00.000Z', scope: null }]);
+  assert.deepEqual(rateLimitWindows({ usedPercent: 100, resetsAt: '2099-01-01T00:00:00Z' }), []);
+
+  // And the fear that made the flat reading matter is answered elsewhere, which
+  // is why dropping a lengthless one costs nothing: the exhaustion's reset comes
+  // from `reachedResetAt(snap)`, not from the window list, so a timed limit stays
+  // timed and does not turn into the sticky kind.
   assert.equal(reachedResetAt({ usedPercent: 100, resetsAt: '2099-01-01T00:00:00Z' }),
     '2099-01-01T00:00:00.000Z');
   // A named window still wins: the flat reading is the fallback, not the rule.
-  assert.deepEqual(rateLimitWindows({ usedPercent: 99, primary: { usedPercent: 12 } }),
-    [{ id: 'primary', usedPercent: 12, resetAt: null }]);
+  assert.deepEqual(rateLimitWindows({ usedPercent: 99, primary: { usedPercent: 12, windowDurationMins: 300 } }),
+    [{ id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 12, resetAt: null, scope: null }]);
 });
 
 test('the reset of an exhaustion is the reset of the window that was reached', () => {
@@ -245,9 +257,9 @@ test('an authenticated account is available, with both windows and the model inv
   assert.equal(verdict.version, HARNESS_VERSION);
   assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini']);
   assert.deepEqual(windowById(verdict, 'primary'),
-    { id: 'primary', usedPercent: 12, lengthSec: 18_000, resetAt: '2100-01-01T00:00:00.000Z' });
+    { id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 12, resetAt: '2100-01-01T00:00:00.000Z', scope: null });
   assert.deepEqual(windowById(verdict, 'secondary'),
-    { id: 'secondary', usedPercent: 46, lengthSec: 604_800, resetAt: '2100-01-02T00:00:00.000Z' });
+    { id: 'secondary', kind: 'weekly', lengthSec: 604_800, usedPercent: 46, resetAt: '2100-01-02T00:00:00.000Z', scope: null });
   // The one field an `available` verdict may not carry: a reason on `available`
   // is a contract breach, and the preflight turns it into `probe_failed`.
   assert.equal(verdict.reason, null);
@@ -280,28 +292,37 @@ test('an account nobody is logged into is unavailable / not_authenticated', asyn
   assert.equal(verdict.models, undefined, 'a logged-out account exposes no inventory of its own');
 });
 
-test('a binary without the limit read falls back to the notification', async () => {
+test('a binary without the limit read falls back to the notification, and that payload names no length', async () => {
   // The path the brief for this task described, kept for the binary it still
-  // applies to. The notification carries the snapshot flat and with an ISO reset.
+  // applies to. The notification carries the snapshot flat and with an ISO reset
+  // — and, in the shape this stand-in models, no `windowDurationMins`.
+  //
+  // Since ADR-004 that means NO WINDOW rather than a window without a length: a
+  // window with no length has no pace, and a length derived from the id would be
+  // a number app-server never stated. The verdict is otherwise untouched — the
+  // account is still known to be authenticated and still `available`. What it
+  // costs is named rather than hidden: with no window, `remaining` is unknown for
+  // this harness and the entry ages at the auth TTL rather than the window one.
+  // Whether a real notification carries the duration is a question for the
+  // adapters track (PB-24.1); if it does, reading it puts the window back.
   const verdict = await probe({ flags: 'unsupported' });
   assert.equal(verdict.state, 'available');
   assert.equal(verdict.reason, null, verdict.message);
-  assert.deepEqual(windowById(verdict, 'primary'),
-    { id: 'primary', usedPercent: 12, resetAt: '2099-01-01T00:00:00.000Z' });
-  assert.equal(windowById(verdict, 'secondary'), undefined, 'the notification names one window');
+  assert.deepEqual(verdict.windows, [], 'a payload with no duration states no window');
 });
 
-test('a flat notification of a spent limit keeps its window and its reset', async () => {
-  // The shape that names no window still names the numbers, and `rateLimitReached`
-  // has always treated it as one. Read as "no window" it would become an
-  // exhaustion with `resetAt: null` — the sticky kind, which only
-  // `--clear-exhausted` lifts — over a limit the harness had timed to the minute.
+test('a flat notification of a spent limit keeps its RESET, which is the half that decides stickiness', async () => {
+  // The fear this check was written for is unchanged and is still answered: an
+  // exhaustion with `resetAt: null` is the sticky kind, which only
+  // `--clear-exhausted` lifts, and reading a timed limit as one would be a
+  // regression. It is answered by `reachedResetAt(snap)`, which reads the
+  // snapshot and not the window list — so the reset survives even though the
+  // payload states no duration and therefore states no window (ADR-004).
   const verdict = await probe({ flags: 'unsupported,flat', limit: true });
   assert.equal(verdict.state, 'exhausted');
   assert.equal(verdict.reason, 'subscription_exhausted');
-  assert.equal(verdict.resetAt, '2099-01-01T00:00:00.000Z');
-  assert.deepEqual(verdict.windows,
-    [{ id: 'primary', usedPercent: 100, resetAt: '2099-01-01T00:00:00.000Z' }]);
+  assert.equal(verdict.resetAt, '2099-01-01T00:00:00.000Z', 'a timed limit must not become the sticky kind');
+  assert.deepEqual(verdict.windows, []);
 });
 
 test('a model list that refuses costs the inventory and nothing else', async () => {
@@ -447,4 +468,44 @@ test('not one of those probes started a thread', async () => {
   }
   assert.deepEqual(threads, [], `the probe started ${threads.length} thread(s)`);
   restore();
+});
+
+test('a Codex window survives the cache projection — kind, length and scope are stated, not guessed', () => {
+  // The regression this exists for is silent: `windowOf` requires `kind`,
+  // `lengthSec` and an explicit `scope` since ADR-004, and an adapter still
+  // emitting the old shape would have every window DROPPED on the way to disk.
+  // Nothing would go red — `remaining` would quietly become 50 for every
+  // candidate, each would take the −10 unknown penalty, and the entry would fall
+  // out of the 60 s window TTL into the 1 h auth one, so a spent Codex account
+  // would look fine for an hour.
+  //
+  // So the check is the ROUND TRIP, adapter into projection, and not the
+  // adapter's own output compared with a fixture that moves when the code does.
+  //
+  // Mutation probe: drop `kind` (or `scope`) from `rateLimitWindows` and the
+  // projected list below comes back empty.
+  const snap = rateLimitSnapshot({
+    rateLimits: {
+      primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1788668319 },
+      secondary: { usedPercent: 46, windowDurationMins: 10080, resetsAt: 1789040909 },
+    },
+  });
+  const windows = rateLimitWindows(snap);
+  assert.deepEqual(windows.map((w) => [w.id, w.kind, w.lengthSec, w.scope]), [
+    ['primary', 'session', 18000, null],
+    ['secondary', 'weekly', 604800, null],
+  ]);
+
+  const projected = snapshotEntry({
+    state: 'available', reason: null, message: 'ok', checkedAt: isoStamp(), source: 'probe', windows,
+  });
+  assert.deepEqual(projected.windows, windows, 'the projection dropped a window the adapter reported');
+  assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { codex: projected } }), true);
+
+  // A window whose length app-server did not state is left out by the adapter
+  // rather than given one: without a length there is no pace, and a number
+  // invented here would be one the harness never said.
+  assert.deepEqual(rateLimitWindows(rateLimitSnapshot({
+    rateLimits: { primary: { usedPercent: 12, resetsAt: 1788668319 } },
+  })), []);
 });

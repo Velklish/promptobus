@@ -22,11 +22,9 @@ with `catalog.json` as the catalog, `snapshot.json` as the cache, **no overlay f
 
 ## Comparison is byte-for-byte after two normalisations
 
+**The availability block** in `decision.json` — `decision.json` carries `harnesses` — is the snapshot projected onto the decision, one row per harness with its tier and every window. It is assembled by the COMMAND, not by the resolver, which reads no disk; the resolver check composes it with the same exported `availabilityOf` the command uses rather than a copy, so the two runs cannot disagree about it. It is **not** normalised, because it holds no path and no clock the run produces — it is compared exactly, like everything else below the two fields that cannot be.
+
 Two kinds of field cannot be compared raw, and both are normalised before the diff rather than excluded from it — an excluded field is an unpinned field.
-
-1. **The availability block.** `decision.json` carries `harnesses` — the snapshot projected onto the decision, one row per harness with its tier and every window. It is assembled by the COMMAND, not by the resolver, which reads no disk; the resolver check composes it with the same exported `availabilityOf` the command uses rather than a copy, so the two runs cannot disagree about it. It is not normalised — it holds no path and no clock the run produces.
-
-The two normalisations proper:
 
 1. **Paths.** The overlay paths in `decision.json` are written as `~/.promptobus/model-routing.json` and `<workspaceRoot>/.promptobus/model-routing.json`. The comparison replaces the home directory with `~` and the workspace root with `<workspaceRoot>`, longest prefix first, then compares. The placeholders stay in the fixture: a fixture holding one machine's home directory is a fixture only that machine can read.
 

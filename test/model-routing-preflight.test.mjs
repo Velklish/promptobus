@@ -447,18 +447,21 @@ test('a value the adapter garbled is dropped, and only that value', () => {
       { model: '   ' }, { model: null }, { model: 42 }, {},
     ],
     windows: [
-      { id: 'kept', kind: 'session', lengthSec: 18000, usedPercent: 40 },
-      { id: '', kind: 'session', lengthSec: 1, usedPercent: 1 },
-      { id: 'nan', kind: 'session', lengthSec: 1, usedPercent: Number.NaN },
-      { id: 'missing', kind: 'session', lengthSec: 1 },
-      { id: 'over', kind: 'session', lengthSec: 1, usedPercent: 101 },
-      { id: 'under', kind: 'session', lengthSec: 1, usedPercent: -1 },
+      { id: 'kept', kind: 'session', lengthSec: 18000, usedPercent: 40, scope: null },
+      { id: '', kind: 'session', lengthSec: 1, usedPercent: 1, scope: null },
+      { id: 'nan', kind: 'session', lengthSec: 1, usedPercent: Number.NaN, scope: null },
+      { id: 'missing', kind: 'session', lengthSec: 1, scope: null },
+      { id: 'over', kind: 'session', lengthSec: 1, usedPercent: 101, scope: null },
+      { id: 'under', kind: 'session', lengthSec: 1, usedPercent: -1, scope: null },
       // ADR-004 makes kind and lengthSec required: a window with no length has no
       // PACE, and one that silently never paces is worse than one dropped here.
-      { id: 'no-kind', lengthSec: 1, usedPercent: 1 },
-      { id: 'bad-kind', kind: 'daily', lengthSec: 1, usedPercent: 1 },
-      { id: 'no-length', kind: 'session', usedPercent: 1 },
-      { id: 'zero-length', kind: 'session', lengthSec: 0, usedPercent: 1 },
+      { id: 'no-kind', lengthSec: 1, usedPercent: 1, scope: null },
+      { id: 'bad-kind', kind: 'daily', lengthSec: 1, usedPercent: 1, scope: null },
+      { id: 'no-length', kind: 'session', usedPercent: 1, scope: null },
+      // Absent is not `null`: `null` is the claim "this binds the whole account",
+      // and an adapter that never named a scope did not make it.
+      { id: 'no-scope', kind: 'session', lengthSec: 1, usedPercent: 1 },
+      { id: 'zero-length', kind: 'session', lengthSec: 0, usedPercent: 1, scope: null },
       // A garbled scope takes its window with it rather than widening into
       // `null`: null is the CLAIM "this binds the whole account", and it would
       // apply somebody's per-model cap to every tuple of the harness.
@@ -473,7 +476,7 @@ test('a value the adapter garbled is dropped, and only that value', () => {
       // A display name the adapter could not resolve keeps its window: it is
       // printed for a person and binds nothing.
       { id: 'unresolved', kind: 'weekly', lengthSec: 604800, usedPercent: 3, scope: { model: 'Mystery' } },
-      { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: 'soon' },
+      { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: 'soon', scope: null },
     ],
   });
   // The flag list is closed (ADR-004): an overlay may deny by a flag, so a name
@@ -623,7 +626,7 @@ test('the projection is field-by-field: an undeclared field cannot reach the sna
     ...entry(),
     token: FAKE_TOKEN,
     models: [{ model: 'm', flags: ['no-zdr'], secret: FAKE_TOKEN }],
-    windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, secret: FAKE_TOKEN }],
+    windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, scope: null, secret: FAKE_TOKEN }],
     tier: { name: 'example-plan', source: 'credentials', token: FAKE_TOKEN },
   });
   assert.equal(JSON.stringify(projected).includes(FAKE_TOKEN), false);

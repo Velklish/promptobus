@@ -84,6 +84,10 @@
             { "type": "null" }
           ]
         },
+        "spendControlReached": {
+          "description": "The account's own spend control says it is at its ceiling. Informational, and carried because it is a fact about the PLAN's policy rather than an amount — nothing scores it, and a harness that says so is still reported by its state and its windows.",
+          "type": "boolean"
+        },
         "credits": {
           "description": "Whether the account holds spendable credits beside its windows. Informational: nothing scores it and nothing spends one.",
           "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits"
