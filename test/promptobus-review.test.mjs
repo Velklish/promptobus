@@ -963,6 +963,19 @@ check(`: the base is named out loud — in the plan, in the reviewer's prompt, a
   && first.prompt.includes(String(first.baseLine)) && first.reReview.includes(String(first.baseLine)),
   String(first.baseLine));
 
+// PB-35: the diff file is written once, at the call, and the worker goes on committing —
+// two reviewers of the 2026-09-06 run read an older state and reported findings the
+// author had already closed. Nothing locks the worker's tree, so the file is not made to
+// follow it: its age is named instead. Here — in the brief, and in the re-review message
+// by the same sentence, because both are built from `subject()` and a snapshot named in
+// one of them only would be exactly as wrong as naming it in neither.
+check('PB-35 prompt: the diff file is named a snapshot — its moment, the worktree HEAD, and the working copy as the current state',
+  first.prompt.includes(`The file is a SNAPSHOT taken at ${first.snapshot.at}`)
+  && first.prompt.includes(`from worktree HEAD ${gOut(W1, 'rev-parse', 'HEAD')}`)
+  && first.prompt.includes(`The current state is the working copy ${W1} itself`)
+  && first.reReview.includes(`The file is a SNAPSHOT taken at ${first.snapshot.at}`),
+  first.snapshot.line);
+
 const second = planReview(WS, { target: W2, task: owned.id });
 check(': a second worker of the same repository gets its own reviewer, not the first one\'s reviewer',
   second.address === 'reviewer:vtoroy' && second.address !== first.address, second.address);
@@ -991,6 +1004,17 @@ const liveOut = await capture(() => review(WS, { tool: TOOL, target: W2, task: o
 check(`: a real run names the base, the worker, and the reviewer's address`,
   liveOut.includes(FORK) && /by the worker worker:vtoroy/.test(liveOut)
   && liveOut.includes('reviewer:vtoroy') && /diff base/.test(liveOut), liveOut);
+// PB-35: and the age of the file it just wrote, on the same line as the base — the pair
+// a person reads without opening the diff.
+const SNAPSHOT_LINE = /diff base:[^\n]*diff snapshot: \d{4}-\d{2}-\d{2}T[^\n]*, worktree HEAD [0-9a-f]{7,}/;
+check('PB-35 output: the snapshot moment and the worktree HEAD stand beside the diff base',
+  SNAPSHOT_LINE.test(liveOut) && liveOut.includes(gOut(W2, 'rev-parse', 'HEAD')), liveOut);
+// The same shape on `--dry-run` (review note): the reference promises the pair beside the
+// base without qualifying which mode, and a dry run whose plan the person reads to decide
+// whether to lift is exactly where the age of the diff is a fact worth having.
+const drySnapOut = await capture(() => review(WS, { target: W2, task: owned.id, dryRun: true }));
+check('PB-35 output: --dry-run prints the same pair beside the base',
+  SNAPSHOT_LINE.test(drySnapOut) && drySnapOut.includes(gOut(W2, 'rev-parse', 'HEAD')), drySnapOut);
 
 // A re-review of the same subject must stay the same: the same directory and the same
 // --task go to the same reviewer, not raise a second one.
@@ -1002,6 +1026,34 @@ const reReviewed = planReview(WS, { target: W2, task: owned.id });
 check('re-review of the same subject — the same address and the same live session',
   reReviewed.address === 'reviewer:vtoroy' && reReviewed.reuse === true
   && reReviewed.sessionState === 'alive', `${reReviewed.address} · ${reReviewed.sessionState}`);
+
+// PB-35: the same pair on the reviewer's record — that is what `promptobus status` and
+// `promptobus_task` read to answer how far behind the file is. Shape first: an ISO
+// moment and the worktree HEAD the lift took the diff from.
+const liftHead = gOut(W2, 'rev-parse', 'HEAD');
+check('PB-35 record: the lift writes the snapshot moment and the head commit of the diff',
+  /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(revPart?.diffAt)) && revPart?.diffHead === liftHead,
+  JSON.stringify({ diffAt: revPart?.diffAt, diffHead: revPart?.diffHead, head: liftHead }));
+
+// And it MOVES on a re-review. The re-review branch does not rewrite the record — a live
+// reviewer only gets a message — so without its own patch the record would keep naming
+// the first snapshot for the whole review, which is the lag this answers. The worktree
+// gains a commit first: with the same HEAD on both sides the check would pass on a
+// record nobody touched.
+writeFileSync(path.join(W2, 'vtoroy-2.txt'), 'вторая порция работы\n');
+g(W2, 'add', '.');
+g(W2, 'commit', '-m', 'вторая порция', '-q');
+const afterHead = gOut(W2, 'rev-parse', 'HEAD');
+claudeSays(JSON.stringify([{ name: revPart?.name ?? 'сессии нет', pid: 4242 }]));
+await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
+const reStamped = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
+check('PB-35 record: a re-review moves the snapshot to the diff it just sent',
+  reStamped?.diffHead === afterHead && afterHead !== liftHead
+  && reStamped?.diffAt !== revPart?.diffAt
+  // The re-review patches the pair and nothing else: the session the record was lifted
+  // with must survive it.
+  && reStamped?.name === revPart?.name && reStamped?.session === revPart?.session,
+  JSON.stringify({ diffAt: reStamped?.diffAt, diffHead: reStamped?.diffHead, was: revPart?.diffHead }));
 
 // The main clone belongs to nobody in the worktree journal — a review of the
 // orchestrator's own work stays on the prior behavior for both tasks.

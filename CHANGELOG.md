@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The reviewer is told its diff file is a snapshot, and the journal says how far behind it is.** `promptobus review` writes `files/review-<worker>.diff` once, at the call, while the worker goes on committing — on 2026-09-06 two reviewers of the same run read an older state and reported findings the author had already closed. Nothing locks the worker's tree, so the file is not made to follow it; its age is named instead. The reviewer's prompt now calls the file a snapshot, gives the moment it was taken and the worktree HEAD it was taken from, and sends the reviewer to the working copy for the current state before it reports a finding. The command prints the same pair beside the `diff base` line, and the reviewer's participant record carries it (`metadata.diffAt`, `metadata.diffHead`), so `promptobus status` and `promptobus_task` answer "how far behind" without opening the file. A repeat of the command with `--task` re-snapshots — a new numbered diff file and its path to the live reviewer — and both the record and the line move with it, which is why there is no `--fresh` flag.
+
 ## [0.4.0] — 2026-09-06
 
 ### Added
