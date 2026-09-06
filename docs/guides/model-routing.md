@@ -122,6 +122,9 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<workspaceR
   "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
   "qualityFloor": { "worker": 3, "reviewer": 5 },
   "balance": { "band": 5, "spendUnit": 5 },
+  "nearLimit": { "usedPercent": 80, "underspend": -15 },
+  "defaults": { "strategy": "balance" },
+  "account": { "cursor": { "plan": "example-ultra" } },
   "ratings": { "cursor-composer-2.5": { "speed": 5 } },
   "payg": { "allow": true }
 }
@@ -134,6 +137,9 @@ Line by line:
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
 - `qualityFloor` raises or lowers the bar per role — the defaults are worker 3 and reviewer 5. Both are soft floors and both are choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
+- `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line;
+- `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
+- `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the **user** file. **Nothing writes it**: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
 - `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone;
 - `payg.allow` admits pay-as-you-go tuples without `--allow-payg` on every call. The shipped catalog has no pay-as-you-go row today — every account the drivers log into is a subscription, and no price was filled in from a source that could be named — so this only matters once one appears or an overlay's own policy needs it.
 

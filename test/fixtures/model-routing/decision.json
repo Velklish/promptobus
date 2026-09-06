@@ -145,6 +145,10 @@
     {
       "code": "unknown-remaining",
       "message": "other exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points"
+    },
+    {
+      "code": "near-limit",
+      "message": "example is running short — its session window \"5h\" (20.1 % elapsed, resets at 2026-09-05T13:00:00.000Z): it is 19.93 points ahead of its own pace, past the -15 the threshold allows. Propose --strategy balance to the person and run `promptobus models strategy --set balance` once they agree — nothing switches on its own"
     }
   ],
   "constraints": {

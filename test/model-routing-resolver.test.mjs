@@ -312,7 +312,11 @@ test('unknown availability is penalised, never blocking, and it says so once per
   assert.equal(steady.availability.state, 'unknown');
   assert.deepEqual(steady.score.adjustments, [{ code: 'unknown-availability', points: -10 }]);
   assert.equal(steady.score.components.remaining, (NEUTRAL_REMAINING_PERCENT * 15) / 100);
-  assert.deepEqual(decision.warnings.map((w) => w.code), ['unknown-remaining']);
+  // Once per harness, and once only. The golden inputs also raise a `near-limit`
+  // line about the OTHER harness, which is a different subject — so the count of
+  // this code is what the test is about, not the length of the list.
+  assert.deepEqual(decision.warnings.filter((w) => w.code === 'unknown-remaining').map((w) => w.code),
+    ['unknown-remaining']);
 });
 
 test('remaining is what the most spent window leaves, not the roomiest one', () => {
@@ -341,14 +345,15 @@ test('an available harness with no limit window is unknown remaining too', () =>
 });
 
 test('a stale entry and a timed-out probe each say so in the warnings', () => {
+  // `near-limit` is filtered out of both: the golden inputs raise one, and this
+  // test is about the two codes a harness entry's own `reason` produces.
+  const codes = (d) => d.warnings.map((w) => w.code).filter((c) => c !== 'near-limit');
   const stale = clone(SNAPSHOT);
   stale.harnesses.other.reason = 'stale_cache';
-  assert.deepEqual(decide({ snapshot: stale }).warnings.map((w) => w.code),
-    ['unknown-remaining', 'snapshot-stale']);
+  assert.deepEqual(codes(decide({ snapshot: stale })), ['unknown-remaining', 'snapshot-stale']);
   const timedOut = clone(SNAPSHOT);
   timedOut.harnesses.other.reason = 'probe_timeout';
-  assert.deepEqual(decide({ snapshot: timedOut }).warnings.map((w) => w.code),
-    ['unknown-remaining', 'probe-incomplete']);
+  assert.deepEqual(codes(decide({ snapshot: timedOut })), ['unknown-remaining', 'probe-incomplete']);
 });
 
 test('the snapshot block carries the age from the clock and the source from the entries', () => {
@@ -1064,6 +1069,93 @@ test('a harness that cannot be paced prints its note rather than empty columns',
   const row = text.split('\n').find((l) => l.includes('codex') && l.includes('no-pace'));
   assert.ok(row, text);
   assert.match(row, /no-pace: no window that can be paced/);
+});
+
+// --- ADR-004: the near-limit signal ------------------------------------------
+
+const nearLimits = (decision) => decision.warnings.filter((w) => w.code === 'near-limit');
+
+test('a harness ahead of its own pace raises near-limit, and the line names which test tripped', () => {
+  // Cursor's auto pool is 62 % used with 47.9 % of the cycle elapsed — 14.08
+  // points ahead of pace. Nowhere near the 80 % LEVEL threshold, and the account
+  // is still spending faster than the window refills, which is the whole reason
+  // the signal reads both.
+  const decision = paced({ workspace: overlay({ nearLimit: { underspend: -10 } }) });
+  const lines = nearLimits(decision);
+  assert.equal(lines.length, 1, lines.map((w) => w.message).join('\n'));
+  assert.match(lines[0].message, /^cursor is running short/);
+  assert.match(lines[0].message, /monthly window "cycle-auto"/);
+  assert.match(lines[0].message, /resets at 2026-09-21T00:00:00\.000Z/);
+  assert.match(lines[0].message, /14\.08 points ahead of its own pace/);
+  assert.match(lines[0].message, /Propose --strategy balance/);
+  assert.equal(/% of it is used/.test(lines[0].message), false, 'the level test did not trip, so it is not claimed');
+  validDecision(decision, 'a decision carrying a near-limit line');
+});
+
+test('the level test alone raises it, and says so in those words', () => {
+  const decision = paced({ workspace: overlay({ nearLimit: { usedPercent: 50 } }) });
+  const cursor = nearLimits(decision).find((w) => w.message.startsWith('cursor'));
+  assert.ok(cursor, nearLimits(decision).map((w) => w.message).join('\n'));
+  assert.match(cursor.message, /62\.0 % of it is used, at or past the 50 % threshold/);
+});
+
+test('economy is proposed only when EVERY paced harness is past the threshold', () => {
+  // At 50 % only Cursor is over, so at least one other account has room and the
+  // answer is to spend it there: `balance`.
+  const some = paced({ workspace: overlay({ nearLimit: { usedPercent: 50 } }) });
+  for (const w of nearLimits(some)) assert.match(w.message, /Propose --strategy balance/);
+
+  // At 25 % all three are over — the set as a whole is short, and the answer is
+  // to spend less per run.
+  const all = paced({ workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.equal(nearLimits(all).length, 3);
+  for (const w of nearLimits(all)) assert.match(w.message, /Propose --strategy economy/);
+});
+
+test('no line when the strategy it would propose is the one already running', () => {
+  // A warning that recommends what is already happening is noise.
+  const already = paced({ strategy: 'economy', workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.deepEqual(nearLimits(already), []);
+  const other = paced({ strategy: 'balanced', workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.equal(nearLimits(other).length, 3);
+});
+
+test('the signal is raised under every strategy, not only under balance', () => {
+  // A person running `models --strategy quality` is owed the same warning about
+  // their windows — which is why the pace is computed for every scored candidate
+  // and only PUBLISHED under balance.
+  for (const strategy of ['quality', 'balanced', 'speed', 'economy']) {
+    const decision = paced({ strategy, workspace: overlay({ nearLimit: { underspend: -10 } }) });
+    assert.equal(nearLimits(decision).length, 1, `${strategy}: the line is missing`);
+    assert.equal(decision.candidates.every((c) => c.pace === undefined), true,
+      `${strategy}: the pace block must not be published`);
+  }
+
+  // `balance` is the one that is quiet here, and not because it is exempt: the
+  // strategy the line would propose is the one already running. Give the account
+  // set a reason to propose `economy` instead and the line arrives.
+  const quiet = paced({ strategy: 'balance', workspace: overlay({ nearLimit: { underspend: -10 } }) });
+  assert.deepEqual(nearLimits(quiet), []);
+  const loud = paced({ strategy: 'balance', workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.equal(nearLimits(loud).length, 3);
+  for (const w of nearLimits(loud)) assert.match(w.message, /Propose --strategy economy/);
+});
+
+test('a harness that cannot be paced raises no near-limit line — a threshold needs a number', () => {
+  const decision = paced({
+    snapshot: windowless('cursor'),
+    workspace: overlay({ nearLimit: { usedPercent: 1 } }),
+  });
+  assert.equal(nearLimits(decision).some((w) => w.message.startsWith('cursor')), false);
+  assert.equal(nearLimits(decision).length, 2, 'the other two are still measured');
+});
+
+test('the thresholds are policy values, and the defaults are ADR-004\'s', () => {
+  // The defaults raise nothing on this fixture: Cursor at 62 % is under 80, and
+  // its −14.08 is inside the −15 band. One point either way turns each on.
+  assert.deepEqual(nearLimits(paced({})), []);
+  assert.equal(nearLimits(paced({ workspace: overlay({ nearLimit: { usedPercent: 62 } }) })).length >= 1, true);
+  assert.equal(nearLimits(paced({ workspace: overlay({ nearLimit: { underspend: -14 } }) })).length, 1);
 });
 
 // --- ADR-004: the two new selectors ------------------------------------------

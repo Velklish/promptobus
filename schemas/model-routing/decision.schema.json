@@ -348,7 +348,8 @@
         "probe-incomplete",
         "flag-not-in-inventory",
         "worker-floor-not-met",
-        "balance-fallback"
+        "balance-fallback",
+        "near-limit"
       ]
     }
   }

@@ -25,7 +25,11 @@ Default diff base is the repository default branch. In a worker worktree it is t
 
 **Diversity.** A reviewer whose harness or model differs from the worker's scores higher — the resolver gives it a bonus, because a second reading with the same blind spot is not a review. Prefer a different harness when the workspace declares more than one and the user allowed it. Stay on the worker's harness only when the user pinned it, or when nothing else is available.
 
-`promptobus models --strategy quality --role reviewer` prints what that would pick before you start the reviewer. `--strategy` is one of `quality`, `balanced`, `speed`, `economy`; without it the command routes nothing and takes the defaults. `--harness`, `--model` and `--effort` stay constraints — a value the user named is never replaced by a strategy.
+`promptobus models --strategy quality --role reviewer` prints what that would pick before you start the reviewer. `--strategy` is one of `quality`, `balanced`, `speed`, `economy`, `balance`; without it the command takes the recorded default if there is one, and otherwise routes nothing and takes the defaults. `--harness`, `--model` and `--effort` stay constraints — a value the user named is never replaced by a strategy.
+
+**The reviewer follows the same recorded default as a worker.** If the person has agreed a switch — `promptobus models strategy --set <name>`, which the orchestrator proposes when `models` prints a `near-limit` line and never runs on its own — a `review` with no `--strategy` routes with it. Pass `--strategy quality` when the reviewer's own bar matters more than the account balance; that is the flag winning over the default, which is the rule everywhere.
+
+Nothing pins the reviewer to one harness. Under `balance` it is routed by the pace of the accounts like a worker, with the reviewer quality floor of 5 above it and the diversity bonus on top — a reviewer on a different harness or model from the worker's scores higher, because a second reading with the same blind spot is not a review.
 
 The rubric that turns a task into one strategy is in [orchestrate](../orchestrate/SKILL.md) § Model routing.
 

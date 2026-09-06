@@ -89,6 +89,53 @@
         }
       }
     },
+    "nearLimit": {
+      "description": "When models says an account is running short (ADR-004). Two readings of the same binding window, and either one on its own raises the line.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "usedPercent": {
+          "description": "A LEVEL: how much of the binding window is gone. Default 80.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "underspend": {
+          "description": "A RATE, in percentage points of the window: how far the account is AHEAD of its own pace. Default -15 — fifteen points more of the window spent than has elapsed of it. Negative on purpose and unbounded below; a positive value would fire on every harness that is behind pace, which is every harness the balance strategy is happy about.",
+          "type": "number"
+        }
+      }
+    },
+    "defaults": {
+      "description": "What a command uses when the flag is absent. The one key models strategy --set writes, into the host's writable layer. Merged as a scalar: the highest layer that names one wins.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "strategy": {
+          "description": "The strategy spawn and review route with when --strategy is absent. A flag a person typed always wins. With no default anywhere the legacy path is unchanged — a call with no --strategy routes nothing. `auto` is not a value: it is a skill decision.",
+          "enum": ["quality", "balanced", "speed", "economy", "balance"]
+        }
+      }
+    },
+    "account": {
+      "description": "A person's answers to questions no harness method returns — today one, Cursor's plan name. NOTHING WRITES THIS: models prints the key, the value and the path of the layer, and a person or an agent adds the line (ADR-004). The value is display only and enters no score; the snapshot keeps what was measured, and this is printed beside it as the person's answer.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+      "patternProperties": {
+        "^[a-z][a-z0-9-]{0,31}$": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "plan": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "allow": {
       "description": "Allow-lists. A non-empty list means: only these. An empty list is a shape error, not 'allow nothing' — write a deny rule for that. Allow lists INTERSECT across layers: a tuple must be named by every allow list of that kind any layer states, so a layer's rule survives every layer above it. Two layers can therefore intersect to nothing, which models validate reports as allow-intersection-empty.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/selectors"
@@ -198,6 +245,13 @@
       "deny": { "models": ["example-quick"] },
       "ratings": { "example-deep": { "speed": 3 } },
       "payg": { "allow": true }
+    },
+    {
+      "schemaVersion": 1,
+      "note": "schema example: the strategy a person agreed to, and the one answer no method returns",
+      "defaults": { "strategy": "balance" },
+      "nearLimit": { "usedPercent": 85 },
+      "account": { "example": { "plan": "example-plan" } }
     },
     {
       "schemaVersion": 1,

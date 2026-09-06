@@ -208,7 +208,262 @@ const routedOpts = (extra = {}) => ({
   ...extra,
 });
 
+// --- the strategy default, ADR-004 ------------------------------------------
+
+/** The writable layer under the standalone host: `<promptobusHome>/model-routing.json`. */
+const WORKSPACE_OVERLAY = () => path.join(HOST.promptobusHome(), 'model-routing.json');
+const USER_OVERLAY = () => HOST.routingPaths().overlays.find((l) => l.id === 'user').path;
+
+function writeOverlay(file, doc) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+}
+
+function dropOverlays() {
+  for (const file of [WORKSPACE_OVERLAY(), USER_OVERLAY()]) rmSync(file, { force: true });
+}
+
+test('`models strategy` with no default says so, and --set records one in the writable layer', async () => {
+  dropOverlays();
+  try {
+    const empty = await captureSplit(() => models(WS, { subcommand: 'strategy' }));
+    assert.equal(empty.value, 0);
+    assert.match(empty.out, /strategy default: none/);
+
+    const set = await captureSplit(() => models(WS, { subcommand: 'strategy', set: 'balance' }));
+    assert.equal(set.value, 0);
+    assert.match(set.out, /strategy default set to balance in overlay "workspace"/);
+
+    const file = WORKSPACE_OVERLAY();
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { schemaVersion: 1, defaults: { strategy: 'balance' } });
+    // The host contract asks for 0600 on what the tool writes under a person's
+    // home, and a half-written overlay is a routing stack that refuses to load.
+    assert.equal(statSync(file).mode & 0o777, 0o600, 'the written overlay must be 0600');
+
+    const said = await captureSplit(() => models(WS, { subcommand: 'strategy' }));
+    assert.match(said.out, /strategy default: balance · set by overlay "workspace"/);
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('--set keeps every other key of the file, and --clear takes only that one away', async () => {
+  dropOverlays();
+  const file = WORKSPACE_OVERLAY();
+  // A person's file that happens to hold one machine-written value — not a file
+  // the tool owns. Everything they wrote has to survive both operations.
+  writeOverlay(file, {
+    schemaVersion: 1,
+    note: 'mine',
+    deny: { tuples: ['cursor-composer-2.5'] },
+    qualityFloor: { reviewer: 4 },
+  });
+  try {
+    await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
+      schemaVersion: 1,
+      note: 'mine',
+      deny: { tuples: ['cursor-composer-2.5'] },
+      qualityFloor: { reviewer: 4 },
+      defaults: { strategy: 'economy' },
+    });
+
+    const cleared = await captureSplit(() => models(WS, { subcommand: 'strategy', clear: true }));
+    assert.match(cleared.out, /strategy default cleared from overlay "workspace"/);
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
+      schemaVersion: 1,
+      note: 'mine',
+      deny: { tuples: ['cursor-composer-2.5'] },
+      qualityFloor: { reviewer: 4 },
+    }, 'an empty defaults block is removed rather than left as {}');
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('`models` routes with the recorded default, and --strategy still wins over it', async () => {
+  // `models` answers "what would the resolver pick right now", so it reads the
+  // same default the lift does. Without that, `--set balance` and `models` would
+  // disagree about what is in force — and the near-limit line, which falls
+  // silent when it would propose the running strategy, could never fall silent.
+  dropOverlays();
+  seedCache(HEALTHY());
+  try {
+    const run = async (opts = {}) => {
+      const out = sink();
+      await quiet(() => models(WS, { ...opts, output: out }));
+      return out.text;
+    };
+
+    assert.match(await run(), /strategy: balanced · role: worker/,
+      'no default: balanced, the answer with no thumb on any scale');
+
+    await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
+    assert.match(await run(), /strategy: economy · role: worker/);
+    assert.match(await run({ strategy: 'quality' }), /strategy: quality · role: worker/, 'the flag wins here too');
+
+    assert.equal(JSON.parse(await run({ json: true })).strategySource, 'overlay:workspace',
+      'the document says where the strategy came from when it was not typed');
+    assert.equal(JSON.parse(await run({ strategy: 'quality', json: true })).strategySource, undefined,
+      'a flag records no source — there is nowhere else the value could have come from');
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('--clear with nothing to clear writes no file, and a shadowing layer is named', async () => {
+  dropOverlays();
+  try {
+    // Creating a file to record the absence of a key would leave an overlay on
+    // disk that says nothing, in a directory that had none.
+    const nothing = await captureSplit(() => models(WS, { subcommand: 'strategy', clear: true }));
+    assert.equal(nothing.value, 0);
+    assert.match(nothing.out, /nothing to clear/);
+    assert.equal(existsSync(WORKSPACE_OVERLAY()), false, '--clear must not create the file it would clear');
+
+    // The standalone host marks its HIGHEST layer writable, so nothing can
+    // shadow it — 02-host says a host SHOULD do that, and the warning exists for
+    // a consumer host that does not. Built here, because a warning no host in
+    // the suite can raise is a warning nobody has read back.
+    const paths = HOST.routingPaths();
+    const upended = {
+      ...HOST,
+      routingPaths: () => ({ ...paths, overlays: [paths.overlays[1], paths.overlays[0]] }),
+    };
+    writeOverlay(USER_OVERLAY(), { schemaVersion: 1, defaults: { strategy: 'quality' } });
+    const shadowed = await captureSplit(() => models(upended, { subcommand: 'strategy', set: 'economy' }));
+    assert.match(shadowed.out, /strategy default set to economy/);
+    assert.match(shadowed.err + shadowed.out, /what was just written is shadowed/);
+    assert.match(shadowed.err + shadowed.out, /overlay "user" sits above "workspace"/);
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('`models strategy --set` refuses a value that is not a strategy, and refuses both flags at once', async () => {
+  dropOverlays();
+  await assert.rejects(() => quiet(() => models(WS, { subcommand: 'strategy', set: 'auto' })),
+    (e) => e.code === 'strategy-unknown' && /"auto" is not one of them/.test(e.message));
+  await assert.rejects(() => quiet(() => models(WS, { subcommand: 'strategy', set: 'balance', clear: true })),
+    (e) => /opposite things/.test(e.message));
+  assert.equal(existsSync(WORKSPACE_OVERLAY()), false, 'a refused write leaves no file behind');
+});
+
+test('a host with no writable layer is refused at the write, naming why', async () => {
+  // The standalone host marks one; a consumer host need not declare an overlay
+  // at all, and then there is nowhere to keep a default. The refusal says that
+  // rather than writing somewhere of its own choosing.
+  const bare = { ...HOST, routingPaths: () => ({ ...HOST.routingPaths(), overlays: [] }) };
+  await assert.rejects(() => quiet(() => models(bare, { subcommand: 'strategy', set: 'balance' })),
+    (e) => e.code === 'overlay-invalid' && /nowhere to keep a strategy default/.test(e.message));
+});
+
+test('`spawn --dry-run` with no --strategy takes the overlay default and records its source', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('default-t20260905-090010');
+  try {
+    await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
+    const said = await captureSplit(() => spawnRaw(WS, {
+      repo: 'cargos-api',
+      brief: BRIEF,
+      task,
+      worker: 'defaulted',
+      dryRun: true,
+      tool: { ok: true, bin: path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude') },
+      adapterFor: probeSet(counter()),
+    }));
+    assert.match(said.out, /routing decision:/, 'the default routes the lift, with no flag on the command line');
+    assert.match(said.out, /strategy: economy · role: worker/);
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('a flag on the command line always wins over the default', async () => {
+  // ADR-004's precedence, and the rule ADR-003 fixed for --harness, --model and
+  // --effort: a named value is never replaced. This is the check the mutation
+  // probe of PB-32 breaks.
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('precedence-t20260905-090011');
+  try {
+    await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
+    const said = await captureSplit(() => spawnRaw(WS, routedOpts({
+      task, worker: 'flagged', dryRun: true, strategy: 'quality',
+    })));
+    assert.match(said.out, /strategy: quality · role: worker/,
+      'the flag the person typed is what routed, not the recorded default');
+    assert.equal(/strategy: economy/.test(said.out), false);
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('with no default anywhere, a spawn without --strategy takes the legacy path', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('legacy-t20260905-090012');
+  const probes = counter();
+  const said = await captureSplit(() => spawnRaw(WS, {
+    repo: 'cargos-api',
+    brief: BRIEF,
+    task,
+    worker: 'legacy',
+    dryRun: true,
+    tool: { ok: true, bin: path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude') },
+    adapterFor: probeSet(probes),
+  }));
+  assert.equal(/routing decision:/.test(said.out), false, 'nothing is routed');
+  assert.equal(probes.probes, 0, 'and no harness is asked — the legacy path is unchanged, not merely quiet');
+});
+
+test('`models` names the one question the tool cannot answer, and no command writes it', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const missing = await captureSplit(() => models(WS, {}));
+  assert.match(missing.out, /no plan name recorded for/);
+  assert.match(missing.out, /No command writes it/);
+  assert.match(missing.out, /"account": \{ "<harness>": \{ "plan": "<name>" \} \}/);
+
+  writeOverlay(USER_OVERLAY(), { schemaVersion: 1, account: { cursor: { plan: 'example-ultra' } } });
+  try {
+    const answered = await captureSplit(() => models(WS, {}));
+    assert.match(answered.out, /account\.cursor\.plan: "example-ultra" · from overlay "user"/);
+    assert.match(answered.out, /scored by nothing/);
+  } finally {
+    dropOverlays();
+  }
+});
+
 // --- `models validate`, `--clear-exhausted` ----------------------------------
+
+test('`models validate` prints the bans in force and who can lift each one', async () => {
+  // The whole point of ADR-004's union is met where a person meets it: a deny
+  // rule is lifted in the layer that wrote it and nowhere else, and no allow
+  // list anywhere reaches one. A person reading `denied-by-policy` on a
+  // candidate row otherwise has to work out which of three files to open.
+  dropOverlays();
+  writeOverlay(USER_OVERLAY(), { schemaVersion: 1, deny: { tuples: ['cursor-composer-2.5'] } });
+  writeOverlay(WORKSPACE_OVERLAY(), {
+    schemaVersion: 1,
+    deny: { harnesses: ['codex'], byRole: { reviewer: { harnesses: ['cursor'] } } },
+  });
+  try {
+    const said = await captureSplit(() => models(WS, { subcommand: 'validate' }));
+    assert.match(said.out, /deny rules in force — each is lifted only in the layer that wrote it/);
+    assert.match(said.out, /deny\.tuples of "user": cursor-composer-2\.5/);
+    assert.match(said.out, /deny\.harnesses of "workspace": codex/);
+    assert.match(said.out, /deny\.byRole\.reviewer\.harnesses of "workspace": cursor/);
+  } finally {
+    dropOverlays();
+  }
+
+  // No rule, no block: a heading with nothing under it reads as output that
+  // failed to print.
+  const bare = await captureSplit(() => models(WS, { subcommand: 'validate' }));
+  assert.equal(/deny rules in force/.test(bare.out), false);
+});
 
 test('`models validate` checks the shipped catalog and the layers the host names', async () => {
   const said = await captureSplit(() => models(WS, { subcommand: 'validate' }));

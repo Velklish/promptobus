@@ -42,6 +42,12 @@ promptobus models --strategy balanced --role worker --json     → decision.json
 
 with `catalog.json` as the catalog, `snapshot.json` as the cache, **no overlay file present at either layer**, no live participant on any harness, no explicit `--harness`, `--model` or `--effort`, and `--allow-payg` absent. The clock is frozen at `2026-09-05T09:00:12.000Z` — twelve seconds after the snapshot's `takenAt`, which is where `ageSec: 12` comes from.
 
+## The goldens are regenerated, not hand-edited
+
+When a change moves them, reproduce the pair rather than editing it: resolve with `strategy: 'balanced'`, `role: 'worker'`, the two overlay layers absent, no live participant and the frozen clock above, attach `harnesses` with the exported `availabilityOf`, normalise the paths, and write both files — `models.txt` is `render()` of that same document. A hand-edited golden records what someone expected instead of what the code does, which is the one thing a golden exists not to do.
+
+**Take the layer paths from `test/model-routing-resolver.test.mjs`, not from the reference.** They live in that file's own constants and they have moved: [ADR-004](../../../docs/adr/adr-004-subscription-balance.md) put the workspace overlay at `<promptobusHome>/model-routing.json`, and a regeneration written from an older description silently reverts that one path in `decision.json` and fails a test with a diff that looks like it is about something else.
+
 ## Comparison is byte-for-byte after two normalisations
 
 **The availability block.** `decision.json` carries `harnesses`: the snapshot projected onto the decision, one row per harness with its tier and every window. It is assembled by the COMMAND, not by the resolver, which reads no disk; the resolver check composes it with the same exported `availabilityOf` the command uses rather than a copy, so the two runs cannot disagree about it. It is **not** normalised, because it holds no path and no clock the run produces — it is compared exactly, like everything else below the two fields that cannot be.
@@ -58,3 +64,5 @@ Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runt
 ## Where the numbers come from
 
 `balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–5 scale normalises as `(r − 1) / 4 × 100`, and `quotaCost` inverted as `(5 − r) / 4 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 69, `other-steady` 66.25 − 10 = 56.25, `example-deep-high` 55.25. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
+
+The pair also carries a **`near-limit`** warning, and it was not put there on purpose — the numbers already in it produce one. `example`'s session window is 40 % used with 20.1 % of it elapsed, which is 19.93 points ahead of its own pace, past the `nearLimit.underspend` default of −15. It is the level-and-rate distinction in one line: 40 % used is nowhere near the 80 % threshold, and the account is still spending twice as fast as the window refills. `balance` is proposed rather than `economy` because the other harness is not paced at all, so the set as a whole is not short.

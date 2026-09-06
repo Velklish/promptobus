@@ -52,7 +52,7 @@ promptobus models [--strategy <s>] [--role <worker|reviewer>] [--refresh] [--jso
 
 `--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
 
-`--strategy` is one of `quality`, `balanced`, `speed`, `economy`. Without it the command routes nothing and takes the defaults. See [Model routing](#model-routing).
+`--strategy` is one of `quality`, `balanced`, `speed`, `economy`, `balance`. Without it the command takes the recorded default if there is one, and otherwise routes nothing and takes the defaults. See [Model routing](#model-routing).
 
 `--repo` is a path on disk. `--brief` is required.
 
@@ -70,10 +70,27 @@ Read the worker branch from `promptobus status` or `promptobus_task`. Do not reb
 | Ordinary development: a feature in a known subsystem, a bug with a repro, tests for behaviour that already exists | `balanced` |
 | Reconnaissance, reading a subsystem, and a small precise change in a named file | `speed` |
 | Bulk low-risk routine: a mechanical rename, a mass import rewrite, a formatting sweep | `economy` |
+| The subscriptions are unevenly spent and the work is not itself urgent — spend from the account with room rather than from the best-rated one | `balance` |
 
 **The price of a mistake moves a track up one row**, in that order: `economy` → `speed` → `balanced` → `quality`. A mechanical rename that touches a published surface is `speed`. A small precise change in a payment or auth path is `balanced`. Ambiguity is already priced in — an unclear statement is `quality` outright, not one row up from where its subject would sit.
 
 Classify each track on its own. One run may spawn `quality` and `economy` side by side.
+
+`balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. Reach for it when `models` says an account is running short, not as a general default.
+
+### When `models` says an account is running short
+
+A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its threshold, or which is spending faster than the window refills, and it names the strategy it would switch to — `economy` when every paced account is short, `balance` when at least one has room.
+
+**Propose that switch to the person. Never make it.** The strategy envelope is what they approved, and a mechanism that quietly left it would make the envelope unauditable. Show them the line and the tuple it would change, and when they agree:
+
+```text
+promptobus models strategy --set <name>
+```
+
+That records `defaults.strategy` in the host's writable overlay, and every following `spawn` and `review` without `--strategy` routes with it — the proposal holds without repeating a flag. `promptobus models strategy` alone prints the effective default and the layer it came from; `--clear` removes it. A `--strategy` on the command line always wins over the recorded default, so a track whose envelope names its own strategy is unaffected.
+
+This is the only thing that changes a strategy between spawns, and a person is on both ends of it.
 
 ### The strategy envelope
 
@@ -87,7 +104,7 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 `promptobus models [--strategy <s>] [--role <worker|reviewer>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
 
-`promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start.
+`promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start. A lift routed by the recorded default rather than by a flag says so, so a run made under a switch the person agreed to is auditable as one.
 
 ### Constraints the user named
 

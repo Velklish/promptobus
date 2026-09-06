@@ -64,12 +64,13 @@ The whole surface runs: `models`, `--strategy` and `--allow-payg` on `spawn` and
 ```text
 promptobus models [--strategy <quality|balanced|speed|economy|balance>] [--role <worker|reviewer>] [--refresh] [--json]
 promptobus models validate
+promptobus models strategy [--set <quality|balanced|speed|economy|balance> | --clear]
 promptobus models --clear-exhausted <harness>
 promptobus spawn  … [--strategy <quality|balanced|speed|economy|balance>] [--allow-payg] [--refresh]
 promptobus review … [--strategy <quality|balanced|speed|economy|balance>] [--allow-payg] [--refresh]
 ```
 
-`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--strategy` defaults to `balanced` and `--role` to `worker`. The text form prints at most eight unrated rows per harness and counts the rest (`… and N more`); `--json` carries every row, so the two outputs cannot drift.
+`models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. Without `--strategy` it takes the **recorded default** and falls back to `balanced` where none is set — the same precedence a lift uses, so `models` and the next `spawn` cannot disagree about what is in force. `--role` defaults to `worker`. The text form prints at most eight unrated rows per harness and counts the rest (`… and N more`); `--json` carries every row, so the two outputs cannot drift.
 
 **`models` has no `--dry-run`, because it is one.** It reads the availability cache and asks no harness anything; `--refresh` is the only flag that makes it probe, and therefore the only one that writes a cache entry. The reason is the ADR's: this is the command a person types to ask a question, and a question that starts three harness binaries and waits out the preflight budget is not one. `--dry-run` belongs to `spawn` and `review`, where the alternative to a dry run is a lift.
 
@@ -87,7 +88,15 @@ A `kind` is a **name** and `lengthSec` is the **number**, and the line prints bo
 
 `models --clear-exhausted <harness>` drops an exhaustion the cache is holding with no known reset. Nothing else clears one: an exhaustion with a reset expires by itself.
 
-`--strategy` on `spawn` and `review` hands the resolver an intent. `auto` is not a value here — the orchestrating agent turns a task into one concrete strategy before the call. Without `--strategy` the command takes today's path exactly, with today's defaults.
+`--strategy` on `spawn` and `review` hands the resolver an intent. `auto` is not a value here — the orchestrating agent turns a task into one concrete strategy before the call. Without `--strategy` the command takes the **recorded default** if one is set, and otherwise today's path exactly, with today's defaults.
+
+**Precedence: flag → overlay default → none.** `--strategy` on the command line always wins, which is the rule [ADR-003](../adr/adr-003-model-routing.md) fixed for `--harness`, `--model` and `--effort` — a named value is never replaced. Below it, `defaults.strategy` from the merged overlays: a scalar, so the highest layer that names one wins. Below that, nothing — and nothing is the legacy path, so ADR-003's "a call with no `--strategy` routes nothing" still holds word for word where no layer sets one. A lift routed by the default records `strategySource: "overlay:<layer>"` on its decision and in `metadata.routing`, so a run made under a switch a person agreed to is auditable as one; a lift routed by a flag records no source, because there is nowhere else the value could have come from.
+
+Reading the default costs the overlay files and no probe, so a `spawn` that routes nothing still asks no harness anything.
+
+`promptobus models strategy` with no argument prints the effective default and the layer that set it. `--set <name>` writes `defaults.strategy` into the host's **writable** layer ([02-host](02-host.md)): it keeps every other key of that file, creates it with a `schemaVersion` when it is not there, writes atomically with mode `0600`, and **refuses when no layer is writable** — a host that declares layers and marks none, or declares none at all, has nowhere to keep the value and is told so rather than written to somewhere of the tool's choosing. `--clear` removes the key and leaves the rest. When what was just written is shadowed by a layer above the writable one, the command says so: the value would otherwise sit on disk doing nothing.
+
+**One question the tool cannot answer, and no command writes it.** Today there is one — Cursor's plan name, which no method returns. It lives in the **user** overlay under `account: { "<harness>": { "plan": "<name>" } }`. `models` prints the key, the value where a person set one and the layer it came from, and the path to add it to where they have not; a person or an agent adds the line. There is no writer for two reasons: the writable layer is per-workspace, so a tool-written answer would be given again in every workspace, which is the opposite of "asked once"; and declaring a second writable layer to carry one string would make "exactly one writable layer" false the first time it was used. The value is **display only and enters no score**, and the snapshot keeps what was measured — a typed string never reaches the cache.
 
 `--allow-payg` admits pay-as-you-go tuples, which are otherwise excluded from automatic selection.
 
@@ -132,6 +141,7 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | warning | `unknown-remaining` | At least one harness could not report its remaining limit |
 | warning | `reviewer-floor-not-met` | No reviewer candidate reached the quality floor; the best remaining one was taken |
 | warning | `worker-floor-not-met` | The same for the worker's floor, which [ADR-004](../adr/adr-004-subscription-balance.md) added at 3 |
+| warning | `near-limit` | A harness whose binding window is at or past `nearLimit.usedPercent` (80), or whose underspend is below `nearLimit.underspend` (−15 points). The line names the window, its reset, which of the two tests tripped, and the strategy to propose — it never switches one |
 | warning | `balance-fallback` | `--strategy balance` and no harness could be paced — every candidate's binding window is unknown, spent or already reset. The pick was scored by the `balanced` weights, not balanced |
 | warning | `snapshot-stale` | The decision was made on cache entries past their TTL |
 | warning | `probe-incomplete` | An adapter missed the preflight budget and its harness is `unknown` |
