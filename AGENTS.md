@@ -17,3 +17,5 @@ The task tracker and decision log live in `docs/` and are managed with `npx gith
 
 Worker boundaries: change only the assigned branch or worktree; do not touch status directories or `docs/archive/`; closure and triage belong to the approver.
 <!-- backslop:end -->
+
+**A fresh clone or worktree carries no generated adapter output** — `.claude/skills/backslop-*/SKILL.md` and `CLAUDE.md` are written by `npx github:Velklish/backslop#v0.4.0 init` and are not tracked. Run `init` first in a fresh checkout: without it `backslop lint` is red on "no generated output" and the skill files the lift prompt names do not exist; `git status` does not change from it.
