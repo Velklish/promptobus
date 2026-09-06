@@ -2,11 +2,11 @@
 
 - **Scope:** [ADR-003](../../adr/adr-003-model-routing.md), [ADR-004](../../adr/adr-004-subscription-balance.md), `models/catalog.json`, `schemas/model-routing/*.json`, `lib/model-routing/{resolver,validate,catalog}.js`, new `lib/model-routing/calibrate.js`, `lib/models.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06, owner's decision 2026-09-06
-- **Dependencies:** the 0.4.0 tag; PB-36 (telemetry records exist); PB-29.1 (the rule defects of ADR-004 § Catalog ratings)
+- **Dependencies:** the 0.4.0 tag; PB-36 (telemetry records exist); the catalog track's finding on the rule defects of ADR-004 § Catalog ratings (filed under PB-29, lands with it)
 
 ## Context
 
-Three things the 0.4.0 series learned about ratings, all recorded in PB-29.1 and the PB-29 review: a rank band over a narrow field does not discriminate at the top (Opus 5 at 96.0 and Fable 5 at 95.0 share band 5 of 5; the other natural rank cut would have split them the wrong way); benchmark figures are not identified by benchmark and version alone — the agent harness is part of the figure; and a 1–5 scale leaves five steps for a field that the owner wants to see ranked more sharply. The owner's decision (2026-09-06): a **1–10 scale**, **absolute bands per benchmark and version** fixed in the ADR and revisited at each catalog update, and **local statistics** (PB-36) read back on request to propose corrections — not applied silently.
+Three things the 0.4.0 series learned about ratings, all recorded in the catalog track's finding under PB-29 and in the PB-29 review: a rank band over a narrow field does not discriminate at the top (Opus 5 at 96.0 and Fable 5 at 95.0 share band 5 of 5; the other natural rank cut would have split them the wrong way); benchmark figures are not identified by benchmark and version alone — the agent harness is part of the figure; and a 1–5 scale leaves five steps for a field that the owner wants to see ranked more sharply. The owner's decision (2026-09-06): a **1–10 scale**, **absolute bands per benchmark and version** fixed in the ADR and revisited at each catalog update, and **local statistics** (PB-36) read back on request to propose corrections — not applied silently.
 
 ## Work to do
 
