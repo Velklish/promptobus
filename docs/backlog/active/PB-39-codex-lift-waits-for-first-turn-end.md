@@ -7,7 +7,7 @@
 
 ## Context
 
-Measured 2026-09-06 07:13–07:16 UTC on the owner's machine: `promptobus spawn` (ati-agents CLI 0.71.0 over promptobus 0.4.0) of `worker:bl550` with a real task brief, routed by `balance` to `codex-sol-medium`.
+Measured 2026-09-06 07:13–07:16 UTC on the owner's machine: `promptobus spawn` (a consumer CLI over promptobus 0.4.0) of `worker:bl550` with a real task brief, routed by `balance` to `codex-sol-medium`.
 
 - 07:13:30 `thread/start`; 07:13:32 `turn/started`.
 - 07:14:12 the worker sent `status` to the orchestrator through the bus MCP tool (kept in the task journal `history/orchestrator/20260906T071412581-…`): rules read, the plan of the task — alive and working, 40 s into the turn.
