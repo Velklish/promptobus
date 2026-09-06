@@ -34,7 +34,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { CATALOG_FILE, mergeRouting } from '../lib/model-routing/catalog.js';
 import { NEUTRAL_REMAINING_PERCENT, resolve } from '../lib/model-routing/resolver.js';
 import { render, RUNTIME_ROWS_PER_HARNESS } from '../lib/model-routing/render.js';
-import { availabilityOf } from '../lib/models.js';
+import { availabilityOf, routingMetadata } from '../lib/models.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -47,6 +47,14 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 
 const CATALOG = fixture('catalog.json');
 const SNAPSHOT = fixture('snapshot.json');
+
+// The `balance` pair: three harnesses with real windows, one model-scoped and
+// two pools. Its own files rather than the golden pair, because the golden is
+// one harness with a window and one with none — which cannot show a pace
+// comparison at all. [The fixtures README](fixtures/model-routing/README.md)
+// says what is in them and where the numbers come from.
+const BALANCE_CATALOG = fixture('balance-catalog.json');
+const BALANCE_SNAPSHOT = fixture('balance-snapshot.json');
 
 // The clock the fixtures README freezes: twelve seconds after the snapshot was
 // taken, which is where `ageSec: 12` comes from.
@@ -389,7 +397,11 @@ test('a reviewer is routed from the tuples rated for it', () => {
   assert.equal(excludedOf(decision, 'example-quick').code, 'role-not-allowed');
   assert.equal(excludedOf(decision, 'example-quick').detail, 'rated for worker only');
   assert.deepEqual(scoredIds(decision), ['other-steady', 'example-deep-high', 'example-deep-max']);
-  assert.equal(decision.chosen.tupleId, 'other-steady');
+  // The pick is not the top scorer, and the reviewer floor of 5 (ADR-004,
+  // raised from ADR-003's 4) is why: `other-steady` rates 4 and keeps its place
+  // at the head of the list with its score — the floor is a choice rule.
+  assert.equal(decision.chosen.tupleId, 'example-deep-high');
+  assert.equal(byId(decision, 'other-steady').excluded, null, 'the floor is a choice rule, not a filter');
   assert.equal(decision.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false);
 });
 
@@ -404,7 +416,10 @@ test('a reviewer that differs from the live worker gains the diversity bonus', (
     [{ code: 'live-participant', points: -5 }]);
   assert.deepEqual(byId(decision, 'other-steady').score.adjustments,
     [{ code: 'unknown-availability', points: -10 }, { code: 'reviewer-diversity', points: 5 }]);
-  assert.equal(decision.chosen.tupleId, 'other-steady');
+  // The bonus puts other-steady at the head of the list; the floor of 5 still
+  // moves the pick past it, which is the two rules composing as ADR-004 says.
+  assert.equal(scoredIds(decision)[0], 'other-steady');
+  assert.equal(decision.chosen.tupleId, 'example-deep-high');
 });
 
 test('a different model on the same harness is diverse enough', () => {
@@ -437,7 +452,10 @@ test('the quality floor moves the pick without excluding anyone', () => {
   // it stays in the list, first and scored, and the pick goes past it.
   const decision = decide({
     role: 'reviewer',
-    workspace: overlay({ ratings: { 'other-steady': { quality: 3, speed: 5, quotaCost: 1 } } }),
+    workspace: overlay({
+      qualityFloor: { reviewer: 4 },
+      ratings: { 'other-steady': { quality: 3, speed: 5, quotaCost: 1 } },
+    }),
   });
   assert.equal(scoredIds(decision)[0], 'other-steady');
   assert.equal(byId(decision, 'other-steady').score.total, 62.5);
@@ -459,7 +477,47 @@ test('nothing reaching the floor is a warning and the best remaining one, not a 
   assert.equal(decision.chosen.tupleId, scoredIds(decision)[0], 'the soft fallback takes the top of the list');
   const warning = decision.warnings.find((w) => w.code === 'reviewer-floor-not-met');
   assert.ok(warning, 'the fallback must say it happened');
-  assert.match(warning.message, /quality floor of 4 of 5/);
+  assert.match(warning.message, /quality floor of 5 of 5/);
+});
+
+test('the worker has a floor too, and its own warning code', () => {
+  // ADR-004 decision 3 gives the worker a floor of 3, which ADR-003 never set —
+  // "a worker on a cheap model where the task needed the expensive one is paid
+  // for in review rounds" describes one. Same shape as the reviewer's: a choice
+  // rule, and a soft fallback with a warning of its own.
+  const catalog = catalogOf([
+    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 2, speed: 5, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-sound', harness: 'alpha', model: 'sound', ratings: { quality: 3, speed: 2, quotaCost: 4 }, priority: 20 },
+  ]);
+  const moved = decide({ catalog, snapshot: TIE_SNAPSHOT });
+  assert.equal(scoredIds(moved)[0], 'alpha-cheap', 'it is still the top scorer');
+  assert.equal(moved.chosen.tupleId, 'alpha-sound', 'the worker floor of 3 moved the pick');
+  assert.equal(byId(moved, 'alpha-cheap').excluded, null, 'a choice rule, not a filter');
+  assert.equal(moved.warnings.some((w) => w.code === 'worker-floor-not-met'), false);
+
+  const floorless = catalogOf([
+    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 2, speed: 5, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-cheaper', harness: 'alpha', model: 'cheaper', ratings: { quality: 1, speed: 2, quotaCost: 4 }, priority: 20 },
+  ]);
+  const fallback = decide({ catalog: floorless, snapshot: TIE_SNAPSHOT });
+  assert.equal(fallback.chosen.tupleId, 'alpha-cheap');
+  const warning = fallback.warnings.find((w) => w.code === 'worker-floor-not-met');
+  assert.ok(warning, fallback.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /quality floor of 3 of 5/);
+  validDecision(fallback, 'a decision carrying the worker floor fallback');
+});
+
+test('reviewerQualityFloor is still read, as an alias for qualityFloor.reviewer', () => {
+  // An overlay written for v1 keeps its meaning (ADR-004).
+  const aliased = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 4 }) });
+  assert.equal(aliased.chosen.tupleId, 'other-steady', 'a floor of 4 admits the quality-4 top scorer');
+
+  // Stated both ways in one layer, the explicit key wins and validate warns.
+  const both = decide({
+    role: 'reviewer',
+    workspace: overlay({ reviewerQualityFloor: 4, qualityFloor: { reviewer: 5 } }),
+  });
+  assert.equal(both.chosen.tupleId, 'example-deep-high', 'the explicit qualityFloor.reviewer wins');
 });
 
 test('a role rating override is what the role being routed is scored on', () => {
@@ -505,20 +563,31 @@ test('a role rating override is what the reviewer floor reads too', () => {
     { id: 'alpha-solid', harness: 'alpha', model: 'solid', ratings: { quality: 4, speed: 3, quotaCost: 3 }, priority: 20 },
   ]);
   const worker = decide({ catalog, snapshot: TIE_SNAPSHOT, strategy: 'speed' });
-  assert.equal(worker.chosen.tupleId, 'alpha-fast', 'no override for a worker, and no floor either');
+  assert.equal(worker.chosen.tupleId, 'alpha-fast',
+    'no override for a worker: it is scored at quality 5 and clears the worker floor of 3');
 
-  const reviewer = decide({ catalog, snapshot: TIE_SNAPSHOT, strategy: 'speed', role: 'reviewer' });
+  // The reviewer floor is pinned at 4 here rather than left at ADR-004's 5,
+  // because the arrangement needs exactly one of the two tuples above it —
+  // with nothing above the floor the soft fallback fires and the check would
+  // pass for the wrong reason.
+  const reviewer = decide({
+    catalog, snapshot: TIE_SNAPSHOT, strategy: 'speed', role: 'reviewer',
+    workspace: overlay({ qualityFloor: { reviewer: 4 } }),
+  });
   assert.equal(scoredIds(reviewer)[0], 'alpha-fast', 'it is still the top scorer');
   assert.equal(byId(reviewer, 'alpha-fast').score.total, 87.5);
-  assert.equal(reviewer.chosen.tupleId, 'alpha-solid', 'the reviewer quality of 3 is below the floor of 4');
+  assert.equal(reviewer.chosen.tupleId, 'alpha-solid', 'the reviewer quality of 3 is below the floor');
   assert.equal(reviewer.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false,
     'alpha-solid reaches the floor, so this is not the fallback');
 });
 
 test('the floor itself is a policy value', () => {
-  // Raised to 5, other-steady's quality of 4 no longer clears it, and the pick
-  // moves to the first tuple that does.
-  const decision = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 5 }) });
+  // Lowered to 3, other-steady's quality of 4 clears it and the pick is the top
+  // scorer again; raised back, the pick moves to the first tuple that does.
+  const lowered = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 3 } }) });
+  assert.equal(lowered.chosen.tupleId, 'other-steady');
+
+  const decision = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 5 } }) });
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
   assert.equal(scoredIds(decision)[0], 'other-steady', 'the order is untouched — only the pick moved');
 });
@@ -650,11 +719,37 @@ test('tie-break 4: the tuple id is the last word, so the pick is total', () => {
 
 // --- allow and deny ---------------------------------------------------------------
 
-test('a deny rule excludes and names the layer that wrote it', () => {
+test('a deny rule excludes and names the layer and the rule that wrote it', () => {
   const decision = decide({ workspace: overlay({ deny: { models: ['example-quick'] } }) });
-  assert.deepEqual(excludedOf(decision, 'example-quick'),
-    { code: 'denied-by-policy', detail: 'denied by overlay "workspace" (deny.models)' });
+  assert.deepEqual(excludedOf(decision, 'example-quick'), {
+    code: 'denied-by-policy',
+    detail: 'denied by deny.models of overlay "workspace" — a ban is lifted only in the layer that wrote it',
+  });
   assert.equal(decision.chosen.tupleId, 'other-steady');
+});
+
+test('a ban two layers wrote names both of them — neither file alone lifts it', () => {
+  const decision = decide({
+    user: overlay({ deny: { models: ['example-quick'] } }),
+    workspace: overlay({ deny: { models: ['example-quick', 'other-metered'] } }),
+  });
+  assert.match(excludedOf(decision, 'example-quick').detail,
+    /deny\.models of overlay "user", deny\.models of overlay "workspace"/,
+    'a diagnostic naming one of two files sends the reader to do half the edit');
+  // And the ban only one of them wrote names only that one.
+  assert.match(excludedOf(decision, 'other-metered').detail, /^denied by deny\.models of overlay "workspace"/);
+});
+
+test('an allow list that intersected to nothing admits no tuple', () => {
+  // Two layers narrowing different ways. `validate` calls this
+  // `allow-intersection-empty`; the resolver's job is only to be honest about
+  // it — an empty allow list is not an absent one.
+  const decision = decide({
+    user: overlay({ allow: { harnesses: ['example'] } }),
+    workspace: overlay({ allow: { harnesses: ['other'] } }),
+  });
+  assert.equal(decision.chosen, null);
+  for (const c of decision.candidates) assert.equal(c.excluded.code, 'denied-by-policy', c.tupleId);
 });
 
 test('an allow rule keeps only what it names', () => {
@@ -670,6 +765,399 @@ test('allow lists of different kinds hold at once — a tuple must be named by e
     'the right harness is not enough while another allow list is unmet');
   assert.match(excludedOf(decision, 'other-steady').detail, /allow\.harnesses/);
   assert.equal(decision.chosen.tupleId, 'example-deep-high', 'the one tuple both lists name');
+});
+
+// --- ADR-004: the balance strategy -------------------------------------------
+
+/** One decision on the balance pair. */
+const paced = (over = {}) => decide({ catalog: BALANCE_CATALOG, snapshot: BALANCE_SNAPSHOT, ...over });
+
+/** The pace block of one candidate. */
+const paceOf = (decision, id) => byId(decision, id).pace;
+
+/** The balance snapshot with one harness's windows taken away. */
+function windowless(...harnesses) {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  for (const harness of harnesses) delete snapshot.harnesses[harness].windows;
+  return snapshot;
+}
+
+test('the balance fixtures are documents their own schemas accept', () => {
+  // The pair is hand-written to ADR-004's shapes, and a hand-written fixture
+  // that the schema would refuse is a fixture the rest of this section proves
+  // things about a document nothing else in the package would ever see.
+  const ajvSnapshot = ajv.getSchema('urn:promptobus:model-routing:snapshot');
+  const ajvCatalog = ajv.getSchema('urn:promptobus:model-routing:catalog');
+  assert.equal(ajvSnapshot(BALANCE_SNAPSHOT), true, ajv.errorsText(ajvSnapshot.errors));
+  assert.equal(ajvCatalog(BALANCE_CATALOG), true, ajv.errorsText(ajvCatalog.errors));
+  assert.equal(BALANCE_SNAPSHOT.schemaVersion, 2, 'the pace layer reads a v2 snapshot and nothing else');
+});
+
+test('the pace of a candidate is its binding window, in percentage points', () => {
+  const decision = paced({ strategy: 'balance' });
+  validDecision(decision, 'a balance decision');
+
+  // Codex: the weekly window is the more spent of the two, so it binds. 46 % of
+  // it is gone and 62.5 % of it has elapsed, so the account is 16.5 POINTS
+  // behind its own pace and has that much room. quotaCost 4 gives up
+  // 5 × (4 − 1) / 4 = 3.75 of them before harnesses are compared.
+  assert.deepEqual(paceOf(decision, 'codex-sol'), {
+    window: { id: 'secondary', kind: 'weekly', scope: null },
+    usedShare: 0.46,
+    elapsedShare: 0.625,
+    underspend: 16.5,
+    spendPenalty: 3.75,
+    effective: 12.75,
+    eligible: true,
+    note: null,
+    representative: true,
+  });
+
+  // Both shares are published beside the result, so the ×100 can be recomputed.
+  const pace = paceOf(decision, 'cursor-composer');
+  assert.equal(Math.round((pace.elapsedShare - pace.usedShare) * 100 * 100) / 100, -14.08);
+  assert.equal(pace.underspend, -14.08, 'the unit is percentage points, not the share');
+});
+
+test('the binding window is chosen per TUPLE, and a scope is what makes it differ', () => {
+  const decision = paced({ strategy: 'balance' });
+  // Two tuples, one harness, one snapshot — and different binding windows,
+  // because the weekly window scoped to the Fable family covers only one of
+  // them and is the more spent of the two that do.
+  assert.equal(paceOf(decision, 'claude-opus').window.id, '7d');
+  assert.equal(paceOf(decision, 'claude-fable').window.id, '7d-fable');
+  assert.equal(paceOf(decision, 'claude-opus').underspend, 10.48);
+  assert.equal(paceOf(decision, 'claude-fable').underspend, 2.48);
+
+  // Cursor's two pools are the same fact in its own shape: the auto pool names
+  // its models, and the api pool is the complement — every model in no auto
+  // list falls there, which is the owner's rule and the harness's own.
+  assert.deepEqual(paceOf(decision, 'cursor-composer').window,
+    { id: 'cycle-auto', kind: 'monthly', scope: { pool: 'auto', models: ['composer-2.5'] } });
+  assert.deepEqual(paceOf(decision, 'cursor-api').window,
+    { id: 'cycle-api', kind: 'monthly', scope: { pool: 'api' } });
+});
+
+test('balance picks a different harness from balanced, on one snapshot', () => {
+  // The whole point of ADR-004 in one pair of runs. `balanced` sends the work to
+  // the best-rated tuple; `balance` sends it to the account with room, because
+  // Cursor's auto pool is fourteen points AHEAD of its own cycle while Codex is
+  // sixteen behind its week.
+  const scored = paced({ strategy: 'balanced' });
+  assert.equal(scored.chosen.tupleId, 'claude-fable', 'the best balanced score');
+  assert.equal(scored.candidates.every((c) => c.pace === undefined), true,
+    'only balance publishes a pace block — a number no rule of this strategy used invites a wrong reading');
+
+  const balanced = paced({ strategy: 'balance' });
+  assert.equal(balanced.chosen.tupleId, 'codex-sol', 'the largest effective underspend');
+  assert.deepEqual(balanced.weights, { quality: 40, speed: 25, quotaCost: 20, remaining: 15 },
+    'balance has no weight set of its own — it orders tuples inside a harness by balanced');
+  assert.deepEqual(balanced.balance, { band: 5, spendUnit: 5 });
+  // A choice layer, not a filter: the order and the scores are untouched.
+  assert.deepEqual(scoredIds(balanced), scoredIds(scored));
+  assert.equal(byId(balanced, 'claude-fable').score.total, byId(scored, 'claude-fable').score.total);
+  assert.equal(byId(balanced, 'claude-fable').excluded, null);
+});
+
+test('the reviewer is inside the balance, and nothing pins it to one harness', () => {
+  // ADR-004 decision 4. The reviewer is routed by pace like a worker, with the
+  // floor of 5 above it, and the harness it lands on is whichever is furthest
+  // behind its own pace — here Codex, not Claude.
+  const decision = paced({ strategy: 'balance', role: 'reviewer' });
+  assert.equal(decision.chosen.tupleId, 'codex-sol');
+  assert.equal(decision.chosen.harness, 'codex');
+  assert.equal(decision.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false,
+    'codex-sol rates 5 and reaches the floor');
+});
+
+test('the band ties two harnesses and the balanced score then decides', () => {
+  // Codex leads on pace at +12.75 and Claude's representative is at −0.02, so
+  // nothing is tied at the default band of 5. Widened past the gap, the two are
+  // equal-spent by policy and the better-scoring tuple wins — which is exactly
+  // what the band is for: "these accounts are about equally spent, so take the
+  // better model".
+  const wide = paced({ strategy: 'balance', workspace: overlay({ balance: { band: 20 } }) });
+  assert.equal(wide.chosen.tupleId, 'claude-fable', 'inside the band the balanced score decides');
+  assert.equal(byId(wide, 'claude-fable').score.total > byId(wide, 'codex-sol').score.total, true);
+
+  // And the band is measured from the leader's NUMBER, so the tied set does not
+  // depend on which candidate arrived first.
+  const shuffled = clone(BALANCE_CATALOG);
+  shuffled.tuples.reverse();
+  const same = decide({
+    catalog: shuffled, snapshot: BALANCE_SNAPSHOT, strategy: 'balance', workspace: overlay({ balance: { band: 20 } }),
+  });
+  assert.equal(same.chosen.tupleId, 'claude-fable');
+});
+
+test('the spend penalty is what keeps a heavy tuple from oscillating the strategy', () => {
+  // ADR-004 option C2: the discount is in the units of the underspend. With the
+  // unit at zero the penalty vanishes and the raw underspend decides; the
+  // default makes a quotaCost of 5 give up exactly one band against a 1.
+  const free = paced({ strategy: 'balance', workspace: overlay({ balance: { spendUnit: 0 } }) });
+  for (const c of free.candidates.filter((x) => x.pace)) assert.equal(c.pace.spendPenalty, 0);
+  assert.equal(paceOf(free, 'codex-sol').effective, paceOf(free, 'codex-sol').underspend);
+
+  const dear = paced({ strategy: 'balance', workspace: overlay({ balance: { spendUnit: 8 } }) });
+  assert.equal(paceOf(dear, 'claude-opus').spendPenalty, 8, 'quotaCost 5: the whole unit');
+  assert.equal(paceOf(dear, 'cursor-composer').spendPenalty, 2, 'quotaCost 2: a quarter of it');
+});
+
+test('the spend penalty reads the ROLE\'s quotaCost, the same rating the score component does', () => {
+  // A tuple that costs less of the subscription as a reviewer than as a worker.
+  // If the penalty read `tuple.ratings` while the score read `roleRatings`, the
+  // two halves of one decision would disagree about what this tuple spends —
+  // and with the numbers below the harness choice flips on it.
+  const catalog = clone(BALANCE_CATALOG);
+  const opus = catalog.tuples.find((t) => t.id === 'claude-opus');
+  opus.roleRatings = { reviewer: { quotaCost: 1 } };
+
+  const asWorker = decide({
+    catalog, snapshot: BALANCE_SNAPSHOT, strategy: 'balance', role: 'worker',
+  });
+  assert.equal(paceOf(asWorker, 'claude-opus').spendPenalty, 5, 'quotaCost 5 as a worker');
+  assert.equal(paceOf(asWorker, 'claude-opus').effective, 5.48);
+
+  const asReviewer = decide({
+    catalog, snapshot: BALANCE_SNAPSHOT, strategy: 'balance', role: 'reviewer',
+  });
+  assert.equal(paceOf(asReviewer, 'claude-opus').spendPenalty, 0, 'quotaCost 1 as a reviewer: nothing given up');
+  assert.equal(paceOf(asReviewer, 'claude-opus').effective, 10.48);
+  // And the score component beside it reads the same override, which is the
+  // agreement the fix is about.
+  assert.equal(byId(asReviewer, 'claude-opus').score.components.quotaCost, 20);
+  assert.equal(byId(asWorker, 'claude-opus').score.components.quotaCost, 0);
+});
+
+test('the representative is named in the document, and the renderer marks that row', () => {
+  // The rule is the resolver's — best eligible tuple meeting the role's floor —
+  // and the renderer reads the answer rather than repeating the rule. Under the
+  // reviewer floor of 5 the two would part: claude-opus represents Claude, and
+  // it is not the harness's best-scoring eligible tuple in the worker's list.
+  const decision = paced({ strategy: 'balance', role: 'reviewer' });
+  const named = decision.candidates.filter((c) => c.pace?.representative).map((c) => c.tupleId);
+  assert.deepEqual([...named].sort(), ['claude-opus', 'codex-sol', 'cursor-api']);
+  for (const c of decision.candidates) {
+    if (!c.pace?.representative) assert.equal(c.pace?.representative, undefined, c.tupleId);
+  }
+  const rows = render(decision).split('\npace — ')[1].split('\n\n')[0].split('\n').slice(1).filter(Boolean);
+  assert.equal(rows.length, 3);
+  assert.match(rows.find((r) => r.includes('claude')), /claude-opus/);
+  assert.equal(rows.filter((r) => r.trimStart().startsWith('*')).length, 1, 'exactly one row carries the pick marker');
+});
+
+test('a harness with no window has no pace and does not take part', () => {
+  const decision = paced({ strategy: 'balance', snapshot: windowless('codex') });
+  const pace = paceOf(decision, 'codex-sol');
+  assert.equal(pace.eligible, false);
+  assert.equal(pace.note, 'no-pace');
+  assert.equal(pace.window, null);
+  assert.equal(byId(decision, 'codex-sol').excluded, null, 'not paced is not excluded — the pick moves, the list does not');
+  assert.equal(decision.chosen.harness, 'claude', 'the pick goes to the best-paced harness that is left');
+});
+
+test('a window at or past its limit is spent for that tuple', () => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  snapshot.harnesses.codex.windows.find((w) => w.id === 'secondary').usedPercent = 100;
+  const decision = paced({ strategy: 'balance', snapshot });
+  const pace = paceOf(decision, 'codex-sol');
+  assert.equal(pace.eligible, false);
+  assert.equal(pace.note, 'window-spent');
+  assert.equal(pace.window.id, 'secondary');
+  assert.equal(pace.usedShare, 1);
+  assert.notEqual(decision.chosen.harness, 'codex');
+});
+
+test('a window whose reset has passed is not paced — the fact has expired', () => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  for (const w of snapshot.harnesses.codex.windows) w.resetAt = '2026-09-05T08:00:00.000Z';
+  const decision = paced({ strategy: 'balance', snapshot });
+  assert.equal(paceOf(decision, 'codex-sol').note, 'no-pace');
+  assert.equal(paceOf(decision, 'codex-sol').window.id, 'secondary', 'the window is still named, it is just not paced');
+});
+
+test('no harness can be paced — the pick is the best score, with balance-fallback', () => {
+  const decision = paced({ strategy: 'balance', snapshot: windowless('claude', 'codex', 'cursor') });
+  // Every harness now reports no window at all, so `remaining` is the neutral
+  // 50 for all three and each pays the unknown-availability penalty — the pick
+  // is the best score under those inputs, which is not the same tuple as with
+  // the windows in place.
+  assert.equal(decision.chosen.tupleId, 'cursor-composer', 'the best balanced score, as the fallback says');
+  const warning = decision.warnings.find((w) => w.code === 'balance-fallback');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /no harness could be paced/);
+  validDecision(decision, 'a decision carrying the balance fallback');
+});
+
+test('remaining is per tuple for every strategy, not per harness', () => {
+  // ADR-004 refines ADR-003's own word: the applicable windows are the
+  // account-wide ones PLUS the scope covering this tuple. Two Cursor tuples on
+  // one snapshot therefore differ, because their pools do — 100 − 62 against
+  // 100 − 72 — and that reaches the score under quality, balanced, speed and
+  // economy alike.
+  for (const strategy of ['quality', 'balanced', 'speed', 'economy']) {
+    const decision = paced({ strategy });
+    const weight = decision.weights.remaining;
+    assert.equal(byId(decision, 'cursor-composer').score.components.remaining,
+      Math.round((100 - 62) * weight) / 100, `${strategy}: the auto pool`);
+    assert.equal(byId(decision, 'cursor-api').score.components.remaining,
+      Math.round((100 - 72) * weight) / 100, `${strategy}: the api pool`);
+  }
+});
+
+test('a lift records the applicable windows of the tuple it chose', () => {
+  // The starting value a later reader needs to say what this run SPENT: the
+  // delta of these windows between the lift and the finish (PB-36). The set is
+  // the resolver's own `applicableWindows`, so a run is measured against the
+  // windows its pick was scored on and not against a second reading of the word.
+  const decision = paced({ strategy: 'balance' });
+  const meta = routingMetadata(decision, BALANCE_SNAPSHOT);
+  assert.equal(meta.tupleId, 'codex-sol');
+  assert.deepEqual(meta.windows, [
+    { id: 'primary', kind: 'session', scope: null, usedPercent: 0 },
+    { id: 'secondary', kind: 'weekly', scope: null, usedPercent: 46 },
+  ]);
+
+  // A scoped window is in the set exactly when it covers the tuple.
+  const fable = decide({
+    catalog: BALANCE_CATALOG, snapshot: BALANCE_SNAPSHOT, strategy: 'balanced',
+  });
+  assert.equal(fable.chosen.tupleId, 'claude-fable');
+  assert.deepEqual(routingMetadata(fable, BALANCE_SNAPSHOT).windows.map((w) => w.id), ['5h', '7d', '7d-fable']);
+
+  // And a harness with no window records an empty list rather than nothing.
+  const bare = paced({ strategy: 'balance', snapshot: windowless('claude', 'codex', 'cursor') });
+  assert.deepEqual(routingMetadata(bare, windowless('claude', 'codex', 'cursor')).windows, []);
+  assert.deepEqual(routingMetadata(bare).windows, [], 'no snapshot in reach is an empty list too');
+});
+
+test('a hidden row is carried and never chosen, and is not a runtime row either', () => {
+  // ADR-004: the harness lists it and declines to offer it. The resolver's
+  // inventory is the rows without the mark, so a tuple naming one is excluded by
+  // the existing code and no new one is added.
+  const decision = paced({ strategy: 'balance' });
+  assert.deepEqual(byId(decision, 'codex-preview').excluded, {
+    code: 'model-not-in-inventory',
+    detail: 'the codex account does not expose "gpt-5.6-preview"',
+  });
+  assert.deepEqual(decision.runtime, [],
+    'a hidden UNRATED row is not offered either, so it is not a runtime row a person could pick');
+});
+
+test('the pace table prints one row per harness, with the numbers the document carries', () => {
+  const decision = paced({ strategy: 'balance' });
+  const table = render(decision).split('\npace — ')[1].split('\n\n')[0].split('\n');
+  assert.match(table[0], /percentage points of each binding window · band 5\.0 · spend unit 5\.0/);
+  const rows = table.slice(1).filter(Boolean);
+  assert.equal(rows.length, 3, `one row per harness, not per candidate:\n${rows.join('\n')}`);
+  assert.match(rows.find((r) => r.includes('codex')),
+    /\* codex .*codex-sol · secondary weekly · 46\.0% used · 62\.5% elapsed · underspend \+16\.50 · penalty -3\.75 · effective \+12\.75/);
+  // Two decimals, because one would print an underspend of −0.02 as "-0.0".
+  assert.match(rows.find((r) => r.includes('claude')), /effective -0\.02/);
+
+  // And no table at all under a strategy whose candidates carry no pace.
+  assert.equal(render(paced({ strategy: 'balanced' })).includes('pace — '), false);
+});
+
+test('a harness that cannot be paced prints its note rather than empty columns', () => {
+  const text = render(paced({ strategy: 'balance', snapshot: windowless('codex') }));
+  const row = text.split('\n').find((l) => l.includes('codex') && l.includes('no-pace'));
+  assert.ok(row, text);
+  assert.match(row, /no-pace: no window that can be paced/);
+});
+
+// --- ADR-004: the two new selectors ------------------------------------------
+
+/** The fixture snapshot with a flag put on a RATED model, which the golden has on an unrated one. */
+function flaggedSnapshot(model = 'example-quick', flags = ['no-zdr']) {
+  const snapshot = clone(SNAPSHOT);
+  const row = snapshot.harnesses.example.models.find((m) => m.model === model);
+  row.flags = flags;
+  return snapshot;
+}
+
+test('a byRole rule excludes for that role and leaves the other alone', () => {
+  const rule = overlay({ deny: { byRole: { reviewer: { harnesses: ['other'] } } } });
+  const asReviewer = decide({ role: 'reviewer', workspace: rule });
+  assert.deepEqual(excludedOf(asReviewer, 'other-steady'), {
+    code: 'denied-by-policy',
+    detail: 'denied by deny.byRole.reviewer.harnesses of overlay "workspace" — '
+      + 'a ban is lifted only in the layer that wrote it',
+  });
+
+  const asWorker = decide({ role: 'worker', workspace: rule });
+  assert.equal(excludedOf(asWorker, 'other-steady'), null, 'a rule scoped to the reviewer must not reach the worker');
+  assert.ok(scoredIds(asWorker).includes('other-steady'));
+});
+
+test('an unscoped ban and a byRole ban are both in force for that role', () => {
+  const decision = decide({
+    role: 'reviewer',
+    workspace: overlay({
+      deny: { tuples: ['example-deep-max'], byRole: { reviewer: { harnesses: ['other'] } } },
+    }),
+  });
+  assert.match(excludedOf(decision, 'example-deep-max').detail, /deny\.tuples/);
+  assert.match(excludedOf(decision, 'other-steady').detail, /deny\.byRole\.reviewer\.harnesses/);
+  assert.equal(decision.chosen.tupleId, 'example-deep-high', 'the one reviewer tuple neither rule reaches');
+});
+
+test('a flag rule excludes the tuple whose model the snapshot marks', () => {
+  const decision = decide({
+    snapshot: flaggedSnapshot(),
+    workspace: overlay({ deny: { flags: ['no-zdr'] } }),
+  });
+  assert.deepEqual(excludedOf(decision, 'example-quick'), {
+    code: 'denied-by-policy',
+    detail: 'denied by deny.flags of overlay "workspace" — a ban is lifted only in the layer that wrote it',
+  });
+  assert.equal(excludedOf(decision, 'example-deep-high'), null, 'an unmarked model of the same harness is untouched');
+});
+
+test('the flag selector runs after the inventory step, so it never speaks for a model the account lacks', () => {
+  // A tuple the account does not expose is `model-not-in-inventory` and stays
+  // that, whatever a flag rule says: the flag needs the row the inventory step
+  // consulted, so it cannot be the reason reported before that step ran.
+  const snapshot = clone(SNAPSHOT);
+  snapshot.harnesses.example.models = snapshot.harnesses.example.models.filter((m) => m.model !== 'example-quick');
+  const decision = decide({ snapshot, workspace: overlay({ deny: { flags: ['no-zdr'] } }) });
+  assert.equal(excludedOf(decision, 'example-quick').code, 'model-not-in-inventory');
+});
+
+test('silence is not absence: a flag deny excludes nothing on a harness that listed no models', () => {
+  // ADR-004 states the limit rather than implying it. A person who must never
+  // run outside zero-data-retention does not get that guarantee from a harness
+  // with no inventory, and the decision says so with a warning instead of
+  // appearing to.
+  // The golden snapshot marks one UNRATED row, so the mark is stripped first:
+  // the subject here is a rule whose flag nothing in the run carries.
+  const snapshot = clone(SNAPSHOT);
+  for (const model of snapshot.harnesses.example.models) delete model.flags;
+  const decision = decide({ snapshot, workspace: overlay({ deny: { flags: ['no-zdr'] } }) });
+  assert.equal(excludedOf(decision, 'other-steady'), null);
+  const warning = decision.warnings.find((w) => w.code === 'flag-not-in-inventory');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /no-zdr/);
+  assert.match(warning.message, /deny\.flags of overlay "workspace"/);
+});
+
+test('allow.flags is the same fact read the other way — an unmarked tuple is not one of \"only these\"', () => {
+  const decision = decide({
+    snapshot: flaggedSnapshot(),
+    workspace: overlay({ allow: { flags: ['no-zdr'] } }),
+  });
+  assert.deepEqual(excludedOf(decision, 'example-deep-high'),
+    { code: 'denied-by-policy', detail: 'not named by allow.flags of overlay "workspace"' });
+  assert.ok(scoredIds(decision).includes('example-quick'), 'the marked model is the one the allow list admits');
+});
+
+test('a flag the snapshot does carry raises no warning', () => {
+  const decision = decide({
+    snapshot: flaggedSnapshot(),
+    workspace: overlay({ deny: { flags: ['no-zdr'] } }),
+  });
+  assert.equal(decision.warnings.find((w) => w.code === 'flag-not-in-inventory'), undefined);
+  validDecision(decision, 'a decision carrying the new selectors');
 });
 
 // --- the text output ----------------------------------------------------------------

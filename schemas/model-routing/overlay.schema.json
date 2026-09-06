@@ -56,17 +56,45 @@
       }
     },
     "reviewerQualityFloor": {
-      "description": "Lowest quality rating a reviewer candidate should have. A soft floor: if nothing reaches it, the best remaining candidate is chosen with a warning.",
+      "description": "ALIAS for qualityFloor.reviewer, kept so an overlay written for v1 keeps its meaning (ADR-004). A layer stating both is a models validate warning and the explicit key wins.",
       "type": "integer",
       "minimum": 1,
       "maximum": 5
     },
+    "qualityFloor": {
+      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 3, reviewer 5 (ADR-004, superseding ADR-003's reviewer floor of 4 and its absence of a worker floor). A soft floor and a CHOICE RULE, not a filter: a candidate below it keeps its place and its score, only the pick moves past it, and when nothing reaches it the best remaining candidate is chosen with a warning.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "worker": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "reviewer": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "balance": {
+      "description": "The two numbers of the balance strategy's pace layer, both in PERCENTAGE POINTS of a window — the unit usedPercent is already in — and both defaulting to 5.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "band": {
+          "description": "Harnesses within this many points of the leader's effective underspend are tied, and the balanced score of their representatives decides. Its job is not to model noise, but the noise floor is about a point — one harness reports usedPercent as an integer, and a sixty-second cache entry moves a five-hour window by a third of a point — so a band below that would do nothing.",
+          "type": "number",
+          "minimum": 0
+        },
+        "spendUnit": {
+          "description": "The discount a heavy tuple gives up before harnesses are compared: spendUnit × (quotaCost − 1) / 4. Equal to the band by default, so a quotaCost of 5 gives up exactly one band against a quotaCost of 1 — the heaviest tuple has to be a whole band ahead on pace to win.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "allow": {
-      "description": "Allow-lists. A non-empty list means: only these. An empty list is a shape error, not 'allow nothing' — write a deny rule for that.",
+      "description": "Allow-lists. A non-empty list means: only these. An empty list is a shape error, not 'allow nothing' — write a deny rule for that. Allow lists INTERSECT across layers: a tuple must be named by every allow list of that kind any layer states, so a layer's rule survives every layer above it. Two layers can therefore intersect to nothing, which models validate reports as allow-intersection-empty.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/selectors"
     },
     "deny": {
-      "description": "Deny-lists, applied after allow. A name in both is the contradiction models validate refuses.",
+      "description": "Deny-lists, applied after allow. Deny lists ACCUMULATE across layers: a ban written in any layer stands and no layer above it lifts one — lifting a ban means changing the layer that wrote it. A name allowed in one layer and denied in another is lawful and deny wins, which models validate reports as the allow-shadowed-by-deny warning; a name both allowed and denied in ONE layer stays an error.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/selectors"
     },
     "ratings": {
@@ -120,8 +148,39 @@
         "harnesses": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "models": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
-        "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" }
+        "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
+        "byRole": {
+          "description": "The same rule block, scoped to one role. A role is a condition on when a rule applies rather than a thing that can be banned, so it nests instead of standing beside the selectors above. When routing role R the effective deny of a kind is the unscoped list unioned with byRole.R's, and the effective allow is the intersection of the two where both are stated.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "worker": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
+            "reviewer": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" }
+          }
+        }
       }
+    },
+    "roleSelectors": {
+      "description": "Selectors inside a byRole block. The same four names and flags; byRole does not nest inside itself — a rule is scoped to one role or to none.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "harnesses": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "models": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" }
+      }
+    },
+    "flagList": {
+      "description": "Marks the availability snapshot carries on a model row. The one selector whose names are in no catalog — a flag is not a catalog fact — so they are checked against this closed list, which is the snapshot schema's own flags enum. A new mark a harness starts printing needs a release rather than a data change; the price of catching a person's typo. MODEL_FLAGS in lib/model-routing/catalog.js is the same list and the suite reads the two as one.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["no-zdr"] }
     },
     "nameList": {
       "type": "array",
@@ -135,7 +194,7 @@
       "schemaVersion": 1,
       "note": "schema example: a deny rule, a weight change, and a PAYG opt-in",
       "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-      "reviewerQualityFloor": 3,
+      "qualityFloor": { "worker": 3, "reviewer": 4 },
       "deny": { "models": ["example-quick"] },
       "ratings": { "example-deep": { "speed": 3 } },
       "payg": { "allow": true }
@@ -143,6 +202,14 @@
     {
       "schemaVersion": 1,
       "allow": { "harnesses": ["example"] }
+    },
+    {
+      "schemaVersion": 1,
+      "note": "schema example: the two selectors ADR-004 added — a mark the snapshot carries, and a rule that holds for one role only",
+      "deny": {
+        "flags": ["no-zdr"],
+        "byRole": { "reviewer": { "harnesses": ["example"] } }
+      }
     }
   ]
 }

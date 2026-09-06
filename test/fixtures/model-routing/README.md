@@ -1,6 +1,6 @@
 # Model-routing golden fixtures
 
-Four files, and they are one pair of inputs and one pair of outputs:
+Six files: one pair of inputs with one pair of outputs, and a second pair of inputs with no golden output of its own.
 
 | File | What it is |
 |---|---|
@@ -8,8 +8,28 @@ Four files, and they are one pair of inputs and one pair of outputs:
 | `snapshot.json` | the availability cache the run reads. Version 2 since ADR-004: `example` carries a tier and two windows — an account-wide session one and a weekly one scoped to a model family — and `other` carries a `null` tier and no window at all, which is the harness the `unknown-remaining` warning is about |
 | `decision.json` | the golden `models --json` output |
 | `models.txt` | the golden `models` text output |
+| `balance-catalog.json` | the catalog of the **balance** pair: six tuples over the three real harness names, two of them on one Cursor model family and one on a model the account hides |
+| `balance-snapshot.json` | the availability cache of that pair. Three harnesses with real windows — Claude with a session, a weekly and a weekly scoped to a model family; Codex with a session and a weekly; Cursor with two pool windows in one monthly billing cycle — plus a hidden rated row and a hidden unrated one on Codex |
 
 A golden output with no pinned input cannot be reproduced by the task that has to make it green, which is why the inputs are here too.
+
+## The balance pair has no golden output, and that is deliberate
+
+The golden pair above is one harness with a window and one with none, which cannot show a pace comparison at all: `balance` compares harnesses, and one paced harness is not a comparison. The balance pair exists to be that comparison, and `test/model-routing-resolver.test.mjs` drives it directly rather than through a third golden file — a golden pins a whole document, and what needs pinning here is a dozen numbers that each mean something on their own.
+
+Where its numbers come from, on the same frozen clock (`2026-09-05T09:00:12.000Z`):
+
+| Harness | Binding window for | `usedPercent` | `elapsedShare` | `underspend` |
+|---|---|---|---|---|
+| claude | `claude-opus-5` → the account-wide weekly | 30 | 40.48 % | **+10.48** |
+| claude | `claude-fable-5` → the weekly scoped to that family, which is the more spent of the two that apply | 38 | 40.48 % | **+2.48** |
+| codex | both tuples → the weekly, more spent than the session | 46 | 62.50 % | **+16.50** |
+| cursor | `composer-2.5` → the `auto` pool, which names it | 62 | 47.92 % | **−14.08** |
+| cursor | `gpt-5.6-via-cursor` → the `api` pool, the complement: every model in no `auto` list falls there | 72 | 47.92 % | **−24.08** |
+
+With the default `spendUnit` of 5 the penalties are `5 × (quotaCost − 1) / 4`, so the effective numbers are +5.48, −0.02, +12.75, −15.33 and −29.08. Codex leads by more than the band of 5, and it is chosen.
+
+**The point of the pair is that the two strategies disagree on one snapshot.** `balanced` picks `claude-fable` at 68.05 — the best-rated tuple. `balance` picks `codex-sol` at 65.60, because Cursor's auto pool is fourteen points ahead of its own cycle while Codex is sixteen behind its week. That is the behaviour ADR-004 exists for, and a fixture on which both strategies agreed would not show it.
 
 ## The run these outputs come from
 
@@ -35,4 +55,4 @@ Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runt
 
 ## Where the numbers come from
 
-`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–5 scale normalises as `(r − 1) / 4 × 100`, `quotaCost` inverted as `(5 − r) / 4 × 100`, and `remaining` is `100 − max(usedPercent)` over the harness's windows — 50 when there are none, plus the −10 `unknown-availability` adjustment. `example`'s largest is the session window at 40, so `remaining` is 60; the model-scoped weekly window sits below it at 12 and moves no score, which is deliberate — it exists here to pin the SHAPE of a scope, and reading it per tuple is the resolver's own task (PB-30). That gives `example-quick` 69, `other-steady` 66.25 − 10 = 56.25, `example-deep-high` 55.25. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
+`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–5 scale normalises as `(r − 1) / 4 × 100`, and `quotaCost` inverted as `(5 − r) / 4 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 69, `other-steady` 66.25 − 10 = 56.25, `example-deep-high` 55.25. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.

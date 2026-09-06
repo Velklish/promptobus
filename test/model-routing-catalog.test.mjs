@@ -29,8 +29,10 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { GateError } from '../dist/index.js';
+import { MODEL_FLAGS } from '../lib/model-routing/cache.js';
 import {
-  CATALOG_FILE, DEFAULT_POLICY, DEFAULTS, STALE_RATING_DAYS, loadCatalog, mergeRouting, readLayers,
+  CATALOG_FILE, DEFAULT_POLICY, DEFAULTS, STALE_RATING_DAYS,
+  loadCatalog, mergeRouting, readLayers, rulesFor, rulesForRole, rulesLabel,
 } from '../lib/model-routing/catalog.js';
 import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
@@ -427,8 +429,11 @@ test('every layer overrides the one below it, field by field', () => {
 
   // Taken from the higher layer.
   assert.equal(merged.policy.penalties.unknownAvailability, 30);
-  assert.equal(merged.policy.reviewerQualityFloor, 5);
-  assert.deepEqual(merged.policy.deny.models, ['claude-sonnet-5']);
+  assert.equal(merged.policy.qualityFloor.reviewer, 5, 'the v1 alias still reaches the floor it names');
+  assert.equal(merged.policy.qualityFloor.worker, 3, 'and leaves the worker floor at its default');
+  // A deny list is the exception and ADR-004 is why: it ACCUMULATES. The higher
+  // layer adds its ban to the lower one's rather than writing over it.
+  assert.deepEqual(merged.policy.deny.models, ['claude-opus-5', 'claude-sonnet-5']);
   // Left alone by the higher layer, so the lower one still holds.
   assert.deepEqual(merged.policy.weights.balanced, { quality: 50, speed: 20, quotaCost: 15, remaining: 15 });
   assert.equal(merged.policy.bonuses.reviewerDiversity, 9);
@@ -446,10 +451,15 @@ test('every layer overrides the one below it, field by field', () => {
   assert.deepEqual(merged.appliedOverlays, ['user', 'workspace']);
 });
 
-test('the layer order IS the precedence order', () => {
+test('the layer order IS the precedence order — for the scalars it still governs', () => {
   // This is the check the mutation probe breaks: swap the two layers in the
   // call and the assertions below must go red. A merge that folded layers into
   // a set rather than a sequence would pass everything above and fail here.
+  //
+  // ADR-004 narrowed what the order governs, and deliberately: a deny list no
+  // longer depends on it, because a ban written in any layer stands. What is
+  // still ordered is every SCALAR — the highest layer that states one wins —
+  // and that is the half this test now pins.
   const canonical = canonicalLayer();
   const low = overlayLayer('user', { schemaVersion: 1, reviewerQualityFloor: 2, deny: { harnesses: ['cursor'] } });
   const high = overlayLayer('workspace', { schemaVersion: 1, reviewerQualityFloor: 5, deny: { harnesses: ['codex'] } });
@@ -457,11 +467,230 @@ test('the layer order IS the precedence order', () => {
   const upward = mergeRouting({ canonical: canonical.data, overlays: [low, high] });
   const swapped = mergeRouting({ canonical: canonical.data, overlays: [high, low] });
 
-  assert.equal(upward.policy.reviewerQualityFloor, 5);
-  assert.deepEqual(upward.policy.deny.harnesses, ['codex']);
-  assert.equal(swapped.policy.reviewerQualityFloor, 2);
-  assert.deepEqual(swapped.policy.deny.harnesses, ['cursor']);
+  assert.equal(upward.policy.qualityFloor.reviewer, 5);
+  assert.equal(swapped.policy.qualityFloor.reviewer, 2);
   assert.notDeepEqual(upward.policy, swapped.policy, 'the two orders must not produce one policy');
+
+  // And the property that replaced the old assertion: both bans hold, whichever
+  // way round the layers were read.
+  assert.deepEqual([...upward.policy.deny.harnesses].sort(), ['codex', 'cursor']);
+  assert.deepEqual([...swapped.policy.deny.harnesses].sort(), ['codex', 'cursor']);
+});
+
+// --- ADR-004: the merge is union, intersection and two selectors --------------
+
+test('two layers with different deny lists — BOTH bans hold', () => {
+  // The mutation probe of PB-31: make the merge replace again and this goes red.
+  // It is the whole of ADR-004 decision 5 in one assertion — the first consumer
+  // had to sit above a person's file and erase their `deny.tuples` to make its
+  // own policy stand, and under union it does not.
+  const canonical = canonicalLayer();
+  const person = overlayLayer('user', { schemaVersion: 1, deny: { tuples: ['claude-opus-5-high'] } });
+  const policy = overlayLayer('workspace', { schemaVersion: 1, deny: { tuples: ['codex-sol-high'] } });
+
+  const merged = mergeRouting({ canonical: canonical.data, overlays: [person, policy] });
+  assert.deepEqual(merged.policy.deny.tuples, ['claude-opus-5-high', 'codex-sol-high'],
+    'a higher layer adds its ban to the one below rather than writing over it');
+
+  // And the provenance says who wrote which, because a ban is lifted only in the
+  // layer that wrote it and a person has to know which file to open.
+  assert.deepEqual(
+    merged.sources.rules.map((r) => [r.layer, r.rule, r.role, r.kind, r.names]),
+    [['user', 'deny', null, 'tuples', ['claude-opus-5-high']],
+      ['workspace', 'deny', null, 'tuples', ['codex-sol-high']]],
+  );
+});
+
+test('allow lists INTERSECT across layers, and an intersection may come out empty', () => {
+  const canonical = canonicalLayer();
+  const wide = overlayLayer('user', { schemaVersion: 1, allow: { harnesses: ['claude', 'codex'] } });
+  const narrow = overlayLayer('workspace', { schemaVersion: 1, allow: { harnesses: ['codex', 'cursor'] } });
+  const merged = mergeRouting({ canonical: canonical.data, overlays: [wide, narrow] });
+  assert.deepEqual(merged.policy.allow.harnesses, ['codex'],
+    'a tuple must be named by every allow list any layer states');
+
+  // Two layers narrowing different ways agree on nothing. The empty array is a
+  // different fact from an absent key and the merge keeps them apart: absent is
+  // "no allow list of this kind", empty is "an allow list that admits nothing".
+  const disjoint = mergeRouting({
+    canonical: canonical.data,
+    overlays: [
+      overlayLayer('user', { schemaVersion: 1, allow: { harnesses: ['claude'] } }),
+      overlayLayer('workspace', { schemaVersion: 1, allow: { harnesses: ['codex'] } }),
+    ],
+  });
+  assert.deepEqual(disjoint.policy.allow.harnesses, []);
+  assert.equal(mergeRouting({ canonical: canonical.data, overlays: [] }).policy.allow.harnesses, undefined);
+});
+
+test('a byRole block merges into its own role and leaves the other alone', () => {
+  const canonical = canonicalLayer();
+  const merged = mergeRouting({
+    canonical: canonical.data,
+    overlays: [overlayLayer('workspace', {
+      schemaVersion: 1,
+      deny: { harnesses: ['cursor'], byRole: { reviewer: { harnesses: ['codex'] } } },
+    })],
+  });
+  assert.deepEqual(merged.policy.deny.harnesses, ['cursor'], 'the unscoped list holds for both roles');
+  assert.deepEqual(merged.policy.byRole.reviewer.deny.harnesses, ['codex']);
+  assert.deepEqual(merged.policy.byRole.worker.deny, {}, 'a rule scoped to one role does not reach the other');
+
+  // And the effective lists the resolver asks for: the unscoped list unioned
+  // with the role's own.
+  assert.deepEqual([...rulesForRole(merged.policy, 'reviewer').deny.harnesses].sort(), ['codex', 'cursor']);
+  assert.deepEqual(rulesForRole(merged.policy, 'worker').deny.harnesses, ['cursor']);
+});
+
+test('validate names each ADR-004 check by its rule, on a layer pair that fires it', () => {
+  // Every one of the three has to be reachable and has to name the layer that
+  // wrote each half — the whole reason they exist is that an unsatisfiable
+  // policy would otherwise reach a person as an empty candidate list.
+  const empty = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [
+      overlayLayer('user', { schemaVersion: 1, allow: { harnesses: ['claude'] } }),
+      overlayLayer('workspace', { schemaVersion: 1, allow: { harnesses: ['codex'] } }),
+    ],
+  });
+  const intersection = empty.errors.find((e) => e.rule === 'allow-intersection-empty');
+  assert.ok(intersection, empty.errors.map((e) => `${e.rule}:${e.at}`).join(' | '));
+  assert.equal(intersection.at, 'allow.harnesses', 'the path must be one a person can find in a file');
+  assert.equal(intersection.layer, 'workspace');
+  assert.match(intersection.message, /"user"/);
+  assert.match(intersection.message, /"workspace"/);
+
+  const covered = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [
+      overlayLayer('user', { schemaVersion: 1, allow: { models: ['claude-opus-5'] } }),
+      overlayLayer('workspace', { schemaVersion: 1, deny: { models: ['claude-opus-5'] } }),
+    ],
+  });
+  assert.ok(covered.errors.some((e) => e.rule === 'deny-covers-allow'));
+  const shadow = covered.warnings.find((w) => w.code === 'allow-shadowed-by-deny');
+  assert.ok(shadow);
+  assert.equal(shadow.at, 'deny.models');
+});
+
+test('a byRole rule does not make a finding name a path nobody wrote', () => {
+  // The set checks run per role once any layer scopes a rule of that kind, and
+  // the pairwise check runs once over the rules themselves. Without that split
+  // an unscoped contradiction was reported twice, at `deny.byRole.<role>.<kind>`
+  // — a path that is in no file.
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('workspace', {
+      schemaVersion: 1,
+      allow: { harnesses: ['claude', 'codex'] },
+      deny: { harnesses: ['codex'], byRole: { reviewer: { harnesses: ['claude'] } } },
+    })],
+  });
+  const found = verdict.errors.filter((e) => e.message.includes('both allowed and denied'));
+  assert.equal(found.length, 1, found.map((e) => `${e.at}: ${e.message}`).join('\n'));
+  assert.equal(found[0].at, 'deny.harnesses',
+    'the finding names the rule that fired, and the unscoped pair is reported once rather than once per role');
+
+  // And the role-scoped half of the same file is NOT a second finding: allowing
+  // two harnesses and keeping the reviewer off one of them is the rule `byRole`
+  // exists to make writable, not a contradiction.
+  assert.equal(verdict.warnings.some((w) => w.code === 'allow-shadowed-by-deny'), false,
+    verdict.warnings.map((w) => `${w.code}: ${w.message}`).join('\n'));
+});
+
+test('a rule scoped to one role does not contradict an allow scoped to the other', () => {
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('workspace', {
+      schemaVersion: 1,
+      allow: { byRole: { worker: { harnesses: ['codex'] } } },
+      deny: { byRole: { reviewer: { harnesses: ['codex'] } } },
+    })],
+  });
+  assert.equal(verdict.errors.filter((e) => e.message.includes('both allowed and denied')).length, 0,
+    'two policies for two roles are not one contradiction');
+  assert.equal(verdict.warnings.some((w) => w.code === 'allow-shadowed-by-deny'), false);
+});
+
+test('validate refuses a flag, a role and a floor the vocabulary does not have', () => {
+  const cases = [
+    ['flag typo', { schemaVersion: 1, deny: { flags: ['no-zdrr'] } }, /unknown flag/],
+    ['unknown role in byRole', { schemaVersion: 1, deny: { byRole: { architect: { harnesses: ['codex'] } } } }, /unknown role/],
+    ['unknown role in qualityFloor', { schemaVersion: 1, qualityFloor: { architect: 3 } }, /unknown role/],
+    ['floor out of range', { schemaVersion: 1, qualityFloor: { worker: 9 } }, /integer from 1 to 5/],
+    ['balance not a number', { schemaVersion: 1, balance: { band: 'wide' } }, /number not below zero/],
+    ['balance unknown key', { schemaVersion: 1, balance: { width: 5 } }, /unknown key/],
+  ];
+  for (const [name, doc, pattern] of cases) {
+    const verdict = validateLayers({ canonical: canonicalLayer(), overlays: [overlayLayer('user', doc)] });
+    assert.equal(verdict.ok, false, `${name}: validate accepted it`);
+    assert.equal(verdict.errors[0].layer, 'user', name);
+    assert.match(verdict.errors.map((e) => e.message).join(' | '), pattern, name);
+  }
+});
+
+test('a byRole block is checked against the catalog like an unscoped rule', () => {
+  // `referenceChecks` has to walk into the nested block: a tuple id nobody rates
+  // is as wrong there as it is at the top level, and it was reachable only
+  // through the flat selectors before ADR-004.
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('workspace', {
+      schemaVersion: 1,
+      deny: { byRole: { reviewer: { tuples: ['no-such-tuple'], harnesses: ['aider'] } } },
+    })],
+  });
+  assert.equal(verdict.ok, false);
+  assert.deepEqual([...verdict.errors.map((e) => e.at)].sort(),
+    ['deny.byRole.reviewer.harnesses', 'deny.byRole.reviewer.tuples']);
+});
+
+test('a layer that states both spellings of the reviewer floor is a warning, and the explicit key wins', () => {
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('user', {
+      schemaVersion: 1, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 },
+    })],
+  });
+  assert.equal(verdict.ok, true, 'lawful — the alias is still read, it just loses here');
+  const warning = verdict.warnings.find((w) => w.code === 'quality-floor-alias');
+  assert.ok(warning, verdict.warnings.map((w) => w.code).join(' | '));
+  assert.equal(warning.layer, 'user');
+
+  const merged = mergeRouting({
+    canonical: CATALOG,
+    overlays: [overlayLayer('user', { schemaVersion: 1, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 } })],
+  });
+  assert.equal(merged.policy.qualityFloor.reviewer, 5);
+  assert.deepEqual(merged.sources.floorAlias, ['user']);
+
+  // Across layers there is nothing to warn about: a floor is a scalar and the
+  // highest layer that states one wins, whichever spelling it used.
+  const across = mergeRouting({
+    canonical: CATALOG,
+    overlays: [
+      overlayLayer('user', { schemaVersion: 1, qualityFloor: { reviewer: 5 } }),
+      overlayLayer('workspace', { schemaVersion: 1, reviewerQualityFloor: 2 }),
+    ],
+  });
+  assert.equal(across.policy.qualityFloor.reviewer, 2);
+  assert.deepEqual(across.sources.floorAlias, []);
+});
+
+test('the constant, the overlay schema and the snapshot schema are ONE closed flag list', () => {
+  // A flag is the one selector whose names are in no catalog, so a typo has
+  // nothing to be caught against but this list — which therefore has to be one
+  // list in three places rather than three lists. An overlay may select by a
+  // flag the snapshot can never carry, and nothing would say so.
+  const overlaySchema = readJson(path.join(SCHEMAS, 'overlay.schema.json'));
+  const snapshotSchema = readJson(path.join(SCHEMAS, 'snapshot.schema.json'));
+  assert.deepEqual(overlaySchema.$defs.flagList.items.enum, MODEL_FLAGS);
+  assert.deepEqual(snapshotSchema.$defs.model.properties.flags.items.enum, MODEL_FLAGS);
+  assert.deepEqual(
+    overlaySchema.$defs.roleSelectors.properties.flags.$ref,
+    overlaySchema.$defs.selectors.properties.flags.$ref,
+    'a byRole block selects by the same flags as an unscoped rule',
+  );
 });
 
 test('a weight set is replaced whole, not field by field', () => {
@@ -506,12 +735,12 @@ test('loadCatalog reads the host layers in the host order and reports which were
     const host = hostWith([{ id: 'user', path: userFile }, { id: 'workspace', path: wsFile }]);
 
     const loaded = loadCatalog({ host });
-    assert.equal(loaded.policy.reviewerQualityFloor, 2);
+    assert.equal(loaded.policy.qualityFloor.reviewer, 2);
     assert.deepEqual(loaded.layers.map((l) => [l.id, l.present]),
       [['catalog', true], ['user', true], ['workspace', false]]);
 
     writeFileSync(wsFile, JSON.stringify({ schemaVersion: 1, reviewerQualityFloor: 4 }));
-    assert.equal(loadCatalog({ host }).policy.reviewerQualityFloor, 4,
+    assert.equal(loadCatalog({ host }).policy.qualityFloor.reviewer, 4,
       'the workspace layer sits above the user layer');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -623,7 +852,10 @@ test('validate refuses weights that do not sum to 100, and rules that both allow
   assert.equal(contradiction.ok, false);
   assert.ok(contradiction.errors.some((e) => e.message.includes('both allowed and denied')));
 
-  // Across layers, too: the contradiction is between the MERGED lists.
+  // Across layers it is no longer that error. ADR-004 made it lawful — deny
+  // wins — so it becomes a warning that sends the person to the file which took
+  // their allow list away, and the error beside it is the one that actually
+  // stops routing: every name the merged allow list admits is denied.
   const acrossLayers = validateLayers({
     canonical: canonicalLayer(),
     overlays: [
@@ -632,7 +864,12 @@ test('validate refuses weights that do not sum to 100, and rules that both allow
     ],
   });
   assert.equal(acrossLayers.ok, false);
-  assert.ok(acrossLayers.errors.some((e) => e.message.includes('both allowed and denied')));
+  assert.ok(acrossLayers.warnings.some((w) => w.code === 'allow-shadowed-by-deny'),
+    acrossLayers.warnings.map((w) => w.code).join(' | '));
+  assert.ok(acrossLayers.errors.some((e) => e.rule === 'deny-covers-allow'),
+    acrossLayers.errors.map((e) => e.message).join(' | '));
+  assert.ok(!acrossLayers.errors.some((e) => e.message.includes('both allowed and denied')),
+    'across layers is lawful under union and must not be the one-layer error');
 });
 
 test('a stale assessedAt is a warning and never an exclusion', () => {
@@ -708,7 +945,7 @@ test('an overlay that is present and unreadable stops the load — it does not b
     // The same file, readable again: the load goes through, so the refusal was
     // about the content and not about the path.
     writeFileSync(file, '{ "schemaVersion": 1, "reviewerQualityFloor": 2 }');
-    assert.equal(loadCatalog({ host }).policy.reviewerQualityFloor, 2);
+    assert.equal(loadCatalog({ host }).policy.qualityFloor.reviewer, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -736,8 +973,10 @@ test('every warning carries code and message, the two fields a decision may copy
 
 test('a finding names the layer that wrote the key it is about', () => {
   // 03-cli and ADR-003 promise a layer id — "denied by overlay \"workspace\"" —
-  // so the merge records who last wrote each weight set and each allow/deny
-  // list. Without that the only honest answer would be the whole stack.
+  // so the merge records who wrote each weight set and every allow/deny list.
+  // Without that the only honest answer would be the whole stack. Under ADR-004
+  // a list has as many writers as there are layers that stated one, so the
+  // record is a list of rules rather than one id per key.
   const weights = validateLayers({
     canonical: canonicalLayer(),
     overlays: [
@@ -761,13 +1000,17 @@ test('a finding names the layer that wrote the key it is about', () => {
   });
   const denyError = contradiction.errors.find((e) => e.at === 'deny.models');
   assert.ok(denyError, 'no contradiction finding');
+  assert.equal(denyError.rule, 'deny-covers-allow');
   assert.equal(denyError.layer, 'workspace', 'deny is applied last, so the deny layer is named');
   assert.ok(denyError.message.includes('"user"'), 'the message must also name where the allow came from');
 
-  // Nobody touched `quality`, so a finding about it would name the defaults.
+  // Nobody touched `quality`, so a finding about it would name the defaults, and
+  // nobody wrote a rule at all — the rule list is where a deny finding reads its
+  // layer from, and an empty one is how "the defaults" is said.
   const untouched = mergeRouting({ canonical: CATALOG, overlays: [] });
   assert.equal(untouched.sources.weights.quality, DEFAULTS);
-  assert.equal(untouched.sources.deny.models, DEFAULTS);
+  assert.deepEqual(untouched.sources.rules, []);
+  assert.equal(rulesLabel(rulesFor(untouched.sources, { rule: 'deny', kind: 'models' })), 'the defaults');
 });
 
 test('a tuple whose id is a prototype key is not patched by an overlay that never named it', () => {

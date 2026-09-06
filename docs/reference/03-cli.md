@@ -62,11 +62,11 @@ The whole surface runs: `models`, `--strategy` and `--allow-payg` on `spawn` and
 ### Commands
 
 ```text
-promptobus models [--strategy <quality|balanced|speed|economy>] [--role <worker|reviewer>] [--refresh] [--json]
+promptobus models [--strategy <quality|balanced|speed|economy|balance>] [--role <worker|reviewer>] [--refresh] [--json]
 promptobus models validate
 promptobus models --clear-exhausted <harness>
-promptobus spawn  … [--strategy <quality|balanced|speed|economy>] [--allow-payg] [--refresh]
-promptobus review … [--strategy <quality|balanced|speed|economy>] [--allow-payg] [--refresh]
+promptobus spawn  … [--strategy <quality|balanced|speed|economy|balance>] [--allow-payg] [--refresh]
+promptobus review … [--strategy <quality|balanced|speed|economy|balance>] [--allow-payg] [--refresh]
 ```
 
 `models` prints what the resolver would pick right now: the chosen tuple, every candidate it considered with its score components, the models the account exposes that the catalog does not rate, and the warnings. `--strategy` defaults to `balanced` and `--role` to `worker`. The text form prints at most eight unrated rows per harness and counts the rest (`… and N more`); `--json` carries every row, so the two outputs cannot drift.
@@ -119,7 +119,7 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | exclusion | `model-not-in-inventory` | The catalog rates the tuple; the account does not expose that model |
 | exclusion | `role-not-allowed` | The tuple is not rated for the role being routed |
 | exclusion | `constraint-mismatch` | An explicit `--harness`, `--model` or `--effort` rules it out |
-| exclusion | `denied-by-policy` | An allow/deny rule of an overlay; `detail` names the layer |
+| exclusion | `denied-by-policy` | An allow/deny rule of the merged policy; `detail` names the rule and **every** layer that wrote it — a deny list accumulates, so a ban two layers wrote is lifted in neither of them alone |
 | exclusion | `payg-not-allowed` | Pay-as-you-go without `--allow-payg` |
 | exclusion | `harness-unavailable` | The harness snapshot is `unavailable` |
 | exclusion | `harness-exhausted` | The harness snapshot is `exhausted` |
@@ -129,8 +129,11 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | warning | `stale-rating` | A tuple's `assessedAt` is old. A warning only — never an exclusion |
 | warning | `unknown-remaining` | At least one harness could not report its remaining limit |
 | warning | `reviewer-floor-not-met` | No reviewer candidate reached the quality floor; the best remaining one was taken |
+| warning | `worker-floor-not-met` | The same for the worker's floor, which [ADR-004](../adr/adr-004-subscription-balance.md) added at 3 |
+| warning | `balance-fallback` | `--strategy balance` and no harness could be paced — every candidate's binding window is unknown, spent or already reset. The pick was scored by the `balanced` weights, not balanced |
 | warning | `snapshot-stale` | The decision was made on cache entries past their TTL |
 | warning | `probe-incomplete` | An adapter missed the preflight budget and its harness is `unknown` |
+| warning | `flag-not-in-inventory` | An overlay's `flags` rule names a mark no model of this run's snapshot carries. The rule excluded nothing — and a harness that lists no models has no flag to match, so silence is not absence |
 
 ### Error codes
 
@@ -142,7 +145,7 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 
 | Code | When |
 |---|---|
-| `strategy-unknown` | `--strategy` is not one of the four values |
+| `strategy-unknown` | `--strategy` is not one of the five values |
 | `role-unknown` | `--role` is not `worker` or `reviewer` |
 | `harness-unknown` | A harness the workspace does not declare is named — by `--clear-exhausted`, or by `--harness` on a routed `spawn` or `review`. The routing catalog is filtered by the declaration, so a tuple of an undeclared harness is never in the snapshot to be chosen from |
 | `catalog-invalid` | The shipped catalog fails schema or reference validation |
@@ -250,13 +253,44 @@ Three library entry points, all in `lib/model-routing/`:
 
 `--harness`, `--model` and `--effort` reach the merge as constraints and are carried through untouched — the resolver applies them. `--allow-payg` is the one constraint that changes policy at that layer, and it is opt-in: its absence does not undo an overlay that opted pay-as-you-go in.
 
-**A ban is final from below.** A layer replaces an allow or deny list whole, per selector kind, and it cannot clear one: the overlay schema refuses `deny: {}` and `deny: { models: [] }` alike, and every denied name must exist in the merged catalog, so "deny nothing" cannot be written. A higher layer swaps a ban for a different ban or leaves it standing; nothing above lifts it. Read ADR-003's layer ordering with that in mind — the workspace layer sits above a consumer policy layer and can restate any rule, but a consumer's ban survives a workspace file that does not name that selector kind. Lifting one means changing the layer that wrote it.
+**A ban is final from below, and a `deny` list accumulates.** [ADR-004](../adr/adr-004-subscription-balance.md) decision 5 supersedes ADR-003's "Clarification, 2026-09-05" whole: a deny list of any selector kind is the **union** across every layer that states one. A ban written in any layer stands, no layer above it lifts one, and lifting one means editing the layer that wrote it.
 
-`validate` covers the shape of every layer, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, weights that do not sum to 100, references to a tuple, model, harness or effort that does not exist, a name that is both allowed and denied, the host's own declaration — exactly one layer is writable whenever any layer is declared, reported here as a finding on the layer `host` rather than thrown, because a person whose host declares none would otherwise be told by `models validate` that their stack holds and by `models` that it does not; the layer list it prints marks the writable one — and, since PB-29, a rated row whose rating has nothing behind it.
+```text
+// user layer                        // workspace layer, above it
+{ "deny": { "tuples": ["a"] } }      { "deny": { "tuples": ["b"] } }
+// merged: deny.tuples = ["a", "b"] — both bans hold
+```
 
-**A rating with nothing behind it is `catalog-invalid`.** ADR-004 rates from published results, and `evidence` grew the object form that carries the citation: `{ text, sources, interpolatedFrom, hypothesis }`, with the bare string still lawful for a row written before it. Each entry of `sources` names one rating and its `basis`, `version`, `agentHarness`, `provenance`, `figure`, `fieldSize`, `url` and `date`. For each of `quality`, `speed` and `quotaCost`, a row states one of three things and `validate` refuses a fourth: the rating is cited in `sources`; the row is `interpolatedFrom` a base row that cites it, which is why an `interpolatedFrom` naming no tuple is itself an error; or the rating is named in `hypothesis`, which is the ADR's "no published number" said in a form a reader can find. Naming a rating in both `sources` and `hypothesis` is an error too — it is one or the other. Its warnings are `stale-rating` — a rating older than `STALE_RATING_DAYS` (90), never an exclusion — and two of its own, `priority-duplicate` and `priority-not-canonical`, which check the canonical-priority convention the guide documents and never reach a decision.
+Under the old rule the workspace layer's list replaced the user's, and `a` came back. That is the cost the first consumer measured: to make its own bans hold it had to sit above a person's file and erase that person's `deny.tuples` with it.
 
-A finding carries `code`, the `layer` id it belongs to, `at` for the field, and `message`. `layer` is whoever last wrote the key in question — the overlay that wrote that weight set or that deny list, and `defaults` where none did. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
+**An `allow` list intersects.** A tuple must be named by every allow list of that kind that any layer states, so one sentence covers both lists — *a layer's rule survives every layer above it* — which is the sentence the resolver already applies across selector kinds, with the layer as one more axis. Two layers narrowing different ways therefore intersect to nothing, and a file that says "allow" then admits no tuple at all; that case is checked rather than discovered, below. An intersection that came out empty is an allow list which admits nothing, and it is not the same document state as no allow list of that kind.
+
+Neither list can be cleared: the overlay schema refuses `deny: {}` and `deny: { models: [] }` alike, and every denied name must exist in the merged catalog, so "deny nothing" cannot be written.
+
+**Two more selectors**, both additive and both usable in `allow` and `deny` alike:
+
+| Selector | What it names | Where it is applied |
+|---|---|---|
+| `flags` | a mark the availability **snapshot** carries on a model row — today one, `no-zdr`. It is the one selector whose names are in no catalog, so they are checked against a closed list (`MODEL_FLAGS`, mirrored into the overlay schema's own enum and into the snapshot's). A new mark a harness starts printing needs a release rather than a data change | after the inventory step of the resolver, because that is where the model row it reads arrives |
+| `byRole` | a nested rule block scoped to `worker` or `reviewer` — `deny: { byRole: { reviewer: { harnesses: ["cursor"] } } }`. A role is a condition on *when* a rule applies rather than a thing that can be banned, which is why it nests instead of standing beside the four names. Routing role R, the effective deny of a kind is the unscoped list unioned with `byRole.R`'s, and the effective allow is the intersection of the two where both are stated. `validate` refuses a role outside the two | wherever the rule it wraps is applied |
+
+**Silence is not absence.** A harness that reports no inventory has no flags to match, so a flag deny excludes nothing there: a person who must never run outside zero-data-retention does not get that guarantee from a harness that lists no models, and the reference says so rather than appearing to. Read the other way, the same fact settles the allow half — `allow.flags` means "only models carrying this mark", and a tuple whose mark cannot be seen is not one of them, so it is excluded. A rule whose flag no model of the run carries raises the `flag-not-in-inventory` warning.
+
+`validate` covers the shape of every layer, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, weights that do not sum to 100, references to a tuple, model, harness or effort that does not exist, a flag outside the closed list, a role outside the two, a name that is both allowed and denied **in one layer** — which nobody writes on purpose — a rated row whose rating has nothing behind it, and the host's own declaration: exactly one layer is writable whenever any layer is declared, reported here as a finding on the layer `host` rather than thrown, because a person whose host declares none would otherwise be told by `models validate` that their stack holds and by `models` that it does not. The layer list it prints marks the writable one. Three checks are ADR-004's, and every one of them names the layer that wrote each half. They are named by a `rule` field on the finding rather than by an error code of their own: `models validate` raises the code of its first finding, so a new value there would change what a consumer branching on `overlay-invalid` receives.
+
+**A rating with nothing behind it is `catalog-invalid`.** ADR-004 rates from published results, and `evidence` grew the object form that carries the citation: `{ text, sources, interpolatedFrom, hypothesis }`, with the bare string still lawful for a row written before it. Each entry of `sources` names one rating and its `basis`, `version`, `agentHarness`, `provenance`, `figure`, `fieldSize`, `url` and `date`. For each of `quality`, `speed` and `quotaCost`, a row states one of three things and `validate` refuses a fourth: the rating is cited in `sources`; the row is `interpolatedFrom` a base row that cites it, which is why an `interpolatedFrom` naming no tuple is itself an error; or the rating is named in `hypothesis`, which is the ADR's "no published number" said in a form a reader can find. Naming a rating in both `sources` and `hypothesis` is an error too — it is one or the other.
+
+| Check | Kind | What it says |
+|---|---|---|
+| `allow-intersection-empty` | error, under `overlay-invalid` | the allow lists of one selector kind intersect to nothing across the layers that state one, so no tuple is admitted. Without this the symptom would be `candidates-empty` with no explanation |
+| `deny-covers-allow` | error, under `overlay-invalid` | every name the intersected allow list admits is denied somewhere |
+| `allow-shadowed-by-deny` | warning | a name allowed in one layer and denied in another. Under replacement this was the contradiction ADR-003 asked `validate` to refuse; under union it is lawful and deny wins, so it becomes a warning that sends the person to the file which took their allow list away |
+
+`models validate` also prints the deny rules in force, each with the layer that wrote it and the sentence that **only that layer can lift it** — no allow list anywhere reaches a ban, because deny is applied after allow.
+
+Its other warnings are `stale-rating` — a rating older than `STALE_RATING_DAYS` (90), never an exclusion — and two of its own, `priority-duplicate` and `priority-not-canonical`, which check the canonical-priority convention the guide documents and never reach a decision.
+
+A finding carries `code`, the `layer` id it belongs to, `at` for the field, `message`, and `rule` where the check has a name of its own (the three above). `layer` is whoever wrote the key in question — the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where none did. A merged list has as many writers as there are layers that stated one, so the merge records every allow and deny rule rather than one layer id per key. A warning carries `code` and `message` first and its facts after: those two fields are the whole of a warning in the decision document (`warnings` in `decision.schema.json` is closed on them), **so a decision copies `code` and `message` and translates nothing**.
 
 ### Claude Code: what its adapter asks
 
@@ -380,9 +414,10 @@ Both are pure — no disk, no harness, no clock of their own — because determi
 **Filtering**, in [ADR-003](../adr/adr-003-model-routing.md)'s order, and the first step that matches is the reason reported:
 
 1. the tuples of the merged catalog;
-2. the allow and deny lists of the merged policy, then `--harness`, `--model` and `--effort` — `denied-by-policy`, whose `detail` names the layer that wrote the list, then `constraint-mismatch`. Allow lists of different selector kinds hold at once: a tuple must be named by every allow list there is, and the first one that does not name it is the one reported;
+2. the allow and deny lists **in force for the role being routed** — the unscoped ones with that role's `byRole` block unioned into the deny and intersected into the allow — then `--harness`, `--model` and `--effort`: `denied-by-policy`, whose `detail` names the rule and every layer that wrote it, then `constraint-mismatch`. Allow lists of different selector kinds hold at once: a tuple must be named by every allow list there is, and the first one that does not name it is the one reported. The `flags` selector is the one that is not applied here — it needs a snapshot row, and it runs at step 4a;
 3. tuples not rated for the role — `role-not-allowed`;
 4. tuples whose model the account does not expose — `model-not-in-inventory`. A harness that reported no inventory at all excludes nothing: silence is not absence;
+   4a. the `flags` selector, over the marks the snapshot carries on the model row this step just consulted — `denied-by-policy` again, with the flag and its layers in `detail`;
 5. `unavailable` and `exhausted` harnesses — `harness-unavailable`, `harness-exhausted`;
 6. pay-as-you-go without `--allow-payg` — `payg-not-allowed`;
 7. scoring;
@@ -391,11 +426,49 @@ Both are pure — no disk, no harness, no clock of their own — because determi
 
 **A harness the snapshot does not carry is filtered out, not excluded.** The preflight is asked about the harnesses the workspace declared, so the snapshot's harness set is that declaration, and ADR-003 says the catalog is filtered by it. On a workspace that declares only `claude`, the Cursor and Codex tuples are absent from `candidates` rather than listed with a reason — they were never considered, and the exclusion list has no code that would be true of them. The cost is that `resolve` alone cannot tell "you named a harness this workspace never declared" from "nothing survived filtering": both end with `chosen: null`. Telling them apart is the command's job and it happens before the call — an explicit `--harness`, `--model` or `--effort` that matches no tuple of the merged catalog is `constraint-unknown`, and a `--clear-exhausted` naming an undeclared harness is `harness-unknown`, both from the table above.
 
-**Scoring** is the weight table of the merged policy over four values. `quality` and `speed` are 1–5 ratings normalised as `(r − 1) / 4 × 100`; `quotaCost` is inverted, `(5 − r) / 4 × 100`, so a smaller spend contributes more; `remaining` is not a rating but `100 − max(usedPercent)` over the harness's windows. A tuple's `roleRatings` override its ratings for the role being routed. A component is its weight over 100 times that value, and all four are published, so a reader can divide one back by its weight and recover the input.
+**Scoring** is the weight table of the merged policy over four values. `quality` and `speed` are 1–5 ratings normalised as `(r − 1) / 4 × 100`; `quotaCost` is inverted, `(5 − r) / 4 × 100`, so a smaller spend contributes more; `remaining` is not a rating but `100 − max(usedPercent)` over the **applicable windows of that tuple** — the account-wide ones plus the scope covering it. A tuple's `roleRatings` override its ratings for the role being routed. A component is its weight over 100 times that value, and all four are published, so a reader can divide one back by its weight and recover the input.
 
-A harness that is `unknown`, or that exposes no window at all, has no remaining limit to read: it counts as a neutral 50 % and the candidate loses the `unknown-availability` points. Penalised, never blocked — that is the fourth row of the ADR's decision table.
+`remaining` is therefore per tuple rather than per harness, under every strategy: two Cursor tuples on one snapshot differ when their pools do, and one in a spent pool scores below one in a pool with room. [ADR-004](../adr/adr-004-subscription-balance.md) calls this a refinement of ADR-003's own sentence and not a reversal of it — that sentence already said "applicable", and until the snapshot carried scopes a harness had only account-wide windows.
 
-**The extra rules** are the ADR's, and every number in them comes from the merged policy, so an overlay moves it: `live-participant` costs points for each participant already up on that harness and is capped; `reviewer-diversity` adds points to a reviewer whose harness or model differs from every live worker's — with no live worker there is nothing to differ from and no bonus; and the reviewer quality floor is a **choice rule, not a filter**. A candidate below the floor keeps its place in the list with its score, and only the pick moves past it; when nothing reaches the floor the best remaining candidate is taken with a `reviewer-floor-not-met` warning rather than the run refusing.
+A harness that is `unknown`, or for which no window applies, has no remaining limit to read: it counts as a neutral 50 % and the candidate loses the `unknown-availability` points. Penalised, never blocked — that is the fourth row of the ADR's decision table.
+
+**Hidden rows are not inventory.** A model the harness lists and declines to offer carries `hidden: true`, and the resolver's inventory is the rows without it. So a catalog tuple naming a hidden model is excluded as `model-not-in-inventory` — which is true of it from the resolver's side — and a hidden unrated row is not a `runtime` row either: it is not something a person could pick.
+
+**The extra rules** are the ADR's, and every number in them comes from the merged policy, so an overlay moves it: `live-participant` costs points for each participant already up on that harness and is capped; `reviewer-diversity` adds points to a reviewer whose harness or model differs from every live worker's — with no live worker there is nothing to differ from and no bonus; and a quality floor is a **choice rule, not a filter**. ADR-004 gives **both** roles one, `qualityFloor: { worker: 3, reviewer: 5 }`, superseding ADR-003's reviewer floor of 4 and its absence of a worker floor; `reviewerQualityFloor` is still read as an alias for `qualityFloor.reviewer`, a layer stating both is a `quality-floor-alias` warning and the explicit key wins. A candidate below its floor keeps its place in the list with its score, and only the pick moves past it; when nothing reaches it the best remaining candidate is taken with a `reviewer-floor-not-met` or `worker-floor-not-met` warning rather than the run refusing.
+
+### `balance`: which account to spend from
+
+The fifth strategy, and it answers a different question from the other four — not how to weigh the qualities of a tuple, but which of the person's subscriptions to spend. It has **no weight set of its own**: inside one harness it orders tuples by the merged `balanced` weights, which is what "the role's ordering" means throughout [ADR-004](../adr/adr-004-subscription-balance.md). The cost is named rather than hidden — an overlay that re-weights `balanced` re-weights the inside of `balance` with it.
+
+It is a **choice layer above the scoring, not a filter**. Filtering steps 1–6 run unchanged, every surviving candidate is scored and keeps its place, and each gains a **pace block**:
+
+| Field | What it is |
+|---|---|
+| `window` | the **binding window**: the applicable one with the highest `usedPercent`, by `id`, `kind` and `scope`. Applicable means the account-wide windows plus the scope covering this tuple, so two tuples of one harness can bind different windows |
+| `usedShare` | `usedPercent / 100` — a share, 0…1 |
+| `elapsedShare` | `(now − (resetAt − lengthSec)) / lengthSec`, clamped to 0…1 against clock skew — a share |
+| `underspend` | `(elapsedShare − usedShare) × 100` — **percentage points of that window**. Positive means the account is behind the pace of its own window and has room |
+| `spendPenalty` | `balance.spendUnit × (quotaCost − 1) / 4`, in the same points |
+| `effective` | `underspend − spendPenalty` |
+| `eligible` | whether this candidate takes part in the comparison, with a `note` when it does not: `no-pace` or `window-spent`. Every other field is `null` when it could not be computed, in both cases |
+| `representative` | present and `true` on the one candidate that represents its harness — the tuple that would actually be picked there. Named in the document so the text output marks the same row the pick was made on rather than re-deriving the rule |
+
+**One unit, and it is stated once.** The two inputs are shares of 0…1; everything compared — `underspend`, `spendPenalty`, `effective`, `balance.band`, `balance.spendUnit` — is in percentage points of the window, which is the unit `usedPercent` is already in. The `× 100` is the whole conversion and both shares are published beside the result, so a reader can recompute it. Mixing the two is not a rounding difference but a degenerate strategy: read as shares, every harness would fall inside one band and `balance` would quietly be `balanced`.
+
+A window whose `resetAt` is absent or is not in the future **is not paced** — the fact has expired, and the sixty-second TTL is what repairs it. A binding window at or past 100 % is `window-spent`. A harness with no applicable window has no pace, and the decision says so rather than guessing one.
+
+**The pick**, in order:
+
+1. among **eligible** candidates, each harness is represented by its best tuple by the role's ordering that meets the role's quality floor — the tuple that would actually be picked on it, so the pace compared is the pace of the tuple the comparison is about;
+2. the largest `effective` leads, and every harness within `balance.band` of it is tied with it. The band is measured from the leader's **number**, which is what makes the tied set well defined whatever order the candidates arrived in;
+3. inside the tied set the `balanced` score of each representative decides, then ADR-003's own tie-break;
+4. **no eligible candidate — the pick is the best `balanced` score**, with the `balance-fallback` warning. A fallback rather than a refusal, because a person asked for work to start and not for a lecture about their windows.
+
+Two overlay keys carry the numbers and both default to **5** — five percentage points of a window. `balance.band` says "these two accounts are about equally spent, so take the better model"; its job is not to model noise, but the noise floor is about a point, so a band below that would do nothing. `balance.spendUnit` is equal to it by default, so a `quotaCost` of 5 gives up exactly one band against a `quotaCost` of 1: the heaviest tuple has to be a whole band ahead on pace to win.
+
+**`remaining` and pace are not the same fact counted twice.** `remaining` is a level — how much of the window is gone — and it ranks tuples inside a harness. Pace is a rate — how much is gone against how much of the window has elapsed. A harness at ninety per cent used with ninety-five per cent of its window elapsed is high on level and *ahead* on pace, and the two components say so independently.
+
+`models` prints the pace table under the candidates, one row per harness with the representative the document names, the binding window, both shares, the underspend, the penalty and the effective number; `--json` carries the same numbers on every scored candidate. Neither appears under the other four strategies: a decision carrying a number no rule of its own strategy used would invite a reader to believe one did. **Nothing in this package pins the reviewer to a harness** — a reviewer is routed by pace like a worker, with the floor of 5 and the diversity bonus above it.
 
 **The tie-break** is effective score, then confirmed availability, then canonical priority, then the tuple id. It is total, because two tuples cannot share an id — which is why a duplicate id is an error in `models validate` and not a warning.
 
@@ -405,7 +478,7 @@ The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reprodu
 
 ## Status, done, dismiss, history, prune
 
-`status` lists active tasks, participants, unread counts, and warden health. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
+`status` lists active tasks, participants, unread counts, and warden health. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. That record also keeps `windows`: the applicable windows of the chosen tuple with the `usedPercent` they had at the lift, which is the starting value a later reader needs to say what the run spent. It is the resolver's own applicable set, and it is empty when the harness reported no window. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
 
 A Cursor participant's liveness is judged by **three** signals, and a stall verdict needs all three quiet: the chat transcript growing, an instrumental process under the session's tmux pane, and a write in the participant's own worktree — the newest mtime among `git ls-files -mo --exclude-standard` plus its HEAD commit time (`lib/cursor-persist.js`). The third exists because the agent edits files inside one long call and spawns nothing, so the first two see a session that is working as one that is silent. It is **positive only**: a recent write lifts the verdict, its absence never raises one, and a session nothing writes for still stalls once the threshold passes. The verdict names each measurement and its span, so a silent transcript can be told from a dead session without opening the panel.
 

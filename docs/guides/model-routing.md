@@ -27,15 +27,31 @@ Three combining rules, and they differ on purpose.
 
 | Field | Rule | Why |
 |---|---|---|
-| `weights.<strategy>` | the named set is replaced **whole** | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose |
-| `allow.<kind>`, `deny.<kind>` | the named list is replaced **whole**, per selector kind | a higher layer states what the rule is, rather than adding to a list it cannot see |
+| `weights.<strategy>` | the named set is replaced **whole** | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose. Only the four ADR-003 strategies have one: `balance` orders tuples inside a harness by `balanced`, so re-weighting `balanced` re-weights the inside of `balance` with it |
+| `deny.<kind>` | the lists of every layer are **unioned** | a ban written in any layer stands, and no layer above it lifts one |
+| `allow.<kind>` | the lists of every layer are **intersected** | one rule then covers both lists — a layer's rule survives every layer above it |
 | everything else | field by field | naming a field is how an overlay changes it; not naming it is how it leaves the layer below alone |
 
-"Everything else" is `penalties`, `bonuses`, `reviewerQualityFloor`, `payg.allow`, one rating of one tuple (`ratings.<tupleId>.<rating>`) and one tuple's canonical priority (`priority.<tupleId>`).
+"Everything else" is `penalties`, `bonuses`, `qualityFloor.<role>`, `balance.band`, `balance.spendUnit`, `payg.allow`, one rating of one tuple (`ratings.<tupleId>.<rating>`) and one tuple's canonical priority (`priority.<tupleId>`). `reviewerQualityFloor` is still read as an alias for `qualityFloor.reviewer`; a layer that states both is a `quality-floor-alias` warning and the explicit key wins.
 
-**Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["claude-opus-5"] }` admits the Claude tuples that run `claude-opus-5` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny, which is the order `validate` assumes when it reports a name that is in both as a contradiction.
+**Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["claude-opus-5"] }` admits the Claude tuples that run `claude-opus-5` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny.
 
-**A higher layer can replace a list; it cannot clear one.** The overlay schema has no empty list and no reset — `deny: {}` and `deny: { models: [] }` are both refused — and every denied name must exist, so there is no way to write "deny nothing". A layer above can therefore swap a ban for a different ban, but a ban from the layer below survives any file that does not name that selector kind. For a consumer policy layer that is the intended behaviour: its bans are meant to hold whatever a person writes in their workspace file. For a person who wants to try a model their consumer forbids, it is a wall, and the way through it is to change the layer that wrote the ban. That is settled, not pending: the owner decided on 2026-09-05 to keep lists non-clearable, and [ADR-003](../adr/adr-003-model-routing.md) § Overlays records it. There is no reset sentinel to look for.
+**A ban is final from below.** [ADR-004](../adr/adr-004-subscription-balance.md) decision 5 made the deny lists accumulate: your file and a consumer's policy file both hold, whichever sits higher.
+
+```text
+// ~/.promptobus/model-routing.json    // a consumer's policy layer above it
+{ "deny": { "models": ["a"] } }        { "deny": { "models": ["b"] } }
+// merged: deny.models = ["a", "b"]
+```
+
+For a consumer policy layer that is the intended behaviour: its bans hold whatever a person writes. For a person who wants to try a model their consumer forbids, it is a wall, and the way through it is to change the layer that wrote the ban — `promptobus models validate` prints every deny rule in force with the layer that wrote it, which is the file to open. No allow list anywhere reaches a ban, because deny is applied after allow. Neither list can be cleared either: the overlay schema has no empty list and no reset — `deny: {}` and `deny: { models: [] }` are both refused — and every denied name must exist.
+
+**An allow list can now be unsatisfiable.** Because allow lists intersect, two layers narrowing different ways admit nothing at all, and every tuple is denied by policy from files that both say "allow". `validate` names both layers as `allow-intersection-empty`; without that check the symptom would be an empty candidate list with no explanation.
+
+**Two more selectors**, and they work in `allow` and `deny` alike:
+
+- `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. **A harness that lists no models has no flag to match**, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
+- `byRole` scopes a rule to one role: `deny: { byRole: { reviewer: { harnesses: ["cursor"] } } }` is "the reviewer never runs there", and leaves the worker alone. Routing a role, its block is unioned into the deny and intersected into the allow.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
@@ -98,9 +114,14 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<workspaceR
 {
   "schemaVersion": 1,
   "note": "personal routing preferences",
-  "deny": { "models": ["gpt-5.4-mini"] },
+  "deny": {
+    "models": ["gpt-5.4-mini"],
+    "flags": ["no-zdr"],
+    "byRole": { "reviewer": { "harnesses": ["cursor"] } }
+  },
   "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-  "reviewerQualityFloor": 5,
+  "qualityFloor": { "worker": 3, "reviewer": 5 },
+  "balance": { "band": 5, "spendUnit": 5 },
   "ratings": { "cursor-composer-2.5": { "speed": 5 } },
   "payg": { "allow": true }
 }
@@ -108,9 +129,11 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<workspaceR
 
 Line by line:
 
-- `deny.models` takes one model out of automatic selection everywhere it appears. A denied candidate is still reported, with `denied-by-policy` and the layer's name, so the pick stays explainable;
+- `deny.models` takes one model out of automatic selection everywhere it appears. A denied candidate is still reported, with `denied-by-policy` and the rule and every layer that wrote it, so the pick stays explainable;
+- `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.reviewer` applies its block only when the reviewer is being routed;
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
-- `reviewerQualityFloor` raises the bar for a reviewer candidate. It is a soft floor: if nothing reaches it, the best remaining candidate is chosen with a warning rather than the run refusing;
+- `qualityFloor` raises or lowers the bar per role — the defaults are worker 3 and reviewer 5. Both are soft floors and both are choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
+- `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone;
 - `payg.allow` admits pay-as-you-go tuples without `--allow-payg` on every call. The shipped catalog has no pay-as-you-go row today — every account the drivers log into is a subscription, and no price was filled in from a source that could be named — so this only matters once one appears or an overlay's own policy needs it.
 
@@ -121,10 +144,10 @@ Line by line:
 | Kind | What it covers |
 |---|---|
 | error `catalog-invalid` | the catalog's shape, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, and a rating with nothing behind it — no source, no interpolation, no stated hypothesis — including an `interpolatedFrom` that names no tuple or names one that is itself interpolated |
-| error `overlay-invalid` | an overlay's shape, a strategy whose four weights do not sum to 100, a reference to a tuple, model, harness or effort that does not exist, and a name that is both allowed and denied |
-| warning | `stale-rating`, `priority-duplicate`, `priority-not-canonical` — every one of them advisory; none of them stops a run |
+| error `overlay-invalid` | an overlay's shape, a strategy whose four weights do not sum to 100, a reference to a tuple, model, harness, effort, flag or role that does not exist, a name both allowed and denied **in one layer**, allow lists that intersect to nothing (`allow-intersection-empty`) and an allow list every name of which is denied (`deny-covers-allow`) |
+| warning | `stale-rating`, `priority-duplicate`, `priority-not-canonical`, `allow-shadowed-by-deny`, `quality-floor-alias` — every one of them advisory; none of them stops a run |
 
-Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — and `message`. `layer` names whoever last wrote the key in question: the overlay that wrote that weight set, or the overlay that wrote the deny list, and `defaults` where no overlay ever touched it. A contradiction names the deny side, because deny is applied last, and its message names the allow side too.
+Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — `message`, and `rule` where the check has a name of its own. `layer` names whoever wrote the key in question: the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where no overlay ever touched it. A finding about allow and deny together names the deny side, because deny is applied last, and its message names the allow side too. `allow-shadowed-by-deny` is a name allowed in one layer and denied in another — lawful since ADR-004, and a warning rather than the error it was, because deny simply wins.
 
 Warnings carry `code` and `message` and then whatever facts the caller may want without parsing prose. Those first two fields are the whole of a warning in a decision document — `warnings` in `decision.schema.json` is closed on them — so a decision copies them and translates nothing. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision.
 

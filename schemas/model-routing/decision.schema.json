@@ -7,15 +7,30 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "strategy", "role", "weights", "chosen", "candidates", "runtime", "warnings", "constraints", "overlays", "snapshot"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "strategy": {
-      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here.",
-      "enum": ["quality", "balanced", "speed", "economy"]
+      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here. `balance` is ADR-004's fifth: it answers which account to spend from rather than how to weigh a tuple, and it has no weight set of its own.",
+      "enum": ["quality", "balanced", "speed", "economy", "balance"]
     },
     "role": { "enum": ["worker", "reviewer"] },
     "weights": {
-      "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating.",
+      "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating. Under `balance` these are the merged `balanced` weights, which is what that strategy orders tuples inside one harness by.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet"
+    },
+    "balance": {
+      "description": "The two numbers of the pace layer, in percentage points of a window, as they stood after overlays. Present exactly when the strategy is `balance`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["band", "spendUnit"],
+      "properties": {
+        "band": { "type": "number", "minimum": 0 },
+        "spendUnit": { "type": "number", "minimum": 0 }
+      }
+    },
+    "strategySource": {
+      "description": "Where the strategy came from when it was not named on the command line: `overlay:<layer>` for a merged `defaults.strategy`. Absent when `--strategy` was given, which always wins.",
+      "type": "string",
+      "minLength": 1
     },
     "chosen": {
       "description": "null when nothing survived filtering. The command then exits with candidates-empty and writes no task, worktree or participant.",
@@ -177,6 +192,10 @@
             { "type": "null" }
           ]
         },
+        "pace": {
+          "description": "How much of this candidate's binding window is spent against how much of it has elapsed (ADR-004). Present on every scored candidate when the strategy is `balance`, and on none otherwise: `balance` is a choice layer above the scoring, so a candidate keeps its score and its place and only the pick moves, but a decision carrying a number no rule of its own strategy used would invite a reader to believe one did.",
+          "$ref": "urn:promptobus:model-routing:decision#/$defs/pace"
+        },
         "excluded": {
           "oneOf": [
             {
@@ -194,6 +213,71 @@
         "chosen": { "type": "boolean" }
       }
     },
+    "pace": {
+      "description": "Every number of the pace layer, in ONE unit: `usedShare` and `elapsedShare` are shares of 0…1, and everything compared — `underspend`, `spendPenalty`, `effective` — is in PERCENTAGE POINTS of the window, the unit `usedPercent` is already in. Both shares are published beside the result so a reader can recompute the conversion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window", "eligible", "note"],
+      "properties": {
+        "window": {
+          "description": "The binding window — the applicable one with the highest usedPercent, the account-wide windows plus the scope covering this tuple. null when the harness reported none that apply.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "scope"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "kind": { "enum": ["session", "weekly", "monthly"] },
+                "scope": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/modelScope" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/autoPoolScope" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/apiPoolScope" }
+                  ]
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "usedShare": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "elapsedShare": {
+          "description": "(now − (resetAt − lengthSec)) / lengthSec, clamped to 0…1 against clock skew.",
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "underspend": {
+          "description": "(elapsedShare − usedShare) × 100 — percentage points of that window. Positive means the account is behind the pace of its own window and has room to spend.",
+          "type": ["number", "null"]
+        },
+        "spendPenalty": {
+          "description": "balance.spendUnit × (quotaCost − 1) / 4, in the same points: the tuple that would actually be picked gives up a share of the window proportional to its quotaCost, before harnesses are compared.",
+          "type": ["number", "null"]
+        },
+        "effective": {
+          "description": "underspend − spendPenalty. The number harnesses are compared and banded by.",
+          "type": ["number", "null"]
+        },
+        "eligible": {
+          "description": "Whether this candidate takes part in the pace comparison at all.",
+          "type": "boolean"
+        },
+        "representative": {
+          "description": "Present and true on the one candidate that represents its harness in the comparison — its best eligible tuple by the role's ordering that meets the role's quality floor, which is the tuple that would actually be picked there. Absent on every other candidate, and on all of them when no harness could be paced.",
+          "const": true
+        },
+        "note": {
+          "description": "Why it does not, when it does not. `no-pace` — the harness reports no applicable window, or the binding one has no future reset or no length. `window-spent` — the binding window is at or past 100 %.",
+          "oneOf": [
+            { "enum": ["no-pace", "window-spent"] },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "score": {
       "type": "object",
       "additionalProperties": false,
@@ -208,7 +292,7 @@
           "type": "number"
         },
         "components": {
-          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/4*100 of their 1-5 rating; quotaCost is inverted, (5-r)/4*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the harness's applicable windows, and 50 when the harness has no windows or its state is unknown — the unknown case also carries the unknown-availability adjustment.",
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/4*100 of their 1-5 rating; quotaCost is inverted, (5-r)/4*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
           "type": "object",
           "additionalProperties": false,
           "required": ["quality", "speed", "quotaCost", "remaining"],
@@ -261,7 +345,10 @@
         "unknown-remaining",
         "reviewer-floor-not-met",
         "snapshot-stale",
-        "probe-incomplete"
+        "probe-incomplete",
+        "flag-not-in-inventory",
+        "worker-floor-not-met",
+        "balance-fallback"
       ]
     }
   }
