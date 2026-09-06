@@ -3,7 +3,7 @@
 - **Order:** 110
 - **Scope:** `CHANGELOG.md`, `README.md`, [01-overview](../../reference/01-overview.md), [02-host](../../reference/02-host.md), [03-cli](../../reference/03-cli.md), `skills/orchestrate/SKILL.md`, `skills/solo-review/SKILL.md`, `docs/ROADMAP.md`
 - **Created:** 2026-09-06
-- **Dependencies:** PB-24…PB-32
+- **Dependencies:** PB-24…PB-32, PB-36
 
 ## Context
 
@@ -11,7 +11,7 @@ The subscription-balance series (ADR-004) changes the snapshot, the catalog, the
 
 ## Work to do
 
-- `CHANGELOG.md`: the tasks' entries merged into **one release note** for 0.4.0 under the unreleased heading — for the user (what `models` now shows, `balance`, `models strategy`, the moved workspace overlay and the fact that `model-routing.local.json` in the repository root is no longer read) and for the host implementer (the `writable` layer, the snapshot v2 fields, the overlay merge by union and the two selectors).
+- `CHANGELOG.md`: the tasks' entries merged into **one release note** for 0.4.0 under the unreleased heading — for the user (what `models` now shows, `balance`, `models strategy`, the moved workspace overlay and the fact that `model-routing.local.json` in the repository root is no longer read, the telemetry file `promptobus done` now appends to and what it never holds) and for the host implementer (the `writable` layer, the snapshot v2 fields, the overlay merge by union and the two selectors).
 - `README.md` and the reference: every command, flag and key of the series present once, with the precedence flag → overlay default → none; the reason codes table unchanged unless a task added one.
 - `skills/orchestrate/SKILL.md`: the rubric — `balance` is the strategy for a person who pays for several harnesses and wants them spent evenly; the `near-limit` line; the one-time Cursor plan question; the reviewer no longer pinned to one harness by the package. `skills/solo-review/SKILL.md` follows for the reviewer.
 - `docs/ROADMAP.md`: the goal of the series marked with evidence.
