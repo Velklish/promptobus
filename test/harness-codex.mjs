@@ -41,6 +41,8 @@ export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 //                     naming no window, which is the shape `rateLimitReached`
 //                     and `rateLimitNote` have always also accepted
 //   hidden          — `model/list` also lists a model app-server hides
+//   credits         — the account holds spendable credits (the flag and a balance)
+//   spend-control   — the account's own spend control is at its ceiling
 //   no-models       — `model/list` refuses; the limit is still known
 //   stderr          — the `base_instructions` cache ERROR a healthy app-server
 //                     writes on every start
@@ -60,6 +62,9 @@ export const STDERR_NOISE = 'ERROR codex_models_manager::cache: failed to load m
 // them; the notification below keeps the ISO string it has always sent, and the
 // adapter reads both.
 export const STUB_RESET_PRIMARY = 4102444800;
+
+/** How many "full reset" credits the stub account holds. Surfaced by the adapter, never spent. */
+export const STUB_RESET_CREDITS = 2;
 export const STUB_RESET_SECONDARY = 4102531200;
 
 export function addrKey(address) {
@@ -325,6 +330,14 @@ async function appServer() {
         return;
       }
       const exhausted = process.env[LIMIT_VAR] === '1';
+      // The informational half, in the shape measured on codex-cli 0.146.0: the
+      // plan beside the windows, the credit flags, and the "Full reset (Weekly +
+      // 5 hr)" credits at the TOP level rather than inside `rateLimits` — which is
+      // the whole reason the adapter reads the payload as well as the snapshot.
+      // `credits` steers the two branches the adapter has for them.
+      const credits = probe.has('credits')
+        ? { hasCredits: true, unlimited: false, balance: '2' }
+        : { hasCredits: false, unlimited: false, balance: '0' };
       reply(id, {
         rateLimits: {
           limitId: 'codex',
@@ -334,9 +347,20 @@ async function appServer() {
             resetsAt: STUB_RESET_PRIMARY,
           },
           secondary: { usedPercent: 46, windowDurationMins: 10080, resetsAt: STUB_RESET_SECONDARY },
-          credits: { hasCredits: false, unlimited: false, balance: '0' },
+          credits,
           planType: 'plus',
+          spendControlReached: probe.has('spend-control'),
           rateLimitReachedType: exhausted ? 'primary' : null,
+        },
+        rateLimitResetCredits: {
+          availableCount: STUB_RESET_CREDITS,
+          credits: [{
+            resetType: 'codexRateLimits',
+            status: 'available',
+            title: 'Full reset (Weekly + 5 hr)',
+            grantedAt: 1788489076,
+            expiresAt: 1791081076,
+          }],
         },
       });
       return;
@@ -346,8 +370,29 @@ async function appServer() {
         fail(id, -32000, 'the model catalog is unavailable');
         return;
       }
-      const data = [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.4-mini' }];
-      if (probe.has('hidden')) data.push({ id: 'gpt-5.6-internal', hidden: true });
+      // `supportedReasoningEfforts` and `additionalSpeedTiers` are on the rows the
+      // way codex-cli 0.146.0 prints them, `ultra` above `max` on sol included.
+      // Nothing reads them yet — the snapshot's model object is closed to four
+      // fields, and whether it should carry them is the open question PB-24.2 puts
+      // to the owner. They are here so that the day it is answered the stand
+      // already says what the harness says.
+      const data = [
+        {
+          id: 'gpt-5.6-sol',
+          supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+          additionalSpeedTiers: ['fast'],
+          isDefault: true,
+        },
+        { id: 'gpt-5.4-mini', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
+      ];
+      if (probe.has('hidden')) {
+        data.push({
+          id: 'gpt-5.6-internal',
+          hidden: true,
+          supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+          additionalSpeedTiers: ['fast'],
+        });
+      }
       reply(id, { data });
       return;
     }

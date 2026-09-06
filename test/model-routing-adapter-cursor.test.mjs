@@ -26,7 +26,10 @@ import test, { afterEach } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
-import { authState, cursorAvailability, parseModels } from '../lib/model-routing/adapter-cursor.js';
+import {
+  authState, autoPoolModels, backendUrlOf, connectHeaders, cursorAvailability, derivedTier,
+  nudgeNote, parseModels, periodWindows, sanitizeMessage,
+} from '../lib/model-routing/adapter-cursor.js';
 import { CURSOR, CURSOR_TOOL, cursorDriver } from '../lib/driver-cursor.js';
 import { adapterOf } from '../lib/drivers.js';
 import { preflight } from '../lib/model-routing/preflight.js';
@@ -44,6 +47,26 @@ const STUB_ACCOUNT = 'probe-account@example.invalid';
 
 /** The version the host reports from its own resolve; the adapter must carry it, not re-ask. */
 const STUB_VERSION = '2026.09.02-c22c1a3';
+
+/**
+ * The inventory the stub prints, as ONE list.
+ *
+ * It used to be five lines inside the stub body with the ids repeated in the
+ * checks beside it, and two of the five had drifted — so the pool checks were
+ * covering an inventory no stand-in ever printed. The stub interpolates this at
+ * build time and `STUB_IDS` is read off the same array, so there is nothing left
+ * to drift against.
+ */
+const STUB_MODELS = [
+  ['auto', 'Auto (default)'],
+  ['gpt-5.3-codex-low', 'Codex 5.3 Low'],
+  ['claude-opus-5-thinking-max', 'Claude Opus 5 Max Thinking'],
+  ['cursor-grok-4.6-xhigh-fast', 'Grok 4.6 Extra High Fast'],
+  ['claude-fable-5-thinking-high', 'Claude Fable 5 1M Thinking (NO ZDR)'],
+];
+
+/** The ids of that list, which is what the adapter reports and what the pool checks read. */
+const STUB_IDS = STUB_MODELS.map(([id]) => id);
 
 // The stub binary. One file, steered by `STUB_CURSOR_MODE`, because the modes
 // differ only in which of the two subcommands misbehaves.
@@ -82,11 +105,7 @@ if (args[0] === 'status') {
     process.stdout.write([
       dim('Available models'),
       '',
-      \`\${cyan('auto')} \${dim('- Auto')}\${dim(' (default)')}\`,
-      \`\${cyan('gpt-5.3-codex-low')} \${dim('- Codex 5.3 Low')}\`,
-      \`\${cyan('claude-opus-5-thinking-max')} \${dim('- Claude Opus 5 Max Thinking')}\`,
-      \`\${cyan('cursor-grok-4.6-xhigh-fast')} \${dim('- Grok 4.6 Extra High Fast')}\`,
-      \`\${cyan('claude-fable-5-thinking-high')} \${dim('- Claude Fable 5 1M Thinking (NO ZDR)')}\`,
+      ...${JSON.stringify(STUB_MODELS)}.map(([id, name]) => \`\${cyan(id)} \${dim('- ' + name)}\`),
       '',
       dim("Tip: use --model <id> (or /model <id> in interactive mode) to switch. Parameterized models "
         + "also accept quoted overrides, e.g. --model 'claude-opus-4-8[context=1m,effort=high,fast=false]'."),
@@ -159,8 +178,27 @@ afterEach(() => {
  * the probe, and travels in the request ([preflight.js](../lib/model-routing/preflight.js)).
  * The host is still handed over, so a module reaching for it stays visible here.
  */
-const ask = (host, timeoutMs = 10_000) => {
-  const adapter = cursorAvailability(CURSOR_TOOL);
+const NO_ACCOUNT = {
+  readToken: async () => null,
+  readBackendUrl: async () => 'https://backend.invalid',
+  postJson: async () => { throw new Error('the suite never calls the Cursor dashboard'); },
+};
+
+/**
+ * The adapter under test, with the account half stubbed.
+ *
+ * The binary substitution stays where it was — on the BINARY boundary, which is
+ * what this file exists to check. What is handed in here is the OTHER half: the
+ * keychain read and the dashboard POSTs, which have no binary to stub. The
+ * default answers nothing and refuses to be called, so a check that forgets to
+ * ask for the account half gets `quota_unknown` and an explanation, never a
+ * keychain dialog on the machine running `npm test` and never a request to
+ * api2.cursor.sh. The driver's live wiring is pinned separately, as source.
+ */
+const stubAdapter = (deps = {}) => cursorAvailability(CURSOR_TOOL, { ...NO_ACCOUNT, ...deps });
+
+const ask = (host, timeoutMs = 10_000, deps = {}) => {
+  const adapter = stubAdapter(deps);
   return adapter.probe({ host, toolBin: host.resolveToolBin(adapter.tool), timeoutMs, refresh: false });
 };
 
@@ -176,17 +214,20 @@ test('the Cursor driver declares the adapter, and the registry hands back that o
 
 // --- the inventory -----------------------------------------------------------
 
-test('a logged-in account is quota_unknown with its inventory, never available', async () => {
-  // Cursor has no limit API, no usage subcommand and no window it will name, so a
-  // successful probe cannot claim `available` — that word means the limit was
-  // confirmed. `quota_unknown` is the code written for auth-is-fine-limit-is-not.
+test('a logged-in account whose limit could not be read is quota_unknown with its inventory', async () => {
+  // The binary half succeeded and the account half was not answered — here
+  // because no token could be read, which is the shape a refused keychain has.
+  // `available` would claim the limit was confirmed, and `quota_unknown` is the
+  // code written for auth-is-fine-limit-is-not. Since ADR-004 this is a BRANCH
+  // rather than the only outcome: the check below it is the one where the
+  // dashboard answered.
   const verdict = await ask(machine());
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'quota_unknown');
   assert.equal(verdict.source, 'probe');
   assert.equal(verdict.resetAt, null);
   assert.equal(verdict.version, STUB_VERSION);
-  // No windows at all, not an empty list: a harness with no limit source reports
+  // No windows at all, not an empty list: a limit that could not be read reports
   // none, and an empty array would age the entry at the 60 s window TTL for a
   // fact it never measured.
   assert.equal(verdict.windows, undefined);
@@ -391,7 +432,7 @@ test('the binary comes from the request: this adapter resolves none of its own',
     ...host,
     resolveToolBin: () => { throw new Error('the preflight resolved this already'); },
   };
-  const verdict = await cursorAvailability(CURSOR_TOOL)
+  const verdict = await stubAdapter()
     .probe({ host: hostile, toolBin: resolved, timeoutMs: 10_000, refresh: false });
   assert.equal(verdict.reason, 'quota_unknown', verdict.message);
   assert.equal(verdict.version, STUB_VERSION);
@@ -420,7 +461,7 @@ test('the account the binary printed reaches neither the verdict nor the cache f
   const verdict = await ask(host);
   assert.equal(JSON.stringify(verdict).includes(STUB_ACCOUNT), false, 'the verdict carries the account');
 
-  await preflight({ host, harnesses: [CURSOR], adapterFor: () => adapterOf(CURSOR) });
+  await preflight({ host, harnesses: [CURSOR], adapterFor: () => stubAdapter() });
   const written = readFileSync(host.routingPaths().cacheFile, 'utf8');
   assert.equal(written.includes(STUB_ACCOUNT), false, 'the cache file carries the account');
 });
@@ -433,7 +474,7 @@ test('the verdict survives the preflight contract gate and reaches the snapshot 
   // snapshot it produces is handed to the schema the cache file promises to
   // validate against.
   const host = machine();
-  const snapshot = await preflight({ host, harnesses: [CURSOR], adapterFor: () => adapterOf(CURSOR) });
+  const snapshot = await preflight({ host, harnesses: [CURSOR], adapterFor: () => stubAdapter() });
   const entry = snapshot.harnesses[CURSOR];
   assert.equal(entry.state, 'unknown');
   assert.equal(entry.reason, 'quota_unknown');
@@ -444,4 +485,394 @@ test('the verdict survives the preflight contract gate and reaches the snapshot 
   assert.deepEqual(entry.models.find((m) => m.model === 'claude-fable-5-thinking-high'),
     { model: 'claude-fable-5-thinking-high', rated: false, flags: ['no-zdr'] });
   assert.equal(validSnapshot(snapshot) ? true : ajv.errorsText(validSnapshot.errors), true);
+});
+
+// --- the account: the billing cycle, the two pools, the tier -----------------
+
+/**
+ * The measured shapes, redacted. Copies of what the spike of 2026-09-06 saw, with
+ * the account's address and its three ids replaced by `<redacted>` in the config
+ * fixture — which is also what `npm run audit` scans the tree for. The adapter
+ * reads ONE field out of that file and the redaction is what says so.
+ */
+const FIXTURES = path.join(here, 'fixtures', 'model-routing');
+const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), 'utf8'));
+const PERIOD_USAGE = fixture('cursor-period-usage.json');
+const LIMIT_STATUS = fixture('cursor-usage-limit-status.json');
+const CLI_CONFIG = readFileSync(path.join(FIXTURES, 'cursor-cli-config.json'), 'utf8');
+
+/** A bearer no live endpoint would take, shaped like one so a grep can find it. */
+const FAKE_TOKEN = 'cursor-fake-jwt.promptobus.3f9a1c';
+const BACKEND = 'https://api2.cursor.sh';
+const USAGE_CALL = `${BACKEND}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`;
+const POLICY_CALL = `${BACKEND}/aiserver.v1.DashboardService/GetUsageLimitStatusAndActiveGrants`;
+const ok = (doc) => ({ status: 200, doc });
+
+/**
+ * The account half wired to answers instead of to the network. Every URL asked is
+ * recorded, which is how the checks that a call was NOT made are written.
+ */
+function account({ token = FAKE_TOKEN, source = 'keychain', replies = {} } = {}) {
+  const asked = [];
+  return {
+    asked,
+    deps: {
+      readToken: async () => (token ? { token, source } : null),
+      readBackendUrl: async () => BACKEND,
+      postJson: async (url, opts) => {
+        asked.push({ url, token: opts.token });
+        const reply = replies[url];
+        return reply ? (typeof reply === 'function' ? reply() : reply) : { status: 404, doc: null };
+      },
+    },
+  };
+}
+
+test('the auto pool names inventory ids, by exact name or by family prefix', () => {
+  // `autoBucketModels` names FAMILIES and the inventory names ids with the effort
+  // level and the speed tier baked in. ADR-004 wants a scope that covers models to
+  // name them by id, because the resolver matches exactly and infers no family —
+  // so the inference happens in the adapter, which holds both lists.
+  const bucket = ['composer-2.5', 'cursor-grok-4.6', 'vega', 'default'];
+  const inventory = [
+    'composer-2.5', 'composer-2.5-fast', 'cursor-grok-4.6-xhigh-fast', 'cursor-grok-4.6-low',
+    'claude-opus-5-thinking-high', 'gpt-5.6-sol-high', 'vegabond-3', 'auto',
+  ];
+  assert.deepEqual(autoPoolModels(inventory, bucket), [
+    'composer-2.5', 'composer-2.5-fast', 'cursor-grok-4.6-xhigh-fast', 'cursor-grok-4.6-low',
+  ]);
+  // The hyphen is the whole of the prefix rule: without it `vega` would claim
+  // `vegabond-3`, and the api pool would silently lose a model to the auto one.
+  assert.equal(autoPoolModels(['vegabond-3'], ['vega']).length, 0);
+  // A bucket name that matches no id contributes nothing rather than being carried
+  // as a guess — `default` is Cursor's internal name for the auto row and is not
+  // an id the binary lists.
+  assert.equal(autoPoolModels(inventory, bucket).includes('default'), false);
+  // No bucket at all is no auto pool at all: the harness publishes that list, and
+  // its absence is this adapter's fault rather than a limit to report.
+  assert.deepEqual(autoPoolModels(inventory, undefined), []);
+  assert.deepEqual(autoPoolModels(inventory, []), []);
+});
+
+test('one billing cycle becomes two windows of the same length, one per pool', () => {
+  // ADR-004: `kind` is a name and `lengthSec` is the number, and a billing cycle
+  // is `monthly` and is not thirty days — the length is the one the answer states.
+  const windows = periodWindows(PERIOD_USAGE, STUB_IDS);
+  assert.deepEqual(windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+  assert.deepEqual(windows.map((w) => w.kind), ['monthly', 'monthly']);
+  assert.deepEqual(windows.map((w) => w.lengthSec), [2_592_000, 2_592_000]);
+  assert.deepEqual(windows.map((w) => w.usedPercent), [86.1025, 98.4]);
+  assert.deepEqual(windows.map((w) => w.resetAt), ['2030-01-04T00:00:00.000Z', '2030-01-04T00:00:00.000Z']);
+  // The auto pool names the ids it covers; the api pool names none, being the
+  // complement — ADR-004 refuses a list there rather than letting a second,
+  // quieter claim ride along.
+  assert.deepEqual(windows[0].scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
+  assert.deepEqual(windows[1].scope, { pool: 'api' });
+  assert.equal('models' in windows[1].scope, false);
+});
+
+test('a cycle that does not read yields no window at all, and a percentage past 100 is capped', () => {
+  // A pace cannot be computed without a length, and an invented one would be a
+  // measurement nobody made. The cap is the other way round: `bonusSpend` can
+  // carry a total past the included amount, the schema's range ends at 100, and
+  // "spent" is what a value past the end means.
+  const noCycle = { ...PERIOD_USAGE, billingCycleEnd: 'soon' };
+  assert.deepEqual(periodWindows(noCycle, STUB_IDS), []);
+  const backwards = { ...PERIOD_USAGE, billingCycleEnd: PERIOD_USAGE.billingCycleStart };
+  assert.deepEqual(periodWindows(backwards, STUB_IDS), []);
+
+  const over = { ...PERIOD_USAGE, planUsage: { ...PERIOD_USAGE.planUsage, apiPercentUsed: 140 } };
+  assert.equal(periodWindows(over, STUB_IDS).find((w) => w.id === 'monthly-api').usedPercent, 100);
+  const missing = { ...PERIOD_USAGE, planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: null } };
+  assert.deepEqual(periodWindows(missing, STUB_IDS).map((w) => w.id), ['monthly-api']);
+});
+
+test('the tier is the plan included amount, marked derived, and never the account spend', () => {
+  // No Cursor method returns the plan name — the spike checked, and cursor.com
+  // refuses the CLI token — so ADR-004 makes the included amount the proxy and
+  // marks it `derived`. The number is the PLAN's, which is why a tier stays a
+  // property of the plan rather than a fact about the person.
+  assert.deepEqual(derivedTier(PERIOD_USAGE), { name: 'included:7000', source: 'derived' });
+  assert.equal(String(derivedTier(PERIOD_USAGE).name).includes(String(PERIOD_USAGE.planUsage.totalSpend)), false);
+  assert.equal(derivedTier({ planUsage: {} }), null);
+  assert.equal(derivedTier(null), null);
+  // And the name has the shape the snapshot demands of a tier — no spaces, no `@`.
+  assert.match(derivedTier(PERIOD_USAGE).name, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/);
+});
+
+test('the near-limit nudge is rewritten, never quoted', () => {
+  // `message` is the one free-text field that reaches disk. The threshold is a
+  // number and the target is a model id, and those two are carried; the nudge's
+  // own `label` is prose written for a dialog and does not travel.
+  const note = nudgeNote(LIMIT_STATUS);
+  assert.match(note, /api pool is past 90 %/);
+  assert.match(note, /grok-4\.6/);
+  assert.equal(note.includes(LIMIT_STATUS.thirdPartyUsageNudge.label), false);
+  assert.equal(nudgeNote({}), null);
+  assert.equal(nudgeNote({ thirdPartyUsageNudge: { targetModel: 'x' } }), null);
+  // A target that is not shaped like a model id is left out rather than carried.
+  assert.equal(nudgeNote({ thirdPartyUsageNudge: { threshold: 90, targetModel: 'a b@c' } }),
+    'Cursor warns that the api pool is past 90 %');
+});
+
+test('harness prose is bounded before it reaches a message, and an address is refused outright', () => {
+  assert.equal(sanitizeMessage("You've hit your usage limit"), "You've hit your usage limit");
+  assert.equal(sanitizeMessage('  spaced   out\tand\nwrapped '), 'spaced out and wrapped');
+  assert.equal(sanitizeMessage('write to someone@example.invalid'), null, 'an address is refused');
+  assert.equal(sanitizeMessage('x'.repeat(400)).length, 120);
+  assert.equal(sanitizeMessage(''), null);
+  assert.equal(sanitizeMessage(null), null);
+});
+
+test('only https is accepted as the backend, and anything else falls back to the measured default', () => {
+  // The value comes out of a file on disk and a bearer token is about to be sent
+  // to it. A `http:` there would be a token in the clear.
+  assert.equal(backendUrlOf(CLI_CONFIG), 'https://api2.cursor.sh');
+  assert.equal(backendUrlOf(JSON.stringify({ serverConfigCache: { backendUrl: 'http://api2.cursor.sh' } })), null);
+  assert.equal(backendUrlOf(JSON.stringify({ serverConfigCache: { backendUrl: 'file:///etc/passwd' } })), null);
+  assert.equal(backendUrlOf('not json'), null);
+  assert.equal(backendUrlOf('{}'), null);
+});
+
+test('the config file is read for one field: the account it also holds does not travel', () => {
+  // `~/.cursor/cli-config.json` carries `authInfo` — an address, a display name
+  // and two ids. One field of the file is parsed, and the answer is a URL.
+  assert.equal(backendUrlOf(CLI_CONFIG), 'https://api2.cursor.sh');
+  assert.ok(CLI_CONFIG.includes('authInfo'), 'the fixture really does carry the block');
+});
+
+test('a logged-in account whose dashboard answers is available, with two pool windows and a tier', async () => {
+  // The sentence this replaces is the reference's: "a successful probe is
+  // `unknown`, not `available`". ADR-004 supersedes the assumption under it, and
+  // the word still means auth, model AND limit confirmed.
+  const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [POLICY_CALL]: ok(LIMIT_STATUS) } });
+  const verdict = await ask(machine(), 10_000, wired.deps);
+  assert.equal(verdict.state, 'available', verdict.message);
+  assert.equal(verdict.reason, null);
+  assert.deepEqual(verdict.tier, { name: 'included:7000', source: 'derived' });
+  assert.deepEqual(verdict.windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+  assert.equal(verdict.version, STUB_VERSION);
+  // The nudge is in the message, rewritten. The harness's own `displayMessage` is
+  // NOT: it is written for a person who is out of usage, and the check below on the
+  // exhausted branch is where it belongs.
+  assert.match(verdict.message, /api pool is past 90 %/);
+  assert.equal(/the harness says/.test(verdict.message), false, verdict.message);
+  assert.deepEqual(wired.asked.map((a) => a.url), [USAGE_CALL, POLICY_CALL]);
+});
+
+test('the token reaches one header and nothing else — not the verdict, not the cache', async () => {
+  const host = machine();
+  const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE) } });
+  const verdict = await ask(host, 10_000, wired.deps);
+  assert.equal(wired.asked[0].token, FAKE_TOKEN, 'the header did get the token');
+  assert.equal(JSON.stringify(verdict).includes(FAKE_TOKEN), false, 'the token is in the verdict');
+
+  const snapshot = await preflight({
+    host, harnesses: [CURSOR], adapterFor: () => stubAdapter(wired.deps),
+  });
+  assert.equal(snapshot.harnesses[CURSOR].state, 'available');
+  assert.equal(validSnapshot(snapshot) ? true : ajv.errorsText(validSnapshot.errors), true);
+  const written = readFileSync(host.routingPaths().cacheFile, 'utf8');
+  assert.equal(written.includes(FAKE_TOKEN), false, 'the token is on disk');
+});
+
+test('the refresh token is named in prose and never in code', () => {
+  // The safest way not to leak a secret is not to hold it. `cursor-refresh-token`
+  // sits in the same keychain under a neighbouring service name, and the check is
+  // on the SOURCE because there is no branch to exercise: no expression in this
+  // file names it. The comments are stripped first on purpose — the header says
+  // out loud that the refresh token is never asked for, and a check that forbade
+  // the words would forbid the documentation along with the call.
+  const source = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+  assert.equal(code.includes('refresh-token'), false, 'the adapter names the refresh token in code');
+  assert.equal(code.includes('refreshToken'), false, 'the adapter names the refresh token in code');
+  assert.ok(source.includes('cursor-refresh-token'), 'the prose still says it is never asked for');
+});
+
+test('the Connect headers are the three the dashboard answers to', () => {
+  // `connect-protocol-version` is what makes these methods answer 200 at all
+  // (measured 2026-09-06). A probe that lost it would report `quota_unknown` for a
+  // perfectly good account, which reads as a harness change rather than a missing
+  // line.
+  assert.deepEqual(connectHeaders(FAKE_TOKEN), {
+    authorization: `Bearer ${FAKE_TOKEN}`,
+    'content-type': 'application/json',
+    'connect-protocol-version': '1',
+  });
+});
+
+test('no token is quota_unknown, not a logged-out account', async () => {
+  // `status` has already answered the auth question and the binary just listed the
+  // inventory. Calling an unreadable keychain a logged-out account would take
+  // every Cursor tuple out of routing on a dialog somebody dismissed. PB-27's text
+  // says `not_authenticated` here; this follows ADR-004's own reading of the word,
+  // and the reference says so.
+  const verdict = await ask(machine(), 10_000, { readToken: async () => null });
+  assert.equal(verdict.state, 'unknown');
+  assert.equal(verdict.reason, 'quota_unknown');
+  assert.match(verdict.message, /no access token could be read/);
+  assert.equal(verdict.models.length, 5, 'the inventory is still reported');
+});
+
+test('a dashboard that refuses the token is not_authenticated: that one IS about the account', async () => {
+  for (const status of [401, 403]) {
+    const wired = account({ replies: { [USAGE_CALL]: { status, doc: null } } });
+    const verdict = await ask(machine(), 10_000, wired.deps);
+    assert.equal(verdict.state, 'unavailable', `status ${status}`);
+    assert.equal(verdict.reason, 'not_authenticated', `status ${status}`);
+    assert.match(verdict.message, /cursor-agent login/);
+  }
+});
+
+test('a dashboard that answers otherwise, times out, or cannot be reached keeps its own code', async () => {
+  const other = account({ replies: { [USAGE_CALL]: { status: 500, doc: null } } });
+  assert.equal((await ask(machine(), 10_000, other.deps)).reason, 'quota_unknown');
+  const slow = account({ replies: { [USAGE_CALL]: { error: 'timeout' } } });
+  assert.equal((await ask(machine(), 10_000, slow.deps)).reason, 'probe_timeout');
+  const gone = account({ replies: { [USAGE_CALL]: { error: 'network' } } });
+  assert.equal((await ask(machine(), 10_000, gone.deps)).reason, 'probe_failed');
+});
+
+test('the policy call is optional: a refusal costs the nudge and nothing else', async () => {
+  // PB-27 says to skip it on timeout, and the windows still count — it carries a
+  // warning and the windows are the fact.
+  const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [POLICY_CALL]: { error: 'timeout' } } });
+  const verdict = await ask(machine(), 10_000, wired.deps);
+  assert.equal(verdict.state, 'available');
+  assert.equal(verdict.windows.length, 2);
+  assert.equal(/api pool is past/.test(verdict.message), false);
+});
+
+test('one spent pool does not exhaust the harness; both do', async () => {
+  // A pool at or past 100 % is spent for the tuples it covers, and the resolver
+  // reads that per tuple as the binding window (ADR-004). `exhausted` takes every
+  // Cursor tuple out of routing, and one spent pool leaves the other one running —
+  // which is the whole point of publishing two windows rather than one number.
+  const onePool = {
+    ...PERIOD_USAGE,
+    planUsage: { ...PERIOD_USAGE.planUsage, apiPercentUsed: 100 },
+  };
+  const half = account({ replies: { [USAGE_CALL]: ok(onePool) } });
+  const running = await ask(machine(), 10_000, half.deps);
+  assert.equal(running.state, 'available', running.message);
+  assert.equal(running.windows.find((w) => w.id === 'monthly-api').usedPercent, 100);
+
+  const bothPools = {
+    ...PERIOD_USAGE,
+    planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: 100, apiPercentUsed: 100 },
+  };
+  const spent = account({ replies: { [USAGE_CALL]: ok(bothPools) } });
+  const out = await ask(machine(), 10_000, spent.deps);
+  assert.equal(out.state, 'exhausted', out.message);
+  assert.equal(out.reason, 'subscription_exhausted');
+  assert.equal(out.resetAt, '2030-01-04T00:00:00.000Z');
+});
+
+test('a cycle the adapter cannot place is quota_unknown with the tier still reported', async () => {
+  const wired = account({ replies: { [USAGE_CALL]: ok({ ...PERIOD_USAGE, billingCycleEnd: 'soon' }) } });
+  const verdict = await ask(machine(), 10_000, wired.deps);
+  assert.equal(verdict.state, 'unknown');
+  assert.equal(verdict.reason, 'quota_unknown');
+  assert.deepEqual(verdict.tier, { name: 'included:7000', source: 'derived' });
+  assert.equal(verdict.windows, undefined);
+});
+
+test('the keychain token comes first and the environment key is the fallback', () => {
+  // The keychain token is the one the spike measured this call answering.
+  // `CURSOR_API_KEY` is the other way the binary authenticates and nothing says
+  // DashboardService takes it, so it is a fallback rather than a claim — and the
+  // order is what keeps an exported variable from shadowing the measured
+  // credential.
+  //
+  // The source travels with the token because it decides what a refusal means; the
+  // live reader is pinned here as source, since exercising it would mean asking
+  // the developer's own keychain.
+  const source = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
+  // Both searched from the start of the file, not from a window around one of
+  // them: an offset would make the check depend on how far apart the two lines
+  // happen to sit, which is not what it is about.
+  const keychainAt = source.indexOf('runOut(SECURITY_BIN, TOKEN_ARGV');
+  const envAt = source.indexOf('process.env[TOKEN_ENV]');
+  assert.ok(keychainAt > 0, 'the keychain read is not there at all');
+  assert.ok(envAt > keychainAt, 'the environment key is read before the keychain');
+  assert.match(source, /source: 'keychain'/);
+  assert.match(source, /source: 'env'/);
+});
+
+test('a refused environment key is quota_unknown; a refused keychain token is not_authenticated', async () => {
+  // A 401 on the credential the spike measured means the login is no longer good.
+  // A 401 on an API key says nothing of the kind — that path is not measured at
+  // all — and marking the harness `unavailable` on it would drop every Cursor
+  // tuple out of routing because of a variable a person exported for the binary.
+  for (const status of [401, 403]) {
+    const keychain = account({ replies: { [USAGE_CALL]: { status, doc: null } } });
+    const refused = await ask(machine(), 10_000, keychain.deps);
+    assert.equal(refused.state, 'unavailable', `keychain ${status}`);
+    assert.equal(refused.reason, 'not_authenticated', `keychain ${status}`);
+
+    const env = account({ source: 'env', replies: { [USAGE_CALL]: { status, doc: null } } });
+    const soft = await ask(machine(), 10_000, env.deps);
+    assert.equal(soft.state, 'unknown', `env ${status}`);
+    assert.equal(soft.reason, 'quota_unknown', `env ${status}`);
+    assert.match(soft.message, /CURSOR_API_KEY/);
+    assert.match(soft.message, /not measured/);
+  }
+});
+
+test('one window read is never both pools spent', async () => {
+  // The `auto` pool has no window when the harness published no id list, and a
+  // list of one window is not evidence about the pool missing from it. Reading it
+  // as "every window is spent" would exhaust the harness on the api pool alone and
+  // then say "both usage pools are spent", which is a sentence about a fact
+  // nobody had.
+  const apiOnly = {
+    ...PERIOD_USAGE,
+    autoBucketModels: [],
+    planUsage: { ...PERIOD_USAGE.planUsage, apiPercentUsed: 100 },
+  };
+  const wired = account({ replies: { [USAGE_CALL]: ok(apiOnly) } });
+  const verdict = await ask(machine(), 10_000, wired.deps);
+  assert.deepEqual(verdict.windows.map((w) => w.id), ['monthly-api']);
+  assert.equal(verdict.state, 'available', verdict.message);
+  assert.equal(/both usage pools/.test(verdict.message), false);
+});
+
+test("the harness's own usage line reaches a diagnosis only when the harness is out", async () => {
+  // `displayMessage` is written for a person who has hit their limit. Beside
+  // `available` it reads as a contradiction — "available … the harness says:
+  // you've hit your usage limit" — so it travels on the exhausted branch and not
+  // on the healthy one.
+  const healthy = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE) } });
+  const running = await ask(machine(), 10_000, healthy.deps);
+  assert.equal(running.state, 'available');
+  assert.equal(/the harness says/.test(running.message), false, running.message);
+
+  const bothPools = {
+    ...PERIOD_USAGE,
+    planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: 100, apiPercentUsed: 100 },
+  };
+  const spent = account({ replies: { [USAGE_CALL]: ok(bothPools) } });
+  const out = await ask(machine(), 10_000, spent.deps);
+  assert.equal(out.state, 'exhausted');
+  assert.match(out.message, /the harness says: You've hit your usage limit/);
+});
+
+test('a plan that names no included amount has no tier, and a nudge with no threshold is no nudge', () => {
+  // `Number(null)` is 0 both times: the first would publish `included:0` as a
+  // measured tier, the second would warn that the pool is "past 0 %".
+  for (const limit of [null, undefined, '', '7000', false]) {
+    assert.equal(derivedTier({ planUsage: { limit } }), null, String(limit));
+  }
+  for (const threshold of [null, undefined, '', '90', false]) {
+    assert.equal(nudgeNote({ thirdPartyUsageNudge: { threshold, targetModel: 'grok-4.6' } }), null, String(threshold));
+  }
+});
+
+test('the driver wires the live token read and the live dashboard call', () => {
+  // The suite builds this adapter with the account half stubbed, so the wiring a
+  // person actually runs is pinned here, as source: the driver declares the
+  // adapter with no `deps`, which is what leaves the live implementations in place.
+  const driver = readFileSync(path.join(ROOT, 'lib', 'driver-cursor.js'), 'utf8');
+  assert.match(driver, /availability: cursorAvailability\(CURSOR_TOOL\),/);
 });

@@ -1,0 +1,11 @@
+{
+  "authInfo": {
+    "email": "<redacted>",
+    "displayName": "<redacted>",
+    "userId": "<redacted>",
+    "authId": "<redacted>"
+  },
+  "serverConfigCache": {
+    "backendUrl": "https://api2.cursor.sh"
+  }
+}

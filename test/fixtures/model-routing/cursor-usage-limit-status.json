@@ -1,0 +1,14 @@
+{
+  "usageLimitPolicyStatus": {
+    "canConfigureSpendLimit": true,
+    "canAdjustOnDemand": true,
+    "recommendedOnDemandLimitCents": 2000,
+    "onDemandMinCents": 500,
+    "onDemandMaxCents": 100000
+  },
+  "thirdPartyUsageNudge": {
+    "threshold": 90,
+    "targetModel": "grok-4.6",
+    "label": "90% of Other Models usage reached — switch to a Cursor model to keep going"
+  }
+}

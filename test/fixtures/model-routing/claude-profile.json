@@ -1,0 +1,13 @@
+{
+  "account": {
+    "has_claude_max": true,
+    "has_claude_pro": false
+  },
+  "organization": {
+    "organization_type": "claude_max",
+    "rate_limit_tier": "default_claude_max_20x",
+    "has_extra_usage_enabled": false
+  },
+  "subscription_status": "active",
+  "billing_type": "stripe_subscription"
+}

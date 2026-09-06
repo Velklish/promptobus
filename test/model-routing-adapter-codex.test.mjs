@@ -38,11 +38,13 @@ import { preflight } from '../lib/model-routing/preflight.js';
 import { listedModels } from '../lib/codex-session.js';
 import { isoStamp, snapshotEntry } from '../lib/model-routing/cache.js';
 import {
-  rateLimitSnapshot, rateLimitWindows, reachedResetAt, resetIso, unsupportedMethod,
+  accountCredits, accountTier, rateLimitSnapshot, rateLimitWindows, reachedResetAt, resetCreditCount,
+  resetIso, unsupportedMethod,
 } from '../lib/model-routing/adapter-codex.js';
 import { makeSandbox, resolveToolBin } from './sandbox.mjs';
 import {
-  HARNESS_VERSION, LIMIT_VAR, PROBE_VAR, STUB_RESET_PRIMARY, STUB_RESET_SECONDARY, installHarness,
+  HARNESS_VERSION, LIMIT_VAR, PROBE_VAR, STUB_RESET_CREDITS, STUB_RESET_PRIMARY, STUB_RESET_SECONDARY,
+  installHarness,
 } from './harness-codex.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -265,10 +267,112 @@ test('an authenticated account is available, with both windows and the model inv
   assert.equal(verdict.reason, null);
 });
 
-test('a model app-server hides is not in the inventory', async () => {
+test('a model app-server hides is KEPT, with the mark on it', async () => {
+  // It used to be dropped, on the reasoning that app-server hides what it does not
+  // offer — which is true, and which the resolver now applies itself: its
+  // inventory is the rows without `hidden`, so a tuple naming one still comes out
+  // as `model-not-in-inventory`. What dropping it cost was the other half: an
+  // inventory that did not match what the harness lists, and a `models validate`
+  // that could only call a hidden row missing (ADR-004, PB-28).
+  //
+  // Mutation probe: put `.filter((m) => !m.hidden)` back and this reddens.
   const verdict = await probe({ flags: 'hidden' });
   assert.equal(verdict.state, 'available');
-  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini']);
+  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini', 'gpt-5.6-internal']);
+  // The mark is written only where it is true: the absent case and the
+  // explicit-false case are one fact, and one spelling of a fact is the rule.
+  assert.deepEqual(verdict.models, [
+    { model: 'gpt-5.6-sol' },
+    { model: 'gpt-5.4-mini' },
+    { model: 'gpt-5.6-internal', hidden: true },
+  ]);
+});
+
+// --- what the account says about itself beside its windows -------------------
+
+test('the plan comes off the limits answer, and account/read is not called for it', async () => {
+  // PB-28's text names `account/read` as the source. This file's own rule is that
+  // it must never be called — it answers the account e-mail — and the same
+  // `planType` is already inside the answer to `account/rateLimits/read`, which the
+  // probe makes anyway. So the tier is taken from the call already being made.
+  //
+  // `source` is `probe`, one of ADR-004's four, and not the name of a method:
+  // `account/read` is not a value the closed list has.
+  assert.deepEqual(accountTier({ planType: 'plus' }), { name: 'plus', source: 'probe' });
+  assert.deepEqual(accountTier({ planType: '  pro  ' }), { name: 'pro', source: 'probe' });
+  assert.equal(accountTier({}), null, 'a snapshot that names no plan reports no tier');
+  assert.equal(accountTier(null), null);
+
+  const verdict = await probe();
+  assert.deepEqual(verdict.tier, { name: 'plus', source: 'probe' });
+  // And the stand would have said so: the two methods this file may not call are
+  // not in its dispatch at all, so a probe that reached for one fails loudly.
+  assert.equal(verdict.state, 'available', verdict.message);
+});
+
+test('credits are two booleans and the balance stops at the adapter', async () => {
+  // The snapshot's contract is booleans only: a count is a fact about the account
+  // rather than about the plan, and nothing in the package reads a balance. It IS
+  // consulted — an account with credits and no `hasCredits` flag still has them —
+  // and the number does not travel.
+  assert.deepEqual(accountCredits({ credits: { hasCredits: false, unlimited: false, balance: '0' } }),
+    { available: false, unlimited: false });
+  assert.deepEqual(accountCredits({ credits: { hasCredits: true, unlimited: false, balance: '2' } }),
+    { available: true, unlimited: false });
+  assert.deepEqual(accountCredits({ credits: { hasCredits: false, unlimited: false, balance: '7' } }),
+    { available: true, unlimited: false }, 'a balance with no flag is still credits');
+  assert.deepEqual(accountCredits({ credits: { unlimited: true } }), { available: false, unlimited: true });
+  assert.equal(accountCredits({}), null);
+
+  const rich = await probe({ flags: 'credits' });
+  assert.deepEqual(rich.credits, { available: true, unlimited: false });
+  assert.equal(JSON.stringify(rich).includes('"balance"'), false, 'the balance travelled');
+  assert.match(rich.message, /credits available/);
+});
+
+test('the reset credits are counted from the payload, surfaced, and never spent', async () => {
+  // They sit at the TOP level of the answer rather than inside `rateLimits`, which
+  // is why the adapter keeps the payload as well as the snapshot. Spending one is
+  // money-adjacent and a person's decision — ADR-004 puts it among the things not
+  // in v1.
+  assert.deepEqual(resetCreditCount({ rateLimitResetCredits: { availableCount: 2 } }), { available: 2 });
+  assert.deepEqual(resetCreditCount({ rateLimitResetCredits: { availableCount: 0 } }), { available: 0 });
+  assert.equal(resetCreditCount({ rateLimitResetCredits: {} }), null);
+  assert.equal(resetCreditCount({}), null);
+  assert.equal(resetCreditCount({ rateLimitResetCredits: { availableCount: -1 } }), null);
+
+  const verdict = await probe();
+  assert.deepEqual(verdict.resetCredits, { available: STUB_RESET_CREDITS });
+  assert.match(verdict.message, new RegExp(`${STUB_RESET_CREDITS} reset credits available`));
+  // Nothing was spent to learn it: the probe's own rule is that it starts no
+  // thread, and the credit methods are not in its dispatch either.
+  assert.equal(verdict.state, 'available', verdict.message);
+});
+
+test('the spend control is named only when it is at its ceiling', async () => {
+  // "The spend control is not at its ceiling" is not news, and a message that says
+  // it every time buries the one run where it matters.
+  const quiet = await probe();
+  assert.equal(quiet.spendControlReached, false);
+  assert.equal(/spend control/.test(quiet.message), false);
+
+  const capped = await probe({ flags: 'spend-control' });
+  assert.equal(capped.spendControlReached, true);
+  assert.match(capped.message, /spend control is at its ceiling/);
+  // It qualifies the account, it does not decide it: the state is still what the
+  // windows say.
+  assert.equal(capped.state, 'available', capped.message);
+});
+
+test('a spent limit still carries the plan, the credits and the reset count', async () => {
+  // The exhausted branch is exactly where a person wants to know there are reset
+  // credits sitting unused, so it must not be the branch that drops them.
+  const verdict = await probe({ limit: true, flags: 'credits' });
+  assert.equal(verdict.state, 'exhausted');
+  assert.deepEqual(verdict.tier, { name: 'plus', source: 'probe' });
+  assert.deepEqual(verdict.credits, { available: true, unlimited: false });
+  assert.deepEqual(verdict.resetCredits, { available: STUB_RESET_CREDITS });
+  assert.match(verdict.message, new RegExp(`${STUB_RESET_CREDITS} reset credits available`));
 });
 
 test('a spent limit is exhausted / subscription_exhausted, with the reset that clears it', async () => {

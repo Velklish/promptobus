@@ -1,6 +1,8 @@
 # Model-routing golden fixtures
 
-Six files: one pair of inputs with one pair of outputs, and a second pair of inputs with no golden output of its own.
+Six **golden** files: one pair of inputs with one pair of outputs, and a second pair of inputs with no golden output of its own. The other files in this directory are not golden: they are the **adapter fixtures** — redacted copies of the harness answers the spike of 2026-09-06 measured, named `claude-*` and `cursor-*`, read by `test/model-routing-adapter-{claude,cursor}.test.mjs` and by nothing else. A secret in one of them is written `<redacted>`, which is also what `npm run audit` scans the tree for.
+
+The golden set:
 
 | File | What it is |
 |---|---|
