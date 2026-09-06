@@ -124,7 +124,7 @@ const entry = (state, reason, extra = {}) => ({
 /** Seed the availability cache the host names. Written whole: these checks own the file. */
 function seedCache(harnesses) {
   mkdirSync(path.dirname(CACHE), { recursive: true });
-  writeFileSync(CACHE, `${JSON.stringify({ schemaVersion: 1, takenAt: new Date().toISOString(), harnesses }, null, 2)}\n`,
+  writeFileSync(CACHE, `${JSON.stringify({ schemaVersion: 2, takenAt: new Date().toISOString(), harnesses }, null, 2)}\n`,
     { mode: 0o600 });
 }
 
@@ -132,7 +132,7 @@ function seedCache(harnesses) {
 const HEALTHY = () => ({
   claude: entry('available', null, {
     models: [{ model: 'claude-opus-5', rated: true }, { model: 'claude-sonnet-5', rated: true }],
-    windows: [{ id: '5h', usedPercent: 20, lengthSec: 18000, resetAt: null }],
+    windows: [{ id: '5h', kind: 'session', usedPercent: 20, lengthSec: 18000, resetAt: null, scope: null }],
   }),
   cursor: entry('unavailable', 'not_authenticated'),
   codex: entry('unavailable', 'not_authenticated'),
@@ -156,7 +156,7 @@ const probeSet = (probes) => adapterMap({
     source: 'probe',
     resetAt: null,
     models: [{ model: 'claude-opus-5' }, { model: 'claude-sonnet-5' }],
-    windows: [{ id: '5h', usedPercent: 20, lengthSec: 18000, resetAt: null }],
+    windows: [{ id: '5h', kind: 'session', usedPercent: 20, lengthSec: 18000, resetAt: null, scope: null }],
   }, probes),
   cursor: unauthenticatedStub(probes),
   codex: unauthenticatedStub(probes),
@@ -318,7 +318,7 @@ test('an explicit --harness whose account is spent is constraint-unavailable, no
   // never replaced by a neighbour, so the two refusals must not read the same.
   seedCache({
     claude: entry('exhausted', 'manual_exhaustion'),
-    cursor: entry('available', null, { windows: [{ id: '5h', usedPercent: 10, lengthSec: 18000, resetAt: null }] }),
+    cursor: entry('available', null, { windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, resetAt: null, scope: null }] }),
     codex: entry('unavailable', 'not_authenticated'),
   });
   const before = treeOf(HOME);
@@ -336,7 +336,7 @@ test('a tuple another harness denied by overlay does not turn constraint-unavail
   // and broke the "every one of them is down" test.
   seedCache({
     claude: entry('exhausted', 'manual_exhaustion'),
-    cursor: entry('available', null, { windows: [{ id: '5h', usedPercent: 10, lengthSec: 18000, resetAt: null }] }),
+    cursor: entry('available', null, { windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, resetAt: null, scope: null }] }),
     codex: entry('unavailable', 'not_authenticated'),
   });
   const overlay = path.join(WS, 'model-routing.local.json');

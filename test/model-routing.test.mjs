@@ -114,6 +114,103 @@ test('the golden fixtures validate against their schemas', () => {
   }
 });
 
+// --- snapshot v2: the shapes ADR-004 added, and the ones it refuses ----------
+
+test('the snapshot schema is version 2, and a version 1 document is not one', () => {
+  // ADR-004 decision D: a v1 cache is discarded rather than migrated, and the
+  // schema is where that is a fact rather than a policy — a document of the old
+  // version does not validate, so nothing can write one back half-converted.
+  const validate = validatorFor('urn:promptobus:model-routing:snapshot');
+  const v2 = readJson(path.join(FIXTURES, 'snapshot.json'));
+  assert.equal(v2.schemaVersion, 2);
+  assert.equal(validate(v2), true, ajv.errorsText(validate.errors));
+  assert.equal(validate({ ...v2, schemaVersion: 1 }), false, 'a v1 document still validates');
+});
+
+test('a window states its kind, its length and what it binds — or it is not a window', () => {
+  // The three rules of ADR-004 that the schema itself can hold. `kind` is a NAME
+  // and `lengthSec` is the number, and neither is derived from the other; a
+  // window with no length has no pace; and a scope is explicit, because a scope
+  // read from an ABSENCE would silently mean "the whole account", which is the
+  // one claim an adapter that forgot the field did not make.
+  const validate = validatorFor('urn:promptobus:model-routing:snapshot');
+  const doc = readJson(path.join(FIXTURES, 'snapshot.json'));
+  const withWindow = (w) => {
+    const out = structuredClone(doc);
+    out.harnesses.example.windows = [w];
+    return out;
+  };
+  const ok = { id: 'w', kind: 'session', lengthSec: 18000, usedPercent: 40, scope: null };
+  assert.equal(validate(withWindow(ok)), true, ajv.errorsText(validate.errors));
+
+  const refused = {
+    'no kind': { ...ok, kind: undefined },
+    'a kind outside the three': { ...ok, kind: 'daily' },
+    'no length': { ...ok, lengthSec: undefined },
+    'a length of zero': { ...ok, lengthSec: 0 },
+    'no scope at all': { ...ok, scope: undefined },
+    'an auto pool with no model list': { ...ok, scope: { pool: 'auto' } },
+    'an api pool carrying a model list': { ...ok, scope: { pool: 'api', models: ['x'] } },
+    'a scope that is neither': { ...ok, scope: { bucket: 'x' } },
+  };
+  for (const [why, w] of Object.entries(refused)) {
+    assert.equal(validate(withWindow(JSON.parse(JSON.stringify(w)))), false, `${why}: accepted`);
+  }
+  // A model scope without its resolved ids is the one case that STAYS: the
+  // adapter could not resolve the harness's display name, and the window is
+  // printed for a person while binding nothing.
+  assert.equal(validate(withWindow({ ...ok, scope: { model: 'Example Deep' } })), true,
+    ajv.errorsText(validate.errors));
+});
+
+test('the tier and the flag list are closed vocabularies, not free text', () => {
+  // The tier is the second adapter-authored string that reaches disk, and it is
+  // shaped like a code so it cannot carry an address or a line of harness
+  // output. The flag list is closed because an overlay may deny by a flag
+  // (ADR-004), and a name checked against nothing would let a typo ban silently
+  // nothing.
+  const validate = validatorFor('urn:promptobus:model-routing:snapshot');
+  const doc = readJson(path.join(FIXTURES, 'snapshot.json'));
+  const withTier = (tier) => { const o = structuredClone(doc); o.harnesses.example.tier = tier; return o; };
+  assert.equal(validate(withTier({ name: 'plus', source: 'probe' })), true, ajv.errorsText(validate.errors));
+  assert.equal(validate(withTier(null)), true, 'a harness that names no plan');
+  for (const [why, tier] of [
+    ['a source outside the four', { name: 'plus', source: 'guess' }],
+    ['a name with a space', { name: 'Team Plan', source: 'user' }],
+    ['an address', { name: 'a@example.invalid', source: 'probe' }],
+    ['no source', { name: 'plus' }],
+  ]) assert.equal(validate(withTier(tier)), false, `${why}: accepted`);
+
+  const withFlags = (flags) => {
+    const o = structuredClone(doc);
+    o.harnesses.example.models = [{ model: 'm', rated: false, flags }];
+    return o;
+  };
+  assert.equal(validate(withFlags(['no-zdr'])), true, ajv.errorsText(validate.errors));
+  assert.equal(validate(withFlags(['no-zdrr'])), false, 'a flag outside the closed list was accepted');
+});
+
+test('the golden decision carries every window of every harness the snapshot held', () => {
+  // The availability block travels IN the decision document rather than being
+  // printed from a second source, which is what keeps `--json` and the text form
+  // from drifting. This check is the "every window" half of that promise: the
+  // decision must not summarise the snapshot it was made on.
+  const snapshot = readJson(path.join(FIXTURES, 'snapshot.json'));
+  const d = readJson(path.join(FIXTURES, 'decision.json'));
+  assert.deepEqual(d.harnesses.map((h) => h.harness), Object.keys(snapshot.harnesses));
+  for (const h of d.harnesses) {
+    const entry = snapshot.harnesses[h.harness];
+    assert.deepEqual(h.windows ?? [], entry.windows ?? [], `${h.harness}: windows differ from the snapshot`);
+    assert.deepEqual(h.tier ?? null, entry.tier ?? null, `${h.harness}: tier differs from the snapshot`);
+  }
+  const text = readFileSync(path.join(FIXTURES, 'models.txt'), 'utf8');
+  for (const h of d.harnesses) {
+    for (const w of h.windows ?? []) {
+      assert.ok(text.includes(w.id), `${h.harness}/${w.id}: the window is in --json and not in the text form`);
+    }
+  }
+});
+
 // --- the code lists are one list, read from two places -----------------------
 
 // Codes are taken from the reference by table, not by a grep of the whole file:

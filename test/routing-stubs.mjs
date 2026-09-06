@@ -36,8 +36,8 @@ export function availableStub(count = null, { windows = true } = {}) {
         source: 'probe',
         resetAt: null,
         version: '0.0.0',
-        models: [{ model: 'stub-deep' }, { model: 'stub-quick', flags: ['preview'] }],
-        ...(windows ? { windows: [{ id: '5h', usedPercent: 40, lengthSec: 18000, resetAt: null }] } : {}),
+        models: [{ model: 'stub-deep' }, { model: 'stub-quick', flags: ['no-zdr'] }],
+        ...(windows ? { windows: [{ id: '5h', kind: 'session', usedPercent: 40, lengthSec: 18000, resetAt: null, scope: null }] } : {}),
         // Not in the contract and not in the schema. This is the leak under test.
         token: FAKE_TOKEN,
         account: 'someone@example.invalid',

@@ -85,6 +85,11 @@
         }
       }
     },
+    "harnesses": {
+      "description": "ADR-004: the availability facts behind this decision, one row per harness the snapshot carried — the tier and every window with its kind, scope, used percent and reset. OPTIONAL, so a decision assembled without a snapshot in reach stays valid; assembled by the command rather than by the resolver, which reads no disk. It is here rather than only in the text output because `render` prints the decision document and nothing else, and two outputs of one command that read different sources drift.",
+      "type": "array",
+      "items": { "$ref": "urn:promptobus:model-routing:decision#/$defs/harnessAvailability" }
+    },
     "snapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -100,6 +105,35 @@
     }
   },
   "$defs": {
+    "harnessAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "state", "reason", "checkedAt", "source"],
+      "properties": {
+        "harness": { "type": "string", "minLength": 1 },
+        "state": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/state" },
+        "reason": {
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/reason" },
+            { "type": "null" }
+          ]
+        },
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "source": { "enum": ["probe", "cache", "manual"] },
+        "tier": {
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/tier" },
+            { "type": "null" }
+          ]
+        },
+        "credits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits" },
+        "resetCredits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/resetCredits" },
+        "windows": {
+          "type": "array",
+          "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/window" }
+        }
+      }
+    },
     "tupleRef": {
       "type": "object",
       "additionalProperties": false,

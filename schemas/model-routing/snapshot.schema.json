@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:model-routing:snapshot",
   "title": "Availability snapshot",
-  "description": "What the local account can run right now, per harness — and, on disk, the cache file the host names (src/host.ts routingPaths cacheFile), mode 0600. Every object here is closed: an implementation cannot quietly add a token, an email or an open account id, because a document carrying one stops validating.",
+  "description": "What the local account can run right now, per harness — and, on disk, the cache file the host names (src/host.ts routingPaths cacheFile), mode 0600. Every object here is closed: an implementation cannot quietly add a token, an email or an open account id, because a document carrying one stops validating. Version 2 (ADR-004) adds the harness tier, the window kind and scope, and the hidden mark on a model; a version 1 document is discarded rather than migrated.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "takenAt", "harnesses"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "takenAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
     "fingerprint": {
       "description": "Opaque local key, present only when accounts must be told apart. Hex, and one-way: the original identifier must not be recoverable from it.",
@@ -32,7 +32,7 @@
       "enum": ["available", "exhausted", "unavailable", "unknown"]
     },
     "reason": {
-      "description": "Stable reason code. The list is fixed in ADR-003 and written once in docs/reference/03-cli.md.",
+      "description": "Stable reason code. The list is fixed in ADR-003, unchanged by ADR-004, and written once in docs/reference/03-cli.md.",
       "enum": [
         "binary_missing",
         "not_authenticated",
@@ -77,6 +77,21 @@
           "description": "Harness binary version, when the probe read it.",
           "type": "string"
         },
+        "tier": {
+          "description": "The plan this account is on (ADR-004). null when the harness names none. Carried and displayed; an input to no score in v1.",
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/tier" },
+            { "type": "null" }
+          ]
+        },
+        "credits": {
+          "description": "Whether the account holds spendable credits beside its windows. Informational: nothing scores it and nothing spends one.",
+          "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits"
+        },
+        "resetCredits": {
+          "description": "How many window resets the account may spend. Informational, and surfaced rather than used: spending one is a person's decision.",
+          "$ref": "urn:promptobus:model-routing:snapshot#/$defs/resetCredits"
+        },
         "models": {
           "description": "Model inventory this account exposes. A model the catalog does not rate is carried with rated:false and is shown but never chosen automatically.",
           "type": "array",
@@ -89,6 +104,40 @@
         }
       }
     },
+    "tier": {
+      "description": "ADR-004: the plan name and where it came from. A tier is a property of the PLAN, shared by everyone on it — which is why it does not break the cache's promise to hold no identity, and why the derived form carries the plan's included amount and never the account's used amount.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source"],
+      "properties": {
+        "name": {
+          "description": "Shaped like a code, not like prose: no spaces and no '@', so this field cannot become a second route for harness output or for an address.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+        },
+        "source": {
+          "description": "credentials — a local credential record, read with no request; probe — the harness answered; derived — computed where no method names the plan; user — the person answered the question once, in the user overlay.",
+          "enum": ["credentials", "probe", "derived", "user"]
+        }
+      }
+    },
+    "credits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "unlimited"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "unlimited": { "type": "boolean" }
+      }
+    },
+    "resetCredits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "integer", "minimum": 0 }
+      }
+    },
     "model": {
       "type": "object",
       "additionalProperties": false,
@@ -99,67 +148,166 @@
           "description": "Whether the merged catalog carries a tuple for this model.",
           "type": "boolean"
         },
+        "hidden": {
+          "description": "The harness lists this row and declines to offer it (ADR-004). Carried so a person sees the whole inventory; the resolver's inventory is the rows without it, so a tuple naming one is excluded as model-not-in-inventory.",
+          "type": "boolean"
+        },
         "flags": {
-          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the model in an overlay.",
+          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the flag or the model in an overlay. The list is CLOSED (ADR-004), because an overlay may select by a flag and a name checked against nothing would let a person's typo ban silently nothing — the cost is that a new mark a harness starts printing needs a release rather than a data change.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "enum": ["no-zdr"] }
         }
       }
     },
     "window": {
+      "description": "One limit period of the account. ADR-004 makes kind and lengthSec required and scope explicit: kind is a NAME and lengthSec is the number, and neither is derived from the other — a billing cycle is monthly and is not thirty days. An adapter that cannot state a length reports no window at all.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "usedPercent"],
+      "required": ["id", "kind", "lengthSec", "usedPercent", "scope"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "usedPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "kind": { "enum": ["session", "weekly", "monthly"] },
         "lengthSec": { "type": "integer", "minimum": 1 },
+        "usedPercent": { "type": "number", "minimum": 0, "maximum": 100 },
         "resetAt": {
           "oneOf": [
             { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
             { "type": "null" }
           ]
+        },
+        "scope": {
+          "description": "What the window binds. null — the whole account. A scope that covers models names them BY ID, so the resolver matches exactly and infers no family.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/modelScope" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/autoPoolScope" },
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/apiPoolScope" }
+          ]
         }
+      }
+    },
+    "modelScope": {
+      "description": "One model family, as the harness named it. `model` is the harness's own display name; `models` is that name resolved to catalog-comparable ids by the adapter holding the driver's dictionary. A display name the adapter cannot resolve arrives WITHOUT `models`: the window stays in the snapshot, is printed for a person, and binds nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "autoPoolScope": {
+      "description": "The pool whose model list the harness publishes. `models` is required here: the list is a fact the harness stated, and a pool that covers named models without naming them binds nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool", "models"],
+      "properties": {
+        "pool": { "const": "auto" },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "apiPoolScope": {
+      "description": "The complement pool: every model in no auto list falls here. It carries NO `models`, because a list of everything else is not a fact any harness stated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool"],
+      "properties": {
+        "pool": { "const": "api" }
       }
     }
   },
   "examples": [
     {
-      "schemaVersion": 1,
-      "takenAt": "2026-09-05T09:00:00.000Z",
+      "schemaVersion": 2,
+      "takenAt": "2026-09-06T09:00:00.000Z",
       "harnesses": {
         "example": {
           "state": "available",
           "reason": null,
-          "message": "authenticated; 2 models listed",
-          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "message": "authenticated; 2 models listed; 2 windows",
+          "checkedAt": "2026-09-06T09:00:00.000Z",
           "source": "probe",
           "resetAt": null,
           "version": "0.0.0",
+          "tier": { "name": "example-plan", "source": "credentials" },
           "models": [
             { "model": "example-deep", "rated": true },
-            { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] }
+            { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] },
+            { "model": "example-withheld", "rated": false, "hidden": true }
           ],
           "windows": [
-            { "id": "5h", "usedPercent": 40, "lengthSec": 18000, "resetAt": "2026-09-05T13:00:00.000Z" }
+            {
+              "id": "session",
+              "kind": "session",
+              "lengthSec": 18000,
+              "usedPercent": 40,
+              "resetAt": "2026-09-06T13:00:00.000Z",
+              "scope": null
+            },
+            {
+              "id": "weekly-example-deep",
+              "kind": "weekly",
+              "lengthSec": 604800,
+              "usedPercent": 12,
+              "resetAt": "2026-09-09T13:00:00.000Z",
+              "scope": { "model": "Example Deep", "models": ["example-deep"] }
+            }
+          ]
+        },
+        "example-pooled": {
+          "state": "available",
+          "reason": null,
+          "message": "authenticated; one cycle with two pools",
+          "checkedAt": "2026-09-06T09:00:00.000Z",
+          "source": "probe",
+          "resetAt": null,
+          "tier": { "name": "included:0", "source": "derived" },
+          "windows": [
+            {
+              "id": "cycle-auto",
+              "kind": "monthly",
+              "lengthSec": 2678400,
+              "usedPercent": 55,
+              "resetAt": "2026-09-25T00:00:00.000Z",
+              "scope": { "pool": "auto", "models": ["example-own"] }
+            },
+            {
+              "id": "cycle-api",
+              "kind": "monthly",
+              "lengthSec": 2678400,
+              "usedPercent": 90,
+              "resetAt": "2026-09-25T00:00:00.000Z",
+              "scope": { "pool": "api" }
+            }
           ]
         },
         "example-out": {
           "state": "exhausted",
           "reason": "subscription_exhausted",
           "message": "limit spent; resets at 13:00Z",
-          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "checkedAt": "2026-09-06T09:00:00.000Z",
           "source": "probe",
-          "resetAt": "2026-09-05T13:00:00.000Z"
+          "resetAt": "2026-09-06T13:00:00.000Z"
         },
         "example-quiet": {
           "state": "unknown",
           "reason": "quota_unknown",
           "message": "authenticated, but this harness exposes no limit source",
-          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "checkedAt": "2026-09-06T09:00:00.000Z",
           "source": "cache",
-          "resetAt": null
+          "resetAt": null,
+          "tier": null
         }
       }
     }

@@ -441,26 +441,132 @@ test('a value the adapter garbled is dropped, and only that value', () => {
     checkedAt: isoStamp(),
     source: 'probe',
     models: [
-      { model: 'kept', flags: ['a', 'a', ' ', 'b'] },
+      { model: 'kept', flags: ['no-zdr', 'no-zdr', 'no-zdrr', ' '] },
+      { model: 'withheld', hidden: true },
+      { model: 'shown', hidden: false },
       { model: '   ' }, { model: null }, { model: 42 }, {},
     ],
     windows: [
-      { id: 'kept', usedPercent: 40, lengthSec: 0 },
-      { id: '', usedPercent: 1 },
-      { id: 'nan', usedPercent: Number.NaN },
-      { id: 'missing' },
-      { id: 'over', usedPercent: 101 },
-      { id: 'under', usedPercent: -1 },
-      { id: 'unreadable-reset', usedPercent: 5, resetAt: 'soon' },
+      { id: 'kept', kind: 'session', lengthSec: 18000, usedPercent: 40 },
+      { id: '', kind: 'session', lengthSec: 1, usedPercent: 1 },
+      { id: 'nan', kind: 'session', lengthSec: 1, usedPercent: Number.NaN },
+      { id: 'missing', kind: 'session', lengthSec: 1 },
+      { id: 'over', kind: 'session', lengthSec: 1, usedPercent: 101 },
+      { id: 'under', kind: 'session', lengthSec: 1, usedPercent: -1 },
+      // ADR-004 makes kind and lengthSec required: a window with no length has no
+      // PACE, and one that silently never paces is worse than one dropped here.
+      { id: 'no-kind', lengthSec: 1, usedPercent: 1 },
+      { id: 'bad-kind', kind: 'daily', lengthSec: 1, usedPercent: 1 },
+      { id: 'no-length', kind: 'session', usedPercent: 1 },
+      { id: 'zero-length', kind: 'session', lengthSec: 0, usedPercent: 1 },
+      // A garbled scope takes its window with it rather than widening into
+      // `null`: null is the CLAIM "this binds the whole account", and it would
+      // apply somebody's per-model cap to every tuple of the harness.
+      { id: 'bad-scope', kind: 'weekly', lengthSec: 1, usedPercent: 1, scope: 'everything' },
+      { id: 'auto-no-models', kind: 'monthly', lengthSec: 1, usedPercent: 1, scope: { pool: 'auto' } },
+      { id: 'api-with-models', kind: 'monthly', lengthSec: 1, usedPercent: 1, scope: { pool: 'api', models: ['x'] } },
+      { id: 'third-shape', kind: 'weekly', lengthSec: 1, usedPercent: 1, scope: { bucket: 'everything' } },
+      {
+        id: 'scoped', kind: 'weekly', lengthSec: 604800, usedPercent: 12,
+        scope: { model: 'Example Deep', models: ['example-deep', 'example-deep', ' '] },
+      },
+      // A display name the adapter could not resolve keeps its window: it is
+      // printed for a person and binds nothing.
+      { id: 'unresolved', kind: 'weekly', lengthSec: 604800, usedPercent: 3, scope: { model: 'Mystery' } },
+      { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: 'soon' },
     ],
   });
-  assert.deepEqual(projected.models, [{ model: 'kept', rated: false, flags: ['a', 'b'] }]);
+  // The flag list is closed (ADR-004): an overlay may deny by a flag, so a name
+  // checked against nothing would let `no-zdrr` validate, match no model, and
+  // read to whoever wrote it as a rule that holds.
+  assert.deepEqual(projected.models, [
+    { model: 'kept', rated: false, flags: ['no-zdr'] },
+    { model: 'withheld', rated: false, hidden: true },
+    { model: 'shown', rated: false },
+  ]);
   assert.deepEqual(projected.windows, [
-    { id: 'kept', usedPercent: 40 },
-    { id: 'unreadable-reset', usedPercent: 5, resetAt: null },
+    { id: 'kept', kind: 'session', lengthSec: 18000, usedPercent: 40, scope: null },
+    {
+      id: 'scoped', kind: 'weekly', lengthSec: 604800, usedPercent: 12,
+      scope: { model: 'Example Deep', models: ['example-deep'] },
+    },
+    { id: 'unresolved', kind: 'weekly', lengthSec: 604800, usedPercent: 3, scope: { model: 'Mystery' } },
+    { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: null, scope: null },
   ]);
   assert.equal(projected.message, 'still a usable answer', 'the verdict itself survives');
-  assert.equal(validates({ schemaVersion: 1, takenAt: isoStamp(), harnesses: { h: projected } }), true);
+  assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { h: projected } }), true);
+});
+
+test('the tier is projected like a code, and an unreadable one becomes null rather than free text', () => {
+  // ADR-004 puts a second adapter-authored string on disk beside `message`. It is
+  // shaped like a code — no spaces, no `@` — so it cannot become a second route
+  // for harness output or for an account address, and a value outside that shape
+  // is dropped rather than repaired. Losing a tier costs a line of output:
+  // nothing scores it.
+  const base = { ...entry(), tier: { name: 'example-plan', source: 'credentials' } };
+  assert.deepEqual(snapshotEntry(base).tier, { name: 'example-plan', source: 'credentials' });
+  assert.deepEqual(snapshotEntry({ ...base, tier: { name: 'included:1234', source: 'derived' } }).tier,
+    { name: 'included:1234', source: 'derived' });
+
+  for (const [why, tier] of [
+    ['a source outside the closed list', { name: 'plus', source: 'guess' }],
+    ['a name with a space', { name: 'Team Plan', source: 'user' }],
+    ['an address', { name: 'someone@example.invalid', source: 'probe' }],
+    ['no source at all', { name: 'plus' }],
+    ['not an object', 'plus'],
+  ]) {
+    assert.equal(snapshotEntry({ ...base, tier }).tier, null, why);
+  }
+  assert.equal('tier' in snapshotEntry(entry()), false, 'a harness that names none carries no key');
+  assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { h: snapshotEntry(base) } }), true);
+});
+
+test('credits are carried as flags and a count, never as an amount', () => {
+  // Informational (ADR-004): nothing scores them and nothing spends a reset.
+  // The balance is deliberately not carried — what an account holds is a fact
+  // about that account, and this file promises to hold no identity.
+  const projected = snapshotEntry({
+    ...entry(),
+    credits: { available: false, unlimited: false, balance: '12345' },
+    resetCredits: { available: 2, credits: [{ title: 'full reset' }] },
+  });
+  assert.deepEqual(projected.credits, { available: false, unlimited: false });
+  assert.deepEqual(projected.resetCredits, { available: 2 });
+  assert.equal(JSON.stringify(projected).includes('12345'), false, 'an amount reached the snapshot');
+  for (const bad of [{ available: 'no', unlimited: false }, null, 'yes']) {
+    assert.equal('credits' in snapshotEntry({ ...entry(), credits: bad }), false);
+  }
+  assert.equal('resetCredits' in snapshotEntry({ ...entry(), resetCredits: { available: -1 } }), false);
+  assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { h: projected } }), true);
+});
+
+test('a cache of an older schemaVersion is discarded, and the diagnosis says so', async () => {
+  // ADR-004 decision D: discarded, never migrated. The shortest fact in this file
+  // lives sixty seconds and the longest an hour, so a reader for the old shape
+  // would buy one hour of not asking and be kept forever.
+  //
+  // Mutation probe: drop the version check in `readSnapshot` and the first
+  // assertion below goes green on a document this build cannot read.
+  const host = sandboxHost();
+  mkdirSync(path.dirname(host.cacheFile), { recursive: true });
+  writeFileSync(host.cacheFile, `${JSON.stringify({
+    schemaVersion: 1,
+    takenAt: isoStamp(),
+    harnesses: { legacy: { ...entry(), windows: [{ id: '5h', usedPercent: 40 }] } },
+  }, null, 2)}\n`, { mode: CACHE_MODE });
+
+  assert.equal(readSnapshot(host), null, 'a document of another version is a cache that holds nothing');
+
+  // A dry run asks nothing, so the discard is the whole answer — and it reads as
+  // a discard rather than as "no cache entry", which is where a person would
+  // otherwise go looking for a bug that is not there.
+  const snapshot = await preflight({
+    host, harnesses: ['legacy'], adapterFor: adapterMap({}), dryRun: true, budgetMs: 500,
+  });
+  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.harnesses.legacy.reason, 'stale_cache');
+  assert.match(snapshot.harnesses.legacy.message, /older version \(schemaVersion 1\)/);
+  assert.equal(validates(snapshot), true);
 });
 
 test('a stamp that cannot be read is expired, never fresh', () => {
@@ -516,12 +622,14 @@ test('the projection is field-by-field: an undeclared field cannot reach the sna
   const projected = snapshotEntry({
     ...entry(),
     token: FAKE_TOKEN,
-    models: [{ model: 'm', flags: ['x'], secret: FAKE_TOKEN }],
-    windows: [{ id: '5h', usedPercent: 10, lengthSec: 18000, secret: FAKE_TOKEN }],
+    models: [{ model: 'm', flags: ['no-zdr'], secret: FAKE_TOKEN }],
+    windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, secret: FAKE_TOKEN }],
+    tier: { name: 'example-plan', source: 'credentials', token: FAKE_TOKEN },
   });
   assert.equal(JSON.stringify(projected).includes(FAKE_TOKEN), false);
   assert.deepEqual(Object.keys(projected.models[0]).sort(), ['flags', 'model', 'rated']);
-  assert.deepEqual(Object.keys(projected.windows[0]).sort(), ['id', 'lengthSec', 'usedPercent']);
+  assert.deepEqual(Object.keys(projected.windows[0]).sort(), ['id', 'kind', 'lengthSec', 'scope', 'usedPercent']);
+  assert.deepEqual(Object.keys(projected.tier).sort(), ['name', 'source']);
 });
 
 // --- two commands writing at once --------------------------------------------

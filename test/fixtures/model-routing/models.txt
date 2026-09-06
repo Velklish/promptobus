@@ -10,6 +10,12 @@ candidates:
   - other-metered     other / other-metered         unknown          --  payg-not-allowed: pay-as-you-go; pass --allow-payg to consider it
   - example-deep-max  example / example-deep max    available        --  role-not-allowed: rated for reviewer only
 
+availability:
+  example  available  tier example-plan (credentials)
+      5h       session 40.0% used · 18000 s · account · resets 2026-09-05T13:00:00.000Z
+      7d-deep  weekly  12.0% used · 604800 s · model Example Deep · resets 2026-09-08T13:00:00.000Z
+  other    unknown    tier unknown
+
 runtime models — not rated, never chosen automatically:
     example / example-runtime-only  [no-zdr]
 

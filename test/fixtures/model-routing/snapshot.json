@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "takenAt": "2026-09-05T09:00:00.000Z",
   "harnesses": {
     "example": {
@@ -10,13 +10,29 @@
       "source": "cache",
       "resetAt": null,
       "version": "0.0.0",
+      "tier": { "name": "example-plan", "source": "credentials" },
       "models": [
         { "model": "example-deep", "rated": true },
         { "model": "example-quick", "rated": true },
         { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] }
       ],
       "windows": [
-        { "id": "5h", "usedPercent": 40, "lengthSec": 18000, "resetAt": "2026-09-05T13:00:00.000Z" }
+        {
+          "id": "5h",
+          "kind": "session",
+          "lengthSec": 18000,
+          "usedPercent": 40,
+          "resetAt": "2026-09-05T13:00:00.000Z",
+          "scope": null
+        },
+        {
+          "id": "7d-deep",
+          "kind": "weekly",
+          "lengthSec": 604800,
+          "usedPercent": 12,
+          "resetAt": "2026-09-08T13:00:00.000Z",
+          "scope": { "model": "Example Deep", "models": ["example-deep"] }
+        }
       ]
     },
     "other": {
@@ -26,6 +42,7 @@
       "checkedAt": "2026-09-05T09:00:00.000Z",
       "source": "cache",
       "resetAt": null,
+      "tier": null,
       "models": [
         { "model": "other-steady", "rated": true },
         { "model": "other-metered", "rated": true }

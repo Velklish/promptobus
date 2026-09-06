@@ -34,6 +34,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { CATALOG_FILE, mergeRouting } from '../lib/model-routing/catalog.js';
 import { NEUTRAL_REMAINING_PERCENT, resolve } from '../lib/model-routing/resolver.js';
 import { render, RUNTIME_ROWS_PER_HARNESS } from '../lib/model-routing/render.js';
+import { availabilityOf } from '../lib/models.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -117,14 +118,26 @@ const overlay = (fields) => ({ schemaVersion: 1, ...fields });
 
 // --- the goldens --------------------------------------------------------------
 
+/**
+ * The decision the golden files pin: what the resolver answers, plus the
+ * availability block the COMMAND attaches (ADR-004).
+ *
+ * The resolver reads no disk and holds no snapshot beyond the one it was handed,
+ * so the block is assembled a layer up — and it is assembled here by the same
+ * exported function the command uses, not by a copy, because these two runs
+ * reproduce one pair of files and a second description of the projection is
+ * exactly how they would stop agreeing.
+ */
+const golden = (over = {}) => ({ ...decide(over), harnesses: availabilityOf(fixture('snapshot.json')) });
+
 test('the golden decision is reproduced from the golden inputs', () => {
-  const decision = decide();
+  const decision = golden();
   validDecision(decision, 'the decision the resolver produced');
   assert.deepEqual(normalise(decision), fixture('decision.json'));
 });
 
 test('the golden text is rendered from that decision, byte for byte', () => {
-  const text = render(decide());
+  const text = render(golden());
   assert.equal(text, readFileSync(path.join(FIXTURES, 'models.txt'), 'utf8'));
 });
 
@@ -571,7 +584,7 @@ const TIE_SNAPSHOT = {
       checkedAt: '2026-09-05T09:00:00.000Z',
       source: 'cache',
       resetAt: null,
-      windows: [{ id: '5h', usedPercent: 0, lengthSec: 18000, resetAt: null }],
+      windows: [{ id: '5h', kind: 'session', usedPercent: 0, lengthSec: 18000, resetAt: null, scope: null }],
     },
     beta: {
       state: 'unknown',
