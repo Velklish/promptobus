@@ -1,9 +1,9 @@
 # PB-33 · Documentation, the orchestrate rubric, acceptance evidence and the release note for 0.4.0
 
-- **Order:** 110
 - **Scope:** `CHANGELOG.md`, `README.md`, [01-overview](../../reference/01-overview.md), [02-host](../../reference/02-host.md), [03-cli](../../reference/03-cli.md), `skills/orchestrate/SKILL.md`, `skills/solo-review/SKILL.md`, `docs/ROADMAP.md`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-24…PB-32, PB-36
+- **Taken:** 2026-09-06
 
 ## Context
 
