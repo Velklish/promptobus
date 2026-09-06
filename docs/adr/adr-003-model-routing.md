@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-09-05
 **Deciders:** Pavel Kim (project owner)
+**Partly superseded by:** [ADR-004](adr-004-subscription-balance.md) (2026-09-06), in five sections and no others — § Strategies (the four values of `--strategy`, and "a call with no `--strategy` routes nothing" where an overlay sets a default), § CLI surface (the same list of values), § Overlays ("Clarification, 2026-09-05": lists replaced per selector kind), § Resolver (the reviewer quality floor of 4), and § Host contract ("`promptobusHome()` is not used for routing"). Everything else here stands as written. The four decision rows below stand as decisions — row 2 included: it decided that the reviewer floor is a POLICY VALUE rather than a constant, which is exactly what lets ADR-004 move its default from 4 to 5 and add a worker floor beside it, without reversing anything decided there. ADR-004 § "What this supersedes in ADR-003" is the whole list and names what only looks superseded.
 
 ## Context
 

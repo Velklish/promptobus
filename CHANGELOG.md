@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **ADR-004 fixes the subscription-balance contract before any of it is built.** Three subscriptions pay for three harnesses, and work should spend all three over their own windows rather than going to the best-rated tuple until one account is out — which is what routing by rating does, and what the person was correcting by hand. A spike on 2026-09-06 disproved the assumption ADR-003 recorded, that no harness but Codex exposes a remaining limit: all three answer from local credentials with no paid turn. [ADR-004](docs/adr/adr-004-subscription-balance.md) records the owner's nine decisions of that date and settles what they left open — the availability snapshot carries the tier and every window with its `kind`, `lengthSec`, `resetAt` and a `scope` that names what it covers by model id; a fifth strategy, `balance`, is a choice layer above ADR-003's scoring that prefers the harness furthest behind the pace of its binding window, discounts a heavy tuple in the units of that pace, and falls back to `balanced` with a warning when nothing can be paced; quality floors become `qualityFloor: { worker: 3, reviewer: 5 }`; overlay `deny` lists accumulate across layers and `allow` lists intersect, with new selectors by role and by a model flag the inventory carries; exactly one overlay layer is `writable`, and under standalone that is the workspace layer, moved out of the repository root to `<promptobusHome>/model-routing.json` because the tool writes it; and catalog ratings come from published benchmark results by one recomputable rank-band rule, with effort levels interpolated from a base row and marked as such. It supersedes ADR-003 by section — the replace-by-selector-kind merge, the reviewer floor of 4, the four values of `--strategy`, "`promptobusHome()` is not used for routing", and "a call with no `--strategy` routes nothing" where a default is set — and names what only looks superseded. PB-24…PB-33 implement it (PB-23).
+
 ## [0.3.0] — 2026-09-05
 
 ### Added
