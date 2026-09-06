@@ -17,7 +17,7 @@ The Codex adapter already reads `account/rateLimits/read` into two windows (prim
 - Tier: `{ name: planType, source: "probe" }` read off the `account/rateLimits/read` answer, which carries `planType` too — `account/read` is never called (it returns the account's email, and this file's standing rule is to call nothing that does); ratified 2026-09-06 after the worker's deviation.
 - Windows gain `kind` (`session` for primary, `weekly` for secondary) per PB-24; `resetsAt` is epoch **seconds** — keep the existing conversion.
 - Informational fields into the harness record: `credits`, `spendControlReached`, `resetCredits.availableCount`; `models` text prints the reset-credit count as a note. The adapter never spends a reset credit.
-- Inventory: keep hidden rows with `hidden: true` instead of dropping them (the resolver's `model-not-in-inventory` treats hidden as not offered; `models validate` can then say "hidden" rather than "missing"); per-model efforts and speed tiers are NOT recorded in v1: the snapshot's model object is closed and ADR-004 keeps the service tier out of the tuple key — PB-24.2 (triage) holds the proposal; the catalog (PB-29) took the effort ladders from the spike.
+- Inventory: keep hidden rows with `hidden: true` instead of dropping them (the resolver's `model-not-in-inventory` treats hidden as not offered; `models validate` can then say "hidden" rather than "missing"); per-model efforts and speed tiers are NOT recorded in v1: the snapshot's model object is closed and ADR-004 keeps the service tier out of the tuple key — the adapters track's finding under PB-24 holds the proposal (lands with the track); the catalog (PB-29) took the effort ladders from the spike.
 - Tests on fixtures; a live run is the approver's.
 
 ## Out of scope
