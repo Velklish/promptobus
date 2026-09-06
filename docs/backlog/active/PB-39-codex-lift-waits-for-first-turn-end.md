@@ -3,6 +3,7 @@
 - **Scope:** `lib/codex-session.js` (`turnWaitMs`, `readyMs`, `waitReady`, the holder's first-turn wait near line 1010), `lib/driver-codex.js`, `lib/spawn.js` (the lift prompt: "list them in your first reply. Then work by them"), [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-06
 
 ## Context
 

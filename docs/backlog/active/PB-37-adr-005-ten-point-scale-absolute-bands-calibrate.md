@@ -1,9 +1,9 @@
 # PB-37 · ADR-005: ratings on a 1–10 scale with absolute bands per benchmark and version, and models calibrate proposing overlay corrections from local telemetry
 
-- **Order:** 10
 - **Scope:** [ADR-003](../../adr/adr-003-model-routing.md), [ADR-004](../../adr/adr-004-subscription-balance.md), `models/catalog.json`, `schemas/model-routing/*.json`, `lib/model-routing/{resolver,validate,catalog}.js`, new `lib/model-routing/calibrate.js`, `lib/models.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06, owner's decision 2026-09-06
 - **Dependencies:** the 0.4.0 tag; PB-36 (telemetry records exist); the catalog track's finding on the rule defects of ADR-004 § Catalog ratings (filed under PB-29, lands with it)
+- **Taken:** 2026-09-06
 
 ## Context
 
