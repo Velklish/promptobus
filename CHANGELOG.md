@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-06
+
 ### Added
 
 - **Subscription balance: the CLI now knows what each account has left, and `--strategy balance` spends the three of them evenly.** Three subscriptions pay for three harnesses, and routing by rating sent work to the best-rated tuple until one account was out while the other two sat idle — which is what the owner was correcting by hand. A spike on 2026-09-06 disproved the assumption [ADR-003](docs/adr/adr-003-model-routing.md) recorded, that no harness but Codex exposes a remaining limit: all three answer from local credentials with no paid turn. [ADR-004](docs/adr/adr-004-subscription-balance.md) records the owner's nine decisions of that date, supersedes ADR-003 section by section — the replace-by-selector-kind merge, the reviewer floor of 4, the four values of `--strategy`, "`promptobusHome()` is not used for routing", and "a call with no `--strategy` routes nothing" where a default is set — and PB-24…PB-33 with PB-36 implement it.
