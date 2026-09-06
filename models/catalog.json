@@ -3,6 +3,34 @@
   "updated": "2026-09-06T09:00:00.000Z",
   "tuples": [
     {
+      "id": "claude-fable-51-high",
+      "harness": "claude",
+      "model": "claude-fable-5-1",
+      "effort": "high",
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 9,
+        "speed": 2,
+        "quotaCost": 9
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 160,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from claude-fable-51-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-fable-51-xhigh"
+      }
+    },
+    {
       "id": "claude-fable-high",
       "harness": "claude",
       "model": "claude-fable-5",
@@ -22,7 +50,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 140,
+      "priority": 170,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -50,12 +78,64 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 150,
+      "priority": 180,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from claude-opus-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-opus-xhigh"
+      }
+    },
+    {
+      "id": "claude-fable-51-xhigh",
+      "harness": "claude",
+      "model": "claude-fable-5-1",
+      "effort": "xhigh",
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 2,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 100,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "quality has NO published SWE-bench Verified figure for this exact model and is a hypothesis of 10: the leaderboard this catalog reads lists Claude Fable 5 at 95.0 % and carries no Fable 5.1 row (seen 2026-09-06), and Anthropic's own launch page publishes no SWE-bench figure for it at all. Every head-to-head figure that page does publish puts 5.1 above Fable 5 — Terminal-Bench 4.0 55.8 % against 42.0 %, Terminal-Bench-Science 0.1 52.6 % against 24.7 %, Humanity's Last Exam 60.9 % against 57.8 %, GDPval-AA v2 1853 against 1723, OSWorld 2.0 strict 41.7 % against 36.1 %, CursorBench 3.2.0 73.4 % against 70.5 % — and none of those benchmarks has an anchor pair here, so none of them can be banded without a catalog-wide re-band. Fable 5's 95.0 % bands 10 under SWE-bench Verified 60→1 / 96→10, the scale stops at 10, and a successor ahead of its predecessor on every published comparison cannot sit below it: 10. speed uses Artificial Analysis 40→1 / 310→10: 70 tokens/s→2. quotaCost uses blended list price $2.50→1 / $30→10: $30→10 — Anthropic held the $10 in / $50 out price across the 5 → 5.1 change and cut cache reads to $0.25, which the blended (input + output) / 2 rule does not read. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary leaderboard page, opened",
+            "figure": "70 tokens/s",
+            "url": "https://artificialanalysis.ai/leaderboards/models",
+            "date": "2026-09-06"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "Anthropic list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API",
+            "provenance": "vendor launch page, opened",
+            "figure": "$30.00 per 1M tokens ($10 in / $50 out)",
+            "url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "date": "2026-09-06"
+          }
+        ],
+        "hypothesis": [
+          "quality"
+        ]
       }
     },
     {
@@ -78,11 +158,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 100,
+      "priority": 110,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 95.0→10; speed is newly assessed as 2 from the nearest Artificial Analysis figures (Opus 57, Sonnet 76) under the 40→1 / 310→10 pair; quotaCost uses blended list price $2.50→1 / $30→10: $30→10. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 95.0→10; speed uses Artificial Analysis 40→1 / 310→10: 72 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $30→10. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
@@ -95,6 +175,16 @@
             "date": "2026-09-06"
           },
           {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary leaderboard page, opened",
+            "figure": "72 tokens/s",
+            "url": "https://artificialanalysis.ai/leaderboards/models",
+            "date": "2026-09-06"
+          },
+          {
             "rating": "quotaCost",
             "basis": "Anthropic list price, blended (input + output) / 2",
             "figure": "$30.00 per 1M tokens ($10 in / $50 out)",
@@ -104,9 +194,6 @@
             "version": "price schedule 2026-09-06",
             "agentHarness": "vendor API"
           }
-        ],
-        "hypothesis": [
-          "speed"
         ]
       }
     },
@@ -130,7 +217,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 110,
+      "priority": 120,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -169,6 +256,34 @@
       }
     },
     {
+      "id": "claude-fable-51-max",
+      "harness": "claude",
+      "model": "claude-fable-5-1",
+      "effort": "max",
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 2,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 130,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from claude-fable-51-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-fable-51-xhigh"
+      }
+    },
+    {
       "id": "claude-fable-max",
       "harness": "claude",
       "model": "claude-fable-5",
@@ -188,7 +303,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 120,
+      "priority": 140,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -216,7 +331,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 130,
+      "priority": 150,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -243,7 +358,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 160,
+      "priority": 190,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -270,7 +385,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 180,
+      "priority": 210,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -297,7 +412,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 170,
+      "priority": 200,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -354,7 +469,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 190,
+      "priority": 220,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {

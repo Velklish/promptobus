@@ -441,7 +441,8 @@ export async function claudeMain(argv, env = process.env) {
   });
   child.unref();
   // Record form taken from `claude agents --json` 2.1.251 (measurement in
-  // [12], «Test coverage boundary»): a bare array, fields
+  // [12], «Test coverage boundary»), re-read unchanged on 2.1.263 (PB-34, a live
+  // background participant): a bare array, fields
   // `pid, cwd, kind, startedAt, sessionId, name, id, status, state`. `id` and `state`
   // exist only on background records — the harness does not create interactive ones at
   // all.

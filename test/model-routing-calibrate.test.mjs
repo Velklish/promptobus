@@ -45,6 +45,7 @@ import {
   acceptedPiece, calibrate, median, moveFor, renderCalibration, resolveModel, windowDelta,
 } from '../lib/model-routing/calibrate.js';
 import { CATALOG_FILE } from '../lib/model-routing/catalog.js';
+import { claudeDriver } from '../lib/driver-claude.js';
 import { telemetryFileOf } from '../lib/model-routing/telemetry.js';
 import { hostOf } from '../lib/host.js';
 import { models } from '../lib/models.js';
@@ -55,12 +56,16 @@ const FIXTURE = path.join(here, 'fixtures', 'model-routing', 'telemetry.jsonl');
 const RECORDS = readFileSync(FIXTURE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
 const TUPLES = JSON.parse(readFileSync(CATALOG_FILE, 'utf8')).tuples;
 
-// The Claude dictionary as the driver hands it over. Written out rather than
-// imported from `driver-claude.js`: this file stands on the shape of the
-// argument, and the parity between it and the driver is the catalog suite's
-// check, not this one's.
+// The Claude dictionary as the driver hands it over. It is written out, because
+// this file stands on the SHAPE of the argument and an expectation computed from
+// the thing under test passes whatever that thing becomes. But the literal is
+// pinned against the driver's real table below, and that pin is this file's
+// business after all: the parity was left to "the catalog suite" and no check
+// there covered `options.modelAliases`, so when the `fable` entry gained a second
+// id the fixture went on resolving an alias the driver had stopped resolving, and
+// nothing anywhere went red (PB-34).
 const ALIASES = {
-  claude: { fable: ['claude-fable-5'], opus: ['claude-opus-5'], sonnet: ['claude-sonnet-5'] },
+  claude: { fable: ['claude-fable-5-1'], opus: ['claude-opus-5'], sonnet: ['claude-sonnet-5'] },
 };
 
 const report = () => calibrate(RECORDS, { tuples: TUPLES, aliases: ALIASES });
@@ -72,6 +77,23 @@ function sink() {
   const chunks = [];
   return { write: (c) => chunks.push(c), get text() { return chunks.join(''); } };
 }
+
+test('the fixture alias table is the one the driver actually hands over', () => {
+  // Mutation probe: put a second id behind `fable` in the driver's
+  // `MODEL_ALIAS_IDS` — as the scope table legitimately does — and this reddens.
+  // Without it the regression is silent twice over: `resolveModel` refuses an
+  // alias in front of two ids and returns the alias unresolved, so an aliased
+  // run is grouped under `fable`, matches no catalog row, and simply proposes
+  // nothing. A key that quietly stops being rated looks exactly like a key with
+  // too few runs.
+  assert.deepEqual(claudeDriver.options.modelAliases, ALIASES.claude);
+  // And an alias resolves to ONE id, which is the property `calibrate` needs and
+  // the reason this table is not the availability adapter's scope table: a scope
+  // names a family and may name several ids, an alias starts one model.
+  for (const [alias, ids] of Object.entries(claudeDriver.options.modelAliases)) {
+    assert.equal(ids.length, 1, `${alias} resolves to ${ids.length} ids, and calibrate resolves only one`);
+  }
+});
 
 test('median takes the middle, and the mean of the middle pair', () => {
   assert.equal(median([3, 1, 2]), 2);

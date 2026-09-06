@@ -86,7 +86,7 @@ planParticipant(HARNESS, ADDR, {
 // and `agents --json`.
 const version = claude('--version');
 check('the stub claude names the version the format was taken from',
-  version.stdout.trim().startsWith('2.1.251'), version.stdout);
+  version.stdout.trim().startsWith('2.1.263'), version.stdout);
 const emptyList = claude('agents', '--json');
 check('an empty registry prints as an empty array, not a refusal',
   emptyList.stdout.trim() === '[]', emptyList.stdout);
@@ -99,7 +99,7 @@ resetBgSessionsCache();
 const listed = bgSessions();
 const record = sessionByName(HARNESS, NAME);
 const REQUIRED = ['pid', 'cwd', 'kind', 'startedAt', 'sessionId', 'name', 'id', 'status', 'state'];
-check('agents --json prints the lifted one — a bare array and the 2.1.251 form fields',
+check('agents --json prints the lifted one — a bare array and the 2.1.263 form fields',
   Array.isArray(listed) && listed.length === 1 && REQUIRED.every((f) => listed[0][f] !== undefined),
   JSON.stringify(listed));
 check('the record is found by the same findSession the mechanism uses, and is judged alive',

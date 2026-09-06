@@ -334,19 +334,24 @@ test('the inventory is the pinned ids and the alias set the binary publishes, pl
   // that. The three ids are the full names the catalog rates — a catalog row and an
   // inventory that disagreed would exclude every Claude tuple as
   // `model-not-in-inventory` and blame the catalog for it (PB-13.1) — and the three
-  // aliases are what `claude --help` prints under `--model` on 2.1.251, measured
-  // 2026-09-05. So the ids, the alias set and the default model that feed the
+  // aliases are what `claude --help` prints under `--model` on 2.1.263, measured
+  // 2026-09-06. So the ids, the alias set and the default model that feed the
   // inventory are pinned through one check.
   //
-  // `claude-fable-5` joined the ids in PB-29, when the catalog gained rows for it:
-  // the binary's own baked catalog resolves the `fable` alias to that id
-  // (`fable:{default:"claude-fable-5"}`, `best:"fable"`, empty `alias_migration`,
-  // read offline from 2.1.251), and an id the catalog rates has to be in the
-  // inventory or every Fable row would be excluded as `model-not-in-inventory`.
+  // `claude-fable-5` joined the ids in PB-29 and `claude-fable-5-1` in PB-34, both
+  // read offline out of the binary's own baked catalog rather than guessed. On
+  // 2.1.263 that table holds the two of them as separate first-party rows of
+  // `family:"fable"` and points the alias at the newer one
+  // (`fable:{default:"claude-fable-5-1",per_provider:{gateway:"claude-fable-5"}}`,
+  // `latest_per_family.fable:"claude-fable-5-1"`, `alias_migration` still `{}`), so
+  // the predecessor is a name the binary still takes. An id the catalog rates has
+  // to be in the inventory or every Fable row would be excluded as
+  // `model-not-in-inventory`.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const verdict = await probe(box.host);
   assert.deepEqual(verdict.models.map((m) => m.model),
-    ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'fable', 'opus', 'sonnet']);
+    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-sonnet-5',
+      'fable', 'opus', 'sonnet']);
   // And the default is in there whatever the alias set says: it is the model every
   // spawn without a `--model` flag asks for.
   assert.ok(verdict.models.some((m) => m.model === DEFAULT_MODEL), DEFAULT_MODEL);
@@ -473,7 +478,10 @@ test('a scope display name resolves to pinned ids, and an unknown one resolves t
   // ADR-004: the adapter holds the harness's model dictionary and resolves a
   // display name into the ids the catalog rates; the resolver matches by exact id
   // and infers no family, so what it is handed has to be ids.
-  assert.deepEqual(scopeModels('Fable', MODEL_SCOPE_IDS), ['claude-fable-5']);
+  // "Fable" is a FAMILY window and names both ids the binary serves under it: a
+  // tuple on the predecessor spends the same weekly window as one on the successor,
+  // and a table naming only the current alias target would leave it bound by none.
+  assert.deepEqual(scopeModels('Fable', MODEL_SCOPE_IDS), ['claude-fable-5-1', 'claude-fable-5']);
   assert.deepEqual(scopeModels('opus', MODEL_SCOPE_IDS), ['claude-opus-5']);
   assert.deepEqual(scopeModels('Sonnet', MODEL_SCOPE_IDS), ['claude-sonnet-5']);
   assert.equal(scopeModels('Some Model Nobody Pinned', MODEL_SCOPE_IDS), null);
@@ -498,7 +506,8 @@ test('the usage answer becomes three windows: a session, a weekly, and a model-s
   // way the harness does and the ids the driver's table resolves it to.
   assert.equal(windows[0].scope, null);
   assert.equal(windows[1].scope, null);
-  assert.deepEqual(windows[2].scope, { model: 'Fable', models: ['claude-fable-5'] });
+  assert.deepEqual(windows[2].scope,
+    { model: 'Fable', models: ['claude-fable-5-1', 'claude-fable-5'] });
   // And the model's own id in the payload is never read: the fixture holds
   // `<redacted>` there and the window is complete anyway.
   assert.equal(JSON.stringify(windows).includes('<redacted>'), false);
@@ -682,7 +691,8 @@ test('no credential record is quota_unknown, and nothing is claimed about the lo
   assert.equal(verdict.tier, undefined);
   // The inventory is still reported: it is the driver's fact, not the account's.
   assert.deepEqual(verdict.models.map((m) => m.model),
-    ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'fable', 'opus', 'sonnet']);
+    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-sonnet-5',
+      'fable', 'opus', 'sonnet']);
 });
 
 test('a usage endpoint that refuses the token is not_authenticated, not a quota mystery', async () => {
