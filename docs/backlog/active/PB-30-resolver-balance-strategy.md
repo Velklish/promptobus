@@ -19,6 +19,7 @@ ADR-003's four strategies score by rating with `remaining` at 15 % of the weight
 - Reviewer: the "reviewer stays on Claude Code" assumption is not in the package — confirm nothing in `resolver.js` or the skills pins the reviewer's harness; the diversity bonus stays.
 - `models` text: the pace table per harness (window, used, elapsed, underspend, penalty, effective) under the candidates; `--json` carries the same numbers.
 - `remaining` becomes per tuple for every strategy: the applicable windows are the account-wide ones plus the scope covering the tuple (ADR-004, "Every strategy gains from the scoped windows"); golden fixtures move with the snapshot version.
+- `docs/GLOSSARY.md`: the `strategy` row lists four values today and becomes false with `balance` — this task adds the fifth (PB-33 adds the new terms of ADR-004).
 - `decision.schema.json`: `schemaVersion` → 2 (`DECISION_SCHEMA_VERSION` in `resolver.js`), the fifth `strategy` value, `candidates[].pace`, the two warning codes and `strategySource`; golden fixtures move with it (ADR-004: the bump belongs to this task; the top-level `harnesses` block of PB-24 is optional and already on `main`).
 
 ## Out of scope
