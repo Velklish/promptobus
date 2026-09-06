@@ -22,3 +22,9 @@ Observed 2026-09-06 in the subscription-balance run, twice: `promptobus review <
 ## Verification
 
 - A reviewer spawned on a worktree that then gains a commit: the prompt names the snapshot time; the reference paragraph exists; `npm test` on the prompt text.
+
+## Deferred
+
+- **Deferred:** 2026-09-06
+- **Reason:** a change to the reviewer's prompt and the `review` command's output; the workaround (the reviewer compares against the worktree) held for the whole 0.4.0 run.
+- **Return condition:** the `v0.4.0` tag is cut; then this returns to the queue.

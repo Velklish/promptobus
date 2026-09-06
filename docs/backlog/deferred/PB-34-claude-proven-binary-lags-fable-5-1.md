@@ -21,3 +21,9 @@ Found on 2026-09-06 while the catalog track (PB-29) verified the `fable` alias o
 ## Verification
 
 - `claude --model claude-fable-5-1 --help` style offline checks on the newer binary; a live liftoff of a participant on `fable` reporting the 5.1 id in `claude agents --json`; `npm test` on the driver's version pin.
+
+## Deferred
+
+- **Deferred:** 2026-09-06
+- **Reason:** the driver's proven binary is 2.1.251 and re-proving against a newer `claude` is a release of its own (`PROVEN_CLAUDE_VERSION`, the alias table, the liftoff check); 0.4.0 ships with `claude-fable-5` pinned and the successor named in the catalog's evidence.
+- **Return condition:** the `v0.4.0` tag is cut; then this returns to the queue as the first driver task of the next series, together with a `claude` build on the machine that knows `claude-fable-5-1`.
