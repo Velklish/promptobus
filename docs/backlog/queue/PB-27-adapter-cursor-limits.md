@@ -22,7 +22,7 @@ The measured document is in the run's file `spike-limits.md`.
 
 - Read the access token from the keychain (or `CURSOR_API_KEY`); missing → `not_authenticated`; the adapter never reads the refresh token and never writes the token anywhere.
 - One `GetCurrentPeriodUsage` call inside the probe budget; two v2 windows, both `{ kind: monthly, lengthSec: (end − start) / 1000, resetAt: end }`: `{ scope: { pool: "auto", models: autoBucketModels }, usedPercent: autoPercentUsed }` and `{ scope: { pool: "api", models: [] }, usedPercent: apiPercentUsed }`. A tuple whose model is in `autoBucketModels` (exact id, or the id's family prefix — say which) maps to `auto`, everything else to `api`. A pool at or past 100 % is exhausted for its tuples; `displayMessage` is surfaced in the message.
-- Tier: `{ name: "included:" + planUsage.limit, source: "dashboard" }`; the plan name comes from the user overlay when the person answered the one-time question (PB-32 or the skill), else stays unnamed.
+- Tier: `{ name: "included:" + planUsage.limit, source: "derived" }` (the closed list of ADR-004: `credentials | probe | derived | user`); the plan name, when the person wrote it under `account.cursor.plan` in the user overlay (ADR-004, no writer in the tool), is display only.
 - `thirdPartyUsageNudge`, when present, becomes a warning on the harness; `GetUsageLimitStatusAndActiveGrants` is optional (skip on timeout, the windows still count).
 - `cursor-agent status` and `models` stay as they are (auth and inventory); `no-zdr` flags stay.
 - Tests on redacted fixtures: pools, mapping of a composer / grok / gpt / claude id to its pool, exhaustion of one pool only, missing token, HTTP refusal, timeout. A live run is the approver's.
