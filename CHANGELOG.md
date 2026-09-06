@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-06
+
 ### Added
 
 - **`promptobus models calibrate` reads this machine's own runs back against the shipped catalog and proposes overlay lines.** PB-36 began writing `telemetry.jsonl` at every `done` and nothing read it: a person could see that their serving stack or their subscription behaved unlike the catalog and had no reproducible way to turn that into an overlay correction. The command groups records by `(harness, model, effort)` and never by `tuple` — a lift made with an explicit `--model` carries no routing decision, and 18 of the owner's first 21 records had `tuple: null`, so grouping by tuple would have dropped most of the evidence and then reported a confident median over the rest. A model alias is resolved to a full id through the driver's own dictionary, handed over as `options.modelAliases`, so runs typed `--model opus` land on the row that rates `claude-opus-5`.
