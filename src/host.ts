@@ -131,8 +131,10 @@ export interface HostRoutingOverlay {
   id: string;
   path: string;
   /**
-   * Whether this is the layer the TOOL writes — `models strategy --set` today
-   * (ADR-004, decision 6).
+   * Whether this is the layer the TOOL writes (ADR-004, decision 6). PB-32 adds
+   * the writer, `models strategy --set`; until then the flag is a declaration
+   * with no caller, which is the order this package takes everywhere — the
+   * contract first, then what runs on it.
    *
    * Exactly one layer carries it whenever any layer is declared; `readLayers`
    * refuses zero and refuses two, naming the layers it found. The refusal is at
@@ -146,9 +148,10 @@ export interface HostRoutingOverlay {
    * `<promptobusHome>/model-routing.json` for exactly that reason — a consumer
    * keeps it wherever its own state lives, under the same one condition.
    *
-   * A host should mark the HIGHEST-precedence layer, or the tool writes a value a
-   * layer above it overrides; `models strategy --set` warns when that happens
-   * rather than leaving the person to wonder why their default did not take.
+   * A host should mark the HIGHEST-precedence layer, or the tool would write a
+   * value a layer above it overrides; the writer PB-32 adds will warn when that
+   * happens rather than leave the person to wonder why their default did not
+   * take.
    */
   writable?: boolean;
 }
