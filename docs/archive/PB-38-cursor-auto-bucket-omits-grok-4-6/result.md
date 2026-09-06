@@ -1,0 +1,11 @@
+# PB-38 · Result
+
+**Outcome:** completed.
+
+**The measurement the task waited for** (2026-09-06 ~07:35 UTC, the owner's account, run by the orchestrator with the owner's permission): one turn on `cursor-grok-4.6-medium` (14 950 input / 24 output tokens, 3.222 cents) moved `planUsage.autoPercentUsed` 86.1025 → 86.105 and left `apiPercentUsed` at 98.4; `GetAggregatedUsageEvents` gained a row `{ modelIntent: "cursor-grok-4.6-medium", tier: 2, totalCents: 3.222 }` beside the three existing `cursor-grok-4.6-*-fast` rows (all `tier: 2`); `autoBucketModels` still named no grok-4.6 id. Cursor bills the family to the Auto pool and the bucket list lags.
+
+**What was done.** The adapter asks a third dashboard method, `GetAggregatedUsageEvents` (body `{}`, measured), and the `auto` scope is the union of the bucket list's expansion and the ids the aggregation billed to `tier: 2`; exact-id matching only, no prefix exception; a model with neither a row nor a bucket entry stays in `api`; the call is optional and degrades to the bucket list. Fixtures carry the measured payloads. Reference (03-cli § Cursor) and CHANGELOG updated. No schema change.
+
+**Verification.** Worker: `npm test` 47/47 files (adapter file 46/46), `backslop lint` clean, `npm run audit` clean after the merge of main; two mutation probes after the commit (the tier route removed → 3 red; the tier value ignored → 3 red). Isolated review (`reviewer:cursor`, `claude-fable-high` under `balance`): no critical or major findings, three minor in the reference and comments (a stale one-window sentence, the POST count, the honesty of the timeout prose) — closed in 6e95a5c, verified by the approver on the diff. Approver, on the squashed main tree: `backslop lint` clean, `npm run audit` clean, `npm test` exit 0. The live check on the owner's machine (grok-4.6 tuples paced against `monthly-auto`) is run by the approver from a standalone workspace on the package's own CLI and recorded in the run's journal.
+
+**Findings.** PB-38.1 — duplicate of PB-35.1 (the audit red on the orchestrator's backlog files), closed as merged. PB-38.2 — a model with no event this cycle and no bucket entry is paced against `api` until its first turn; queued as a refinement.

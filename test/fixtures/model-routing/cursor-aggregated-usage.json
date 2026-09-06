@@ -1,0 +1,33 @@
+{
+  "aggregations": [
+    {
+      "modelIntent": "cursor-grok-4.6-medium",
+      "tier": 2,
+      "totalCents": 3.222,
+      "inputTokens": "14950",
+      "outputTokens": "24",
+      "cacheReadTokens": "13312"
+    },
+    {
+      "modelIntent": "cursor-grok-4.6-xhigh-fast",
+      "tier": 2,
+      "totalCents": 101240,
+      "inputTokens": "412889301",
+      "outputTokens": "3118442"
+    },
+    {
+      "modelIntent": "claude-opus-5-thinking-max",
+      "tier": 1,
+      "totalCents": 8814,
+      "inputTokens": "31889012",
+      "outputTokens": "402118"
+    },
+    {
+      "modelIntent": "composer-2.5",
+      "tier": 2,
+      "totalCents": 1902,
+      "inputTokens": "8120044",
+      "outputTokens": "91002"
+    }
+  ]
+}

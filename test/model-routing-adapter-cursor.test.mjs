@@ -27,8 +27,8 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
-  authState, autoPoolModels, backendUrlOf, connectHeaders, cursorAvailability, derivedTier,
-  nudgeNote, parseModels, periodWindows, sanitizeMessage,
+  authState, autoPoolModels, autoTierModels, backendUrlOf, connectHeaders, cursorAvailability,
+  derivedTier, nudgeNote, parseModels, periodWindows, sanitizeMessage,
 } from '../lib/model-routing/adapter-cursor.js';
 import { CURSOR, CURSOR_TOOL, cursorDriver } from '../lib/driver-cursor.js';
 import { adapterOf } from '../lib/drivers.js';
@@ -499,6 +499,9 @@ const FIXTURES = path.join(here, 'fixtures', 'model-routing');
 const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), 'utf8'));
 const PERIOD_USAGE = fixture('cursor-period-usage.json');
 const LIMIT_STATUS = fixture('cursor-usage-limit-status.json');
+/** The pair PB-38 measured: a bucket list that lags Cursor's billing, and the aggregation that states it. */
+const BUCKET_LAG = fixture('cursor-period-usage-bucket-lag.json');
+const AGGREGATED = fixture('cursor-aggregated-usage.json');
 const CLI_CONFIG = readFileSync(path.join(FIXTURES, 'cursor-cli-config.json'), 'utf8');
 
 /** A bearer no live endpoint would take, shaped like one so a grep can find it. */
@@ -506,6 +509,7 @@ const FAKE_TOKEN = 'cursor-fake-jwt.promptobus.3f9a1c';
 const BACKEND = 'https://api2.cursor.sh';
 const USAGE_CALL = `${BACKEND}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`;
 const POLICY_CALL = `${BACKEND}/aiserver.v1.DashboardService/GetUsageLimitStatusAndActiveGrants`;
+const EVENTS_CALL = `${BACKEND}/aiserver.v1.DashboardService/GetAggregatedUsageEvents`;
 const ok = (doc) => ({ status: 200, doc });
 
 /**
@@ -552,6 +556,52 @@ test('the auto pool names inventory ids, by exact name or by family prefix', () 
   // its absence is this adapter's fault rather than a limit to report.
   assert.deepEqual(autoPoolModels(inventory, undefined), []);
   assert.deepEqual(autoPoolModels(inventory, []), []);
+});
+
+test('a family the bucket list omits joins the auto pool when the aggregation billed it there', () => {
+  // PB-38, measured on the owner's account 2026-09-06: one turn on
+  // `cursor-grok-4.6-medium` moved `autoPercentUsed` (86.1025 → 86.105) and left
+  // `apiPercentUsed` at 98.4, while `autoBucketModels` named `grok-4.5` and no
+  // `grok-4.6` before or after. The aggregation row for that turn carries
+  // `tier: 2`, which is the Auto bucket — so the pool is read from the row and the
+  // bucket list is no longer the only source.
+  const billed = autoTierModels(AGGREGATED);
+  assert.deepEqual([...billed].sort(),
+    ['composer-2.5', 'cursor-grok-4.6-medium', 'cursor-grok-4.6-xhigh-fast']);
+  // `tier: 1` is the api pool and stays out of it.
+  assert.equal(billed.has('claude-opus-5-thinking-max'), false);
+  // A row with no tier, or one that is not a number, is not a pool anybody named.
+  assert.equal(autoTierModels({ aggregations: [{ modelIntent: 'x' }, { modelIntent: 'y', tier: '2' }] }).size, 0);
+  assert.equal(autoTierModels(null).size, 0);
+  assert.equal(autoTierModels({ aggregations: 'some' }).size, 0);
+
+  // The two routes are a UNION and the tier one matches by exact id, inferring no
+  // family: `cursor-grok-4.6-medium` is billed and is not in this inventory, and it
+  // does not drag `cursor-grok-4.6-low` in with it.
+  const inventory = ['composer-2.5', 'cursor-grok-4.6-xhigh-fast', 'cursor-grok-4.6-low', 'gpt-5.6-sol-high'];
+  assert.deepEqual(autoPoolModels(inventory, ['composer-2.5'], billed),
+    ['composer-2.5', 'cursor-grok-4.6-xhigh-fast']);
+  // A model the bucket list names keeps its place with no event this cycle: an
+  // absent row is an absent measurement, not a denial.
+  assert.deepEqual(autoPoolModels(inventory, ['gpt-5.6-sol'], new Set()), ['gpt-5.6-sol-high']);
+  // And a model with neither stays in the api pool — the conservative reading.
+  assert.equal(autoPoolModels(inventory, ['composer-2.5'], billed).includes('gpt-5.6-sol-high'), false);
+  // Both sources silent is still no auto window at all.
+  assert.deepEqual(autoPoolModels(inventory, [], new Set()), []);
+  assert.deepEqual(autoPoolModels(inventory, undefined, undefined), []);
+});
+
+test('the auto window of a lagging bucket list is drawn from the aggregation, and without it from the list alone', () => {
+  // The whole PB-38 claim in two calls on the measured pair: the same payload,
+  // with and without the aggregation the adapter now asks for.
+  const withEvents = periodWindows(BUCKET_LAG, STUB_IDS, AGGREGATED);
+  assert.deepEqual(withEvents.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+  assert.deepEqual(withEvents[0].scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
+  assert.equal(withEvents[0].usedPercent, 86.105);
+
+  // Without it the bucket list is the whole answer, and on this inventory it names
+  // nothing — which is the state the live acceptance run of 2026-09-06 reported.
+  assert.deepEqual(periodWindows(BUCKET_LAG, STUB_IDS, null).map((w) => w.id), ['monthly-api']);
 });
 
 test('one billing cycle becomes two windows of the same length, one per pool', () => {
@@ -657,7 +707,46 @@ test('a logged-in account whose dashboard answers is available, with two pool wi
   // exhausted branch is where it belongs.
   assert.match(verdict.message, /api pool is past 90 %/);
   assert.equal(/the harness says/.test(verdict.message), false, verdict.message);
-  assert.deepEqual(wired.asked.map((a) => a.url), [USAGE_CALL, POLICY_CALL]);
+  assert.deepEqual(wired.asked.map((a) => a.url), [USAGE_CALL, EVENTS_CALL, POLICY_CALL]);
+});
+
+test('the snapshot paces a grok-4.6 tuple against the auto pool the aggregation named', async () => {
+  // The end of PB-38: the account's own payload, the bucket list lagging, and the
+  // verdict that reaches the cache. `monthly-auto` names the id, so the resolver
+  // binds that tuple to the pool at 86 % rather than to the api pool at 98 %.
+  const host = machine();
+  const wired = account({
+    replies: { [USAGE_CALL]: ok(BUCKET_LAG), [EVENTS_CALL]: ok(AGGREGATED), [POLICY_CALL]: ok(LIMIT_STATUS) },
+  });
+  const verdict = await ask(host, 10_000, wired.deps);
+  assert.equal(verdict.state, 'available', verdict.message);
+  const auto = verdict.windows.find((w) => w.id === 'monthly-auto');
+  assert.deepEqual(auto.scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
+  assert.equal(auto.usedPercent, 86.105);
+
+  const snapshot = await preflight({ host, harnesses: [CURSOR], adapterFor: () => stubAdapter(wired.deps) });
+  const written = snapshot.harnesses[CURSOR].windows.find((w) => w.id === 'monthly-auto');
+  assert.deepEqual(written.scope.models, ['cursor-grok-4.6-xhigh-fast']);
+  assert.equal(validSnapshot(snapshot) ? true : ajv.errorsText(validSnapshot.errors), true);
+});
+
+test('the aggregation call is optional: a refusal costs the second pool route and nothing else', async () => {
+  // It is asked for a REFINEMENT of the auto scope, and the bucket list is still an
+  // answer. A timeout, a refusal or an empty budget leaves the adapter doing what it
+  // did before PB-38 rather than losing a window.
+  //
+  // What this check does NOT see is the cost of a live timeout: the stub answers
+  // `{ error: 'timeout' }` at once, while a real hang is aborted only when the
+  // shared preflight budget runs out, and the policy call after it is then never
+  // made. That is a property of the budget rather than of this branch, and the
+  // adapter's own comment says so — a stub cannot hold a clock it does not own.
+  for (const reply of [{ error: 'timeout' }, { status: 500, doc: null }, ok(null)]) {
+    const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [EVENTS_CALL]: reply } });
+    const verdict = await ask(machine(), 10_000, wired.deps);
+    assert.equal(verdict.state, 'available', verdict.message);
+    assert.deepEqual(verdict.windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+    assert.deepEqual(verdict.windows[0].scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
+  }
 });
 
 test('the token reaches one header and nothing else — not the verdict, not the cache', async () => {
