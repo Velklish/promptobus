@@ -117,8 +117,82 @@
           "minLength": 1
         },
         "evidence": {
-          "description": "Short note a later maintainer can check the rating against.",
-          "type": "string"
+          "description": "What a later maintainer checks the rating against. A bare string is the v1 form and still holds. The object form is what ADR-004 asks for once ratings come from published results: it carries the citation per rating, so `validate` can refuse a rated row that has none.",
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "urn:promptobus:model-routing:catalog#/$defs/citedEvidence" }
+          ]
+        }
+      }
+    },
+    "citation": {
+      "description": "One published figure behind one rating. ADR-004 asks for the benchmark or price source, the figure, the size of the field it was banded against, the source URL and the date seen; the agent harness is named because a Terminal-bench figure without it is not a figure, and `provenance` says whether the page cited was the one actually opened.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rating", "basis", "figure", "fieldSize", "url", "date"],
+      "properties": {
+        "rating": { "enum": ["quality", "speed", "quotaCost"] },
+        "basis": {
+          "description": "The benchmark or the price source, named as the source names it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "description": "Version of the benchmark. Two versions of one benchmark are two benchmarks: the same model moves tens of points between them.",
+          "type": "string",
+          "minLength": 1
+        },
+        "agentHarness": {
+          "description": "Agent harness the figure was measured under, or a sentence saying the page does not state one. A benchmark that scores the model and the harness together produces a different number per harness.",
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "description": "Whether the cited page is the one that was opened, and whether it is primary or secondary.",
+          "type": "string",
+          "minLength": 1
+        },
+        "figure": { "type": "string", "minLength": 1 },
+        "fieldSize": {
+          "description": "How many rated models the band was cut from. A rank band over a small field is a rank band over a small field, and the reader is told the size.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": { "type": "string", "minLength": 1 },
+        "date": {
+          "description": "The date the source was seen, as YYYY-MM-DD.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      }
+    },
+    "citedEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "description": "The prose a later maintainer reads first.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sources": {
+          "description": "One entry per rating that rests on a published figure.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/citation" }
+        },
+        "interpolatedFrom": {
+          "description": "Tuple id of the base row this one was interpolated from. The base row holds the citations and the ladder shares its assessedAt, so a ladder goes stale together.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+        },
+        "hypothesis": {
+          "description": "Ratings with no published figure for this exact model. ADR-004 refuses to invent one: the row says so, and the band stays the maintainers' reasoning.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["quality", "speed", "quotaCost"] }
         }
       }
     },

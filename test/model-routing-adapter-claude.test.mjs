@@ -295,16 +295,22 @@ test('the inventory is the pinned ids and the alias set the binary publishes, pl
   // Every name is pinned LITERALLY, not computed from `MODEL_IDS` or
   // `MODEL_ALIASES`: an expectation derived from the constant under test passes
   // whatever that constant becomes, and the first mutation probe caught exactly
-  // that. The two ids are the full names the catalog rates — a catalog row and an
+  // that. The three ids are the full names the catalog rates — a catalog row and an
   // inventory that disagreed would exclude every Claude tuple as
   // `model-not-in-inventory` and blame the catalog for it (PB-13.1) — and the three
   // aliases are what `claude --help` prints under `--model` on 2.1.251, measured
   // 2026-09-05. So the ids, the alias set and the default model that feed the
   // inventory are pinned through one check.
+  //
+  // `claude-fable-5` joined the ids in PB-29, when the catalog gained rows for it:
+  // the binary's own baked catalog resolves the `fable` alias to that id
+  // (`fable:{default:"claude-fable-5"}`, `best:"fable"`, empty `alias_migration`,
+  // read offline from 2.1.251), and an id the catalog rates has to be in the
+  // inventory or every Fable row would be excluded as `model-not-in-inventory`.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const verdict = await probe(box.host);
   assert.deepEqual(verdict.models.map((m) => m.model),
-    ['claude-opus-5', 'claude-sonnet-5', 'fable', 'opus', 'sonnet']);
+    ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'fable', 'opus', 'sonnet']);
   // And the default is in there whatever the alias set says: it is the model every
   // spawn without a `--model` flag asks for.
   assert.ok(verdict.models.some((m) => m.model === DEFAULT_MODEL), DEFAULT_MODEL);

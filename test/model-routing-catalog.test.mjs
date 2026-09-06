@@ -164,6 +164,214 @@ test('every Claude model id is one the driver reports, and no Claude row names a
   }
 });
 
+test('every rating of every shipped row has a source, an interpolation, or a stated hypothesis', () => {
+  // PB-29 / ADR-004 § Catalog ratings from published results. The v1 catalog was
+  // rated from the models' own descriptions, and nothing could tell a number
+  // with a published figure behind it from a number somebody liked. This is what
+  // tells them apart, and it is checked per RATING rather than per row: one row
+  // can have a published list price behind `quotaCost` and nothing at all behind
+  // `speed`, and the honest catalog says which is which.
+  const RATINGS = ['quality', 'speed', 'quotaCost'];
+  for (const tuple of CATALOG.tuples) {
+    assert.equal(typeof tuple.evidence, 'object',
+      `${tuple.id}: PB-29 rows carry the cited form of evidence, not the v1 string`);
+    if (tuple.evidence.interpolatedFrom) {
+      assert.ok(CATALOG.tuples.some((t) => t.id === tuple.evidence.interpolatedFrom),
+        `${tuple.id}: interpolated from "${tuple.evidence.interpolatedFrom}", which is not a tuple`);
+      continue;
+    }
+    const cited = new Set((tuple.evidence.sources ?? []).map((c) => c.rating));
+    const supposed = new Set(tuple.evidence.hypothesis ?? []);
+    for (const rating of RATINGS) {
+      assert.ok(cited.has(rating) || supposed.has(rating),
+        `${tuple.id}: "${rating}" is rated ${tuple.ratings[rating]} with neither a source nor a stated hypothesis`);
+      assert.ok(!(cited.has(rating) && supposed.has(rating)),
+        `${tuple.id}: "${rating}" is both cited and called a hypothesis`);
+    }
+    for (const citation of tuple.evidence.sources ?? []) {
+      assert.match(citation.date, /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, `${tuple.id}: citation date`);
+      assert.ok(citation.url.startsWith('https://'), `${tuple.id}: a citation names a page`);
+      assert.ok(citation.fieldSize >= 1, `${tuple.id}: a band is cut from a field of a stated size`);
+    }
+  }
+});
+
+test('validate refuses a rated row whose rating has nothing behind it', () => {
+  // The library half of the check above, and the one a consumer gets. Three
+  // ways out and no fourth: cite it, interpolate it from a base row that cites
+  // it, or say no figure is published.
+  const base = clone(CATALOG);
+  // A base row that no rung hangs off: the third way out below turns this row
+  // into an interpolated one, and doing that to a row with dependents would
+  // make THEM chains and report a different fault than the one under test.
+  const row = base.tuples.find((t) => !t.evidence.interpolatedFrom
+    && !base.tuples.some((other) => other.evidence.interpolatedFrom === t.id));
+  assert.ok(row, 'the catalog has no standalone base row to drive this check with');
+  row.evidence = { text: 'rated from the model\'s own marketing copy' };
+  const verdict = validateLayers({ canonical: canonicalLayer(base) });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.errors.length, 3, 'one error per unsupported rating');
+  for (const error of verdict.errors) {
+    assert.equal(error.code, 'catalog-invalid');
+    assert.equal(error.at, `tuples.${row.id}.evidence`);
+  }
+
+  // ... and the three ways out all work.
+  for (const evidence of [
+    {
+      text: 'cited',
+      sources: ['quality', 'speed', 'quotaCost'].map((rating) => ({
+        rating, basis: 'b', figure: 'f', fieldSize: 6, url: 'https://example.invalid', date: '2026-09-06',
+      })),
+    },
+    { text: 'no figure is published for this exact model', hypothesis: ['quality', 'speed', 'quotaCost'] },
+    // A base row of its own, not merely another tuple: the exemption is one hop
+    // to a row that carries figures, so pointing it at a rung would be a chain.
+    {
+      text: 'a rung of a ladder',
+      interpolatedFrom: base.tuples.find((t) => t.id !== row.id && !t.evidence.interpolatedFrom).id,
+    },
+  ]) {
+    const doc = clone(base);
+    doc.tuples.find((t) => t.id === row.id).evidence = evidence;
+    assert.deepEqual(validateLayers({ canonical: canonicalLayer(doc) }).errors, [],
+      `this evidence should account for every rating: ${JSON.stringify(evidence).slice(0, 60)}`);
+  }
+});
+
+test('validate refuses an interpolated row whose base tuple is not in the catalog', () => {
+  // `interpolatedFrom` is the one exemption from citing a figure, and it works
+  // only because the base row carries the citations. A base row that is not
+  // there turns the exemption into a hole.
+  const base = clone(CATALOG);
+  const row = base.tuples.find((t) => t.evidence.interpolatedFrom);
+  row.evidence = { ...row.evidence, interpolatedFrom: 'no-such-tuple' };
+  const verdict = validateLayers({ canonical: canonicalLayer(base) });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.errors.some((e) => e.at === `tuples.${row.id}.evidence.interpolatedFrom`),
+    'the missing base row should be named');
+});
+
+test('an interpolated row is exactly what the ADR-004 arithmetic makes of its base row', () => {
+  // quality one band per TWO steps (signed), speed one band per step with the
+  // OPPOSITE sign, quotaCost one band per step with the SAME sign, all clamped
+  // to 1…5. Written as arithmetic in the ADR precisely so that replacing it by
+  // measurement is one change; this is what stops a hand-edited rung drifting
+  // off the rule in the meantime.
+  //
+  // The step count is recovered from the LADDER rather than from the ratings,
+  // because the clamp erases it wherever a base row already sits at an end of
+  // the scale — and it is recovered from the ladder the FAMILY publishes, not
+  // from the driver's full `EFFORT_LEVELS`. Those differ where it matters:
+  // `kimi-k3` offers low, high and max with no medium, and Cursor's list has
+  // `extra-high` sitting between `high` and `xhigh`, so a driver-list distance
+  // would call `glm-5.2-high` → `-max` three steps where the person sees one.
+  // A step is a rung somebody can actually select.
+  const byId = new Map(CATALOG.tuples.map((t) => [t.id, t]));
+  const clamp = (n) => Math.max(1, Math.min(5, n));
+
+  // Cursor carries the level inside the model id, so the family's ladder is the
+  // set of level suffixes its own rows use, put in the driver's canonical order.
+  const cursorLevels = effortLevelsOf('cursor');
+  const levelOf = (tuple) => {
+    if (tuple.effort !== null) return tuple.effort;
+    const tail = tuple.model.slice(tuple.model.lastIndexOf('-') + 1);
+    return cursorLevels.includes(tail) ? tail : null;
+  };
+  const familyLadder = (base) => {
+    const family = [base, ...CATALOG.tuples.filter((t) => t.evidence?.interpolatedFrom === base.id)];
+    const levels = [...new Set(family.map(levelOf))];
+    assert.ok(levels.every((l) => l !== null), `${base.id}: a rung of this family names no level`);
+    return levels.sort((a, b) => cursorLevels.indexOf(a) - cursorLevels.indexOf(b));
+  };
+
+  let checked = 0;
+  for (const tuple of CATALOG.tuples) {
+    const from = tuple.evidence?.interpolatedFrom;
+    if (!from) continue;
+    const origin = byId.get(from);
+    assert.ok(origin, `${tuple.id}: base row ${from} is missing`);
+    assert.ok(!origin.evidence?.interpolatedFrom,
+      `${tuple.id}: its base row ${from} is itself interpolated — the exemption is one hop`);
+    assert.equal(tuple.assessedAt, origin.assessedAt,
+      `${tuple.id}: a ladder shares its base row's assessedAt so that it goes stale together`);
+    assert.equal(tuple.harness, origin.harness, `${tuple.id}: a ladder does not cross harnesses`);
+    assert.equal(tuple.model.replace(/-[a-z-]+$/, ''), origin.model.replace(/-[a-z-]+$/, ''),
+      `${tuple.id}: a ladder does not cross models`);
+
+    const ladder = tuple.harness === 'cursor' ? familyLadder(origin) : effortLevelsOf(tuple.harness);
+    const here = ladder.indexOf(levelOf(tuple));
+    const there = ladder.indexOf(levelOf(origin));
+    assert.ok(here >= 0 && there >= 0,
+      `${tuple.id}: "${levelOf(tuple)}" or "${levelOf(origin)}" is not on the ladder ${ladder.join(', ')}`);
+    const steps = here - there;
+    assert.notEqual(steps, 0, `${tuple.id}: interpolated from a row at the same rung`);
+
+    assert.deepEqual(tuple.ratings, {
+      quality: clamp(origin.ratings.quality + Math.trunc(steps / 2)),
+      speed: clamp(origin.ratings.speed - steps),
+      quotaCost: clamp(origin.ratings.quotaCost + steps),
+    }, `${tuple.id}: ${steps} step(s) from ${from} ${JSON.stringify(origin.ratings)} on ladder `
+      + `[${ladder.join(', ')}] does not give ${JSON.stringify(tuple.ratings)}`);
+    checked += 1;
+  }
+  assert.ok(checked >= 25, `only ${checked} rungs were checked — the catalog has lost its ladders`);
+});
+
+test('validate refuses an interpolation chain, and a row with no evidence at all', () => {
+  // Two holes the first cut of this check left. A base row that is itself
+  // interpolated makes every rung of a chain exempt from citing anything, and a
+  // chain can close into a ring; and `evidence` being optional in the schema
+  // made "delete the field" the way past a rule about the field's contents.
+  const chained = clone(CATALOG);
+  const rung = chained.tuples.find((t) => t.evidence.interpolatedFrom);
+  const base = chained.tuples.find((t) => t.id === rung.evidence.interpolatedFrom);
+  base.evidence = { text: 'now a rung itself', interpolatedFrom: rung.id };
+  const ring = validateLayers({ canonical: canonicalLayer(chained) });
+  assert.equal(ring.ok, false);
+  assert.ok(ring.errors.some((e) => e.at === `tuples.${rung.id}.evidence.interpolatedFrom`
+    && e.message.includes('one hop')), 'the chain should be named');
+
+  const bare = clone(CATALOG);
+  const row = bare.tuples.find((t) => !t.evidence.interpolatedFrom);
+  delete row.evidence;
+  const verdict = validateLayers({ canonical: canonicalLayer(bare) });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.errors.length, 3, 'a row with no evidence has three unsupported ratings');
+  for (const error of verdict.errors) assert.equal(error.at, `tuples.${row.id}.evidence`);
+});
+
+test('no row is offered as a reviewer below the ADR-004 reviewer floor', () => {
+  // One-sided on purpose, and the asymmetry is the whole point. `roles` is a
+  // HARD filter in the resolver, while the quality floor is a CHOICE rule that
+  // an overlay can lower — so a biconditional here would quietly nail the two
+  // together: with `reviewer` on exactly the quality-5 rows, an overlay that
+  // sets `qualityFloor.reviewer` to 3 could never reach a single extra
+  // candidate, because none of them is offered for the role at all. The floor
+  // would be unlowerable in a file that says it is lowerable.
+  //
+  // So: nothing BELOW the floor may be offered — that keeps
+  // `reviewer-floor-not-met` reachable and stops the catalog handing the
+  // resolver a candidate the ADR forbids — and a row at or above it need not
+  // be, which is the room a later pass has to take a role off a row for a
+  // reason that is not its rating.
+  for (const tuple of CATALOG.tuples) {
+    if (tuple.roles.includes('reviewer')) {
+      assert.ok(tuple.ratings.quality >= 5,
+        `${tuple.id}: offered as a reviewer at quality ${tuple.ratings.quality}, below the floor of 5`);
+    }
+    assert.ok(tuple.roles.includes('worker'), `${tuple.id}: every rated row is offered as a worker`);
+  }
+
+  // And the consequence a person has to know, pinned rather than left in prose:
+  // the shipped catalog offers no Cursor reviewer, so ADR-003's diversity bonus
+  // has two harnesses to move between today, not three.
+  const reviewerHarnesses = new Set(CATALOG.tuples.filter((t) => t.roles.includes('reviewer'))
+    .map((t) => t.harness));
+  assert.deepEqual([...reviewerHarnesses].sort(), ['claude', 'codex'],
+    'the reviewer harness set changed — say so in CHANGELOG and the guide, the diversity bonus depends on it');
+});
+
 test('the shipped catalog passes validate with no overlay present', () => {
   const verdict = validate({ host: hostWith([{ id: 'user', path: '/nowhere/user.json' }]) });
   assert.deepEqual(verdict.errors, []);
@@ -173,17 +381,23 @@ test('the shipped catalog passes validate with no overlay present', () => {
 });
 
 test('a model the harness exposes but the catalog does not rate produces no tuple', () => {
-  // Measured 2026-09-05: `model/list` over `codex app-server` returns
-  // gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5 and gpt-5.4-mini, and
-  // `claude --help` publishes the aliases fable, opus and sonnet. The rows the
-  // maintainers could not rate from a named source are absent by decision, and
-  // an absent row is an `unrated` runtime line (PB-14), never a tuple.
+  // Measured 2026-09-06 (PB-29): `model/list` over `codex app-server` returns
+  // the five visible models AND two hidden ones, `gpt-reserve` and
+  // `codex-auto-review`, which ADR-004 keeps out of the catalog; `claude --help`
+  // publishes the aliases fable, opus and sonnet, and a row keyed on an alias is
+  // a rating of whatever the vendor points it at today. An absent row is an
+  // `unrated` runtime line (PB-14), never a tuple.
+  //
+  // gpt-5.5 left this list in PB-29: v1 could not rate it from a named source
+  // and now it has one, so it is a tuple. The aliases never will be.
   const models = new Set(CATALOG.tuples.map((t) => t.model));
-  for (const unrated of ['gpt-5.5', 'fable']) {
+  for (const unrated of ['fable', 'opus', 'sonnet', 'gpt-reserve', 'codex-auto-review']) {
     assert.equal(models.has(unrated), false,
       `${unrated} has no maintainer rating and must not appear as a tuple`);
   }
-  assert.equal(models.has('gpt-5.6-sol'), true, 'the rated inventory should still be there');
+  for (const rated of ['gpt-5.6-sol', 'gpt-5.5', 'claude-fable-5']) {
+    assert.equal(models.has(rated), true, `${rated} should be rated`);
+  }
 });
 
 // --- the merge ---------------------------------------------------------------
@@ -613,6 +827,47 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     (c) => { c.tuples[0].roleRatings = { architect: { quality: 3 } }; },
     (c) => { c.tuples[0].roleRatings = { reviewer: {} }; },
     (c) => { delete c.tuples[0].assessedAt; },
+    // PB-29: the object form of `evidence`. The string form stays lawful, and
+    // both descriptions of the object form have to refuse the same documents.
+    (c) => { c.tuples[0].evidence = 'a bare string is still the v1 shape'; },
+    (c) => { c.tuples[0].evidence = { text: '' }; },
+    (c) => { c.tuples[0].evidence = { sources: [] }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', sources: [] }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', hypothesis: [] }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', hypothesis: ['latency'] }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', hypothesis: ['speed', 'speed'] }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', interpolatedFrom: 'Not An Id' }; },
+    (c) => { c.tuples[0].evidence = { text: 'x', somethingElse: 1 }; },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '2026-09-06' }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'latency', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '2026-09-06' }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 0, url: 'u', date: '2026-09-06' }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '06-09-2026' }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u' }],
+      };
+    },
   ]) {
     const doc = clone(CATALOG);
     mutate(doc);
