@@ -3,6 +3,7 @@
 - **Scope:** `lib/models.js` (the `--clear-exhausted` success message), [03-cli](../../reference/03-cli.md) § Model routing
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-06
 
 ## Context
 

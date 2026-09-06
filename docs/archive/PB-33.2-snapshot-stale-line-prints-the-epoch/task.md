@@ -3,6 +3,7 @@
 - **Scope:** `lib/model-routing/resolver.js` (the `snapshot-stale` warning message), [03-cli](../../reference/03-cli.md) § Reason codes
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-06
 
 ## Context
 
