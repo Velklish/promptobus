@@ -178,6 +178,12 @@ test('routingPaths keeps the account files out of the per-workspace store', asyn
   // follows the root. A routing path that drifted into `promptobusHome()`
   // would pass every other check in this file and only show up as three
   // harnesses re-probed per clone.
+  //
+  // The workspace layer is the exception, and since ADR-004 it is a deliberate
+  // one: the tool WRITES that file, so it lives inside `promptobusHome()` rather
+  // than in the repository root, where a `.gitignore` is a contract with the
+  // repository and not with this package. It is also the one layer marked
+  // writable, and standalone marks no other.
   const { createStandaloneHost } = await import('../dist/host-index.js');
   const dirA = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-a-'));
   const dirB = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-b-'));
@@ -197,8 +203,13 @@ test('routingPaths keeps the account files out of the per-workspace store', asyn
   assert.deepEqual(pa.overlays.map((o) => o.id), ['user', 'workspace']);
   assert.equal(pa.overlays[0].path, path.join(homedir(), '.promptobus', 'model-routing.json'));
   assert.equal(pa.overlays[0].path, pb.overlays[0].path);
-  assert.equal(pa.overlays[1].path, path.join(dirA, 'model-routing.local.json'));
-  assert.equal(pb.overlays[1].path, path.join(dirB, 'model-routing.local.json'));
+  assert.equal(pa.overlays[1].path, path.join(a.promptobusHome(), 'model-routing.json'));
+  assert.equal(pb.overlays[1].path, path.join(b.promptobusHome(), 'model-routing.json'));
+  assert.equal(pa.overlays[1].path.startsWith(dirA), true, 'the workspace layer still follows the root');
+  assert.notEqual(pa.overlays[1].path, pb.overlays[1].path);
+  assert.equal(pa.overlays[1].path, path.join(dirA, '.promptobus', 'model-routing.json'));
+  assert.equal(pa.overlays.filter((o) => o.writable).map((o) => o.id).join(), 'workspace',
+    'exactly one layer is writable, and it is the one the tool writes');
 });
 
 test('entry point ./hooks returns a plan without a foreign workspace layout', async () => {
@@ -291,4 +302,17 @@ test('the environment wins over the host, and a host that names none refuses by 
   } finally {
     bindHarnessHomes(null);
   }
+});
+
+test('the built host declaration carries the writable layer flag a consumer compiles against', () => {
+  // `dist/host.d.ts` is what a consumer's `tsc` reads, and `pretest` rebuilds it
+  // — so this is not a check that the build ran, it is a check that the FIELD is
+  // in the public declaration and not only in a comment. The first consumer's
+  // suite compares this declaration, and a layer flag that never reached it
+  // would make `readLayers` refuse a host whose types said nothing was missing
+  // (ADR-004, PB-25).
+  const dts = readFileSync(path.join(ROOT, 'dist', 'host.d.ts'), 'utf8');
+  const block = dts.slice(dts.indexOf('interface HostRoutingOverlay'));
+  assert.ok(block, 'dist/host.d.ts declares no HostRoutingOverlay');
+  assert.match(block.slice(0, block.indexOf('}')), /writable\?: boolean/);
 });

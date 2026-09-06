@@ -20,12 +20,13 @@ export const HOST_CONFIG = 'promptobus.json';
 
 // Model-routing file names of the standalone host. Names, not a path: the two
 // homes they hang off differ — the user home for what belongs to the account,
-// the workspace root for the person's local exception.
+// the workspace's own store home for what the TOOL writes. One name serves both
+// overlays because a layer is told apart by its id and its home, not by its
+// basename.
 const ROUTING_HOME = '.promptobus';
 const ROUTING_DIR = 'model-routing';
 const ROUTING_CACHE = 'cache.json';
 const ROUTING_OVERLAY = 'model-routing.json';
-const ROUTING_LOCAL_OVERLAY = 'model-routing.local.json';
 
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_OUTPUT = 32 * 1024 * 1024;
@@ -155,14 +156,22 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     },
     // Routing files of a standalone workspace. The user home carries the cache
     // and the `user` overlay — they are the account's, and the same account is
-    // reached from every checkout on this machine; the workspace root carries
-    // the local exception. Standalone ships no product policy, so there is no
-    // third layer here: a consumer inserts its own between these two.
+    // reached from every checkout on this machine; the store home carries the
+    // workspace layer, which is the one the tool writes. Standalone ships no
+    // product policy, so there is no third layer here: a consumer inserts its
+    // own between these two, read-only, and marks no second writable one.
     routingPaths: (): HostRoutingPaths => ({
       cacheFile: path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR, ROUTING_CACHE),
       overlays: [
         { id: 'user', path: path.join(os.homedir(), ROUTING_HOME, ROUTING_OVERLAY) },
-        { id: 'workspace', path: path.join(root, ROUTING_LOCAL_OVERLAY) },
+        // The workspace layer is STATE: the tool writes it (`models strategy
+        // --set`), so it lives in this package's own directory in the workspace
+        // rather than in the repository root, where a `.gitignore` is a contract
+        // with the repository and not with us. It used to be
+        // `<workspaceRoot>/model-routing.local.json`, and that path is no longer
+        // read — there is no fallback, because two paths under one layer id would
+        // make the file a person edits depend on which of them exists (ADR-004).
+        { id: 'workspace', path: path.join(home, ROUTING_OVERLAY), writable: true },
       ],
     }),
 

@@ -162,7 +162,7 @@
     },
     {
       "id": "workspace",
-      "path": "<workspaceRoot>/model-routing.local.json",
+      "path": "<workspaceRoot>/.promptobus/model-routing.json",
       "applied": false
     }
   ],

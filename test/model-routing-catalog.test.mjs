@@ -30,7 +30,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { GateError } from '../dist/index.js';
 import {
-  CATALOG_FILE, DEFAULT_POLICY, DEFAULTS, STALE_RATING_DAYS, loadCatalog, mergeRouting,
+  CATALOG_FILE, DEFAULT_POLICY, DEFAULTS, STALE_RATING_DAYS, loadCatalog, mergeRouting, readLayers,
 } from '../lib/model-routing/catalog.js';
 import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
@@ -57,8 +57,21 @@ const ajvOverlay = ajv.getSchema('urn:promptobus:model-routing:overlay');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-/** Host stand-in: routing needs exactly one method of it, and naming paths is all it does. */
+/**
+ * Host stand-in: routing needs exactly one method of it, and naming paths is all
+ * it does.
+ *
+ * The LAST layer is marked writable unless a caller marked one itself, because
+ * that is what a lawful declaration looks like since ADR-004 — exactly one
+ * writable layer whenever any is declared, and a host should mark the
+ * highest-precedence one. A stand-in that declared none would make every test
+ * here a test of the refusal.
+ */
 function hostWith(overlays, cacheFile = '/nowhere/cache.json') {
+  const marked = overlays.some((o) => o.writable === true)
+    ? overlays
+    : overlays.map((o, i) => (i === overlays.length - 1 ? { ...o, writable: true } : o));
+  overlays = marked;
   return {
     kind: 'promptobus-host',
     commandName: 'promptobus',
@@ -671,4 +684,56 @@ test('the package ships the catalog', () => {
   const pkg = readJson(path.join(ROOT, 'package.json'));
   assert.ok(pkg.files.includes('models'), 'models/ is not in package.json files — the catalog would not ship');
   assert.ok(CATALOG_FILE.endsWith(path.join('models', 'catalog.json')));
+});
+
+// --- the writable layer -------------------------------------------------------
+
+test('exactly one routing layer is writable, and the refusal names the layers', () => {
+  // ADR-004 decision 6: the workspace overlay is state, so one layer — and only
+  // one — is the file the tool writes. The check is at the DECLARATION, not at
+  // the write: a person who learns their host names no writable layer from
+  // `models strategy --set` learns it after making the edit it refuses to keep.
+  //
+  // Mutation probe: drop the count check in `readLayers` and both refusals below
+  // stop being refusals.
+  const box = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-'));
+  const layer = (id, writable) => ({ id, path: path.join(box, `${id}.json`), ...(writable ? { writable } : {}) });
+
+  const one = readLayers(hostWith([layer('user'), layer('workspace', true)]), { catalogFile: CATALOG_FILE });
+  assert.deepEqual(one.overlays.map((o) => [o.id, o.writable]), [['user', false], ['workspace', true]]);
+
+  // The stand-in above marks the last layer, so the "none" case is built by hand.
+  const raw = (overlays) => ({ routingPaths: () => ({ cacheFile: 'unused', overlays }) });
+  assert.throws(() => readLayers(raw([layer('user'), layer('workspace')]), { catalogFile: CATALOG_FILE }),
+    (e) => /none of them is writable/.test(e.message) && /user, workspace/.test(e.message));
+  assert.throws(() => readLayers(raw([layer('user', true), layer('workspace', true)]), { catalogFile: CATALOG_FILE }),
+    (e) => /2 writable routing layers/.test(e.message) && /user, workspace/.test(e.message));
+
+  // A host that declares no layer declares nothing to write, and that is lawful:
+  // it is what a consumer with no overlays has.
+  assert.deepEqual(readLayers(raw([]), { catalogFile: CATALOG_FILE }).overlays, []);
+});
+
+test('`validate` reports a bad writable declaration as a finding, not as a throw', () => {
+  // `readLayers` refuses; this call is the one a person makes when something is
+  // wrong, so it must answer rather than throw — otherwise `models validate`
+  // would say the stack holds while `models` refused to run on it.
+  const raw = (overlays) => ({ routingPaths: () => ({ cacheFile: 'unused', overlays }) });
+  const layer = (id, writable) => ({ id, path: `/layers/${id}.json`, ...(writable ? { writable } : {}) });
+
+  const none = validate({ host: raw([layer('user'), layer('workspace')]), catalogFile: CATALOG_FILE });
+  assert.equal(none.ok, false);
+  assert.deepEqual(none.errors.map((e) => [e.code, e.layer]), [['overlay-invalid', 'host']]);
+  assert.match(none.errors[0].message, /no declared layer is writable \(user, workspace\)/);
+  assert.deepEqual(none.layers.map((l) => l.writable), [false, false, false],
+    'the layers are still reported, so a person sees the stack the finding is about');
+
+  const two = validate({ host: raw([layer('user', true), layer('workspace', true)]), catalogFile: CATALOG_FILE });
+  assert.equal(two.ok, false);
+  assert.match(two.errors[0].message, /2 layers are writable \(user, workspace\)/);
+
+  const one = validate({ host: raw([layer('user'), layer('workspace', true)]), catalogFile: CATALOG_FILE });
+  assert.equal(one.ok, true, JSON.stringify(one.errors));
+  assert.deepEqual(one.layers.map((l) => [l.id, l.writable]),
+    [['catalog', false], ['user', false], ['workspace', true]]);
 });

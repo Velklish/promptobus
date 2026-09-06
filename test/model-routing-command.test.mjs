@@ -216,6 +216,10 @@ test('`models validate` checks the shipped catalog and the layers the host names
   assert.match(said.out, /layers: catalog /);
   assert.match(said.out, /user \(absent\)/);
   assert.match(said.out, /the catalog and 2 overlay layer\(s\) hold/);
+  // Which layer the tool writes is a fact about the stack, and this is the
+  // command a person runs to ask about the stack (ADR-004, PB-25).
+  assert.match(said.out, /workspace .*\[writable\]/);
+  assert.equal(/user .*\[writable\]/.test(said.out), false, 'only one layer may be marked');
 });
 
 test('`models --clear-exhausted` drops a reset-less exhaustion and says so, and leaves a dated one alone', async () => {
@@ -339,7 +343,8 @@ test('a tuple another harness denied by overlay does not turn constraint-unavail
     cursor: entry('available', null, { windows: [{ id: '5h', kind: 'session', usedPercent: 10, lengthSec: 18000, resetAt: null, scope: null }] }),
     codex: entry('unavailable', 'not_authenticated'),
   });
-  const overlay = path.join(WS, 'model-routing.local.json');
+  const overlay = path.join(HOST.promptobusHome(), 'model-routing.json');
+  mkdirSync(path.dirname(overlay), { recursive: true });
   writeFileSync(overlay, `${JSON.stringify({ schemaVersion: 1, deny: { tuples: ['cursor-composer-2.5'] } }, null, 2)}\n`);
   try {
     await assert.rejects(

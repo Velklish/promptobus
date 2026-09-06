@@ -130,6 +130,27 @@ export interface HostLegacyLayout {
 export interface HostRoutingOverlay {
   id: string;
   path: string;
+  /**
+   * Whether this is the layer the TOOL writes — `models strategy --set` today
+   * (ADR-004, decision 6).
+   *
+   * Exactly one layer carries it whenever any layer is declared; `readLayers`
+   * refuses zero and refuses two, naming the layers it found. The refusal is at
+   * the declaration rather than at the write for the reason `harnessStateHome`
+   * refuses instead of guessing: a host that names layers and no writable one has
+   * an incomplete declaration, and finding that out at the write costs a person
+   * the edit they just made.
+   *
+   * A writable layer is STATE, not configuration, so it must not be a file
+   * anybody commits. Under the standalone host it is `workspace`, and it lives at
+   * `<promptobusHome>/model-routing.json` for exactly that reason — a consumer
+   * keeps it wherever its own state lives, under the same one condition.
+   *
+   * A host should mark the HIGHEST-precedence layer, or the tool writes a value a
+   * layer above it overrides; `models strategy --set` warns when that happens
+   * rather than leaving the person to wonder why their default did not take.
+   */
+  writable?: boolean;
 }
 
 /**

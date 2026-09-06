@@ -77,7 +77,7 @@ const validDecision = (decision, note = '') => assert.equal(ajvDecision(decision
 function policyOf({ catalog = CATALOG, user = null, workspace = null, constraints = null, now = NOW } = {}) {
   const layers = [
     { id: 'user', path: path.join(HOME, '.promptobus', 'model-routing.json'), present: user !== null, data: user },
-    { id: 'workspace', path: path.join(WORKSPACE, 'model-routing.local.json'), present: workspace !== null, data: workspace },
+    { id: 'workspace', path: path.join(WORKSPACE, '.promptobus', 'model-routing.json'), present: workspace !== null, data: workspace },
   ];
   const merged = mergeRouting({ canonical: catalog, overlays: layers, constraints, now });
   return {
