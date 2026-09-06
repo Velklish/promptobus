@@ -49,6 +49,8 @@ The two halves are independent:
 - Stop the reviewer session in the harness (the driver route is in `promptobus status`).
 - Close the task: `promptobus done --task <id>`. The review command prints this line.
 
+Run `promptobus models --refresh` right before that `done`. The close writes one local telemetry record for the reviewer and reads its window values out of the availability cache without probing anything, and a window entry lives sixty seconds — without the refresh the record carries the spawn reading and no end value, so what the review spent on the account is unmeasurable afterwards.
+
 A leftover active task forces every later command to take `--task`.
 
 ## Not this skill

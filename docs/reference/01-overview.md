@@ -41,6 +41,8 @@ Layout of one task:
 
 Sidecar files the CLI writes (warden, wake, health, worker catalogs) sit in the same task directory. The engine API does not own them.
 
+One file sits at the **root** of the store rather than under `tasks/`: `model-routing.json`, the `workspace` overlay layer, which under the standalone host is the writable one — the file `promptobus models strategy --set` records `defaults.strategy` in, mode `0600` ([02-host](02-host.md) § The writable layer). It is state the tool writes, which is why it is here and not in the repository root, and it is per-workspace exactly as the store is. The availability cache and the participant telemetry are NOT here: they are account-scoped and live at the paths `routingPaths()` names, off the user home under standalone.
+
 ## MCP tools
 
 Declared in `src/mcp/tools.ts` and listed in `lib/contract.js` as `PROMPTOBUS_TOOLS`:

@@ -111,36 +111,58 @@ promptobus review ./my-repo --title "Review the change"
 
 ```bash
 promptobus models --strategy balanced          # что выбрал бы резолвер и почему
+promptobus models --strategy balance           # …и какую из подписок он бы потратил
 promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
 ```
 
-Реальный вывод на машине, где залогинены все три harness; сокращено по строкам `…` — дальше идут остальные из девятнадцати кандидатов и модели аккаунта без рейтинга:
+Вид вывода, сокращённый по строкам `…`. Числа взяты из фикстуры снапшота, которую фиксирует набор тестов (`test/fixtures/model-routing/balance-snapshot.json`), прогнанной против каталога из пакета, — читатель может их воспроизвести. Проценты реального аккаунта принадлежат этому аккаунту:
 
 ```text
-$ promptobus models --refresh
-strategy: balanced · role: worker
-snapshot: 2026-09-05T16:32:23.972Z · 0 s old · source probe
+$ promptobus models --strategy balance
+strategy: balance · role: worker
+snapshot: 2026-09-06T02:17:43.464Z · 0 s old · source cache
 overlays: user (absent) · workspace (absent)
-chosen: codex-luna-medium · codex / gpt-5.6-luna medium · score 73.10
+chosen: codex-sol-medium · codex / gpt-5.6-sol medium · score 78.10
 
 candidates:
-  * codex-luna-medium             codex / gpt-5.6-luna medium            available     73.10
-    codex-sol-medium              codex / gpt-5.6-sol medium             available     71.85
-    codex-mini-medium             codex / gpt-5.4-mini medium            available     63.10
-    claude-sonnet-medium          claude / claude-sonnet-5 medium        unknown       62.50  (-10 unknown-availability)
+  * codex-sol-medium        codex / gpt-5.6-sol medium       available     78.10
+    claude-opus-medium      claude / claude-opus-5 medium    available     74.25
+    codex-sol-high          codex / gpt-5.6-sol high         available     73.10
+    claude-opus-high        claude / claude-opus-5 high      available     73.00
     …
+
+pace — percentage points of each binding window · band 5.0 · spend unit 5.0:
+  * codex   codex-sol-medium · secondary weekly · 46.0% used · 62.5% elapsed · underspend +16.50 · penalty -1.25 · effective +15.25
+    claude  claude-opus-medium · 7d weekly · 30.0% used · 40.5% elapsed · underspend +10.48 · penalty -1.25 · effective +9.23
+    cursor  cursor-composer-2.5 · cycle-auto monthly · 62.0% used · 47.9% elapsed · underspend -14.08 · penalty -1.25 · effective -15.33
+
+availability:
+  claude  available  tier example-max (credentials)
+      5h        session 8.0% used · 18000 s · account · resets 2026-09-06T06:17:43.464Z
+      7d        weekly  30.0% used · 604800 s · account · resets 2026-09-10T06:17:43.464Z
+      7d-fable  weekly  38.0% used · 604800 s · model Fable · resets 2026-09-10T06:17:43.464Z
+  cursor  available  tier included:2000 (derived)
+      cycle-auto  monthly 62.0% used · 2592000 s · pool auto · resets 2026-09-21T17:17:43.464Z
+      cycle-api   monthly 72.0% used · 2592000 s · pool api · resets 2026-09-21T17:17:43.464Z
+  codex   available  tier example-pro (probe) · credits none · reset credits 2
+      primary    session 0.0% used · 18000 s · account · resets 2026-09-06T04:17:43.464Z
+      secondary  weekly  46.0% used · 604800 s · account · resets 2026-09-08T17:17:43.464Z
 
 runtime models — not rated, never chosen automatically:
-    claude / opus
-    …
+    cursor / gpt-5.6-via-cursor  [no-zdr]
+    …```
 
-warnings:
-  ! unknown-remaining: claude exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points
-```
+Стратегий пять: `quality`, `balanced`, `speed`, `economy` и `balance`. Первые четыре взвешивают качества кортежа. `balance` отвечает на другой вопрос — какую из подписок тратить. Его берут, когда платят за несколько harness и хотят расходовать их равномерно: он предпочитает harness, сильнее прочих отставший от темпа собственного лимитного окна, внутри harness упорядочивает кортежи по `balanced`, а когда темп не считается ни для одного окна — откатывается к `balanced` с предупреждением. Блок `availability:` над ним — это то, что ответил каждый аккаунт: состояние, тариф и каждое лимитное окно с его видом, израсходованной долей, длиной, тем, что оно связывает, и временем сброса. Таблица `pace` печатается только под `balance`.
 
-Стратегии четыре: `quality`, `balanced`, `speed`, `economy`. `models` читает кэш доступности и ни о чём не спрашивает harness — опрашивает только `--refresh`, и он же единственный, кто пишет запись в кэш. У `spawn` и `review` `--strategy` отдаёт резолверу намерение, а `--harness`, `--model` и `--effort` остаются **ограничениями** его выбора, и подменить названное значение нельзя. Без `--strategy` маршрутизации нет, команда идёт обычным путём.
+**Приоритет: флаг → записанный default overlay → ничего.** `--strategy` в командной строке всегда выигрывает. Ниже — `defaults.strategy` из слитых overlay, записанный default. Ещё ниже — ничего: `spawn` и `review` не маршрутизируют и идут своим обычным путём, ровно как раньше. `--harness`, `--model` и `--effort` в эту лестницу не входят вовсе: они остаются **ограничениями** выбора резолвера, и стратегия их не подменяет.
 
-`models validate` проверяет каталог из пакета и каждый слой overlay; `models --clear-exhausted <harness>` снимает отметку об исчерпании, у которой нет известного времени сброса. Поверхность команд — [Model routing](docs/reference/03-cli.md#model-routing); каталог, слои и файл overlay для копирования — [docs/guides/model-routing.md](docs/guides/model-routing.md).
+`models` читает кэш доступности и ни о чём не спрашивает harness — опрашивает только `--refresh`, и он же единственный, кто пишет запись в кэш.
+
+Когда у аккаунта остаётся мало, `models` печатает строку `near-limit`: окно, время его сброса, что именно сработало — уровень или темп — и стратегию, на которую стоит перейти. **Само ничего не переключается.** Агент предлагает переход вам; после согласия `promptobus models strategy --set <name>` записывает `defaults.strategy` в записываемый слой overlay, и каждый следующий `spawn` и `review` без `--strategy` маршрутизируется с ним. `--clear` убирает запись, а `promptobus models strategy` без аргумента печатает действующий default и слой, из которого он взят.
+
+Единственный вопрос, на который не отвечает ни один метод harness, — название тарифа Cursor. Эту строку вы добавляете один раз в overlay `user`, в `account: { "cursor": { "plan": "<name>" } }`. Её никто не пишет, она только отображается и ни во что не оценивается.
+
+`models validate` проверяет каталог из пакета и каждый слой overlay; `models --clear-exhausted <harness>` снимает отметку об исчерпании, у которой нет известного времени сброса. `promptobus done` дописывает по одной телеметрической записи на участника в `telemetry.jsonl` рядом с кэшем доступности — локально, режим `0600`, никуда не отправляется и не содержит ни промптов, ни путей, ни идентификаторов сессий, ни токенов; `models` печатает, сколько записей в файле. Запустите `promptobus models --refresh` прямо перед `promptobus done`, если хотите, чтобы запись несла конечное значение по каждому окну. Поверхность команд — [Model routing](docs/reference/03-cli.md#model-routing); каталог, слои и файл overlay для копирования — [docs/guides/model-routing.md](docs/guides/model-routing.md).
 
 ## Команды
 
@@ -148,9 +170,9 @@ warnings:
 |---|---|
 | `promptobus spawn` | Поднять воркера в изолированном git worktree |
 | `promptobus review` | Поднять read-only ревьюера на путь |
-| `promptobus models` | Что резолвер выбрал бы сейчас; `validate` проверяет каталог, `--clear-exhausted <harness>` снимает залипшую отметку об исчерпании |
+| `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта; `strategy --set <name>` записывает default, с которым согласился человек, `validate` проверяет каталог, `--clear-exhausted <harness>` снимает залипшую отметку об исчерпании |
 | `promptobus status` | Список активных задач, участники, непрочитанное |
-| `promptobus done` | Закрыть задачу. Гасит сессии, которые подняла шина, если нет `--keep-sessions` |
+| `promptobus done` | Закрыть задачу. Гасит сессии, которые подняла шина, если нет `--keep-sessions`, и дописывает по одной локальной телеметрической записи на участника |
 | `promptobus dismiss <address>` | Снять сданного участника с наблюдения |
 | `promptobus history` | Печатает **прочитанную** почту, от старых к новым (по умолчанию последние 50) |
 | `promptobus prune` | Показать или удалить журналы давно закрытых задач (порог 14 дней) |

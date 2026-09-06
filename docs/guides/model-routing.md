@@ -15,11 +15,13 @@ The host names the overlays and their order — `routingPaths().overlays`, lowes
 | Layer | Standalone path | Whose it is |
 |---|---|---|
 | `user` | `~/.promptobus/model-routing.json` | preferences that follow the account across workspaces |
-| `workspace` | `<workspaceRoot>/model-routing.local.json` | a local exception for this repository set |
+| `workspace` | `<promptobusHome>/model-routing.json` | a local exception for this repository set — and the **writable** layer |
 
 A consumer that ships its own policy inserts a layer of its own between them; that is a host-side choice and needs no change here. **A missing overlay file is normal**, not an error: the host names paths, it does not promise they exist.
 
-The host names a third routing file beside the two overlays, and it is not a layer: the availability cache, `~/.promptobus/model-routing/cache.json` under standalone, mode `0600`. Nothing in it is edited by hand — it holds what the harnesses last answered, and the one command that changes it deliberately is `promptobus models --clear-exhausted <harness>`. Both overlays and the cache sit under the home directory rather than the workspace because they follow the **account** the harness binaries are logged into, not one checkout ([reference/02-host.md](../reference/02-host.md) § Model-routing paths).
+**Exactly one layer is the writable one**, whenever any layer is declared, and it is the layer `promptobus models strategy --set <name>` writes `defaults.strategy` into ([reference/02-host.md](../reference/02-host.md) § The writable layer). Under standalone that is `workspace`, and it sits inside the task store rather than in the repository root because the tool rewrites it: state, not configuration, and not a file anybody commits. **`<workspaceRoot>/model-routing.local.json` is no longer read and there is no fallback** — two paths under one layer id would make the file a person edits depend on which of them exists — so rules kept in the old file have to be moved by hand.
+
+The host names a third routing file beside the two overlays, and it is not a layer: the availability cache, `~/.promptobus/model-routing/cache.json` under standalone, mode `0600`. Nothing in it is edited by hand — it holds what the harnesses last answered, and the one command that changes it deliberately is `promptobus models --clear-exhausted <harness>`. The `user` overlay and the cache sit under the home directory rather than the workspace because they follow the **account** the harness binaries are logged into, not one checkout; the `workspace` layer is per-workspace, which is the whole of what its id says ([reference/02-host.md](../reference/02-host.md) § Model-routing paths).
 
 ## What a layer may change, and how it combines
 
@@ -108,7 +110,7 @@ A rating older than 90 days produces a `stale-rating` warning and is **never** e
 
 ## The overlay to copy
 
-Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<workspaceRoot>/model-routing.local.json` (this repository set only). Every field below is optional; keep the ones you want.
+Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobusHome>/model-routing.json` (this repository set only — the writable layer, so `models strategy --set` edits that file in place around whatever you put in it). Every field below is optional; keep the ones you want.
 
 ```json
 {

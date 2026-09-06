@@ -111,36 +111,59 @@ Name an intent — a strategy — instead of a model, and the CLI picks the `rol
 
 ```bash
 promptobus models --strategy balanced          # what the resolver would pick, and why
+promptobus models --strategy balance           # …and which of your subscriptions it would spend
 promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
 ```
 
-Real output on a machine with all three harnesses logged in, abridged at the `…` lines — nineteen candidates and the account's unrated models follow in the same shape:
+The shape of the output, abridged at the `…` lines. The numbers are the snapshot fixture the suite pins (`test/fixtures/model-routing/balance-snapshot.json`) run against the shipped catalog, so a reader can reproduce them; the percentages of a real account are that account's own:
 
 ```text
-$ promptobus models --refresh
-strategy: balanced · role: worker
-snapshot: 2026-09-05T16:32:23.972Z · 0 s old · source probe
+$ promptobus models --strategy balance
+strategy: balance · role: worker
+snapshot: 2026-09-06T02:17:43.464Z · 0 s old · source cache
 overlays: user (absent) · workspace (absent)
-chosen: codex-luna-medium · codex / gpt-5.6-luna medium · score 73.10
+chosen: codex-sol-medium · codex / gpt-5.6-sol medium · score 78.10
 
 candidates:
-  * codex-luna-medium             codex / gpt-5.6-luna medium            available     73.10
-    codex-sol-medium              codex / gpt-5.6-sol medium             available     71.85
-    codex-mini-medium             codex / gpt-5.4-mini medium            available     63.10
-    claude-sonnet-medium          claude / claude-sonnet-5 medium        unknown       62.50  (-10 unknown-availability)
+  * codex-sol-medium        codex / gpt-5.6-sol medium       available     78.10
+    claude-opus-medium      claude / claude-opus-5 medium    available     74.25
+    codex-sol-high          codex / gpt-5.6-sol high         available     73.10
+    claude-opus-high        claude / claude-opus-5 high      available     73.00
     …
+
+pace — percentage points of each binding window · band 5.0 · spend unit 5.0:
+  * codex   codex-sol-medium · secondary weekly · 46.0% used · 62.5% elapsed · underspend +16.50 · penalty -1.25 · effective +15.25
+    claude  claude-opus-medium · 7d weekly · 30.0% used · 40.5% elapsed · underspend +10.48 · penalty -1.25 · effective +9.23
+    cursor  cursor-composer-2.5 · cycle-auto monthly · 62.0% used · 47.9% elapsed · underspend -14.08 · penalty -1.25 · effective -15.33
+
+availability:
+  claude  available  tier example-max (credentials)
+      5h        session 8.0% used · 18000 s · account · resets 2026-09-06T06:17:43.464Z
+      7d        weekly  30.0% used · 604800 s · account · resets 2026-09-10T06:17:43.464Z
+      7d-fable  weekly  38.0% used · 604800 s · model Fable · resets 2026-09-10T06:17:43.464Z
+  cursor  available  tier included:2000 (derived)
+      cycle-auto  monthly 62.0% used · 2592000 s · pool auto · resets 2026-09-21T17:17:43.464Z
+      cycle-api   monthly 72.0% used · 2592000 s · pool api · resets 2026-09-21T17:17:43.464Z
+  codex   available  tier example-pro (probe) · credits none · reset credits 2
+      primary    session 0.0% used · 18000 s · account · resets 2026-09-06T04:17:43.464Z
+      secondary  weekly  46.0% used · 604800 s · account · resets 2026-09-08T17:17:43.464Z
 
 runtime models — not rated, never chosen automatically:
-    claude / opus
+    cursor / gpt-5.6-via-cursor  [no-zdr]
     …
-
-warnings:
-  ! unknown-remaining: claude exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points
 ```
 
-The four strategies are `quality`, `balanced`, `speed` and `economy`. `models` reads the availability cache and asks no harness anything — `--refresh` is the only flag that probes, and therefore the only one that writes a cache entry. On `spawn` and `review`, `--strategy` hands the resolver an intent, while `--harness`, `--model` and `--effort` stay **constraints** on its choice and are never replaced by one. Without `--strategy` nothing is routed and the command takes its usual path.
+The five strategies are `quality`, `balanced`, `speed`, `economy` and `balance`. The first four weigh the qualities of a tuple. `balance` answers a different question — which of your subscriptions to spend — and it is the one to reach for when you pay for several harnesses and want them spent evenly: it prefers the harness furthest behind the pace of its own limit window, orders tuples inside a harness by `balanced`, and falls back to `balanced` with a warning when no window can be paced. The `availability:` block above it is what each account answered: its state, its tier, and every limit window with its kind, how much of it is gone, how long it is, what it binds and when it resets. The `pace` table is printed under `balance` only.
 
-`models validate` checks the shipped catalog and every overlay layer; `models --clear-exhausted <harness>` lifts an exhaustion the cache is holding with no known reset. The command surface is [Model routing](docs/reference/03-cli.md#model-routing); the catalog, the layers and the overlay file to copy are in [docs/guides/model-routing.md](docs/guides/model-routing.md).
+**Precedence: flag → overlay default → none.** `--strategy` on the command line always wins. Below it, `defaults.strategy` from the merged overlays — the recorded default. Below that, nothing: `spawn` and `review` route nothing and take their usual path, exactly as before. `--harness`, `--model` and `--effort` are not part of that ladder at all — they stay **constraints** on the resolver's choice and are never replaced by a strategy.
+
+`models` reads the availability cache and asks no harness anything — `--refresh` is the only flag that probes, and therefore the only one that writes a cache entry.
+
+When an account is running short, `models` prints a `near-limit` line: the window, its reset, whether the level or the rate tripped it, and the strategy to switch to. **Nothing switches on its own.** An agent proposes the switch to you; once you agree, `promptobus models strategy --set <name>` records `defaults.strategy` in the host's writable overlay so every following `spawn` and `review` without `--strategy` routes with it. `--clear` removes it, and `promptobus models strategy` alone prints the effective default and the layer it came from.
+
+One question no harness method answers — Cursor's plan name — is a line you add once, to the `user` overlay under `account: { "cursor": { "plan": "<name>" } }`. Nothing writes it, and it is displayed and scored by nothing.
+
+`models validate` checks the shipped catalog and every overlay layer; `models --clear-exhausted <harness>` lifts an exhaustion the cache is holding with no known reset. `promptobus done` appends one telemetry record per participant to `telemetry.jsonl` beside the availability cache — local, mode `0600`, never sent anywhere, and holding no prompt, path, session id or token; `models` prints how many records it holds. Run `promptobus models --refresh` right before `promptobus done` if you want that record to carry an end value for each window. The command surface is [Model routing](docs/reference/03-cli.md#model-routing); the catalog, the layers and the overlay file to copy are in [docs/guides/model-routing.md](docs/guides/model-routing.md).
 
 ## Commands
 
@@ -148,9 +171,9 @@ The four strategies are `quality`, `balanced`, `speed` and `economy`. `models` r
 |---|---|
 | `promptobus spawn` | Start a worker in an isolated git worktree |
 | `promptobus review` | Start a read-only reviewer on a path |
-| `promptobus models` | What the resolver would pick now; `validate` checks the catalog, `--clear-exhausted <harness>` lifts a stuck exhaustion |
+| `promptobus models` | What the resolver would pick now, and what each account has left; `strategy --set <name>` records the default a person agreed to, `validate` checks the catalog, `--clear-exhausted <harness>` lifts a stuck exhaustion |
 | `promptobus status` | List active tasks, participants, unread counts |
-| `promptobus done` | Close a task. Stops sessions the bus started unless `--keep-sessions` |
+| `promptobus done` | Close a task. Stops sessions the bus started unless `--keep-sessions`, and appends one local telemetry record per participant |
 | `promptobus dismiss <address>` | Stop watching a finished participant |
 | `promptobus history` | Print **read** mail, oldest first (default last 50) |
 | `promptobus prune` | Preview or delete journals of old closed tasks (default 14 days) |

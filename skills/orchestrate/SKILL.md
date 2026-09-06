@@ -70,13 +70,13 @@ Read the worker branch from `promptobus status` or `promptobus_task`. Do not reb
 | Ordinary development: a feature in a known subsystem, a bug with a repro, tests for behaviour that already exists | `balanced` |
 | Reconnaissance, reading a subsystem, and a small precise change in a named file | `speed` |
 | Bulk low-risk routine: a mechanical rename, a mass import rewrite, a formatting sweep | `economy` |
-| The subscriptions are unevenly spent and the work is not itself urgent — spend from the account with room rather than from the best-rated one | `balance` |
+| You pay for several harnesses and want them spent evenly — spend from the account that is behind the pace of its own window rather than from the best-rated one | `balance` |
 
 **The price of a mistake moves a track up one row**, in that order: `economy` → `speed` → `balanced` → `quality`. A mechanical rename that touches a published surface is `speed`. A small precise change in a payment or auth path is `balanced`. Ambiguity is already priced in — an unclear statement is `quality` outright, not one row up from where its subject would sit.
 
 Classify each track on its own. One run may spawn `quality` and `economy` side by side.
 
-`balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. Reach for it when `models` says an account is running short, not as a general default.
+`balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
 
 ### When `models` says an account is running short
 
@@ -92,6 +92,16 @@ That records `defaults.strategy` in the host's writable overlay, and every follo
 
 This is the only thing that changes a strategy between spawns, and a person is on both ends of it.
 
+### The one question the tool cannot answer
+
+`models` prints the key and the file when nothing has recorded Cursor's plan name, because no Cursor method returns it. **Ask the person once, and only once**, and only when a run will actually use Cursor. The line goes in the `user` overlay, `~/.promptobus/model-routing.json`:
+
+```json
+"account": { "cursor": { "plan": "<the plan name>" } }
+```
+
+No command writes it: the writable layer is per-workspace, so a tool-written answer would be asked again in the next workspace. The value is display only and enters no score, so a run is not blocked while it is missing — do not stall a spawn on it, and do not ask a second time in the same run.
+
 ### The strategy envelope
 
 Agree the envelope with the user before the first spawn, in the same approval as the split. It names three things:
@@ -105,6 +115,17 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 `promptobus models [--strategy <s>] [--role <worker|reviewer>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
 
 `promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start. A lift routed by the recorded default rather than by a flag says so, so a run made under a switch the person agreed to is auditable as one.
+
+### Refresh right before you close
+
+`promptobus done` writes one local telemetry record per participant, and the window readings in it are the ones the availability cache holds at that moment. `done` probes nothing, and a window entry lives sixty seconds. So run
+
+```bash
+promptobus models --refresh
+promptobus done --task <id>
+```
+
+**in that order, back to back.** Without the refresh the record carries the spawn reading only and no end value, and what the run actually spent on each account is unmeasurable afterwards — the file is append-only and there is no second chance at the close. The record is local, holds no prompt, path, session id or token, and nothing sends it anywhere.
 
 ### Constraints the user named
 

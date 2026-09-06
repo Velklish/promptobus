@@ -172,7 +172,7 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 | What | Where | Notes |
 |---|---|---|
 | catalog | `models/catalog.json`, shipped with the package | `schemas/model-routing/catalog.schema.json` |
-| overlays | `host.routingPaths().overlays`, lowest precedence first | standalone: `user`, then `workspace` ([02-host](02-host.md)) |
+| overlays | `host.routingPaths().overlays`, lowest precedence first | standalone: `user`, then `workspace` — the **writable** one, at `<promptobusHome>/model-routing.json`, which is what `models strategy --set` writes ([02-host](02-host.md)) |
 | availability cache | `host.routingPaths().cacheFile` | mode `0600`; no prompt, token, email or open account id |
 | participant telemetry | `telemetry.jsonl` beside the cache | mode `0600`; JSON Lines, `schemas/model-routing/telemetry.schema.json`; the same rule, plus no path, no session id and no message body |
 
