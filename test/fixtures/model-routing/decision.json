@@ -27,12 +27,12 @@
         "source": "cache"
       },
       "score": {
-        "total": 69,
-        "base": 69,
+        "total": 71.78,
+        "base": 71.78,
         "components": {
-          "quality": 20,
+          "quality": 22.22,
           "speed": 25,
-          "quotaCost": 15,
+          "quotaCost": 15.56,
           "remaining": 9
         },
         "adjustments": []
@@ -52,12 +52,12 @@
         "source": "cache"
       },
       "score": {
-        "total": 56.25,
-        "base": 66.25,
+        "total": 56.94,
+        "base": 66.94,
         "components": {
-          "quality": 30,
-          "speed": 18.75,
-          "quotaCost": 10,
+          "quality": 31.11,
+          "speed": 19.44,
+          "quotaCost": 8.89,
           "remaining": 7.5
         },
         "adjustments": [
@@ -82,11 +82,11 @@
         "source": "cache"
       },
       "score": {
-        "total": 55.25,
-        "base": 55.25,
+        "total": 54.56,
+        "base": 54.56,
         "components": {
           "quality": 40,
-          "speed": 6.25,
+          "speed": 5.56,
           "quotaCost": 0,
           "remaining": 9
         },

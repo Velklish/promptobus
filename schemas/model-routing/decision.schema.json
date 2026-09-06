@@ -292,7 +292,7 @@
           "type": "number"
         },
         "components": {
-          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/4*100 of their 1-5 rating; quotaCost is inverted, (5-r)/4*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
           "type": "object",
           "additionalProperties": false,
           "required": ["quality", "speed", "quotaCost", "remaining"],

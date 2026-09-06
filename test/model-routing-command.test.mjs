@@ -235,7 +235,7 @@ test('`models strategy` with no default says so, and --set records one in the wr
     assert.match(set.out, /strategy default set to balance in overlay "workspace"/);
 
     const file = WORKSPACE_OVERLAY();
-    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { schemaVersion: 1, defaults: { strategy: 'balance' } });
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { schemaVersion: 2, defaults: { strategy: 'balance' } });
     // The host contract asks for 0600 on what the tool writes under a person's
     // home, and a half-written overlay is a routing stack that refuses to load.
     assert.equal(statSync(file).mode & 0o777, 0o600, 'the written overlay must be 0600');
@@ -252,8 +252,10 @@ test('--set keeps every other key of the file, and --clear takes only that one a
   const file = WORKSPACE_OVERLAY();
   // A person's file that happens to hold one machine-written value — not a file
   // the tool owns. Everything they wrote has to survive both operations.
+  // Version 2 because it carries a floor: ADR-005 refuses a v1 file holding any
+  // value on the rating scale. `--set` must not touch that either.
   writeOverlay(file, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     note: 'mine',
     deny: { tuples: ['cursor-composer-2.5'] },
     qualityFloor: { reviewer: 4 },
@@ -261,7 +263,7 @@ test('--set keeps every other key of the file, and --clear takes only that one a
   try {
     await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
     assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       note: 'mine',
       deny: { tuples: ['cursor-composer-2.5'] },
       qualityFloor: { reviewer: 4 },
@@ -271,7 +273,7 @@ test('--set keeps every other key of the file, and --clear takes only that one a
     const cleared = await captureSplit(() => models(WS, { subcommand: 'strategy', clear: true }));
     assert.match(cleared.out, /strategy default cleared from overlay "workspace"/);
     assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       note: 'mine',
       deny: { tuples: ['cursor-composer-2.5'] },
       qualityFloor: { reviewer: 4 },

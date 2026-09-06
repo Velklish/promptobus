@@ -8,8 +8,8 @@
   "required": ["schemaVersion", "updated", "tuples"],
   "properties": {
     "schemaVersion": {
-      "description": "Version of the catalog format. A newer one blocks the load rather than being read half-understood.",
-      "const": 1
+      "description": "Version of the catalog format. An older or newer one blocks the load rather than being read under the wrong rating scale.",
+      "const": 2
     },
     "updated": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
     "tuples": {
@@ -26,10 +26,10 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     },
     "rating": {
-      "description": "Maintainer rating on the 1-5 scale. Integers: half a point is a judgement the source cannot support.",
+      "description": "Maintainer rating on the 1–10 scale. Integers: half a point is a judgement the source cannot support.",
       "type": "integer",
       "minimum": 1,
-      "maximum": 5
+      "maximum": 10
     },
     "ratings": {
       "type": "object",
@@ -112,7 +112,7 @@
         },
         "assessedAt": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
         "source": {
-          "description": "Where the rating came from. A rating with no source is a hypothesis and stays out of the catalog.",
+          "description": "Where the rating came from. A row with NO assessment stays out of the catalog; an assessed rating with no published figure stays in it and names itself in `evidence.hypothesis` (ADR-005).",
           "type": "string",
           "minLength": 1
         },
@@ -126,10 +126,10 @@
       }
     },
     "citation": {
-      "description": "One published figure behind one rating. ADR-004 asks for the benchmark or price source, the figure, the size of the field it was banded against, the source URL and the date seen; the agent harness is named because a Terminal-bench figure without it is not a figure, and `provenance` says whether the page cited was the one actually opened.",
+      "description": "One published figure behind one rating. ADR-005 requires its source, version, agent harness, figure, URL and date; absolute bands have no comparison field.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["rating", "basis", "figure", "fieldSize", "url", "date"],
+      "required": ["rating", "basis", "version", "agentHarness", "figure", "url", "date"],
       "properties": {
         "rating": { "enum": ["quality", "speed", "quotaCost"] },
         "basis": {
@@ -153,11 +153,6 @@
           "minLength": 1
         },
         "figure": { "type": "string", "minLength": 1 },
-        "fieldSize": {
-          "description": "How many rated models the band was cut from. A rank band over a small field is a rank band over a small field, and the reader is told the size.",
-          "type": "integer",
-          "minimum": 1
-        },
         "url": { "type": "string", "minLength": 1 },
         "date": {
           "description": "The date the source was seen, as YYYY-MM-DD.",
@@ -209,7 +204,7 @@
   },
   "examples": [
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "updated": "2026-09-05T00:00:00.000Z",
       "tuples": [
         {
@@ -218,8 +213,8 @@
           "model": "example-deep",
           "effort": "high",
           "roles": ["worker", "reviewer"],
-          "ratings": { "quality": 5, "speed": 2, "quotaCost": 5 },
-          "roleRatings": { "reviewer": { "quality": 5 } },
+          "ratings": { "quality": 10, "speed": 3, "quotaCost": 10 },
+          "roleRatings": { "reviewer": { "quality": 10 } },
           "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
           "billing": "subscription",
           "priority": 10,
@@ -233,7 +228,7 @@
           "model": "example-quick",
           "effort": null,
           "roles": ["worker"],
-          "ratings": { "quality": 3, "speed": 5, "quotaCost": 2 },
+          "ratings": { "quality": 6, "speed": 10, "quotaCost": 3 },
           "prices": { "inputPerMTok": 1.5, "cachedInputPerMTok": 0.15, "outputPerMTok": 7.5 },
           "billing": "payg",
           "priority": 20,

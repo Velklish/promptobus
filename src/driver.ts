@@ -288,6 +288,14 @@ export interface DriverOptions {
    */
   defaultModel: string;
   /**
+   * Model alias published by the harness → the full ids it resolves to today.
+   * Optional: a harness whose model names are all full names declares none, and
+   * `models calibrate` then resolves nothing for it. The driver is the only
+   * holder of this answer — an alias points at whatever the vendor moved it to —
+   * so it is handed over here rather than read out of a driver module.
+   */
+  modelAliases?: Record<string, string[]>;
+  /**
    * Whether the harness takes the workspace skills directory for one session.
    * Optional: not declared — “does not take”, and the output line says so out loud
    * instead of promising the participant skills it never received.

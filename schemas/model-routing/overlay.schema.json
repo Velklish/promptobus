@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "enum": [1, 2], "description": "Version 2 is required whenever a key on the rating scale is present: `ratings`, `qualityFloor` or `reviewerQualityFloor` (ADR-005). Version 1 remains readable for policy-only overlays — deny, allow, defaults, account, weights, penalties, bonuses, priority and payg did not change meaning." },
     "note": {
       "description": "Free text for whoever opens the file next. The mechanism never reads it.",
       "type": "string"
@@ -59,16 +59,16 @@
       "description": "ALIAS for qualityFloor.reviewer, kept so an overlay written for v1 keeps its meaning (ADR-004). A layer stating both is a models validate warning and the explicit key wins.",
       "type": "integer",
       "minimum": 1,
-      "maximum": 5
+      "maximum": 10
     },
     "qualityFloor": {
-      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 3, reviewer 5 (ADR-004, superseding ADR-003's reviewer floor of 4 and its absence of a worker floor). A soft floor and a CHOICE RULE, not a filter: a candidate below it keeps its place and its score, only the pick moves past it, and when nothing reaches it the best remaining candidate is chosen with a warning.",
+      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 5, reviewer 9 on the ADR-005 1–10 scale. A soft floor and a CHOICE RULE, not a filter.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
-        "worker": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "reviewer": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "worker": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "reviewer": { "type": "integer", "minimum": 1, "maximum": 10 }
       }
     },
     "balance": {
@@ -83,7 +83,7 @@
           "minimum": 0
         },
         "spendUnit": {
-          "description": "The discount a heavy tuple gives up before harnesses are compared: spendUnit × (quotaCost − 1) / 4. Equal to the band by default, so a quotaCost of 5 gives up exactly one band against a quotaCost of 1 — the heaviest tuple has to be a whole band ahead on pace to win.",
+          "description": "The discount a heavy tuple gives up before harnesses are compared: spendUnit × (quotaCost − 1) / 9. Equal to the band by default, so a quotaCost of 10 gives up exactly one band against a quotaCost of 1.",
           "type": "number",
           "minimum": 0
         }
@@ -238,10 +238,10 @@
   },
   "examples": [
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "note": "schema example: a deny rule, a weight change, and a PAYG opt-in",
       "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-      "qualityFloor": { "worker": 3, "reviewer": 4 },
+      "qualityFloor": { "worker": 5, "reviewer": 9 },
       "deny": { "models": ["example-quick"] },
       "ratings": { "example-deep": { "speed": 3 } },
       "payg": { "allow": true }
@@ -264,6 +264,19 @@
         "flags": ["no-zdr"],
         "byRole": { "reviewer": { "harnesses": ["example"] } }
       }
+    }
+  ]
+  ,"allOf": [
+    {
+      "$comment": "ADR-005: the keys whose VALUES are on the rating scale cannot be read from a version 1 file. A `reviewerQualityFloor: 5` written for the 1-5 scale means the top band; read as 1-10 it would silently lower the reviewer floor from 9 to 5. Mirrored by SCALED_OVERLAY_KEYS in lib/model-routing/catalog.js, and the parity check in test/model-routing-catalog.test.mjs holds the two together.",
+      "if": {
+        "anyOf": [
+          { "required": ["ratings"] },
+          { "required": ["qualityFloor"] },
+          { "required": ["reviewerQualityFloor"] }
+        ]
+      },
+      "then": { "properties": { "schemaVersion": { "const": 2 } } }
     }
   ]
 }

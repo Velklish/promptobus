@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-09-06
 **Deciders:** Pavel Kim (project owner)
+**Partly superseded by:** [ADR-005](adr-005-ten-point-scale-absolute-bands-calibrate.md), only for the rating scale, role-floor defaults, catalog banding and interpolation rules, hypothesis wording, and the narrow `models calibrate --write` exception to the read-only user layer; ADR-005's supersession table is exhaustive.
 
 ## Context
 

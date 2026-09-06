@@ -167,7 +167,7 @@ test('every Claude model id is one the driver reports, and no Claude row names a
 });
 
 test('every rating of every shipped row has a source, an interpolation, or a stated hypothesis', () => {
-  // PB-29 / ADR-004 § Catalog ratings from published results. The v1 catalog was
+  // PB-37 / ADR-005 § Absolute bands. The v1 catalog was
   // rated from the models' own descriptions, and nothing could tell a number
   // with a published figure behind it from a number somebody liked. This is what
   // tells them apart, and it is checked per RATING rather than per row: one row
@@ -193,7 +193,9 @@ test('every rating of every shipped row has a source, an interpolation, or a sta
     for (const citation of tuple.evidence.sources ?? []) {
       assert.match(citation.date, /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, `${tuple.id}: citation date`);
       assert.ok(citation.url.startsWith('https://'), `${tuple.id}: a citation names a page`);
-      assert.ok(citation.fieldSize >= 1, `${tuple.id}: a band is cut from a field of a stated size`);
+      assert.equal(typeof citation.version, 'string', `${tuple.id}: a figure names its version`);
+      assert.equal(typeof citation.agentHarness, 'string', `${tuple.id}: a figure names its agent harness`);
+      assert.equal(Object.hasOwn(citation, 'fieldSize'), false, `${tuple.id}: absolute bands have no field`);
     }
   }
 });
@@ -223,7 +225,7 @@ test('validate refuses a rated row whose rating has nothing behind it', () => {
     {
       text: 'cited',
       sources: ['quality', 'speed', 'quotaCost'].map((rating) => ({
-        rating, basis: 'b', figure: 'f', fieldSize: 6, url: 'https://example.invalid', date: '2026-09-06',
+        rating, basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'https://example.invalid', date: '2026-09-06',
       })),
     },
     { text: 'no figure is published for this exact model', hypothesis: ['quality', 'speed', 'quotaCost'] },
@@ -254,10 +256,13 @@ test('validate refuses an interpolated row whose base tuple is not in the catalo
     'the missing base row should be named');
 });
 
-test('an interpolated row is exactly what the ADR-004 arithmetic makes of its base row', () => {
-  // quality one band per TWO steps (signed), speed one band per step with the
-  // OPPOSITE sign, quotaCost one band per step with the SAME sign, all clamped
-  // to 1…5. Written as arithmetic in the ADR precisely so that replacing it by
+test('an interpolated row is exactly what the ADR-005 arithmetic makes of its base row', () => {
+  // quality one band per step (signed), speed unchanged, quotaCost one band
+  // per step with the SAME sign, all clamped to 1…10. The owner cut the
+  // quotaCost step from two bands to one on 2026-09-06 (ADR-005 decision 3a):
+  // two bands preserved ADR-004's relative movement and drove long ladders into
+  // the clamp, where `claude-opus-medium` shared band 1 with `gpt-5.4-mini`. Written as arithmetic in
+  // the ADR precisely so that replacing it by
   // measurement is one change; this is what stops a hand-edited rung drifting
   // off the rule in the meantime.
   //
@@ -270,7 +275,7 @@ test('an interpolated row is exactly what the ADR-004 arithmetic makes of its ba
   // would call `glm-5.2-high` → `-max` three steps where the person sees one.
   // A step is a rung somebody can actually select.
   const byId = new Map(CATALOG.tuples.map((t) => [t.id, t]));
-  const clamp = (n) => Math.max(1, Math.min(5, n));
+  const clamp = (n) => Math.max(1, Math.min(10, n));
 
   // Cursor carries the level inside the model id, so the family's ladder is the
   // set of level suffixes its own rows use, put in the driver's canonical order.
@@ -310,8 +315,8 @@ test('an interpolated row is exactly what the ADR-004 arithmetic makes of its ba
     assert.notEqual(steps, 0, `${tuple.id}: interpolated from a row at the same rung`);
 
     assert.deepEqual(tuple.ratings, {
-      quality: clamp(origin.ratings.quality + Math.trunc(steps / 2)),
-      speed: clamp(origin.ratings.speed - steps),
+      quality: clamp(origin.ratings.quality + steps),
+      speed: origin.ratings.speed,
       quotaCost: clamp(origin.ratings.quotaCost + steps),
     }, `${tuple.id}: ${steps} step(s) from ${from} ${JSON.stringify(origin.ratings)} on ladder `
       + `[${ladder.join(', ')}] does not give ${JSON.stringify(tuple.ratings)}`);
@@ -343,7 +348,7 @@ test('validate refuses an interpolation chain, and a row with no evidence at all
   for (const error of verdict.errors) assert.equal(error.at, `tuples.${row.id}.evidence`);
 });
 
-test('no row is offered as a reviewer below the ADR-004 reviewer floor', () => {
+test('reviewer requires both the rung and its assessed base row at the ADR-005 floor', () => {
   // One-sided on purpose, and the asymmetry is the whole point. `roles` is a
   // HARD filter in the resolver, while the quality floor is a CHOICE rule that
   // an overlay can lower — so a biconditional here would quietly nail the two
@@ -359,18 +364,22 @@ test('no row is offered as a reviewer below the ADR-004 reviewer floor', () => {
   // reason that is not its rating.
   for (const tuple of CATALOG.tuples) {
     if (tuple.roles.includes('reviewer')) {
-      assert.ok(tuple.ratings.quality >= 5,
-        `${tuple.id}: offered as a reviewer at quality ${tuple.ratings.quality}, below the floor of 5`);
+      assert.ok(tuple.ratings.quality >= 9,
+        `${tuple.id}: offered as a reviewer at quality ${tuple.ratings.quality}, below the floor of 9`);
+      const base = tuple.evidence.interpolatedFrom
+        ? CATALOG.tuples.find((candidate) => candidate.id === tuple.evidence.interpolatedFrom)
+        : tuple;
+      assert.ok(base.ratings.quality >= 9,
+        `${tuple.id}: upward interpolation from ${base.id} conferred reviewer`);
     }
     assert.ok(tuple.roles.includes('worker'), `${tuple.id}: every rated row is offered as a worker`);
   }
 
   // And the consequence a person has to know, pinned rather than left in prose:
-  // the shipped catalog offers no Cursor reviewer, so ADR-003's diversity bonus
-  // has two harnesses to move between today, not three.
+  // Kimi K3 now reaches the measured floor, so all three harnesses participate.
   const reviewerHarnesses = new Set(CATALOG.tuples.filter((t) => t.roles.includes('reviewer'))
     .map((t) => t.harness));
-  assert.deepEqual([...reviewerHarnesses].sort(), ['claude', 'codex'],
+  assert.deepEqual([...reviewerHarnesses].sort(), ['claude', 'codex', 'cursor'],
     'the reviewer harness set changed — say so in CHANGELOG and the guide, the diversity bonus depends on it');
 });
 
@@ -407,20 +416,20 @@ test('a model the harness exposes but the catalog does not rate produces no tupl
 test('every layer overrides the one below it, field by field', () => {
   const canonical = canonicalLayer();
   const first = overlayLayer('user', {
-    schemaVersion: 1,
+    schemaVersion: 2,
     weights: { balanced: { quality: 50, speed: 20, quotaCost: 15, remaining: 15 } },
     penalties: { unknownAvailability: 20 },
     bonuses: { reviewerDiversity: 9 },
-    reviewerQualityFloor: 3,
+    reviewerQualityFloor: 6,
     deny: { models: ['claude-opus-5'] },
-    ratings: { 'codex-sol-high': { quality: 2 } },
+    ratings: { 'codex-sol-high': { quality: 3 } },
     priority: { 'codex-sol-high': 999 },
     payg: { allow: true },
   });
   const second = overlayLayer('workspace', {
-    schemaVersion: 1,
+    schemaVersion: 2,
     penalties: { unknownAvailability: 30 },
-    reviewerQualityFloor: 5,
+    reviewerQualityFloor: 9,
     deny: { models: ['claude-sonnet-5'] },
     ratings: { 'codex-sol-high': { speed: 1 } },
   });
@@ -429,8 +438,8 @@ test('every layer overrides the one below it, field by field', () => {
 
   // Taken from the higher layer.
   assert.equal(merged.policy.penalties.unknownAvailability, 30);
-  assert.equal(merged.policy.qualityFloor.reviewer, 5, 'the v1 alias still reaches the floor it names');
-  assert.equal(merged.policy.qualityFloor.worker, 3, 'and leaves the worker floor at its default');
+  assert.equal(merged.policy.qualityFloor.reviewer, 9, 'the alias still reaches the floor it names');
+  assert.equal(merged.policy.qualityFloor.worker, 5, 'and leaves the worker floor at its default');
   // A deny list is the exception and ADR-004 is why: it ACCUMULATES. The higher
   // layer adds its ban to the lower one's rather than writing over it.
   assert.deepEqual(merged.policy.deny.models, ['claude-opus-5', 'claude-sonnet-5']);
@@ -443,7 +452,7 @@ test('every layer overrides the one below it, field by field', () => {
   assert.equal(merged.policy.penalties.liveParticipantCap, DEFAULT_POLICY.penalties.liveParticipantCap);
   // Ratings merge per named rating; priority replaces.
   const tuple = merged.tuples.find((t) => t.id === 'codex-sol-high');
-  assert.equal(tuple.ratings.quality, 2, 'the lower layer set quality and nobody overrode it');
+  assert.equal(tuple.ratings.quality, 3, 'the lower layer set quality and nobody overrode it');
   assert.equal(tuple.ratings.speed, 1, 'the higher layer set speed');
   assert.equal(tuple.ratings.quotaCost, CATALOG.tuples.find((t) => t.id === 'codex-sol-high').ratings.quotaCost,
     'a rating nobody named keeps its catalog value');
@@ -461,8 +470,8 @@ test('the layer order IS the precedence order — for the scalars it still gover
   // still ordered is every SCALAR — the highest layer that states one wins —
   // and that is the half this test now pins.
   const canonical = canonicalLayer();
-  const low = overlayLayer('user', { schemaVersion: 1, reviewerQualityFloor: 2, deny: { harnesses: ['cursor'] } });
-  const high = overlayLayer('workspace', { schemaVersion: 1, reviewerQualityFloor: 5, deny: { harnesses: ['codex'] } });
+  const low = overlayLayer('user', { schemaVersion: 2, reviewerQualityFloor: 2, deny: { harnesses: ['cursor'] } });
+  const high = overlayLayer('workspace', { schemaVersion: 2, reviewerQualityFloor: 5, deny: { harnesses: ['codex'] } });
 
   const upward = mergeRouting({ canonical: canonical.data, overlays: [low, high] });
   const swapped = mergeRouting({ canonical: canonical.data, overlays: [high, low] });
@@ -616,8 +625,8 @@ test('validate refuses a flag, a role and a floor the vocabulary does not have',
   const cases = [
     ['flag typo', { schemaVersion: 1, deny: { flags: ['no-zdrr'] } }, /unknown flag/],
     ['unknown role in byRole', { schemaVersion: 1, deny: { byRole: { architect: { harnesses: ['codex'] } } } }, /unknown role/],
-    ['unknown role in qualityFloor', { schemaVersion: 1, qualityFloor: { architect: 3 } }, /unknown role/],
-    ['floor out of range', { schemaVersion: 1, qualityFloor: { worker: 9 } }, /integer from 1 to 5/],
+    ['unknown role in qualityFloor', { schemaVersion: 2, qualityFloor: { architect: 3 } }, /unknown role/],
+    ['floor out of range', { schemaVersion: 2, qualityFloor: { worker: 11 } }, /integer from 1 to 10/],
     ['balance not a number', { schemaVersion: 1, balance: { band: 'wide' } }, /number not below zero/],
     ['balance unknown key', { schemaVersion: 1, balance: { width: 5 } }, /unknown key/],
   ];
@@ -649,7 +658,7 @@ test('a layer that states both spellings of the reviewer floor is a warning, and
   const verdict = validateLayers({
     canonical: canonicalLayer(),
     overlays: [overlayLayer('user', {
-      schemaVersion: 1, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 },
+      schemaVersion: 2, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 },
     })],
   });
   assert.equal(verdict.ok, true, 'lawful — the alias is still read, it just loses here');
@@ -659,7 +668,7 @@ test('a layer that states both spellings of the reviewer floor is a warning, and
 
   const merged = mergeRouting({
     canonical: CATALOG,
-    overlays: [overlayLayer('user', { schemaVersion: 1, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 } })],
+    overlays: [overlayLayer('user', { schemaVersion: 2, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 } })],
   });
   assert.equal(merged.policy.qualityFloor.reviewer, 5);
   assert.deepEqual(merged.sources.floorAlias, ['user']);
@@ -669,8 +678,8 @@ test('a layer that states both spellings of the reviewer floor is a warning, and
   const across = mergeRouting({
     canonical: CATALOG,
     overlays: [
-      overlayLayer('user', { schemaVersion: 1, qualityFloor: { reviewer: 5 } }),
-      overlayLayer('workspace', { schemaVersion: 1, reviewerQualityFloor: 2 }),
+      overlayLayer('user', { schemaVersion: 2, qualityFloor: { reviewer: 5 } }),
+      overlayLayer('workspace', { schemaVersion: 2, reviewerQualityFloor: 2 }),
     ],
   });
   assert.equal(across.policy.qualityFloor.reviewer, 2);
@@ -731,7 +740,7 @@ test('loadCatalog reads the host layers in the host order and reports which were
   try {
     const userFile = path.join(dir, 'user.json');
     const wsFile = path.join(dir, 'workspace.json');
-    writeFileSync(userFile, JSON.stringify({ schemaVersion: 1, reviewerQualityFloor: 2 }));
+    writeFileSync(userFile, JSON.stringify({ schemaVersion: 2, reviewerQualityFloor: 2 }));
     const host = hostWith([{ id: 'user', path: userFile }, { id: 'workspace', path: wsFile }]);
 
     const loaded = loadCatalog({ host });
@@ -739,7 +748,7 @@ test('loadCatalog reads the host layers in the host order and reports which were
     assert.deepEqual(loaded.layers.map((l) => [l.id, l.present]),
       [['catalog', true], ['user', true], ['workspace', false]]);
 
-    writeFileSync(wsFile, JSON.stringify({ schemaVersion: 1, reviewerQualityFloor: 4 }));
+    writeFileSync(wsFile, JSON.stringify({ schemaVersion: 2, reviewerQualityFloor: 4 }));
     assert.equal(loadCatalog({ host }).policy.qualityFloor.reviewer, 4,
       'the workspace layer sits above the user layer');
   } finally {
@@ -747,14 +756,102 @@ test('loadCatalog reads the host layers in the host order and reports which were
   }
 });
 
+test('a v1 policy overlay still loads, while any v1 value on the rating scale gives the migration route', () => {
+  // The line between the two halves is what the whole migration rests on: a v1
+  // file whose meaning did not move keeps working, and a v1 file holding a
+  // value whose SCALE moved is refused, because the two are indistinguishable
+  // by inspection. `reviewerQualityFloor: 5` meant the top band of five under
+  // ADR-004 and reads as half way up ten under ADR-005 — read unchanged it
+  // would lower a person's reviewer floor from 9 to 5 without a word, which is
+  // the one direction a floor must never move by itself.
+  const policyOnly = overlayLayer('user', {
+    schemaVersion: 1,
+    deny: { harnesses: ['cursor'] },
+    allow: { models: ['claude-opus-5'] },
+    defaults: { strategy: 'balance' },
+    account: { cursor: { plan: 'example-ultra' } },
+    payg: { allow: true },
+  });
+  const merged = mergeRouting({ canonical: CATALOG, overlays: [policyOnly] });
+  assert.deepEqual(merged.policy.deny.harnesses, ['cursor']);
+  assert.equal(merged.policy.defaults.strategy, 'balance');
+  assert.equal(validateLayers({ canonical: canonicalLayer(), overlays: [policyOnly] }).ok, true);
+
+  for (const [what, block] of [
+    ['ratings', { ratings: { 'codex-sol-high': { speed: 5 } } }],
+    ['qualityFloor', { qualityFloor: { reviewer: 5 } }],
+    ['reviewerQualityFloor', { reviewerQualityFloor: 5 }],
+    // Named together, and the message names both rather than stopping at one.
+    ['qualityFloor and reviewerQualityFloor', { qualityFloor: { worker: 3 }, reviewerQualityFloor: 5 }],
+  ]) {
+    const scaled = overlayLayer('user', { schemaVersion: 1, ...block });
+    const route = new RegExp(`rewrite .* on the 1–10 scale and set \`schemaVersion: 2\``);
+    assert.throws(() => mergeRouting({ canonical: CATALOG, overlays: [scaled] }), route,
+      `a v1 overlay carrying ${what} must be refused by the load`);
+    const verdict = validateLayers({ canonical: canonicalLayer(), overlays: [scaled] });
+    assert.equal(verdict.ok, false, `a v1 overlay carrying ${what} must be refused by validate`);
+    assert.match(verdict.errors[0].message, route);
+    assert.equal(verdict.errors[0].at, 'schemaVersion');
+    for (const key of Object.keys(block)) {
+      assert.match(verdict.errors[0].message, new RegExp(`\`${key}\``),
+        `the route must name ${key}, so a person knows which key to rewrite`);
+    }
+  }
+
+  // The same values on version 2 are read, which is what makes the refusal a
+  // migration rather than a removal.
+  const rewritten = overlayLayer('user', { schemaVersion: 2, qualityFloor: { reviewer: 9 } });
+  assert.equal(mergeRouting({ canonical: CATALOG, overlays: [rewritten] }).policy.qualityFloor.reviewer, 9);
+});
+
+test('validate refuses a catalog where interpolation conferred the reviewer role', () => {
+  // The check next door asserts the shipped rows; this one asserts the CHECK.
+  // A catalog is data a maintainer edits by hand, so the rule that upward
+  // interpolation never confers `reviewer` has to be refused rather than merely
+  // absent from the file that ships today.
+  const doc = clone(CATALOG);
+  // A rung that interpolates UP to the floor from a base row below it — the
+  // shape of `codex-gpt55-xhigh`, which is a worker row for exactly this reason.
+  const rung = doc.tuples.find((tuple) => tuple.evidence?.interpolatedFrom
+    && !tuple.roles.includes('reviewer')
+    && doc.tuples.find((base) => base.id === tuple.evidence.interpolatedFrom).ratings.quality < 9);
+  assert.ok(rung, 'the catalog has no upward-interpolated non-reviewer rung to build the case from');
+  rung.ratings.quality = 10;
+  rung.roles = ['worker', 'reviewer'];
+  const verdict = validateLayers({ canonical: canonicalLayer(doc) });
+  assert.equal(verdict.ok, false);
+  const error = verdict.errors.find((entry) => entry.at === `tuples.${rung.id}.roles`);
+  assert.ok(error, verdict.errors.map((entry) => entry.at).join(' | '));
+  assert.match(error.message, /upward interpolation never confers the reviewer role/);
+  assert.equal(error.code, 'catalog-invalid');
+
+  // And the rung's own rating is not enough on its own either: a BASE row below
+  // the floor is refused however high the rung interpolates.
+  const ok = clone(CATALOG);
+  assert.equal(validateLayers({ canonical: canonicalLayer(ok) }).ok, true);
+});
+
+test('indistinguishable ladder rungs remain and produce ladder-indistinguishable', () => {
+  const doc = clone(CATALOG);
+  const rung = doc.tuples.find((tuple) => tuple.evidence?.interpolatedFrom);
+  const base = doc.tuples.find((tuple) => tuple.id === rung.evidence.interpolatedFrom);
+  rung.ratings = clone(base.ratings);
+  rung.roles = clone(base.roles);
+  const verdict = validateLayers({ canonical: canonicalLayer(doc) });
+  const warning = verdict.warnings.find((entry) => entry.code === 'ladder-indistinguishable'
+    && entry.tupleIds.includes(rung.id));
+  assert.ok(warning, verdict.warnings.map((entry) => entry.code).join(' | '));
+  assert.equal(doc.tuples.some((tuple) => tuple.id === rung.id), true, 'the rung was not collapsed');
+});
+
 // --- validate ----------------------------------------------------------------
 
 test('validate refuses a catalog whose shape is wrong', () => {
   const cases = [
-    ['schemaVersion', (c) => { c.schemaVersion = 2; }],
+    ['schemaVersion', (c) => { c.schemaVersion = 1; }],
     ['updated', (c) => { c.updated = '2026-09-05'; }],
     ['unknown field', (c) => { c.notes = 'hello'; }],
-    ['rating out of range', (c) => { c.tuples[0].ratings.quality = 6; }],
+    ['rating out of range', (c) => { c.tuples[0].ratings.quality = 11; }],
     ['rating not an integer', (c) => { c.tuples[0].ratings.speed = 2.5; }],
     ['role unknown', (c) => { c.tuples[0].roles = ['architect']; }],
     ['billing unknown', (c) => { c.tuples[0].billing = 'invoice'; }],
@@ -795,16 +892,16 @@ test('validate refuses a catalog whose references do not hold', () => {
 
 test('validate refuses an overlay whose shape is wrong', () => {
   const cases = [
-    ['schemaVersion', { schemaVersion: 2 }],
+    ['schemaVersion', { schemaVersion: 3 }],
     ['unknown field', { schemaVersion: 1, weight: {} }],
     ['unknown strategy', { schemaVersion: 1, weights: { thorough: { quality: 25, speed: 25, quotaCost: 25, remaining: 25 } } }],
     ['half a weight set', { schemaVersion: 1, weights: { speed: { quality: 50, speed: 50 } } }],
-    ['floor out of range', { schemaVersion: 1, reviewerQualityFloor: 9 }],
+    ['floor out of range', { schemaVersion: 2, reviewerQualityFloor: 11 }],
     ['empty rule', { schemaVersion: 1, deny: {} }],
     ['empty name list', { schemaVersion: 1, deny: { models: [] } }],
     ['unknown selector', { schemaVersion: 1, deny: { providers: ['x'] } }],
     ['payg not a boolean', { schemaVersion: 1, payg: { allow: 'yes' } }],
-    ['empty rating override', { schemaVersion: 1, ratings: { 'codex-sol-high': {} } }],
+    ['empty rating override', { schemaVersion: 2, ratings: { 'codex-sol-high': {} } }],
   ];
   for (const [name, doc] of cases) {
     const verdict = validateLayers({ canonical: canonicalLayer(), overlays: [overlayLayer('user', doc)] });
@@ -816,7 +913,7 @@ test('validate refuses an overlay whose shape is wrong', () => {
 
 test('validate refuses an overlay that names something the catalog does not have', () => {
   const cases = [
-    ['ratings', { schemaVersion: 1, ratings: { 'no-such-tuple': { quality: 3 } } }],
+    ['ratings', { schemaVersion: 2, ratings: { 'no-such-tuple': { quality: 6 } } }],
     ['priority', { schemaVersion: 1, priority: { 'no-such-tuple': 10 } }],
     ['deny.tuples', { schemaVersion: 1, deny: { tuples: ['no-such-tuple'] } }],
     ['deny.harnesses', { schemaVersion: 1, deny: { harnesses: ['aider'] } }],
@@ -834,7 +931,7 @@ test('validate refuses weights that do not sum to 100, and rules that both allow
   const weights = validateLayers({
     canonical: canonicalLayer(),
     overlays: [overlayLayer('user', {
-      schemaVersion: 1,
+      schemaVersion: 2,
       weights: { economy: { quality: 20, speed: 10, quotaCost: 50, remaining: 15 } },
     })],
   });
@@ -937,14 +1034,15 @@ test('an overlay that is present and unreadable stops the load — it does not b
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-'));
   try {
     const file = path.join(dir, 'user.json');
-    writeFileSync(file, '{ "schemaVersion": 1, "reviewerQualityFloor": ');
+    writeFileSync(file, '{ "schemaVersion": 2, "reviewerQualityFloor": ');
     const host = hostWith([{ id: 'user', path: file }]);
     assert.throws(() => loadCatalog({ host }), GateError);
     assert.throws(() => loadCatalog({ host }), /is not valid JSON/);
 
     // The same file, readable again: the load goes through, so the refusal was
-    // about the content and not about the path.
-    writeFileSync(file, '{ "schemaVersion": 1, "reviewerQualityFloor": 2 }');
+    // about the content and not about the path. Version 2 because a floor is a
+    // value on the rating scale, and ADR-005 refuses a v1 file carrying one.
+    writeFileSync(file, '{ "schemaVersion": 2, "reviewerQualityFloor": 2 }');
     assert.equal(loadCatalog({ host }).policy.qualityFloor.reviewer, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -980,7 +1078,7 @@ test('a finding names the layer that wrote the key it is about', () => {
   const weights = validateLayers({
     canonical: canonicalLayer(),
     overlays: [
-      overlayLayer('user', { schemaVersion: 1, reviewerQualityFloor: 3 }),
+      overlayLayer('user', { schemaVersion: 2, reviewerQualityFloor: 3 }),
       overlayLayer('workspace', {
         schemaVersion: 1,
         weights: { economy: { quality: 20, speed: 10, quotaCost: 50, remaining: 15 } },
@@ -1025,7 +1123,7 @@ test('a tuple whose id is a prototype key is not patched by an overlay that neve
   const merged = mergeRouting({
     canonical: doctored,
     overlays: [overlayLayer('user', {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ratings: { 'codex-sol-high': { speed: 1 } },
       priority: { 'codex-sol-high': 7 },
     })],
@@ -1050,13 +1148,13 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
   // one proves is refused for the SAME reason the schema would refuse it.
   const catalogDocs = [
     CATALOG,
-    { ...clone(CATALOG), schemaVersion: 2 },
+    { ...clone(CATALOG), schemaVersion: 1 },
     { ...clone(CATALOG), updated: '2026-09-05' },
     { ...clone(CATALOG), notes: 'hello' },
-    { schemaVersion: 1, updated: CATALOG.updated, tuples: [] },
+    { schemaVersion: 2, updated: CATALOG.updated, tuples: [] },
   ];
   for (const mutate of [
-    (c) => { c.tuples[0].ratings.quality = 6; },
+    (c) => { c.tuples[0].ratings.quality = 11; },
     (c) => { c.tuples[0].ratings.speed = 2.5; },
     (c) => { c.tuples[0].roles = ['architect']; },
     (c) => { c.tuples[0].roles = []; },
@@ -1084,31 +1182,31 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     (c) => {
       c.tuples[0].evidence = {
         text: 'x',
-        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '2026-09-06' }],
+        sources: [{ rating: 'quality', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '2026-09-06', extra: true }],
       };
     },
     (c) => {
       c.tuples[0].evidence = {
         text: 'x',
-        sources: [{ rating: 'latency', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '2026-09-06' }],
+        sources: [{ rating: 'latency', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '2026-09-06' }],
       };
     },
     (c) => {
       c.tuples[0].evidence = {
         text: 'x',
-        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 0, url: 'u', date: '2026-09-06' }],
+        sources: [{ rating: 'quality', basis: 'b', version: '', agentHarness: 'h', figure: 'f', url: 'u', date: '2026-09-06' }],
       };
     },
     (c) => {
       c.tuples[0].evidence = {
         text: 'x',
-        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u', date: '06-09-2026' }],
+        sources: [{ rating: 'quality', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '06-09-2026' }],
       };
     },
     (c) => {
       c.tuples[0].evidence = {
         text: 'x',
-        sources: [{ rating: 'quality', basis: 'b', figure: 'f', fieldSize: 6, url: 'u' }],
+        sources: [{ rating: 'quality', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u' }],
       };
     },
   ]) {
@@ -1130,24 +1228,36 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, note: 'a person wrote this' },
     { schemaVersion: 1, weights: { balanced: { quality: 50, speed: 20, quotaCost: 15, remaining: 15 } } },
     { schemaVersion: 1, allow: { harnesses: ['claude'] }, deny: { models: ['claude-opus-5'] } },
-    { schemaVersion: 1, ratings: { 'codex-sol-high': { speed: 4 } }, priority: { 'codex-sol-high': 5 } },
+    { schemaVersion: 2, ratings: { 'codex-sol-high': { speed: 8 } }, priority: { 'codex-sol-high': 5 } },
+    // ADR-005's version rule, in the corpus so BOTH descriptions of it are
+    // checked: the hand-written grammar refuses it at `schemaVersion`, and the
+    // schema's `allOf` must refuse the same document. Without this row the
+    // schema half was unchecked — a mutation of that `allOf` left the run green.
+    { schemaVersion: 1, ratings: { 'codex-sol-high': { speed: 8 } } },
+    { schemaVersion: 1, ratings: {} },
+    // The floor keys are on the same scale as `ratings` and are refused the same
+    // way: `reviewerQualityFloor: 5` meant the TOP band of five and would read
+    // as half way up ten, lowering a person's reviewer floor without a word.
+    { schemaVersion: 1, reviewerQualityFloor: 5 },
+    { schemaVersion: 1, qualityFloor: { reviewer: 5 } },
+    { schemaVersion: 1, qualityFloor: { worker: 3, reviewer: 5 }, deny: { harnesses: ['cursor'] } },
     { schemaVersion: 1, payg: { allow: true } },
-    { schemaVersion: 2 },
+    { schemaVersion: 3 },
     { schemaVersion: 1, weight: {} },
     { schemaVersion: 1, weights: { thorough: { quality: 25, speed: 25, quotaCost: 25, remaining: 25 } } },
     { schemaVersion: 1, weights: { speed: { quality: 50, speed: 50 } } },
     { schemaVersion: 1, weights: { speed: { quality: 150, speed: 0, quotaCost: 0, remaining: 0 } } },
-    { schemaVersion: 1, reviewerQualityFloor: 9 },
-    { schemaVersion: 1, reviewerQualityFloor: 2.5 },
+    { schemaVersion: 2, reviewerQualityFloor: 11 },
+    { schemaVersion: 2, reviewerQualityFloor: 2.5 },
     { schemaVersion: 1, deny: {} },
     { schemaVersion: 1, deny: { models: [] } },
     { schemaVersion: 1, deny: { models: ['claude-opus-5', 'claude-opus-5'] } },
     { schemaVersion: 1, deny: { providers: ['x'] } },
     { schemaVersion: 1, payg: { allow: 'yes' } },
     { schemaVersion: 1, payg: { enabled: true } },
-    { schemaVersion: 1, ratings: {} },
-    { schemaVersion: 1, ratings: { 'codex-sol-high': {} } },
-    { schemaVersion: 1, ratings: { 'Codex Sol': { quality: 3 } } },
+    { schemaVersion: 2, ratings: {} },
+    { schemaVersion: 2, ratings: { 'codex-sol-high': {} } },
+    { schemaVersion: 2, ratings: { 'Codex Sol': { quality: 6 } } },
     { schemaVersion: 1, priority: { 'codex-sol-high': -1 } },
     { schemaVersion: 1, penalties: { unknownAvailability: -1 } },
     { schemaVersion: 1, penalties: { unknown: 1 } },
@@ -1169,7 +1279,7 @@ test('the documented example overlay is a document the mechanism accepts', () =>
   const guide = readFileSync(path.join(ROOT, 'docs', 'guides', 'model-routing.md'), 'utf8');
   const blocks = [...guide.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
   assert.ok(blocks.length, 'the guide carries no JSON example');
-  const examples = blocks.map((b) => JSON.parse(b)).filter((d) => d.schemaVersion === 1 && !d.tuples);
+  const examples = blocks.map((b) => JSON.parse(b)).filter((d) => d.schemaVersion === 2 && !d.tuples);
   assert.ok(examples.length, 'the guide carries no overlay example');
   for (const doc of examples) {
     assert.equal(ajvOverlay(doc), true, ajv.errorsText(ajvOverlay.errors));

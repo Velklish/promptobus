@@ -1,12 +1,12 @@
 strategy: balanced · role: worker
 snapshot: 2026-09-05T09:00:00.000Z · 12 s old · source cache
 overlays: user (absent) · workspace (absent)
-chosen: example-quick · example / example-quick · score 69.00
+chosen: example-quick · example / example-quick · score 71.78
 
 candidates:
-  * example-quick     example / example-quick       available     69.00
-    other-steady      other / other-steady medium   unknown       56.25  (-10 unknown-availability)
-    example-deep-high example / example-deep high   available     55.25
+  * example-quick     example / example-quick       available     71.78
+    other-steady      other / other-steady medium   unknown       56.94  (-10 unknown-availability)
+    example-deep-high example / example-deep high   available     54.56
   - other-metered     other / other-metered         unknown          --  payg-not-allowed: pay-as-you-go; pass --allow-payg to consider it
   - example-deep-max  example / example-deep max    available        --  role-not-allowed: rated for reviewer only
 

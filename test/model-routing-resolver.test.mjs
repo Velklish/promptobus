@@ -122,7 +122,7 @@ const normalise = (decision) => JSON.parse(JSON.stringify(decision)
   .split(WORKSPACE).join('<workspaceRoot>')
   .split(HOME).join('~'));
 
-const overlay = (fields) => ({ schemaVersion: 1, ...fields });
+const overlay = (fields) => ({ schemaVersion: 2, ...fields });
 
 // --- the goldens --------------------------------------------------------------
 
@@ -174,14 +174,14 @@ test('each strategy picks what its weights predict, on one snapshot', () => {
 
 test('a component is its weight over 100 times the normalised rating, and quotaCost is inverted', () => {
   const quick = byId(decide(), 'example-quick').score;
-  // ratings 3 / 5 / 2, weights 40 / 25 / 20 / 15, remaining 100 − 40 = 60.
-  assert.deepEqual(quick.components, { quality: 20, speed: 25, quotaCost: 15, remaining: 9 });
-  assert.equal(quick.base, 69);
-  assert.equal(quick.total, 69);
+  // ratings 6 / 10 / 3, weights 40 / 25 / 20 / 15, remaining 100 − 40 = 60.
+  assert.deepEqual(quick.components, { quality: 22.22, speed: 25, quotaCost: 15.56, remaining: 9 });
+  assert.equal(quick.base, 71.78);
+  assert.equal(quick.total, 71.78);
   // The inversion is the half a mutation would flip: quotaCost 2 is CHEAP, so it
-  // contributes 15 of its 20 points. Read as a plain rating it would contribute 5.
+  // contributes 15.56 of its 20 points. Read as a plain rating it would contribute less.
   const deep = byId(decide(), 'example-deep-high').score;
-  assert.equal(deep.components.quotaCost, 0, 'quotaCost 5 is the dearest and contributes nothing');
+  assert.equal(deep.components.quotaCost, 0, 'quotaCost 10 is the dearest and contributes nothing');
   assert.ok(quick.components.quotaCost > deep.components.quotaCost,
     'the cheaper tuple must score higher on quotaCost than the dearer one');
 });
@@ -242,7 +242,7 @@ test('PAYG is dropped by default and admitted by the flag', () => {
   assert.equal(excludedOf(decide(), 'other-metered').code, 'payg-not-allowed');
   const opted = decide({ constraints: { allowPayg: true } });
   // ratings 5 / 4 / 1 on a harness whose remaining is unknown: 40 + 18.75 + 20 + 7.5 − 10.
-  assert.equal(byId(opted, 'other-metered').score.total, 76.25);
+  assert.equal(byId(opted, 'other-metered').score.total, 76.94);
   assert.equal(opted.chosen.tupleId, 'other-metered');
   assert.equal(opted.constraints.allowPayg, true);
 });
@@ -330,7 +330,7 @@ test('remaining is what the most spent window leaves, not the roomiest one', () 
   ];
   const quick = byId(decide({ snapshot }), 'example-quick').score;
   assert.equal(quick.components.remaining, 4.5, '100 − 70 of the weekly window, at a weight of 15');
-  assert.equal(quick.total, 64.5);
+  assert.equal(quick.total, 67.28);
 });
 
 test('an available harness with no limit window is unknown remaining too', () => {
@@ -370,7 +370,7 @@ test('the snapshot block carries the age from the clock and the source from the 
 test('a live participant costs its harness points, and the cost is capped', () => {
   const one = decide({ liveParticipants: [{ harness: 'example', model: 'example-deep', role: 'worker' }] });
   assert.deepEqual(byId(one, 'example-quick').score.adjustments, [{ code: 'live-participant', points: -5 }]);
-  assert.equal(byId(one, 'example-quick').score.total, 64);
+  assert.equal(byId(one, 'example-quick').score.total, 66.78);
   // The other harness pays nothing for a participant that is not on it.
   assert.deepEqual(byId(one, 'other-steady').score.adjustments, [{ code: 'unknown-availability', points: -10 }]);
 
@@ -458,12 +458,12 @@ test('the quality floor moves the pick without excluding anyone', () => {
   const decision = decide({
     role: 'reviewer',
     workspace: overlay({
-      qualityFloor: { reviewer: 4 },
-      ratings: { 'other-steady': { quality: 3, speed: 5, quotaCost: 1 } },
+      qualityFloor: { reviewer: 9 },
+      ratings: { 'other-steady': { quality: 8, speed: 10, quotaCost: 1 } },
     }),
   });
   assert.equal(scoredIds(decision)[0], 'other-steady');
-  assert.equal(byId(decision, 'other-steady').score.total, 62.5);
+  assert.equal(byId(decision, 'other-steady').score.total, 73.61);
   assert.equal(byId(decision, 'other-steady').excluded, null, 'the floor is a choice rule, not a filter');
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
   assert.equal(byId(decision, 'other-steady').chosen, false);
@@ -475,52 +475,52 @@ test('nothing reaching the floor is a warning and the best remaining one, not a 
     role: 'reviewer',
     workspace: overlay({
       ratings: {
-        'other-steady': { quality: 3 }, 'example-deep-high': { quality: 3 }, 'example-deep-max': { quality: 2 },
+        'other-steady': { quality: 8 }, 'example-deep-high': { quality: 8 }, 'example-deep-max': { quality: 6 },
       },
     }),
   });
   assert.equal(decision.chosen.tupleId, scoredIds(decision)[0], 'the soft fallback takes the top of the list');
   const warning = decision.warnings.find((w) => w.code === 'reviewer-floor-not-met');
   assert.ok(warning, 'the fallback must say it happened');
-  assert.match(warning.message, /quality floor of 5 of 5/);
+  assert.match(warning.message, /quality floor of 9 of 10/);
 });
 
 test('the worker has a floor too, and its own warning code', () => {
-  // ADR-004 decision 3 gives the worker a floor of 3, which ADR-003 never set —
+  // ADR-005 gives the worker a floor of 5 —
   // "a worker on a cheap model where the task needed the expensive one is paid
   // for in review rounds" describes one. Same shape as the reviewer's: a choice
   // rule, and a soft fallback with a warning of its own.
   const catalog = catalogOf([
-    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 2, speed: 5, quotaCost: 1 }, priority: 10 },
-    { id: 'alpha-sound', harness: 'alpha', model: 'sound', ratings: { quality: 3, speed: 2, quotaCost: 4 }, priority: 20 },
+    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 4, speed: 10, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-sound', harness: 'alpha', model: 'sound', ratings: { quality: 5, speed: 3, quotaCost: 8 }, priority: 20 },
   ]);
   const moved = decide({ catalog, snapshot: TIE_SNAPSHOT });
   assert.equal(scoredIds(moved)[0], 'alpha-cheap', 'it is still the top scorer');
-  assert.equal(moved.chosen.tupleId, 'alpha-sound', 'the worker floor of 3 moved the pick');
+  assert.equal(moved.chosen.tupleId, 'alpha-sound', 'the worker floor of 5 moved the pick');
   assert.equal(byId(moved, 'alpha-cheap').excluded, null, 'a choice rule, not a filter');
   assert.equal(moved.warnings.some((w) => w.code === 'worker-floor-not-met'), false);
 
   const floorless = catalogOf([
-    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 2, speed: 5, quotaCost: 1 }, priority: 10 },
-    { id: 'alpha-cheaper', harness: 'alpha', model: 'cheaper', ratings: { quality: 1, speed: 2, quotaCost: 4 }, priority: 20 },
+    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 4, speed: 10, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-cheaper', harness: 'alpha', model: 'cheaper', ratings: { quality: 1, speed: 3, quotaCost: 8 }, priority: 20 },
   ]);
   const fallback = decide({ catalog: floorless, snapshot: TIE_SNAPSHOT });
   assert.equal(fallback.chosen.tupleId, 'alpha-cheap');
   const warning = fallback.warnings.find((w) => w.code === 'worker-floor-not-met');
   assert.ok(warning, fallback.warnings.map((w) => w.code).join(' | '));
-  assert.match(warning.message, /quality floor of 3 of 5/);
+  assert.match(warning.message, /quality floor of 5 of 10/);
   validDecision(fallback, 'a decision carrying the worker floor fallback');
 });
 
 test('reviewerQualityFloor is still read, as an alias for qualityFloor.reviewer', () => {
   // An overlay written for v1 keeps its meaning (ADR-004).
-  const aliased = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 4 }) });
-  assert.equal(aliased.chosen.tupleId, 'other-steady', 'a floor of 4 admits the quality-4 top scorer');
+  const aliased = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 8 }) });
+  assert.equal(aliased.chosen.tupleId, 'other-steady', 'a floor of 8 admits the quality-8 top scorer');
 
   // Stated both ways in one layer, the explicit key wins and validate warns.
   const both = decide({
     role: 'reviewer',
-    workspace: overlay({ reviewerQualityFloor: 4, qualityFloor: { reviewer: 5 } }),
+    workspace: overlay({ reviewerQualityFloor: 8, qualityFloor: { reviewer: 9 } }),
   });
   assert.equal(both.chosen.tupleId, 'example-deep-high', 'the explicit qualityFloor.reviewer wins');
 });
@@ -544,12 +544,12 @@ test('a role rating override is what the role being routed is scored on', () => 
   // As a worker the override is not read at all: the slow, dear tuple loses.
   const worker = decide({ catalog, snapshot: TIE_SNAPSHOT });
   assert.equal(worker.chosen.tupleId, 'alpha-generalist');
-  assert.equal(byId(worker, 'alpha-reviewly').score.total, 61.25);
+  assert.equal(byId(worker, 'alpha-reviewly').score.total, 46.67);
   // As a reviewer the same tuple is a different set of ratings, and it wins.
   const reviewer = decide({ catalog, snapshot: TIE_SNAPSHOT, role: 'reviewer' });
   assert.equal(reviewer.chosen.tupleId, 'alpha-reviewly');
-  assert.equal(byId(reviewer, 'alpha-reviewly').score.total, 90);
-  assert.equal(byId(reviewer, 'alpha-generalist').score.total, 80, 'the tuple with no override is scored the same in both roles');
+  assert.equal(byId(reviewer, 'alpha-reviewly').score.total, 59.44);
+  assert.equal(byId(reviewer, 'alpha-generalist').score.total, 55, 'the tuple with no override is scored the same in both roles');
 });
 
 test('a role rating override is what the reviewer floor reads too', () => {
@@ -580,19 +580,19 @@ test('a role rating override is what the reviewer floor reads too', () => {
     workspace: overlay({ qualityFloor: { reviewer: 4 } }),
   });
   assert.equal(scoredIds(reviewer)[0], 'alpha-fast', 'it is still the top scorer');
-  assert.equal(byId(reviewer, 'alpha-fast').score.total, 87.5);
+  assert.equal(byId(reviewer, 'alpha-fast').score.total, 50);
   assert.equal(reviewer.chosen.tupleId, 'alpha-solid', 'the reviewer quality of 3 is below the floor');
   assert.equal(reviewer.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false,
     'alpha-solid reaches the floor, so this is not the fallback');
 });
 
 test('the floor itself is a policy value', () => {
-  // Lowered to 3, other-steady's quality of 4 clears it and the pick is the top
+  // Lowered to 8, other-steady's quality of 8 clears it and the pick is the top
   // scorer again; raised back, the pick moves to the first tuple that does.
-  const lowered = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 3 } }) });
+  const lowered = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 8 } }) });
   assert.equal(lowered.chosen.tupleId, 'other-steady');
 
-  const decision = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 5 } }) });
+  const decision = decide({ role: 'reviewer', workspace: overlay({ qualityFloor: { reviewer: 9 } }) });
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
   assert.equal(scoredIds(decision)[0], 'other-steady', 'the order is untouched — only the pick moved');
 });
@@ -612,7 +612,7 @@ test('the unknown-availability penalty is a policy number', () => {
   const decision = decide({ workspace: overlay({ penalties: { unknownAvailability: 0 } }) });
   const steady = byId(decision, 'other-steady');
   assert.deepEqual(steady.score.adjustments, [{ code: 'unknown-availability', points: 0 }]);
-  assert.equal(steady.score.total, 66.25);
+  assert.equal(steady.score.total, 66.94);
   assert.match(decision.warnings[0].message, /penalised 0 points/);
 });
 
@@ -633,7 +633,7 @@ test('a warning from the merge is copied with its two fields and nothing else', 
 
 /** A catalog of exactly the tuples a tie-break check needs. */
 const catalogOf = (tuples) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   updated: '2026-09-05T00:00:00.000Z',
   tuples: tuples.map((t) => ({
     roles: ['worker', 'reviewer'],
@@ -690,7 +690,10 @@ test('tie-break 2: at an equal score, confirmed availability wins', () => {
     { id: 'beta-two', harness: 'beta', model: 'beta-two', ratings: { quality: 1, speed: 3, quotaCost: 4 }, priority: 10 },
     { id: 'alpha-two', harness: 'alpha', model: 'alpha-two', ratings: { quality: 1, speed: 1, quotaCost: 5 }, priority: 20 },
   ]);
-  const decision = decide({ catalog, snapshot: TIE_SNAPSHOT });
+  const decision = decide({
+    catalog, snapshot: TIE_SNAPSHOT,
+    workspace: overlay({ penalties: { unknownAvailability: 0.28 } }),
+  });
   assert.equal(byId(decision, 'alpha-two').score.total, byId(decision, 'beta-two').score.total,
     'the check is only meaningful while the two totals are equal');
   // beta-two has the lower canonical priority and the earlier id, so it would win
@@ -811,8 +814,8 @@ test('the pace of a candidate is its binding window, in percentage points', () =
     usedShare: 0.46,
     elapsedShare: 0.625,
     underspend: 16.5,
-    spendPenalty: 3.75,
-    effective: 12.75,
+    spendPenalty: 3.89,
+    effective: 12.61,
     eligible: true,
     note: null,
     representative: true,
@@ -904,8 +907,8 @@ test('the spend penalty is what keeps a heavy tuple from oscillating the strateg
   assert.equal(paceOf(free, 'codex-sol').effective, paceOf(free, 'codex-sol').underspend);
 
   const dear = paced({ strategy: 'balance', workspace: overlay({ balance: { spendUnit: 8 } }) });
-  assert.equal(paceOf(dear, 'claude-opus').spendPenalty, 8, 'quotaCost 5: the whole unit');
-  assert.equal(paceOf(dear, 'cursor-composer').spendPenalty, 2, 'quotaCost 2: a quarter of it');
+  assert.equal(paceOf(dear, 'claude-opus').spendPenalty, 8, 'quotaCost 10: the whole unit');
+  assert.equal(paceOf(dear, 'cursor-composer').spendPenalty, 1.78, 'quotaCost 3: two ninths of it');
 });
 
 test('the spend penalty reads the ROLE\'s quotaCost, the same rating the score component does', () => {
@@ -1056,9 +1059,9 @@ test('the pace table prints one row per harness, with the numbers the document c
   const rows = table.slice(1).filter(Boolean);
   assert.equal(rows.length, 3, `one row per harness, not per candidate:\n${rows.join('\n')}`);
   assert.match(rows.find((r) => r.includes('codex')),
-    /\* codex .*codex-sol · secondary weekly · 46\.0% used · 62\.5% elapsed · underspend \+16\.50 · penalty -3\.75 · effective \+12\.75/);
+    /\* codex .*codex-sol · secondary weekly · 46\.0% used · 62\.5% elapsed · underspend \+16\.50 · penalty -3\.89 · effective \+12\.61/);
   // Two decimals, because one would print an underspend of −0.02 as "-0.0".
-  assert.match(rows.find((r) => r.includes('claude')), /effective -0\.02/);
+  assert.match(rows.find((r) => r.includes('claude')), /effective -0\.30/);
 
   // And no table at all under a strategy whose candidates carry no pace.
   assert.equal(render(paced({ strategy: 'balanced' })).includes('pace — '), false);
@@ -1277,12 +1280,12 @@ test('every candidate row is on the same grid, however long the names are', () =
 
 test('a decision with nothing to say prints no empty blocks', () => {
   const catalog = catalogOf([
-    { id: 'alpha-only', harness: 'alpha', model: 'alpha-only', ratings: { quality: 3, speed: 3, quotaCost: 3 }, priority: 10 },
+    { id: 'alpha-only', harness: 'alpha', model: 'alpha-only', ratings: { quality: 5, speed: 3, quotaCost: 3 }, priority: 10 },
   ]);
   const text = render(decide({ catalog, snapshot: TIE_SNAPSHOT }));
   assert.equal(text.includes('runtime models'), false, 'no unrated model, no runtime block');
   assert.equal(text.includes('warnings:'), false, 'no warning, no warnings block');
-  assert.match(text, /^chosen: alpha-only · alpha \/ alpha-only · score 57\.50$/m);
+  assert.match(text, /^chosen: alpha-only · alpha \/ alpha-only · score 53\.90$/m);
 });
 
 test('a decision with no candidate says so where the pick would be', () => {

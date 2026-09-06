@@ -31,7 +31,7 @@ Default diff base is the repository default branch. In a worker worktree it is t
 
 **The reviewer follows the same recorded default as a worker.** If the person has agreed a switch — `promptobus models strategy --set <name>`, which the orchestrator proposes when `models` prints a `near-limit` line and never runs on its own — a `review` with no `--strategy` routes with it. Pass `--strategy quality` when the reviewer's own bar matters more than the account balance; that is the flag winning over the default, which is the rule everywhere.
 
-Nothing pins the reviewer to one harness. Under `balance` it is routed by the pace of the accounts like a worker, with the reviewer quality floor of 5 above it and the diversity bonus on top — a reviewer on a different harness or model from the worker's scores higher, because a second reading with the same blind spot is not a review.
+Nothing pins the reviewer to one harness. Under `balance` it is routed by the pace of the accounts like a worker, with the reviewer quality floor of 9 on the ten-point scale above it and the diversity bonus on top — a reviewer on a different harness or model from the worker's scores higher, because a second reading with the same blind spot is not a review.
 
 The rubric that turns a task into one strategy is in [orchestrate](../orchestrate/SKILL.md) § Model routing.
 
@@ -51,7 +51,7 @@ The two halves are independent:
 - Stop the reviewer session in the harness (the driver route is in `promptobus status`).
 - Close the task: `promptobus done --task <id>`. The review command prints this line.
 
-Run `promptobus models --refresh` right before that `done`. The close writes one local telemetry record for the reviewer and reads its window values out of the availability cache without probing anything, and a window entry lives sixty seconds — without the refresh the record carries the spawn reading and no end value, so what the review spent on the account is unmeasurable afterwards.
+Run `promptobus models --refresh` right before that `done`. The close writes one local telemetry record for the reviewer and reads its window values out of the availability cache without probing anything, and a window entry lives sixty seconds — without the refresh the record carries the spawn reading and no end value, so what the review spent on the account is unmeasurable afterwards, and `promptobus models calibrate` counts that run under "without windows" rather than as spend evidence.
 
 A leftover active task forces every later command to take `--task`.
 

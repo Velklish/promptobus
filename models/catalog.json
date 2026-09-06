@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "updated": "2026-09-06T00:00:00.000Z",
+  "schemaVersion": 2,
+  "updated": "2026-09-06T09:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-high",
@@ -12,9 +12,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 3,
-        "quotaCost": 4
+        "quality": 9,
+        "speed": 2,
+        "quotaCost": 9
       },
       "prices": {
         "inputPerMTok": null,
@@ -22,11 +22,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 100,
+      "priority": 140,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-fable-5 at effort high: 1 step below the base row claude-fable-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 2 → 3, quotaCost 5 → 4. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from claude-fable-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-fable-xhigh"
       }
     },
@@ -40,9 +40,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 3,
-        "quotaCost": 3
+        "quality": 9,
+        "speed": 2,
+        "quotaCost": 4
       },
       "prices": {
         "inputPerMTok": null,
@@ -50,11 +50,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 110,
+      "priority": 150,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-opus-5 at effort high: 1 step below the base row claude-opus-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 2 → 3, quotaCost 4 → 3. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from claude-opus-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-opus-xhigh"
       }
     },
@@ -68,9 +68,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
+        "quality": 10,
         "speed": 2,
-        "quotaCost": 5
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -78,18 +78,17 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 120,
+      "priority": 100,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The top Claude model, and the id is the one the binary resolves the `fable` alias to. Verified without a paid turn on `claude` 2.1.251 — the version `PROVEN_CLAUDE_VERSION` names — by three offline reads: `claude --help` says `--model` takes \"an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g. 'claude-fable-5')\"; the baked model catalog inside the binary reads `fable:{default:\"claude-fable-5\"}`, `latest_per_family:{fable:\"claude-fable-5\",…}`, `best:\"fable\"`, with an empty `alias_migration`; and the Vertex region table pairs `claude-fable-5` with `VERTEX_REGION_CLAUDE_FABLE_5`. A grep for `claude-fable-5-1` and \"Fable 5.1\" over all 345 288 strings of the binary returns nothing. A successor exists in the world — Anthropic has announced Claude Fable 5.1, and Cursor lists `claude-fable-5-1-*` ids — but the binary this driver proves cannot start it, so it is not rated here; this ladder moves when `PROVEN_CLAUDE_VERSION` does. quality: SWE-bench Verified 95.0 %, second of the six rated models banded on that benchmark, so the top fifth — band 5. The same leaderboard puts claude-opus-5 one point above it at 96.0 %, which is the whole distance between bands 5 and 5 here and is the field-size fragility recorded in the finding under this task. This model also carries Terminal-Bench 2.1 figures — 83.8 % on Claude Code and 80.4 % on Terminus 2 — and they are not the basis of any rating here, because SWE-bench Verified comes first in the ADR-004 preference order. They are recorded because the hypotheses on other harnesses are anchored on the 83.8 %, which is the figure measured on Claude Code, the harness this catalog runs this model on. speed: a hypothesis. No output-throughput figure is published for Fable 5; the nearest published number is Claude Fable 5.1 at 69 tokens/s on the Artificial Analysis leaderboard, which is a different model. 69 sits between claude-sonnet-5 (76, band 2) and claude-opus-5 (57, band 2), so band 2 is the same either way — which is why the hypothesis is safe rather than merely unavoidable. quotaCost: $10 in / $50 out, the dearest of the thirteen rated models with a published list price, so band 5. The price table lists it under \"Claude Fable 5.1\"; Fable 5 shipped at the same $10/$50.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 95.0→10; speed is newly assessed as 2 from the nearest Artificial Analysis figures (Opus 57, Sonnet 76) under the 40→1 / 310→10 pair; quotaCost uses blended list price $2.50→1 / $30→10: $30→10. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "95.0 %",
-            "fieldSize": 6,
             "agentHarness": "not stated by the page",
             "provenance": "primary leaderboard page, opened",
             "url": "https://benchlm.ai/benchmarks/swe-bench-verified",
@@ -99,10 +98,11 @@
             "rating": "quotaCost",
             "basis": "Anthropic list price, blended (input + output) / 2",
             "figure": "$30.00 per 1M tokens ($10 in / $50 out)",
-            "fieldSize": 13,
             "provenance": "price table, opened",
             "url": "https://benchlm.ai/anthropic/api-pricing",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -120,9 +120,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
+        "quality": 10,
         "speed": 2,
-        "quotaCost": 4
+        "quotaCost": 5
       },
       "prices": {
         "inputPerMTok": null,
@@ -130,18 +130,17 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 130,
+      "priority": 110,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The pinned id, not the `opus` alias: an alias names whatever the vendor points it at today, and a rating keyed on one keeps its evidence and its `assessedAt` through a re-point (PB-13.1). quality: SWE-bench Verified 96.0 %, first of the six rated models banded on that benchmark — band 5, and the only row of the three harnesses that reaches the ADR-004 reviewer floor from a figure on the leaderboard page itself rather than from a hypothesis. This row is also the calibration anchor between the two quality sub-fields: it is the one rated model with a figure on both SWE-bench Verified (96.0) and Terminal-Bench 2.1 (84.64 on the Vals AI harness, 89.1 as reported elsewhere), so the hypotheses anchored on Terminal-bench can be read against a row whose band is measured. speed: 57 tokens/s, eighth of the nine rated models with a published throughput figure — band 2. Deep reasoning is slow, and the ladder below trades it back. quotaCost: $5 in / $25 out, fourth-dearest of thirteen — band 4.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 96.0→10; speed uses Artificial Analysis 40→1 / 310→10: 57 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $15→5. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "96.0 %",
-            "fieldSize": 6,
             "agentHarness": "not stated by the page",
             "provenance": "primary leaderboard page, opened",
             "url": "https://benchlm.ai/benchmarks/swe-bench-verified",
@@ -152,17 +151,19 @@
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "57 tokens/s",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Anthropic list price, blended (input + output) / 2",
             "figure": "$15.00 per 1M tokens ($5 in / $25 out)",
-            "fieldSize": 13,
             "url": "https://benchlm.ai/anthropic/api-pricing",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ]
       }
@@ -177,9 +178,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 1,
-        "quotaCost": 5
+        "quality": 10,
+        "speed": 2,
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -187,11 +188,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 140,
+      "priority": 120,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-fable-5 at effort max: 1 step above the base row claude-fable-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 2 → 1, quotaCost 5 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from claude-fable-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-fable-xhigh"
       }
     },
@@ -205,9 +206,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 1,
-        "quotaCost": 5
+        "quality": 10,
+        "speed": 2,
+        "quotaCost": 6
       },
       "prices": {
         "inputPerMTok": null,
@@ -215,11 +216,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 150,
+      "priority": 130,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-opus-5 at effort max: 1 step above the base row claude-opus-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 2 → 1, quotaCost 4 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from claude-opus-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-opus-xhigh"
       }
     },
@@ -232,9 +233,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 4,
-        "quotaCost": 2
+        "quality": 8,
+        "speed": 2,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -246,7 +247,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-opus-5 at effort medium: 2 steps below the base row claude-opus-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 4, speed 2 → 4, quotaCost 4 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from claude-opus-xhigh on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-opus-xhigh"
       }
     },
@@ -259,9 +260,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 3,
-        "quotaCost": 2
+        "quality": 6,
+        "speed": 2,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -269,11 +270,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 170,
+      "priority": 180,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-sonnet-5 at effort high: 1 step below the base row claude-sonnet-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 3, speed 2 → 3, quotaCost 3 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from claude-sonnet-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-sonnet-xhigh"
       }
     },
@@ -286,9 +287,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
+        "quality": 7,
         "speed": 2,
-        "quotaCost": 3
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -296,18 +297,17 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 180,
+      "priority": 170,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The mid tier, named by its pinned id for the reason claude-opus-xhigh states. quality: SWE-bench Verified 85.2 %, fourth of six — band 3. Nearly eleven points below claude-fable-5 and the largest gap anywhere in that sub-field, which is what keeps this rating away from the reviewer floor. speed: 76 tokens/s, seventh of nine — band 2, one place above claude-opus-5. quotaCost: $2 in / $10 out, eighth-dearest of thirteen — band 3. The `xhigh` row exists because it is the base row the two below it are interpolated from: `xhigh` is what `claude` runs without an `--effort` flag (measured on 2.1.237, lib/driver-claude.js), and ADR-004 puts the base at the harness default where the source does not name an effort. A ladder whose base is not itself a tuple would leave `interpolatedFrom` pointing at nothing.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 85.2→7; speed uses Artificial Analysis 40→1 / 310→10: 76 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $6→2. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "85.2 %",
-            "fieldSize": 6,
             "agentHarness": "not stated by the page",
             "provenance": "primary leaderboard page, opened",
             "url": "https://benchlm.ai/benchmarks/swe-bench-verified",
@@ -318,17 +318,19 @@
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "76 tokens/s",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Anthropic list price, blended (input + output) / 2",
             "figure": "$6.00 per 1M tokens ($2 in / $10 out)",
-            "fieldSize": 13,
             "url": "https://benchlm.ai/anthropic/api-pricing",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ]
       }
@@ -342,8 +344,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 4,
+        "quality": 5,
+        "speed": 2,
         "quotaCost": 1
       },
       "prices": {
@@ -356,7 +358,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "claude-sonnet-5 at effort medium: 2 steps below the base row claude-sonnet-xhigh, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 2 → 4, quotaCost 3 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from claude-sonnet-xhigh on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-sonnet-xhigh"
       }
     },
@@ -369,9 +371,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 5,
-        "quotaCost": 2
+        "quality": 8,
+        "speed": 8,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -379,29 +381,31 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 300,
+      "priority": 320,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "In Cursor's `api` pool, which bills third-party models against the same included amount — the reason this family is here at all is that neither Claude Code nor Codex serves it. The base row is `-high`, the level the throughput figure was measured at. quality: a HYPOTHESIS, and this row is the sharpest illustration of why the ADR rule needs the fix filed under this task. Two sources report Terminal-Bench 2.1 for this exact model at 90.8 % and at 19.1 % ± 3.4 — the second under a mini-SWE-agent harness, the first under an unnamed one. Seventy points apart, same model, same benchmark, same version. No band can rest on that. Band 4 on the one thing both sources agree about: Google reports this model above gemini-3.7-flash on the same benchmark, and gemini-3.7-flash bands 3. An earlier reading of this row put it at band 5 and therefore gave a Flash-class model the ADR-004 reviewer floor; opening the second source is what removed it. speed: 254 tokens/s, second of the nine rated models with a published throughput figure — band 5. quotaCost: $0.75 in / $3.75 out, joint cheapest of the thirteen — band 1. The price is introductory through 2026-12-31, after which the published standard is $1.50 / $7.50; a rating dated today is a rating of today's price, and that reprice is a reason to re-band rather than a reason to guess now.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 8: Terminal-Bench 2.1 reports incompatible 90.8 (harness unstated) and 19.1 ± 3.4 (mini-SWE-agent), so neither is promoted to a source; the row stays above Gemini 3.7 Flash and below measured Kimi K3. speed uses Artificial Analysis 40→1 / 310→10: 254 tokens/s→8; quotaCost uses blended list price $2.50→1 / $30→10: the $4.50 list blend ($1.50 in / $7.50 out) bands 2, and the 50 % promotion seen in force on 2026-09-06 gives $2.25→1 — the band this row carries only while that promotion holds; the day it ends the row is re-banded to 2 from the list price. The anchor itself is a list price and no promotion moves it. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "254 tokens/s (measured at high)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Google list price, blended (input + output) / 2",
             "figure": "$4.50 per 1M tokens ($1.50 in / $7.50 out list; a 50 % discount is applied today, giving $0.75 / $3.75)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://openrouter.ai/google/gemini-3.8-flash",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -418,8 +422,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 5,
+        "quality": 7,
+        "speed": 8,
         "quotaCost": 1
       },
       "prices": {
@@ -428,11 +432,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 310,
+      "priority": 360,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gemini-3.8-flash-medium: 1 step below the base row cursor-gemini-38-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 4, speed 5 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from cursor-gemini-38-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-gemini-38-high"
       }
     },
@@ -445,9 +449,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 3,
-        "quotaCost": 4
+        "quality": 7,
+        "speed": 2,
+        "quotaCost": 9
       },
       "prices": {
         "inputPerMTok": null,
@@ -455,11 +459,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 320,
+      "priority": 370,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "cursor-grok-4.6-medium: 1 step below the base row cursor-grok-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 4, speed 2 → 3, quotaCost 5 → 4. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from cursor-grok-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-grok-high"
       }
     },
@@ -472,9 +476,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
+        "quality": 8,
         "speed": 2,
-        "quotaCost": 5
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -486,7 +490,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "Cursor's own variant of Grok 4.6, in the `auto` pool. The base row is `-high`, which the listing displays as plain \"Cursor Grok 4.6\" with no level word — the family's headline id — while `-low`, `-medium` and `-xhigh` carry theirs. The `-fast` ids are the same tuples with the service tier set and get no rows. quality: a HYPOTHESIS, and deliberately so. There IS a published Terminal-Bench 2.1 figure of 88.4 % for **xAI's Grok 4.6**, and it is not a figure for this model: ADR-004 asks for a figure for \"that exact model\", the Terminal-bench leaderboard scores the model and its agent harness together, and the one harness-labelled Grok row on it is Grok 4.5 on Cursor CLI at 79.3 % — nine points below the harness-free number. Band 4 on this reasoning: 88.4 % would sit between gpt-5.6-sol and gpt-5.5, and the lower of the two bands is taken because a harness-specific variant is not the vendor's measured configuration. The tie rule that applied is \"the harness this catalog runs it on\", and it is the reason the 88.4 % is distrusted: the only Grok row on Cursor CLI is Grok 4.5 at 79.3 %. speed: a HYPOTHESIS. The nearest published figure is 63 tokens/s for xAI's Grok 4.6 (high) on the Artificial Analysis leaderboard, which sits between claude-opus-5 (57) and claude-sonnet-5 (76) — both band 2 — so band 2 holds whichever way the variant differs. quotaCost: a HYPOTHESIS with the strongest evidence on this row, and it is not a list price: xAI published no separate API price for Grok 4.6 at launch. What exists is measured spend against the very subscription this rating is about — the spike of 2026-09-06 read `GetAggregatedUsageEvents` and found `cursor-grok-4.6-xhigh-fast` at 101 240 cents in one cycle against `gpt-5.6-sol-xhigh` 5 182 and `claude-opus-5-thinking-xhigh` 4 880, roughly twenty times the next model, with `cursor-grok-4.6-high-fast` at 1 546. Band 5. The caveat is the one the task states: token counts differ by task, so this is a level, not a rate. ADR-003 keeps telemetry out of automatic ratings, which is why it stays a hypothesis rather than becoming a source.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 8 against Terminal-Bench 2.1 60→1 / 90→10: the exact Cursor variant has no figure, while vendor Grok 4.6 reports 88.4 and Cursor CLI Grok 4.5 reports 79.3; 8 keeps the variant below the vendor configuration. speed is newly assessed as 2 beside vendor Grok 4.6 at 63 tokens/s under Artificial Analysis 40→1 / 310→10. quotaCost is newly assessed as 10 from the local Cursor usage spike, far above every measured neighbour; no list price exists. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "hypothesis": [
           "quality",
           "speed",
@@ -503,9 +507,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 2,
-        "quotaCost": 3
+        "quality": 8,
+        "speed": 1,
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -517,7 +521,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "kimi-k3-high: 1 step below the base row cursor-kimi-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 4, speed 1 → 2, quotaCost 4 → 3. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from cursor-kimi-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-kimi-max"
       }
     },
@@ -530,9 +534,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 1,
-        "quotaCost": 5
+        "quality": 9,
+        "speed": 2,
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -540,11 +544,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 350,
+      "priority": 300,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "cursor-grok-4.6-xhigh: 1 step above the base row cursor-grok-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 4, speed 2 → 1, quotaCost 5 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from cursor-grok-high on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-grok-high"
       }
     },
@@ -554,12 +558,13 @@
       "model": "kimi-k3-max",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "reviewer"
       ],
       "ratings": {
-        "quality": 4,
+        "quality": 9,
         "speed": 1,
-        "quotaCost": 4
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -567,18 +572,17 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 360,
+      "priority": 310,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The strongest open-weights model in the catalog, in Cursor's `api` pool. The base row is `-max`, which the listing displays as plain \"Kimi K3\" — the family's headline id — and which is also the level the throughput figure names. quality: SWE-bench Verified 93.4 %, third of the six rated models banded on that benchmark — band 4. The harness is named because it matters: this is the Vals AI harness, while the Claude figures in the same sub-field come from a leaderboard page that does not name one. That is a weakness of the sub-field, recorded here and filed as a finding. speed: 41 tokens/s, ninth and last of the nine rated models with a published figure — band 1. It is the slowest thing the three harnesses will start. quotaCost: $3 in / $15 out, fifth-dearest of thirteen — band 4. A model that is cheap to license and dear to run.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 93.4→9 on the Vals AI harness; speed uses Artificial Analysis 40→1 / 310→10: 41 tokens/s→1; quotaCost uses blended list price $2.50→1 / $30→10: $7.65→3. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "93.4 %",
-            "fieldSize": 6,
             "agentHarness": "Vals AI",
             "provenance": "model page, opened",
             "url": "https://benchlm.ai/models/kimi-k3",
@@ -589,18 +593,20 @@
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "41 tokens/s (measured at max)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Moonshot list price, blended (input + output) / 2",
             "figure": "$7.65 per 1M tokens ($2.55 in / $12.75 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://openrouter.ai/moonshotai/kimi-k3",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ]
       }
@@ -614,9 +620,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 5,
-        "quotaCost": 2
+        "quality": 7,
+        "speed": 10,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -624,29 +630,31 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 370,
+      "priority": 380,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The previous Flash generation, in Cursor's `api` pool. The base row is `-high`, which the listing displays as plain \"Gemini 3.7 Flash\" — the family's headline id — and which is also the level the throughput figure names. quality: a HYPOTHESIS. The figure is Terminal-Bench 2.1 85.8 %, vendor-reported, and Terminal-Bench 2.1 does not hold five rated models on one agent harness, so no rank band can be cut from it. Band 3 on this reasoning: 85.8 % is above claude-fable-5's 83.8 % on Claude Code on the same benchmark and version, but it is a vendor-reported number for a Flash-class model against an independently harnessed one for a frontier model, and the same benchmark moves this family by seventy points between harnesses (see gemini-3.8-flash). Band 3 is two below the anchor and level with claude-sonnet-5, whose band is measured. speed: 305 tokens/s, the fastest of the nine rated models with a published figure — band 5. quotaCost: $0.75 in / $3.75 out, joint cheapest of thirteen — band 1, tied with gemini-3.8-flash, and a tie takes the higher band, which for an inverted scale is the same 1 for both. All three of this family's rows carry identical ratings: the base row is already at the clamp on speed (5) and on quotaCost (1), and the quality step is one band per two levels, so a three-rung ladder moves nothing. That is the ADR clamp working as written, and it is filed as a finding under this task rather than papered over here.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 7 against Terminal-Bench 2.1 60→1 / 90→10: the vendor-reported 85.8 lacks this catalog harness and the family is unstable across harnesses, so it is placed with measured Sonnet 5 rather than promoted above it. speed uses Artificial Analysis 40→1 / 310→10: 305 tokens/s→10; quotaCost uses blended list price $2.50→1 / $30→10: the $4.50 list blend ($1.50 in / $7.50 out) bands 2, and the 50 % promotion seen in force on 2026-09-06 gives $2.25→1 — the band this row carries only while that promotion holds; the day it ends the row is re-banded to 2 from the list price. The anchor itself is a list price and no promotion moves it. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "305 tokens/s (measured at high)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Google list price, blended (input + output) / 2",
             "figure": "$4.50 per 1M tokens ($1.50 in / $7.50 out list; a 50 % discount is applied today, giving $0.75 / $3.75 — the same rate as gemini-3.8-flash)",
-            "fieldSize": 13,
             "provenance": "price page for THIS model, opened",
             "url": "https://openrouter.ai/google/gemini-3.7-flash",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -663,8 +671,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 5,
+        "quality": 6,
+        "speed": 10,
         "quotaCost": 1
       },
       "prices": {
@@ -673,11 +681,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 380,
+      "priority": 400,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gemini-3.7-flash-medium: 1 step below the base row cursor-gemini-37-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 3, speed 5 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from cursor-gemini-37-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-gemini-37-high"
       }
     },
@@ -690,8 +698,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 5,
+        "quality": 6,
+        "speed": 8,
         "quotaCost": 1
       },
       "prices": {
@@ -700,11 +708,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 390,
+      "priority": 410,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gemini-3.8-flash-low: 2 steps below the base row cursor-gemini-38-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 3, speed 5 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from cursor-gemini-38-high on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-gemini-38-high"
       }
     },
@@ -717,9 +725,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 4,
-        "quotaCost": 2
+        "quality": 6,
+        "speed": 8,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -727,11 +735,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 400,
+      "priority": 420,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "Cursor's own model, listed by `cursor-agent models` as `composer-2.5` with no level suffix at all, so there is no deeper level of it to rate. It is the driver's DEFAULT_MODEL (lib/driver-cursor.js) and sits in the `auto` pool with cursor-grok (PB-27). The `composer-2.5-fast` id is the same tuple with the service tier set, not a second rating, and ADR-004 § Not in v1 keeps that tier out of the tuple key — so it gets no row. Every rating on this row is a HYPOTHESIS, and it is the only row in the catalog of which that is true. quality: Cursor publishes Terminal-Bench 2.0 69.3 % and SWE-Bench Multilingual 79.8 % for it, and nothing on SWE-bench Verified or Terminal-Bench 2.1. Terminal-Bench 2.0 holds two rated models, under the five a rank band needs. Band 3 on this reasoning: gpt-5.5 scores 82.7 % on the same Terminal-Bench 2.0 and bands 4, and this model is 13.4 points behind it — one band, and it lands level with claude-sonnet-5, whose measured SWE-bench Verified figure bands 3. speed: no published throughput figure at all. Band 4 is the maintainers' judgement from the model's place in the auto pool and nothing published; it is named here so it can be argued with rather than inherited. quotaCost: no published per-token list price — it is billed against the subscription's auto pool rather than sold per token, so the price field the ADR bands over does not exist for it. Band 2 on the ground that the spike of 2026-09-06 measured most of the Cursor work on it without exhausting the auto pool, while `cursor-grok-4.6-xhigh-fast` alone spent 101 240 cents in the same cycle.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "All three ratings are newly assessed hypotheses. quality uses Terminal-Bench 2.0 Cursor-agent anchors 50→1 / 85→10 as a placement guide: 69.3→6. speed 8 places the subscription auto-pool model with Gemini 3.8 Flash rather than preserving the old five-point value. quotaCost 3 places the ordinary auto-pool spend above the cheapest public API rows and far below Cursor Grok; neither throughput nor a list price is published. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "hypothesis": [
           "quality",
           "speed",
@@ -748,9 +756,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 4,
-        "quotaCost": 3
+        "quality": 6,
+        "speed": 2,
+        "quotaCost": 8
       },
       "prices": {
         "inputPerMTok": null,
@@ -758,11 +766,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 410,
+      "priority": 430,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "cursor-grok-4.6-low: 2 steps below the base row cursor-grok-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 3, speed 2 → 4, quotaCost 5 → 3. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from cursor-grok-high on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-grok-high"
       }
     },
@@ -775,9 +783,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 3,
-        "quotaCost": 2
+        "quality": 7,
+        "speed": 1,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -785,11 +793,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 420,
+      "priority": 390,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "kimi-k3-low: 2 steps below the base row cursor-kimi-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 3, speed 1 → 3, quotaCost 4 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from cursor-kimi-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-kimi-max"
       }
     },
@@ -802,8 +810,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 5,
+        "quality": 5,
+        "speed": 10,
         "quotaCost": 1
       },
       "prices": {
@@ -812,11 +820,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 430,
+      "priority": 460,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gemini-3.7-flash-low: 2 steps below the base row cursor-gemini-37-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 5 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from cursor-gemini-37-high on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-gemini-37-high"
       }
     },
@@ -829,9 +837,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
+        "quality": 6,
         "speed": 4,
-        "quotaCost": 3
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -843,14 +851,13 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "The one Pro-class Gemini the owner chose, in Cursor's `api` pool. `cursor-agent models` lists it as a single id with no level suffix, so there is no ladder and nothing to interpolate. quality: SWE-bench Verified 80.6 %, fifth of the six rated models banded on that benchmark — band 2. Measured, not a hypothesis: it is one of only four Cursor-served models in the catalog whose quality rests on a figure for that exact model. speed: 115 tokens/s, fourth of nine — band 4. quotaCost: $2 in / $12 out, seventh-dearest of thirteen — band 3.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 80.6→6; speed uses Artificial Analysis 40→1 / 310→10: 115 tokens/s→4; quotaCost uses blended list price $2.50→1 / $30→10: $7→2. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "80.6 %",
-            "fieldSize": 6,
             "agentHarness": "not stated by the page",
             "provenance": "primary leaderboard page, opened",
             "url": "https://llm-stats.com/benchmarks/swe-bench-verified",
@@ -861,18 +868,20 @@
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "115 tokens/s",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "Google list price, blended (input + output) / 2",
             "figure": "$7.00 per 1M tokens ($2 in / $12 out)",
-            "fieldSize": 13,
             "provenance": "SECONDARY: price reported by a search result naming this vendor page; the page itself was not opened",
             "url": "https://ai.google.dev/gemini-api/docs/pricing",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ]
       }
@@ -886,7 +895,7 @@
         "worker"
       ],
       "ratings": {
-        "quality": 1,
+        "quality": 6,
         "speed": 2,
         "quotaCost": 1
       },
@@ -900,14 +909,13 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "An MIT-licensed open-weights model in Cursor's `api` pool. The base row is `-high`, which the listing displays as plain \"GLM 5.2\" — the family's headline id — against \"GLM 5.2 Max\" for the level above. quality: SWE-bench Verified 78.7 %, sixth and last of the six rated models banded on that benchmark — band 1. The citation is weaker than the rest of that sub-field and the row says so: the figure is reported by a secondary page naming Epoch AI's independent harness, and the two SWE-bench Verified leaderboards opened for this pass do not list this model at all. A maintainer re-checking this row should open Epoch AI's harness directly. speed: a HYPOTHESIS. No published throughput figure for 5.2; the nearest is GLM-5.3 at 83 tokens/s, a later model. 83 sits between claude-sonnet-5 (76, band 2) and gpt-5.6-sol (90, band 3), and the lower band is taken because 5.2 precedes the model that was measured. quotaCost: $1.40 in / $4.40 out, tenth-dearest of thirteen — band 2.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 78.7→6 on the Epoch AI harness; speed is newly assessed as 2 below the later GLM-5.3 figure of 83 tokens/s under Artificial Analysis 40→1 / 310→10; quotaCost uses blended list price $2.50→1 / $30→10: $2.90→1. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quality",
             "basis": "SWE-bench Verified",
             "version": "Verified",
             "figure": "78.7 %",
-            "fieldSize": 6,
             "agentHarness": "Epoch AI",
             "provenance": "SECONDARY page naming the Epoch AI harness; the primary was not opened",
             "url": "https://www.morphllm.com/best-open-source-coding-model-2026",
@@ -917,10 +925,11 @@
             "rating": "quotaCost",
             "basis": "Z.ai list price, blended (input + output) / 2",
             "figure": "$2.90 per 1M tokens ($1.40 in / $4.40 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://openrouter.ai/z-ai/glm-5.2",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -937,8 +946,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 1,
-        "speed": 1,
+        "quality": 7,
+        "speed": 2,
         "quotaCost": 2
       },
       "prices": {
@@ -947,11 +956,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 460,
+      "priority": 350,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "glm-5.2-max: 1 step above the base row cursor-glm-high, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 1 → 1, speed 2 → 1, quotaCost 1 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from cursor-glm-high on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-glm-high"
       }
     },
@@ -965,9 +974,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 4,
-        "quotaCost": 4
+        "quality": 9,
+        "speed": 3,
+        "quotaCost": 5
       },
       "prices": {
         "inputPerMTok": null,
@@ -975,11 +984,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 600,
+      "priority": 630,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-sol at effort xhigh: 1 step below the base row codex-sol-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 3 → 4, quotaCost 5 → 4. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from codex-sol-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
       }
     },
@@ -993,9 +1002,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
+        "quality": 10,
         "speed": 3,
-        "quotaCost": 5
+        "quotaCost": 6
       },
       "prices": {
         "inputPerMTok": null,
@@ -1003,29 +1012,31 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 610,
+      "priority": 600,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "Codex's default model (`isDefault` in `model/list`, and `DEFAULT_MODEL` in lib/driver-codex.js), described there as a \"Reliable agentic workhorse for everyday tasks\". quality: a HYPOTHESIS, and the reason is a defect in the field rather than in the model. OpenAI does not report SWE-bench Verified for the 5.6 family at all, and this model is absent from the SWE-bench Verified leaderboard that bands the six rated Claude, Kimi, Gemini and GLM rows. The fallback the ADR names is Terminal-bench, and Terminal-bench 2.1 does not hold five rated models on any one agent harness: the figures found are 88.8 % single-agent and 85.77 % on the Vals AI harness for this model, against claude-fable-5 at 83.8 % on Claude Code and 83.4 % elsewhere. The band is 5, on this reasoning: 88.8 % is above claude-fable-5's 83.8 % on the same benchmark and version, claude-fable-5 bands 5 from its own measured SWE-bench Verified figure, and OpenAI's Coding Agent Index puts this model first of its family at 80 against terra 77 and luna 75. Two figures exist for this model on Terminal-Bench 2.1 and neither page names Codex CLI as the agent harness, so the tie rule that applied is \"highest published\": 88.8 % over the Vals AI harness's 85.77 %. It is the strongest thing Codex will start, and the reviewer floor of ADR-004 is met by judgement, not by a rank — which the table says out loud so the owner can overrule it. speed: 90 tokens/s, sixth of nine — band 3. The figure was measured at max, not at this row's medium base; the ladder below therefore reads the throughput of a deeper level than it describes, and that is recorded rather than corrected. quotaCost: $5 in / $30 out, joint second-dearest of thirteen — band 5. Because the base row is already at the ceiling, every step up this ladder clamps to 5 and the cost column is flat from medium to ultra; that flattening is the ADR clamp, and it is filed as a finding under this task. `ultra` is a real level of this model in `model/list` and reaches the driver (EFFORT_LEVELS in lib/driver-codex.js). The `fast` service tier beside it is not modelled: ADR-004 § Not in v1 keeps it out of the tuple key.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 10 using Terminal-Bench 2.1 single-agent anchors 60→1 / 90→10 as a placement guide: the highest published exact-model figure 88.8 maps to 10; it stays a hypothesis because the page does not identify Codex CLI. speed uses Artificial Analysis 40→1 / 310→10: 90 tokens/s→3; quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "90 tokens/s (measured at max)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
             "figure": "$17.50 per 1M tokens ($5 in / $30 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -1043,9 +1054,36 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 2,
-        "quotaCost": 5
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 7
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 610,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from codex-sol-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt55-xhigh",
+      "harness": "codex",
+      "model": "gpt-5.5",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 8
       },
       "prices": {
         "inputPerMTok": null,
@@ -1057,35 +1095,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-sol at effort ultra: 1 step above the base row codex-sol-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 5, speed 3 → 2, quotaCost 5 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
-        "interpolatedFrom": "codex-sol-max"
-      }
-    },
-    {
-      "id": "codex-gpt55-xhigh",
-      "harness": "codex",
-      "model": "gpt-5.5",
-      "effort": "xhigh",
-      "roles": [
-        "worker",
-        "reviewer"
-      ],
-      "ratings": {
-        "quality": 5,
-        "speed": 1,
-        "quotaCost": 5
-      },
-      "prices": {
-        "inputPerMTok": null,
-        "cachedInputPerMTok": null,
-        "outputPerMTok": null
-      },
-      "billing": "subscription",
-      "priority": 630,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
-      "evidence": {
-        "text": "gpt-5.5 at effort xhigh: 2 steps above the base row codex-gpt55-medium, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 5, speed 3 → 1, quotaCost 5 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +2 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality +2, speed unchanged because throughput belongs to the model and serving stack, quotaCost +2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt55-medium"
       }
     },
@@ -1098,9 +1108,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 5,
-        "quotaCost": 3
+        "quality": 8,
+        "speed": 3,
+        "quotaCost": 4
       },
       "prices": {
         "inputPerMTok": null,
@@ -1108,11 +1118,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 640,
+      "priority": 650,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-sol at effort high: 2 steps below the base row codex-sol-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 4, speed 3 → 5, quotaCost 5 → 3. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from codex-sol-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
       }
     },
@@ -1125,9 +1135,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 5,
-        "quotaCost": 2
+        "quality": 7,
+        "speed": 3,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -1135,11 +1145,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 650,
+      "priority": 680,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-sol at effort medium: 3 steps below the base row codex-sol-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 5 → 4, speed 3 → 5, quotaCost 5 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -3 effort step(s) from codex-sol-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
       }
     },
@@ -1152,9 +1162,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
+        "quality": 8,
         "speed": 3,
-        "quotaCost": 5
+        "quotaCost": 6
       },
       "prices": {
         "inputPerMTok": null,
@@ -1166,16 +1176,17 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "\"Proven previous-generation model\" in `model/list`, and new to the catalog: v1 left it unrated for want of a source, and it has one now. Its efforts stop at `xhigh` — the spike's `model/list` capture shows no `max` and no `ultra` on this model — so the ladder does too. quality: a HYPOTHESIS. Band 4 on this reasoning: 83.1 % on Terminal-Bench 2.1 on the Codex CLI harness, within a point of claude-fable-5's 83.8 % on Claude Code on the same benchmark and version, where claude-fable-5 bands 5 from a measured SWE-bench Verified figure. The tie rule that applied is \"the harness this catalog runs it on\": a second page reports 88.0 % for this model on Terminal-Bench 2.1 without naming a harness, and the 83.1 % measured on Codex CLI is preferred. One band below the anchor, because a figure on a different agent harness is not a figure on the same one — the Terminal-Bench leaderboard itself states that it scores \"the model and agent harness together\", and the same model moves five points between harnesses. speed: also a HYPOTHESIS — no published throughput figure. Banded 3, level with gpt-5.6-sol, which it matches on list price and precedes by one generation. quotaCost: $5 in / $30 out, joint second-dearest of thirteen — band 5. Same price as gpt-5.6-sol for a previous generation, which is the whole argument against routing here on anything but diversity.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 8 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 83.1→8, preferred over the higher harness-free 88.0. speed is newly assessed as 3 beside the measured 90 tokens/s Sol row rather than translated from 1–5. quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
             "figure": "$17.50 per 1M tokens ($5 in / $30 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://openrouter.ai/openai/gpt-5.5",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -1193,9 +1204,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 2,
-        "quotaCost": 5
+        "quality": 9,
+        "speed": 3,
+        "quotaCost": 7
       },
       "prices": {
         "inputPerMTok": null,
@@ -1203,11 +1214,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 670,
+      "priority": 640,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.5 at effort high: 1 step above the base row codex-gpt55-medium, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 4 → 4, speed 3 → 2, quotaCost 5 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt55-medium"
       }
     },
@@ -1220,9 +1231,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
+        "quality": 7,
         "speed": 4,
-        "quotaCost": 2
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -1230,29 +1241,31 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 680,
+      "priority": 690,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "\"Fast and affordable agentic coding model\" in `model/list`, `defaultReasoningEffort` medium. quality: a HYPOTHESIS, and the weakest-sourced of the Codex three. No SWE-bench Verified figure, and no Terminal-Bench 2.1 figure on any page opened for this pass — the only figure found for it, 84.3 %, comes from a secondary summary that also reverses its order against gpt-5.6-terra. OpenAI's Coding Agent Index, which is one source over one harness, puts luna 75 against terra 77 and sol 80. Banded level with terra at 3 because the two sources order the pair opposite ways and neither difference exceeds two points. speed: 127 tokens/s, third of nine and the fastest thing Codex will start — band 4, measured at max. quotaCost: $1 in / $6 out, ninth-dearest of thirteen — band 2. This is the row an `economy` run is meant to reach on this harness.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 7 beside Terra: OpenAI Coding Agent Index orders Luna 75 below Terra 77, while a secondary Terminal-Bench report reverses them, so the models remain level rather than claiming unsupported precision. speed uses Artificial Analysis 40→1 / 310→10: 127 tokens/s→4; quotaCost uses blended list price $2.50→1 / $30→10: $3.50→1. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "127 tokens/s (measured at max)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
             "figure": "$3.50 per 1M tokens ($1 in / $6 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -1269,9 +1282,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 4,
-        "quotaCost": 3
+        "quality": 6,
+        "speed": 3,
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -1279,11 +1292,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 690,
+      "priority": 710,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-terra at effort xhigh: 1 step below the base row codex-terra-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 3, speed 3 → 4, quotaCost 4 → 3. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -1 effort step(s) from codex-terra-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
       }
     },
@@ -1296,9 +1309,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
+        "quality": 7,
         "speed": 3,
-        "quotaCost": 4
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -1310,25 +1323,27 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "\"Balanced agentic coding model for everyday work\" in `model/list`, with `defaultReasoningEffort` medium — which is this row and the base of the ladder. quality: a HYPOTHESIS, for the reason codex-sol-medium gives — no SWE-bench Verified figure, and Terminal-Bench 2.1 has no five-model rated sub-field on one harness. Band 3 on this reasoning: on the one Terminal-Bench 2.1 leaderboard that labels the agent harness, this model scores 78.4 % on Codex CLI — the harness these rows actually run on — against gpt-5.5 at 83.1 % on the same harness and version, and OpenAI's own Coding Agent Index puts terra 77 against sol 80. Two bands below sol, one below gpt-5.5. The tie rule that applied is \"the harness this catalog runs it on\": a second page reports 82.5 % for this model on Terminal-Bench 2.1 without naming a harness, and the 78.4 % measured on Codex CLI is preferred because Codex CLI is what a routed spawn of this row actually starts. A second reported Terminal-Bench 2.1 set puts terra at 82.5 % and luna at 84.3 %, i.e. luna ABOVE terra, while the Coding Agent Index puts terra above luna. The two disagree, so the two rows are banded level rather than ordered on a contested point. speed: 114 tokens/s, fifth of nine — band 3, measured at max rather than at this base row. quotaCost: $2.50 in / $15 out, sixth-dearest of thirteen — band 4. A second model on the same harness matters beyond its rating: it is where a reviewer goes when the worker took gpt-5.6-sol, and the diversity bonus of ADR-003 is what pays for that.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "quality is newly assessed as 7 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 78.4→7, preferred over the harness-free 82.5. speed uses Artificial Analysis 40→1 / 310→10: 114 tokens/s→3; quotaCost uses blended list price $2.50→1 / $30→10: $8.75→3. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
             "provenance": "primary leaderboard page, opened",
             "figure": "114 tokens/s (measured at max)",
-            "fieldSize": 9,
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "leaderboard snapshot 2026-09-06",
+            "agentHarness": "Artificial Analysis serving stack"
           },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
             "figure": "$8.75 per 1M tokens ($2.50 in / $15 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -1345,9 +1360,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 2,
-        "quotaCost": 5
+        "quality": 8,
+        "speed": 3,
+        "quotaCost": 4
       },
       "prices": {
         "inputPerMTok": null,
@@ -1355,11 +1370,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 710,
+      "priority": 670,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-terra at effort ultra: 1 step above the base row codex-terra-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 3, speed 3 → 2, quotaCost 4 → 5. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from codex-terra-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
       }
     },
@@ -1372,8 +1387,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 5,
+        "quality": 5,
+        "speed": 4,
         "quotaCost": 1
       },
       "prices": {
@@ -1386,7 +1401,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-luna at effort high: 2 steps below the base row codex-luna-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 4 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -2 effort step(s) from codex-luna-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-luna-max"
       }
     },
@@ -1399,62 +1414,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 5,
-        "quotaCost": 1
-      },
-      "prices": {
-        "inputPerMTok": null,
-        "cachedInputPerMTok": null,
-        "outputPerMTok": null
-      },
-      "billing": "subscription",
-      "priority": 730,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
-      "evidence": {
-        "text": "gpt-5.6-luna at effort medium: 3 steps below the base row codex-luna-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 4 → 5, quotaCost 2 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
-        "interpolatedFrom": "codex-luna-max"
-      }
-    },
-    {
-      "id": "codex-terra-high",
-      "harness": "codex",
-      "model": "gpt-5.6-terra",
-      "effort": "high",
-      "roles": [
-        "worker"
-      ],
-      "ratings": {
-        "quality": 2,
-        "speed": 5,
-        "quotaCost": 2
-      },
-      "prices": {
-        "inputPerMTok": null,
-        "cachedInputPerMTok": null,
-        "outputPerMTok": null
-      },
-      "billing": "subscription",
-      "priority": 740,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
-      "evidence": {
-        "text": "gpt-5.6-terra at effort high: 2 steps below the base row codex-terra-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 3 → 5, quotaCost 4 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
-        "interpolatedFrom": "codex-terra-max"
-      }
-    },
-    {
-      "id": "codex-terra-medium",
-      "harness": "codex",
-      "model": "gpt-5.6-terra",
-      "effort": "medium",
-      "roles": [
-        "worker"
-      ],
-      "ratings": {
-        "quality": 2,
-        "speed": 5,
+        "quality": 4,
+        "speed": 4,
         "quotaCost": 1
       },
       "prices": {
@@ -1467,21 +1428,48 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.6-terra at effort medium: 3 steps below the base row codex-terra-max, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 3 → 2, speed 3 → 5, quotaCost 4 → 1. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated -3 effort step(s) from codex-luna-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-luna-max"
+      }
+    },
+    {
+      "id": "codex-terra-high",
+      "harness": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "high",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 3,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 730,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from codex-terra-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
       }
     },
     {
-      "id": "codex-mini-medium",
+      "id": "codex-terra-medium",
       "harness": "codex",
-      "model": "gpt-5.4-mini",
+      "model": "gpt-5.6-terra",
       "effort": "medium",
       "roles": [
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 4,
+        "quality": 4,
+        "speed": 3,
         "quotaCost": 1
       },
       "prices": {
@@ -1494,16 +1482,44 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "\"Small, fast, and cost-efficient model for simpler coding tasks\" in `model/list` — the only Codex entry whose own description names a narrower class of task. It is the one model of the five with no `fast` service tier. quality: a HYPOTHESIS, and the sub-field it would need does not exist: its only figures are Terminal-Bench 2.0 60.0 % and SWE-bench Pro 54.4 %, and Terminal-Bench 2.0 holds two rated models, well under the five a rank band needs. Band 2 on this reasoning: gpt-5.5 scores 82.7 % on that same Terminal-Bench 2.0 and bands 4, so this model is 22.7 points behind its anchor on the one version they share — two bands. speed: a HYPOTHESIS, no published throughput figure. Band 4, above gpt-5.6-sol's measured 90 tokens/s, on the size of the model and nothing stronger; this is the least-supported number in the catalog and the table marks it. quotaCost: $0.75 in / $4.50 out, eleventh-dearest of thirteen — band 2.\n\nThe cut is the one PB-29 used for all three scales and it is written out so a reader can reproduce it: sort the rated models of the sub-field best first, 1-based position `pos`, field size `n`, then `band = 5 - floor((pos - 1) * 5 / n)`.",
+        "text": "Interpolated -3 effort step(s) from codex-terra-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-terra-max"
+      }
+    },
+    {
+      "id": "codex-mini-medium",
+      "harness": "codex",
+      "model": "gpt-5.4-mini",
+      "effort": "medium",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 4,
+        "speed": 5,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 770,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "quality is newly assessed as 4 using Terminal-Bench 2.0 Codex/unstated anchors 50→1 / 85→10 as a placement guide: 60.0→4. speed is newly assessed as 5, above the measured Sol throughput and below Luna; no exact-model throughput is published. quotaCost uses blended list price $2.50→1 / $30→10: $2.63→1. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
             "figure": "$2.63 per 1M tokens ($0.75 in / $4.50 out)",
-            "fieldSize": 13,
             "provenance": "price page, opened",
             "url": "https://openrouter.ai/openai/gpt-5.4-mini",
-            "date": "2026-09-06"
+            "date": "2026-09-06",
+            "version": "price schedule 2026-09-06",
+            "agentHarness": "vendor API"
           }
         ],
         "hypothesis": [
@@ -1521,8 +1537,8 @@
         "worker"
       ],
       "ratings": {
-        "quality": 2,
-        "speed": 3,
+        "quality": 5,
+        "speed": 5,
         "quotaCost": 2
       },
       "prices": {
@@ -1531,11 +1547,11 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 770,
+      "priority": 740,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "gpt-5.4-mini at effort high: 1 step above the base row codex-mini-medium, which carries the figures. ADR-004 interpolation: quality one band per two steps (signed), speed one band per step with the opposite sign, quotaCost one band per step with the same sign, all clamped to 1…5. Applied here: quality 2 → 2, speed 4 → 3, quotaCost 1 → 2. The ladder shares the base row's assessedAt, so it goes stale together.",
+        "text": "Interpolated +1 effort step(s) from codex-mini-medium on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-mini-medium"
       }
     }

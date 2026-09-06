@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updated": "2026-09-06T00:00:00.000Z",
   "tuples": [
     {
@@ -12,9 +12,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 2,
-        "quotaCost": 5
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -24,7 +24,7 @@
       "billing": "subscription",
       "priority": 10,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     },
     {
       "id": "claude-fable",
@@ -35,9 +35,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 4,
-        "quotaCost": 3
+        "quality": 8,
+        "speed": 8,
+        "quotaCost": 6
       },
       "prices": {
         "inputPerMTok": null,
@@ -47,7 +47,7 @@
       "billing": "subscription",
       "priority": 20,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     },
     {
       "id": "codex-sol",
@@ -59,9 +59,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 3,
-        "quotaCost": 4
+        "quality": 10,
+        "speed": 6,
+        "quotaCost": 8
       },
       "prices": {
         "inputPerMTok": null,
@@ -71,7 +71,7 @@
       "billing": "subscription",
       "priority": 30,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     },
     {
       "id": "codex-preview",
@@ -82,9 +82,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 5,
-        "speed": 4,
-        "quotaCost": 4
+        "quality": 10,
+        "speed": 8,
+        "quotaCost": 8
       },
       "prices": {
         "inputPerMTok": null,
@@ -94,7 +94,7 @@
       "billing": "subscription",
       "priority": 40,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     },
     {
       "id": "cursor-composer",
@@ -105,9 +105,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 3,
-        "speed": 5,
-        "quotaCost": 2
+        "quality": 6,
+        "speed": 10,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -117,7 +117,7 @@
       "billing": "subscription",
       "priority": 50,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     },
     {
       "id": "cursor-api",
@@ -129,9 +129,9 @@
         "reviewer"
       ],
       "ratings": {
-        "quality": 4,
-        "speed": 3,
-        "quotaCost": 5
+        "quality": 8,
+        "speed": 6,
+        "quotaCost": 10
       },
       "prices": {
         "inputPerMTok": null,
@@ -141,7 +141,7 @@
       "billing": "subscription",
       "priority": 60,
       "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "fixture \u2014 placeholder ratings, not a claim about any real model"
+      "source": "fixture — placeholder ratings, not a claim about any real model"
     }
   ]
 }

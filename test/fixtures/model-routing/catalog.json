@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updated": "2026-09-05T00:00:00.000Z",
   "tuples": [
     {
@@ -7,9 +7,20 @@
       "harness": "example",
       "model": "example-deep",
       "effort": "high",
-      "roles": ["worker", "reviewer"],
-      "ratings": { "quality": 5, "speed": 2, "quotaCost": 5 },
-      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
       "billing": "subscription",
       "priority": 10,
       "assessedAt": "2026-09-05T00:00:00.000Z",
@@ -20,9 +31,19 @@
       "harness": "example",
       "model": "example-quick",
       "effort": null,
-      "roles": ["worker"],
-      "ratings": { "quality": 3, "speed": 5, "quotaCost": 2 },
-      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 6,
+        "speed": 10,
+        "quotaCost": 3
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
       "billing": "subscription",
       "priority": 20,
       "assessedAt": "2026-09-05T00:00:00.000Z",
@@ -33,9 +54,20 @@
       "harness": "other",
       "model": "other-steady",
       "effort": "medium",
-      "roles": ["worker", "reviewer"],
-      "ratings": { "quality": 4, "speed": 4, "quotaCost": 3 },
-      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 8,
+        "speed": 8,
+        "quotaCost": 6
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
       "billing": "subscription",
       "priority": 30,
       "assessedAt": "2026-09-05T00:00:00.000Z",
@@ -46,9 +78,19 @@
       "harness": "other",
       "model": "other-metered",
       "effort": null,
-      "roles": ["worker"],
-      "ratings": { "quality": 5, "speed": 4, "quotaCost": 1 },
-      "prices": { "inputPerMTok": 3, "cachedInputPerMTok": 0.3, "outputPerMTok": 15 },
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 8,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": 3,
+        "cachedInputPerMTok": 0.3,
+        "outputPerMTok": 15
+      },
       "billing": "payg",
       "priority": 40,
       "assessedAt": "2026-09-05T00:00:00.000Z",
@@ -59,9 +101,19 @@
       "harness": "example",
       "model": "example-deep",
       "effort": "max",
-      "roles": ["reviewer"],
-      "ratings": { "quality": 5, "speed": 1, "quotaCost": 5 },
-      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "roles": [
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 1,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
       "billing": "subscription",
       "priority": 50,
       "assessedAt": "2026-09-05T00:00:00.000Z",

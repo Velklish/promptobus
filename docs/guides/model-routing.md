@@ -84,9 +84,11 @@ That is the check to repeat when a row is added — the offline read first, and 
 
 The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
 
-**No Cursor row is offered as a reviewer today.** The reviewer floor of ADR-004 is a quality of 5, and nothing Cursor serves reaches it in the shipped catalog — the reviewer rows are Claude Code's Fable and Opus ladders and Codex's `gpt-5.6-sol` and `gpt-5.5` at `xhigh`. So ADR-003's reviewer diversity bonus has two harnesses to move between rather than three, and a review of work done on Claude Code goes to Codex or stays put. This follows from the ratings rather than from a rule about Cursor, and it changes the day a Cursor row bands 5.
+**All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and ten rows reach it: Claude Code's Fable and Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-5.6-sol` at `xhigh`, `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-003's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
 
-**Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–5 judgement of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": since PB-29 the vendors' published list prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2` and cited in the row's `evidence` — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent.
+**Upward interpolation never makes a rung a reviewer.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross the reviewer floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` only when its own rating AND its **base row's** assessed rating are at the floor. `codex-gpt55-xhigh` is the live case: it interpolates to quality 10 from a base row assessed at 8, and it is a worker row. `models validate` refuses a catalog that says otherwise.
+
+**Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–10 band of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": since PB-29 the vendors' published **list** prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2`, banded against the dated $2.50 → 1 / $30 → 10 anchor pair and cited in the row's `evidence`. A promotional price never moves the anchor — it applies to the model's own figure while the cited promotion is in force, and the row's `evidence` names the list price, the promotion and the band the list price would give, so the row is re-banded the day the promotion ends — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent.
 
 **An unrated model is not a tuple.** The catalog holds only models the maintainers assessed against a source they named: every row carries `source` and `evidence`, and a model nobody could assess at all gets no row.
 
@@ -104,6 +106,21 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 
 `validate` enforces this as a **warning**: a catalog that breaks the convention still routes, because priority only ever breaks a tie, but a drifting file should say so out loud. The two warnings are `priority-duplicate` (two tuples share a priority, so the tie-break falls through to the tuple id) and `priority-not-canonical` (a harness block starts inside the block above it, or quality rises as priority rises inside one block).
 
+### Re-rating a row
+
+A rating is a **band**: an integer from 1 through 10, produced from one published figure and the dated anchor pair of its benchmark, version and agent harness. It reads no field, so adding or removing a model moves no other model's band. Four steps, and the fourth is what makes the third checkable:
+
+1. **Find the figure, with its version and its harness.** A number without both is not a figure ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)): the same Grok 4.6 was reported at 88.4 on Terminal-Bench 2.1 and 26 on 3.0, and Claude Fable 5 scores 83.8 under Claude Code and 80.4 under Terminus 2 on one version. Where several figures exist, take the harness this catalog runs the model on; where none does, take the highest published one and say in `evidence.text` that this fallback was used. The source order is ADR-004's and is unchanged: SWE-bench Verified, then Terminal-Bench, then Aider polyglot, then the vendor model card.
+2. **Pick the anchor pair** for exactly that source, version and harness from the table in ADR-005 § Absolute bands. If the source is not in that table, the ADR is what changes first — a new pair is a decision, not a data edit, and adding one re-bands the whole catalog.
+3. **Compute the band**: `clamp(1 + roundHalfUp((figure − floor) / (ceiling − floor) × 9), 1, 10)`, rounding half up. SWE-bench Verified under 60 → 1 and 96 → 10: 96.0 → 10, 95.0 → 10, 93.4 → 9, 85.2 → 7, 80.6 → 6, 78.7 → 6.
+4. **Cite it in the row.** `evidence.sources` gets the figure with its `basis`, `version`, `agentHarness`, `provenance`, `url` and `date`; `evidence.text` names the anchor pair the band came from, in the row's own words — `quotaCost uses blended list price $2.50→1 / $30→10: $15→5`. `validate` refuses a rating with neither a citation, an interpolation from a base row that has one, nor a stated hypothesis, so step 4 is not paperwork: skip it and the catalog stops loading.
+
+**No published figure is still a rating, not a gap.** Name it in `evidence.hypothesis`, place it against the neighbours that DO have figures, and write the placement reasoning in `evidence.text`. What is never done is a mechanical translation: a band on the old 1–5 scale does not become a band on this one by `× 2 − 1`, because the two scales were cut from different things.
+
+**Effort rungs are arithmetic from the base row**, and only two of the three ratings move: `quality = clamp(base + steps, 1, 10)` and `quotaCost = clamp(base + steps, 1, 10)`, while `speed` is the base row's unchanged. Throughput belongs to the model and its serving stack, not to how hard it is thinking; the extra output tokens of a deeper effort are the `quotaCost` step. One band per step and not two: a two-band step spans eight bands over a five-rung ladder, so both ends run into the clamp and a top-tier model's low rung ends up in the same band as the cheapest model in the catalog. Rungs that clamp to the same three ratings all stay — the effort is still a launchable choice — and `models validate` says so with `ladder-indistinguishable`.
+
+**A local run can argue with a band.** `promptobus models calibrate` reads the telemetry of this machine and proposes `speed` and `quotaCost` lines for the user overlay, with the medians behind each and the catalog band beside it; `--write` merges them after you agree. It proposes and never applies, and it never proposes `quality` — see [reference/03-cli.md](../reference/03-cli.md) § Commands.
+
 ### Staleness
 
 A rating older than 90 days produces a `stale-rating` warning and is **never** excluded. Catalog updates are event-driven — a changed model line-up, changed prices, a substantial observation — so the number is a mechanism default rather than a schedule: it is longer than a release cycle and shorter than the time in which a harness's model list turns over. It lives in one place, `STALE_RATING_DAYS` in `lib/model-routing/catalog.js`.
@@ -114,7 +131,7 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "note": "personal routing preferences",
   "deny": {
     "models": ["gpt-5.4-mini"],
@@ -122,12 +139,12 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
     "byRole": { "reviewer": { "harnesses": ["cursor"] } }
   },
   "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-  "qualityFloor": { "worker": 3, "reviewer": 5 },
+  "qualityFloor": { "worker": 5, "reviewer": 9 },
   "balance": { "band": 5, "spendUnit": 5 },
   "nearLimit": { "usedPercent": 80, "underspend": -15 },
   "defaults": { "strategy": "balance" },
   "account": { "cursor": { "plan": "example-ultra" } },
-  "ratings": { "cursor-composer-2.5": { "speed": 5 } },
+  "ratings": { "cursor-composer-2.5": { "speed": 9 } },
   "payg": { "allow": true }
 }
 ```
@@ -137,12 +154,12 @@ Line by line:
 - `deny.models` takes one model out of automatic selection everywhere it appears. A denied candidate is still reported, with `denied-by-policy` and the rule and every layer that wrote it, so the pick stays explainable;
 - `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.reviewer` applies its block only when the reviewer is being routed;
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
-- `qualityFloor` raises or lowers the bar per role — the defaults are worker 3 and reviewer 5. Both are soft floors and both are choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
+- `qualityFloor` raises or lowers the bar per role — the defaults are worker 5 and reviewer 9 on the 1–10 scale. Both are soft floors and both are choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line;
 - `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
 - `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the **user** file. **Nothing writes it**: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
-- `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone;
+- `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone. Every value is an integer from 1 through 10, and an overlay that carries a `ratings` block **must** declare `schemaVersion: 2`: a block written on the old 1–5 scale is refused by the load and by `models validate` with the route *rewrite `ratings` on the 1–10 scale and set `schemaVersion: 2`*, because a 3 was a middle of five and is a low third of ten and nothing may translate it silently. The two quality-floor keys are on the same scale and are refused the same way: `reviewerQualityFloor: 5` was the top band of five and is half way up ten, so a v1 file holding one would quietly lower your reviewer floor from 9 to 5. An overlay carrying none of the three — a deny list, a strategy default, an account answer, weights — is still read on `schemaVersion: 1`, unchanged. `models calibrate --write` is the one command that writes this block, and only after you agree to the exact lines it printed;
 - `payg.allow` admits pay-as-you-go tuples without `--allow-payg` on every call. The shipped catalog has no pay-as-you-go row today — every account the drivers log into is a subscription, and no price was filled in from a source that could be named — so this only matters once one appears or an overlay's own policy needs it.
 
 ## Checking a file

@@ -92,6 +92,21 @@ That records `defaults.strategy` in the host's writable overlay, and every follo
 
 This is the only thing that changes a strategy between spawns, and a person is on both ends of it.
 
+### When the local runs disagree with the catalog
+
+The catalog's ratings come from published benchmarks. `promptobus models calibrate` reads this machine's own telemetry back against them and prints, per harness/model/effort, how many runs it has, the median time to a finished piece, the median movement of the account's limit windows, and — where a key has at least five runs — a proposed `speed` and `quotaCost` line for the user overlay with the catalog band beside it and the numbers behind it.
+
+**Read it as evidence, not as a verdict.** The key with the most runs is the anchor and keeps its catalog band; every other key is proposed a step away from ITS OWN band, at most two, and only when the measurement differs materially from what the bands already imply. A line reading `insufficient data: N of 5` is the command declining to guess, and `quality` is never proposed at all — review rounds measure how work was received, not how good a model is.
+
+Run it when a person asks why a model was picked and their experience disagrees, or after a long series on one harness. Then show them the proposal and let them decide:
+
+```text
+promptobus models calibrate
+promptobus models calibrate --write
+```
+
+`--write` merges only the proposed `ratings` into the person's `user` overlay, keeps every other key of that file, and **asks on the terminal first**. Do not pass `--yes` on their behalf: it exists to record an agreement the person already gave, and using it to skip the question is the one thing the flag is not for. As with a strategy switch, a person is on both ends of this.
+
 ### The one question the tool cannot answer
 
 `models` prints the key and the file when nothing has recorded Cursor's plan name, because no Cursor method returns it. **Ask the person once, and only once**, and only when a run will actually use Cursor. The line goes in the `user` overlay, `~/.promptobus/model-routing.json`:
