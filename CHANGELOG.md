@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Backlog triage and execution tracks.** Reviewed the accumulated findings, consolidated duplicate records, separated focused repairs from deferred structural work, and recorded priorities, dependencies and shared-file boundaries in `docs/TRACKS.md`. No runtime behavior changed.
+
 ## [0.5.0] — 2026-09-06
 
 ### Added

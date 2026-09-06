@@ -1,9 +1,9 @@
 # PB-43 · Under balance a harness is represented by its best-scored tuple, so Cursor's Auto pool never enters the pace comparison while a third-party tuple wins the score
 
-- **Order:** 15
+- **Order:** 230
 - **Scope:** [ADR-004](../../adr/adr-004-subscription-balance.md) § The balance strategy (the pick, step 1), `lib/model-routing/resolver.js` (the pace layer), [03-cli](../../reference/03-cli.md) § Model routing
 - **Created:** 2026-09-06
-- **Dependencies:** none
+- **Dependencies:** PB-78
 
 ## Context
 
@@ -30,3 +30,10 @@ ADR-004 says "each harness is represented by its best tuple by the role's orderi
 ## Verification
 
 - The fixture above; `npm test`; live `models --refresh --strategy balance --role worker` on the owner's account shows a Cursor pace row for `monthly-auto`.
+
+## Triage — 2026-09-07
+
+- **Track:** R — Routing policy, overlays and availability.
+- **Priority:** P1.
+- **Evidence level:** source/definition review at `1e0401a`, including the files named in Scope and the current repository configuration. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
+- **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.

@@ -25,6 +25,8 @@ The operational tracker for promptobus: **one task is one file**, and **status i
 - A task that becomes an architectural decision moves to an [ADR](../README.md); the task file keeps a link.
 - Project gates are the `gates` field in `backslop.json`; `npx github:Velklish/backslop#v0.4.0 lint` is among them.
 
+For the 2026-09-07 triage decisions and execution boundaries, see [TRACKS.md](../TRACKS.md). It records assignments, not current status.
+
 ## Triage cadence
 
 There are two review points, and neither replaces the other:

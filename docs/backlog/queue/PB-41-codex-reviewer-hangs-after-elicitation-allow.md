@@ -1,9 +1,9 @@
 # PB-41 · A Codex reviewer hangs after the holder answers an `mcpServer/elicitation/request` with a bare allow — the turn never ends and no report arrives
 
-- **Order:** 70
+- **Order:** 120
 - **Scope:** `lib/codex-hold.js` / `lib/codex-session.js` (the holder's server-request handling), `lib/driver-codex.js`, [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06
-- **Dependencies:** PB-39 (the lift criterion; this is the turn after it)
+- **Dependencies:** PB-97
 
 ## Context
 
@@ -29,3 +29,10 @@ The worker of the same run (`turn/start`, same MCP set, same account) did not ha
 ## Verification
 
 - A fake app-server that emits an elicitation request: the turn continues (or the request is declined and the turn continues); `status` names a stuck request after the budget; `npm test`.
+
+## Triage — 2026-09-07
+
+- **Track:** C — Codex session lifecycle.
+- **Priority:** P1.
+- **Evidence level:** source/definition review at `1e0401a`, including the files named in Scope and the current repository configuration. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
+- **Next step:** Treat the historical elicitation hang as an observed symptom; its asserted causal explanation is a hypothesis until the exact request and reply shapes are captured. PB-97 can also lose a server request. Resolve RPC dispatch first, then verify the elicitation contract. Activity recording and stalled-request status belong to PB-42, not a second implementation here.
