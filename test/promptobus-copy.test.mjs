@@ -1,7 +1,8 @@
 // Runtime helpers inside the bus boundary: win32 resolve, quoting, env substitution.
-import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 
 const util = await import('../lib/util.js');
@@ -52,6 +53,64 @@ check('exec.planRun win .cmd is ok for paths with spaces',
 const percent = exec.planRun('npm', ['run', '%PATH%'], WIN);
 check('exec.planRun win .cmd refuses %',
   percent.ok === false && percent.code !== undefined, JSON.stringify(percent));
+
+// A copy shortens only the two shared ceilings: exercising the production minute
+// would add a minute to every suite run, while a caller that forgot the defaults
+// must still go red rather than hang the probe. liftoff.js is the production reader,
+// with only its unrelated imports pointed back at this tree.
+// `bgSessions` also maps empty stdout to null, so the elapsed bound — not `timed`
+// alone — is the discriminating half of the timeout verdict.
+const PROBE = path.join(SB, 'exec-ceilings');
+mkdirSync(PROBE, { recursive: true });
+const execSource = readFileSync(new URL('../lib/exec.js', import.meta.url), 'utf8');
+const probeExec = execSource
+  .replace('export const PROC_TIMEOUT_MS = 60_000;', 'export const PROC_TIMEOUT_MS = 1_000;')
+  .replace('export const GIT_MAX_OUTPUT = 32 * 1024 * 1024;', 'export const GIT_MAX_OUTPUT = 64;');
+check('exec ceiling probe shortens both production defaults',
+  probeExec !== execSource
+  && probeExec.includes('export const PROC_TIMEOUT_MS = 1_000;')
+  && probeExec.includes('export const GIT_MAX_OUTPUT = 64;'));
+writeFileSync(path.join(PROBE, 'exec.js'), probeExec);
+
+const liftoffSource = readFileSync(new URL('../lib/liftoff.js', import.meta.url), 'utf8');
+const probeLiftoff = liftoffSource
+  .replace("'../dist/index.js'", JSON.stringify(new URL('../dist/index.js', import.meta.url).href))
+  .replace("'./util.js'", JSON.stringify(new URL('../lib/util.js', import.meta.url).href));
+check('bgSessions probe keeps the production reader and redirects only its neighbours',
+  probeLiftoff !== liftoffSource
+  && !probeLiftoff.includes("'../dist/index.js'")
+  && !probeLiftoff.includes("'./util.js'"));
+writeFileSync(path.join(PROBE, 'liftoff.js'), probeLiftoff);
+
+const SLOW_BIN = path.join(PROBE, 'bin');
+mkdirSync(SLOW_BIN, { recursive: true });
+writeFileSync(path.join(SLOW_BIN, 'claude'), `#!/bin/sh
+if [ "$PB_EXEC_PROBE" = "timeout" ]; then
+  exec sleep 30
+fi
+printf '["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]\\n'
+`, { mode: 0o755 });
+
+const probe = await import(pathToFileURL(path.join(PROBE, 'liftoff.js')).href);
+const savedPath = process.env.PATH;
+try {
+  process.env.PATH = `${SLOW_BIN}${path.delimiter}${savedPath ?? ''}`;
+  process.env.PB_EXEC_PROBE = 'timeout';
+  const started = Date.now();
+  const timed = probe.bgSessions({ fresh: true });
+  const elapsed = Date.now() - started;
+  check('bgSessions returns null when its stand-in binary crosses the run timeout',
+    timed === null && elapsed < 10_000, `result=${JSON.stringify(timed)} · ${elapsed} ms`);
+
+  process.env.PB_EXEC_PROBE = 'buffer';
+  const buffered = probe.bgSessions({ fresh: true });
+  check('bgSessions returns null when its stand-in binary crosses the run output budget',
+    buffered === null, JSON.stringify(buffered));
+} finally {
+  if (savedPath === undefined) delete process.env.PATH;
+  else process.env.PATH = savedPath;
+  delete process.env.PB_EXEC_PROBE;
+}
 
 process.env.PB_COPY_GATE = 'yes';
 try {

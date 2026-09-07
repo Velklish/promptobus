@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Nested suite hygiene keeps the runner's Claude config diversion.** A suite file that imports `home.mjs` now preserves an existing `CLAUDE_CONFIG_DIR=<run home>/.claude` while that diverted home is live, instead of deleting the runner-issued value before the file's own child processes inherit it; the runner probe now exercises that second hygiene pass. (PB-141)
 
+- **Harness process launches have shared time and output ceilings.** Every launch through `run` now carries the project's 60-second timeout and 32 MiB output budget unless its caller overrides either value, so a wedged or over-verbose driver read becomes the existing unknown-liveness result instead of blocking the warden indefinitely. The same budget keeps Cursor's dirty-worktree liveness read from collapsing to “no writes” when `git ls-files` output crosses Node's default. (PB-50)
+
 ### Documentation
 
 - **Backlog triage and execution tracks.** Reviewed the accumulated findings, consolidated duplicate records, separated focused repairs from deferred structural work, and recorded priorities, dependencies and shared-file boundaries in `docs/TRACKS.md`. No runtime behavior changed.

@@ -684,6 +684,8 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
 
+No driver call on the warden beat path may block without a ceiling. Every launch through `run` carries the shared 60-second timeout and 32 MiB output budget; a call site may override either value.
+
 ## The Codex holder
 
 A Codex participant is a thread inside a `codex app-server --stdio` process, and stdio is held by whoever opened it. `promptobus spawn` returns when app-server has supplied the thread id and emitted `turn/started` for the first turn; it does not wait for that turn to end. It therefore starts a detached holder (`lib/codex-hold.js`) and leaves; the holder answers approvals and listens on the unix socket the driver writes turns into. The registry is `alive` and `busy` throughout that first turn, with `firstTurnStartedAt`; its eventual `turn/completed` adds `firstTurnEndedAt`, but that timestamp is history, not a lift condition. `status` consequently prints the participant as alive while the first turn runs, never as absent or `GONE`.
