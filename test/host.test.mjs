@@ -304,6 +304,64 @@ test('the environment wins over the host, and a host that names none refuses by 
   }
 });
 
+test('registry reads distinguish an undeclared home from a named empty registry', async () => {
+  const { GateError } = await import('../dist/index.js');
+  const { bindHarnessHomes } = await import('../lib/harness-home.js');
+  const {
+    readSession: readCursorSession, sessionsDir: cursorSessionsDir,
+  } = await import('../lib/cursor-persist.js');
+  const {
+    listSessions: listCodexSessions, readSession: readCodexSession,
+    sessionsDir: codexSessionsDir,
+  } = await import('../lib/codex-session.js');
+  const { cursorDriver } = await import('../lib/driver-cursor.js');
+  const { codexDriver } = await import('../lib/driver-codex.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-host-empty-registries-'));
+  const cursorHome = process.env.PROMPTOBUS_CURSOR_HOME;
+  const codexHome = process.env.PROMPTOBUS_CODEX_HOME;
+  const refusal = (harness) => (e) => {
+    assert.ok(e instanceof GateError);
+    assert.match(e.message, new RegExp(`PROMPTOBUS_${harness.toUpperCase()}_HOME`));
+    assert.match(e.message, new RegExp(`harnessStateHome\\('${harness}'\\)`));
+    return true;
+  };
+  try {
+    delete process.env.PROMPTOBUS_CURSOR_HOME;
+    delete process.env.PROMPTOBUS_CODEX_HOME;
+    bindHarnessHomes(null);
+
+    assert.throws(() => readCursorSession('x'), refusal('cursor'));
+    assert.throws(() => readCodexSession('x'), refusal('codex'));
+    assert.throws(() => listCodexSessions(), refusal('codex'));
+    assert.throws(() => cursorDriver.inspect('x'), refusal('cursor'));
+    assert.throws(() => codexDriver.inspect('x'), refusal('codex'));
+    await assert.rejects(cursorDriver.stop('x'), refusal('cursor'));
+    await assert.rejects(codexDriver.stop('x'), refusal('codex'));
+    await assert.rejects(cursorDriver.activate({ ref: 'x' }, {}), refusal('cursor'));
+    await assert.rejects(codexDriver.activate({ ref: 'x' }, {}), refusal('codex'));
+
+    process.env.PROMPTOBUS_CURSOR_HOME = path.join(dir, 'cursor');
+    process.env.PROMPTOBUS_CODEX_HOME = path.join(dir, 'codex');
+    mkdirSync(cursorSessionsDir(), { recursive: true });
+    mkdirSync(codexSessionsDir(), { recursive: true });
+
+    assert.equal(readCursorSession('x'), null);
+    assert.equal(readCodexSession('x'), null);
+    assert.deepEqual(listCodexSessions(), []);
+    assert.equal(cursorDriver.inspect('x').state, 'gone');
+    assert.match(cursorDriver.inspect('x').stall.reason, /no session record in the Cursor registry/);
+    assert.equal(codexDriver.inspect('x').state, 'gone');
+    assert.match(codexDriver.inspect('x').stall.reason, /no session record in the Codex registry/);
+  } finally {
+    if (cursorHome === undefined) delete process.env.PROMPTOBUS_CURSOR_HOME;
+    else process.env.PROMPTOBUS_CURSOR_HOME = cursorHome;
+    if (codexHome === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
+    else process.env.PROMPTOBUS_CODEX_HOME = codexHome;
+    bindHarnessHomes(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the built host declaration carries the writable layer flag a consumer compiles against', () => {
   // `dist/host.d.ts` is what a consumer's `tsc` reads, and `pretest` rebuilds it
   // — so this is not a check that the build ran, it is a check that the FIELD is

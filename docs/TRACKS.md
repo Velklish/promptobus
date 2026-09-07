@@ -106,7 +106,7 @@ Added after this snapshot: [PB-156](backlog/queue/PB-156-codex-thread-name-ignor
 
 PB-45 is a cross-driver prerequisite and edits Codex too: finish it before C. PB-151 is the first Cursor repair. PB-120 is deferred.
 
-Queued assignments: [PB-45](backlog/queue/PB-45-registry-read-swallows-refusal.md), [PB-151](backlog/queue/PB-151-cursor-inject-buffer-file-mode.md), [PB-148](backlog/queue/PB-148-limit-regex-alternation-order.md), [PB-153](backlog/queue/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/queue/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/queue/PB-93-cursor-bin-name-order-mismatch.md).
+Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](backlog/queue/PB-151-cursor-inject-buffer-file-mode.md), [PB-148](backlog/queue/PB-148-limit-regex-alternation-order.md), [PB-153](backlog/queue/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/queue/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/queue/PB-93-cursor-bin-name-order-mismatch.md).
 
 Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh-flag.md).
 

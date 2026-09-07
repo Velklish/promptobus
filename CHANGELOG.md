@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Registry readers no longer turn a missing harness-state home into an empty registry.** Cursor and Codex session reads now preserve the `GateError` that names `PROMPTOBUS_<HARNESS>_HOME` and `harnessStateHome`, and direct driver `inspect`, `stop` and `activate` calls propagate it. The aggregate `snapshotSessions` path still degrades driver errors to `unknown`, so it does not surface the refusal, while wake-side `registerWake` and `sessionPrefix` retain their safety catches. `gone` and “no session record” now mean that a declared registry was actually opened but held no matching record. (PB-45)
+
 - **Review snapshots expose a dirty tracked tree at the same pass that reads the patch and stat.** `promptobus review` still compares the selected base with the working tree so purely uncommitted work remains reviewable, but its output, reviewer prompt and participant journal now say whether that tree matched `HEAD` and name modified tracked paths when it did not. The prompt requires a current-file check even after a clean snapshot and routes contradictions back to the orchestrator as unresolved. A mutation probe can no longer silently make committed content disappear from the review subject, or make an uncommitted edit look committed, without the state being recorded. (PB-157)
 
 - **Nested suite hygiene keeps the runner's Claude config diversion.** A suite file that imports `home.mjs` now preserves an existing `CLAUDE_CONFIG_DIR=<run home>/.claude` while that diverted home is live, instead of deleting the runner-issued value before the file's own child processes inherit it; the runner probe now exercises that second hygiene pass. (PB-141)
