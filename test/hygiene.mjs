@@ -75,8 +75,9 @@
 //   environment (the harness puts it there), and leaked it would send
 //   the parse into the state of a person's live sessions — where the
 //   suite file did not plant a directory itself. It is diverted to
-//   the same place as home: `<run home>/.claude`; without a home —
-//   dropped.
+//   the same place as home: `<run home>/.claude`. A nested apply
+//   keeps that path while the already-diverted home is live; any
+//   other path is dropped.
 
 //
 // The list has a second half that is not a variable at all — **PATH**. Sandboxing
@@ -263,7 +264,8 @@ export function dropSessionLeaks(env) {
 // child, for the helper `process.env` itself. Home is a separate
 // argument: its path is different for each (the run directory for
 // the runner, a sandbox for the helper); what is shared is the list
-// of names.
+// of names. When the runner already diverted home, a nested apply
+// keeps its `<home>/.claude` value while that home directory exists.
 export function applyHygiene(env, { home, seal } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
   dropSessionLeaks(env);
@@ -273,7 +275,8 @@ export function applyHygiene(env, { home, seal } = {}) {
   if (home) {
     for (const name of HOME_VARS) env[name] = home;
     env[CONFIG_DIR_VAR] = path.join(home, '.claude');
-  } else {
+  } else if (!HOME_VARS.some((name) =>
+    env[name] && existsSync(env[name]) && env[CONFIG_DIR_VAR] === path.join(env[name], '.claude'))) {
     delete env[CONFIG_DIR_VAR];
   }
   // The seal directory is the caller's to place, for the same reason home is: the

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project gates run the full test suite before lint and the package audit.** Added `npm test` as the first backslop gate so a broken suite stops worker verification before the slower build-and-pack audit and before it reaches CI on `main`. (PB-71)
 
+### Fixed
+
+- **Nested suite hygiene keeps the runner's Claude config diversion.** A suite file that imports `home.mjs` now preserves an existing `CLAUDE_CONFIG_DIR=<run home>/.claude` while that diverted home is live, instead of deleting the runner-issued value before the file's own child processes inherit it; the runner probe now exercises that second hygiene pass. (PB-141)
+
 ### Documentation
 
 - **Backlog triage and execution tracks.** Reviewed the accumulated findings, consolidated duplicate records, separated focused repairs from deferred structural work, and recorded priorities, dependencies and shared-file boundaries in `docs/TRACKS.md`. No runtime behavior changed.

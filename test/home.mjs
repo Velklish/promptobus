@@ -35,6 +35,9 @@
 // Windows `os.userInfo()` reads the same `USERPROFILE`, so the signal also fires
 // under the runner there: the file gets its own sandbox instead of the issued
 // one, both inside the run directory, and there is no harm in that.
+// The runner also issued `CLAUDE_CONFIG_DIR=<run home>/.claude`; when no second
+// home is needed, the nested hygiene apply keeps that value while the issued home
+// is live. Any config path other than `<current home>/.claude` is still dropped.
 //
 // Everything else the call applies — the warden switch, the session-leak list,
 // the memory-hook lever, the PATH seal — is the shared list in

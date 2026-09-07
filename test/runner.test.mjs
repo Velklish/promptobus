@@ -36,9 +36,9 @@ const copy = src.replace(/const FILE_TIMEOUT_MS = [\d_]+;/, `const FILE_TIMEOUT_
 check('file timeout in the copy is swapped — we exercise the shortened one, not the real one',
   copy !== src && copy.includes(`const FILE_TIMEOUT_MS = ${CAP_MS};`));
 
-// The runner copy is planted in the sandbox with the hygiene list and
-// the `$TMPDIR` sweep: the runner imports both by a relative path, and
-// without the neighbour files the copy fails on import — red would
+// The runner copy is planted in the sandbox with the hygiene list, its
+// module-load apply, and the `$TMPDIR` sweep: the probes import them by
+// relative paths. Without the neighbour files, a failed import would
 // point at the probe, not at its subject. One hand puts them so
 // nothing can be forgotten.
 //
@@ -58,6 +58,7 @@ check(': thresholds import in the sweep copy is rewritten to the real module',
 function plant(dir, source) {
   writeFileSync(path.join(dir, 'run.mjs'), source);
   copyFileSync(path.join(here, 'hygiene.mjs'), path.join(dir, 'hygiene.mjs'));
+  copyFileSync(path.join(here, 'home.mjs'), path.join(dir, 'home.mjs'));
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
 }
 plant(SB, copy);
@@ -174,6 +175,14 @@ writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   + "${hit(['claude', 'cursor', 'cursor-agent', 'agent', 'codex', 'tmux'])} :: "
   + "${hit(['git', 'node', 'sh'])}`);\n");
 
+// Keep the second hygiene apply in its own file. If the broad runner probe above
+// imported home.mjs, that apply would sanitize the neighbouring variables itself
+// and let their runner assertions pass even when run.mjs leaked them.
+writeFileSync(path.join(SB2, 'c-nested.test.mjs'),
+  "import './home.mjs';\n"
+  + "import os from 'node:os';\n"
+  + "console.log(`NESTED: ${process.env.CLAUDE_CONFIG_DIR ?? '(dropped)'} :: ${os.homedir()}`);\n");
+
 const raised = await runCopy(SB2, {
   PROMPTOBUS_WARDEN: 'on',
   CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/poddelnyy-probe.sock',
@@ -228,6 +237,13 @@ check(': USERPROFILE is diverted to the same place as HOME',
 check(': CLAUDE_CONFIG_DIR is diverted into the run directory — stall parse does not read a person home',
   homeSeen !== '' && cfgSeen === path.join(homeSeen, '.claude'),
   `CLAUDE_CONFIG_DIR=${cfgSeen || '(unnamed)'} · home ${homeSeen || '(unnamed)'}`);
+// A separate suite file imports home.mjs and applies hygiene a second time. It
+// must inherit the same live diversion, not drop it during its module-load apply.
+const [nestedCfgSeen = '', nestedHomeSeen = ''] =
+  (raised.out.match(/NESTED: (.+)/)?.[1] ?? '').split(' :: ');
+check(': a nested hygiene apply keeps the runner-issued Claude config diversion',
+  nestedHomeSeen !== '' && nestedCfgSeen === path.join(nestedHomeSeen, '.claude'),
+  `CLAUDE_CONFIG_DIR=${nestedCfgSeen || '(unnamed)'} · home ${nestedHomeSeen || '(unnamed)'}`);
 
 // --- PATH is sealed: an unstubbed name reaches nothing ---------------
 //
