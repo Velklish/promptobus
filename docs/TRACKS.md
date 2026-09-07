@@ -140,6 +140,8 @@ PB-126 uses Q process fixes. PB-121 in C precedes changes to launch rendering. P
 
 Queued assignments: [PB-87](backlog/queue/PB-87-reviewer-mcp-write-isolation.md), [PB-126](backlog/queue/PB-126-review-git-spawn-no-timeout.md), [PB-83](backlog/queue/PB-83-spawn-preamble-missing-deps-line.md), [PB-44](backlog/queue/PB-44-rules-list-dry-run-only.md), [PB-51](backlog/queue/PB-51-standalone-plugin-warning-wrong.md), [PB-54](backlog/queue/PB-54-review-refusals-plain-error.md), [PB-55](backlog/queue/PB-55-bus-hint-wraps-wrong-command.md), [PB-80](backlog/queue/PB-80-cli-catch-instanceof-not-name.md), [PB-96](backlog/queue/PB-96-reviewer-worktree-pickup-fallback.md), [PB-140](backlog/queue/PB-140-refusal-messages-hardcode-bare-command.md).
 
+Added after this snapshot: [PB-158](backlog/queue/PB-158-done-keeps-a-branch-it-proved-merged.md) — `done` removes a worktree on proven squash containment but leaves its own branch, because the branch check falls back to an ancestry test a squash cannot satisfy.
+
 Added after this snapshot: [PB-157](archive/PB-157-review-snapshot-reads-dirty-worktree/task.md) — the review snapshot is taken from the working tree, so a mandated post-commit mutation probe removes the reviewed change from the diff. Ordered near the top: it is a verification prerequisite for every track.
 
 ### W — Guard and warden delivery
