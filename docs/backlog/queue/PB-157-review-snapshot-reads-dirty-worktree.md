@@ -1,5 +1,6 @@
 # PB-157 · The review snapshot is taken from the working tree, so a mandated post-commit mutation probe silently removes the reviewed change from the diff
 
+- **Order:** 25
 - **Scope:** `lib/review.js`, [03-cli](../../reference/03-cli.md) § Review, review tests
 - **Created:** 2026-09-07
 - **Dependencies:** none
@@ -58,3 +59,10 @@ Reviewing uncommitted work is a legitimate mode — `solo-review` exists for exa
 - A clean tree produces the same snapshot and prompt as today apart from an explicit "tree clean" statement.
 - Review of purely uncommitted work still produces the same diff it does now.
 - `npm test` stays green.
+
+## Triage — 2026-09-07
+
+- **Track:** L — Spawn, review and command guidance (`lib/review.js`).
+- **Priority:** P1. It is a verification prerequisite: while it stands, every isolated review in this backlog can be judged against a diff that omits the change under review.
+- **Evidence level:** three live measurements on task `pb-qprep-t20260907-160618`, 2026-09-07, plus source review of `lib/review.js:313-337` and `:1042`. Two of the three produced false `[major]` findings; the third survived a deliberate pre-check of the tree.
+- **Next step:** implement as written. The fix is a recorded fact and its wording, not a change to what the snapshot compares — reviewing uncommitted work stays supported.

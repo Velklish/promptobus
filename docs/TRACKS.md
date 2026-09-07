@@ -86,6 +86,8 @@ Start with PB-71/PB-141 and PB-50/PB-122. Stabilize live evidence with PB-67/PB-
 
 Queued assignments: [PB-71](archive/PB-71-gates-omit-npm-test/task.md), [PB-141](archive/PB-141-hygiene-drops-claude-config-dir/task.md), [PB-50](archive/PB-50-harness-run-missing-ceilings/task.md), [PB-122](archive/PB-122-windows-path-ignored-by-planrun/task.md), [PB-67](backlog/queue/PB-67-live-mixed-matcher-uses-wrong-field.md), [PB-68](backlog/queue/PB-68-live-cursor-review-verdict-false-green.md), [PB-69](backlog/queue/PB-69-dead-path-prepend-live-scripts.md), [PB-114](backlog/queue/PB-114-live-run-sweep-gaps.md), [PB-144](backlog/queue/PB-144-stray-tmp-sockets-unswept.md), [PB-82](backlog/queue/PB-82-package-test-missing-catalog-check.md), [PB-108](backlog/queue/PB-108-exports-map-untested-specifiers.md), [PB-70](backlog/queue/PB-70-version-drift-changelog-tag.md), [PB-72](backlog/queue/PB-72-contributing-guide-drifted-facts.md), [PB-73](backlog/queue/PB-73-forbidden-list-missing-brand.md), [PB-75](backlog/queue/PB-75-roadmap-cyrillic-check-not-gated.md), [PB-94](backlog/queue/PB-94-ci-unpinned-ast-grep-backslop.md), [PB-107](backlog/queue/PB-107-link-check-skips-fragments.md), [PB-110](backlog/queue/PB-110-harness-vocabulary-missing-from-glossary.md), [PB-112](backlog/queue/PB-112-reference-docs-lag-current-code.md), [PB-113](backlog/queue/PB-113-live-canary-narrates-removed-commands.md), [PB-137](backlog/queue/PB-137-readme-links-need-repository-field.md), [PB-138](backlog/queue/PB-138-audit-public-portable-launch.md), [PB-142](backlog/queue/PB-142-harness-duplication-hides-scenario-errors.md), [PB-143](backlog/queue/PB-143-sweep-list-has-dead-prefixes.md), [PB-46](backlog/queue/PB-46-roadmap-catalog-numbers-stale.md), [PB-47](backlog/queue/PB-47-orchestrate-skill-cli-drift.md), [PB-84](backlog/queue/PB-84-cli-help-strategy-default-stale.md), [PB-104](backlog/queue/PB-104-hidden-models-reference-mismatch.md).
 
+Added after this snapshot: [PB-50.1](backlog/queue/PB-50.1-git-max-output-names-a-process-wide-budget.md) — the shared output budget kept a git-specific name when PB-50 widened its reach.
+
 ### S — Store integrity and public engine
 
 PB-63 and PB-66 are P0. PB-66 precedes PB-65 and reader taxonomy. PB-101 follows the version/error fixes; PB-147 tests its cleanup boundary.
@@ -97,6 +99,8 @@ Queued assignments: [PB-63](backlog/queue/PB-63-migrate-mark-never-removed.md), 
 PB-97 before PB-41; PB-49/PB-99 before PB-42. Do not conflate a protocol collision with the unproven cause of the historical elicitation hang. PB-90 requires protocol evidence.
 
 Queued assignments: [PB-97](backlog/queue/PB-97-codex-rpc-id-collision.md), [PB-49](backlog/queue/PB-49-codex-holder-spawn-error-unhandled.md), [PB-41](backlog/queue/PB-41-codex-reviewer-hangs-after-elicitation-allow.md), [PB-99](backlog/queue/PB-99-codex-rising-branch-ignores-error-age.md), [PB-42](backlog/queue/PB-42-codex-activity-watchdog.md), [PB-115](backlog/queue/PB-115-codex-socket-fallback-collision.md), [PB-152](backlog/queue/PB-152-codex-session-record-env-leak.md), [PB-88](backlog/queue/PB-88-codex-approval-text-match-false-positive.md), [PB-89](backlog/queue/PB-89-codex-approval-symlink-paths.md), [PB-90](backlog/queue/PB-90-codex-reviewer-effort-dropped.md), [PB-150](backlog/queue/PB-150-currenttime-read-approve-table.md), [PB-98](backlog/queue/PB-98-codex-sessions-phrase-wrong-home.md), [PB-121](backlog/queue/PB-121-codex-dry-run-prompt-via-argv.md).
+
+Added after this snapshot: [PB-156](backlog/queue/PB-156-codex-thread-name-ignores-chosen-session-name.md) — the Codex thread takes a machine name and never receives the readable session name the mechanism chose.
 
 ### D — Harness registries and Cursor / Claude drivers
 
@@ -131,6 +135,8 @@ Queued assignments: [PB-119](backlog/queue/PB-119-duplicate-server-and-hook-cons
 PB-126 uses Q process fixes. PB-121 in C precedes changes to launch rendering. PB-87 is a design/capability checkpoint. PB-55 and PB-140 integrate after their shared model/store call sites stabilize.
 
 Queued assignments: [PB-87](backlog/queue/PB-87-reviewer-mcp-write-isolation.md), [PB-126](backlog/queue/PB-126-review-git-spawn-no-timeout.md), [PB-83](backlog/queue/PB-83-spawn-preamble-missing-deps-line.md), [PB-44](backlog/queue/PB-44-rules-list-dry-run-only.md), [PB-51](backlog/queue/PB-51-standalone-plugin-warning-wrong.md), [PB-54](backlog/queue/PB-54-review-refusals-plain-error.md), [PB-55](backlog/queue/PB-55-bus-hint-wraps-wrong-command.md), [PB-80](backlog/queue/PB-80-cli-catch-instanceof-not-name.md), [PB-96](backlog/queue/PB-96-reviewer-worktree-pickup-fallback.md), [PB-140](backlog/queue/PB-140-refusal-messages-hardcode-bare-command.md).
+
+Added after this snapshot: [PB-157](backlog/queue/PB-157-review-snapshot-reads-dirty-worktree.md) — the review snapshot is taken from the working tree, so a mandated post-commit mutation probe removes the reviewed change from the diff. Ordered near the top: it is a verification prerequisite for every track.
 
 ### W — Guard and warden delivery
 

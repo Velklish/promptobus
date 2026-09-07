@@ -1,5 +1,6 @@
 # PB-156 · The Codex thread is named `promptobus:<task>:<address>`, so the readable session name the mechanism already chose and stored is invisible in the Codex UI
 
+- **Order:** 1040
 - **Scope:** `lib/codex-session.js`, `lib/driver-codex.js`, [02-host](../../reference/02-host.md), Codex session tests
 - **Created:** 2026-09-07
 - **Dependencies:** none
@@ -49,3 +50,10 @@ Not already tracked: `grep -rniE 'thread/name|threadName|session name|sessionNam
 - A record without the name field still lifts and is still named, by the current machine string; a test that reddens if the fallback is removed.
 - Two Codex workers on one task lift under distinct names, differing by their `--title` rather than by an address tail.
 - `npm test` stays green.
+
+## Triage — 2026-09-07
+
+- **Track:** C — Codex session lifecycle (`lib/codex-session.js`, `lib/driver-codex.js`).
+- **Priority:** P2. Nothing breaks; a person watching a run cannot tell what a Codex session is working on, and two Codex workers on one task differ only by an address tail.
+- **Evidence level:** observed live on task `pb-qprep-t20260907-160618`, 2026-09-07 — the journal's `sessionRef` against the name shown in the Codex session list — plus source review of `lib/spawn.js:465`, `lib/codex-session.js:967`, `lib/driver-codex.js:68` and the `naming` contract at `src/driver.ts:255-261`.
+- **Next step:** implement as written. Keep the machine identity addressable and the fallback for records written before the field existed.
