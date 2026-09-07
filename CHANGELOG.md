@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Review snapshots expose a dirty tracked tree at the same pass that reads the patch and stat.** `promptobus review` still compares the selected base with the working tree so purely uncommitted work remains reviewable, but its output, reviewer prompt and participant journal now say whether that tree matched `HEAD` and name modified tracked paths when it did not. The prompt requires a current-file check even after a clean snapshot and routes contradictions back to the orchestrator as unresolved. A mutation probe can no longer silently make committed content disappear from the review subject, or make an uncommitted edit look committed, without the state being recorded. (PB-157)
+
 - **Nested suite hygiene keeps the runner's Claude config diversion.** A suite file that imports `home.mjs` now preserves an existing `CLAUDE_CONFIG_DIR=<run home>/.claude` while that diverted home is live, instead of deleting the runner-issued value before the file's own child processes inherit it; the runner probe now exercises that second hygiene pass. (PB-141)
 
 - **Harness process launches have shared time and output ceilings.** Every launch through `run` now carries the project's 60-second timeout and 32 MiB output budget unless its caller overrides either value, so a wedged or over-verbose driver read becomes the existing unknown-liveness result instead of blocking the warden indefinitely. The same budget keeps Cursor's dirty-worktree liveness read from collapsing to “no writes” when `git ls-files` output crosses Node's default. (PB-50)

@@ -1052,7 +1052,11 @@ store.createTask(HOME, { id: DECOR, title: 'строки участника в �
 store.upsertParticipant(HOME, DECOR, store.participantRecord('worker:cargos-api', { repo: 'loads_search/cargos-api',
   worktree: DECOR_WT,
   branch: DECOR_BRANCH,
-  session: 'ab12cd34' }));
+  session: 'ab12cd34',
+  diffAt: '2026-09-07T20:00:00.000Z',
+  diffHead: '0123456789abcdef',
+  diffClean: false,
+  diffModifiedTracked: ['src/a.ts'] }));
 // The neighboring record has none of the adapter's fields at all: the lines aren't invented —
 // `orchestrator` has no directory at all, and `worktree undefined` in its line would be a lie.
 store.upsertParticipant(HOME, DECOR, store.participantRecord('worker:web'));
@@ -1070,6 +1074,10 @@ check(`: the task response prints the participant's repository`,
 // survive a reordering.
 check(`: the task response prints the participant's worktree with the real git branch — before bg-session`,
   decorLine.includes(`worktree ${DECOR_WT} (branch ${DECOR_BRANCH}) · bg-session ab12cd34`),
+  decorLine || decorOut);
+check('PB-157 task response: the snapshot line carries its dirty tracked-tree path',
+  decorLine.includes('diff snapshot 2026-09-07T20:00:00.000Z at 0123456789abcdef, '
+    + 'tracked tree dirty (modified tracked paths: src/a.ts)'),
   decorLine || decorOut);
 check(': a participant with no repository, worktree, or session has none of these lines',
   bareLine.startsWith('- worker:web · unread')

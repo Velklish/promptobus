@@ -2,8 +2,8 @@
 //
 // Subject — the review plan: everything computed before the `claude --bg` exec — the
 // address and task, the module's review-skill resolve, the prompt and its read-only
-// invariants, the diff path, the re-review branch to the same address. The exec itself
-// is not under test: it raises a live session.
+// invariants, the diff path and its tracked-tree state, the re-review branch to the same
+// address. The exec itself is not under test: it raises a live session.
 //
 // **Names like `a2a-…` in fixtures are left in on purpose**: that's what the previous
 // CLI called branches, worktree directories, and sessions, and they check that the hard
@@ -30,6 +30,7 @@ const { planReview, review, denyToolsRefusal, writeDiff } = await import(reviewU
 // own, not the bus's.
 const { EFFORT_LEVELS, REVIEWER_DENY, SESSION_ENV_DROP } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { GUARD_HOOK_EVENT, guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 // The participant file path under `workers/` — in the journal, next to `workersDir`:
@@ -113,7 +114,7 @@ try {
   cleanThrew = e.message;
 }
 check('clean clone without --title: answers "no changes — nothing to review" instead of demanding a name',
-  !cleanThrew && /nothing to review/.test(cleanOut) && !/--title/.test(cleanOut),
+  !cleanThrew && /nothing to review/.test(cleanOut) && /tree clean/.test(cleanOut) && !/--title/.test(cleanOut),
   cleanThrew ?? cleanOut.slice(-400));
 
 // : a name that doesn't survive transliteration (CJK, emoji, punctuation only) used to
@@ -223,6 +224,18 @@ check('plan: the name went into the task slug, the id is readable',
   && plan.taskId.startsWith(`${plan.createNew.adapter.slug}-t`), `${plan.createNew.adapter.slug} · ${plan.taskId}`);
 check('plan: the diff is not empty and includes what is uncommitted',
   /a\.txt/.test(plan.diff) && plan.untracked.includes('new.txt'), plan.untracked.join(','));
+check('PB-157: purely uncommitted tracked work stays in the snapshot and is named as dirty',
+  plan.snapshot.clean === false
+  && JSON.stringify(plan.snapshot.modifiedTracked) === JSON.stringify(['a.txt'])
+  && plan.diff === spawnSync('git', ['-C', REPO, '-c', 'core.quotePath=false', 'diff', plan.baseRef], { encoding: 'utf8' }).stdout,
+  JSON.stringify(plan.snapshot));
+// The stat now comes out of the prefix of the same `--raw --stat --patch` read rather than
+// from a call of its own, and the format is what silently drifts under that move: leading
+// spaces, the summary line, the separator before the patch. Pinned byte-for-byte against
+// the call it replaced.
+check('PB-157: the stat cut out of the single pass equals the stat of its own call',
+  plan.stat === spawnSync('git', ['-C', REPO, '-c', 'core.quotePath=false', 'diff', '--stat', plan.baseRef], { encoding: 'utf8' }).stdout.trim(),
+  plan.stat);
 // The title goes into the session name, and the tail carries a short stamp: the raw id
 // there used to read as fifteen technical characters instead of a date and time.
 check(`reviewer's session name: role as the first word, task name, short stamp in the tail`,
@@ -912,6 +925,7 @@ const FORK = gOut(OWN, 'rev-parse', 'HEAD');
 const W1 = path.join(OWN, '.claude', 'worktrees', 'a2a-pervyy');
 g(OWN, 'worktree', 'add', '-q', '-b', 'worktree-a2a-pervyy', W1, 'main');
 writeFileSync(path.join(W1, 'pervyy.txt'), `работа первого worker'а\n`);
+writeFileSync(path.join(W1, 'probe.txt'), 'часть commit, временно снятая mutation probe\n');
 g(W1, 'add', '.');
 g(W1, 'commit', '-m', 'работа первого', '-q');
 const W2 = path.join(OWN, '.claude', 'worktrees', 'a2a-vtoroy');
@@ -945,6 +959,17 @@ const worker = (address, worktree, wtName, title = null, extra = {}) => store.pa
 store.upsertParticipant(home, owned.id, worker('worker:pervyy', W1, 'a2a-pervyy', `Точка ветвления worker'а`, { baseSha: FORK }));
 store.upsertParticipant(home, owned.id, worker('worker:vtoroy', W2, 'a2a-vtoroy', 'Reviewer по предмету ревью', { baseSha: FORK }));
 
+// PB-157: the branch commit contains two files, but a mutation probe has reverted one
+// addition in the working tree. The review diff must keep comparing the base with the
+// working tree, so `probe.txt` is deliberately absent from the patch. The tree-state
+// record has to expose that omission from the SAME diff pass.
+rmSync(path.join(W1, 'probe.txt'));
+check('PB-157 fixture: a committed path is reverted in the working tree and absent from the review diff',
+  /^D probe\.txt$/.test(gOut(W1, 'status', '--short'))
+  && !gOut(W1, 'diff', FORK).includes('probe.txt')
+  && gOut(W1, 'diff', FORK, 'HEAD').includes('probe.txt'),
+  gOut(W1, 'status', '--short'));
+
 // The fixture must reproduce the bug, otherwise the checks below pass green for any
 // reason: from the old base, the worker's diff really does drag in someone else's work.
 check(`fixture: the orchestrator's work lands in the first worker's diff from origin/main`,
@@ -958,6 +983,20 @@ check(': the diff base is the branch point from the journal, not origin/<default
   first.baseRef === FORK, `${first.baseRef} vs ${FORK}`);
 check(`: the orchestrator's work bypassing origin does not land in the worker's diff`,
   first.diff.includes('pervyy.txt') && !first.diff.includes('orkestrator.txt'), first.stat);
+check('PB-157 stat: the summary came through with the patch from the snapshot pass',
+  first.stat.includes('pervyy.txt') && !first.stat.includes('orkestrator.txt'), first.stat);
+check('PB-157 prompt: a dirty snapshot names the committed path omitted by the working tree in both review messages',
+  first.snapshot.clean === false
+  && JSON.stringify(first.snapshot.modifiedTracked) === JSON.stringify(['probe.txt'])
+  && first.prompt.includes('modified tracked paths: probe.txt')
+  && first.prompt.includes('content committed at HEAD can be absent from the snapshot')
+  && first.prompt.includes('uncommitted content can be present')
+  && first.prompt.includes('whether the tracked-tree state below is clean or dirty')
+  && first.prompt.includes('do not run Git and do not file a finding')
+  && first.prompt.includes('report the discrepancy as unresolved')
+  && first.prompt.includes('git show <sha> -- <path>')
+  && first.reReview.includes('modified tracked paths: probe.txt'),
+  JSON.stringify(first.snapshot));
 check(`: the base is named out loud — in the plan, in the reviewer's prompt, and in the re-review message`,
   String(first.baseLine).includes(FORK) && String(first.baseLine).includes('worker:pervyy')
   && first.prompt.includes(String(first.baseLine)) && first.reReview.includes(String(first.baseLine)),
@@ -976,7 +1015,22 @@ check('PB-35 prompt: the diff file is named a snapshot — its moment, the workt
   && first.reReview.includes(`The file is a SNAPSHOT taken at ${first.snapshot.at}`),
   first.snapshot.line);
 
+const dirtySnapshotOut = await capture(() => review(WS, { target: W1, task: owned.id, dryRun: true }));
+check('PB-157 output: a dirty snapshot warns the person beside the diff base and names the tracked path',
+  /diff base:[^\n]*diff snapshot:[^\n]*tracked tree dirty/.test(dirtySnapshotOut)
+  && dirtySnapshotOut.includes('probe.txt')
+  && dirtySnapshotOut.includes('snapshot can omit committed content or include uncommitted content'),
+  dirtySnapshotOut);
+writeFileSync(path.join(W1, 'probe.txt'), 'часть commit, временно снятая mutation probe\n');
+
 const second = planReview(WS, { target: W2, task: owned.id });
+check('PB-157 prompt: a clean snapshot says so explicitly and carries no modified tracked paths',
+  second.snapshot.clean === true && second.snapshot.modifiedTracked.length === 0
+  && second.prompt.includes('At snapshot time the tracked tree was clean.')
+  && second.prompt.includes('whether the tracked-tree state below is clean or dirty')
+  && second.prompt.includes('git show <sha> -- <path>')
+  && second.reReview.includes('At snapshot time the tracked tree was clean.'),
+  JSON.stringify(second.snapshot));
 check(': a second worker of the same repository gets its own reviewer, not the first one\'s reviewer',
   second.address === 'reviewer:vtoroy' && second.address !== first.address, second.address);
 check(': the second one\'s reviewer sees its own diff',
@@ -1027,13 +1081,17 @@ check('re-review of the same subject — the same address and the same live sess
   reReviewed.address === 'reviewer:vtoroy' && reReviewed.reuse === true
   && reReviewed.sessionState === 'alive', `${reReviewed.address} · ${reReviewed.sessionState}`);
 
-// PB-35: the same pair on the reviewer's record — that is what `promptobus status` and
-// `promptobus_task` read to answer how far behind the file is. Shape first: an ISO
-// moment and the worktree HEAD the lift took the diff from.
+// The snapshot facts on the reviewer's record are what `promptobus status` and
+// `promptobus_task` read to answer how far behind the file is and whether it matched
+// HEAD. Shape first: an ISO moment, the worktree HEAD and a clean tracked-tree state.
 const liftHead = gOut(W2, 'rev-parse', 'HEAD');
-check('PB-35 record: the lift writes the snapshot moment and the head commit of the diff',
-  /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(revPart?.diffAt)) && revPart?.diffHead === liftHead,
-  JSON.stringify({ diffAt: revPart?.diffAt, diffHead: revPart?.diffHead, head: liftHead }));
+check('PB-157 record: the lift writes the snapshot moment, head and clean tracked-tree state',
+  /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(String(revPart?.diffAt)) && revPart?.diffHead === liftHead
+  && revPart?.diffClean === true && JSON.stringify(revPart?.diffModifiedTracked) === '[]',
+  JSON.stringify({
+    diffAt: revPart?.diffAt, diffHead: revPart?.diffHead,
+    diffClean: revPart?.diffClean, diffModifiedTracked: revPart?.diffModifiedTracked, head: liftHead,
+  }));
 
 // And it MOVES on a re-review. The re-review branch does not rewrite the record — a live
 // reviewer only gets a message — so without its own patch the record would keep naming
@@ -1044,16 +1102,26 @@ writeFileSync(path.join(W2, 'vtoroy-2.txt'), 'вторая порция рабо
 g(W2, 'add', '.');
 g(W2, 'commit', '-m', 'вторая порция', '-q');
 const afterHead = gOut(W2, 'rev-parse', 'HEAD');
+writeFileSync(path.join(W2, 'vtoroy.txt'), 'незафиксированная правка после commit\n');
 claudeSays(JSON.stringify([{ name: revPart?.name ?? 'сессии нет', pid: 4242 }]));
 await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
 const reStamped = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
-check('PB-35 record: a re-review moves the snapshot to the diff it just sent',
+check('PB-157 record: a re-review moves the snapshot and replaces its tracked-tree state',
   reStamped?.diffHead === afterHead && afterHead !== liftHead
   && reStamped?.diffAt !== revPart?.diffAt
-  // The re-review patches the pair and nothing else: the session the record was lifted
+  && reStamped?.diffClean === false
+  && JSON.stringify(reStamped?.diffModifiedTracked) === JSON.stringify(['vtoroy.txt'])
+  // The re-review patches the snapshot fields and nothing else: the session the record was lifted
   // with must survive it.
   && reStamped?.name === revPart?.name && reStamped?.session === revPart?.session,
-  JSON.stringify({ diffAt: reStamped?.diffAt, diffHead: reStamped?.diffHead, was: revPart?.diffHead }));
+  JSON.stringify({
+    diffAt: reStamped?.diffAt, diffHead: reStamped?.diffHead, diffClean: reStamped?.diffClean,
+    diffModifiedTracked: reStamped?.diffModifiedTracked, was: revPart?.diffHead,
+  }));
+const snapshotStatus = await capture(() => status(WS, { task: owned.id, sessions: {} }));
+check('PB-157 status: the reviewer line exposes the dirty snapshot and its tracked path',
+  /reviewer:vtoroy[^\n]*tracked tree dirty \(modified tracked paths: vtoroy\.txt\)/.test(snapshotStatus),
+  snapshotStatus);
 
 // The main clone belongs to nobody in the worktree journal — a review of the
 // orchestrator's own work stays on the prior behavior for both tasks.
