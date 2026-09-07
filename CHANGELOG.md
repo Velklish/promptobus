@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Harness process launches have shared time and output ceilings.** Every launch through `run` now carries the project's 60-second timeout and 32 MiB output budget unless its caller overrides either value, so a wedged or over-verbose driver read becomes the existing unknown-liveness result instead of blocking the warden indefinitely. The same budget keeps Cursor's dirty-worktree liveness read from collapsing to “no writes” when `git ls-files` output crosses Node's default. (PB-50)
 
+- **Windows launch planning and tracing honor the caller's environment.** `run` now gives `planRun` the same caller-supplied environment it passes to the child, and the execution trace resolves Windows commands through `PATHEXT`, so a sealed or deliberately reduced `PATH` cannot be replaced by the parent process's paths or reported as `(unresolved)`. (PB-122)
+
 ### Documentation
 
 - **Backlog triage and execution tracks.** Reviewed the accumulated findings, consolidated duplicate records, separated focused repairs from deferred structural work, and recorded priorities, dependencies and shared-file boundaries in `docs/TRACKS.md`. No runtime behavior changed.

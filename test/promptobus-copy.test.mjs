@@ -63,6 +63,51 @@ check('exec.planRun win .cmd refuses %',
 const PROBE = path.join(SB, 'exec-ceilings');
 mkdirSync(PROBE, { recursive: true });
 const execSource = readFileSync(new URL('../lib/exec.js', import.meta.url), 'utf8');
+
+// Force the production defaults to win32 in a copy and stop at the spawn boundary.
+// The parent and caller PATHs contain the same command at different paths, so the
+// returned plan says which environment run() actually handed to planRun. The same
+// call writes the production trace and exposes whether PATHEXT was used there too.
+const WIN_PROBE = path.join(SB, 'win32-env');
+const PARENT_BIN = path.join(WIN_PROBE, 'parent-bin');
+const CALLER_BIN = path.join(WIN_PROBE, 'caller-bin');
+mkdirSync(PARENT_BIN, { recursive: true });
+mkdirSync(CALLER_BIN, { recursive: true });
+writeFileSync(path.join(PARENT_BIN, 'chosen.exe'), 'parent');
+writeFileSync(path.join(CALLER_BIN, 'chosen.exe'), 'caller');
+const spawnImport = "import { spawnSync } from 'node:child_process';";
+const winExecSource = execSource
+  .replace(spawnImport,
+    'const spawnSync = (file, args, options) => ({ status: 0, file, args, options });')
+  .replaceAll('process.platform', "'win32'");
+check('win32 env probe forces the production defaults and stops at spawn',
+  winExecSource !== execSource
+  && !winExecSource.includes(spawnImport)
+  && !winExecSource.includes('process.platform'));
+const WIN_EXEC = path.join(WIN_PROBE, 'exec.js');
+writeFileSync(WIN_EXEC, winExecSource);
+const winExec = await import(pathToFileURL(WIN_EXEC).href);
+const WIN_TRACE = path.join(WIN_PROBE, 'trace.tsv');
+const savedParentPath = process.env.PATH;
+const savedTrace = process.env.PROMPTOBUS_EXEC_TRACE;
+try {
+  process.env.PATH = PARENT_BIN;
+  process.env.PROMPTOBUS_EXEC_TRACE = WIN_TRACE;
+  const callerEnv = { PATH: CALLER_BIN, PATHEXT: '.EXE' };
+  const planned = winExec.run('chosen', [], { env: callerEnv });
+  check('exec.run win32 plans against the caller PATH, not process PATH',
+    planned.file === path.join(CALLER_BIN, 'chosen.exe'), JSON.stringify(planned));
+  let winTrace = '';
+  try { winTrace = readFileSync(WIN_TRACE, 'utf8'); } catch { /* trace failure is the verdict */ }
+  check('exec trace win32 resolves the caller PATHEXT binary',
+    winTrace === `chosen\t${path.join(CALLER_BIN, 'chosen.exe')}\n`, winTrace || '(missing)');
+} finally {
+  if (savedParentPath === undefined) delete process.env.PATH;
+  else process.env.PATH = savedParentPath;
+  if (savedTrace === undefined) delete process.env.PROMPTOBUS_EXEC_TRACE;
+  else process.env.PROMPTOBUS_EXEC_TRACE = savedTrace;
+}
+
 const probeExec = execSource
   .replace('export const PROC_TIMEOUT_MS = 60_000;', 'export const PROC_TIMEOUT_MS = 1_000;')
   .replace('export const GIT_MAX_OUTPUT = 32 * 1024 * 1024;', 'export const GIT_MAX_OUTPUT = 64;');
