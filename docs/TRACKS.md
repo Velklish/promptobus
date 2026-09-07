@@ -108,6 +108,8 @@ PB-45 is a cross-driver prerequisite and edits Codex too: finish it before C. PB
 
 Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](backlog/queue/PB-151-cursor-inject-buffer-file-mode.md), [PB-148](backlog/queue/PB-148-limit-regex-alternation-order.md), [PB-153](backlog/queue/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/queue/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/queue/PB-93-cursor-bin-name-order-mismatch.md).
 
+Added after this snapshot: [PB-45.1](backlog/queue/PB-45.1-snapshot-path-hides-registry-refusal.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
+
 Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh-flag.md).
 
 ### R — Routing policy, overlays and availability
@@ -129,6 +131,8 @@ Queued assignments: [PB-77](backlog/queue/PB-77-telemetry-end-reading-stale-exha
 PB-119 first, then PB-103/PB-52. PB-53 precedes PB-100, then PB-154. PB-76 includes PB-111. PB-109 fixes regeneration guidance without changing config policy.
 
 Queued assignments: [PB-119](archive/PB-119-duplicate-server-and-hook-constants/task.md), [PB-103](backlog/queue/PB-103-guard-hook-hardcodes-promptobus-word.md), [PB-52](backlog/queue/PB-52-guard-ownership-machine-local.md), [PB-53](backlog/queue/PB-53-install-rewrites-unselected-files.md), [PB-100](backlog/queue/PB-100-install-dry-run-check-mismatch.md), [PB-154](backlog/queue/PB-154-install-check-gates-blind.md), [PB-76](backlog/queue/PB-76-cursor-hooks-doc-mismatch.md), [PB-109](backlog/queue/PB-109-bus-hook-sync-command-missing.md).
+
+Added after this snapshot: [PB-119.1](backlog/queue/PB-119.1-install-writes-hook-event-names-by-hand.md) — `lib/install.js` writes the hook event names as literals while importing the matcher from `dist`, leaving `GUARD_HOOK_EVENT` an untied third door.
 
 ### L — Spawn, review and command guidance
 
