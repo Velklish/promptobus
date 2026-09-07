@@ -3,6 +3,7 @@
   "docs": "docs",
   "cli": "npx github:Velklish/backslop#v0.4.0",
   "gates": [
+    "npm test",
     "npx github:Velklish/backslop#v0.4.0 lint",
     "npm run audit"
   ],

@@ -23,7 +23,7 @@ The operational tracker for promptobus: **one task is one file**, and **status i
 - **Closure** — completed, rejected, or merged — uses `npx github:Velklish/backslop#v0.4.0 archive N`: the file moves to the archive as `task.md`, alongside a dated `result.md`. The approver completes the outcome and result; while `result.md` contains `[TODO]`, `lint` fails.
 - A deferred task gets a “Deferred” section with its reason and return condition; without them, `lint` fails.
 - A task that becomes an architectural decision moves to an [ADR](../README.md); the task file keeps a link.
-- Project gates are the `gates` field in `backslop.json`; `npx github:Velklish/backslop#v0.4.0 lint` is among them.
+- Project gates are the `gates` field in `backslop.json`; `npm test` runs first and `npx github:Velklish/backslop#v0.4.0 lint` is among them.
 
 For the 2026-09-07 triage decisions and execution boundaries, see [TRACKS.md](../TRACKS.md). It records assignments, not current status.
 
