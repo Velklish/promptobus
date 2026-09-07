@@ -327,6 +327,27 @@ check('package sources import only Node built-ins and their own files',
 const built = npm(['run', 'build'], COPY_ROOT);
 check('copy of the repo builds', built.status === 0, why(built));
 
+let serverContract = { adapter: null, hook: null, matcher: null, error: '' };
+if (built.status === 0) {
+  try {
+    const adapter = await import(pathToFileURL(path.join(COPY_ROOT, 'lib', 'contract.js')).href);
+    const hooks = await import(pathToFileURL(path.join(COPY_ROOT, 'dist', 'hooks.js')).href);
+    serverContract = {
+      adapter: adapter.PROMPTOBUS_SERVER,
+      hook: hooks.BUS_SERVER,
+      matcher: hooks.BUS_HOOK_MATCHER,
+      error: '',
+    };
+  } catch (e) {
+    serverContract.error = e.message;
+  }
+}
+check('PB-119 server contract: the shipped server name is promptobus on both doors and in the hook matcher',
+  serverContract.adapter === serverContract.hook
+  && serverContract.adapter === 'promptobus'
+  && serverContract.matcher === 'mcp__promptobus__(promptobus_send|promptobus_mailbox)',
+  JSON.stringify(serverContract));
+
 function packList() {
   const r = npm(['pack', '--dry-run', '--json'], COPY_ROOT);
   if (r.status !== 0) return { ok: false, files: [], detail: why(r) };
@@ -346,7 +367,7 @@ check('tarball contains package.json',
 check('tarball contains built dist with declarations',
   files.includes('dist/index.js') && files.includes('dist/index.d.ts')
   && files.includes('dist/driver.js') && files.includes('dist/host-index.js')
-  && files.includes('dist/hooks.js'),
+  && files.includes('dist/hooks.js') && files.includes('dist/contract.js'),
   files.filter((f) => f.startsWith('dist/')).join(', '));
 check('tarball contains the bus-hook template',
   packed.ok && files.includes('templates/bus-hook.mjs'),

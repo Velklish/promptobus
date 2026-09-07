@@ -684,6 +684,8 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
 
+`GUARD_HOOK_EVENT` in `src/hooks.ts` declares the Claude `Stop` event, and `lib/driver-claude.js` imports that compiled value for participant settings: those two cannot rename the event independently. `lib/install.js` still spells the event names out when it writes and cleans harness settings, so a rename there is not yet held to the declaration.
+
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
 
 No driver call on the warden beat path may block without a ceiling. Every launch through `run` carries the shared 60-second timeout and 32 MiB output budget; a call site may override either value.
@@ -704,4 +706,4 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 ## MCP
 
-`promptobus mcp` serves stdio JSON-RPC. It must not write logs to stdout. The bus server name is `promptobus`.
+`promptobus mcp` serves stdio JSON-RPC. It must not write logs to stdout. The bus server name is `promptobus`: `src/contract.ts` owns that literal, `src/hooks.ts` exposes it as `BUS_SERVER` for the hook matcher, and `lib/contract.js` re-exports its compiled value as `PROMPTOBUS_SERVER` for adapter consumers.

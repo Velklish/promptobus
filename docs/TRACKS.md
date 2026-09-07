@@ -128,7 +128,7 @@ Queued assignments: [PB-77](backlog/queue/PB-77-telemetry-end-reading-stale-exha
 
 PB-119 first, then PB-103/PB-52. PB-53 precedes PB-100, then PB-154. PB-76 includes PB-111. PB-109 fixes regeneration guidance without changing config policy.
 
-Queued assignments: [PB-119](backlog/queue/PB-119-duplicate-server-and-hook-constants.md), [PB-103](backlog/queue/PB-103-guard-hook-hardcodes-promptobus-word.md), [PB-52](backlog/queue/PB-52-guard-ownership-machine-local.md), [PB-53](backlog/queue/PB-53-install-rewrites-unselected-files.md), [PB-100](backlog/queue/PB-100-install-dry-run-check-mismatch.md), [PB-154](backlog/queue/PB-154-install-check-gates-blind.md), [PB-76](backlog/queue/PB-76-cursor-hooks-doc-mismatch.md), [PB-109](backlog/queue/PB-109-bus-hook-sync-command-missing.md).
+Queued assignments: [PB-119](archive/PB-119-duplicate-server-and-hook-constants/task.md), [PB-103](backlog/queue/PB-103-guard-hook-hardcodes-promptobus-word.md), [PB-52](backlog/queue/PB-52-guard-ownership-machine-local.md), [PB-53](backlog/queue/PB-53-install-rewrites-unselected-files.md), [PB-100](backlog/queue/PB-100-install-dry-run-check-mismatch.md), [PB-154](backlog/queue/PB-154-install-check-gates-blind.md), [PB-76](backlog/queue/PB-76-cursor-hooks-doc-mismatch.md), [PB-109](backlog/queue/PB-109-bus-hook-sync-command-missing.md).
 
 ### L — Spawn, review and command guidance
 

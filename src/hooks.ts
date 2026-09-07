@@ -7,14 +7,15 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
 import type { PromptobusHost } from './host.js';
 
 export const BUS_HOOK_EVENT = 'PostToolUse';
 export const BUS_HOOK_SEP = '\n';
-// Bus server name. The package has no `contract.js` of its own, and the literal
-// here is not a copy of a consumer constant, it is a package declaration. Drift
-// from the server name breaks the staged-hook matcher: the group is not found.
-export const BUS_SERVER = 'promptobus';
+// Bus server name. `src/contract.ts` owns the literal; this alias and
+// `lib/contract.js` both expose its compiled value. Drift from the server name
+// would break the staged-hook matcher: the group would not be found.
+export { BUS_SERVER };
 export const BUS_HOOK_MATCHER = `mcp__${BUS_SERVER}__(promptobus_send|promptobus_mailbox)`;
 
 export const GUARD_HOOK_EVENT = 'Stop';
