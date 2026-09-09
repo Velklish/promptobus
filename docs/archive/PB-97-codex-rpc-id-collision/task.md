@@ -1,9 +1,9 @@
 # PB-97 · CodexRpc dispatches on the pending-id pool before `method`, so a server-to-client request whose id collides with an outstanding client request is swallowed as its reply — the approval is never answered and the turn hangs
 
-- **Order:** 100
 - **Scope:** [03-cli](../../reference/03-cli.md) § The Codex holder, `lib/codex-rpc.js`, `lib/codex-session.js`, `test/harness-codex.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-08
 
 ## Context
 
