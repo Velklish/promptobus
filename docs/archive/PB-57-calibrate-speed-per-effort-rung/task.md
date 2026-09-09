@@ -1,9 +1,9 @@
 # PB-57 · `models calibrate` groups by effort and proposes a per-rung `speed`, so `--write` leaves one model's rungs disagreeing on a rating ADR-005 defines as constant along the ladder
 
-- **Order:** 270
 - **Scope:** `lib/model-routing/calibrate.js`, `lib/model-routing/validate.js`, `models/catalog.json`, [adr-005](../../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-77, PB-37.2
+- **Taken:** 2026-09-09
 
 ## Context
 

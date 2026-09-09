@@ -58,6 +58,13 @@
         { "type": "null" }
       ]
     },
+    "throughput": {
+      "description": "Optional model-output throughput evidence. Cursor currently supplies output-token counts from its stop payload; it does not supply model-active generation duration or tokensPerSecond, so those components remain null. Claude and Codex records currently carry null. The per-turn sidecar is projected at done: outputTokens sums reported counts, while pairTokens and pairDuration are summed only from observations carrying both components and are written as outputTokens and generationDurationSec for the derived rate; a lone token count leaves generationDurationSec null. When no usable pair exists, tokensPerSecond is a token-weighted mean of direct harness rates, not the last turn's value. Missing components and missing observations are null, never zero. This is separate from durationSec, which is completion-duration evidence and is never a speed input. Older records may omit this additive field.",
+      "oneOf": [
+        { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/throughputObservation" },
+        { "type": "null" }
+      ]
+    },
     "turns": {
       "description": "Messages this participant sent on the bus. Counted from the canonical message records, not from history: history holds what a mailbox fetched, and a result nobody read is still a turn.",
       "type": "integer",
@@ -125,6 +132,32 @@
           ]
         }
       }
+    },
+    "throughputObservation": {
+      "description": "A partial or complete throughput observation. The pair outputTokens and generationDurationSec is sufficient for calibration; tokensPerSecond is the direct harness-provided alternative. Null fields mean that the producer did not report that component. A run-level record sums output tokens from its per-turn observations, but sums output tokens and generation duration for the derived pair only when both occur in the same observation; when no usable pair exists, it carries the token-weighted mean of direct rates rather than a last-turn value.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outputTokens", "generationDurationSec", "tokensPerSecond"],
+      "properties": {
+        "outputTokens": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "generationDurationSec": {
+          "oneOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "tokensPerSecond": {
+          "oneOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "null" }
+          ]
+        }
+      }
     }
   },
   "examples": [
@@ -142,6 +175,7 @@
       "spawnedAt": "2026-09-06T11:00:00.000Z",
       "endedAt": "2026-09-06T12:30:00.000Z",
       "durationSec": 5400,
+      "throughput": { "outputTokens": 2400, "generationDurationSec": 48, "tokensPerSecond": null },
       "turns": 9,
       "reviewRounds": 2,
       "questions": 1,
@@ -179,6 +213,7 @@
       "spawnedAt": "2026-09-06T12:00:00.000Z",
       "endedAt": "2026-09-06T12:30:00.000Z",
       "durationSec": 1800,
+      "throughput": null,
       "turns": 3,
       "reviewRounds": 0,
       "questions": 0,

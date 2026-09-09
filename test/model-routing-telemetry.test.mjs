@@ -149,6 +149,11 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('worker:api', {
     windows: SPAWN_WINDOWS,
   },
 }));
+const workerThroughputFile = telemetry.throughputSidecarFile(HOME, TASK, 'worker:api');
+mkdirSync(path.dirname(workerThroughputFile), { recursive: true });
+writeFileSync(workerThroughputFile, `${JSON.stringify({
+  outputTokens: 300, generationDurationSec: 6,
+})}\n`, { mode: telemetry.THROUGHPUT_SIDECAR_MODE });
 // Routed reviewer on another harness, dismissed mid-run: its record must end at
 // the dismissal, not at the close.
 store.upsertParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
@@ -250,13 +255,58 @@ check(': the duration runs from the lift to the close',
   && worker.endedAt === worker.recordedAt, JSON.stringify({
     from: worker.spawnedAt, to: worker.endedAt, sec: worker.durationSec,
   }));
+check(': throughput evidence is projected without using completion duration',
+  worker.throughput?.outputTokens === 300
+  && worker.throughput?.generationDurationSec === 6
+  && worker.throughput?.tokensPerSecond === null,
+  JSON.stringify(worker.throughput));
+const partialThroughput = {
+  outputTokens: 184, generationDurationSec: null, tokensPerSecond: null,
+};
+check(': a partial throughput observation is schema-valid but not a calibration rate',
+  validate({ ...worker, throughput: partialThroughput }) === true
+  && telemetry.throughputRate(partialThroughput) === null,
+  JSON.stringify({ errors: validate.errors, rate: telemetry.throughputRate(partialThroughput) }));
+check(': a pair and a direct rate both normalize to tokens per second',
+  telemetry.throughputRate({ outputTokens: 300, generationDurationSec: 6 }) === 50
+  && telemetry.throughputRate({ tokensPerSecond: 50 }) === 50,
+  JSON.stringify({ pair: telemetry.throughputRate({ outputTokens: 300, generationDurationSec: 6 }),
+    direct: telemetry.throughputRate({ tokensPerSecond: 50 }) }));
+check(': throughput absence is null and zero is not accepted as a rate',
+  telemetry.throughputObservationOf({}) === null
+  && validate({ ...worker, throughput: { outputTokens: null, generationDurationSec: null, tokensPerSecond: 0 } }) === false,
+  JSON.stringify({ empty: telemetry.throughputObservationOf({}), errors: validate.errors }));
+
+const directRateSidecar = telemetry.throughputSidecarFile(HOME, TASK, 'worker:direct-rate');
+writeFileSync(directRateSidecar, [
+  { outputTokens: 100, tokensPerSecond: 10 },
+  { outputTokens: 300, tokensPerSecond: 20 },
+].map((row) => JSON.stringify(row)).join('\n') + '\n', { mode: telemetry.THROUGHPUT_SIDECAR_MODE });
+const directRateTotals = telemetry.readThroughputSidecar(HOME, TASK, 'worker:direct-rate');
+check(': direct sidecar rates use a token-weighted mean instead of the last turn',
+  directRateTotals?.outputTokens === 400
+  && directRateTotals?.generationDurationSec === null
+  && directRateTotals?.tokensPerSecond === 17.5,
+  JSON.stringify(directRateTotals));
+
+const mixedSidecar = telemetry.throughputSidecarFile(HOME, TASK, 'worker:mixed');
+writeFileSync(mixedSidecar, [
+  { outputTokens: 5000 },
+  { generationDurationSec: 2 },
+].map((row) => JSON.stringify(row)).join('\n') + '\n', { mode: telemetry.THROUGHPUT_SIDECAR_MODE });
+const mixedTotals = telemetry.readThroughputSidecar(HOME, TASK, 'worker:mixed');
+check(': mixed sidecar turns do not manufacture a pair across observations',
+  mixedTotals?.outputTokens === 5000
+  && mixedTotals?.generationDurationSec === null
+  && mixedTotals?.tokensPerSecond === null,
+  JSON.stringify(mixedTotals));
 
 check(': a participant dismissed mid-run says so, and its record ends at the dismissal',
   reviewer.dismissedBeforeDone === true && reviewer.endedAt === T2 && reviewer.durationSec === 2700,
   JSON.stringify({ d: reviewer.dismissedBeforeDone, end: reviewer.endedAt, sec: reviewer.durationSec }));
 check(': an explicit --model run is recorded too, with no strategy and no windows',
   hand.strategy === null && hand.strategySource === null && hand.tuple === null
-  && hand.windows.length === 0 && hand.dismissedBeforeDone === false,
+  && hand.windows.length === 0 && hand.dismissedBeforeDone === false && hand.throughput === null,
   JSON.stringify({ s: hand.strategy, t: hand.tuple, w: hand.windows.length }));
 check(': a participant with no routing is still measured — its traffic is counted',
   hand.turns === 1 && hand.resultCount === 1, JSON.stringify({ turns: hand.turns, r: hand.resultCount }));
@@ -723,3 +773,31 @@ check(': the delta on the account-wide window is what the run spent — 66 at th
 check(': a window that did not move reads as a zero delta, not as an absence',
   weekly.usedPercentAtSpawn === 12 && weekly.usedPercentAtEnd === 12
   && weekly.scope.models.includes('example-deep'), JSON.stringify(weekly));
+
+// A malformed participant address must not stop `done` from writing the other
+// participants' rows. This is kept after the account-wide assertions above:
+// the sandbox host intentionally shares the account telemetry file.
+const badAddressSandbox = makeSandbox('promptobus-telemetry-invalid-');
+writeHostConfig(badAddressSandbox);
+const badAddressHome = path.join(badAddressSandbox, '.promptobus');
+const badAddressHost = hostOf(badAddressSandbox);
+const badAddressTask = 'telemetriya-invalid-t20260906-100000';
+const badAddressMeta = store.createTask(badAddressHome, { id: badAddressTask, title: 'негодный адрес', owner: null });
+badAddressMeta.participants.push(store.participantRecord('worker:good', {
+  harness: 'claude', model: 'claude-opus', started: T1,
+}));
+badAddressMeta.participants.push({
+  id: 'worker-bad', role: 'worker', harness: 'claude', mode: 'attached', sessionRef: null,
+  capabilities: null, metadata: { address: 'not-an-address', model: 'claude-opus', started: T1 },
+});
+writeFileSync(store.taskFile(badAddressHome, badAddressTask), JSON.stringify(badAddressMeta, null, 2) + '\n');
+telemetry.appendThroughputObservation(badAddressHome, badAddressTask, 'worker:good', { output_tokens: 42 });
+await capture(async () => close(badAddressSandbox, { task: badAddressTask, snapshot: noSessions }));
+const badAddressFile = telemetry.telemetryFileOf(badAddressHost);
+const badAddressRows = readFileSync(badAddressFile, 'utf8').split('\n').filter((line) => line.trim())
+  .map((line) => JSON.parse(line))
+  .filter((row) => row.task === telemetry.taskHash(badAddressTask));
+const goodAddressRow = badAddressRows.find((row) => row.model === 'claude-opus' && row.throughput?.outputTokens === 42);
+check(': one invalid participant address does not prevent the valid row from being written',
+  badAddressRows.length === 2 && goodAddressRow?.throughput?.outputTokens === 42,
+  JSON.stringify(badAddressRows));

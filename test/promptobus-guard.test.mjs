@@ -11,7 +11,9 @@
 // What's checked is what the harness will see: the return code (2 — the turn is returned, 0 —
 // it isn't), the reason in stderr, and silence on a clean pass. Plus loop protection: the same
 // state is returned no more than twice in a row.
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
@@ -34,6 +36,8 @@ const {
   guardVerdict, guardMarkFile, GUARD_MARK, GUARD_BLOCK_LIMIT,
   successorLine, successorVerdict, probeContactPoint,
 } = await import(path.join(here, '..', 'lib', 'guard.js'));
+const { readThroughputSidecar, throughputSidecarFile } = await import(
+  path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
 const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
@@ -131,9 +135,9 @@ const asHook = (input, env = {}) => {
     env: {
       ...clean,
       PATH: `${STUB}${path.delimiter}${process.env.PATH}`,
-      PROMPTOBUS_HOME: HOME,
-      PROMPTOBUS_TASK: TASK,
-      PROMPTOBUS_ROLE: 'orchestrator',
+      PROMPTOBUS_HOME: env.PROMPTOBUS_HOME ?? HOME,
+      PROMPTOBUS_TASK: Object.hasOwn(env, 'PROMPTOBUS_TASK') ? env.PROMPTOBUS_TASK : TASK,
+      PROMPTOBUS_ROLE: env.PROMPTOBUS_ROLE ?? 'orchestrator',
     },
     encoding: 'utf8',
   });
@@ -535,6 +539,23 @@ check('live run: the Stop event on stdin — code 2 and the reason in stderr',
 // guard would silently fail to work on every turn, indistinguishable from a clean pass.
 check('identity: session_id is taken from the payload, not from the environment',
   hookRun.stderr.includes(`task=${TASK}`), hookRun.stderr);
+const throughputHook = asHook(JSON.stringify({
+  ...JSON.parse(stopEvent()),
+  generation_id: 'sess-guard-1111',
+  loop_count: 0,
+  output_tokens: 184,
+}), { PROMPTOBUS_ROLE: 'worker:api' });
+const workerAfterHook = store.participantOf(store.readTask(HOME, TASK), 'worker:api');
+const throughputFile = throughputSidecarFile(HOME, TASK, 'worker:api');
+const throughput = readThroughputSidecar(HOME, TASK, 'worker:api');
+check('throughput: a hook observation is appended beside the guard mark without journal mutation',
+  throughputHook.status === 0
+  && throughput?.outputTokens === 184
+  && throughput?.generationDurationSec === null
+  && throughput?.tokensPerSecond === null
+  && workerAfterHook?.metadata?.throughput === undefined
+  && (statSync(throughputFile).mode & 0o777) === 0o600,
+  `status=${throughputHook.status} sidecar=${JSON.stringify(throughput)} metadata=${JSON.stringify(workerAfterHook?.metadata?.throughput)}`);
 const wrongSession = asHook(stopEvent('sess-postoronnyaya-9999'), { PROMPTOBUS_TASK: '' });
 check('identity: a foreign session_id from the payload finds no binding — silence',
   wrongSession.status === 0 && wrongSession.stdout === '' && wrongSession.stderr === '',

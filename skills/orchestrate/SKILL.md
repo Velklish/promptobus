@@ -94,7 +94,7 @@ This is the only thing that changes a strategy between spawns, and a person is o
 
 ### When the local runs disagree with the catalog
 
-The catalog's ratings come from published benchmarks. `promptobus models calibrate` reads this machine's own telemetry back against them and prints, per harness/model/effort, how many runs it has, the median time to a finished piece, the median movement of the account's limit windows, and — where a key has at least five runs — a proposed `speed` and `quotaCost` line for the user overlay with the catalog band beside it and the numbers behind it.
+The catalog's ratings come from published benchmarks. `promptobus models calibrate` reads this machine's own telemetry back against them and prints, per harness/model/effort, how many runs it has, completion-duration evidence, usable throughput, the median movement of the account's limit windows, and — where evidence reaches the threshold — proposed `speed` and `quotaCost` lines for the user overlay with the catalog band beside them and the numbers behind them. Speed observations pool across every effort rung of a `(harness, model)` and produce one speed band for that ladder; completion duration is never a speed input.
 
 **Read it as evidence, not as a verdict.** The key with the most runs is the anchor and keeps its catalog band; every other key is proposed a step away from ITS OWN band, at most two, and only when the measurement differs materially from what the bands already imply. A line reading `insufficient data: N of 5` is the command declining to guess, and `quality` is never proposed at all — review rounds measure how work was received, not how good a model is.
 
@@ -133,7 +133,7 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 ### Close-time telemetry refresh
 
-`promptobus done` writes one local telemetry record per participant and automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token, and nothing sends it anywhere.
+`promptobus done` writes one local telemetry record per participant and automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token contents, and may carry a numeric output-token count as throughput evidence; nothing sends it anywhere.
 
 ### Constraints the user named
 

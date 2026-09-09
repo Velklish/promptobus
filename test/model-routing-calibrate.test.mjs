@@ -190,7 +190,9 @@ test('the pivot is the most-observed eligible key and keeps its catalog bands', 
   });
   const opus = keyOf(r, 'claude', 'claude-opus-5', 'xhigh');
   assert.equal(opus.proposal.pivot, true);
-  assert.equal(opus.proposal.speed.band, opus.catalog.speed);
+  assert.equal(r.speedPivot, null);
+  assert.equal(opus.proposal.speed.band, null);
+  assert.match(opus.proposal.speed.why, /no throughput observation/);
   assert.equal(opus.proposal.quotaCost.band, opus.catalog.quotaCost);
   // And it is therefore never in the merge payload.
   assert.equal(Object.hasOwn(r.ratings, 'claude-opus-xhigh'), false);
@@ -208,14 +210,13 @@ test('a ratio moves a band only when it surprises the catalog, and never by more
   assert.equal(moveFor(NaN), 0);
 });
 
-test('a key twice as slow as the pivot at the same speed band loses one band; its spend gains two', () => {
+test('a key window moves quotaCost independently of its missing throughput', () => {
   const sonnet = keyOf(report(), 'claude', 'claude-sonnet-5', 'xhigh');
-  // speed: both rows band 2, so the catalog implies the same duration. Measured
-  // 2000 s against the pivot's 1000 s is a 2× surprise — one band down.
   assert.equal(sonnet.catalog.speed, 2);
-  assert.equal(sonnet.proposal.speed.ratio, 2);
-  assert.equal(sonnet.proposal.speed.implied, 1);
-  assert.equal(sonnet.proposal.speed.band, 1);
+  assert.equal(sonnet.proposal.speed.band, null);
+  assert.match(sonnet.proposal.speed.why, /no throughput observation/);
+  // Completion duration remains visible evidence, but never supplies speed.
+  assert.equal(sonnet.durationSec, 2000);
   // quotaCost: band 2 against the pivot's 5 implies 1.25^-3 of its window
   // movement; the run actually moved twice as much — two bands up.
   assert.equal(sonnet.catalog.quotaCost, 2);
@@ -223,12 +224,86 @@ test('a key twice as slow as the pivot at the same speed band loses one band; it
   assert.equal(sonnet.proposal.quotaCost.band, 4);
 });
 
+test('speed pools throughput across a model ladder and proposes one band for both rungs', () => {
+  const tuples = [
+    { id: 'alpha-anchor-high', harness: 'alpha', model: 'anchor', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-anchor-xhigh', harness: 'alpha', model: 'anchor', effort: 'xhigh', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-slower-high', harness: 'alpha', model: 'slower', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-slower-xhigh', harness: 'alpha', model: 'slower', effort: 'xhigh', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-slower-max', harness: 'alpha', model: 'slower', effort: 'max', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+  ];
+  const records = [];
+  for (const model of ['anchor', 'slower']) {
+    for (const effort of ['high', 'xhigh']) {
+      for (let i = 0; i < 5; i += 1) {
+        records.push({
+          harness: 'alpha', model, effort, durationSec: effort === 'xhigh' ? 1000 : 100,
+          turns: 1, reviewRounds: 0, resultCount: 1, dismissedBeforeDone: false,
+          throughput: model === 'anchor'
+            ? { outputTokens: 100, generationDurationSec: 2 }
+            : { outputTokens: 100, generationDurationSec: 4 },
+        });
+      }
+    }
+  }
+  const r = calibrate(records, { tuples });
+  const slowerHigh = r.keys.find((k) => k.model === 'slower' && k.effort === 'high');
+  const slowerXhigh = r.keys.find((k) => k.model === 'slower' && k.effort === 'xhigh');
+  assert.equal(r.keys.some((k) => k.model === 'slower' && k.effort === 'max'), false);
+  assert.equal(slowerHigh.proposal.speed.band, 4);
+  assert.equal(slowerXhigh.proposal.speed.band, 4);
+  assert.equal(slowerHigh.proposal.speed.ratio, 0.5);
+  assert.deepEqual(r.ratings, {
+    'alpha-slower-high': { speed: 4 },
+    'alpha-slower-xhigh': { speed: 4 },
+    'alpha-slower-max': { speed: 4 },
+  });
+});
+
+test('dismissed records still contribute usable throughput evidence', () => {
+  const tuples = [
+    { id: 'alpha-anchor-high', harness: 'alpha', model: 'anchor', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-slower-high', harness: 'alpha', model: 'slower', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+  ];
+  const record = (model, dismissedBeforeDone = false) => ({
+    harness: 'alpha', model, effort: 'high', durationSec: 100, turns: 1, reviewRounds: 0,
+    resultCount: dismissedBeforeDone ? 0 : 1, dismissedBeforeDone,
+    throughput: { outputTokens: 100, generationDurationSec: model === 'anchor' ? 2 : 4 },
+  });
+  const records = [
+    ...Array.from({ length: 5 }, () => record('anchor')),
+    ...Array.from({ length: 4 }, () => record('slower')),
+    record('slower', true),
+  ];
+  const r = calibrate(records, { tuples });
+  const slower = r.speedModels.find((model) => model.model === 'slower');
+  assert.equal(slower.throughputSamples, 5);
+  assert.equal(keyOf(r, 'alpha', 'slower', 'high').proposal.speed.band, 4);
+});
+
+test('duration is completion evidence only and never supplies a speed proposal', () => {
+  const tuples = [
+    { id: 'alpha-anchor-high', harness: 'alpha', model: 'anchor', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+    { id: 'alpha-slower-high', harness: 'alpha', model: 'slower', effort: 'high', ratings: { quality: 5, speed: 5, quotaCost: 5 } },
+  ];
+  const records = ['anchor', 'slower'].flatMap((model) => Array.from({ length: 5 }, () => ({
+    harness: 'alpha', model, effort: 'high', durationSec: model === 'anchor' ? 100 : 1000,
+    turns: 1, reviewRounds: 0, resultCount: 1, dismissedBeforeDone: false, throughput: null,
+  })));
+  const r = calibrate(records, { tuples });
+  for (const key of r.keys) {
+    assert.equal(key.proposal.speed.band, null);
+    assert.match(key.proposal.speed.why, /throughput/);
+  }
+  assert.deepEqual(r.ratings, {});
+});
+
 test('a key the local runs agree with keeps every band, and writes no overlay line', () => {
   const r = report();
   const sol = keyOf(r, 'codex', 'gpt-5.6-sol', 'max');
-  assert.equal(sol.proposal.speed.move, 0);
+  assert.equal(sol.proposal.speed.band, null);
+  assert.match(sol.proposal.speed.why, /no throughput observation/);
   assert.equal(sol.proposal.quotaCost.move, 0);
-  assert.equal(sol.proposal.speed.band, sol.catalog.speed);
   assert.equal(Object.hasOwn(r.ratings, 'codex-sol-max'), false);
 });
 
@@ -239,25 +314,27 @@ test('no usable window evidence omits quotaCost alone and says why', () => {
   assert.equal(gemini.withoutWindows, 5);
   assert.equal(gemini.proposal.quotaCost.band, null);
   assert.match(gemini.proposal.quotaCost.why, /no usable window delta/);
-  // The duration evidence is untouched by the missing windows.
-  assert.equal(gemini.proposal.speed.band, 9);
-  assert.deepEqual(report().ratings['cursor-gemini-38-high'], { speed: 9 });
+  // Completion duration and missing throughput are reported independently.
+  assert.equal(gemini.proposal.speed.band, null);
+  assert.match(gemini.proposal.speed.why, /no throughput observation/);
+  assert.equal(Object.hasOwn(report().ratings, 'cursor-gemini-38-high'), false);
 });
 
 test('the merge payload carries only ratings that moved', () => {
   assert.deepEqual(report().ratings, {
-    'claude-sonnet-xhigh': { speed: 1, quotaCost: 4 },
-    'cursor-gemini-38-high': { speed: 9 },
+    'claude-sonnet-xhigh': { quotaCost: 4 },
   });
 });
 
 test('the printed proposal carries the numbers behind it and never a quality rating', () => {
   const text = renderCalibration(report());
   assert.match(text, /pivot \(local anchor\): claude · claude-opus-5 · xhigh — 8 run\(s\)/);
-  assert.match(text, /speed: 2 → 1 \(catalog 2\)/);
+  assert.match(text, /speed: no proposal — no throughput observation for this model \(catalog 2\)/);
   assert.match(text, /quotaCost: 2 → 4 \(catalog 2\)/);
-  assert.match(text, /median duration 2000s over 5 sample\(s\)/);
+  assert.match(text, /median completion duration 2000s over 5 sample\(s\)/);
+  assert.match(text, /median throughput — tokens\/s over 0 sample\(s\)/);
   assert.match(text, /median window delta 20 pp over 6 sample\(s\)/);
+  assert.match(text, /duration is completion-duration evidence and is not used for speed/);
   assert.match(text, /quality is not proposed from telemetry/);
   // The overlay block is what a person pastes, and it is the merge payload.
   assert.match(text, /"ratings"/);
@@ -278,7 +355,7 @@ test('the comparison is against the SHIPPED catalog, so a second run on one file
   // again — up to two bands a run — until the rating reaches whatever the
   // measured ratio implies, with nothing new measured in between.
   const first = report();
-  assert.deepEqual(first.ratings['claude-sonnet-xhigh'], { speed: 1, quotaCost: 4 });
+  assert.deepEqual(first.ratings['claude-sonnet-xhigh'], { quotaCost: 4 });
 
   // The overlay a `--write` of that first run leaves behind.
   const overlaid = JSON.parse(JSON.stringify(TUPLES));
@@ -286,13 +363,13 @@ test('the comparison is against the SHIPPED catalog, so a second run on one file
     if (t.id === 'claude-sonnet-xhigh') Object.assign(t.ratings, first.ratings['claude-sonnet-xhigh']);
   }
   const second = calibrate(RECORDS, { tuples: TUPLES, overlayTuples: overlaid, aliases: ALIASES });
-  assert.deepEqual(second.ratings['claude-sonnet-xhigh'], { speed: 1, quotaCost: 4 },
+  assert.deepEqual(second.ratings['claude-sonnet-xhigh'], { quotaCost: 4 },
     'the second run must propose what the first did, not a step past it');
 
   const key = keyOf(second, 'claude', 'claude-sonnet-5', 'xhigh');
   assert.deepEqual(key.catalog, { quality: 7, speed: 2, quotaCost: 2 }, 'catalog bands, not overlaid ones');
-  assert.deepEqual(key.override, { speed: 1, quotaCost: 4 });
-  // …and the person is told both numbers rather than one standing in for the other.
+  assert.deepEqual(key.override, { quotaCost: 4 });
+  // …and the person is told the quota number beside the catalog band.
   const text = renderCalibration(second);
   assert.match(text, /quotaCost: 2 → 4 \(catalog 2, your overlay 4\)/);
   assert.match(text, /compared against the SHIPPED catalog/);
@@ -310,8 +387,8 @@ test('a key with no overlay reports none, and the line stays a plain catalog ban
 });
 
 test('a median of zero is below the measurement resolution, and proposes nothing', () => {
-  // `usedPercent` arrives as whole percent and `durationSec` as whole seconds,
-  // so a median of 0 says the runs were too small to register. Reading it as
+  // `usedPercent` arrives as whole percent, so a median of 0 says the runs were
+  // too small to register. Reading it as
   // "far cheaper than the catalog" would propose a two-band drop from an
   // absence of evidence — the zero-pivot case seen from the other side.
   const flat = RECORDS.filter((r) => r.model === 'claude-sonnet-5').map((r) => ({
@@ -326,8 +403,9 @@ test('a median of zero is below the measurement resolution, and proposes nothing
   assert.equal(key.proposal.quotaCost.band, null);
   assert.match(key.proposal.quotaCost.why, /below what this measurement can resolve/);
   assert.equal(Object.hasOwn(r.ratings['claude-sonnet-xhigh'] ?? {}, 'quotaCost'), false);
-  // The duration evidence is untouched by it.
-  assert.equal(key.proposal.speed.band, 1);
+  // The completion-duration evidence is untouched, and still cannot supply speed.
+  assert.equal(key.proposal.speed.band, null);
+  assert.match(key.proposal.speed.why, /no throughput observation/);
 });
 
 // --- the command ---------------------------------------------------------
@@ -371,7 +449,7 @@ test('calibrate prints the proposal and writes nothing', async () => {
     });
     assert.equal(code, 0);
     assert.match(out.text, /claude-sonnet-xhigh/);
-    assert.match(out.text, /speed: 2 → 1/);
+    assert.match(out.text, /speed: no proposal — no throughput observation/);
     assert.equal(existsSync(w.user.path), false);
   } finally { w.drop(); }
 });
@@ -388,8 +466,7 @@ test('--json prints the report as one document', async () => {
     assert.equal(doc.records, RECORDS.length);
     assert.equal(doc.keys.length, 6);
     assert.deepEqual(doc.ratings, {
-      'claude-sonnet-xhigh': { speed: 1, quotaCost: 4 },
-      'cursor-gemini-38-high': { speed: 9 },
+      'claude-sonnet-xhigh': { quotaCost: 4 },
     });
     assert.equal(doc.file, telemetryFileOf(w.host));
     assert.equal(existsSync(w.user.path), false);
@@ -421,7 +498,7 @@ test('--write on a terminal asks, and a no writes nothing', async () => {
       ask: (q) => { asked = q; return 'n'; },
     });
     assert.equal(code, 0);
-    assert.match(asked, /merge 2 rating override\(s\)/);
+    assert.match(asked, /merge 1 rating override\(s\)/);
     assert.match(asked, new RegExp(w.user.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.equal(existsSync(w.user.path), false);
   } finally { w.drop(); }
@@ -448,12 +525,11 @@ test('--write on a terminal with a yes merges only ratings, and keeps every othe
     assert.deepEqual(doc.defaults, { strategy: 'balance' });
     assert.deepEqual(doc.deny, { models: ['gpt-5.4-mini'] });
     assert.equal(doc.schemaVersion, 2);
-    // Per tuple AND per rating: the hand-set `quality` survives beside the two
-    // calibrated ones, and a tuple calibrate did not propose is untouched.
+    // Per tuple AND per rating: the hand-set `quality` survives beside the
+    // calibrated quota cost, and a tuple calibrate did not propose is untouched.
     assert.deepEqual(doc.ratings, {
-      'claude-sonnet-xhigh': { quality: 8, speed: 1, quotaCost: 4 },
+      'claude-sonnet-xhigh': { quality: 8, quotaCost: 4 },
       'codex-sol-max': { speed: 4 },
-      'cursor-gemini-38-high': { speed: 9 },
     });
   } finally { w.drop(); }
 });
@@ -472,8 +548,7 @@ test('--yes writes with no terminal, and raises a version 1 overlay to 2 with th
     assert.equal(doc.schemaVersion, 2);
     assert.deepEqual(doc.defaults, { strategy: 'balance' });
     assert.deepEqual(doc.ratings, {
-      'claude-sonnet-xhigh': { speed: 1, quotaCost: 4 },
-      'cursor-gemini-38-high': { speed: 9 },
+      'claude-sonnet-xhigh': { quotaCost: 4 },
     });
   } finally { w.drop(); }
 });
@@ -530,7 +605,7 @@ test('the COMMAND compares against the shipped catalog even when the user overla
     // Exactly what a first `--write` leaves behind.
     writeFileSync(w.user.path, `${JSON.stringify({
       schemaVersion: 2,
-      ratings: { 'claude-sonnet-xhigh': { speed: 1, quotaCost: 4 } },
+      ratings: { 'claude-sonnet-xhigh': { quotaCost: 4 } },
     }, null, 2)}\n`);
     const out = sink();
     await models(w.host, {
@@ -542,9 +617,9 @@ test('the COMMAND compares against the shipped catalog even when the user overla
     // The bands compared against are the shipped ones…
     assert.deepEqual(key.catalog, { quality: 7, speed: 2, quotaCost: 2 });
     // …the person's override is reported beside them, not instead of them…
-    assert.deepEqual(key.override, { speed: 1, quotaCost: 4 });
+    assert.deepEqual(key.override, { quotaCost: 4 });
     // …and the proposal is what the first run proposed, not a step past it.
-    assert.deepEqual(doc.ratings['claude-sonnet-xhigh'], { speed: 1, quotaCost: 4 });
+    assert.deepEqual(doc.ratings['claude-sonnet-xhigh'], { quotaCost: 4 });
 
     // Applying it again is a no-op on the file rather than another step.
     const before = readFileSync(w.user.path, 'utf8');
@@ -584,11 +659,10 @@ test('--json puts exactly one document on stdout, write outcome included', async
     // document, which is the only way a machine reader can see it.
     const doc = JSON.parse(out.text);
     assert.deepEqual(doc.write, {
-      layer: 'user', path: w.user.path, tuples: 2, applied: true,
+      layer: 'user', path: w.user.path, tuples: 1, applied: true,
     });
     assert.deepEqual(JSON.parse(readFileSync(w.user.path, 'utf8')).ratings, {
-      'claude-sonnet-xhigh': { speed: 1, quotaCost: 4 },
-      'cursor-gemini-38-high': { speed: 9 },
+      'claude-sonnet-xhigh': { quotaCost: 4 },
     });
   } finally { w.drop(); }
 });

@@ -66,6 +66,7 @@ function versionLess(a, b) {
 }
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
+const throughput = await import(path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
 const { GUARD_HOOK_EVENT, guardHookCommand, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { shellQuote } = await import(path.join(here, '..', 'lib', 'util.js'));
 
@@ -940,6 +941,8 @@ await quiet(() => spawnWorker(WS, optsOld453));
 // Slice acceptance: the session was closed, the address dismissed from watch.
 // The session list is empty — the former track's session is dead, and a repeat
 // spawn at this address is legal.
+const staleSidecar453 = throughput.throughputSidecarFile(HOME, TASK453, 'worker:store');
+throughput.appendThroughputObservation(HOME, TASK453, 'worker:store', { output_tokens: 17 });
 store.dismissParticipant(HOME, TASK453, 'worker:store');
 claudeSays([]);
 resetCliCaches();
@@ -960,6 +963,40 @@ resetCliCaches();
 await quiet(() => spawnWorker(WS, optsNew453));
 const backRec = store.participantOf(store.readTask(HOME, TASK453), 'worker:store');
 const back = backRec?.metadata;
+const reusedSidecar = throughput.throughputSidecarFile(HOME, TASK453, 'worker:store');
+check(': a new lift clears the prior address sidecar before replacing its record',
+  existsSync(reusedSidecar) && throughput.readThroughputSidecar(HOME, TASK453, 'worker:store') === null,
+  JSON.stringify(throughput.readThroughputSidecar(HOME, TASK453, 'worker:store')));
+
+// A failed telemetry cleanup must not turn a new assignment into a failed lift.
+// The sidecar is restored after the probe so the remainder of the fixture can
+// continue to exercise the ordinary task paths.
+store.dismissParticipant(HOME, TASK453, 'worker:store');
+throughput.appendThroughputObservation(HOME, TASK453, 'worker:store', { output_tokens: 19 });
+chmodSync(staleSidecar453, 0o400);
+claudeSays([{ id: 'sess-0447b', name: planNew453.name, state: 'working', pid: 4448 }]);
+resetCliCaches();
+let unwritableLiftError = null;
+let unwritableLiftOut = '';
+try {
+  unwritableLiftOut = await capture(() => spawnWorker(WS, optsNew453));
+} catch (e) {
+  unwritableLiftError = e;
+}
+if (unwritableLiftError) {
+  chmodSync(staleSidecar453, 0o600);
+  await quiet(() => spawnWorker(WS, optsNew453));
+} else {
+  chmodSync(staleSidecar453, 0o600);
+}
+const unwritableDetail = unwritableLiftError
+  ? `initial error: ${unwritableLiftError.message}; retry completed`
+  : unwritableLiftOut;
+check(': an unwritable sidecar does not block a lift and names the telemetry loss',
+  unwritableLiftError === null && unwritableLiftOut.includes(`${staleSidecar453}: could not clear throughput sidecar`)
+  && store.participantOf(store.readTask(HOME, TASK453), 'worker:store')?.sessionRef
+    === store.participantOf(store.readTask(HOME, TASK453), 'worker:store')?.metadata?.name,
+  unwritableDetail);
 
 check(': the slice title of one lifted again is from the new brief, not from the old record',
   back?.title === TITLE_NEW_STORED, `${back?.title} (in the brief "${TITLE_NEW}")`);
