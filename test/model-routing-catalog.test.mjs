@@ -38,6 +38,7 @@ import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
 } from '../lib/model-routing/validate.js';
 import { MODEL_ALIASES, MODEL_IDS } from '../lib/driver-claude.js';
+import { routingContext } from '../lib/models.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -78,6 +79,16 @@ function hostWith(overlays, cacheFile = '/nowhere/cache.json') {
     kind: 'promptobus-host',
     commandName: 'promptobus',
     routingPaths: () => ({ cacheFile, overlays }),
+  };
+}
+
+function routedHost(overlays) {
+  return {
+    kind: 'promptobus-host',
+    commandName: 'promptobus',
+    workspaceRoot: () => ROOT,
+    routingPaths: () => ({ cacheFile: '/nowhere/cache.json', overlays }),
+    declaredTools: () => ['claude'],
   };
 }
 
@@ -1045,6 +1056,81 @@ test('validate reports a broken file instead of throwing — that is when it is 
     const missing = validate({ host: hostWith([]), catalogFile: path.join(dir, 'nowhere.json') });
     assert.equal(missing.ok, false);
     assert.equal(missing.errors[0].code, 'catalog-invalid');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('routed layer failures name the same layer as validate', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-'));
+  const layer = (id, writable = false) => ({
+    id,
+    path: path.join(dir, `${id}.json`),
+    ...(writable ? { writable: true } : {}),
+  });
+  const cases = [
+    {
+      name: 'two writable overlays',
+      overlays: [layer('user', true), layer('workspace', true)],
+      expected: 'host',
+      expectedCode: 'overlay-invalid',
+      subject: 'the host routing declaration',
+    },
+    {
+      name: 'zero writable overlays',
+      overlays: [layer('user'), layer('workspace')],
+      expected: 'host',
+      expectedCode: 'overlay-invalid',
+      subject: 'the host routing declaration',
+    },
+    {
+      name: 'invalid JSON overlay',
+      overlays: [layer('user'), layer('workspace', true)],
+      content: '{',
+      expected: 'workspace',
+      expectedCode: 'overlay-invalid',
+      subject: 'routing layer "workspace"',
+    },
+    {
+      name: 'unsupported overlay schema',
+      overlays: [layer('user'), layer('workspace', true)],
+      content: JSON.stringify({ schemaVersion: 99 }),
+      expected: 'workspace',
+      expectedCode: 'overlay-invalid',
+      subject: 'routing layer "workspace"',
+    },
+    {
+      name: 'missing catalog',
+      overlays: [layer('workspace', true)],
+      catalogFile: path.join(dir, 'missing-catalog.json'),
+      expected: 'catalog',
+      expectedCode: 'catalog-invalid',
+      subject: 'routing layer "catalog"',
+    },
+  ];
+
+  try {
+    for (const scenario of cases) {
+      if (scenario.content) writeFileSync(scenario.overlays.at(-1).path, scenario.content);
+      const host = routedHost(scenario.overlays);
+      const catalogOptions = scenario.catalogFile ? { catalogFile: scenario.catalogFile } : {};
+      const verdict = validate({ host, ...catalogOptions });
+      assert.equal(verdict.ok, false, scenario.name);
+      assert.equal(verdict.errors[0].code, scenario.expectedCode, scenario.name);
+      assert.equal(verdict.errors[0].layer, scenario.expected, scenario.name);
+
+      await assert.rejects(
+        () => routingContext(host, { strategy: 'balanced', ...catalogOptions }),
+        (error) => {
+          assert.equal(error.code, verdict.errors[0].code, scenario.name);
+          assert.ok(error.message.includes(scenario.subject), scenario.name);
+          const expectedPath = scenario.catalogFile
+            ?? (scenario.expected === 'host' ? null : scenario.overlays.at(-1).path);
+          if (expectedPath) assert.ok(error.message.includes(expectedPath));
+          return true;
+        },
+      );
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

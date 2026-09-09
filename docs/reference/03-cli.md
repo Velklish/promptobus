@@ -175,8 +175,8 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 | `strategy-unknown` | `--strategy` is not one of the five values |
 | `role-unknown` | `--role` is not `worker` or `reviewer` |
 | `harness-unknown` | A harness the workspace does not declare is named — by `--clear-exhausted`, or by `--harness` on a routed `spawn` or `review`. The routing catalog is filtered by the declaration, so a tuple of an undeclared harness is never in the snapshot to be chosen from |
-| `catalog-invalid` | The shipped catalog fails schema or reference validation |
-| `overlay-invalid` | An overlay fails schema, reference or contradiction validation; the message names the layer |
+| `catalog-invalid` | The shipped catalog cannot be read or has an unsupported schema; `models validate` also uses it for catalog schema or reference findings |
+| `overlay-invalid` | The host declaration or an overlay cannot be used; `models validate` reports schema, reference or contradiction findings, and routed-call messages name the host or overlay layer |
 | `constraint-unknown` | An explicit `--harness`, `--model` or `--effort` matches no tuple in the merged catalog. A `--harness` the workspace never declared is refused by `harness-unknown` before this one: "you do not have that harness" is the more useful of the two answers |
 | `constraint-unavailable` | The explicitly named tuple exists but its harness is `unavailable` or `exhausted` |
 | `candidates-empty` | Nothing survived filtering. The decision document is still printed, with `chosen: null`. It ends `spawn` and `review`; `models` prints the document and exits 0, because answering the question is what that command is for |
