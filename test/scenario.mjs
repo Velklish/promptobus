@@ -95,6 +95,10 @@ const NOTE_FILE = 'e2e/note.md';
 export const WORKER = 'worker:e2e';
 export const REVIEWER = 'reviewer:e2e';
 
+// Protocol v1 records carry the sender participant id, normalized for its mailbox
+// directory, rather than the bus address used by the caller.
+export const sentBy = (m, addr) => m?.sender === store.addrDir(addr);
+
 // A pause inside the participant turn is not decoration and not a round number. The
 // «mailbox fetched» mark (`deliveredAt`) is laid not by the participant but by the
 // warden TICK, and an `fs.watch` observer loses events that arrive during the tick —
@@ -546,9 +550,6 @@ export async function runScenario({
 
   const inboxOf = (addr) => store.glanceInbox(home, TASK, addr);
   const msgOf = (addr, mark) => inboxOf(addr).find((m) => String(m.body ?? '').includes(mark)) ?? null;
-  // Protocol v1 canon carries the sender participant ID; the mechanism address is
-  // assembled from it with the same translation the door writes.
-  const sentBy = (m, addr) => m?.sender === store.addrDir(addr);
   const participantOf = (addr) => store.participantOf(store.readTask(home, TASK), addr);
   // Mechanism fields (worktree, branch, repository) sit in the v1 record `metadata`;
   // the record's own fields are role, harness, mode, session reference and a

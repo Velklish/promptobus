@@ -42,7 +42,7 @@ import { check } from './check.mjs';
 import { makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
-import { REVIEWER, runScenario, WORKER } from './scenario.mjs';
+import { REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import * as cursorSession from '../lib/cursor-persist.js';
@@ -53,6 +53,22 @@ import * as codexSession from '../lib/codex-session.js';
 // list is assembled by hand, and a new name would have to be written there too —
 // otherwise a cut-off run directory would stay in the shared `$TMPDIR` forever.
 const SB = makeSandbox('promptobus-promptobus-mixed-');
+const MATCHER_HOME = path.join(SB, 'matcher', '.promptobus');
+const MATCHER_TASK = 'mixedmatcher-t20260909-000000';
+store.createTask(MATCHER_HOME, { id: MATCHER_TASK, title: 'mixed matcher' });
+store.sendMessage(MATCHER_HOME, MATCHER_TASK, {
+  from: WORKER, to: 'orchestrator', type: 'result', body: 'LIVE-MIXED-HELLO: worker reply',
+});
+store.sendMessage(MATCHER_HOME, MATCHER_TASK, {
+  from: REVIEWER, to: 'orchestrator', type: 'result', body: 'LIVE-MIXED-REVIEW-A: reviewer reply',
+});
+const matcherMessages = store.glanceInbox(MATCHER_HOME, MATCHER_TASK, 'orchestrator');
+const said = (from, type, mark) => matcherMessages
+  .find((m) => sentBy(m, from) && m.type === type && String(m.body ?? '').trimStart().startsWith(mark)) ?? null;
+check('live-mixed said matcher finds a worker message sent through the v1 store',
+  !!said(WORKER, 'result', 'LIVE-MIXED-HELLO'), JSON.stringify(matcherMessages));
+check('live-mixed reviewer matcher finds a reviewer result sent through the v1 store',
+  !!matcherMessages.find((m) => sentBy(m, REVIEWER) && m.type === 'result'), JSON.stringify(matcherMessages));
 const binDir = path.join(SB, 'bin');
 // The stand homes are created by the stands themselves and OUTSIDE the file sandbox:
 // the sandbox hook removes its directory before the stand has time to kill its processes.

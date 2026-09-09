@@ -1,9 +1,9 @@
 # PB-67 · live-mixed.mjs matches inbox messages on m.from, a field protocol v1 messages do not carry, so all five mailbox verdicts of the mixed lineup go red after 30 minutes of waiting
 
-- **Order:** 370
 - **Scope:** `scripts/live-mixed.mjs`, `test/scenario.mjs`, [04-protocol](../../reference/04-protocol.md) § Message types
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

@@ -44,7 +44,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, store } from '../test/scenario.mjs';
+import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
@@ -216,7 +216,7 @@ ${note}
 const orchInbox = () => store.glanceInbox(home, TASK, 'orchestrator');
 /** A message from an address with the marker as the FIRST line: containment would catch a retold plan. */
 const said = (from, type, mark) => orchInbox()
-  .find((m) => m.from === from && m.type === type && String(m.body ?? '').trimStart().startsWith(mark)) ?? null;
+  .find((m) => sentBy(m, from) && m.type === type && String(m.body ?? '').trimStart().startsWith(mark)) ?? null;
 
 let workerRef = '';
 let reviewerRef = '';
@@ -342,7 +342,7 @@ try {
     diffsA.length === 1
     && readFileSync(path.join(store.filesDir(home, TASK), diffsA[0]), 'utf8').includes(MARK.reviewA),
     JSON.stringify(diffsA));
-  const reviewA = await waitFor(() => orchInbox().find((m) => m.from === REVIEWER && m.type === 'result') ?? null,
+  const reviewA = await waitFor(() => orchInbox().find((m) => sentBy(m, REVIEWER) && m.type === 'result') ?? null,
     { timeoutMs: 600000 });
   check('step 4: the Codex reviewer got the diff and sent a result on the same bus',
     !!reviewA, codexSession.tailLog(reviewerRef, process.env, 12));
@@ -388,7 +388,7 @@ try {
     && readFileSync(path.join(store.filesDir(home, TASK), diffsB[0]), 'utf8').includes(MARK.reviewB),
     `${diffsA.join(', ')} → ${diffsOf().join(', ')}`);
   const reviewB = await waitFor(() => orchInbox()
-    .find((m) => m.from === REVIEWER && m.type === 'result' && String(m.body ?? '').includes(MARK.reviewB)) ?? null,
+    .find((m) => sentBy(m, REVIEWER) && m.type === 'result' && String(m.body ?? '').includes(MARK.reviewB)) ?? null,
   { timeoutMs: 600000 });
   check('step 6: the reviewer parsed the NEW diff in the same context and sent a second result',
     !!reviewB, codexSession.tailLog(reviewerRef, process.env, 12));
