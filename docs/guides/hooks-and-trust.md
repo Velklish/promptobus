@@ -16,12 +16,12 @@ Only project files next to `promptobus.json`:
 
 The generated runner is `.promptobus/hooks/bus.mjs`. `src/hooks.ts` plans the Claude-shaped settings. The installer maps that plan onto each harness file.
 
-Owned records are identified by the stable command and matcher, not by file position. A later install with a shorter `--harnesses` list deletes owned records of the harnesses you dropped. Foreign groups stay.
+Owned records are identified by exact install ids first, not by file position. Guard records without a manifest id use the portable command signature described in [install.md](install.md); bus feedback uses its matcher. A later install with a shorter `--harnesses` list deletes owned records of the harnesses you dropped. Foreign groups stay, except guard-shaped commands described in [install.md](install.md).
 
 ## What is never touched
 
 - `~/.claude`, `~/.cursor`, `~/.codex` — user-level harness homes
-- Foreign hook groups and unknown fields in the project files
+- Foreign hook groups that are not guard-shaped, and unknown fields in the project files
 - Hooks that are not owned by Promptobus
 - The participant worktree's main tree outside the hook the driver writes
 - `.promptobus/hooks/` during ordinary task cleanup — the runner must stay

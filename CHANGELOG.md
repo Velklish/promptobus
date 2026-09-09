@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live mixed-lineup matchers now read protocol v1 sender IDs.** Worker and reviewer checks share the normalized sender predicate, so a live run no longer waits for messages under the caller's unstored address spelling. (PB-67)
 - **Loop guard hooks now use the host's launch argv.** The generated command calls the layout entry and host-declared subcommand path, so a non-default command name reaches `guard` instead of carrying a package-specific word. (PB-103)
 - **`done` now refreshes the window-bearing harnesses represented by telemetry records before writing them.** It reuses the 15 s preflight budget, and a refusal or timeout leaves that harness's end reading `null`, prints a warning, and still closes the task. (PB-37.2)
+- **Guard ownership survives copied project hooks.** When the install manifest has no matching id, any `Stop`/`SessionStart` (`stop` for Cursor) command with the rendered guard shape is treated as ours regardless of its binary or paths and is replaced or removed; other guard-like commands remain foreign. (PB-52)
 
 ## [0.5.1] - 2026-09-09
 

@@ -1,9 +1,9 @@
 # PB-52 · A guard hook group is recognised as ours by this machine's absolute bin path, so a checkout without the gitignored manifest gains a second Stop/SessionStart guard that neither install nor uninstall can remove
 
-- **Order:** 330
 - **Scope:** `lib/install.js`, `src/hooks.ts`, `src/standalone.ts`, `docs/guides/install.md`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-103
+- **Taken:** 2026-09-09
 
 ## Context
 

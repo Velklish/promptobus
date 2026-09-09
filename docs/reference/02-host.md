@@ -10,7 +10,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 - Identity: `id`, `commandName`, `version`, `locale`
 - Roots: `workspaceRoot()`, `promptobusHome()`, `findRoot(cwd)`
-- Binaries and launch argv: `nodePath()`, `binPath()`, `layoutBinPath()`, `guardArgv(args)`
+- Binaries and launch argv: `nodePath()`, `binPath()`, `layoutBinPath()` (the entry a host uses to build `guardArgv`; the package itself no longer calls it), `guardArgv(args)`
 - Layout relatives: tools manifest, skills, plugin, bus hook, install manifest
 - `cloneOf(abs)` — the clone a directory belongs to and its namespace path, or `null`; zones and namespace depth are the host's layout, the package never walks the tree
 - `declaredTools()` — harness names allowed for `--harness`

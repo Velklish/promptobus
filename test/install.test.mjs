@@ -278,6 +278,69 @@ test('guard hook argv follows a non-default host command name', async () => {
   assert.deepEqual(homeHits(home), []);
 });
 
+test('guard ownership follows portable argv shape across machines', () => {
+  const { dir, home } = sandbox();
+  doInstall(dir, home, { harnesses: 'claude' });
+  const settingsRel = path.join('.claude', 'settings.json');
+  const doc = readJson(dir, settingsRel);
+  doc.hooks.Stop[0].hooks[0].command = '"C:\\foreign\\node.exe" "C:\\foreign\\promptobus.js" promptobus guard --role "worker:api" --task "guard-t20260829-120000" --home "C:\\p"';
+  doc.hooks.SessionStart[0].hooks[0].command = '"/foreign/node" "/foreign/promptobus.js" promptobus guard';
+  writeFileSync(path.join(dir, '.claude', 'settings.json'), `${JSON.stringify(doc, null, 2)}\n`);
+  rmSync(path.join(dir, '.promptobus'), { recursive: true, force: true });
+
+  assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
+  const installed = readJson(dir, settingsRel);
+  assert.equal(installed.hooks.Stop.length, 1);
+  assert.equal(installed.hooks.SessionStart.length, 1);
+  assert.doesNotMatch(installed.hooks.Stop[0].hooks[0].command, /foreign/);
+  assert.doesNotMatch(installed.hooks.SessionStart[0].hooks[0].command, /foreign/);
+
+  rmSync(path.join(dir, '.promptobus'), { recursive: true, force: true });
+  assert.equal(doUninstall(dir, home), 0);
+  const uninstalled = readJson(dir, settingsRel);
+  assert.equal(uninstalled.hooks?.Stop?.length ?? 0, 0);
+  assert.equal(uninstalled.hooks?.SessionStart?.length ?? 0, 0);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('guard ownership leaves guard-like foreign commands untouched', () => {
+  const { dir, home } = sandbox();
+  const commands = [
+    'echo guard',
+    '"/foreign/node" "/foreign/promptobus.js" promptobus guard --unknown value',
+    '"/foreign/node" "/foreign/promptobus.js" promptobus install',
+    '"/foreign/node" "/foreign/promptobus.js" "guard"',
+    '"/foreign/node" "/foreign/promptobus.js" --flag guard',
+    '"/foreign/node" "/foreign/promptobus.js" guard --role r --task t --home',
+    '"/foreign/node" "/foreign/promptobus.js" guard "--role" r --task t --home h',
+    '"/foreign/node" "/foreign/promptobus.js" guard --role "unterminated',
+    '"/bin/sh" "-c" node hook.js guard',
+  ];
+  const hooks = {
+    Stop: commands.map((command) => ({ hooks: [{ type: 'command', command }] })),
+    SessionStart: commands.map((command) => ({ hooks: [{ type: 'command', command }] })),
+  };
+  mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  writeFileSync(path.join(dir, '.claude', 'settings.json'), `${JSON.stringify({ hooks }, null, 2)}\n`);
+
+  assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
+  const installed = readJson(dir, path.join('.claude', 'settings.json'));
+  for (const event of ['Stop', 'SessionStart']) {
+    assert.equal(installed.hooks[event].length, commands.length + 1);
+    for (const command of commands) {
+      assert.equal(installed.hooks[event].some((group) => group.hooks[0].command === command), true);
+    }
+  }
+
+  rmSync(path.join(dir, '.promptobus'), { recursive: true, force: true });
+  assert.equal(doUninstall(dir, home), 0);
+  const uninstalled = readJson(dir, path.join('.claude', 'settings.json'));
+  for (const event of ['Stop', 'SessionStart']) {
+    assert.deepEqual(uninstalled.hooks[event].map((group) => group.hooks[0].command), commands);
+  }
+  assert.deepEqual(homeHits(home), []);
+});
+
 test('install from a subdirectory writes the project root; prune keeps the runner directory', () => {
   const { dir, home } = sandbox();
   const sub = path.join(dir, 'nested', 'deeper');
