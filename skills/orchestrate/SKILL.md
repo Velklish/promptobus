@@ -131,16 +131,9 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 `promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start. A lift routed by the recorded default rather than by a flag says so, so a run made under a switch the person agreed to is auditable as one.
 
-### Refresh right before you close
+### Close-time telemetry refresh
 
-`promptobus done` writes one local telemetry record per participant, and the window readings in it are the ones the availability cache holds at that moment. `done` probes nothing, and a window entry lives sixty seconds. So run
-
-```bash
-promptobus models --refresh
-promptobus done --task <id>
-```
-
-**in that order, back to back.** Without the refresh the record carries the spawn reading only and no end value, and what the run actually spent on each account is unmeasurable afterwards — the file is append-only and there is no second chance at the close. The record is local, holds no prompt, path, session id or token, and nothing sends it anywhere.
+`promptobus done` writes one local telemetry record per participant and automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token, and nothing sends it anywhere.
 
 ### Constraints the user named
 

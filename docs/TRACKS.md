@@ -124,7 +124,7 @@ Deferred assignments: [PB-38.2](backlog/deferred/PB-38.2-cursor-tier-unknown-unt
 
 PB-77 plus PB-37.2 before PB-57; resolve the throughput-versus-duration contract before PB-56 or changing speed ratings. PB-62/PB-91/PB-106 protect the write workflow. PB-48 comes after timestamp/tally semantics.
 
-Queued assignments: [PB-77](archive/PB-77-telemetry-end-reading-stale-exhausted/task.md), [PB-37.2](backlog/queue/PB-37.2-done-does-not-refresh-windows-so-calibrate-loses-spend.md), [PB-57](backlog/queue/PB-57-calibrate-speed-per-effort-rung.md), [PB-56](backlog/queue/PB-56-calibrate-speed-shared-end-stamp.md), [PB-62](backlog/queue/PB-62-calibrate-confirm-before-print.md), [PB-91](backlog/queue/PB-91-calibrate-write-shadowed-silently.md), [PB-106](backlog/queue/PB-106-calibrate-write-overlay-gaps.md), [PB-145](backlog/queue/PB-145-pivot-tie-break-untested.md), [PB-48](backlog/queue/PB-48-review-rounds-not-exposed-mid-run.md).
+Queued assignments: [PB-77](archive/PB-77-telemetry-end-reading-stale-exhausted/task.md), [PB-37.2](archive/PB-37.2-done-does-not-refresh-windows-so-calibrate-loses-spend/task.md), [PB-57](backlog/queue/PB-57-calibrate-speed-per-effort-rung.md), [PB-56](backlog/queue/PB-56-calibrate-speed-shared-end-stamp.md), [PB-62](backlog/queue/PB-62-calibrate-confirm-before-print.md), [PB-91](backlog/queue/PB-91-calibrate-write-shadowed-silently.md), [PB-106](backlog/queue/PB-106-calibrate-write-overlay-gaps.md), [PB-145](backlog/queue/PB-145-pivot-tie-break-untested.md), [PB-48](backlog/queue/PB-48-review-rounds-not-exposed-mid-run.md).
 
 ### H — Hook installation and host commands
 

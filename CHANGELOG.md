@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Telemetry no longer treats exhausted cache entries as fresh end readings.** A future-reset or sticky exhaustion remains live for routing, but its window percentage is `null` in participant telemetry once the sixty-second window TTL has passed, so `models calibrate` cannot mistake a frozen value for spend evidence. (PB-77)
 - **Live mixed-lineup matchers now read protocol v1 sender IDs.** Worker and reviewer checks share the normalized sender predicate, so a live run no longer waits for messages under the caller's unstored address spelling. (PB-67)
 - **Loop guard hooks now use the host's launch argv.** The generated command calls the layout entry and host-declared subcommand path, so a non-default command name reaches `guard` instead of carrying a package-specific word. (PB-103)
+- **`done` now refreshes the window-bearing harnesses represented by telemetry records before writing them.** It reuses the 15 s preflight budget, and a refusal or timeout leaves that harness's end reading `null`, prints a warning, and still closes the task. (PB-37.2)
 
 ## [0.5.1] - 2026-09-09
 

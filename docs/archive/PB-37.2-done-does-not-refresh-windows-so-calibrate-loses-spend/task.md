@@ -1,9 +1,9 @@
 # PB-37.2 · `done` reads a sixty-second cache for the end-of-run window value, so most records reach `calibrate` with no spend evidence
 
-- **Order:** 260
 - **Scope:** `lib/model-routing/telemetry.js` (`endReader`), `lib/done.js`, [reference/03-cli.md](../../reference/03-cli.md) § Participant telemetry
 - **Created:** 2026-09-06
 - **Dependencies:** PB-58, PB-77
+- **Taken:** 2026-09-09
 
 ## Context
 

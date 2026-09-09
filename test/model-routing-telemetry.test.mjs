@@ -30,7 +30,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture } from './console.mjs';
-import { adapterMap, availableStub } from './routing-stubs.mjs';
+import { adapterMap, answeringStub, availableStub, counter } from './routing-stubs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -42,6 +42,21 @@ const { done } = await import(path.join(ROOT, 'lib', 'done.js'));
 const { models, routingContext, routingMetadata } = await import(path.join(ROOT, 'lib', 'models.js'));
 const { hostOf } = await import(path.join(ROOT, 'lib', 'host.js'));
 const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetry.js'));
+
+const defaultTelemetryAdapter = adapterMap({
+  claude: answeringStub({
+    state: 'available', reason: null, message: 'refreshed',
+    checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+    windows: [{ id: 'session', kind: 'session', lengthSec: 18000, usedPercent: 55, resetAt: null, scope: null }],
+  }),
+});
+const refusingTelemetryAdapter = adapterMap({
+  claude: answeringStub({
+    state: 'unknown', reason: 'probe_failed', message: 'stand-in refusal',
+    checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+  }),
+});
+const close = (root, opts = {}) => done(root, { adapterFor: defaultTelemetryAdapter, ...opts });
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const ajv = new Ajv2020({ strict: false, allErrors: true });
@@ -66,10 +81,10 @@ const CACHE = host.routingPaths().cacheFile;
 const FILE = telemetry.telemetryFileOf(host);
 
 /** A v2 availability snapshot at the cache path, stamped `agoMs` ago. */
-function seedCache({ agoMs = 0, usedPercent = 55, state = 'available', resetAt = null } = {}) {
+function seedCache({ cacheFile = CACHE, agoMs = 0, usedPercent = 55, state = 'available', resetAt = null } = {}) {
   const at = new Date(Date.now() - agoMs).toISOString();
-  mkdirSync(path.dirname(CACHE), { recursive: true });
-  writeFileSync(CACHE, `${JSON.stringify({
+  mkdirSync(path.dirname(cacheFile), { recursive: true });
+  writeFileSync(cacheFile, `${JSON.stringify({
     schemaVersion: 2,
     takenAt: at,
     harnesses: {
@@ -170,7 +185,7 @@ say('worker:hand', 'orchestrator', 'result', 'ручной выбор модел
 
 seedCache();
 const noSessions = () => ({});
-const out = await capture(async () => done(SB, { task: TASK, snapshot: noSessions }));
+const out = await capture(async () => close(SB, { task: TASK, snapshot: noSessions }));
 
 const lines = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim());
 const rows = lines.map((l) => JSON.parse(l));
@@ -253,7 +268,7 @@ check(': a participant with no routing is still measured — its traffic is coun
 // each repeat would append the whole set again, and PB-37 reads one row as one
 // participant run.
 const afterFirst = readFileSync(FILE, 'utf8');
-const againOut = await capture(async () => done(SB, { task: TASK, snapshot: noSessions }));
+const againOut = await capture(async () => close(SB, { task: TASK, snapshot: noSessions }));
 check(': a second done on the same task appends nothing and says nothing about telemetry',
   readFileSync(FILE, 'utf8') === afterFirst && !/telemetry:/.test(againOut), againOut.trim());
 
@@ -305,7 +320,9 @@ store.upsertParticipant(HOME2, TASK2, store.participantRecord('worker:api', {
 // Two hours old: past every TTL in the cascade, and past the window TTL by a
 // hundred times.
 seedCache({ agoMs: 2 * 60 * 60 * 1000 });
-await capture(async () => done(SB2, { task: TASK2, snapshot: noSessions }));
+await capture(async () => close(SB2, {
+  task: TASK2, snapshot: noSessions, adapterFor: refusingTelemetryAdapter,
+}));
 const all = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
 const stale = all[all.length - 1];
 check(': the file is the account\'s, not one workspace\'s — a second workspace appends to the same one',
@@ -316,6 +333,29 @@ check(': a stale cache gives no end reading at all — null, never a number',
 check(': the spawn readings survive a stale cache — they were recorded, not measured now',
   stale.windows[0].usedPercentAtSpawn === 40 && stale.windows[1].usedPercentAtSpawn === 12,
   JSON.stringify(stale.windows.map((w) => w.usedPercentAtSpawn)));
+
+// The direct writer does not refresh: its omitted snapshot must read the cache
+// as it stands and therefore retain the PB-77 stale-cache null. Keep its cache
+// and telemetry file separate from the account-wide fixture above.
+const SB_DIRECT = makeSandbox('promptobus-telemetry-direct-');
+writeHostConfig(SB_DIRECT);
+const directBase = hostOf(SB_DIRECT);
+const directCache = path.join(SB_DIRECT, 'routing', 'cache.json');
+const directHost = Object.create(directBase);
+directHost.routingPaths = () => ({ ...directBase.routingPaths(), cacheFile: directCache });
+const directHome = directHost.promptobusHome();
+const directTask = 'telemetriya-pryamaya-zapis-t20260906-100000';
+store.createTask(directHome, { id: directTask, title: 'прямая запись', owner: null });
+store.upsertParticipant(directHome, directTask, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-direct', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+}));
+seedCache({ cacheFile: directCache, agoMs: 2 * 60 * 60 * 1000 });
+const directWrite = telemetry.appendTelemetry(directHost, directHome, store.readTask(directHome, directTask));
+const directRows = readFileSync(directWrite.file, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+check(': direct appendTelemetry without a snapshot gives no end reading from a stale cache',
+  directRows.length === 1 && directRows[0].windows.every((w) => w.usedPercentAtEnd === null),
+  JSON.stringify(directRows[0]?.windows));
 
 // Routing keeps an exhausted entry until its own reset — or forever when the
 // reset is unknown. Telemetry has a different question: whether the percentage
@@ -336,12 +376,19 @@ for (const [label, resetAt, taskId] of [
     routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
   }));
   seedCache({ agoMs: 2 * 60 * 60 * 1000, state: 'exhausted', resetAt });
-  await capture(async () => done(SB2, { task: taskId, snapshot: noSessions }));
+  const exhaustedOut = await capture(async () => close(SB2, {
+    task: taskId, snapshot: noSessions, adapterFor: refusingTelemetryAdapter,
+  }));
   const exhausted = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim())
     .map((l) => JSON.parse(l)).at(-1);
   check(`: ${label} past the TTL gives no end reading`,
     exhausted.windows.length === 2 && exhausted.windows.every((w) => w.usedPercentAtEnd === null),
     JSON.stringify(exhausted.windows));
+  if (!resetAt) {
+    check(': a held exhausted entry names its own reason once',
+      /telemetry: claude window not re-read \(subscription_exhausted\) — end reading absent/.test(exhaustedOut),
+      exhaustedOut.trim());
+  }
 }
 
 // --- the one line `models` prints --------------------------------------------
@@ -383,6 +430,153 @@ check(': `--json` stays one document — the line is not in the stream and not o
   !jsonOut.text.includes('telemetry:') && !saidJson.includes('telemetry:')
   && typeof JSON.parse(jsonOut.text) === 'object', saidJson.trim());
 
+// Routing state does not decide whether an end reading exists: an exhausted
+// answer can still carry a fresh window percentage, and an available answer
+// can carry none.
+const FRESH_EXHAUSTED_TASK = 'telemetriya-svezhiy-izraskhodovannyy-t20260906-100003';
+store.createTask(HOME2, { id: FRESH_EXHAUSTED_TASK, title: 'свежее исчерпание', owner: null });
+store.upsertParticipant(HOME2, FRESH_EXHAUSTED_TASK, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-fresh-exhausted', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+}));
+seedCache({ agoMs: 2 * 60 * 60 * 1000 });
+const freshExhaustedOut = await capture(async () => close(SB2, {
+  task: FRESH_EXHAUSTED_TASK,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    claude: answeringStub({
+      state: 'exhausted', reason: 'subscription_exhausted', message: 'limit spent',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: futureReset,
+      windows: [{ id: 'session', kind: 'session', lengthSec: 18000, usedPercent: 61, resetAt: null, scope: null }],
+    }),
+  }),
+}));
+const freshExhausted = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).at(-1);
+check(': a fresh exhausted answer supplies its end reading',
+  freshExhausted.windows[0].usedPercentAtEnd === 61, JSON.stringify(freshExhausted.windows[0]));
+check(': a fresh exhausted answer reports its missing scoped window',
+  /telemetry: claude window weekly-opus not re-read \(no_window_reading\) — end reading absent/.test(freshExhaustedOut),
+  freshExhaustedOut.trim());
+
+const EMPTY_WINDOWS_TASK = 'telemetriya-svezhiy-pustoy-t20260906-100004';
+store.createTask(HOME2, { id: EMPTY_WINDOWS_TASK, title: 'пустые окна', owner: null });
+store.upsertParticipant(HOME2, EMPTY_WINDOWS_TASK, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-empty-windows', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+}));
+seedCache({ agoMs: 2 * 60 * 60 * 1000 });
+const emptyWindowsOut = await capture(async () => close(SB2, {
+  task: EMPTY_WINDOWS_TASK,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    claude: answeringStub({
+      state: 'available', reason: null, message: 'no limits reported',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: null, windows: [],
+    }),
+  }),
+}));
+const emptyWindows = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).at(-1);
+check(': an available answer with no windows leaves the end reading absent',
+  emptyWindows.windows.every((w) => w.usedPercentAtEnd === null), JSON.stringify(emptyWindows.windows));
+check(': an available answer with no windows names the missing reading',
+  /telemetry: claude window session not re-read \(no_window_reading\) — end reading absent/.test(emptyWindowsOut)
+  && /telemetry: claude window weekly-opus not re-read \(no_window_reading\) — end reading absent/.test(emptyWindowsOut),
+  emptyWindowsOut.trim());
+
+// --- done refreshes only the window-bearing harnesses it records --------------
+//
+// A close owns the one probe that can make its end reading fresh. The cache is
+// deliberately stale before each close, so a passing record proves the adapter
+// answer, not a value left over from the previous check.
+const REFRESH_TASK = 'telemetriya-avto-obnovlenie-t20260906-100003';
+store.createTask(HOME2, { id: REFRESH_TASK, title: 'автоматическое обновление', owner: null });
+store.upsertParticipant(HOME2, REFRESH_TASK, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-refresh', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+}));
+seedCache({ agoMs: 2 * 60 * 60 * 1000 });
+const refreshCount = counter();
+const otherCount = counter();
+const refreshOut = await capture(async () => close(SB2, {
+  task: REFRESH_TASK,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    claude: answeringStub({
+      state: 'available', reason: null, message: 'refreshed',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+      windows: [{ id: 'session', kind: 'session', lengthSec: 18000, usedPercent: 66, resetAt: null, scope: null }],
+    }, refreshCount),
+    cursor: availableStub(otherCount),
+  }),
+}));
+const refreshed = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).at(-1);
+check(': done refreshes the recorded harness before reading its end window',
+  refreshed.windows[0].usedPercentAtEnd === 66 && refreshCount.probes === 1,
+  JSON.stringify({ end: refreshed.windows[0].usedPercentAtEnd, probes: refreshCount.probes }));
+check(': done does not probe a harness with no telemetry record',
+  otherCount.probes === 0, String(otherCount.probes));
+check(': a successful telemetry refresh reports its missing scoped window',
+  /telemetry: claude window weekly-opus not re-read \(no_window_reading\) — end reading absent/.test(refreshOut),
+  refreshOut.trim());
+
+const SPLIT_TASK = 'telemetriya-raznye-okna-t20260906-100005';
+store.createTask(HOME2, { id: SPLIT_TASK, title: 'разные окна', owner: null });
+store.upsertParticipant(HOME2, SPLIT_TASK, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-split-session', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: [SPAWN_WINDOWS[0]] },
+}));
+store.upsertParticipant(HOME2, SPLIT_TASK, store.participantRecord('worker:other', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-split-weekly', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: [SPAWN_WINDOWS[1]] },
+}));
+seedCache({ agoMs: 2 * 60 * 60 * 1000 });
+const splitOut = await capture(async () => close(SB2, {
+  task: SPLIT_TASK,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    claude: answeringStub({
+      state: 'available', reason: null, message: 'session limit only',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+      windows: [{ id: 'session', kind: 'session', lengthSec: 18000, usedPercent: 70, resetAt: null, scope: null }],
+    }),
+  }),
+}));
+const splitRows = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).slice(-2);
+const splitSession = splitRows.find((row) => row.windows[0]?.id === 'session');
+const splitWeekly = splitRows.find((row) => row.windows[0]?.id === 'weekly-opus');
+const splitWarnings = splitOut.split('\n').filter((line) => line.includes('not re-read'));
+check(': two participants with different window sets keep the session end reading and lose only weekly',
+  splitRows.length === 2 && splitSession?.windows[0].usedPercentAtEnd === 70
+  && splitWeekly?.windows[0].usedPercentAtEnd === null,
+  JSON.stringify(splitRows));
+check(': partial coverage warns once for the missing scoped window',
+  splitWarnings.length === 1 && /claude window weekly-opus not re-read \(no_window_reading\)/.test(splitWarnings[0]),
+  splitWarnings.join('\n'));
+
+const REFUSAL_TASK = 'telemetriya-otkaz-obnovleniya-t20260906-100004';
+store.createTask(HOME2, { id: REFUSAL_TASK, title: 'отказ обновления', owner: null });
+store.upsertParticipant(HOME2, REFUSAL_TASK, store.participantRecord('worker:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-refusal', model: 'claude-opus', started: T1,
+  routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+}));
+seedCache({ agoMs: 2 * 60 * 60 * 1000 });
+const refusalOut = await capture(async () => close(SB2, {
+  task: REFUSAL_TASK,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    claude: answeringStub({
+      state: 'unknown', reason: 'probe_failed', message: 'stand-in refusal',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+    }),
+  }),
+}));
+const refused = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).at(-1);
+check(': a refused refresh leaves the end reading absent',
+  refused.windows[0].usedPercentAtEnd === null, JSON.stringify(refused.windows[0]));
+check(': a refused refresh warns with the reason and still closes the task',
+  /telemetry: claude window not re-read \(probe_failed\) — end reading absent/.test(refusalOut)
+  && /closed/.test(refusalOut) && store.readTask(HOME2, REFUSAL_TASK).status === 'done', refusalOut.trim());
+
 // --- nothing to write, and nowhere to write ----------------------------------
 const SB4 = makeSandbox('promptobus-telemetry-empty-');
 writeHostConfig(SB4);
@@ -390,7 +584,7 @@ const HOME4 = path.join(SB4, '.promptobus');
 const TASK4 = 'telemetriya-bez-uchastnikov-t20260906-110000';
 store.createTask(HOME4, { id: TASK4, title: 'некого записывать', owner: null });
 const before = readFileSync(FILE, 'utf8');
-const emptyOut = await capture(async () => done(SB4, { task: TASK4, snapshot: noSessions }));
+const emptyOut = await capture(async () => close(SB4, { task: TASK4, snapshot: noSessions }));
 check(': a task nobody lifted a session in appends nothing and says nothing',
   readFileSync(FILE, 'utf8') === before && !/telemetry:/.test(emptyOut), emptyOut.trim());
 
@@ -411,7 +605,7 @@ const blockedHost = {
   ...hostOf(SB5),
   routingPaths: () => ({ cacheFile: path.join(wall, 'model-routing', 'cache.json'), overlays: [] }),
 };
-const roOut = await capture(async () => done(blockedHost, { task: TASK5, snapshot: noSessions }));
+const roOut = await capture(async () => close(blockedHost, { task: TASK5, snapshot: noSessions }));
 check(': a path that cannot be written warns and does not undo the close',
   /telemetry records were not written/.test(roOut) && /closed/.test(roOut)
   && store.readTask(HOME5, TASK5).status === 'done', roOut.trim());
@@ -492,7 +686,24 @@ store.upsertParticipant(HOME6, TASK6, store.participantRecord('worker:api', {
 }));
 // The account spent a quarter of its session window while the participant worked.
 seedExample(66);
-await capture(async () => done(SB6, { task: TASK6, snapshot: noSessions }));
+await capture(async () => close(SB6, {
+  task: TASK6,
+  snapshot: noSessions,
+  adapterFor: adapterMap({
+    example: answeringStub({
+      state: 'available', reason: null, message: 'refreshed',
+      checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
+      windows: [
+        { id: 'session', kind: 'session', lengthSec: 18000, usedPercent: 66, resetAt: null, scope: null },
+        {
+          id: 'weekly-example-deep', kind: 'weekly', lengthSec: 604800, usedPercent: 12,
+          resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+          scope: { model: 'Example Deep', models: ['example-deep'] },
+        },
+      ],
+    }),
+  }),
+}));
 const routedRows = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
 const row = routedRows[routedRows.length - 1];
 check(': the record validates and carries the tuple the resolver actually chose',
