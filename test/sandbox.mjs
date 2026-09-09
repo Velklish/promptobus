@@ -183,7 +183,7 @@ export function writeHostConfig(dir, config = {}) {
   writeFileSync(path.join(dir, 'promptobus.json'), `${JSON.stringify(body)}\n`);
 }
 
-/** PATH lookup for live scripts. Standalone host.resolveToolBin does not search install dirs. */
+/** PATH-only presence gate for live scripts; `path` and `bin` are the probed name, not an install path. */
 export function resolveToolBin(name) {
   const r = spawnSync(name, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error) {

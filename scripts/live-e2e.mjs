@@ -38,18 +38,13 @@ import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
 const { bgSessions, findSession, resetBgSessionsCache, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
 const { claudeDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'));
 
-// The binary is found with the same resolve spawn uses — including `~/.local/bin`.
-// But the session registry (`bgSessions`) calls `claude` through PATH, so a directory
-// found outside PATH is prepended: otherwise half the run would see the binary and
-// half would not.
+// `resolveToolBin` searches PATH only and returns the name it probed. `ok` means
+// `claude` already answers through PATH, so leave PATH unchanged for the session
+// registry and every child command.
 const tool = resolveToolBin('claude');
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);
-}
-const binDir = path.dirname(tool.path);
-if (!(process.env.PATH ?? '').split(path.delimiter).includes(binDir)) {
-  process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ''}`;
 }
 resetBgSessionsCache();
 

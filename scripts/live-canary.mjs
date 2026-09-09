@@ -43,7 +43,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
+import { writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -185,42 +185,30 @@ if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} KB)
 // what actually left for the child, and on a scrubbed `process.env` it would be
 // green by construction.
 //
-// It is computed on EVERY call, not once at file load (review note): below,
-// `process.env.PATH` is prepended with the directory of the found `claude`, and
-// a copy taken before that would send `sync` and `doctor` without it — exactly
-// the refusal the prepend exists for. An environment copy per call costs
-// microseconds, and the canary has a handful of calls.
+// It is computed on EVERY call, not once at file load (review note): each child
+// gets a fresh copy after session identity is stripped. The live binary check is
+// PATH-only, so this canary leaves PATH unchanged for `sync`, `doctor`, and the
+// live run. An environment copy per call costs microseconds, and the canary has
+// a handful of calls.
 const childEnv = () => dropSessionLeaks({ ...process.env });
 
 const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
   cwd: ws, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: childEnv(), ...opts,
 });
 
-// The harness binary is found with the SAME resolve spawn uses — including
-// `~/.local/bin`. It cannot be called through PATH: the Claude Code install does
-// not put itself there, and `run('claude', …)` returns ENOENT with empty stdout.
-// A cleanup verdict on that answer would pass as success — "the session list is
-// empty" and "no list was given" are indistinguishable. The live case of the
-// 2026-09-02 run: that is exactly what happened.
-let claudeBin = null;
-try {
-  const { resolveToolBin } = await import(new URL('../test/sandbox.mjs', import.meta.url));
-  const found = resolveToolBin('claude');
-  claudeBin = found.ok ? found.path : null;
-} catch { claudeBin = null; }
+// The harness binary is checked with the same PATH-only helper as live-e2e.
+// `ok` means `claude` is already reachable through PATH, which is also what
+// `run('claude', …)` and the installed session registry use. A cleanup verdict
+// on a missing binary would pass as success — "the session list is empty" and
+// "no list was given" are indistinguishable — so the live loop retains its
+// explicit refusal when it starts.
 
 // The session registry is read with the SAME parse the mechanism uses
 // (`bgSessions` from the installed tree), not our own. `claude agents --json`
 // has three reply shapes — a bare array, `{agents:[…]}` and `{sessions:[…]}` —
 // and a second copy of the parse would drift from the first in silence. `bgSessions`
-// itself calls `claude` through PATH, so a directory found outside PATH is
-// prepended into it — the same trick as in live-e2e.mjs.
-if (claudeBin) {
-  const binDir = path.dirname(claudeBin);
-  if (!(process.env.PATH ?? '').split(path.delimiter).includes(binDir)) {
-    process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ''}`;
-  }
-}
+// itself calls `claude` through PATH; the PATH-only check in the live script makes
+// that same name available to both the canary and the registry.
 let bgSessions = null;
 let resetBgSessionsCache = null;
 try {

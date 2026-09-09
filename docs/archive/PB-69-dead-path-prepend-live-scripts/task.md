@@ -1,9 +1,9 @@
 # PB-69 · The PATH prepend in `live-e2e.mjs` and `live-canary.mjs` is dead — `resolveToolBin` hands back a bare name, so `path.dirname()` is `.` and the current directory lands first on the PATH of the run and of every live session it spawns
 
-- **Order:** 390
 - **Scope:** `scripts/live-e2e.mjs`, `scripts/live-canary.mjs`, `test/sandbox.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 
