@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Codex reviewer's routed effort is sent on `thread/start`.** `review/start` has no effort field, so the holder puts `config.model_reasoning_effort` on `thread/start` for both roles. The worker still also sends `effort` on its first `turn/start`. Measured on codex-cli 0.146.0 with no paid turn: the thread echoes the asked level as `ThreadStartResponse.reasoningEffort`. Catalog Codex reviewer tuples keep the role. (PB-90)
+
 - **A Codex turn is watched by its events.** The holder records `lastEvent` / `lastEventAt` / `pendingRequest` (method, server, mode — never the prompt or params). Silence past `PROMPTOBUS_CODEX_IDLE_MS` (default 180 s) is a watchdog stall. A pending server request is a waiting note immediately and a `pending-request` stall only after that budget; overlapping requests are keyed by exact id. A `turn/completed` with status `failed` stays visible even after a prior bus status and clears on a later successful turn. Unmatched JSON-RPC responses are logged as `orphan id=<id>`. (PB-42)
 
 - **A Codex holder declines `mcpServer/elicitation/request` instead of answering it with a bare allow.** The reply is `{ action: "decline" }`, which is the documented declined-elicitation shape on app-server 0.146.0, and the turn continues. The log names the method, server and mode only — never the prompt, schema, URL, or params. (PB-41)

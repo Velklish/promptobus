@@ -822,7 +822,67 @@ check(': in thread/start there are no canonical names — the bus went out under
   !('promptobus' in started) && !('probe-http' in started)
   && busKey in started && httpKey in started,
   JSON.stringify(Object.keys(started)));
+check(': without --effort thread/start does not invent a model_reasoning_effort',
+  mcpThread && !('model_reasoning_effort' in (mcpThread.config ?? {})),
+  JSON.stringify(mcpThread?.config));
 if (mcpPart?.sessionRef) await codexDriver.stop(mcpPart.sessionRef);
+
+function harnessThread(part, sessionEnv = env) {
+  const id = readSession(part?.sessionRef ?? '', sessionEnv)?.threadId;
+  try {
+    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${id}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+planParticipant(HARNESS, 'worker:effw', {
+  turns: [{ do: [
+    { write: { path: 'codex/effort.md', text: '# effort\n' } },
+    { commit: { message: ': effort probe' } },
+    { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'EFFORT-W' } },
+  ] }],
+});
+planParticipant(HARNESS, 'reviewer:effw', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: 'EFFORT-R' } }] }],
+});
+const effortUp = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'effw', '--harness', 'codex', '--effort', 'xhigh'], { cwd: ws, env });
+check(': worker --effort xhigh lifts',
+  effortUp.status === 0 && /worker worker:effw lifted/.test(effortUp.out), effortUp.out.slice(-600));
+const effortWorker = store.participantOf(store.readTask(home, TASK), 'worker:effw');
+const effortWorkerThread = harnessThread(effortWorker);
+check(': worker thread/start carries config.model_reasoning_effort and turn/start still carries effort',
+  effortWorkerThread?.config?.model_reasoning_effort === 'xhigh'
+    && effortWorkerThread?.firstRpc?.method === 'turn/start'
+    && effortWorkerThread?.firstRpc?.params?.effort === 'xhigh',
+  JSON.stringify({
+    config: effortWorkerThread?.config,
+    firstRpc: effortWorkerThread?.firstRpc,
+  }));
+
+const effortWt = effortWorker?.metadata?.worktree ?? wt;
+const effortWrote = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  .find((m) => String(m.body ?? '').includes('EFFORT-W')) ?? null, { timeoutMs: 20000 });
+check(': worker --effort xhigh committed a change the reviewer can see',
+  !!effortWrote, JSON.stringify(effortWrote));
+const effortReviewed = cli([ 'review', effortWt, '--task', TASK, '--harness', 'codex', '--effort', 'xhigh'],
+  { cwd: ws, env });
+check(': reviewer --effort xhigh lifts a fresh Codex reviewer',
+  effortReviewed.status === 0 && /reviewer reviewer:effw started/.test(effortReviewed.out),
+  effortReviewed.out.slice(-600));
+const effortReviewer = store.participantOf(store.readTask(home, TASK), 'reviewer:effw');
+const effortReviewerThread = harnessThread(effortReviewer);
+check(': reviewer thread/start carries the same model_reasoning_effort; review/start has no effort field',
+  effortReviewerThread?.config?.model_reasoning_effort === 'xhigh'
+    && effortReviewerThread?.firstRpc?.method === 'review/start'
+    && !('effort' in (effortReviewerThread?.firstRpc?.params ?? { effort: true })),
+  JSON.stringify({
+    config: effortReviewerThread?.config,
+    firstRpc: effortReviewerThread?.firstRpc,
+  }));
+if (effortWorker?.sessionRef) await codexDriver.stop(effortWorker.sessionRef);
+if (effortReviewer?.sessionRef) await codexDriver.stop(effortReviewer.sessionRef);
 
 // ── A holder dies with its session ────────────────────────────────────────────
 //

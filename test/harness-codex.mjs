@@ -428,7 +428,11 @@ async function appServer() {
         turnId: null,
         status: 'idle',
       });
-      reply(id, { thread: { id: t.id, status: { type: 'idle' } } });
+      const reasoningEffort = params.config?.model_reasoning_effort;
+      reply(id, {
+        thread: { id: t.id, status: { type: 'idle' } },
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      });
       notify('thread/status/changed', { type: 'idle' });
       return;
     }
@@ -484,6 +488,7 @@ async function appServer() {
       t.turnStarted = false;
       t.turnId = turnId;
       t.status = 'active';
+      t.firstRpc ??= { method, params };
       writeThread(home, t);
       reply(id, { turn: { id: turnId, status: 'inProgress' } });
       setTimeout(() => playTurn(home, t, turnId, params, ask, notify), 40);

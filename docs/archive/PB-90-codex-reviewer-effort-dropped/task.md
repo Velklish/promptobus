@@ -1,9 +1,9 @@
 # PB-90 · A Codex reviewer's routed effort is never sent to the harness — review/start and thread/start carry no effort field — so it runs at the account's default while status and telemetry still name the routed level
 
-- **Order:** 490
 - **Scope:** `lib/codex-session.js` (the `review/start`/`turn/start` fork), `lib/driver-codex.js` (`EFFORT_LEVELS`), `lib/review.js` (`resolveEffort`, `effortNote`), `models/catalog.json` (`codex-sol-xhigh`, `codex-sol-max`), [reference/03-cli.md](../../reference/03-cli.md) § Participant telemetry
 - **Created:** 2026-09-06
 - **Dependencies:** PB-41
+- **Taken:** 2026-09-08
 
 ## Context
 
