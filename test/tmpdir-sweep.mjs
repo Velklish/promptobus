@@ -28,17 +28,16 @@
 // holds them, and it holds the same thing as the canary — a run
 // GOING on nearby: a parallel `npm test` or a file started by hand.
 //
-// **Socket directories under `/tmp` the sweep does not touch, and
-// that is not an oversight.** A test socket lives in `/tmp`, not in
-// `$TMPDIR`, because of the `sun_path` length limit
-// ([sandbox.mjs](sandbox.mjs)), and `/tmp` is a shared system
-// directory the whole machine writes to: the suite does not sweep
-// there by prefix at all. Socket leftovers are caught by the
-// `release-gates.mjs` verdict — "no sockets or run sandboxes left
-// after the run"; prefix list and check —
-// [sock-prefixes.mjs](sock-prefixes.mjs).
+// **Socket directories under `/tmp` are swept by the runner as well.** A
+// test socket lives in `/tmp`, not in `$TMPDIR`, because of the `sun_path`
+// length limit ([sandbox.mjs](sandbox.mjs)). The runner applies the same
+// age cutoff there, but first probes each candidate's socket and holds a
+// directory that still accepts a connection. The prefix list and check
+// live in [sock-prefixes.mjs](sock-prefixes.mjs) and this file.
 import os from 'node:os';
-import { sweepPreviousRuns, sweptLine } from '../scripts/canary-runs.mjs';
+import {
+  RUN_OWNER_FILE, SOCK_PREFIXES, runOwnerIsLive, socketDirIsLive, sweepPreviousRuns, sweptLine,
+} from '../scripts/canary-runs.mjs';
 
 // The sweep summary line goes through this module in transit, rather
 // than the runner taking it from the shared home directly: a copy of
@@ -76,14 +75,12 @@ export { sweptLine };
 // runner run directory.
 //
 // Foreign ones are not here and must not be: `promptobus-canary-`,
-// `promptobus-release-gates-`, and `promptobus-live-*` are created by
-// live runs and release gates, so their cleanup belongs to those scripts;
-// the suite must never sweep a live participant's directory. `agents-review-`
-// is created by production code (`headless.js`). **`promptobus-e2e-` is
-// shared**: `promptobus-e2e.test.mjs` creates it, and
-// `release-gates.mjs` counts such
-// directories as live-run sandboxes. The same age cut-off splits
-// them: a going gates run is younger than an hour.
+// `promptobus-release-gates-`, and `promptobus-live-*` belong to their
+// live or release commands, so the suite must never sweep a live
+// participant's directory. `agents-review-` is created by production code
+// (`headless.js`). **`promptobus-e2e-` is shared**: `promptobus-e2e.test.mjs`
+// creates it, and separate release tooling may count such directories as
+// live-run sandboxes. The same age cut-off protects a going run.
 //
 // Nested-package suite sandboxes (`promptobus-store-` and neighbours)
 // ARE on the list, even though another suite creates them. The
@@ -142,11 +139,28 @@ export const SUITE_PREFIXES = [
  * not go red because of it.
  */
 export function sweepTestSandboxes(dir = os.tmpdir(), {
-  now = Date.now(), current = null, refused = [],
+  now = Date.now(), current = null, refused = [], isLive = null, held = [],
 } = {}) {
   const swept = [];
   for (const prefix of SUITE_PREFIXES) {
-    swept.push(...sweepPreviousRuns(dir, { keep: 0, prefix, current, now, refused }));
+    swept.push(...sweepPreviousRuns(dir, {
+      keep: 0, prefix, current, now, refused, isLive, held,
+    }));
   }
   return swept.sort();
 }
+
+/** Sweep stale unix-socket directories without deleting a live listener. */
+export function sweepTestSockets(dir = '/tmp', {
+  now = Date.now(), current = null, refused = [], isLive = socketDirIsLive, held = [],
+} = {}) {
+  const swept = [];
+  for (const prefix of SOCK_PREFIXES) {
+    swept.push(...sweepPreviousRuns(dir, {
+      keep: 0, prefix, current, now, refused, isLive, held,
+    }));
+  }
+  return swept.sort();
+}
+
+export { RUN_OWNER_FILE, runOwnerIsLive };

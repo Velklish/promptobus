@@ -43,13 +43,16 @@
 // cut-off file shows what passed and where it stopped.
 import {
   closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyHygiene } from './hygiene.mjs';
-import { sweepTestSandboxes, sweptLine } from './tmpdir-sweep.mjs';
+import {
+  RUN_OWNER_FILE, runOwnerIsLive, sweepTestSandboxes, sweepTestSockets, sweptLine,
+} from './tmpdir-sweep.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const files = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
@@ -73,6 +76,9 @@ const files = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
 // `npm test` runs do not collide and one cleanup does not touch the
 // other's sandboxes.
 const RUN_TMP = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
+writeFileSync(path.join(RUN_TMP, RUN_OWNER_FILE), `${JSON.stringify({ pid: process.pid, path: RUN_TMP })}\n`, {
+  mode: 0o600,
+});
 
 // Sandboxes that survived a CUT-OFF run are swept at start. The exit
 // hook ([sandbox.mjs](sandbox.mjs)) and the run-directory cleanup
@@ -88,11 +94,29 @@ const RUN_TMP = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
 // of neighbouring files, and would not touch what piled up in system
 // `$TMPDIR` at all. Thresholds, prefix list, and rationale —
 // [tmpdir-sweep.mjs](tmpdir-sweep.mjs); a run going on nearby is held
-// by the one-hour age cut-off.
+// by its owner marker and live pid, with the age cut-off as the fallback.
 const refusedBoxes = [];
-const sweptBoxes = sweepTestSandboxes(os.tmpdir(), { current: RUN_TMP, refused: refusedBoxes });
+const heldBoxes = [];
+const sweptBoxes = sweepTestSandboxes(os.tmpdir(), {
+  current: RUN_TMP, refused: refusedBoxes, isLive: runOwnerIsLive, held: heldBoxes,
+});
 if (sweptBoxes.length) console.log(`▸ ${sweptLine('previous-run sandboxes', sweptBoxes, { keep: 0 })}`);
 if (refusedBoxes.length) console.log(`▸ sweep refused (in use or foreign permissions): ${refusedBoxes.join(', ')}`);
+if (heldBoxes.length) console.log(`▸ sweep preserved live runs: ${heldBoxes.join(', ')}`);
+
+// Socket directories are outside the diverted `$TMPDIR`, because a unix socket
+// path under the run directory exceeds the platform limit. A live listener is
+// probed before removal; an unknown probe result is held, never deleted.
+const refusedSockets = [];
+const heldSockets = [];
+const sweptSockets = process.platform === 'win32' ? [] : sweepTestSockets('/tmp', {
+  refused: refusedSockets, held: heldSockets,
+});
+if (sweptSockets.length) {
+  console.log(`▸ ${sweptLine('previous-run socket directories', sweptSockets, { keep: 0 })}`);
+}
+if (refusedSockets.length) console.log(`▸ socket sweep refused (in use or foreign permissions): ${refusedSockets.join(', ')}`);
+if (heldSockets.length) console.log(`▸ socket sweep preserved live runs: ${heldSockets.join(', ')}`);
 
 const RAISED_LOG = 'wardens-raised.log';
 // Every command `run` resolved under this run, appended by every child at once
@@ -249,8 +273,8 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 //   both halves — that the resolved `tmux` is the stub, and that the
 //   session state is in this run's stand home;
 // - sockets under `/tmp` — a private `mkdtemp` root per file
-//   ([sandbox.mjs](sandbox.mjs)), swept by prefix by the release
-//   gates, never by name;
+//   ([sandbox.mjs](sandbox.mjs)), swept by prefix by this runner after
+//   probing each listener, never by name;
 // - the holder gate at the tail of this file — one `ps` of the whole
 //   process table, matched against the pids this run's own holder
 //   trace names AND the session file each of them was started for.

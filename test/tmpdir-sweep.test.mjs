@@ -1,16 +1,14 @@
 // Leftovers of mechanism runs in `$TMPDIR`. Run: npm test
 //
-// There are two subjects, and both are directories piling up in a
-// shared `$TMPDIR`. Release gates
-// (`release-gates.mjs`) leave a run
-// directory with a report; the suite leaves a sandbox of a cut-off
-// run — Ctrl-C, taken down at the file timeout, a process crash
-// never reach the exit hook. Both are healed by one
+// There are two subjects, and both are directories piling up in shared
+// machine temporary areas. The suite leaves a sandbox of a cut-off run —
+// Ctrl-C, taken down at the file timeout, a process crash never reaches
+// the exit hook — and its socket helpers leave directories directly under
+// `/tmp`. Both are healed by the runner's shared
 // `sweepPreviousRuns` sweep ([canary-runs.mjs](../scripts/canary-runs.mjs))
-// with its own prefix and its own `keep`: gates keep the three
-// latest directories (the report is read after the run), the suite
-// keeps nothing except the young — there is nothing to read in a
-// sandbox.
+// with one prefix per resource and `keep = 0`: there is nothing to read
+// after the suite run, so only the age cutoff and a liveness proof hold a
+// neighbouring run.
 //
 // Checked on a sandbox, not on the real `$TMPDIR`: the sweep removes
 // directories, and a foreign run on the same machine the suite has
@@ -18,19 +16,24 @@
 // FROM `Date.now()` — the sweep has an age cut-off, and calendar
 // literals would make verdicts depend on the day of the run.
 //
-// The file does not start or import `release-gates.mjs` itself: that
-// one runs whole already on import — it wants a clean tree, packs a
-// tarball and installs it. So the sweep call in it is checked against
-// the source: without that check a removed call would paint nothing.
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+// The runner cannot be imported here: it starts the whole suite. Its two
+// sweep calls are checked against source, so removing one cannot make this
+// fixture file paint green while the production cleanup disappears.
+import {
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { SOCK_PREFIXES } from './sock-prefixes.mjs';
-import { SUITE_PREFIXES, sweepTestSandboxes } from './tmpdir-sweep.mjs';
-import { KEEP_RUNS, sweepPreviousRuns, sweptLine } from '../scripts/canary-runs.mjs';
+import { SUITE_PREFIXES, sweepTestSandboxes, sweepTestSockets } from './tmpdir-sweep.mjs';
+import {
+  KEEP_RUNS, RUN_OWNER_FILE, runOwnerIsLive, socketDirIsLive, sweepPreviousRuns, sweptLine,
+} from '../scripts/canary-runs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MIN = 60 * 1000;
@@ -102,7 +105,8 @@ if (gatesPresent) {
     `prefix literals: ${literals} · sweep: ${/sweepPreviousRuns/.test(gatesSrc)}`);
 } else {
   check(': release-gates.mjs is not in this repository — suite sweep is owned by run.mjs',
-    /sweepTestSandboxes\(os\.tmpdir\(\)/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8')));
+    /sweepTestSandboxes\(os\.tmpdir\(\),[\s\S]*?current:\s*RUN_TMP/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8'))
+    && /sweepTestSockets\(\s*['"]\/tmp['"]/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8')));
 }
 
 // The summary line is one for every caller, and its empty case must
@@ -145,8 +149,20 @@ for (const name of FOREIGN) plant(BOXES, name, 3 * DAY);
 // Directory of THIS run: old by mtime, but the runner itself created
 // it — the sweep does not count it.
 const RUN_TMP = plant(BOXES, 'promptobus-test-run-current', 3 * DAY);
+// A neighbouring run can be older than the age cutoff and still own live
+// holders. Its owner marker is the liveness evidence; the six children model
+// the four Codex holders and two Claude reviewers that must remain together.
+const LIVE_RUN = plant(BOXES, 'promptobus-test-run-live', 3 * DAY);
+writeFileSync(path.join(LIVE_RUN, RUN_OWNER_FILE), `${JSON.stringify({ pid: process.pid, path: LIVE_RUN })}\n`);
+for (const holder of ['codex-holder-1', 'codex-holder-2', 'codex-holder-3', 'codex-holder-4',
+  'claude-reviewer-1', 'claude-reviewer-2']) {
+  mkdirSync(path.join(LIVE_RUN, holder), { recursive: true });
+  writeFileSync(path.join(LIVE_RUN, holder, 'live'), 'held\n');
+}
+utimesSync(LIVE_RUN, new Date(NOW - 3 * DAY), new Date(NOW - 3 * DAY));
 
-const swept = sweepTestSandboxes(BOXES, { current: RUN_TMP });
+const heldRuns = [];
+const swept = sweepTestSandboxes(BOXES, { current: RUN_TMP, isLive: runOwnerIsLive, held: heldRuns });
 
 check(': suite sandboxes older than the cut-off were swept — all own prefixes, including a space in the name',
   swept.join(',') === [...OLD].sort().join(','),
@@ -163,24 +179,101 @@ check(': directories of foreign prefixes the suite sweep does not touch',
 check(': the current run directory is not swept, even though it is old',
   existsSync(RUN_TMP) && !swept.includes(path.basename(RUN_TMP)), RUN_TMP);
 
+check(': a live neighbouring run keeps its owner tree and all six live holders',
+  existsSync(LIVE_RUN)
+  && ['codex-holder-1', 'codex-holder-2', 'codex-holder-3', 'codex-holder-4',
+    'claude-reviewer-1', 'claude-reviewer-2'].every((holder) => existsSync(path.join(LIVE_RUN, holder)))
+  && heldRuns.join(',') === path.basename(LIVE_RUN),
+  `held: ${heldRuns.join(', ') || 'none'}`);
+
 // A second pass over the same directory: there is nothing more to
 // sweep, and the sweep says so with an empty list, not by sweeping
 // the remainder.
 check(': a second pass has nothing to sweep — the remainder is not touched',
-  sweepTestSandboxes(BOXES, { current: RUN_TMP }).length === 0
-  && listOf(BOXES).length === FRESH.length + FOREIGN.length + 1,
+  sweepTestSandboxes(BOXES, { current: RUN_TMP, isLive: runOwnerIsLive }).length === 0
+  && listOf(BOXES).length === FRESH.length + FOREIGN.length + 2,
   listOf(BOXES).join(', '));
 
-// The sweep call in the runner — against the source, the same move
-// and for the same reason as for gates above: [run.mjs](run.mjs)
-// cannot be imported, it runs the whole suite. Without the check a
-// removed call would paint nothing — the sweep itself is checked by
-// sandbox scenes, and it is called from one place, and that place is
-// the only coverage here.
+// The marker's path is resolved before it is compared: a realpath spelling
+// difference is harmless, but a dead pid or a different existing directory
+// is not ownership evidence. Both negative cases must stay removable.
+const OWNER_FIXTURE = mkdtempSync('promptobus-sweep-owner-');
+const DEAD_OWNER = plant(OWNER_FIXTURE, 'dead', 3 * DAY);
+writeFileSync(path.join(DEAD_OWNER, RUN_OWNER_FILE), `${JSON.stringify({ pid: 2147483647, path: DEAD_OWNER })}\n`);
+const MISMATCH_OWNER = plant(OWNER_FIXTURE, 'mismatch', 3 * DAY);
+const MISMATCH_TARGET = plant(OWNER_FIXTURE, 'other', 3 * DAY);
+writeFileSync(path.join(MISMATCH_OWNER, RUN_OWNER_FILE), `${JSON.stringify({ pid: process.pid, path: MISMATCH_TARGET })}\n`);
+check(': a dead owner pid is not live', !runOwnerIsLive(DEAD_OWNER), DEAD_OWNER);
+check(': an owner path mismatch is not live', !runOwnerIsLive(MISMATCH_OWNER), MISMATCH_TARGET);
+rmSync(OWNER_FIXTURE, { recursive: true, force: true });
+
+// A prefix and an old mtime are not proof that a neighbouring run is gone.
+// The fixture supplies liveness evidence for one directory and leaves a second
+// one genuinely abandoned; the sweep must hold the first while removing the
+// second. This is deliberately a private fixture, never the machine's `/tmp`.
+const LIVE_FIXTURE = makeSandbox('promptobus-sweep-live-');
+const LIVE_PREFIX = SOCK_PREFIXES[0];
+const LIVE_NEIGHBOUR = plant(LIVE_FIXTURE, `${LIVE_PREFIX}live-neighbour`, 3 * DAY);
+const CURRENT_SOCKET_RUN = plant(LIVE_FIXTURE, `${LIVE_PREFIX}current`, 3 * DAY);
+const STALE_SOCKET_RUN = plant(LIVE_FIXTURE, `${LIVE_PREFIX}stale`, 3 * DAY);
+const heldLive = [];
+const sweptWithLiveness = sweepTestSockets(LIVE_FIXTURE, {
+  current: CURRENT_SOCKET_RUN,
+  isLive: (dir) => dir === LIVE_NEIGHBOUR,
+  held: heldLive,
+});
+
+check(': liveness evidence preserves a live neighbouring socket directory',
+  existsSync(LIVE_NEIGHBOUR) && existsSync(CURRENT_SOCKET_RUN)
+  && !existsSync(STALE_SOCKET_RUN)
+  && sweptWithLiveness.join(',') === path.basename(STALE_SOCKET_RUN)
+  && heldLive.join(',') === path.basename(LIVE_NEIGHBOUR),
+  `swept: ${sweptWithLiveness.join(', ') || 'none'} · held: ${heldLive.join(', ') || 'none'}`);
+
+// Exercise the default probe, not only the injected predicate above. The
+// fixture uses a short relative root so the Unix socket path stays below
+// sun_path even when the runner diverts the suite's normal TMPDIR.
+if (process.platform !== 'win32') {
+  const SOCKET_FIXTURE = mkdtempSync('promptobus-sweep-socket-');
+  const server = net.createServer();
+  let listening = false;
+  let probeError = null;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(path.join(SOCKET_FIXTURE, 'live.sock'), resolve);
+    });
+    listening = true;
+    const plain = path.join(SOCKET_FIXTURE, 'plain');
+    const empty = path.join(SOCKET_FIXTURE, 'empty');
+    mkdirSync(plain);
+    mkdirSync(empty);
+    writeFileSync(path.join(plain, 'plain.sock'), 'not a socket\n');
+    check(': a live Unix socket is held by the default probe', socketDirIsLive(SOCKET_FIXTURE), SOCKET_FIXTURE);
+    check(': a plain .sock file is not a live socket', !socketDirIsLive(plain), plain);
+    check(': an empty socket directory is not live', !socketDirIsLive(empty), empty);
+  } catch (error) {
+    probeError = error;
+    check(': the socket probe fixture starts', false, error?.message ?? String(error));
+  } finally {
+    if (listening) await new Promise((resolve) => server.close(resolve));
+    rmSync(SOCKET_FIXTURE, { recursive: true, force: true });
+  }
+  if (probeError) console.error(`socket probe fixture: ${probeError.message ?? probeError}`);
+} else {
+  check(': the default socket probe is fail-closed on win32', socketDirIsLive('missing') === true, 'not held');
+}
+
+// The sweep calls in the runner — against the source, for the same reason
+// as the absent release-gate script above: [run.mjs](run.mjs) cannot be
+// imported, it runs the whole suite. Without these checks a removed call
+// would paint nothing — the sweeps themselves are checked by fixture
+// scenes, and the runner is their only production call site.
 const runSrc = readFileSync(path.join(here, 'run.mjs'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-check(': the runner calls the sweep at start and gives it its run directory',
-  /sweepTestSandboxes\(os\.tmpdir\(\), \{ current: RUN_TMP[^)]*\)/.test(runSrc),
-  `import: ${/from '.\/tmpdir-sweep.mjs'/.test(runSrc)} · call: ${/sweepTestSandboxes\(/.test(runSrc)}`);
+check(': the runner sweeps sandboxes and sockets at start, with an owner check',
+  /sweepTestSandboxes\(os\.tmpdir\(\),[\s\S]*?current:\s*RUN_TMP[\s\S]*?isLive:\s*runOwnerIsLive/.test(runSrc)
+  && /sweepTestSockets\(\s*['"]\/tmp['"]/.test(runSrc),
+  `import: ${/from '.\/tmpdir-sweep.mjs'/.test(runSrc)} · sandboxes: ${/sweepTestSandboxes\(/.test(runSrc)} · sockets: ${/sweepTestSockets\(/.test(runSrc)}`);
 
 // Live scripts are not imported: each one starts real harness sessions. Read
 // their source instead, and keep their cleanup checks next to the suite
@@ -327,7 +420,7 @@ check(': the sweep prefix list covers every suite sandbox',
   `literals found: ${declared.length} · uncovered: `
   + `${uncovered.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
 
-// ── Socket-prefix sentinel of the release gate ────────────────────────────
+// ── Socket-prefix sentinel of the runner sweep ────────────────────────────
 //
 // The "no sockets left after the run" verdict looks at `/tmp` by
 // SOCK_PREFIXES. The list is hand-built, and a new prefix would leak
@@ -339,9 +432,9 @@ check(': the sweep prefix list covers every suite sandbox',
 // take — the caller creates the directory.
 //
 // `scripts/` is scanned too: a live run plants a socket through
-// `makeSockDir`, not through the suite. release-gates.mjs itself
-// cannot be imported — it runs on import — so the call is checked
-// against the source, like the run-directory sweep above.
+// `makeSockDir`, not through the suite. The runner itself cannot be
+// imported — it runs the whole suite — so its call is checked against
+// the source, like the run-directory sweep above.
 const sockDeclared = [];
 const SOCK_SCAN = [here, path.join(here, '..', 'scripts')];
 for (const dir of SOCK_SCAN) {
@@ -353,17 +446,28 @@ for (const dir of SOCK_SCAN) {
   }
 }
 const sockUncovered = sockDeclared.filter(([, pre]) => !SOCK_PREFIXES.some((known) => pre.startsWith(known)));
+const sockDead = SOCK_PREFIXES.filter((known) => !sockDeclared.some(([, pre]) => pre.startsWith(known)));
 
 check(': the socket-prefix list covers every makeSockPath/makeSockDir',
   sockDeclared.length > 0 && sockUncovered.length === 0,
   `literals found: ${sockDeclared.length} · uncovered: `
   + `${sockUncovered.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
 
+check(': the socket-prefix list has no dead entries',
+  sockDead.length === 0,
+  `dead: ${sockDead.join(', ') || '—'}`);
+
 if (gatesPresent) {
   check(': release-gates looks at sockets by SOCK_PREFIXES, not by a literal',
     /from '\.\.\/test\/sock-prefixes\.mjs'/.test(gatesSrc)
     && /younger\('\/tmp',\s*SOCK_PREFIXES\)/.test(gatesSrc),
     `import: ${/sock-prefixes/.test(gatesSrc)} · younger: ${/younger\('\/tmp'/.test(gatesSrc)}`);
+} else {
+  check(': the runner sweeps sockets with the shared prefix list and liveness probe',
+    /sweepTestSockets\(\s*['"]\/tmp['"]/.test(runSrc)
+    && /SOCK_PREFIXES/.test(readFileSync(path.join(here, 'sock-prefixes.mjs'), 'utf8'))
+    && /socketDirIsLive/.test(readFileSync(path.join(here, 'tmpdir-sweep.mjs'), 'utf8')),
+    'the runner socket sweep or its liveness seam is missing');
 }
 
 // ── Home-diversion sentinel ───────────────────────────────────────────────

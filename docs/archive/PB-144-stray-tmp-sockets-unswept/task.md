@@ -1,9 +1,9 @@
 # PB-144 · Nothing in promptobus's own test run sweeps the stray socket directories it leaves in shared /tmp — the release-gate verdict that used to catch this now lives only in consumer-cli
 
-- **Order:** 420
 - **Scope:** `test/sock-prefixes.mjs`, `test/tmpdir-sweep.mjs`, `test/tmpdir-sweep.test.mjs`, `test/run.mjs`, `scripts/canary-runs.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-114, PB-141
+- **Taken:** 2026-09-09
 
 ## Context
 
