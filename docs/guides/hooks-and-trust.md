@@ -1,6 +1,6 @@
 # Hooks, trust, and troubleshooting
 
-Project hooks give the orchestrator two things: a line in the session after bus mail, and a Stop guard that refuses to end a turn with unread mail. Participant worktrees get their own Stop hook from the driver. This guide is for Claude Code, Cursor, and Codex.
+Project hooks give the orchestrator a line in the session after bus mail where the harness supports it, and a Stop guard that refuses to end a turn with unread mail. Cursor receives bus feedback by driver injection rather than a project hook. Participant worktrees get their own Stop hook from the driver. This guide is for Claude Code, Cursor, and Codex.
 
 Install first: [install.md](install.md).
 
@@ -11,7 +11,7 @@ Only project files next to `promptobus.json`:
 | Harness | File | Owned records |
 |---|---|---|
 | Claude Code | `.claude/settings.json` | `PostToolUse` matcher `mcp__promptobus__(promptobus_send\|promptobus_mailbox)`; `Stop` and `SessionStart` running `promptobus guard` |
-| Cursor | `.cursor/hooks.json` | `postToolUse` with `--output additional_context`; `stop` running `promptobus guard` |
+| Cursor | `.cursor/hooks.json` | `stop` running `promptobus guard` only |
 | Codex | `.codex/hooks.json` | `PostToolUse` (runner field `systemMessage`); `Stop` and `SessionStart` running `promptobus guard` |
 
 The generated runner is `.promptobus/hooks/bus.mjs`. `src/hooks.ts` plans the Claude-shaped settings. The installer maps that plan onto each harness file.
@@ -56,11 +56,11 @@ Review: Codex requires /hooks; project hooks also depend on workspace trust.
 
 **Claude Code.** Project hooks in `.claude/settings.json` run only when this workspace is trusted. Approve the project when the harness asks. The Stop hook is `promptobus guard`. A clean mailbox exits 0 and prints nothing. Unread mail exits 2 and returns the turn.
 
-**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback arrives as `additional_context` because install passes `--output additional_context`. The loop guard is `stop`.
+**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback reaches a Cursor participant by driver injection, not a project hook. The loop guard is `stop`. Cursor does not recognise `postToolUse`; adding it or another unknown event name to `.cursor/hooks.json` silently disables every hook in the file, so do not add one by hand. The installer validates the merged event map before writing and refuses an unknown event.
 
 **Codex.** Review the new project hooks with `/hooks` before you rely on them. The runner default field is `systemMessage`. Project hooks also depend on trusting this workspace.
 
-If you skip trust, spawn still works. You lose the tape line and the Stop guard. The warden can still knock. `promptobus_mailbox` is still the source of truth.
+If you skip trust, spawn still works, but project hooks do not run: Claude Code and Codex lose their tape line, and each harness loses its project Stop guard. Cursor bus feedback is the separate driver-injection path. The warden can still knock. `promptobus_mailbox` is still the source of truth.
 
 ## Troubleshooting
 

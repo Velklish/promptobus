@@ -96,7 +96,7 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 | Harness | Project file | Bus feedback | Loop guard |
 |---|---|---|---|
 | Claude Code | `.claude/settings.json` | `PostToolUse` matcher on `promptobus_send` / `promptobus_mailbox`; runner field `systemMessage` | `Stop` and `SessionStart` |
-| Cursor | `.cursor/hooks.json` (`version` 1) | `postToolUse` with `--output additional_context` | `stop` |
+| Cursor | `.cursor/hooks.json` (`version` 1) | driver injection; no project hook | `stop` |
 | Codex | `.codex/hooks.json` | `PostToolUse`; runner field `systemMessage` | `Stop` and `SessionStart` |
 
 The runner script is generated under `.promptobus/hooks/` (`busHookRel()`). The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
@@ -118,6 +118,7 @@ The CLI prints `configured` and then:
 
 ```text
 Review: Codex requires /hooks; project hooks also depend on workspace trust.
+Cursor: stop guard only. Bus feedback is driver injection, not a project hook.
 ```
 
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).

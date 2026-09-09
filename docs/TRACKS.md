@@ -130,7 +130,7 @@ Queued assignments: [PB-77](archive/PB-77-telemetry-end-reading-stale-exhausted/
 
 PB-119 first, then PB-103/PB-52. PB-53 precedes PB-100, then PB-154. PB-76 includes PB-111. PB-109 fixes regeneration guidance without changing config policy.
 
-Queued assignments: [PB-119](archive/PB-119-duplicate-server-and-hook-constants/task.md), [PB-103](archive/PB-103-guard-hook-hardcodes-promptobus-word/task.md), [PB-52](archive/PB-52-guard-ownership-machine-local/task.md), [PB-53](archive/PB-53-install-rewrites-unselected-files/task.md), [PB-100](archive/PB-100-install-dry-run-check-mismatch/task.md), [PB-154](archive/PB-154-install-check-gates-blind/task.md), [PB-76](backlog/queue/PB-76-cursor-hooks-doc-mismatch.md), [PB-109](backlog/queue/PB-109-bus-hook-sync-command-missing.md).
+Queued assignments: [PB-119](archive/PB-119-duplicate-server-and-hook-constants/task.md), [PB-103](archive/PB-103-guard-hook-hardcodes-promptobus-word/task.md), [PB-52](archive/PB-52-guard-ownership-machine-local/task.md), [PB-53](archive/PB-53-install-rewrites-unselected-files/task.md), [PB-100](archive/PB-100-install-dry-run-check-mismatch/task.md), [PB-154](archive/PB-154-install-check-gates-blind/task.md), [PB-76](archive/PB-76-cursor-hooks-doc-mismatch/task.md), [PB-109](backlog/queue/PB-109-bus-hook-sync-command-missing.md).
 
 Added after this snapshot: [PB-119.1](backlog/queue/PB-119.1-install-writes-hook-event-names-by-hand.md) — `lib/install.js` writes the hook event names as literals while importing the matcher from `dist`, leaving `GUARD_HOOK_EVENT` an untied third door.
 

@@ -1,9 +1,9 @@
 # PB-76 · Three doc claims describe a Cursor postToolUse bus hook with --output additional_context that the installer never writes, and hand-adding one would silently disable Cursor's real stop guard
 
-- **Order:** 950
 - **Scope:** docs/guides/install.md, docs/guides/hooks-and-trust.md, lib/install.js, test/install.test.mjs
 - **Created:** 2026-09-06
 - **Dependencies:** PB-154
+- **Taken:** 2026-09-10
 
 ## Context
 

@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Install leaves existing unselected harness files byte-identical, and check no longer reports drift for files it was not asked to manage.** (PB-53)
 - **Install check now includes the machine-local manifest, and dry-run lists only writes or removals that would change content.** (PB-100)
 - **Cursor install validates the merged hook event map before writing, so unknown event names refuse the install without changing the existing file.** (PB-154)
+- **Install documentation now describes Cursor's stop-only project hook and driver-injected bus feedback, including the invalid event-name warning.** (PB-76)
 
 ## [0.5.1] - 2026-09-09
 
