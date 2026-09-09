@@ -922,8 +922,8 @@ test('a limit refusal that names no reset is manual_exhaustion, and it is sticky
 });
 
 test('a limit refusal that says the limit resets is subscription_exhausted, still with no reset time', async () => {
-  // Which alternation of the driver's pattern matched chooses the code: the
-  // harness saying the limit RESETS makes the exhaustion the subscription's.
+  // The reset phrase is checked independently of the limit-detection pattern:
+  // saying the limit RESETS makes the exhaustion the subscription's.
   // `resetAt` stays null either way — the reset is named in a person's words and
   // a person's timezone, and a timestamp parsed out of that would be invented, so
   // both kinds wait for `--clear-exhausted` rather than lifting themselves at a
@@ -936,6 +936,13 @@ test('a limit refusal that says the limit resets is subscription_exhausted, stil
   assert.equal(entry.resetAt, null);
   assert.equal(entryLive(entry, Date.now() + 40 * 24 * 3600 * 1000), true, 'sticky: no TTL lifts it');
   assert.equal(stickyExhaustion(entry), true);
+});
+
+test('a limit refusal with both phrases is subscription_exhausted', async () => {
+  const box = sandbox('');
+  markLimitAtStart(box.host, "You've hit your weekly limit. Your limit resets at 3pm.");
+  const entry = readSnapshot(box.host).harnesses[CLAUDE];
+  assert.equal(entry.reason, 'subscription_exhausted');
 });
 
 test('the refusal line names the file the mark went into and the way out of it', async () => {
