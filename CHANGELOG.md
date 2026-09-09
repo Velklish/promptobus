@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Codex approval checks use named request fields.** Text in patch diffs and commands no longer triggers config or privilege denials, while dangerous values in top-level or `item`-nested `sandbox`, `approvalPolicy`, and `permissions` fields remain denied unless an approval-policy or sandbox value echoes the session's recorded mode. (PB-88)
 - **The Codex session record no longer persists the caller's environment.** The detached holder inherits the sanitized launch environment directly, while newly created session directories use mode `0700` without changing the mode of an existing directory. (PB-152)
 - **Codex holder fallback sockets are isolated by registry home.** When a registry's nested session socket path is too long, the `/tmp/pb-cdx-…` fallback now hashes the registry `sessions` directory together with the session ref, so two registries cannot take over the same socket. (PB-115)
 - **Status, history, dismiss, and prune now use the task-store home declared by the host.** A host can place the bus outside `<workspaceRoot>/.promptobus` without making those four commands read an empty journal. The swap loses no former-layout migration on either shipped host: the ATI host member already routes through the migration-aware store door, while the standalone host declares no former layout. (PB-101)

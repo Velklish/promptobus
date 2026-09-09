@@ -15,7 +15,7 @@ import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
   HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
 } from './harness-codex.mjs';
@@ -94,6 +94,7 @@ check(': default readyMs = preamble + turn/started, independent of the full-turn
   String(readyMs({})));
 
 const patchRec = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
+const policyRec = { ...patchRec, sandbox: 'workspace-write', approvalPolicy: 'on-failure' };
 check(': a patch outside cwd — deny',
   (() => {
     const d = decideApproval('applyPatchApproval', { changes: { '/etc/passwd': { type: 'add' } } }, patchRec);
@@ -110,6 +111,85 @@ check(': fileChange outside cwd — deny',
   (() => {
     const d = decideApproval('item/fileChange/requestApproval', { item: { path: '/etc/x' } }, patchRec);
     return d.allow === false && /outside cwd/.test(d.why);
+  })());
+
+check(': an escalation flag in an in-cwd patch diff is not an escalation request',
+  decideApproval('applyPatchApproval', {
+    changes: { 'note.md': { type: 'edit', diff: 'do not use --dangerously-bypass-approvals' } },
+  }, patchRec).allow === true);
+check(': config/read in an in-cwd command is not a config/read request',
+  decideApproval('execCommandApproval', {
+    cwd: '/tmp/wt', command: 'grep -rn config/read lib/',
+  }, patchRec).allow === true);
+check(': workspace-write and outside in unrelated fields are not an escalation request',
+  decideApproval('execCommandApproval', {
+    cwd: '/tmp/wt', command: 'echo workspace-write', note: 'outside',
+  }, patchRec).allow === true);
+check(': danger-full-access in the named permissions field is still denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', { permissions: 'danger-full-access' }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': a named sandbox mode is denied after containment passes',
+  (() => {
+    const d = decideApproval('execCommandApproval', {
+      cwd: '/tmp/wt', command: 'echo hi', sandbox: 'danger-full-access',
+    }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': a nested permissions value is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', {
+      permissions: { mode: 'Danger-Full-Access' }, reason: 'ordinary text',
+    }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': an array permission value is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', {
+      permissions: [{ mode: 'danger-full-access' }],
+    }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': a nested item permissions value is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', {
+      item: { permissions: 'danger-full-access' },
+    }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': a permission map key is treated as a named mode',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', {
+      permissions: { 'danger-full-access': true },
+    }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': approvalPolicy never is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', { approvalPolicy: 'never' }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': approvalPolicy on-failure is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', { approvalPolicy: 'on-failure' }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': an approval policy echo is allowed',
+  decideApproval('execCommandApproval', {
+    cwd: '/tmp/wt', command: 'echo hi', approvalPolicy: 'on-failure',
+  }, policyRec).allow === true);
+check(': an approval policy change is denied',
+  (() => {
+    const d = decideApproval('execCommandApproval', {
+      cwd: '/tmp/wt', command: 'echo hi', approvalPolicy: 'never',
+    }, policyRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
+  })());
+check(': mixed-case dangerous sandbox mode is denied',
+  (() => {
+    const d = decideApproval('item/permissions/requestApproval', { sandbox: 'DANGER-FULL-ACCESS' }, patchRec);
+    return d.allow === false && /privilege escalation denied/.test(d.why);
   })());
 
 check(': the channel is declared rpc — knockRegistry does not substitute the messaging socket',
@@ -369,6 +449,34 @@ check(': a freshly created Codex sessions directory is private',
     ? 'win32: POSIX mode assertion skipped because Windows uses ACLs'
     : sessionsMode.toString(8));
 dropSession(modeRef, modeEnv);
+
+const timeEnv = { ...env, [CURRENT_TIME_VAR]: '1' };
+planParticipant(HARNESS, 'worker:time', { turns: [{ do: [] }] });
+const timeSpawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'time', '--harness', 'codex'], { cwd: ws, env: timeEnv });
+const timeWp = store.participantOf(store.readTask(home, TASK), 'worker:time');
+const timeRef = timeWp?.sessionRef ?? '';
+const timeThread = await waitFor(() => {
+  try {
+    const thread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${timeWp?.metadata?.session ?? ''}.json`), 'utf8'));
+    return thread.currentTimes?.length === 2 ? thread : null;
+  } catch {
+    return null;
+  }
+}, { timeoutMs: 15000 });
+let timeHolderLog = '';
+try { timeHolderLog = readFileSync(holderLogFile(timeRef, timeEnv), 'utf8'); } catch { /* none */ }
+const timeWardenLog = store.tailWardenLog(home, TASK, 100).join('\n');
+check(': currentTime/read gets a fresh timestamp per holder request without denial',
+  timeSpawned.status === 0
+    && timeThread?.currentTimes?.[0]
+    && timeThread?.currentTimes?.[1]
+    && timeThread.currentTimes[0] !== timeThread.currentTimes[1]
+    && /approval allow currentTime\/read/.test(timeHolderLog)
+    && !/approval (?:deny|unknown deny) currentTime\/read/.test(timeHolderLog)
+    && !/currentTime\/read/.test(timeWardenLog),
+  `${timeSpawned.status} · ${JSON.stringify(timeThread?.currentTimes)} · holder=${timeHolderLog.slice(-500)} · warden=${timeWardenLog.slice(-500)}`);
+if (timeRef) await codexDriver.stop(timeRef);
 
 check('step 1: the session handle is the thread id',
   wp?.metadata?.session === record?.threadId, `${wp?.metadata?.session} · ${record?.threadId}`);

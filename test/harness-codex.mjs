@@ -21,6 +21,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
+export const CURRENT_TIME_VAR = 'CODEX_STUB_CURRENT_TIME';
 export const ELICIT_VAR = 'CODEX_STUB_ELICIT';
 export const ELICIT_HANG_VAR = 'CODEX_STUB_ELICIT_HANG';
 export const ELICIT_OVERLAP_VAR = 'CODEX_STUB_ELICIT_OVERLAP';
@@ -574,6 +575,13 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   const sandbox = t.sandbox;
   if (process.env[APPROVAL_VAR] === '1') {
     await ask('execCommandApproval', { command: 'true', cwd: t.cwd });
+  }
+  if (process.env[CURRENT_TIME_VAR] === '1') {
+    const first = await ask('currentTime/read', {});
+    await new Promise((r) => { setTimeout(r, 5); });
+    const second = await ask('currentTime/read', {});
+    t.currentTimes = [first?.currentTime, second?.currentTime];
+    writeThread(home, t);
   }
   if (process.env[ELICIT_VAR] === '1' || process.env[ELICIT_HANG_VAR] === '1') {
     const pendingElicit = ask('mcpServer/elicitation/request', {

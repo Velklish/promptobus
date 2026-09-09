@@ -1,9 +1,9 @@
 # PB-88 · Two approval rules in codex-session.js match text anywhere in the serialized request params instead of named fields, so a diff, command or reason merely containing "config/read" or an escalation-sounding phrase is denied with the wrong reason recorded in the warden journal
 
-- **Order:** 470
 - **Scope:** `lib/codex-session.js`, `test/promptobus-driver-codex.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-97
+- **Taken:** 2026-09-09
 
 ## Context
 
