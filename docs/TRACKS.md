@@ -108,7 +108,7 @@ PB-45 is a cross-driver prerequisite and edits Codex too: finish it before C. PB
 
 Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](archive/PB-151-cursor-inject-buffer-file-mode/task.md), [PB-148](archive/PB-148-limit-regex-alternation-order/task.md), [PB-153](archive/PB-153-cursor-status-turn-count-wrong/task.md), [PB-85](archive/PB-85-driver-cursor-tmux-path-only/task.md), [PB-93](archive/PB-93-cursor-bin-name-order-mismatch/task.md).
 
-Added after this snapshot: [PB-45.1](backlog/active/PB-45.1-snapshot-path-hides-registry-refusal.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
+Added after this snapshot: [PB-45.1](archive/PB-45.1-snapshot-path-hides-registry-refusal/task.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
 
 Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh-flag.md).
 

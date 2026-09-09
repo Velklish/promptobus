@@ -729,8 +729,10 @@ export function snapshotSessions(participants: ParticipantV1[] | null | undefine
         continue;
       }
       seen = driver.inspect(ref);
-    } catch {
-      view[addr] = UNKNOWN;
+    } catch (e) {
+      view[addr] = e instanceof GateError
+        ? { ...UNKNOWN, stall: { kind: 'unknown', reason: e.message } }
+        : UNKNOWN;
       continue;
     }
     if (seen === null) return null;

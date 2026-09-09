@@ -13,13 +13,18 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
 const bus = await import('../dist/index.js');
+const store = await import('../lib/store.js');
+const { bindHarnessHomes } = await import('../lib/harness-home.js');
+const { createStandaloneHost } = await import('../dist/host-index.js');
+const { status } = await import('../lib/status.js');
+const { capture } = await import('./console.mjs');
 
 // A routing policy is required when the engine is opened, and its rule is the
 // adapter's business: there is no adapter here, and a stand-in set plays its
@@ -404,6 +409,76 @@ test('a driver without inspect is also unknown: a live session is not given out 
     bus.claimWarden(home, task);
     assert.equal(bus.beatRound(home, task, Date.now(), { sessions: snap }), null);
   });
+});
+
+test('a GateError stays on its participant as unknown while the snapshot walks on', () => {
+  const task = newTask();
+  const refusal = 'no state home for fake: set PROMPTOBUS_FAKE_HOME, or answer harnessStateHome';
+  const refusing = fakeDriver('fake', { view: () => { throw new bus.GateError(refusal); } });
+  const healthy = fakeDriver('healthy');
+  const registry = bus.createRegistry({ drivers: { fake: refusing, healthy } });
+  put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
+  put(task, 'worker:b', { harness: 'healthy', sessionRef: 'sess-b' });
+
+  const snap = bus.snapshotSessions(engine.readTask(task).participants, registry);
+  assert.deepEqual(snap['worker:a'], {
+    state: 'unknown',
+    busy: false,
+    stall: { kind: 'unknown', reason: refusal },
+    id: null,
+  });
+  assert.equal(snap['worker:b'].state, 'alive');
+});
+
+test('a non-GateError stays reasonless and does not stop the snapshot walk', () => {
+  const task = newTask();
+  const failing = fakeDriver('failing', { view: () => { throw new Error('driver failed'); } });
+  const healthy = fakeDriver('healthy');
+  const registry = bus.createRegistry({ drivers: { failing, healthy } });
+  put(task, 'worker:a', { harness: 'failing', sessionRef: 'sess-a' });
+  put(task, 'worker:b', { harness: 'healthy', sessionRef: 'sess-b' });
+
+  const snap = bus.snapshotSessions(engine.readTask(task).participants, registry);
+  assert.deepEqual(snap['worker:a'], { state: 'unknown', busy: false, stall: null, id: null });
+  assert.equal(snap['worker:b'].state, 'alive');
+});
+
+test('status names a registry refusal and keeps the reasonless unknown sentence', () => {
+  const root = path.join(SB, 'status-workspace');
+  mkdirSync(root, { recursive: true });
+  const standalone = createStandaloneHost({ cwd: root });
+  // This host deliberately has no answer for the registry. It exercises the same
+  // missing-home gate as a consumer host that has not declared one.
+  const host = { ...standalone, harnessStateHome: () => null };
+  const homeForStatus = store.promptobusHome(root, host);
+  const task = 'status-t20260909-450001';
+  store.createTask(homeForStatus, { id: task, title: 'registry refusal', owner: 'pb45-status-owner' });
+  store.upsertParticipant(homeForStatus, task, store.participantRecord('worker:cursor', {
+    harness: 'cursor', name: 'cursor-status-session',
+  }));
+
+  const before = process.env.PROMPTOBUS_CURSOR_HOME;
+  delete process.env.PROMPTOBUS_CURSOR_HOME;
+  bindHarnessHomes(null);
+  try {
+    const refused = capture(() => status(host, { task }));
+    assert.match(refused, /worker:cursor/);
+    assert.match(refused, /PROMPTOBUS_CURSOR_HOME/);
+    assert.match(refused, /harnessStateHome/);
+    assert.doesNotMatch(refused, /there is nobody to ask about it/);
+
+    const reasonless = capture(() => status(host, {
+      task,
+      sessions: {
+        'worker:cursor': { state: 'unknown', busy: false, stall: null, id: null },
+      },
+    }));
+    assert.match(reasonless, /session state "cursor-status-session" is unknown: harness "cursor" — there is nobody to ask about it/);
+  } finally {
+    if (before === undefined) delete process.env.PROMPTOBUS_CURSOR_HOME;
+    else process.env.PROMPTOBUS_CURSOR_HOME = before;
+    bindHarnessHomes(null);
+  }
 });
 
 // --- the stall report carries the record harness ----------------------------
