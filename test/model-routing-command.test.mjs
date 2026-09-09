@@ -351,6 +351,25 @@ test('`models strategy --set` refuses a value that is not a strategy, and refuse
   assert.equal(existsSync(WORKSPACE_OVERLAY()), false, 'a refused write leaves no file behind');
 });
 
+test('models rejects strategy and calibration flags without their subcommand', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  try {
+    const cases = [
+      [{ set: 'economy' }, /models strategy --set/],
+      [{ clear: true }, /models strategy --clear/],
+      [{ write: true }, /models calibrate --write/],
+      [{ yes: true }, /models calibrate --write/],
+    ];
+    for (const [options, expected] of cases) {
+      await assert.rejects(() => quiet(() => models(WS, options)),
+        (error) => expected.test(error.message), JSON.stringify(options));
+    }
+  } finally {
+    dropOverlays();
+  }
+});
+
 test('a host with no writable layer is refused at the write, naming why', async () => {
   // The standalone host marks one; a consumer host need not declare an overlay
   // at all, and then there is nowhere to keep a default. The refusal says that
