@@ -1107,6 +1107,22 @@ test('an expired promotional quota citation warns without invalidating the catal
   assert.equal(futureVerdict.warnings.some((entry) => entry.code === 'promotion-expired' && entry.tupleId === row.id), false);
 });
 
+test('shipped Gemini promotion warnings distinguish promotional and list figures', () => {
+  const now = Date.parse('2026-09-07T00:00:00.000Z');
+  const verdict = validateLayers({ canonical: canonicalLayer(CATALOG), now });
+  assert.equal(verdict.ok, true, verdict.errors.map((error) => error.message).join(' | '));
+
+  for (const tupleId of ['cursor-gemini-38-high', 'cursor-gemini-37-high']) {
+    const warning = verdict.warnings.find((entry) => entry.code === 'promotion-expired'
+      && entry.tupleId === tupleId);
+    assert.ok(warning, verdict.warnings.map((entry) => `${entry.code}:${entry.tupleId}`).join(' | '));
+    assert.notEqual(warning.promotionalFigure, warning.listFigure,
+      `${tupleId}: promotional and list figures must differ`);
+    assert.match(warning.promotionalFigure, /\$2\.25/,
+      `${tupleId}: the promotional figure must name $2.25`);
+  }
+});
+
 test('validate refuses a promotional citation without list replacement facts', () => {
   const incomplete = clone(CATALOG);
   const row = incomplete.tuples.find((tuple) => tuple.id === 'codex-terra-max');

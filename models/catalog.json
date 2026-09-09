@@ -515,7 +515,7 @@
           {
             "rating": "quotaCost",
             "basis": "Google list price, blended (input + output) / 2",
-            "figure": "$4.50 per 1M tokens ($1.50 in / $7.50 out list; a 50 % discount is applied today, giving $0.75 / $3.75)",
+            "figure": "$2.25 per 1M tokens blended ($0.75 in / $3.75 out under the 50 % promotion)",
             "validUntil": "2026-09-06",
             "listFigure": "$4.50 per 1M tokens blended ($1.50 in / $7.50 out list)",
             "listBand": 2,
@@ -767,7 +767,7 @@
           {
             "rating": "quotaCost",
             "basis": "Google list price, blended (input + output) / 2",
-            "figure": "$4.50 per 1M tokens ($1.50 in / $7.50 out list; a 50 % discount is applied today, giving $0.75 / $3.75 — the same rate as gemini-3.8-flash)",
+            "figure": "$2.25 per 1M tokens blended ($0.75 in / $3.75 out under the 50 % promotion)",
             "validUntil": "2026-09-06",
             "listFigure": "$4.50 per 1M tokens blended ($1.50 in / $7.50 out list)",
             "listBand": 2,

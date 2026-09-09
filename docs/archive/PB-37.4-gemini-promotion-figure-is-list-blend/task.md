@@ -1,9 +1,9 @@
 # PB-37.4 · The two shipped Gemini promotion citations carry the list blend as figure, so promotion-expired prints the same number twice and never names the promotional one
 
-- **Order:** 75
 - **Scope:** `models/catalog.json` (the `quotaCost` citations of `cursor-gemini-38-high` and `cursor-gemini-37-high`), `test/model-routing-catalog.test.mjs`
 - **Created:** 2026-09-09
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 
