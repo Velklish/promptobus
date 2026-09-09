@@ -1,0 +1,7 @@
+# PB-82 · Result
+
+**Closed 2026-09-09.** Completed as a test-only change. `test/promptobus-package.test.mjs` now asserts, beside its schema checks, that the packed tarball contains `models/catalog.json` — the shipped catalog every routed decision reads — so a `package.json` `files` edit that drops `models/` fails the package test instead of shipping a release that cannot route. No functional file changed: the check pins the contract `package.json files → models/catalog.json` that already held. No CHANGELOG entry: test-only, no behaviour or documented contract change (PB-124 precedent).
+
+**Verification.** Worker commit `9265093` (worktree of `worker:verify`, on `main` `87530af`). Gates on `9265093`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 652 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: `"models"` removed from `package.json` `files` → `node --test test/promptobus-package.test.mjs` exit 1, 21/22, "tarball contains the model catalog" listing a tarball without `models/`; restored → 22/22. Review: the orchestrator read the diff (one three-line check) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; no CHANGELOG change; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:verify`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.

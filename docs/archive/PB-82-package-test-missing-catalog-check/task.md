@@ -1,9 +1,9 @@
 # PB-82 · The packaging test checks that templates and the four v1 schemas ship in the tarball but never checks `models/catalog.json`, the file the model catalog module assumes is there
 
-- **Order:** 550
 - **Scope:** `test/promptobus-package.test.mjs`, `lib/model-routing/catalog.js`, `package.json`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-10
 
 ## Context
 

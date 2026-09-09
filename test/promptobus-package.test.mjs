@@ -377,6 +377,9 @@ const SCHEMAS_V1 = ['task', 'participant', 'message', 'artifact']
 const missingSchemas = SCHEMAS_V1.filter((f) => !files.includes(f));
 check('tarball contains all four protocol v1 schemas',
   packed.ok && missingSchemas.length === 0, `missing: ${missingSchemas.join(', ')}`);
+check('tarball contains the model catalog',
+  packed.ok && files.includes('models/catalog.json'),
+  files.filter((f) => f.startsWith('models/')).join(', ') || files.join(', '));
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 // The overview writes the version out by hand and says it moves only with a release
