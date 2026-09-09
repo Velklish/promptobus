@@ -1,9 +1,9 @@
 # PB-136 · None of the ADR-004/005 overlay blocks — balance, nearLimit, defaults, account — appears in the schema-versus-grammar parity corpus, and `account` has no shape or reference test at all
 
-- **Order:** 710
 - **Scope:** `lib/model-routing/validate.js`, `schemas/model-routing/overlay.schema.json`, `test/model-routing-catalog.test.mjs`, [reference/03](../../reference/03-cli.md) § Catalog and overlays
 - **Created:** 2026-09-06
 - **Dependencies:** PB-155
+- **Taken:** 2026-09-09
 
 ## Context
 

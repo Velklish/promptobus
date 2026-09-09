@@ -1,9 +1,9 @@
 # PB-58 · The preflight throws when the availability cache cannot be written, so a routed spawn dies with every verdict already in hand
 
-- **Order:** 210
 - **Scope:** `lib/model-routing/preflight.js`, `lib/model-routing/cache.js`, `lib/driver-claude.js`, `lib/done.js`, `lib/util.js`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

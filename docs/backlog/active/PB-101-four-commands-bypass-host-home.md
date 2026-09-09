@@ -1,9 +1,9 @@
 # PB-101 · `status`, `history`, `prune` and `dismiss` rebuild the store path from the workspace root instead of asking the host, so a host that declares its own home gets four commands reading an empty bus
 
-- **Order:** 460
 - **Scope:** `lib/status.js`, `lib/history.js`, `lib/dismiss.js`, `lib/prune.js`, `lib/store.js` (`promptobusHome`), [reference/02-host.md](../../reference/02-host.md) section What the host must answer
 - **Created:** 2026-09-06
 - **Dependencies:** PB-102
+- **Taken:** 2026-09-09
 
 ## Context
 

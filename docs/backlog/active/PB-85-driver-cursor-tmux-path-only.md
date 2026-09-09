@@ -1,9 +1,9 @@
 # PB-85 · driver-cursor.js's resolveTmux checks PATH only while its own findCursorBin already widens PATH with CURSOR_INSTALL_DIRS, so a Homebrew tmux invisible to a background job's PATH passes doctor but refuses spawn
 
-- **Order:** 840
 - **Scope:** `lib/driver-cursor.js`, `lib/spawn.js`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-153
+- **Taken:** 2026-09-09
 
 ## Context
 

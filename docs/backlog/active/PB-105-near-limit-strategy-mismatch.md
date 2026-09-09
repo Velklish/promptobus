@@ -1,9 +1,9 @@
 # PB-105 · The near-limit signal decides `economy` from the level test alone while raising the line on either test, so under the default `--strategy balance` it prints nothing when every account is ahead of pace
 
-- **Order:** 870
 - **Scope:** [03-cli](../../reference/03-cli.md), [ADR-004](../../adr/adr-004-subscription-balance.md), `lib/model-routing/resolver.js`, `skills/orchestrate/SKILL.md`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-59
+- **Taken:** 2026-09-09
 
 ## Context
 

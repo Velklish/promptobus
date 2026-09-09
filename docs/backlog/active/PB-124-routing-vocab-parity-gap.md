@@ -1,9 +1,9 @@
 # PB-124 · MODEL_FLAGS is the only one of eight closed routing vocabularies pinned against its schema twin by a test, so the other seven can drift silently
 
-- **Order:** 890
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) § Model routing (Reason codes, Exclusion/adjustment/warning codes), `lib/model-routing/cache.js`, `lib/model-routing/catalog.js`, `lib/model-routing/validate.js`, `lib/model-routing/resolver.js`, `schemas/model-routing/snapshot.schema.json`, `schemas/model-routing/overlay.schema.json`, `schemas/model-routing/decision.schema.json`, `schemas/model-routing/telemetry.schema.json`, `test/model-routing-catalog.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-43, PB-105
+- **Taken:** 2026-09-09
 
 ## Context
 

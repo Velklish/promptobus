@@ -1,9 +1,9 @@
 # PB-147 · The remove seam added to removeJournals/sweepJournals so its deletion-refusal branch could be tested has no caller — that branch and the "journals not removed" warning are untested
 
-- **Order:** 800
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) § Status, done, dismiss, history, prune, `lib/prune.js`, `lib/done.js`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-101
+- **Taken:** 2026-09-09
 
 ## Context
 

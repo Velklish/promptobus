@@ -1,9 +1,9 @@
 # PB-125 · writeEntries keys the availability cache by a raw harness string with no HARNESS_RE check, so a workspace declaring a name the schema rejects writes a snapshot document that fails it
 
-- **Order:** 880
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) § Model routing → Availability, `lib/model-routing/cache.js`, `lib/model-routing/preflight.js`, `lib/model-routing/validate.js`, `schemas/model-routing/snapshot.schema.json`, `src/standalone.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

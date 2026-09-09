@@ -1,9 +1,9 @@
 # PB-43 · Under balance a harness is represented by its best-scored tuple, so Cursor's Auto pool never enters the pace comparison while a third-party tuple wins the score
 
-- **Order:** 230
 - **Scope:** [ADR-004](../../adr/adr-004-subscription-balance.md) § The balance strategy (the pick, step 1), `lib/model-routing/resolver.js` (the pace layer), [03-cli](../../reference/03-cli.md) § Model routing
 - **Created:** 2026-09-06
 - **Dependencies:** PB-78
+- **Taken:** 2026-09-09
 
 ## Context
 

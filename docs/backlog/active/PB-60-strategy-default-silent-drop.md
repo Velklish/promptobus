@@ -1,9 +1,9 @@
 # PB-60 · An unreadable or unsupported overlay silently drops the recorded strategy default from every lift, and nothing is printed
 
-- **Order:** 220
 - **Scope:** `lib/models.js` (`effectiveStrategy`, `routeLift`), `lib/spawn.js`, `lib/review.js`, `lib/model-routing/catalog.js` (the `schemaVersion` gates), [03-cli](../../reference/03-cli.md) § Commands
 - **Created:** 2026-09-06
 - **Dependencies:** PB-78
+- **Taken:** 2026-09-09
 
 ## Context
 

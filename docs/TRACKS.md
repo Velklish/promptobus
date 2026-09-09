@@ -92,7 +92,7 @@ Added after this snapshot: [PB-50.1](backlog/queue/PB-50.1-git-max-output-names-
 
 PB-63 and PB-66 are P0. PB-66 precedes PB-65 and reader taxonomy. PB-101 follows the version/error fixes; PB-147 tests its cleanup boundary.
 
-Queued assignments: [PB-63](backlog/queue/PB-63-migrate-mark-never-removed.md), [PB-66](backlog/queue/PB-66-recovery-misreads-errno-as-corruption.md), [PB-65](backlog/queue/PB-65-recovery-open-failure-bricks-store.md), [PB-132](backlog/queue/PB-132-task-id-grammar-two-homes.md), [PB-146](backlog/queue/PB-146-unreadable-record-taxonomy-gap.md), [PB-102](backlog/queue/PB-102-mixed-version-diagnosis-unreachable.md), [PB-101](backlog/queue/PB-101-four-commands-bypass-host-home.md), [PB-131](backlog/queue/PB-131-message-types-mutable-array.md), [PB-135](backlog/queue/PB-135-sendsyncinput-not-exported.md), [PB-147](backlog/queue/PB-147-prune-remove-seam-untested.md).
+Queued assignments: [PB-63](backlog/active/PB-63-migrate-mark-never-removed.md), [PB-66](backlog/active/PB-66-recovery-misreads-errno-as-corruption.md), [PB-65](backlog/active/PB-65-recovery-open-failure-bricks-store.md), [PB-132](backlog/active/PB-132-task-id-grammar-two-homes.md), [PB-146](backlog/active/PB-146-unreadable-record-taxonomy-gap.md), [PB-102](backlog/active/PB-102-mixed-version-diagnosis-unreachable.md), [PB-101](backlog/active/PB-101-four-commands-bypass-host-home.md), [PB-131](backlog/active/PB-131-message-types-mutable-array.md), [PB-135](backlog/active/PB-135-sendsyncinput-not-exported.md), [PB-147](backlog/active/PB-147-prune-remove-seam-untested.md).
 
 ### C — Codex session lifecycle
 
@@ -106,9 +106,9 @@ Added after this snapshot: [PB-156](backlog/queue/PB-156-codex-thread-name-ignor
 
 PB-45 is a cross-driver prerequisite and edits Codex too: finish it before C. PB-151 is the first Cursor repair. PB-120 is deferred.
 
-Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](backlog/queue/PB-151-cursor-inject-buffer-file-mode.md), [PB-148](backlog/queue/PB-148-limit-regex-alternation-order.md), [PB-153](backlog/queue/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/queue/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/queue/PB-93-cursor-bin-name-order-mismatch.md).
+Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](backlog/active/PB-151-cursor-inject-buffer-file-mode.md), [PB-148](backlog/active/PB-148-limit-regex-alternation-order.md), [PB-153](backlog/active/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/active/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/active/PB-93-cursor-bin-name-order-mismatch.md).
 
-Added after this snapshot: [PB-45.1](backlog/queue/PB-45.1-snapshot-path-hides-registry-refusal.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
+Added after this snapshot: [PB-45.1](backlog/active/PB-45.1-snapshot-path-hides-registry-refusal.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
 
 Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh-flag.md).
 
@@ -116,7 +116,7 @@ Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh
 
 PB-155/PB-78/PB-58 first. PB-43 precedes PB-59/PB-105. Keep their policy choices explicit. PB-116 waits for C; PB-38.2 is deferred. PB-34.1/PB-37.3 are evidence work, not permission to run paid probes or invent ratings.
 
-Queued assignments: [PB-155](backlog/queue/PB-155-catalog-merge-proto-guard-gap.md), [PB-78](backlog/queue/PB-78-catalog-layer-attribution-wrong.md), [PB-58](backlog/queue/PB-58-preflight-cache-write-throws.md), [PB-60](backlog/queue/PB-60-strategy-default-silent-drop.md), [PB-43](backlog/queue/PB-43-balance-representative-hides-better-paced-pool.md), [PB-59](backlog/queue/PB-59-balance-floor-warning-false.md), [PB-149](backlog/queue/PB-149-cursor-stdout-error-listener.md), [PB-136](backlog/queue/PB-136-overlay-parity-corpus-gap.md), [PB-37.1](backlog/queue/PB-37.1-promotional-price-band-has-no-expiry-signal.md), [PB-61](backlog/queue/PB-61-models-flags-wrong-subcommand.md), [PB-105](backlog/queue/PB-105-near-limit-strategy-mismatch.md), [PB-125](backlog/queue/PB-125-unvalidated-harness-cache-key.md), [PB-124](backlog/queue/PB-124-routing-vocab-parity-gap.md), [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md), [PB-37.3](backlog/queue/PB-37.3-terminal-bench-4-0-has-no-anchor-pair.md), [PB-34.1](backlog/queue/PB-34.1-claude-inventory-narrower-than-baked-table.md).
+Queued assignments: [PB-155](backlog/active/PB-155-catalog-merge-proto-guard-gap.md), [PB-78](backlog/active/PB-78-catalog-layer-attribution-wrong.md), [PB-58](backlog/active/PB-58-preflight-cache-write-throws.md), [PB-60](backlog/active/PB-60-strategy-default-silent-drop.md), [PB-43](backlog/active/PB-43-balance-representative-hides-better-paced-pool.md), [PB-59](backlog/active/PB-59-balance-floor-warning-false.md), [PB-149](backlog/active/PB-149-cursor-stdout-error-listener.md), [PB-136](backlog/active/PB-136-overlay-parity-corpus-gap.md), [PB-37.1](backlog/active/PB-37.1-promotional-price-band-has-no-expiry-signal.md), [PB-61](backlog/active/PB-61-models-flags-wrong-subcommand.md), [PB-105](backlog/active/PB-105-near-limit-strategy-mismatch.md), [PB-125](backlog/active/PB-125-unvalidated-harness-cache-key.md), [PB-124](backlog/active/PB-124-routing-vocab-parity-gap.md), [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md), [PB-37.3](backlog/active/PB-37.3-terminal-bench-4-0-has-no-anchor-pair.md), [PB-34.1](backlog/active/PB-34.1-claude-inventory-narrower-than-baked-table.md).
 
 Deferred assignments: [PB-38.2](backlog/deferred/PB-38.2-cursor-tier-unknown-until-first-turn.md).
 

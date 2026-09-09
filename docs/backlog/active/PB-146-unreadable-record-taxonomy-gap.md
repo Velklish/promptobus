@@ -1,9 +1,9 @@
 # PB-146 · The store's unreadable-record taxonomy differs between readers: listTasks flattens schema-version-unsupported into the same broken bucket as corruption, and a corrupt artifact answers artifact-not-found
 
-- **Order:** 440
 - **Scope:** [reference/04-protocol](../../reference/04-protocol.md) § Artifacts, `src/v1/store.ts`, `src/v1/engine.ts`, `src/v1/artifacts.ts`, `src/v1/errors.ts`, `src/v1/messages.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-65
+- **Taken:** 2026-09-09
 
 ## Context
 

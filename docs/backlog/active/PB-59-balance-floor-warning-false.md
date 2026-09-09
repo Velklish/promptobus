@@ -1,9 +1,9 @@
 # PB-59 · Under balance the floor warning says no candidate reaches the quality floor while a floor-meeting candidate is scored, eligible and representative on another harness
 
-- **Order:** 240
 - **Scope:** [ADR-004](../../adr/adr-004-subscription-balance.md) § The balance strategy (the pick, step 1), [ADR-005](../../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) § Quality floors per role, `lib/model-routing/resolver.js` (`bestOf`, `representatives`, the floor warning), [03-cli](../../reference/03-cli.md) § Model routing
 - **Created:** 2026-09-06
 - **Dependencies:** PB-43
+- **Taken:** 2026-09-09
 
 ## Context
 

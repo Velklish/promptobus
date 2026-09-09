@@ -1,9 +1,9 @@
 # PB-93 · Cursor's binary name is resolved two different ways: lift asks only for cursor-agent, but stop's findCursorBin searches a bare agent first and against a different environment
 
-- **Order:** 850
 - **Scope:** `lib/driver-cursor.js` (`CURSOR_TOOL`, `CURSOR_BINS`, `findCursorBin`, `liveBin`), `lib/cursor-persist.js` (`stopSession`), [reference/02-host.md](../../reference/02-host.md) § Tool binaries
 - **Created:** 2026-09-06
 - **Dependencies:** PB-85
+- **Taken:** 2026-09-09
 
 ## Context
 

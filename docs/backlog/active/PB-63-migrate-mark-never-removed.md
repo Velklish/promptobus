@@ -1,9 +1,9 @@
 # PB-63 · `migrate` never removes `migrated.json` after cleanup, so a legacy store that reappears at the same path is deleted instead of triggering the side-by-side refusal
 
-- **Order:** 70
 - **Scope:** `src/migrate.ts` (`migrateLocked`, `preflight`, `markOf`), `lib/store.js` (the legacy-directory warn line), [02-host](../../reference/02-host.md) § `legacyLayout()`, `test/promptobus-migration.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

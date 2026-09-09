@@ -1,9 +1,9 @@
 # PB-78 · A host with zero or two writable overlays reaches every routed call as catalog-invalid blaming the read-only shipped catalog, while models validate correctly calls the identical fault overlay-invalid on layer host
 
-- **Order:** 200
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) section Error codes, lib/models.js (mergedCatalog), lib/model-routing/catalog.js, lib/model-routing/validate.js, test/model-routing-catalog.test.mjs
 - **Created:** 2026-09-06
 - **Dependencies:** PB-155
+- **Taken:** 2026-09-09
 
 ## Context
 

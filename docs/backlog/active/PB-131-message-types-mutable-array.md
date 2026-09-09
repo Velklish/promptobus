@@ -1,9 +1,9 @@
 # PB-131 · MESSAGE_TYPES is exported as a plain mutable array that MESSAGE_TYPES_V1 aliases rather than copies, so a push from any consumer changes what both validation gates accept for the rest of the process
 
-- **Order:** 780
 - **Scope:** [reference/04-protocol](../../reference/04-protocol.md), `src/protocol.ts`, `src/v1/model.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-132
+- **Taken:** 2026-09-09
 
 ## Context
 

@@ -1,9 +1,9 @@
 # PB-135 · `SendSyncInput` (src/v1/engine.ts:94), the parameter type of the public `Engine.sendSync`, is not re-exported from `src/v1/index.ts` or the package entry point
 
-- **Order:** 790
 - **Scope:** `src/v1/index.ts`, `src/v1/engine.ts`, `test/v1-engine.test.mjs`, [reference/01](../../reference/01-overview.md) § Entry points
 - **Created:** 2026-09-06
 - **Dependencies:** PB-131
+- **Taken:** 2026-09-09
 
 ## Context
 

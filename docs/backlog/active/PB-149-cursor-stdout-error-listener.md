@@ -1,9 +1,9 @@
 # PB-149 · The Cursor adapter's runOut leaves child.stdout unguarded against an error event, so an unhandled stream error would crash the routed command instead of yielding a verdict
 
-- **Order:** 500
 - **Scope:** `lib/model-routing/adapter-cursor.js`, `lib/model-routing/adapter-claude.js`, `lib/model-routing/adapter-codex.js`, [reference/03-cli.md](../../reference/03-cli.md) § Availability: the adapter, the preflight and the cache
 - **Created:** 2026-09-06
 - **Dependencies:** PB-58
+- **Taken:** 2026-09-09
 
 ## Context
 

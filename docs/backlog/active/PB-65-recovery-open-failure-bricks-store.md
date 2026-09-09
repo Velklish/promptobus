@@ -1,9 +1,9 @@
 # PB-65 · Fan-out recovery at engine open lets its failure escape and drops its result: one unfinishable intent bricks every bus command, and an isolated record is reported to nobody
 
-- **Order:** 90
 - **Scope:** `src/v1/engine.ts`, `src/v1/messages.ts`, `src/v1/artifacts.ts`, `lib/store.js`, [04-protocol](../../reference/04-protocol.md) § Engine
 - **Created:** 2026-09-06
 - **Dependencies:** PB-66
+- **Taken:** 2026-09-09
 
 ## Context
 

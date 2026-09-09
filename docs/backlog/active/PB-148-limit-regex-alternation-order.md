@@ -1,9 +1,9 @@
 # PB-148 · LIMIT_DETAIL's alternation order makes the "limit resets" capture unreachable whenever "hit your ... limit" starts earlier in the line, so a late-start refusal naming both is filed as manual_exhaustion
 
-- **Order:** 180
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) § Model routing (Claude Code: what its adapter asks — the late-start hook, ~line 412), `lib/driver-claude.js`, `test/model-routing-adapter-claude.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-119
+- **Taken:** 2026-09-09
 
 ## Context
 

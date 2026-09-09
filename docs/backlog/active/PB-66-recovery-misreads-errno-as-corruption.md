@@ -1,9 +1,9 @@
 # PB-66 · src/v1/messages.ts treats any errno but ENOENT as corruption: recovery retires an unreadable intent to broken/messages, which nothing reads back, and readInbox rethrows mid-walk after refs have already gone to history
 
-- **Order:** 80
 - **Scope:** `src/v1/messages.ts`, [04-protocol](../../reference/04-protocol.md) § Message types
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

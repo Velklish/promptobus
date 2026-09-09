@@ -1,9 +1,9 @@
 # PB-61 · `models` accepts `--set`, `--clear`, `--write` and `--yes` outside the subcommands that own them and silently ignores all four
 
-- **Order:** 860
 - **Scope:** `lib/models.js` (`models`), `lib/cli.js` (the `models` case), [03-cli](../../reference/03-cli.md) § Commands
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

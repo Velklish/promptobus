@@ -1,9 +1,9 @@
 # PB-151 · `injectText` writes wake text without an explicit private `.buf` file mode and skips cleanup when the tmux load fails, so a message preview outlives its delivery
 
-- **Order:** 170
 - **Scope:** `lib/cursor-persist.js` (`injectText`, `bufferFile`, `writeJson`, `dropSession`)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-45
+- **Taken:** 2026-09-09
 
 ## Context
 

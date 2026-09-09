@@ -1,9 +1,9 @@
 # PB-155 · `mergeFlat` and `mergeWeights` are the two overlay-merge helpers in catalog.js without the `__proto__` guard PB-32 added to their two siblings, so an overlay can move the merged policy's prototype on the routed lift, which never runs `validate`
 
-- **Order:** 190
 - **Scope:** `lib/model-routing/catalog.js` (`mergeFlat`, `mergeWeights`, `mergeDefaults`, `mergeAccount`, `applyOverlayToPolicy`), `test/model-routing-catalog.test.mjs`, [reference/03-cli](../../reference/03-cli.md) § Catalog and overlays
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

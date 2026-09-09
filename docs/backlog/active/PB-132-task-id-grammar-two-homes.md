@@ -1,9 +1,9 @@
 # PB-132 · TASK_ID_RE has two homes with different length bounds, so a task id the CLI-facing gate accepts is refused mid-operation as task-not-found by the store's own bound
 
-- **Order:** 430
 - **Scope:** `src/protocol.ts`, `src/v1/model.ts`, `src/v1/layout.ts`, `src/migrate.ts`, `schemas/v1/task.schema.json`, `schemas/v1/message.schema.json`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-66
+- **Taken:** 2026-09-09
 
 ## Context
 

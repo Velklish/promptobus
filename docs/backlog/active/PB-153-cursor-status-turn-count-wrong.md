@@ -1,9 +1,9 @@
 # PB-153 · `promptobus status` reports a Cursor participant's turn count from `turn.ended` — an end-of-file transcript marker its own parser says cannot count turns — instead of `record.turns`, the counter already in scope
 
-- **Order:** 630
 - **Scope:** `lib/driver-cursor.js` (`inspect`, `registerWake`), `lib/cursor-persist.js` (`readTranscript`, `turnState`), `lib/status.js`, `test/promptobus-driver-cursor.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-151
+- **Taken:** 2026-09-09
 
 ## Context
 

@@ -1,9 +1,9 @@
 # PB-102 · The mixed-version diagnosis is wired to nothing: `bus()` memoises the engine before the reader version arrives, the orchestrator record is stamped `0.0.0`, and a prerelease tail falls back to "journal does not match the schema"
 
-- **Order:** 450
 - **Scope:** `lib/store.js` (`bus`, `createTask`, `claimOwnership`), `lib/warden.js`, `src/v1/store.ts` (`cmpVersion`, `writtenByNewer`), [reference/04-protocol.md](../../reference/04-protocol.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-65, PB-146
+- **Taken:** 2026-09-09
 
 ## Context
 
