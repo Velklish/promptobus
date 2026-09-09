@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CI now pins ast-grep, names the existing TypeScript build, covers Node 20 and 22, and relies on the package test for tarball coverage.** (PB-94)
+- **The publicity audit now resolves the file half of Markdown links that carry fragments, while pure in-file anchors remain exempt.** (PB-107)
 - **Bus-hook headers now use the host's regeneration hint, and the reference documents the shipped bin's fixed command name and package version.** (PB-109)
 - **Install now takes the PostToolUse, Stop and SessionStart hook event names from the compiled declarations, so generated settings cannot drift from `src/hooks.ts`.** (PB-119.1)
 - **Codex approval checks use named request fields.** Text in patch diffs and commands no longer triggers config or privilege denials, while dangerous values in top-level or `item`-nested `sandbox`, `approvalPolicy`, and `permissions` fields remain denied unless an approval-policy or sandbox value echoes the session's recorded mode. (PB-88)

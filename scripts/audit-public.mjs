@@ -51,7 +51,7 @@ for (const rel of tracked) {
 // Only prose is examined. In a markdown file every line is prose; in code only
 // comment lines are, because `](` also occurs inside regular expressions and
 // string literals, and a gate that reported those would be answered by muting it.
-const LINK = /\]\(([^)#\s]+?)\)/g;
+const LINK = /\[[^\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 // In markdown a fenced block or an inline code span is not prose either: a sentence
 // that QUOTES the link pattern would otherwise be read as a link to its example.
 const mdProse = (text) => text
@@ -65,8 +65,9 @@ for (const rel of tracked) {
   const text = proseOf(rel, readFileSync(path.join(ROOT, rel), 'utf8'));
   for (const m of text.matchAll(LINK)) {
     const target = m[1].trim();
-    if (/^[a-z]+:/i.test(target) || target.startsWith('#')) continue;
-    const abs = path.resolve(path.dirname(path.join(ROOT, rel)), target);
+    const file = target.split('#')[0];
+    if (!file || /^[a-z]+:/i.test(file)) continue;
+    const abs = path.resolve(path.dirname(path.join(ROOT, rel)), file);
     if (!abs.startsWith(ROOT + path.sep)) failures.push(`link leaves the repository: ${rel} → ${target}`);
     else if (!existsSync(abs)) failures.push(`link resolves to nothing: ${rel} → ${target}`);
   }
