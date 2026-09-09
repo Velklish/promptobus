@@ -1,0 +1,9 @@
+# PB-50.1 · Result
+
+**Closed 2026-09-10.** Completed. The 32 MiB child-output ceiling that every process launch in the package shares is now named for what it is: `PROC_MAX_OUTPUT`, defined at the launch boundary in `lib/exec.js` with its process-wide scope and overflow consequence in the comment, and used by `util.js`, `review.js`, `worktree.js` and `spawn.js`. `util.js` keeps `GIT_MAX_OUTPUT` as a compatibility alias for callers that take process ceilings from there; `src/standalone.ts`'s own definition is out of scope and untouched. `PROC_TIMEOUT_MS`, the defaults PB-50 and PB-122 set, the caller-override precedence and every caller's outcome contract are unchanged.
+
+**Verification.** Worker commit `8bff7c7` (worktree of `worker:verify`, on `main` `fe1c3fa`). Gates on `8bff7c7`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 669 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: the old production name restored in the five files → `node test/promptobus-copy.test.mjs` exit 1, 15/17 ("exec ceiling probe shortens both production defaults", "bgSessions returns null when its stand-in binary crosses the run output budget"); restored → 17/17. `rg GIT_MAX_OUTPUT lib/ src/` leaves the util alias and the standalone definition only. Review: the orchestrator read the diff in full (a rename across five files, one alias, one comment, one fixture, one CHANGELOG bullet) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** The `lib/exec.js` comment; CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:verify`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.

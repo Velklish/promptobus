@@ -110,11 +110,11 @@ try {
 
 const probeExec = execSource
   .replace('export const PROC_TIMEOUT_MS = 60_000;', 'export const PROC_TIMEOUT_MS = 1_000;')
-  .replace('export const GIT_MAX_OUTPUT = 32 * 1024 * 1024;', 'export const GIT_MAX_OUTPUT = 64;');
+  .replace('export const PROC_MAX_OUTPUT = 32 * 1024 * 1024;', 'export const PROC_MAX_OUTPUT = 64;');
 check('exec ceiling probe shortens both production defaults',
   probeExec !== execSource
   && probeExec.includes('export const PROC_TIMEOUT_MS = 1_000;')
-  && probeExec.includes('export const GIT_MAX_OUTPUT = 64;'));
+  && probeExec.includes('export const PROC_MAX_OUTPUT = 64;'));
 writeFileSync(path.join(PROBE, 'exec.js'), probeExec);
 
 const liftoffSource = readFileSync(new URL('../lib/liftoff.js', import.meta.url), 'utf8');

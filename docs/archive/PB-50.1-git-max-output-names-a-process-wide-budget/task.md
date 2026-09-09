@@ -1,9 +1,9 @@
 # PB-50.1 · `GIT_MAX_OUTPUT` names a process-wide output budget that was never git-specific
 
-- **Order:** 1050
 - **Scope:** `lib/exec.js`, `lib/util.js`, `lib/review.js`, `lib/worktree.js`, `lib/spawn.js`
 - **Created:** 2026-09-07
 - **Dependencies:** PB-50
+- **Taken:** 2026-09-10
 
 ## Context
 
