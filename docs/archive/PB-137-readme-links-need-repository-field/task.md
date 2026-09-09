@@ -1,9 +1,9 @@
 # PB-137 · Declare repository metadata and verify relative README links on the registry page
 
-- **Order:** 670
 - **Scope:** `package.json`, `README.md`, `README.ru.md`, `scripts/audit-public.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-108
+- **Taken:** 2026-09-10
 
 ## Context
 
