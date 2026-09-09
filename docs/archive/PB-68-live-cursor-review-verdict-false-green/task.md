@@ -1,9 +1,9 @@
 # PB-68 · The step-5 reviewer verdict in live-cursor.mjs is satisfied by the step-4c pair results already sitting unread in the orchestrator mailbox, so it goes green without the reviewer having sent anything
 
-- **Order:** 380
 - **Scope:** `scripts/live-cursor.mjs`, [03-cli](../../reference/03-cli.md) § Review, [04-protocol](../../reference/04-protocol.md) § Message types
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

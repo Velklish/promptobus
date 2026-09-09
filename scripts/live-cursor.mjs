@@ -37,7 +37,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, store } from '../test/scenario.mjs';
+import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { sweepPreviousRuns } from './canary-runs.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
@@ -462,7 +462,7 @@ try {
     String(denied.stdout ?? '').slice(-500));
 
   const reviewSaid = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
-    .filter((m) => m.type === 'result' && !String(m.body ?? '').includes(MARK.woke)).pop() ?? null,
+    .filter((m) => sentBy(m, REVIEWER) && m.type === 'result').pop() ?? null,
   { timeoutMs: 300000 });
   check('step 5: the Cursor reviewer report reached the orchestrator on the same bus',
     !!reviewSaid, JSON.stringify(readSession(store.participantOf(store.readTask(home, TASK), REVIEWER)?.sessionRef ?? '')?.last));

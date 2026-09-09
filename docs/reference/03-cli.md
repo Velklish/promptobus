@@ -44,6 +44,8 @@ The worker goes on committing after the call: from that moment the file only age
 
 The reviewer is read-only. A harness that cannot deny tools must fail before spawn (`src/driver.ts` `denyTools`).
 
+The review verdict is a result from the reviewer participant, not any result already visible in the orchestrator's mailbox. A live wait therefore matches the normalized `sender` together with `type: result`; an earlier worker result remains unread until its participant is consumed and cannot satisfy the review step.
+
 `--strategy` routes the reviewer the same way it routes a worker, with `--role reviewer`'s rules — the quality floor and the diversity bonus ([Model routing](#model-routing)). The worker the review is about is the live participant the pick is measured against. A re-review sends a new diff to a reviewer that is already up, so there is nothing to route and the flag is reported ignored.
 
 ## Model routing

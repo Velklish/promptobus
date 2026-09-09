@@ -1,0 +1,11 @@
+# PB-68 · Result
+
+**Closed 2026-09-09.** Completed. Step 5 of `scripts/live-cursor.mjs` — the wait for the Cursor reviewer's verdict — no longer accepts any `result` in the orchestrator's mailbox that does not mention the wake marker; it accepts only a record whose normalized `sender` is the reviewer participant and whose `type` is `result`, through the shared `sentBy` predicate from `test/scenario.mjs`. Because `glanceInbox` lists unread records without consuming them, the worker's earlier results stayed visible and satisfied the old matcher, so a live run reported a green review step with no reviewer message at all. 03-cli § Review and 04-protocol § Message types state the sender-and-type rule and the non-consuming read.
+
+**Verification.** Worker commit `ee01d5f` (worktree of `worker:verify`, on `main` `1c21587`). Reproducer red before the repair: `node test/promptobus-live-cursor.test.mjs` exit 1, 1/2 — "live-cursor step 5 matcher requires the reviewer sender" (the probe seeds a real v1 store with four worker messages before step 5 and inspects the script's matcher in place, without importing the script, which would start a real Cursor session). After the repair 2/2. Gates on `ee01d5f`: `npm test` exit 0, 53/53 test files (the new probe is the 53rd); `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 638 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: the old matcher restored → exit 1, 1/2 with the same check; fix restored → 2/2. Review: the orchestrator read the diff in full (one matcher, one import, two reference paragraphs, one CHANGELOG bullet, one probe file) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Not run.** `scripts/live-cursor.mjs` itself was not executed: it starts a real Cursor session and spends the owner's subscription, and the run forbade live scripts to workers; the live acceptance run remains for the owner.
+
+**Documentation in the same pass.** 03-cli.md § Review, 04-protocol.md § Message types, CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:verify`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.
