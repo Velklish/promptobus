@@ -65,7 +65,10 @@ const TUPLES = JSON.parse(readFileSync(CATALOG_FILE, 'utf8')).tuples;
 // id the fixture went on resolving an alias the driver had stopped resolving, and
 // nothing anywhere went red (PB-34).
 const ALIASES = {
-  claude: { fable: ['claude-fable-5-1'], opus: ['claude-opus-5'], sonnet: ['claude-sonnet-5'] },
+  claude: {
+    fable: ['claude-fable-5-1'], opus: ['claude-opus-5'], sonnet: ['claude-sonnet-5'],
+    haiku: ['claude-haiku-4-5'],
+  },
 };
 
 const report = () => calibrate(RECORDS, { tuples: TUPLES, aliases: ALIASES });

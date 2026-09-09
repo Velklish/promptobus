@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-09-06T09:00:00.000Z",
+  "updated": "2026-09-09T00:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-51-high",
@@ -475,6 +475,118 @@
       "evidence": {
         "text": "Interpolated -2 effort step(s) from claude-sonnet-xhigh on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-sonnet-xhigh"
+      }
+    },
+    {
+      "id": "claude-haiku-high",
+      "harness": "claude",
+      "model": "claude-haiku-4-5",
+      "effort": "high",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 3,
+        "speed": 2,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 250,
+      "assessedAt": "2026-09-09T00:00:00.000Z",
+      "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from claude-haiku-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-haiku-xhigh"
+      }
+    },
+    {
+      "id": "claude-haiku-xhigh",
+      "harness": "claude",
+      "model": "claude-haiku-4-5",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 4,
+        "speed": 2,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 240,
+      "assessedAt": "2026-09-09T00:00:00.000Z",
+      "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
+      "evidence": {
+        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 73.3→4, using Anthropic's published SWE-bench scaffold figure as the highest available fallback because no Claude Code figure is published; speed uses Artificial Analysis 40→1 / 310→10: 81 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $3→1. The quality and price figures are from Anthropic's Haiku 4.5 launch page; the speed figure is from the Artificial Analysis leaderboard; all sources were seen 2026-09-09. The id was accepted by a one-turn `claude -p --model claude-haiku-4-5 --max-turns 1` liftoff on 2.1.263, 2026-09-09. Bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "quality",
+            "basis": "SWE-bench Verified",
+            "version": "Verified, full 500-problem set",
+            "agentHarness": "Anthropic SWE-bench scaffold",
+            "provenance": "vendor launch page, opened",
+            "figure": "73.3 %",
+            "url": "https://www.anthropic.com/news/claude-haiku-4-5",
+            "date": "2026-09-09"
+          },
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-09",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary leaderboard page, opened",
+            "figure": "81 tokens/s",
+            "url": "https://artificialanalysis.ai/leaderboards/models",
+            "date": "2026-09-09"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "Anthropic list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-09",
+            "agentHarness": "vendor API",
+            "provenance": "vendor launch page, opened",
+            "figure": "$3.00 per 1M tokens ($1 in / $5 out)",
+            "url": "https://www.anthropic.com/news/claude-haiku-4-5",
+            "date": "2026-09-09"
+          }
+        ]
+      }
+    },
+    {
+      "id": "claude-haiku-max",
+      "harness": "claude",
+      "model": "claude-haiku-4-5",
+      "effort": "max",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 2,
+        "quotaCost": 2
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 230,
+      "assessedAt": "2026-09-09T00:00:00.000Z",
+      "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from claude-haiku-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-haiku-xhigh"
       }
     },
     {

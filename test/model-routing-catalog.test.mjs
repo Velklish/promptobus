@@ -39,7 +39,7 @@ import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
 } from '../lib/model-routing/validate.js';
 import * as validateRouting from '../lib/model-routing/validate.js';
-import { MODEL_ALIASES, MODEL_IDS } from '../lib/driver-claude.js';
+import { MODEL_ALIASES, MODEL_IDS, MODEL_SCOPE_IDS } from '../lib/driver-claude.js';
 import { routingContext } from '../lib/models.js';
 import * as resolverRouting from '../lib/model-routing/resolver.js';
 
@@ -111,6 +111,18 @@ test('Fable 5.1 keeps its predecessor quality band as a hypothesis', () => {
   const predecessor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-xhigh');
   assert.equal(successor.ratings.quality, predecessor.ratings.quality);
   assert.ok(successor.evidence.hypothesis.includes('quality'));
+});
+
+test('the entitled Haiku inventory is rated while refused Mythos stays out', () => {
+  assert.ok(MODEL_IDS.includes('claude-haiku-4-5'));
+  assert.equal(MODEL_IDS.includes('claude-mythos-5-1'), false);
+  assert.ok(MODEL_ALIASES.includes('haiku'));
+  assert.deepEqual(MODEL_SCOPE_IDS.haiku, ['claude-haiku-4-5']);
+  const haiku = CATALOG.tuples.find((tuple) =>
+    tuple.harness === 'claude' && tuple.model === 'claude-haiku-4-5' && tuple.effort === 'xhigh');
+  assert.ok(haiku, 'the startable Haiku model has no xhigh catalog row');
+  assert.deepEqual(haiku.ratings, { quality: 4, speed: 2, quotaCost: 1 });
+  assert.deepEqual(haiku.roles, ['worker']);
 });
 
 test('every shipped tuple names a harness this CLI drives and an effort that driver knows', () => {
@@ -416,7 +428,8 @@ test('a model the harness exposes but the catalog does not rate produces no tupl
   // Measured 2026-09-06 (PB-29): `model/list` over `codex app-server` returns
   // the five visible models AND two hidden ones, `gpt-reserve` and
   // `codex-auto-review`, which ADR-004 keeps out of the catalog; `claude --help`
-  // publishes the aliases fable, opus and sonnet, and a row keyed on an alias is
+  // publishes the aliases fable, opus and sonnet; Haiku is the baked alias proven
+  // in PB-34.1, and a row keyed on an alias is
   // a rating of whatever the vendor points it at today. An absent row is an
   // `unrated` runtime line (PB-14), never a tuple.
   //

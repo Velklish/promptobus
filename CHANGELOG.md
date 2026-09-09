@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cursor teardown prefers the declared binary and caller environment.** Stop resolution now prefers `cursor-agent` over a bare `agent` and uses the stop caller's environment for both lookup and execution. (PB-93)
 - **Balance compares every eligible pool of a harness.** Each pool contributes its best eligible tuple to the pace comparison, and `models` prints one pace row per pool so a roomier Cursor pool is not hidden by a higher-scoring one. (PB-43)
 - **Terminal-Bench 4.0 now has a dated Claude Code anchor pair.** Fable 5.1 records the 4.0 leaderboard figure as supporting evidence but remains at its predecessor's band as a stated hypothesis under the successor rule; re-rating guidance keeps figures without an exact pair as hypotheses. (PB-37.3)
+- **Claude Code's proven inventory now includes entitled Haiku.** Claude 2.1.263 accepted `claude-haiku-4-5` on a one-turn liftoff, so the driver publishes its `haiku` alias and model-scoped limit ids and the catalog carries a worker ladder rated from Anthropic's 73.3 % SWE-bench figure, Artificial Analysis's 81 tokens/s and the $1/$5 list price. The same check refused `claude-mythos-5-1`, which remains out. (PB-34.1)
 
 ## [0.5.1] - 2026-09-09
 
