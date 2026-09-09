@@ -16,7 +16,9 @@ import { writeJsonAtomic } from '../fs/atomic.js';
 import { addressOf, mechanismVersionOf } from '../protocol.js';
 import { withDirLock } from '../fs/lock.js';
 import { fail, PromptobusError } from './errors.js';
+import type { ErrorCode } from './errors.js';
 import { lockDir, taskDir, taskFile, tasksDir } from './layout.js';
+import type { FaultHook } from './messages.js';
 import { SCHEMA_VERSION } from './model.js';
 import type { ParticipantV1, TaskV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
@@ -43,6 +45,8 @@ export interface NewTask {
  * the former path works in full.
  */
 export type ReaderVersion = string | null;
+
+const NO_FAULT: FaultHook = () => {};
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -120,13 +124,20 @@ export function taskExists(home: string, task: string): boolean {
  * Read the journal. Unreadable or invalid — `task-broken`: a damaged task
  * blocks only itself, the rest work (`listTasks` skips it).
  */
-export function readTask(home: string, task: string, cli: ReaderVersion = null): TaskV1 {
+export function readTask(home: string, task: string, cli: ReaderVersion = null, fault: FaultHook = NO_FAULT): TaskV1 {
   const file = taskFile(home, task);
   let raw;
   try {
+    fault('task-read', { task, file });
     raw = readFileSync(file, 'utf8');
-  } catch {
-    fail('task-not-found', `task ${task} is not in ${tasksDir(home)}`, { task, file });
+  } catch (e) {
+    const errno = (e as NodeJS.ErrnoException).code;
+    if (errno === 'ENOENT') {
+      fail('task-not-found', `task ${task} is not in ${tasksDir(home)}`, { task, file, errno });
+    }
+    if (typeof errno !== 'string') throw e;
+    fail('task-broken', `task ${task} journal could not be read (${errno}): ${(e as Error).message}`,
+      { task, file, errno });
   }
   let meta: unknown;
   try {
@@ -201,14 +212,17 @@ export function createTask(home: string, { id, title, owner, adapter = {} }: New
   return meta;
 }
 
-/** A task that cannot be read: its id and the reason. The adapter assembles the text for a person. */
+/** A task that cannot be read: its id, refusal code, and reason. The adapter assembles the text for a person. */
 export interface BrokenTask {
   id: string;
+  code: ErrorCode;
   note: string;
 }
 
 /** List tasks. One corrupt task must not extinguish the rest. */
-export function listTasks(home: string, cli: ReaderVersion = null): { tasks: TaskV1[]; broken: BrokenTask[] } {
+export function listTasks(home: string, cli: ReaderVersion = null, fault: FaultHook = NO_FAULT): {
+  tasks: TaskV1[]; broken: BrokenTask[];
+} {
   const dir = tasksDir(home);
   const tasks: TaskV1[] = [];
   const broken: BrokenTask[] = [];
@@ -221,9 +235,10 @@ export function listTasks(home: string, cli: ReaderVersion = null): { tasks: Tas
   for (const name of names.sort()) {
     if (!taskExists(home, name)) continue;
     try {
-      tasks.push(readTask(home, name, cli));
+      tasks.push(readTask(home, name, cli, fault));
     } catch (e) {
-      broken.push({ id: name, note: (e as Error).message });
+      if (!(e instanceof PromptobusError)) throw e;
+      broken.push({ id: name, code: e.code, note: e.message });
     }
   }
   return { tasks, broken };

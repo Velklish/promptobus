@@ -209,7 +209,7 @@ export function readArtifact(home: string, task: string, id: string): ArtifactV1
     meta = JSON.parse(raw);
   } catch (e) {
     isolateArtifact(home, task, `${id}.json`);
-    fail('artifact-not-found', `artifact ${id} metadata did not parse (${(e as Error).message}) — set aside in broken`,
+    fail('schema-invalid', `artifact ${id} metadata did not parse (${(e as Error).message}) — set aside in broken`,
       { task, artifact: id });
   }
   const verdict = validate('artifact', meta);

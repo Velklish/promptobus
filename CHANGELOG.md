@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
+- **Bulk task listings retain machine-readable failure codes.** Each `BrokenTask` now carries the exact typed refusal code, so callers can distinguish a newer mechanism record from a damaged or unreadable journal without parsing diagnostic text or reading the task again. (PB-146)
 
 ### Fixed
 
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Routed catalog failures name the layer that caused them.** Host overlay declarations, unreadable or invalid overlay files, unsupported overlay schemas, and shipped-catalog failures now keep their source through the merge so routed calls return the same `overlay-invalid` or `catalog-invalid` attribution as `models validate`. (PB-78)
 - **A broken routing overlay no longer silently drops the recorded strategy default.** `spawn` and `review` warn with the layer, path and `promptobus models validate` route before taking the legacy path. (PB-60)
 - **Transient mailbox and intent I/O failures no longer masquerade as corrupt records or discard a partial pass.** An unreadable ref stays in the mailbox and is reported while messages already moved to history are returned. An unreadable intent is likewise reported and retained for retry while recovery continues through other intents and tasks. (PB-66)
+- **Unreadable records no longer report that they were absent.** An existing task journal refused with a non-`ENOENT` errno is `task-broken`, while `ENOENT` remains `task-not-found`. Unparseable artifact metadata returns `schema-invalid`; genuinely missing metadata remains `artifact-not-found`. (PB-146)
 - **A completed migration marker can no longer authorize deletion of a legacy store that later reappears at the same path.** New migrations use `migrating.json` only across the atomic switch and legacy cleanup, then remove it after cleanup succeeds; if that final removal was interrupted, the next open sweeps the mark while its former path is absent. The `migrated.json` files left by older releases are not resume tokens, so two stores beside one another are refused without changing either one. (PB-63)
 - **Claude late-start limit classification checks reset wording independently.** A refusal containing both `hit your ... limit` and `limit ... resets` is recorded as `subscription_exhausted`. (PB-148)
 - **A failed availability-cache write no longer hides a successful preflight.** The probed snapshot is returned with a warning naming the cache file, while explicit `clearExhausted` writes remain refusals. (PB-58)

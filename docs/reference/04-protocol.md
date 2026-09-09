@@ -42,7 +42,7 @@ The v1 record's own fields are `id`, `role`, `harness`, `mode`, `sessionRef`, `c
 
 ## Artifacts
 
-An artifact is attached to a send. There is no separate upload command. Blobs are content-addressed (`blobs/<sha256>`) and immutable inside one task. A digest mismatch on read is `artifact-integrity`.
+An artifact is attached to a send. There is no separate upload command. Blobs are content-addressed (`blobs/<sha256>`) and immutable inside one task. Missing metadata or a missing blob is `artifact-not-found`. Unparseable metadata and parsed metadata that violates the current schema are `schema-invalid` and are set aside in `broken/artifacts` when the move succeeds; metadata from a newer schema is `schema-version-unsupported` and stays in place. A blob whose digest or size differs from its metadata is `artifact-integrity`.
 
 ## Claim
 

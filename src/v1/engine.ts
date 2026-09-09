@@ -257,8 +257,8 @@ export function openEngine({
     home,
 
     createTask: (input) => createTask(home, input, now),
-    readTask: (task) => readTask(home, task, cli),
-    listTasks: () => listTasks(home, cli),
+    readTask: (task) => readTask(home, task, cli, faults),
+    listTasks: () => listTasks(home, cli, faults),
     taskExists: (task) => taskExists(home, task),
     closeTask: (task, patch = {}) => closeTask(home, task, now, patch.adapter, cli),
     patchTask: (task, patch) => withTaskLock(home, task, () => {

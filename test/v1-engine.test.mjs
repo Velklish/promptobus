@@ -1209,6 +1209,25 @@ test('artifact: a digest mismatch on read is a typed refusal', async (t) => {
   });
 });
 
+test('artifact: unparseable metadata is schema-invalid, not absent', () => {
+  const engine = open(sandbox());
+  const id = taskWith(engine);
+  const corrupt = '20260902T101000000-0008-bbbbbb';
+  const missing = '20260902T101000000-0009-cccccc';
+  const artifacts = path.join(engine.home, 'tasks', id, 'artifacts');
+  mkdirSync(artifacts, { recursive: true });
+  writeFileSync(path.join(artifacts, `${corrupt}.json`), '{not json');
+
+  const corruptError = refusal(() => engine.readArtifact(id, corrupt));
+  const missingError = refusal(() => engine.readArtifact(id, missing));
+  assert.deepEqual(
+    { corrupt: corruptError.code, missing: missingError.code },
+    { corrupt: 'schema-invalid', missing: 'artifact-not-found' },
+  );
+  assert.ok(!existsSync(path.join(artifacts, `${corrupt}.json`)));
+  assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'broken', 'artifacts', `${corrupt}.json`)));
+});
+
 test('artifact: broken metadata is isolated, the other task records are read', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
@@ -1340,6 +1359,50 @@ function journalFrom(engine, id, { version, caps = AHEAD_CAPS, patch = {}, on = 
   writeFileSync(file, JSON.stringify({ ...meta, participants, ...patch }, null, 2));
   return file;
 }
+
+test('bulk task listing preserves newer-version and damaged journal codes', () => {
+  const engine = open(sandbox(), { cli: '0.63.0' });
+  const ahead = taskWith(engine, 'ahead-t20260902-100010');
+  const damaged = taskWith(engine, 'damaged-t20260902-100011');
+  journalFrom(engine, ahead, { version: '0.64.0' });
+  writeFileSync(path.join(engine.home, 'tasks', damaged, 'task.json'), '{truncated journal');
+
+  const listed = engine.listTasks();
+  assert.deepEqual(listed.broken.map(({ id, code }) => ({ id, code })), [
+    { id: ahead, code: 'schema-version-unsupported' },
+    { id: damaged, code: 'task-broken' },
+  ]);
+});
+
+test('bulk task listing classifies a non-ENOENT journal read refusal as task-broken', () => {
+  const root = sandbox();
+  const seed = open(root, { recover: false });
+  const id = taskWith(seed, 'unreadable-t20260902-100012');
+  const journal = path.join(seed.home, 'tasks', id, 'task.json');
+  let errno = 'EACCES';
+  const engine = open(root, {
+    recover: false,
+    faults: (step, info) => {
+      if (step !== 'task-read' || info.task !== id) return;
+      throw Object.assign(new Error(`${errno}: injected task journal read refusal`), { code: errno });
+    },
+  });
+
+  assert.ok(existsSync(journal), 'the refused journal was not present on disk');
+  const listed = engine.listTasks();
+  assert.deepEqual(listed.broken.map(({ id: task, code }) => ({ task, code })), [
+    { task: id, code: 'task-broken' },
+  ]);
+  assert.match(listed.broken[0].note, /EACCES/);
+  const refused = refusal(() => engine.readTask(id));
+  assert.equal(refused.code, 'task-broken');
+  assert.equal(refused.context.errno, 'EACCES');
+
+  errno = 'ENOENT';
+  const vanished = refusal(() => engine.readTask(id));
+  assert.equal(vanished.code, 'task-not-found');
+  assert.equal(vanished.context.errno, 'ENOENT');
+});
 
 test('a record of a mechanism newer than the reader — the refusal calls for a new session, not to fix the journal', async (t) => {
   const engine = open(sandbox(), { cli: '0.63.0' });
