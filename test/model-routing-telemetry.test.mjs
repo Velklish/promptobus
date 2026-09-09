@@ -66,7 +66,7 @@ const CACHE = host.routingPaths().cacheFile;
 const FILE = telemetry.telemetryFileOf(host);
 
 /** A v2 availability snapshot at the cache path, stamped `agoMs` ago. */
-function seedCache({ agoMs = 0, usedPercent = 55 } = {}) {
+function seedCache({ agoMs = 0, usedPercent = 55, state = 'available', resetAt = null } = {}) {
   const at = new Date(Date.now() - agoMs).toISOString();
   mkdirSync(path.dirname(CACHE), { recursive: true });
   writeFileSync(CACHE, `${JSON.stringify({
@@ -74,12 +74,12 @@ function seedCache({ agoMs = 0, usedPercent = 55 } = {}) {
     takenAt: at,
     harnesses: {
       claude: {
-        state: 'available',
-        reason: null,
+        state,
+        reason: state === 'exhausted' ? 'subscription_exhausted' : null,
         message: 'authenticated',
         checkedAt: at,
         source: 'probe',
-        resetAt: null,
+        resetAt,
         windows: [
           { id: 'session', kind: 'session', lengthSec: 18000, usedPercent, resetAt: null, scope: null },
         ],
@@ -317,6 +317,33 @@ check(': the spawn readings survive a stale cache — they were recorded, not me
   stale.windows[0].usedPercentAtSpawn === 40 && stale.windows[1].usedPercentAtSpawn === 12,
   JSON.stringify(stale.windows.map((w) => w.usedPercentAtSpawn)));
 
+// Routing keeps an exhausted entry until its own reset — or forever when the
+// reset is unknown. Telemetry has a different question: whether the percentage
+// is fresh enough to subtract from the spawn reading. Both exhausted forms are
+// deliberately past the window TTL, so neither may supply an end reading.
+const futureReset = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+for (const [label, resetAt, taskId] of [
+  ['an exhausted entry with a future reset', futureReset, 'telemetriya-izraskhodovannyy-t20260906-100001'],
+  ['a sticky exhausted entry with no reset', null, 'telemetriya-lipko-izraskhodovannyy-t20260906-100002'],
+]) {
+  store.createTask(HOME2, { id: taskId, title: label, owner: null });
+  store.upsertParticipant(HOME2, taskId, store.participantRecord('worker:api', {
+    harness: 'claude',
+    mode: 'managed',
+    sessionRef: `sess-${taskId}`,
+    model: 'claude-opus',
+    started: T1,
+    routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
+  }));
+  seedCache({ agoMs: 2 * 60 * 60 * 1000, state: 'exhausted', resetAt });
+  await capture(async () => done(SB2, { task: taskId, snapshot: noSessions }));
+  const exhausted = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim())
+    .map((l) => JSON.parse(l)).at(-1);
+  check(`: ${label} past the TTL gives no end reading`,
+    exhausted.windows.length === 2 && exhausted.windows.every((w) => w.usedPercentAtEnd === null),
+    JSON.stringify(exhausted.windows));
+}
+
 // --- the one line `models` prints --------------------------------------------
 //
 // It goes past the decision stream on purpose. `--json` prints one document a
@@ -338,7 +365,7 @@ const said = await capture(async () => models(hostOf(SB3), {
   output: textOut,
 }));
 check(': `models` prints the record count and the file size, and nothing read out of the records',
-  /telemetry: 4 record\(s\), \d+ B \(/.test(said) && !/strategy|tuple|score/.test(said.split('\n').find((l) => l.includes('telemetry:')) ?? ''),
+  /telemetry: 6 record\(s\), \d+ B \(/.test(said) && !/strategy|tuple|score/.test(said.split('\n').find((l) => l.includes('telemetry:')) ?? ''),
   said.trim());
 check(': the line does not enter the decision the text form prints — the golden cannot move under it',
   !textOut.text.includes('telemetry:'), textOut.text.slice(-200));

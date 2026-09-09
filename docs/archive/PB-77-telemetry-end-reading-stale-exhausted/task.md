@@ -1,9 +1,9 @@
 # PB-77 · The telemetry end reading borrows entryLive, which holds an exhausted entry live until its reset, so a window delta can be measured against a days-old percentage the schema says must be null
 
-- **Order:** 250
 - **Scope:** [reference/03-cli](../../reference/03-cli.md) section Participant telemetry, lib/model-routing/telemetry.js (endReader), lib/model-routing/cache.js, schemas/model-routing/telemetry.schema.json, test/model-routing-telemetry.test.mjs
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

@@ -101,7 +101,7 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     },
     "windowDelta": {
-      "description": "One window of the account, read twice. `usedPercentAtSpawn` is what the decision recorded; `usedPercentAtEnd` is the current cache when its entry may still be used, and null when it may not — a delta measured against a stale percentage is not a delta.",
+      "description": "One window of the account, read twice. `usedPercentAtSpawn` is what the decision recorded; `usedPercentAtEnd` is the current cache when the window-bearing entry was checked within the window TTL, and null otherwise — including an exhausted entry retained for routing until its reset or indefinitely when sticky. A delta measured against a stale percentage is not a delta.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "kind", "scope", "usedPercentAtSpawn", "usedPercentAtEnd"],
