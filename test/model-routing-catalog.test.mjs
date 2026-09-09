@@ -106,6 +106,13 @@ test('the shipped catalog validates against its own schema', () => {
   assert.ok(CATALOG.tuples.length >= 1);
 });
 
+test('Fable 5.1 keeps its predecessor quality band as a hypothesis', () => {
+  const successor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-51-xhigh');
+  const predecessor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-xhigh');
+  assert.equal(successor.ratings.quality, predecessor.ratings.quality);
+  assert.ok(successor.evidence.hypothesis.includes('quality'));
+});
+
 test('every shipped tuple names a harness this CLI drives and an effort that driver knows', () => {
   // The catalog is data and the effort dictionaries are code. Nothing else
   // connects them, so a driver that renames a level, or a catalog written

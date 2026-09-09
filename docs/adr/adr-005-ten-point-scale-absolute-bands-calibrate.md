@@ -87,6 +87,8 @@ The catalog pass of 2026-09-06 fixes these anchors. They are revisited on every 
 
 Terminal-Bench 2.1 deliberately uses one numeric pair, 60 → 90, for every harness. The harness identifies the figure; it is not a separate judgement about the scale.
 
+Terminal-Bench 4.0 uses a 40 → 60 pair for Claude Code. The public [leaderboard](https://snorkel.ai/leaderboard/terminal-bench-4-0/) reports GLM-5.3 at 41.8 % ±3.2 (released 2026-08-14) at the floor side and Fable 5.1 at 57.9 % ±3.8 (released 2026-09-01) at the ceiling side; those rows support the rounded pair assessed 2026-09-09.
+
 | Rating | Source, version | Agent harness | Floor → 1 | Ceiling → 10 | Assessed |
 |---|---|---|---:|---:|---|
 | `quality` | SWE-bench Verified | the harness named by the source | 60 % | 96 % | 2026-09-06 |
@@ -98,8 +100,11 @@ Terminal-Bench 2.1 deliberately uses one numeric pair, 60 → 90, for every harn
 | `quality` | Terminal-Bench 2.1 | Terminus 2 | 60 % | 90 % | 2026-09-06 |
 | `quality` | Terminal-Bench 2.1 | mini-SWE-agent | 60 % | 90 % | 2026-09-06 |
 | `quality` | Terminal-Bench 2.1 | single-agent or not stated | 60 % | 90 % | 2026-09-06 |
+| `quality` | [Terminal-Bench 4.0](https://snorkel.ai/leaderboard/terminal-bench-4-0/) | Claude Code | 40 % | 60 % | 2026-09-09 |
 | `speed` | Artificial Analysis output speed | Artificial Analysis serving stack | 40 tokens/s | 310 tokens/s | 2026-09-06 |
 | `quotaCost` | blended public list price `(input + output) / 2` | vendor API | $2.50 / 1M tokens | $30.00 / 1M tokens | 2026-09-06 |
+
+The Terminal-Bench 4.0 pair bands models whose only published figure is a 4.0 one; under the [successor rule in the guide](../guides/model-routing.md), a successor is the next vendor version in the same model family and its predecessor is the previous version, while a figure from any different benchmark, version or agent harness than the source triple on which the predecessor's band rests is recorded in `evidence.text` with its computed band but cannot demote the corresponding effort rung when vendor-published head-to-heads put the successor ahead on every comparison; the hypothesis remains until the successor has a figure from the predecessor's source triple.
 
 For `quotaCost`, the arithmetic is applied in the price direction: the cheap anchor is band 1 and the dear anchor is band 10. Scoring still inverts that band. The floor is a round stable list-price anchor near the cheapest cited list price ($2.63 for GPT-5.4 Mini), not Gemini Flash's temporary $2.25 promotional blend. A promotion applies to that model's figure only while the cited promotion is in force; it does not move the anchor or force unrelated rows to re-band.
 
