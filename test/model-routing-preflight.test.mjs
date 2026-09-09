@@ -635,6 +635,48 @@ test('the projection is field-by-field: an undeclared field cannot reach the sna
   assert.deepEqual(Object.keys(projected.tier).sort(), ['name', 'source']);
 });
 
+test('writeEntries drops a harness name outside the snapshot property-name grammar', () => {
+  const host = sandboxHost();
+  const result = writeEntries(host, { Claude_Code: entry(), valid: entry() });
+  assert.deepEqual(result.dropped, ['Claude_Code']);
+  const document = JSON.parse(readFileSync(host.cacheFile, 'utf8'));
+  assert.equal(document.harnesses.Claude_Code, undefined, 'an invalid harness key reached the cache');
+  assert.equal(document.harnesses.valid.state, 'available');
+  assert.equal(validates(document), true, 'the written cache must validate against its schema');
+});
+
+test('writeEntries drops every invalid harness name without creating an empty cache', () => {
+  const host = sandboxHost();
+  const result = writeEntries(host, { Claude_Code: entry(), Cursor_Agent: entry() });
+  assert.equal(result.doc, null, 'a cache with no valid harnesses is not written');
+  assert.deepEqual(result.dropped, ['Claude_Code', 'Cursor_Agent']);
+  assert.equal(existsSync(host.cacheFile), false, 'dropping every key leaves no cache file');
+});
+
+test('preflight warns once when invalid harness names are dropped from the cache', async () => {
+  const host = sandboxHost();
+  const previousWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    const snapshot = await preflight({
+      host,
+      harnesses: ['Claude_Code', 'valid'],
+      adapterFor: adapterMap({ valid: availableStub() }),
+      budgetMs: 500,
+    });
+    assert.equal(snapshot.harnesses.valid.state, 'available');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /availability cache dropped invalid harness names: Claude_Code/);
+    assert.ok(warnings[0].includes(host.cacheFile), 'the warning names the cache file');
+    const stored = readSnapshot(host);
+    assert.equal(stored.harnesses.Claude_Code, undefined);
+    assert.equal(stored.harnesses.valid.state, 'available');
+  } finally {
+    console.warn = previousWarn;
+  }
+});
+
 // --- two commands writing at once --------------------------------------------
 
 test('a writer waits for a lock somebody else holds, and takes it back when that lock is litter', () => {

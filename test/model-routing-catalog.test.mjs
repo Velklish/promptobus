@@ -723,6 +723,7 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
   const telemetrySchema = readJson(path.join(SCHEMAS, 'telemetry.schema.json'));
 
   assert.ok(cacheRouting.TIER_NAME_RE, 'cache.js must export TIER_NAME_RE for schema parity');
+  assert.ok(cacheRouting.HARNESS_RE, 'cache.js must export HARNESS_RE for schema parity');
   assert.ok(validateRouting.WEIGHT_KEYS, 'validate.js must export WEIGHT_KEYS for schema parity');
   assert.ok(resolverRouting.EXCLUSION_CODES, 'resolver.js must export EXCLUSION_CODES for schema parity');
 
@@ -730,6 +731,9 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
   assert.deepEqual(telemetrySchema.$defs.windowDelta.properties.kind.enum, cacheRouting.WINDOW_KINDS);
   assert.deepEqual(snapshotSchema.$defs.tier.properties.source.enum, cacheRouting.TIER_SOURCES);
   assert.equal(snapshotSchema.$defs.tier.properties.name.pattern, cacheRouting.TIER_NAME_RE.source);
+  assert.equal(snapshotSchema.properties.harnesses.propertyNames.pattern, cacheRouting.HARNESS_RE.source);
+  assert.equal(overlaySchema.properties.account.propertyNames.pattern, cacheRouting.HARNESS_RE.source);
+  assert.deepEqual(Object.keys(overlaySchema.properties.account.patternProperties), [cacheRouting.HARNESS_RE.source]);
 
   assert.deepEqual(overlaySchema.properties.defaults.properties.strategy.enum, catalogRouting.STRATEGIES);
   assert.deepEqual(decisionSchema.properties.strategy.enum, catalogRouting.STRATEGIES);
