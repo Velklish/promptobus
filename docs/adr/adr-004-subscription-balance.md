@@ -130,10 +130,12 @@ eligible      true, or false with a note: no-pace | window-spent
 
 The pick, in order:
 
-1. Among **eligible** candidates, each harness is represented by its best tuple by the role's ordering; the harness's `effective` is that tuple's.
-2. The largest `effective` leads. Every harness within `balance.band` of the leader is tied with it, and inside the tied set the **`balanced` score** of each harness's representative decides, then ADR-003's own tie-break — confirmed availability, canonical priority, tuple id. Measuring the band from the single leader makes the tied set well defined whatever order the candidates arrived in, which is the determinism ADR-003 calls load-bearing.
+1. Among **eligible** candidates, each `(harness, pool)` group is represented by its best tuple by the role's ordering; a pool-less binding window is the one account-wide group, and the group's `effective` is that tuple's.
+2. The largest `effective` leads. Every `(harness, pool)` group within `balance.band` of the leader is tied with it, and inside the tied set the **`balanced` score** of each group's representative decides, then ADR-003's own tie-break — confirmed availability, canonical priority, tuple id. Measuring the band from the single leader makes the tied set well defined whatever order the candidates arrived in, which is the determinism ADR-003 calls load-bearing.
 3. The role rules and the tie-break run as ADR-003 states them.
 4. **No eligible candidate — the pick is the best `balanced` score**, with the warning `balance-fallback`: "no harness could be paced; this pick was scored, not balanced". It is a fallback rather than a refusal because a person asked for work to start, not for a lecture about their windows, and `unknown` has been a penalty and never a block since ADR-003's fourth decision row.
+
+**Amendment, 2026-09-09 (PB-43).** Steps 1–2 now read `(harness, pool)` group where the 2026-09-06 decision read “harness”; every eligible pool contributes its best tuple by the role's ordering. The band, tie-break and no-eligible fallback are unchanged.
 
 `spendPenalty` is C2: the discount is in the units of the underspend, and it is applied to the tuple that would actually be picked — which is also the answer to an ambiguity in decision 2, since the binding window is defined per tuple and a harness therefore has no underspend until a tuple names one.
 

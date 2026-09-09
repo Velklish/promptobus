@@ -158,7 +158,7 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | warning | `unknown-remaining` | At least one harness could not report its remaining limit |
 | warning | `reviewer-floor-not-met` | No reviewer candidate reached the quality floor; the best remaining one was taken |
 | warning | `worker-floor-not-met` | The same for the worker's floor, which [ADR-004](../adr/adr-004-subscription-balance.md) added at 3 |
-| warning | `near-limit` | A harness whose binding window is at or past `nearLimit.usedPercent` (80), or whose underspend is below `nearLimit.underspend` (−15 points). The line names the window, its reset, which of the two tests tripped, and the strategy to propose — it never switches one |
+| warning | `near-limit` | The best-scored representative of a harness whose binding window is at or past `nearLimit.usedPercent` (80), or whose underspend is below `nearLimit.underspend` (−15 points). With several pool representatives, other pools are not checked and the warning remains one per harness. The line names the window, its reset, which of the two tests tripped, and the strategy to propose — it never switches one |
 | warning | `balance-fallback` | `--strategy balance` and no harness could be paced — every candidate's binding window is unknown, spent or already reset. The pick was scored by the `balanced` weights, not balanced |
 | warning | `snapshot-stale` | The decision was made on cache entries past their TTL |
 | warning | `probe-incomplete` | An adapter missed the preflight budget and its harness is `unknown` |
@@ -609,7 +609,7 @@ It is a **choice layer above the scoring, not a filter**. Filtering steps 1–6 
 | `spendPenalty` | `balance.spendUnit × (quotaCost − 1) / 9`, in the same points |
 | `effective` | `underspend − spendPenalty` |
 | `eligible` | whether this candidate takes part in the comparison, with a `note` when it does not: `no-pace` or `window-spent`. Every other field is `null` when it could not be computed, in both cases |
-| `representative` | present and `true` on the one candidate that represents its harness — the tuple that would actually be picked there. Named in the document so the text output marks the same row the pick was made on rather than re-deriving the rule |
+| `representative` | present and `true` on the one candidate that represents its `(harness, pool)` group — the tuple that would actually be picked in that pool. A pool-less binding window is the account-wide group. Named in the document so the text output marks the same row the pick was made on rather than re-deriving the rule |
 
 **One unit, and it is stated once.** The two inputs are shares of 0…1; everything compared — `underspend`, `spendPenalty`, `effective`, `balance.band`, `balance.spendUnit` — is in percentage points of the window, which is the unit `usedPercent` is already in. The `× 100` is the whole conversion and both shares are published beside the result, so a reader can recompute it. Mixing the two is not a rounding difference but a degenerate strategy: read as shares, every harness would fall inside one band and `balance` would quietly be `balanced`.
 
@@ -617,16 +617,16 @@ A window whose `resetAt` is absent or is not in the future **is not paced** — 
 
 **The pick**, in order:
 
-1. among **eligible** candidates, each harness is represented by its best tuple by the role's ordering that meets the role's quality floor — the tuple that would actually be picked on it, so the pace compared is the pace of the tuple the comparison is about;
-2. the largest `effective` leads, and every harness within `balance.band` of it is tied with it. The band is measured from the leader's **number**, which is what makes the tied set well defined whatever order the candidates arrived in;
-3. inside the tied set the `balanced` score of each representative decides, then ADR-003's own tie-break;
+1. among **eligible** candidates, each `(harness, pool)` group is represented by its best tuple by the role's ordering that meets the role's quality floor — the tuple that would actually be picked in that pool, so the pace compared is the pace of the tuple the comparison is about. A pool-less binding window is the account-wide group;
+2. the largest `effective` leads, and every `(harness, pool)` group within `balance.band` of it is tied with it. The band is measured from the leader's **number**, which is what makes the tied set well defined whatever order the candidates arrived in;
+3. inside the tied set the `balanced` score of each group's representative decides, then ADR-003's own tie-break;
 4. **no eligible candidate — the pick is the best `balanced` score**, with the `balance-fallback` warning. A fallback rather than a refusal, because a person asked for work to start and not for a lecture about their windows.
 
 Two overlay keys carry the numbers and both default to **5** — five percentage points of a window. `balance.band` says "these two accounts are about equally spent, so take the better model"; its job is not to model noise, but the noise floor is about a point, so a band below that would do nothing. `balance.spendUnit` is equal to it by default, so a `quotaCost` of 5 gives up exactly one band against a `quotaCost` of 1: the heaviest tuple has to be a whole band ahead on pace to win.
 
 **`remaining` and pace are not the same fact counted twice.** `remaining` is a level — how much of the window is gone — and it ranks tuples inside a harness. Pace is a rate — how much is gone against how much of the window has elapsed. A harness at ninety per cent used with ninety-five per cent of its window elapsed is high on level and *ahead* on pace, and the two components say so independently.
 
-`models` prints the pace table under the candidates, one row per harness with the representative the document names, the binding window, both shares, the underspend, the penalty and the effective number; `--json` carries the same numbers on every scored candidate. Neither appears under the other four strategies: a decision carrying a number no rule of its own strategy used would invite a reader to believe one did. **Nothing in this package pins the reviewer to a harness** — a reviewer is routed by pace like a worker, with the floor of 5 and the diversity bonus above it.
+`models` prints the pace table under the candidates, one row per `(harness, pool)` representative the document names, the pool when one is named, the binding window, both shares, the underspend, the penalty and the effective number. A harness with separate pool windows therefore has one pace row per pool; an account-wide window has one pool-less row. `--json` carries the same numbers on every scored candidate. Neither appears under the other four strategies: a decision carrying a number no rule of its own strategy used would invite a reader to believe one did. **Nothing in this package pins the reviewer to a harness** — a reviewer is routed by pace like a worker, with the floor of 5 and the diversity bonus above it.
 
 **The tie-break** is effective score, then confirmed availability, then canonical priority, then the tuple id. It is total, because two tuples cannot share an id — which is why a duplicate id is an error in `models validate` and not a warning.
 

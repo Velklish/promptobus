@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cursor tmux discovery matches Cursor binary install locations.** The driver probes PATH plus the known install directories before refusing a persist session. (PB-85)
 - **A classified hard-link refusal no longer blocks every store command during open-time recovery.** Recovery retains that intent for retry and continues through neighbouring work; a message whose intent and canon disappeared before materialization is reported as permanently lost instead. The bus warns about either result while `status`, `history`, and `prune` remain usable; unrelated exceptions still escape. (PB-65)
 - **Cursor teardown prefers the declared binary and caller environment.** Stop resolution now prefers `cursor-agent` over a bare `agent` and uses the stop caller's environment for both lookup and execution. (PB-93)
+- **Balance compares every eligible pool of a harness.** Each pool contributes its best eligible tuple to the pace comparison, and `models` prints one pace row per pool so a roomier Cursor pool is not hidden by a higher-scoring one. (PB-43)
 
 ## [0.5.1] - 2026-09-09
 

@@ -867,6 +867,34 @@ test('balance picks a different harness from balanced, on one snapshot', () => {
   assert.equal(byId(balanced, 'claude-fable').excluded, null);
 });
 
+test('balance compares each eligible Cursor pool, not only its best-scored tuple', () => {
+  // Leave only Cursor paced so the choice cannot be hidden by another harness.
+  // The api tuple scores higher under balanced, but its pool is further spent;
+  // the lower-scored Auto tuple has more room and must enter the pace comparison.
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  delete snapshot.harnesses.claude.windows;
+  delete snapshot.harnesses.codex.windows;
+  const catalog = clone(BALANCE_CATALOG);
+  catalog.tuples.find((tuple) => tuple.id === 'cursor-api').ratings = {
+    quality: 10,
+    speed: 10,
+    quotaCost: 1,
+  };
+  const decision = paced({ strategy: 'balance', snapshot, catalog });
+
+  assert.equal(byId(decision, 'cursor-api').score.total > byId(decision, 'cursor-composer').score.total, true,
+    'the api tuple must be the best-scored Cursor row for this reproducer');
+  assert.equal(paceOf(decision, 'cursor-api').eligible, true);
+  assert.equal(paceOf(decision, 'cursor-composer').eligible, true);
+  assert.deepEqual(
+    decision.candidates.filter((c) => c.pace?.representative).map((c) => c.tupleId).sort(),
+    ['cursor-api', 'cursor-composer'],
+    'each eligible Cursor pool must contribute its own representative',
+  );
+  assert.equal(decision.chosen.tupleId, 'cursor-composer',
+    'the roomier Auto pool must win even though the api tuple scores higher');
+});
+
 test('the reviewer is inside the balance, and nothing pins it to one harness', () => {
   // ADR-004 decision 4. The reviewer is routed by pace like a worker, with the
   // floor of 5 above it, and the harness it lands on is whichever is furthest
@@ -1052,25 +1080,41 @@ test('a hidden row is carried and never chosen, and is not a runtime row either'
     'a hidden UNRATED row is not offered either, so it is not a runtime row a person could pick');
 });
 
-test('the pace table prints one row per harness, with the numbers the document carries', () => {
+test('the pace table prints one row per harness/pool representative, with the numbers the document carries', () => {
   const decision = paced({ strategy: 'balance' });
   const table = render(decision).split('\npace — ')[1].split('\n\n')[0].split('\n');
   assert.match(table[0], /percentage points of each binding window · band 5\.0 · spend unit 5\.0/);
   const rows = table.slice(1).filter(Boolean);
-  assert.equal(rows.length, 3, `one row per harness, not per candidate:\n${rows.join('\n')}`);
+  assert.equal(rows.length, 4, `one row per harness/pool representative, not per candidate:\n${rows.join('\n')}`);
   assert.match(rows.find((r) => r.includes('codex')),
     /\* codex .*codex-sol · secondary weekly · 46\.0% used · 62\.5% elapsed · underspend \+16\.50 · penalty -3\.89 · effective \+12\.61/);
   // Two decimals, because one would print an underspend of −0.02 as "-0.0".
   assert.match(rows.find((r) => r.includes('claude')), /effective -0\.30/);
+  assert.match(rows.find((r) => r.includes('pool auto')), /cursor-composer · cycle-auto monthly/);
+  assert.match(rows.find((r) => r.includes('pool api')), /cursor-api · cycle-api monthly/);
 
   // And no table at all under a strategy whose candidates carry no pace.
   assert.equal(render(paced({ strategy: 'balanced' })).includes('pace — '), false);
+
+  // A tuple outside the only available Cursor pool has no window. It must not
+  // add a contradictory no-pace line beside the pool that can be paced.
+  const partial = clone(BALANCE_SNAPSHOT);
+  partial.harnesses.cursor.windows = partial.harnesses.cursor.windows
+    .filter((window) => window.id === 'cycle-auto');
+  const partialTable = render(paced({ strategy: 'balance', snapshot: partial }))
+    .split('\npace — ')[1].split('\n\n')[0].split('\n');
+  const partialRows = partialTable.slice(1).filter(Boolean);
+  const cursorRows = partialRows.filter((row) => row.includes('cursor'));
+  assert.equal(cursorRows.length, 1, partialRows.join('\n'));
+  assert.match(cursorRows[0], /pool auto · cursor-composer · cycle-auto monthly/);
+  assert.equal(cursorRows.some((row) => row.includes('no window that can be paced')), false);
 });
 
 test('a harness that cannot be paced prints its note rather than empty columns', () => {
   const text = render(paced({ strategy: 'balance', snapshot: windowless('codex') }));
-  const row = text.split('\n').find((l) => l.includes('codex') && l.includes('no-pace'));
-  assert.ok(row, text);
+  const rows = text.split('\n').filter((l) => l.includes('codex') && l.includes('no-pace'));
+  assert.equal(rows.length, 1, text);
+  const row = rows[0];
   assert.match(row, /no-pace: no window that can be paced/);
 });
 
