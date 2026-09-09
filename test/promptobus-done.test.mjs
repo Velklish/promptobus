@@ -8,10 +8,10 @@
 // `claude stop`. The suite does not touch the live binary.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture } from './console.mjs';
+import { capture, captureSplit } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-done-');
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -264,7 +264,7 @@ check(': with the flag, the stop walk does not start at all',
 // its own work calls the same cleanup at the default threshold — closing a task is
 // exactly the moment when a person tidies up and sees the list. The home here is its
 // own: cleanup counters must not count the tasks of the checks above.
-const { PRUNE_DEFAULT_DAYS } = await import(path.join(here, '..', 'lib', 'prune.js'));
+const { PRUNE_DEFAULT_DAYS, sweepJournals } = await import(path.join(here, '..', 'lib', 'prune.js'));
 const SWEEP = path.join(SB, 'sweep-ws');
 const sweepHome = path.join(SWEEP, '.promptobus');
 mkdirSync(sweepHome, { recursive: true });
@@ -273,19 +273,19 @@ writeHostConfig(SWEEP);
 // The date is set directly in the journal: `closeTask` writes "now", and the subject
 // under test is age.
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
-const closedAgo = (id, title, ago) => {
-  store.createTask(sweepHome, { id, title, owner: null });
-  store.closeTask(sweepHome, id);
-  store.patchTask(sweepHome, id, { adapter: { closed: daysAgo(ago) } });
+const closedAgo = (home, id, title, ago) => {
+  store.createTask(home, { id, title, owner: null });
+  store.closeTask(home, id);
+  store.patchTask(home, id, { adapter: { closed: daysAgo(ago) } });
   return id;
 };
-const SWEEP_OLD = closedAgo('sweep-staraya-t20260801-010000', 'давно закрытый заход', PRUNE_DEFAULT_DAYS + 1);
-const SWEEP_YOUNG = closedAgo('sweep-svezhaya-t20260901-020000', 'вчерашний заход', 1);
+const SWEEP_OLD = closedAgo(sweepHome, 'sweep-staraya-t20260801-010000', 'давно закрытый заход', PRUNE_DEFAULT_DAYS + 1);
+const SWEEP_YOUNG = closedAgo(sweepHome, 'sweep-svezhaya-t20260901-020000', 'вчерашний заход', 1);
 // Closed long ago, but its worktree still sits on disk: the journal is the only place
 // where it's recorded where this work lives. The participant has no session at all —
 // the worktree walk will leave the directory with the words "unknown" and will not make
 // an external poll.
-const SWEEP_HELD = closedAgo('sweep-zanyataya-t20260801-030000', 'заход с оставленным каталогом', PRUNE_DEFAULT_DAYS + 1);
+const SWEEP_HELD = closedAgo(sweepHome, 'sweep-zanyataya-t20260801-030000', 'заход с оставленным каталогом', PRUNE_DEFAULT_DAYS + 1);
 const heldTree = path.join(SB, 'sweep-repo', '.claude', 'worktrees', 'promptobus-ostavshiysya');
 mkdirSync(heldTree, { recursive: true });
 store.upsertParticipant(sweepHome, SWEEP_HELD, store.participantRecord('worker:ostavshiysya', { repoAbs: path.join(SB, 'sweep-repo'), worktree: heldTree }));
@@ -317,6 +317,48 @@ check(': a task just closed remains — cleanup runs by threshold, not by the fa
 check(': journal cleanup runs after the worktree walk, not before it',
   swept.includes('left in place') && swept.indexOf('left in place') < swept.indexOf('journals removed'),
   swept.trim());
+
+// A portable deletion refusal comes through the remove seam: permissions and busy-file
+// behavior differ by platform, while the branch must report only directories actually gone.
+const PARTIAL_HOME = path.join(SB, 'partial-prune', '.promptobus');
+mkdirSync(PARTIAL_HOME, { recursive: true });
+const PARTIAL_GONE = closedAgo(PARTIAL_HOME, 'prune-gone-t20260909-180500', 'removable journal', 2);
+const PARTIAL_LEFT = closedAgo(PARTIAL_HOME, 'prune-left-t20260909-180501', 'refused journal', 2);
+const partial = captureSplit(() => sweepJournals(PARTIAL_HOME, 0, {
+  remove: (dir, options) => {
+    if (dir === store.taskDir(PARTIAL_HOME, PARTIAL_LEFT)) throw new Error('stand-in deletion refusal');
+    rmSync(dir, options);
+  },
+}));
+check(': one deletion refusal counts only the journal that came off',
+  partial.value.count === 1 && partial.value.failed === 1
+  && !existsSync(store.taskDir(PARTIAL_HOME, PARTIAL_GONE))
+  && existsSync(store.taskDir(PARTIAL_HOME, PARTIAL_LEFT)),
+  JSON.stringify(partial.value));
+check(': a partial refusal warns for that task and still prints the green removal total',
+  partial.err.includes(`task ${PARTIAL_LEFT} not removed: stand-in deletion refusal`)
+  && /journals removed: tasks 1/.test(partial.out)
+  && !/journals not removed/.test(partial.err),
+  `${partial.out.trim()} · ${partial.err.trim()}`);
+
+const ALL_FAILED_HOME = path.join(SB, 'all-failed-prune', '.promptobus');
+mkdirSync(ALL_FAILED_HOME, { recursive: true });
+const ALL_FAILED = [
+  closedAgo(ALL_FAILED_HOME, 'prune-left-t20260909-180502', 'first refused journal', 2),
+  closedAgo(ALL_FAILED_HOME, 'prune-left-t20260909-180503', 'second refused journal', 2),
+];
+const allFailed = captureSplit(() => sweepJournals(ALL_FAILED_HOME, 0, {
+  remove: () => { throw new Error('stand-in deletion refusal'); },
+}));
+check(': when every deletion refuses, the result counts no journal as removed',
+  allFailed.value.count === 0 && allFailed.value.failed === 2 && allFailed.value.gone === 0
+  && ALL_FAILED.every((id) => existsSync(store.taskDir(ALL_FAILED_HOME, id))),
+  JSON.stringify(allFailed.value));
+check(': an all-refused sweep prints the yellow total and claims no removal',
+  /journals not removed: none of 2 tasks came off \(refusals 2\)/.test(allFailed.err)
+  && ALL_FAILED.every((id) => allFailed.err.includes(`task ${id} not removed: stand-in deletion refusal`))
+  && !/journals removed:/.test(allFailed.out),
+  `${allFailed.out.trim()} · ${allFailed.err.trim()}`);
 
 // A home with no candidates: `done` stays completely silent about cleanup. A line about
 // nothing done on every close would be noise — the list and count stay with the manual
