@@ -1,9 +1,9 @@
 # PB-99 · `inspect` calls a Codex participant alive and rising for as long as the record sits at `state: starting` with no thread id, an error on the record and an hour-old `startedAt` change nothing, so a lift killed mid-preamble leaves a dead participant shown as working with no stall route
 
-- **Order:** 130
 - **Scope:** `lib/driver-codex.js` (`inspect`), `lib/codex-session.js` (`waitReady`, `readyMs`), `lib/status.js`, `src/supervisor.ts`, [reference/03-cli.md](../../reference/03-cli.md) section The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** PB-49
+- **Taken:** 2026-09-08
 
 ## Context
 
