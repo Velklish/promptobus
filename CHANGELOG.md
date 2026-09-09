@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Routing policy overlays no longer move policy-block prototypes through `__proto__`.** The overlay merge skips the JSON key in weight and flat policy blocks, keeping routed policy fields own data and matching the existing guards for defaults and account blocks. (PB-155)
+- **Cursor wake buffers are private and cleaned up on every delivery exit.** Wake text is written with mode `0600`, regardless of umask, and the temporary `.buf` file is removed in `finally`, including when `tmux load-buffer` refuses the file. (PB-151)
 
 ## [0.5.1] - 2026-09-09
 

@@ -22,7 +22,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   CURSOR_HOME_VAR, HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
@@ -590,6 +590,88 @@ check(': an orphan lock is taken over — delivery goes on and then hits the ses
   staleLock.ok === false && !/already writing/.test(String(staleLock.error)),
   `${JSON.stringify(staleLock)} · dead pid ${dead.pid}`);
 dropSession(lockRef, process.env);
+
+// PB-151: the wake text is a secret while it crosses the tmux boundary. The probe
+// records the mode during `load-buffer`, because the production function removes the
+// file before it returns on a successful delivery. Both umasks matter: an explicit
+// private mode must not depend on the process default.
+const pb151TmuxDir = path.join(SB, 'pb151-tmux');
+const pb151ModeFile = path.join(SB, 'pb151-mode.txt');
+const pb151CaptureFile = path.join(SB, 'pb151-captures.txt');
+stubCommand(pb151TmuxDir, 'tmux', `
+import { statSync, readFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const failAt = process.env.PROMPTOBUS_PB151_FAIL_AT ?? '';
+if (args.includes('capture-pane')) {
+  let count = 0;
+  try { count = Number(readFileSync(process.env.PROMPTOBUS_PB151_CAPTURE_FILE, 'utf8')); } catch {}
+  writeFileSync(process.env.PROMPTOBUS_PB151_CAPTURE_FILE, String(count + 1));
+  process.stdout.write(failAt === 'wait-input' && count > 0 ? '  → stuck\\n' : '  → Add a follow-up\\n');
+}
+if (args.includes('load-buffer')) {
+  const file = args.at(-1);
+  const mode = statSync(file).mode & 0o777;
+  writeFileSync(process.env.PROMPTOBUS_PB151_MODE_FILE, String(mode));
+  if (failAt === 'load-buffer') process.exitCode = 1;
+}
+if (args.includes('paste-buffer') && failAt === 'paste-buffer') process.exitCode = 1;
+if (args.includes('send-keys') && failAt === 'send-keys') process.exitCode = 1;
+`);
+const pb151BufferFile = (ref) => path.join(stateHome, 'sessions', `${sessionKey(ref)}.buf`);
+const pb151ObservedMode = () => {
+  try { return Number(readFileSync(pb151ModeFile, 'utf8')); } catch { return null; }
+};
+const pb151Env = (failAt = '') => ({
+  ...process.env,
+  PATH: [pb151TmuxDir, process.env.PATH].join(path.delimiter),
+  PROMPTOBUS_PB151_MODE_FILE: pb151ModeFile,
+  PROMPTOBUS_PB151_CAPTURE_FILE: pb151CaptureFile,
+  PROMPTOBUS_PB151_FAIL_AT: failAt,
+});
+const originalUmask = process.umask();
+const pb151Modes = [];
+try {
+  for (const [label, umask] of [['restrictive umask', 0o077], ['permissive umask', 0o000]]) {
+    process.umask(umask);
+    const ref = `Worker: pb151-${label}`;
+    const record = { ref, sessionName: `pb151-${label}`, tmuxServer: 'pb151' };
+    rmSync(pb151ModeFile, { force: true });
+    const delivered = await injectText(record, 'private wake text', { env: pb151Env(), pauseMs: 0 });
+    pb151Modes.push({ label, delivered, mode: pb151ObservedMode(), gone: !existsSync(pb151BufferFile(ref)) });
+  }
+} finally {
+  process.umask(originalUmask);
+}
+check('PB-151: wake buffer is 0600 under restrictive and permissive umasks, then removed',
+  pb151Modes.length === 2 && pb151Modes.every((entry) => entry.delivered.ok && entry.mode === 0o600 && entry.gone),
+  JSON.stringify(pb151Modes));
+
+const pb151PreexistingRef = 'Worker: pb151-pre-existing';
+const pb151PreexistingBuffer = pb151BufferFile(pb151PreexistingRef);
+writeFileSync(pb151PreexistingBuffer, 'stale wake text');
+chmodSync(pb151PreexistingBuffer, 0o644);
+rmSync(pb151ModeFile, { force: true });
+const pb151PreexistingDelivery = await injectText(
+  { ref: pb151PreexistingRef, sessionName: 'pb151-pre-existing', tmuxServer: 'pb151' },
+  'private wake text',
+  { env: pb151Env(), pauseMs: 0 },
+);
+check('PB-151: a pre-existing wake buffer is reset to 0600 before load-buffer',
+  pb151PreexistingDelivery.ok && pb151ObservedMode() === 0o600 && !existsSync(pb151PreexistingBuffer),
+  JSON.stringify({ delivery: pb151PreexistingDelivery, mode: pb151ObservedMode(), gone: !existsSync(pb151PreexistingBuffer) }));
+
+const pb151Failures = [];
+for (const failAt of ['load-buffer', 'paste-buffer', 'send-keys', 'wait-input']) {
+  const ref = `Worker: pb151-failure-${failAt}`;
+  const record = { ref, sessionName: `pb151-failure-${failAt}`, tmuxServer: 'pb151' };
+  rmSync(pb151CaptureFile, { force: true });
+  rmSync(pb151ModeFile, { force: true });
+  const outcome = await injectText(record, 'private wake text', { env: pb151Env(failAt), pauseMs: 0 });
+  pb151Failures.push({ failAt, outcome, gone: !existsSync(pb151BufferFile(ref)) });
+}
+check('PB-151: wake buffer is removed on every post-creation delivery exit',
+  pb151Failures.every((entry) => entry.outcome.ok === false && entry.gone),
+  JSON.stringify(pb151Failures));
 
 // --- live loop on stub binaries -----------------------------------------------------
 
