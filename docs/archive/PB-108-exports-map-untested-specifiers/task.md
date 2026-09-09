@@ -1,9 +1,9 @@
 # PB-108 · No test resolves the package's declared entry points via their npm specifiers — the exports map is asserted for key-presence only, so a broken mapping ships green
 
-- **Order:** 560
 - **Scope:** [01-overview](../../reference/01-overview.md), `test/promptobus-package.test.mjs`, `package.json`, `lib/host.js`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-82
+- **Taken:** 2026-09-10
 
 ## Context
 

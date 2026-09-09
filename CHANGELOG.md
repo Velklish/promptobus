@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **The package test resolves every public exports-map specifier from an installed tarball, including host, hooks, driver, CLI and a protocol schema.** (PB-108)
 - **Live-run sweeps now age-filter mixed sandboxes, cover Codex and E2E prefixes, and report refused cleanup entries.** (PB-114)
 - **The test runner sweeps stale socket directories and preserves live neighbouring runs through owner and listener liveness checks.** (PB-144)
 

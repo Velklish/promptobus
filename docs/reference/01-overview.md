@@ -17,6 +17,8 @@ That number is written out by hand, and the suite compares it to `package.json` 
 | `lib/cli.js` → `./cli` | Command parser |
 | `schemas/v1/*.json` → `./schemas/*` | Task, participant, message, artifact schemas |
 
+The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass.
+
 The `.` entry point exports `Engine` and its public input and result types, including
 `SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.
 

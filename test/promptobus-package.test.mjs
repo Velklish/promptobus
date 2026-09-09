@@ -426,6 +426,66 @@ check('installed tree has no package source or tests',
   existsSync(installedPkg) && !existsSync(path.join(installedPkg, 'src'))
   && !existsSync(path.join(installedPkg, 'test')), installedPkg);
 
+const exportedSpecifiers = [
+  'promptobus',
+  'promptobus/driver',
+  'promptobus/host',
+  'promptobus/hooks',
+  'promptobus/cli',
+  'promptobus/schemas/v1/task.schema.json',
+];
+const specifierProbe = installed.status === 0
+  ? spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import { readFile } from 'node:fs/promises';
+
+    const specifiers = ${JSON.stringify(exportedSpecifiers)};
+    const results = [];
+    for (const specifier of specifiers) {
+      try {
+        const resolved = import.meta.resolve(specifier);
+        if (specifier.endsWith('.json')) {
+          JSON.parse(await readFile(new URL(resolved), 'utf8'));
+        } else {
+          const module = await import(specifier);
+          if (specifier === 'promptobus'
+            && (module.PACKAGE_NAME !== 'promptobus' || module.PROTOCOL_VERSION !== 1)) {
+            throw new Error('root exports do not identify promptobus protocol 1');
+          }
+          if (specifier === 'promptobus/driver' && typeof module.createRegistry !== 'function') {
+            throw new Error('driver factory createRegistry is missing');
+          }
+          if (specifier === 'promptobus/host' && typeof module.isPromptobusHost !== 'function') {
+            throw new Error('host export isPromptobusHost is missing');
+          }
+          if (specifier === 'promptobus/hooks' && typeof module.planPromptobusHooks !== 'function') {
+            throw new Error('hook planner planPromptobusHooks is missing');
+          }
+        }
+        results.push({ specifier, ok: true });
+      } catch (error) {
+        results.push({
+          specifier,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    process.stdout.write(JSON.stringify(results));
+  `], { cwd: target, encoding: 'utf8', env })
+  : { status: 1, stdout: '', stderr: 'tarball was not installed' };
+let resolvedSpecifiers = [];
+try {
+  resolvedSpecifiers = JSON.parse(specifierProbe.stdout);
+} catch {
+  // The check below names the child process output when it could not return JSON.
+}
+for (const specifier of exportedSpecifiers) {
+  const result = resolvedSpecifiers.find((entry) => entry.specifier === specifier);
+  check(`installed package specifier ${specifier} resolves through exports`,
+    specifierProbe.status === 0 && result?.ok === true,
+    result?.error || why(specifierProbe));
+}
+
 const probe = existsSync(entry)
   ? spawnSync(process.execPath, ['--input-type=module', '-e',
     `const m = await import(${JSON.stringify(pathToFileURL(entry).href)});`
