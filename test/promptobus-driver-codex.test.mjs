@@ -15,7 +15,7 @@ import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, FIRST_DELAY_VAR, HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, ELICIT_VAR, FIRST_DELAY_VAR, HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
@@ -29,7 +29,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs,
-  TURN_STARTED_TIMEOUT_MS,
+  TURN_STARTED_TIMEOUT_MS, holderLogFile,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
@@ -287,6 +287,7 @@ const env = {
   [CODEX_HOME_VAR]: HARNESS,
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
+const elicitEnv = { ...env, [ELICIT_VAR]: '1' };
 store.createTask(home, { id: TASK, title: 'проба driver’а Codex', owner: ORCH_SESSION });
 
 const bare = path.join(SB, 'bare-ws');
@@ -389,14 +390,16 @@ check('step 4: the queued wake ran only after the busy turn ended, without turn/
   `${JSON.stringify(queuedSent)} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
 const wt = wp?.metadata?.worktree ?? ws;
-const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex'], { cwd: ws, env });
+const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex'], { cwd: ws, env: elicitEnv });
 check('step 5: promptobus review --harness codex lifted the reviewer',
   reviewed.status === 0 && /reviewer reviewer:cdx started/.test(reviewed.out), reviewed.out.slice(-600));
 
 const reviewSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
-  .find((m) => String(m.body ?? '').includes(REVIEW_MARK)) ?? null, { timeoutMs: 25000 });
+  .find((m) => m.sender === store.addrDir(REVIEWER) && m.type === 'result'
+    && String(m.body ?? '').includes(REVIEW_MARK)) ?? null, { timeoutMs: 25000 });
 check('step 5: the reviewer report reached the orchestrator',
-  !!reviewSent, `${JSON.stringify(reviewSent)} · ${diagnoseTrace(HARNESS, REVIEWER)}`);
+  !!reviewSent && reviewSent.sender === store.addrDir(REVIEWER) && reviewSent.type === 'result',
+  `${JSON.stringify(reviewSent)} · ${diagnoseTrace(HARNESS, REVIEWER)}`);
 
 check('step 5: the read-only reviewer did not write a file — there is no machine sign of refusal, we check the disk',
   !existsSync(path.join(wt, FORBIDDEN)),
@@ -405,6 +408,14 @@ check('step 5: the read-only reviewer did not write a file — there is no machi
 const reviewDenied = readTrace(HARNESS, REVIEWER).some((e) => e.kind === 'write-denied');
 check('step 5: the stand refused the reviewer a write',
   reviewDenied, diagnoseTrace(HARNESS, REVIEWER));
+const revPart = store.participantOf(store.readTask(home, TASK), REVIEWER);
+let revElicitLog = '';
+try { revElicitLog = readFileSync(holderLogFile(revPart?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+check(': a reviewer elicitation is declined and the report still arrives',
+  /approval deny mcpServer\/elicitation\/request/.test(revElicitLog)
+    && /server=probe-mcp/.test(revElicitLog) && /mode=form/.test(revElicitLog)
+    && !revElicitLog.includes('SECRET-PROMPT-DO-NOT-LOG'),
+  revElicitLog.slice(-500));
 
 const stopped = await codexDriver.stop(ref);
 check('step 6: stop kills the holder and drops the record',
@@ -434,6 +445,35 @@ const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
 if (apr?.sessionRef) await codexDriver.stop(apr.sessionRef);
 const rev = store.participantOf(store.readTask(home, TASK), REVIEWER);
 if (rev?.sessionRef) await codexDriver.stop(rev.sessionRef);
+
+planParticipant(HARNESS, 'worker:elicit', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-ELICIT-W' } }] }],
+});
+const elicitW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'elicit', '--harness', 'codex'], { cwd: ws, env: elicitEnv });
+const elicitWp = store.participantOf(store.readTask(home, TASK), 'worker:elicit');
+const elicitWsent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  .find((m) => m.sender === store.addrDir('worker:elicit') && m.type === 'status'
+    && String(m.body ?? '').includes('CODEX-ELICIT-W')) ?? null, { timeoutMs: 20000 });
+const elicitWdone = await waitFor(() => {
+  const r = readSession(elicitWp?.sessionRef ?? '', env);
+  return r && r.busy === false && (r.turns ?? 0) >= 1 ? r : null;
+}, { timeoutMs: 20000 });
+let elicitWlog = '';
+try { elicitWlog = readFileSync(holderLogFile(elicitWp?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+let elicitWthread = null;
+try {
+  elicitWthread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${elicitWdone?.threadId}.json`), 'utf8'));
+} catch { /* none */ }
+check(': a worker elicitation is declined and the turn still completes',
+  elicitW.status === 0 && !!elicitWdone
+    && elicitWsent?.sender === store.addrDir('worker:elicit') && elicitWsent?.type === 'status'
+    && elicitWthread?.elicitation?.action === 'decline'
+    && /approval deny mcpServer\/elicitation\/request/.test(elicitWlog)
+    && /server=probe-mcp/.test(elicitWlog) && /mode=form/.test(elicitWlog)
+    && !elicitWlog.includes('SECRET-PROMPT-DO-NOT-LOG'),
+  `${elicitW.status} · ${JSON.stringify(elicitWsent)} · action=${elicitWthread?.elicitation?.action} · log=${elicitWlog.slice(-400)}`);
+if (elicitWp?.sessionRef) await codexDriver.stop(elicitWp.sessionRef);
 
 // The wake's socket wait has to outlast the turn budget it declares. `activate` sends
 // `turn/start` with an inner `timeoutMs` of `turnWaitMs()`, and the outer `holderAsk`

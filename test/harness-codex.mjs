@@ -21,6 +21,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
+export const ELICIT_VAR = 'CODEX_STUB_ELICIT';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
 export const HANG_AFTER_START_VAR = 'CODEX_STUB_HANG_AFTER_START';
@@ -262,11 +263,15 @@ async function appServer() {
   const fail = (id, code, message) => emit({ jsonrpc: '2.0', id, error: { code, message } });
   const notify = (method, params) => emit({ jsonrpc: '2.0', method, params });
 
-  const ask = (method, params) => new Promise((resolve) => {
+  const ask = (method, params) => {
     const id = `srv-${randomUUID()}`;
-    pendingApprovals.set(id, resolve);
-    emit({ jsonrpc: '2.0', id, method, params });
-  });
+    const done = new Promise((resolve) => {
+      pendingApprovals.set(id, resolve);
+      emit({ jsonrpc: '2.0', id, method, params });
+    });
+    done.requestId = id;
+    return done;
+  };
 
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', async (chunk) => {
@@ -553,6 +558,19 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   const sandbox = t.sandbox;
   if (process.env[APPROVAL_VAR] === '1') {
     await ask('execCommandApproval', { command: 'true', cwd: t.cwd });
+  }
+  if (process.env[ELICIT_VAR] === '1') {
+    const pendingElicit = ask('mcpServer/elicitation/request', {
+      serverName: 'probe-mcp',
+      threadId: t.id,
+      mode: 'form',
+      message: 'SECRET-PROMPT-DO-NOT-LOG',
+      requestedSchema: { type: 'object', properties: { token: { type: 'string' } } },
+    });
+    const elicitation = await pendingElicit;
+    t.elicitation = elicitation;
+    writeThread(home, t);
+    notify('serverRequest/resolved', { requestId: pendingElicit.requestId, threadId: t.id });
   }
   const input = params.input?.[0]?.text
     ?? params.target?.instructions

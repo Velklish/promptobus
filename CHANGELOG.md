@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Codex holder declines `mcpServer/elicitation/request` instead of answering it with a bare allow.** The reply is `{ action: "decline" }`, which is the documented declined-elicitation shape on app-server 0.146.0, and the turn continues. The log names the method, server and mode only — never the prompt, schema, URL, or params. (PB-41)
+
 - **Codex JSON-RPC dispatch no longer treats a server-to-client request as the reply to a pending client call when the integer ids collide.** A message that carries `method` is handled as a request or notification first; only an id without `method` resolves the pending pool. An unmatched response is logged as `orphan` instead of disappearing. (PB-97)
 
 - **A Codex holder that cannot spawn app-server fails the session record with that error instead of dying on an unhandled `error` event and waiting out the ready budget.** Pipe errors on the child's stdin and stdout are handled so a write to a dead app-server is not an uncaught exception. (PB-49)

@@ -1,9 +1,9 @@
 # PB-41 · A Codex reviewer hangs after the holder answers an `mcpServer/elicitation/request` with a bare allow — the turn never ends and no report arrives
 
-- **Order:** 120
 - **Scope:** `lib/codex-hold.js` / `lib/codex-session.js` (the holder's server-request handling), `lib/driver-codex.js`, [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** PB-97
+- **Taken:** 2026-09-08
 
 ## Context
 
