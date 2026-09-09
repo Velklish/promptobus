@@ -31,7 +31,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs,
-  TURN_STARTED_TIMEOUT_MS, holderLogFile,
+  TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
@@ -50,6 +50,21 @@ const TASK = 'codexbus-t20260903-000000';
 const WORKER = 'worker:cdx';
 const REVIEWER = 'reviewer:cdx';
 const ORCH_SESSION = `orch-codex-${process.pid}`;
+
+const collisionRef = 'same-ref-in-two-registries';
+const collisionEnvA = {
+  PROMPTOBUS_CODEX_HOME: path.join(SB, `state-${'a'.repeat(120)}`),
+};
+const collisionEnvB = {
+  PROMPTOBUS_CODEX_HOME: path.join(SB, `state-${'b'.repeat(120)}`),
+};
+const collisionSocketA = socketPath(collisionRef, collisionEnvA);
+const collisionSocketB = socketPath(collisionRef, collisionEnvB);
+check(': long registry homes scope fallback socket paths by registry home',
+  collisionSocketA !== collisionSocketB
+    && collisionSocketA.startsWith(path.join(tmpdir(), 'pb-cdx-'))
+    && collisionSocketB.startsWith(path.join(tmpdir(), 'pb-cdx-')),
+  JSON.stringify({ collisionSocketA, collisionSocketB }));
 
 function thrown(fn) {
   try {

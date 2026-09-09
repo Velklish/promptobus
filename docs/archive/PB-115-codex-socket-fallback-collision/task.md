@@ -1,9 +1,9 @@
 # PB-115 · The holder socket's /tmp fallback path is keyed by the session ref alone, so two registries running a participant with the same ref collide on one socket
 
-- **Order:** 150
 - **Scope:** `lib/codex-session.js` (`socketPath`, `lockFile`, `holdMain`), [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 
