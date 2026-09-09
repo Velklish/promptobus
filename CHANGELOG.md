@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-09
+
 ### Changed
 
 - **Project gates run the full test suite before lint and the package audit.** Added `npm test` as the first backslop gate so a broken suite stops worker verification before the slower build-and-pack audit and before it reaches CI on `main`. (PB-71)
