@@ -55,6 +55,8 @@ const SNAPSHOT = fixture('snapshot.json');
 // says what is in them and where the numbers come from.
 const BALANCE_CATALOG = fixture('balance-catalog.json');
 const BALANCE_SNAPSHOT = fixture('balance-snapshot.json');
+const BALANCE_FLOOR_CATALOG = fixture('balance-floor-catalog.json');
+const BALANCE_FLOOR_SNAPSHOT = fixture('balance-floor-snapshot.json');
 
 // The clock the fixtures README freezes: twelve seconds after the snapshot was
 // taken, which is where `ageSec: 12` comes from.
@@ -798,6 +800,8 @@ test('the balance fixtures are documents their own schemas accept', () => {
   const ajvCatalog = ajv.getSchema('urn:promptobus:model-routing:catalog');
   assert.equal(ajvSnapshot(BALANCE_SNAPSHOT), true, ajv.errorsText(ajvSnapshot.errors));
   assert.equal(ajvCatalog(BALANCE_CATALOG), true, ajv.errorsText(ajvCatalog.errors));
+  assert.equal(ajvSnapshot(BALANCE_FLOOR_SNAPSHOT), true, ajv.errorsText(ajvSnapshot.errors));
+  assert.equal(ajvCatalog(BALANCE_FLOOR_CATALOG), true, ajv.errorsText(ajvCatalog.errors));
   assert.equal(BALANCE_SNAPSHOT.schemaVersion, 2, 'the pace layer reads a v2 snapshot and nothing else');
 });
 
@@ -893,6 +897,64 @@ test('balance compares each eligible Cursor pool, not only its best-scored tuple
   );
   assert.equal(decision.chosen.tupleId, 'cursor-composer',
     'the roomier Auto pool must win even though the api tuple scores higher');
+});
+
+test('balance gives the quality floor precedence over a better-paced below-floor representative', () => {
+  const decision = decide({
+    catalog: BALANCE_FLOOR_CATALOG,
+    snapshot: BALANCE_FLOOR_SNAPSHOT,
+    strategy: 'balance',
+    role: 'reviewer',
+    workspace: overlay({ qualityFloor: { reviewer: 9 } }),
+  });
+  const claude = byId(decision, 'claude-opus');
+  const codex = byId(decision, 'codex-sol');
+  assert.equal(codex.excluded, null, 'the floor is a choice rule, not a filter');
+  assert.equal(codex.pace.representative, true, 'the below-floor group still has its representative');
+  assert.equal(codex.pace.effective > claude.pace.effective, true,
+    'the below-floor Codex representative must lead on pace in this reproducer');
+  assert.equal(decision.chosen.tupleId, 'claude-opus',
+    'a floor-meeting representative wins before the balance comparison');
+  assert.equal(decision.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false,
+    'a scored candidate reaches the floor, so the fallback warning is false');
+  validDecision(decision, 'a balance decision with a floor-meeting representative');
+});
+
+test('balance names a scored floor candidate whose window is not paced when a below-floor representative is taken', () => {
+  const snapshot = clone(BALANCE_FLOOR_SNAPSHOT);
+  snapshot.harnesses.claude.windows.find((window) => window.id === '7d').usedPercent = 100;
+  const decision = decide({
+    catalog: BALANCE_FLOOR_CATALOG,
+    snapshot,
+    strategy: 'balance',
+    role: 'reviewer',
+    workspace: overlay({ qualityFloor: { reviewer: 9 } }),
+  });
+  const claude = byId(decision, 'claude-opus');
+  const warning = decision.warnings.find((w) => w.code === 'reviewer-floor-not-met');
+  assert.equal(decision.chosen.tupleId, 'codex-sol');
+  assert.equal(claude.score.components.quality, 40);
+  assert.equal(claude.pace.eligible, false);
+  assert.equal(claude.pace.note, 'window-spent');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /"codex-sol".*codex.*"claude-opus".*claude.*not paced/);
+  validDecision(decision, 'a balance decision with an unpaced floor-meeting candidate');
+});
+
+test('balance warns only when no scored representative reaches the quality floor', () => {
+  const catalog = clone(BALANCE_FLOOR_CATALOG);
+  catalog.tuples.find((tuple) => tuple.id === 'claude-opus').ratings.quality = 8;
+  const decision = decide({
+    catalog,
+    snapshot: BALANCE_FLOOR_SNAPSHOT,
+    strategy: 'balance',
+    role: 'reviewer',
+    workspace: overlay({ qualityFloor: { reviewer: 9 } }),
+  });
+  const warning = decision.warnings.find((w) => w.code === 'reviewer-floor-not-met');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /quality floor of 9 of 10/);
+  validDecision(decision, 'a balance decision with no floor-meeting candidate');
 });
 
 test('the reviewer is inside the balance, and nothing pins it to one harness', () => {
@@ -1116,6 +1178,20 @@ test('a harness that cannot be paced prints its note rather than empty columns',
   assert.equal(rows.length, 1, text);
   const row = rows[0];
   assert.match(row, /no-pace: no window that can be paced/);
+});
+
+test('a no-window pool does not print beside a paced pool of the same harness', () => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  snapshot.harnesses.cursor.windows = snapshot.harnesses.cursor.windows
+    .filter((window) => window.id === 'cycle-auto');
+  const decision = paced({ strategy: 'balance', snapshot });
+  assert.equal(paceOf(decision, 'cursor-api').eligible, false);
+  assert.equal(paceOf(decision, 'cursor-api').note, 'no-pace');
+  const paceBlock = render(decision).split('\npace — ')[1].split('\n\n')[0];
+  const cursorRows = paceBlock.split('\n').filter((row) => row.includes('cursor'));
+  assert.equal(cursorRows.length, 1, paceBlock);
+  assert.match(cursorRows[0], /pool auto · cursor-composer · cycle-auto monthly/);
+  assert.equal(cursorRows.some((row) => row.includes('no window that can be paced')), false);
 });
 
 // --- ADR-004: the near-limit signal ------------------------------------------

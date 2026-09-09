@@ -1,6 +1,6 @@
 # Model-routing golden fixtures
 
-Six **golden** files: one pair of inputs with one pair of outputs, and a second pair of inputs with no golden output of its own. The other files in this directory are not golden: they are the **adapter fixtures** — redacted copies of the harness answers the spike of 2026-09-06 measured, named `claude-*` and `cursor-*`, read by `test/model-routing-adapter-{claude,cursor}.test.mjs` and by nothing else. A secret in one of them is written `<redacted>`, which is also what `npm run audit` scans the tree for.
+Eight **golden** files: one pair of inputs with one pair of outputs, and two pairs of inputs with no golden output of their own. The other files in this directory are not golden: they are the **adapter fixtures** — redacted copies of the harness answers the spike of 2026-09-06 measured, named `claude-*` and `cursor-*`, read by `test/model-routing-adapter-{claude,cursor}.test.mjs` and by nothing else. A secret in one of them is written `<redacted>`, which is also what `npm run audit` scans the tree for.
 
 The golden set:
 
@@ -12,10 +12,12 @@ The golden set:
 | `models.txt` | the golden `models` text output |
 | `balance-catalog.json` | the catalog of the **balance** pair: six tuples over the three real harness names, two of them on one Cursor model family and one on a model the account hides |
 | `balance-snapshot.json` | the availability cache of that pair. Three harnesses with real windows — Claude with a session, a weekly and a weekly scoped to a model family; Codex with a session and a weekly; Cursor with two pool windows in one monthly billing cycle — plus a hidden rated row and a hidden unrated one on Codex |
+| `balance-floor-catalog.json` | the two-harness floor/balance reproducer: Claude's reviewer tuple meets the floor while the better-paced Codex tuple is below it |
+| `balance-floor-snapshot.json` | the two-harness availability cache for that reproducer, with Codex ahead on pace and Claude's weekly window behind it |
 
 A golden output with no pinned input cannot be reproduced by the task that has to make it green, which is why the inputs are here too.
 
-## The balance pair has no golden output, and that is deliberate
+## The balance pairs have no golden output, and that is deliberate
 
 The golden pair above is one harness with a window and one with none, which cannot show a pace comparison at all: `balance` compares harnesses, and one paced harness is not a comparison. The balance pair exists to be that comparison, and `test/model-routing-resolver.test.mjs` drives it directly rather than through a third golden file — a golden pins a whole document, and what needs pinning here is a dozen numbers that each mean something on their own.
 
@@ -66,3 +68,5 @@ Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runt
 `balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–5 scale normalises as `(r − 1) / 4 × 100`, and `quotaCost` inverted as `(5 − r) / 4 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 69, `other-steady` 66.25 − 10 = 56.25, `example-deep-high` 55.25. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
 
 The pair also carries a **`near-limit`** warning, and it was not put there on purpose — the numbers already in it produce one. `example`'s session window is 40 % used with 20.1 % of it elapsed, which is 19.93 points ahead of its own pace, past the `nearLimit.underspend` default of −15. It is the level-and-rate distinction in one line: 40 % used is nowhere near the 80 % threshold, and the account is still spending twice as fast as the window refills. `balance` is proposed rather than `economy` because the other harness is not paced at all, so the set as a whole is not short.
+
+The floor pair isolates the quality-floor interaction with balance: in the reviewer role at floor 9, Claude's `claude-opus` representative is quality 10 with effective pace +5.48, while Codex's better-paced `codex-sol` representative is quality 8 with effective pace +12.61. The floor-meeting Claude representative must therefore enter the balance comparison alone; lowering Claude's quality to 8 in the test leaves no scored candidate at the floor and restores the soft fallback warning.

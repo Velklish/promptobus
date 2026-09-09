@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "updated": "2026-09-06T00:00:00.000Z",
+  "tuples": [
+    {
+      "id": "claude-opus",
+      "harness": "claude",
+      "model": "claude-opus-5",
+      "effort": "high",
+      "roles": ["worker", "reviewer"],
+      "ratings": { "quality": 10, "speed": 3, "quotaCost": 10 },
+      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "billing": "subscription",
+      "priority": 10,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "fixture — placeholder ratings, not a claim about any real model"
+    },
+    {
+      "id": "codex-sol",
+      "harness": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "roles": ["worker", "reviewer"],
+      "ratings": { "quality": 8, "speed": 6, "quotaCost": 8 },
+      "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+      "billing": "subscription",
+      "priority": 30,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "fixture — placeholder ratings, not a claim about any real model"
+    }
+  ]
+}
