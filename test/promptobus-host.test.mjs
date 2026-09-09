@@ -1,8 +1,9 @@
 // Standalone host through the CLI adapter: two hosts in one process, liftHarness, sessionEnv.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { expectFail } from './console.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -10,7 +11,12 @@ const { hostOf, isPromptobusHost } = await import(path.join(here, '..', 'lib', '
 const { createStandaloneHost, HOST_KIND } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 const { liftHarness, memoryRule, sessionEnv, sessionEnvNote } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { renderBusHook, planPromptobusHooks } = await import(path.join(here, '..', 'dist', 'hooks.js'));
-const { promptobusHome: storeHome } = await import(path.join(here, '..', 'lib', 'store.js'));
+const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const { promptobusHome: storeHome } = store;
+const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
+const { history } = await import(path.join(here, '..', 'lib', 'history.js'));
+const { dismiss } = await import(path.join(here, '..', 'lib', 'dismiss.js'));
+const { prune } = await import(path.join(here, '..', 'lib', 'prune.js'));
 
 const thrown = (fn) => {
   try { fn(); return { threw: false, msg: '' }; }
@@ -108,3 +114,81 @@ check('createStandaloneHost reads promptobus.json from cwd',
   && fromFile.locale === 'ru'
   && fromFile.version === '9.9.9',
   `${fromFile.commandName} ${fromFile.declaredTools()}`);
+
+// A host may put its bus somewhere other than `<workspaceRoot>/.promptobus`. Every command
+// must ask the host for that path, just as spawn, review, and done already do; rebuilding it
+// from workspaceRoot silently opens a different, empty journal.
+const customRoot = makeSandbox('promptobus-host-custom-home-');
+const customHome = path.join(customRoot, 'bus-elsewhere');
+writeHostConfig(customRoot);
+const customHost = createStandaloneHost({
+  cwd: customRoot, home: customHome, version: '0.5.1', binPath: '/bin/promptobus-custom',
+});
+store.bus(customHome, { cli: customHost.version });
+const visible = store.createTask(customHome, {
+  id: 'host-home-t20260909-172500', title: 'host-selected journal', owner: null,
+});
+store.upsertParticipant(customHome, visible.id, store.participantRecord('worker:custom'));
+store.sendMessage(customHome, visible.id, {
+  from: store.ORCHESTRATOR, to: 'worker:custom', type: 'task', body: 'visible through custom home',
+});
+store.readInbox(customHome, visible.id, 'worker:custom');
+const old = store.createTask(customHome, {
+  id: 'host-prune-t20260909-172501', title: 'closed in custom home', owner: null,
+});
+store.closeTask(customHome, old.id);
+
+const customStatus = expectFail(() => status(customHost, { sessions: {} }));
+check('status reads the store home declared by the host',
+  !customStatus.failed && customStatus.out.includes(visible.id), customStatus.out);
+
+const customHistory = expectFail(() => history(customHost, { task: visible.id, all: true }));
+check('history reads the store home declared by the host',
+  !customHistory.failed && customHistory.out.includes('visible through custom home'), customHistory.out);
+
+const customDismiss = expectFail(() => dismiss(customHost, { task: visible.id, address: 'worker:custom' }));
+const dismissed = store.participantOf(store.readTask(customHome, visible.id), 'worker:custom')?.metadata.dismissed;
+check('dismiss writes the store home declared by the host',
+  !customDismiss.failed && typeof dismissed === 'string', `${customDismiss.out} · dismissed=${dismissed}`);
+
+const customPrune = expectFail(() => prune(customHost, { olderThan: 0 }));
+check('prune reads the store home declared by the host',
+  !customPrune.failed && customPrune.out.includes(old.id) && /would be removed/.test(customPrune.out),
+  customPrune.out);
+
+function javascriptFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) return javascriptFiles(file);
+    return entry.isFile() && entry.name.endsWith('.js') ? [file] : [];
+  });
+}
+
+const stripComments = (text) => text
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+
+function callsFreePromptobusHome(source) {
+  const text = stripComments(source);
+  for (const match of text.matchAll(/\bpromptobusHome\s*\(/g)) {
+    const before = text.slice(0, match.index);
+    if (/[$\w]$/.test(before) || before.trimEnd().endsWith('.')) continue;
+    return true;
+  }
+  return false;
+}
+
+const repoRoot = path.join(here, '..');
+const homeGateRoots = [path.join(repoRoot, 'lib'), path.join(repoRoot, 'bin')];
+const allowedFreeHomeCalls = new Set([path.join(repoRoot, 'lib', 'store.js')]);
+check('store home gate ignores comments and host member calls but detects an aliased free call',
+  !callsFreePromptobusHome('// promptobusHome(root, host)')
+  && !callsFreePromptobusHome('/* promptobusHome(root, host) */ host.promptobusHome()')
+  && callsFreePromptobusHome('const rootAlias = host.workspaceRoot(); promptobusHome(rootAlias, host);'),
+  'comment or member classification failed');
+const homeBypasses = homeGateRoots.flatMap(javascriptFiles)
+  .filter((file) => !allowedFreeHomeCalls.has(file))
+  .filter((file) => callsFreePromptobusHome(readFileSync(file, 'utf8')))
+  .map((file) => path.relative(repoRoot, file));
+check('store commands never rebuild a host home from workspaceRoot',
+  homeBypasses.length === 0, homeBypasses.join(', '));

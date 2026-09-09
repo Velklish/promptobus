@@ -22,6 +22,8 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 - `harnessStateHome(harness)` — where the package keeps its session registry for one harness, or `null`
 - Command formatting and worker preamble text
 
+`promptobusHome()` is the authoritative task-store path. Store commands use that answer directly; they do not rebuild `<workspaceRoot>/.promptobus`, because a host may deliberately choose another home. A host whose `legacyLayout()` is not `null` MUST run `preflight()` and, when its plan says so, `migrate()` inside its own `promptobusHome()`; both functions are package-root exports, and a preflight refusal must surface from that member. The `status`, `history`, `dismiss`, and `prune` commands no longer perform migration on the host's behalf. The standalone host returns its configured `home` directly and declares `legacyLayout() === null`, so there is no migration to skip.
+
 ## `legacyLayout()`
 
 `legacyLayout()` declares the former store as a two-segment relative path and supplies the former CLI's close command. `null` means that this host has no former store and migration never runs.
