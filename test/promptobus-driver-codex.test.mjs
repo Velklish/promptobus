@@ -2,7 +2,7 @@
 //
 // Subject — what Codex does differently from Claude Code and Cursor: an app-server
 // process per participant, a rollout appears at turn/started, turn/start queues behind
-// a turn in progress, review/start, the limit gate, denyTools as the sandbox, an empty
+// a turn in progress, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -873,10 +873,10 @@ check(': reviewer --effort xhigh lifts a fresh Codex reviewer',
   effortReviewed.out.slice(-600));
 const effortReviewer = store.participantOf(store.readTask(home, TASK), 'reviewer:effw');
 const effortReviewerThread = harnessThread(effortReviewer);
-check(': reviewer thread/start carries the same model_reasoning_effort; review/start has no effort field',
+check(': reviewer thread/start carries the same model_reasoning_effort; first RPC is turn/start with effort',
   effortReviewerThread?.config?.model_reasoning_effort === 'xhigh'
-    && effortReviewerThread?.firstRpc?.method === 'review/start'
-    && !('effort' in (effortReviewerThread?.firstRpc?.params ?? { effort: true })),
+    && effortReviewerThread?.firstRpc?.method === 'turn/start'
+    && effortReviewerThread?.firstRpc?.params?.effort === 'xhigh',
   JSON.stringify({
     config: effortReviewerThread?.config,
     firstRpc: effortReviewerThread?.firstRpc,
