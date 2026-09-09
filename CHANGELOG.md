@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`done` now refreshes the window-bearing harnesses represented by telemetry records before writing them.** It reuses the 15 s preflight budget, and a refusal or timeout leaves that harness's end reading `null`, prints a warning, and still closes the task. (PB-37.2)
 - **Guard ownership survives copied project hooks.** When the install manifest has no matching id, any `Stop`/`SessionStart` (`stop` for Cursor) command with the rendered guard shape is treated as ours regardless of its binary or paths and is replaced or removed; other guard-like commands remain foreign. (PB-52)
 - **Install leaves existing unselected harness files byte-identical, and check no longer reports drift for files it was not asked to manage.** (PB-53)
+- **Install check now includes the machine-local manifest, and dry-run lists only writes or removals that would change content.** (PB-100)
 
 ## [0.5.1] - 2026-09-09
 

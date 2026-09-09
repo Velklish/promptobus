@@ -1,9 +1,9 @@
 # PB-100 · `install --check` and `install --dry-run` each report a different delta from what `install` writes: the drift walk skips the ownership manifest, the dry run lists writes the content filter drops
 
-- **Order:** 350
 - **Scope:** `lib/install.js` (`runPlan`, `driftOf`), `test/install.test.mjs`, [guides/install.md](../../guides/install.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-53
+- **Taken:** 2026-09-10
 
 ## Context
 

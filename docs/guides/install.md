@@ -85,8 +85,8 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 | Flag | Effect |
 |---|---|
 | `--harnesses <list>` | Comma-separated `claude`, `cursor`, `codex`. Required on the first install. Saved as `harnesses` in `promptobus.json`. A later call without the flag reuses that list. A new list replaces the old one and removes owned hooks of a dropped harness. |
-| `--dry-run` | Print the plan. Write nothing. |
-| `--check` | Report drift. Exit 1 if project files no longer match. Do not repair. On a clean tree prints `configured` and exits 0. |
+| `--dry-run` | Print only pending writes and removals, the same content delta that `--check` reports. Write nothing. |
+| `--check` | Report the content delta. Exit 1 if project files no longer match. Do not repair. On a clean tree prints `configured` and exits 0. |
 | `uninstall` | Separate command. Removes owned Promptobus records only. `--check` is not supported. |
 
 `--harnesses` may name one harness or several. Install each alone or all together.

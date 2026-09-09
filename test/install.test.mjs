@@ -18,6 +18,7 @@ import {
 } from '../lib/install.js';
 import { GateError } from '../lib/store.js';
 import { prune } from '../lib/prune.js';
+import { capture } from './console.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -267,6 +268,27 @@ test('--dry-run writes nothing; --check reports drift and returns non-zero', asy
   assert.equal(doInstall(dir, home, { check: true }), 1);
   assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
   assert.equal(doInstall(dir, home, { check: true }), 0);
+  let dryRunCode;
+  const cleanDryRun = capture(() => { dryRunCode = doInstall(dir, home, { dryRun: true }); });
+  assert.equal(dryRunCode, 0);
+  assert.equal(cleanDryRun, '✔ dry-run: nothing written\n');
+  let cleanCheckCode;
+  const cleanCheck = capture(() => { cleanCheckCode = doInstall(dir, home, { check: true }); });
+  assert.equal(cleanCheckCode, 0);
+  assert.equal(cleanCheck, '✔ configured\n');
+
+  rmSync(path.join(dir, '.promptobus', 'manifest.json'));
+  let manifestCheckCode;
+  const manifestCheck = capture(() => { manifestCheckCode = doInstall(dir, home, { check: true }); });
+  assert.equal(manifestCheckCode, 1);
+  assert.match(manifestCheck, /drift: \.promptobus[\\/]manifest\.json/);
+  let manifestDryRunCode;
+  const manifestDryRun = capture(() => { manifestDryRunCode = doInstall(dir, home, { dryRun: true }); });
+  assert.equal(manifestDryRunCode, 0);
+  assert.match(manifestDryRun, /dry-run: would write \.promptobus[\\/]manifest\.json/);
+  assert.equal((manifestDryRun.match(/dry-run: would /g) ?? []).length, 1);
+  assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
+
   const settings = path.join(dir, '.claude', 'settings.json');
   writeFileSync(settings, fileText(dir, path.join('.claude', 'settings.json')).replace('PostToolUse', 'XPostToolUse'));
   assert.equal(doInstall(dir, home, { check: true }), 1);
