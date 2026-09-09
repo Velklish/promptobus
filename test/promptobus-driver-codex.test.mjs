@@ -15,10 +15,12 @@ import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, ELICIT_VAR, FIRST_DELAY_VAR, HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, PROBE_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
+  HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
+import { capture } from './console.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-codex-');
@@ -32,6 +34,7 @@ const {
   TURN_STARTED_TIMEOUT_MS, holderLogFile,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
+const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
@@ -356,8 +359,38 @@ check('step 3: the turn ended — the session is alive and not busy',
   const during = codexDriver.inspect(ref);
   check(': a Codex turn in progress is not painted as a stall',
     during?.busy === true && during?.stall === null
-    && !/stood/i.test(String(during?.note ?? '')),
+      && !/stood/i.test(String(during?.note ?? '')),
     JSON.stringify(during));
+  writeSession({
+    ...idleRec,
+    busy: false,
+    lastTurn: {
+      id: 'turn-fail',
+      status: 'failed',
+      at: new Date().toISOString(),
+      error: 'invalid_request_error: probe',
+    },
+  });
+  const failedView = codexDriver.inspect(ref);
+  check(': a failed turn is a named stall even after a prior bus status',
+    failedView.stall?.kind === 'failed'
+      && /invalid_request_error: probe/.test(String(failedView.stall.reason))
+      && stallStands(home, TASK, wp, failedView.stall) === true,
+    JSON.stringify(failedView));
+  const failedStatus = cli(['status', '--task', TASK], { cwd: ws, env });
+  const failedLine = failedStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? failedStatus.out;
+  check(': promptobus status prints STALLED for a failed Codex turn',
+    /STALLED/.test(failedLine) && /invalid_request_error: probe/.test(failedLine),
+    failedLine);
+  writeSession({
+    ...idleRec,
+    busy: false,
+    lastTurn: { id: 'turn-ok', status: 'completed', at: new Date().toISOString() },
+  });
+  const recoveredView = codexDriver.inspect(ref);
+  check(': a later successful turn does not retain the old failure',
+    recoveredView.stall?.kind === 'unknown' && /the turn ended/.test(String(recoveredView.stall.reason)),
+    JSON.stringify(recoveredView));
   writeSession({ ...idleRec, busy: false });
 }
 
@@ -475,6 +508,96 @@ check(': a worker elicitation is declined and the turn still completes',
   `${elicitW.status} · ${JSON.stringify(elicitWsent)} · action=${elicitWthread?.elicitation?.action} · log=${elicitWlog.slice(-400)}`);
 if (elicitWp?.sessionRef) await codexDriver.stop(elicitWp.sessionRef);
 
+planParticipant(HARNESS, 'worker:failturn', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-FAIL' } }] }],
+});
+const failEnv = { ...env, [FAIL_TURN_VAR]: '1', [ORPHAN_VAR]: '1' };
+const failW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'failturn', '--harness', 'codex'], { cwd: ws, env: failEnv });
+const failWp = store.participantOf(store.readTask(home, TASK), 'worker:failturn');
+const failDone = await waitFor(() => {
+  const r = readSession(failWp?.sessionRef ?? '', env);
+  return r && r.busy === false && (r.turns ?? 0) >= 1 ? r : null;
+}, { timeoutMs: 20000 });
+const failView = codexDriver.inspect(failWp?.sessionRef ?? '');
+let failLog = '';
+try { failLog = readFileSync(holderLogFile(failWp?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+check(': a failed turn is recorded with its error and inspect names it',
+  failW.status === 0 && failDone?.lastTurn?.status === 'failed'
+    && failDone?.lastTurn?.error === 'invalid_request_error: probe'
+    && failView.stall?.kind === 'failed'
+    && /invalid_request_error: probe/.test(String(failView.stall.reason)),
+  `${failW.status} · ${JSON.stringify(failDone?.lastTurn)} · ${JSON.stringify(failView.stall)}`);
+check(': an unmatched JSON-RPC response is logged by id, not by payload',
+  /orphan id=999001/.test(failLog) && !failLog.includes('unexpected'),
+  failLog.slice(-500));
+check(': the holder log names every notification method, including thread/status/changed and account/rateLimits/updated',
+  /event thread\/status\/changed/.test(failLog)
+    && /event account\/rateLimits\/updated/.test(failLog)
+    && /event turn\/started/.test(failLog)
+    && /event turn\/completed/.test(failLog),
+  failLog);
+if (failWp?.sessionRef) await codexDriver.stop(failWp.sessionRef);
+
+planParticipant(HARNESS, 'worker:pend', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-PEND' } }] }],
+});
+const pendEnv = { ...env, [ELICIT_HANG_VAR]: '1' };
+const pendW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'pend', '--harness', 'codex'], { cwd: ws, env: pendEnv });
+const pendWp = store.participantOf(store.readTask(home, TASK), 'worker:pend');
+const pendRec = await waitFor(() => {
+  const r = readSession(pendWp?.sessionRef ?? '', env);
+  return r?.pendingRequest?.method ? r : null;
+}, { timeoutMs: 20000 });
+const pendView = codexDriver.inspect(pendWp?.sessionRef ?? '');
+let pendLog = '';
+try { pendLog = readFileSync(holderLogFile(pendWp?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+check(': a holder reply without serverRequest/resolved is waiting, not yet a stall',
+  pendW.status === 0 && pendRec?.pendingRequest?.method === 'mcpServer/elicitation/request'
+    && pendRec?.pendingRequest?.server === 'probe-mcp'
+    && pendRec?.lastEvent === 'holder-reply:mcpServer/elicitation/request'
+    && pendView.stall === null
+    && /waiting on mcpServer\/elicitation\/request/.test(String(pendView.note ?? ''))
+    && /from probe-mcp/.test(String(pendView.note ?? ''))
+    && !/the turn is running/.test(String(pendView.note ?? ''))
+    && /approval deny mcpServer\/elicitation\/request/.test(pendLog)
+    && !pendLog.includes('SECRET-PROMPT-DO-NOT-LOG'),
+  `${pendW.status} · event=${pendRec?.lastEvent} · ${JSON.stringify(pendView)} · log=${pendLog.slice(-300)}`);
+{
+  const wasIdle = process.env.PROMPTOBUS_CODEX_IDLE_MS;
+  process.env.PROMPTOBUS_CODEX_IDLE_MS = '50';
+  await new Promise((r) => { setTimeout(r, 80); });
+  const aged = codexDriver.inspect(pendWp?.sessionRef ?? '');
+  check(': an unresolved server request past the idle budget is a pending-request stall',
+    aged.stall?.kind === 'pending-request'
+      && /waiting on mcpServer\/elicitation\/request/.test(String(aged.stall.reason))
+      && aged.stall.kind !== 'watchdog',
+    JSON.stringify(aged));
+  if (wasIdle === undefined) delete process.env.PROMPTOBUS_CODEX_IDLE_MS;
+  else process.env.PROMPTOBUS_CODEX_IDLE_MS = wasIdle;
+}
+if (pendWp?.sessionRef) await codexDriver.stop(pendWp.sessionRef);
+
+planParticipant(HARNESS, 'worker:overlap', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-OVER' } }] }],
+});
+const overlapEnv = { ...env, [ELICIT_OVERLAP_VAR]: '1' };
+const overlapW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'overlap', '--harness', 'codex'], { cwd: ws, env: overlapEnv });
+const overlapWp = store.participantOf(store.readTask(home, TASK), 'worker:overlap');
+const overlapRec = await waitFor(() => {
+  const r = readSession(overlapWp?.sessionRef ?? '', env);
+  return r?.pendingRequest?.server === 'probe-b' ? r : null;
+}, { timeoutMs: 20000 });
+check(': resolving the first of two overlapping server requests leaves the other pending',
+  overlapW.status === 0 && overlapRec?.pendingRequest?.server === 'probe-b'
+    && overlapRec?.pendingRequest?.method === 'mcpServer/elicitation/request'
+    && (overlapRec?.pendingRequests ?? []).length === 1
+    && overlapRec.pendingRequests[0].server === 'probe-b',
+  JSON.stringify({ pending: overlapRec?.pendingRequest, all: overlapRec?.pendingRequests }));
+if (overlapWp?.sessionRef) await codexDriver.stop(overlapWp.sessionRef);
+
 // The wake's socket wait has to outlast the turn budget it declares. `activate` sends
 // `turn/start` with an inner `timeoutMs` of `turnWaitMs()`, and the outer `holderAsk`
 // wait used to sit at its 30 s default: any `PROMPTOBUS_CODEX_TURN_MS` above that was
@@ -588,6 +711,20 @@ const longStatus = cli([ 'status', '--task', TASK], { cwd: ws, env: longEnv });
 const longLine = longStatus.out.split('\n').find((l) => l.includes('worker:long-first')) ?? '';
 check(': status calls the participant in its running first turn alive, not GONE',
   /is alive/.test(longLine) && !/not in the list|GONE/.test(longLine), longLine);
+{
+  const wasIdle = process.env.PROMPTOBUS_CODEX_IDLE_MS;
+  process.env.PROMPTOBUS_CODEX_IDLE_MS = '50';
+  await new Promise((r) => { setTimeout(r, 80); });
+  const silentView = codexDriver.inspect(longPart?.sessionRef ?? '');
+  const silentRec = readSession(longPart?.sessionRef ?? '', env);
+  check(': a first turn that stays silent past the idle budget is a watchdog stall',
+    silentView?.stall?.kind === 'watchdog'
+      && silentRec?.lastEvent
+      && !/the turn is running/.test(String(silentView?.note ?? '')),
+    `${JSON.stringify(silentView)} · lastEvent=${silentRec?.lastEvent}`);
+  if (wasIdle === undefined) delete process.env.PROMPTOBUS_CODEX_IDLE_MS;
+  else process.env.PROMPTOBUS_CODEX_IDLE_MS = wasIdle;
+}
 const queuedOnFirst = await codexDriver.activate({ ref: longPart?.sessionRef }, {
   kind: 'unread', task: TASK, address: 'worker:long-first', unread: 1,
   messages: [{ type: 'review', from: 'orchestrator', ts: 'now', body: 'queued review' }],
@@ -734,6 +871,30 @@ check(': the registry is gone — the holder reaps itself and its app-server, wi
 // tree the holder is dying with — one directory per leaked run, forever.
 check(': a log write under a removed registry does not rebuild the tree',
   !existsSync(reapHome), reapHome);
+
+{
+  const listedView = {
+    state: 'stale',
+    busy: false,
+    stall: { kind: 'stale', reason: 'the holder did not name a thread within 133000 ms' },
+    id: null,
+    note: null,
+  };
+  const listedSnap = {};
+  for (const p of store.readTask(home, TASK).participants ?? []) {
+    const addr = p.metadata?.address;
+    if (addr === WORKER) {
+      listedSnap[addr] = listedView;
+      listedSnap[store.addrDir(addr)] = listedView;
+    }
+  }
+  const listedOut = capture(() => printStatus(ws, { task: TASK, sessions: listedSnap }));
+  const listedLine = String(listedOut).split('\n').find((l) => l.includes(WORKER)) ?? String(listedOut);
+  check(': promptobus status prints LISTED for a stale Codex inspect view',
+    /is LISTED, but there is no process behind it/.test(listedLine)
+      && /There will be no messages from it/.test(listedLine),
+    listedLine.slice(-800));
+}
 
 // If the reap did not happen the checks above are already red; leaving the processes
 // behind would redden the run gate too, and about the wrong thing.

@@ -22,6 +22,10 @@ export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
 export const ELICIT_VAR = 'CODEX_STUB_ELICIT';
+export const ELICIT_HANG_VAR = 'CODEX_STUB_ELICIT_HANG';
+export const ELICIT_OVERLAP_VAR = 'CODEX_STUB_ELICIT_OVERLAP';
+export const FAIL_TURN_VAR = 'CODEX_STUB_FAIL_TURN';
+export const ORPHAN_VAR = 'CODEX_STUB_ORPHAN';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
 export const HANG_AFTER_START_VAR = 'CODEX_STUB_HANG_AFTER_START';
@@ -310,6 +314,9 @@ async function appServer() {
       // different failure and has its own case.
       if (probe.has('hang')) return;
       reply(id, { userAgent: 'codex-stub', platformOs: process.platform, experimentalApi: true });
+      if (process.env[ORPHAN_VAR] === '1') {
+        emit({ jsonrpc: '2.0', id: 999001, result: { unexpected: true } });
+      }
       const exhausted = process.env[LIMIT_VAR] === '1';
       if (probe.has('no-notify')) return;
       setTimeout(() => {
@@ -559,7 +566,7 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   if (process.env[APPROVAL_VAR] === '1') {
     await ask('execCommandApproval', { command: 'true', cwd: t.cwd });
   }
-  if (process.env[ELICIT_VAR] === '1') {
+  if (process.env[ELICIT_VAR] === '1' || process.env[ELICIT_HANG_VAR] === '1') {
     const pendingElicit = ask('mcpServer/elicitation/request', {
       serverName: 'probe-mcp',
       threadId: t.id,
@@ -570,7 +577,23 @@ async function playTurn(home, started, turnId, params, ask, notify) {
     const elicitation = await pendingElicit;
     t.elicitation = elicitation;
     writeThread(home, t);
+    if (process.env[ELICIT_HANG_VAR] === '1') {
+      await new Promise(() => {});
+      return;
+    }
     notify('serverRequest/resolved', { requestId: pendingElicit.requestId, threadId: t.id });
+  }
+  if (process.env[ELICIT_OVERLAP_VAR] === '1') {
+    const first = ask('mcpServer/elicitation/request', {
+      serverName: 'probe-a', threadId: t.id, mode: 'form', message: 'SECRET-PROMPT-DO-NOT-LOG',
+    });
+    const second = ask('mcpServer/elicitation/request', {
+      serverName: 'probe-b', threadId: t.id, mode: 'form', message: 'SECRET-PROMPT-DO-NOT-LOG',
+    });
+    await first;
+    notify('serverRequest/resolved', { requestId: first.requestId, threadId: t.id });
+    await new Promise(() => {});
+    return;
   }
   const input = params.input?.[0]?.text
     ?? params.target?.instructions
@@ -584,7 +607,15 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   live.status = 'idle';
   writeThread(home, live);
   notify('item/completed', { type: 'agentMessage', item: { type: 'agentMessage', text: 'turn played' } });
-  notify('turn/completed', { id: turnId, status: 'completed' });
+  if (process.env[FAIL_TURN_VAR] === '1') {
+    notify('turn/completed', {
+      id: turnId,
+      status: 'failed',
+      error: { message: 'invalid_request_error: probe' },
+    });
+  } else {
+    notify('turn/completed', { id: turnId, status: 'completed' });
+  }
   notify('thread/status/changed', { type: 'idle' });
   note(home, address, { kind: 'turn-end', turnId, steered: live.steered ?? 0 });
   const next = live.pending?.shift();

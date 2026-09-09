@@ -1,9 +1,9 @@
 # PB-42 · A Codex turn is watched by its events: the holder records every app-server notification and server request, status prints the last event and its age, the warden reports a turn silent past a budget, and a failed turn is surfaced
 
-- **Order:** 140
 - **Scope:** `lib/codex-session.js` / `lib/codex-hold.js` (the holder's notification handling and the session record), `lib/driver-codex.js` (`inspect`), `lib/status.js`, `lib/warden.js` / `src/supervisor.ts` (the stall predicate), [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06, the owner's decision 2026-09-06 (next series, after the consumer's release)
 - **Dependencies:** PB-97, PB-49, PB-41, PB-99
+- **Taken:** 2026-09-08
 
 ## Context
 
