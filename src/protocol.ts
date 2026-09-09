@@ -15,7 +15,9 @@ import path from 'node:path';
 // workspace layout has its own. There is never a second list in the code: the
 // literal-copy gate in `lint` keeps one home per key, and that home is named by the
 // `VALUE_HOMES` map in the consumer linter.
-export const MESSAGE_TYPES = ['task', 'status', 'question', 'answer', 'artifact', 'result', 'review'];
+export const MESSAGE_TYPES = Object.freeze([
+  'task', 'status', 'question', 'answer', 'artifact', 'result', 'review',
+]);
 
 export const ORCHESTRATOR = 'orchestrator';
 

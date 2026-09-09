@@ -119,4 +119,4 @@ export interface ArtifactV1 {
 }
 
 /** Message types: the value home is `src/protocol.ts`; there is never a second list in the code. */
-export const MESSAGE_TYPES_V1: readonly string[] = MESSAGE_TYPES;
+export const MESSAGE_TYPES_V1 = MESSAGE_TYPES;

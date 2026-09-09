@@ -14,7 +14,7 @@ reviewer:<slug>
 
 ## Message types
 
-`task`, `status`, `question`, `answer`, `artifact`, `result`, `review` (`MESSAGE_TYPES`).
+`task`, `status`, `question`, `answer`, `artifact`, `result`, `review` (`MESSAGE_TYPES`). The exported `MESSAGE_TYPES` and `MESSAGE_TYPES_V1` names are the same frozen readonly list: consumers can enumerate or copy it, but cannot add, remove, or replace a type and thereby change validation for the process.
 
 `artifactPath` on send is an absolute file path. The file is copied into the task store. The message stores the artifact name.
 

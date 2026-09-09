@@ -22,7 +22,8 @@ import process from 'node:process';
 import test from 'node:test';
 
 import {
-  ERROR_CODES, MECHANISM_VERSION_FIELD, openEngine, PromptobusError, validate,
+  ERROR_CODES, MECHANISM_VERSION_FIELD, MESSAGE_TYPES, MESSAGE_TYPES_V1, openEngine,
+  PromptobusError, validate,
 } from '../dist/index.js';
 // The only deep import in the suite, and it is needed by exactly one check
 // below: `commitIntent` accepts a ready record, that is it lets the id be
@@ -194,6 +195,48 @@ test('exactly one creates a task with the same id', () => {
 });
 
 // ── Fan-out prevalidation ─────────────────────────────────────────────────────────────
+
+test('the public message-type list cannot be extended into either v1 validator', async (t) => {
+  const injected = 'injected';
+  const engine = open(sandbox());
+  const id = taskWith(engine);
+  let mutation = null;
+  try {
+    MESSAGE_TYPES.push(injected);
+  } catch (e) {
+    mutation = e;
+  }
+
+  const verdict = validate('message', {
+    protocolVersion: 1,
+    id: '20260902T100001000-0001-abcdef',
+    task: id,
+    sender: 'owner',
+    recipients: ['w-api'],
+    type: injected,
+    body: 'foreign type',
+    ts: '2026-09-02T10:00:01.000Z',
+  });
+  const sendError = await refusalAsync(() => engine.send(id, {
+    from: 'owner', to: ['w-api'], type: injected, body: 'foreign type',
+  }));
+  if (MESSAGE_TYPES.at(-1) === injected) MESSAGE_TYPES.pop();
+
+  await t.test('the public aliases are one frozen object and push throws', () => {
+    assert.equal(MESSAGE_TYPES, MESSAGE_TYPES_V1);
+    assert.equal(Object.isFrozen(MESSAGE_TYPES), true, 'MESSAGE_TYPES is mutable at runtime');
+    assert.ok(mutation instanceof TypeError, 'MESSAGE_TYPES.push did not throw TypeError');
+  });
+  await t.test('the record validator still rejects the injected type', () => {
+    assert.equal(verdict.ok, false, 'the injected type reached the record validator');
+    assert.equal(verdict.at, 'type');
+  });
+  await t.test('the engine validator still rejects the injected type before a write', () => {
+    assert.ok(sendError instanceof PromptobusError, 'the engine accepted the injected type');
+    assert.equal(sendError.code, 'message-type-unknown');
+    assert.equal(engine.unread(id, 'w-api'), 0);
+  });
+});
 
 test('prevalidation: an empty list, duplicates, an unknown addressee, and a foreign type', async (t) => {
   const engine = open(sandbox());
