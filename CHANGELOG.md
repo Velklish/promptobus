@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Claude late-start limit classification checks reset wording independently.** A refusal containing both `hit your ... limit` and `limit ... resets` is recorded as `subscription_exhausted`. (PB-148)
 - **A failed availability-cache write no longer hides a successful preflight.** The probed snapshot is returned with a warning naming the cache file, while explicit `clearExhausted` writes remain refusals. (PB-58)
 - **Cursor status reports the recorded turn count.** A participant's status uses the hook-owned `record.turns` counter instead of the transcript's end-of-file marker count. (PB-153)
+- **Cursor tmux discovery matches Cursor binary install locations.** The driver probes PATH plus the known install directories before refusing a persist session. (PB-85)
 
 ## [0.5.1] - 2026-09-09
 

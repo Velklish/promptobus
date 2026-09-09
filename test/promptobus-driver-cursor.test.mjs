@@ -253,6 +253,32 @@ check(': tmux not found — refuse before lift, in the same words as doctor',
   /tmux/.test(String(noTmux)) && /not found in PATH/.test(String(noTmux)),
   String(noTmux));
 
+// PB-85: the real tmux resolver must use the same install locations as the Cursor binary
+// resolver. Keep PATH empty and put the stub only under the home-relative location; no
+// util seam is supplied to optionRefusal, so this reaches resolveTmux itself.
+const pb85Home = path.join(SB, 'pb85-home');
+const pb85Install = path.join(pb85Home, '.local', 'bin');
+const pb85Path = path.join(SB, 'pb85-path');
+mkdirSync(pb85Path, { recursive: true });
+const pb85HomeBefore = process.env.HOME;
+const pb85PathBefore = process.env.PATH;
+let pb85Found;
+try {
+  process.env.HOME = pb85Home;
+  process.env.PATH = pb85Path;
+  stubCommand(pb85Install, 'tmux', `
+if (process.argv.includes('-V')) process.stdout.write('tmux 3.6\\n');
+`);
+  pb85Found = cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION });
+} finally {
+  if (pb85HomeBefore === undefined) delete process.env.HOME;
+  else process.env.HOME = pb85HomeBefore;
+  process.env.PATH = pb85PathBefore;
+}
+check('PB-85: real tmux resolver searches a known install location outside PATH',
+  pb85Found === null,
+  String(pb85Found));
+
 // --- lift plan ----------------------------------------------------------------------
 
 const ctx = {
