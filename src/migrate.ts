@@ -254,6 +254,14 @@ export function preflight(root: string, layout: HostLegacyLayout | null): Migrat
       + 'Sort it out by hand: migration does not touch a damaged root and moves nothing from it.';
     return plan;
   }
+  // Check before both-roots/mark handling: resumed cleanup deletes the former root whole, including skipped entries.
+  const invalidTask = invalidLegacyTaskDir(legacyTasks);
+  if (invalidTask) {
+    plan.refusal = `${path.join(legacyTasks, invalidTask)} is an entry under the former tasks/ whose name is not a v1 task id (${invalidTask}). `
+      + 'Task ids must be 1 to 128 characters: an ASCII letter or digit first, then ASCII letters, digits, ., _, or -. '
+      + 'Rename or remove it by hand, then repeat the command; migration has changed nothing.';
+    return plan;
+  }
   if (existsSync(target)) {
     // Both roots at once. The current transient mark tells unfinished cleanup
     // from a foreign `.promptobus`: the first we finish, the second is the very
@@ -277,6 +285,24 @@ export function preflight(root: string, layout: HostLegacyLayout | null): Migrat
       + active.map((id) => `  ${named.done.replace('<id>', id)}`).join('\n');
   }
   return plan;
+}
+
+function invalidLegacyTaskDir(legacyTasks: string): string | null {
+  try {
+    return readdirSync(legacyTasks, { withFileTypes: true })
+      .filter((entry) => {
+        if (!entry.isDirectory() || TASK_ID_RE.test(entry.name)) return false;
+        try {
+          return readdirSync(path.join(legacyTasks, entry.name)).length > 0;
+        } catch {
+          return true;
+        }
+      })
+      .map((entry) => entry.name)
+      .sort()[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function activeLegacyTasks(legacyHome: string): string[] {

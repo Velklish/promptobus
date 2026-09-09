@@ -22,8 +22,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
-  writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
+  statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -199,6 +199,49 @@ test('preflight: a corrupted root — refusal without mutation', async (t) => {
     assert.match(plan.refusal, /is not a directory/);
     assert.equal(existsSync(path.join(other, ROOT_DIR)), false);
   });
+});
+
+test('preflight: a non-empty entry under legacy tasks/ outside the v1 id grammar is refused without mutation', async (t) => {
+  const { root, home, target } = workspace();
+  const oversized = 'a'.repeat(129);
+  const directory = path.join(home, 'tasks', oversized);
+  renameSync(path.join(home, 'tasks', CLOSED), directory);
+  const before = treeDigest(home);
+
+  const plan = preflight(root);
+  const direct = thrown(() => migrate(root));
+  const storeDoor = thrown(() => store.promptobusHome(root, { legacyLayout: () => LAYOUT }));
+
+  await t.test('the refusal names the entry, the 128-character bound, and the manual route', () => {
+    assert.ok(plan.refusal?.includes(directory), plan.refusal ?? 'no refusal');
+    assert.match(plan.refusal ?? '', /entry under the former tasks\/ whose name is not a v1 task id/);
+    assert.ok(plan.refusal?.includes(`(${oversized})`), plan.refusal ?? 'no entry name');
+    assert.match(plan.refusal ?? '', /128 characters/);
+    assert.match(plan.refusal ?? '', /Rename or remove it by hand, then repeat the command/);
+    assert.equal(direct.name, 'GateError');
+    assert.equal(direct.msg, plan.refusal);
+    assert.equal(storeDoor.name, 'GateError');
+    assert.equal(storeDoor.msg, plan.refusal);
+  });
+
+  await t.test('the former store and every task stay intact, and no new store appears', () => {
+    assert.equal(existsSync(home), true, 'the former store was deleted');
+    assert.equal(treeDigest(home), before, 'the former store changed');
+    assert.equal(existsSync(directory), true, 'the oversized task directory was deleted');
+    assert.equal(existsSync(target), false, 'the new store appeared before the refusal');
+  });
+});
+
+test('preflight: an empty directory outside the v1 id grammar is skipped', () => {
+  const { root, home, target } = workspace();
+  mkdirSync(path.join(home, 'tasks', 'not a task id'));
+
+  const plan = preflight(root);
+  assert.equal(plan.refusal, null, plan.refusal ?? '');
+  const report = migrate(root);
+  assert.equal(report.moved, true);
+  assert.equal(existsSync(home), false);
+  assert.equal(existsSync(path.join(target, 'tasks', CLOSED, 'task.json')), true);
 });
 
 // --- full transfer ------------------------------------------------------------

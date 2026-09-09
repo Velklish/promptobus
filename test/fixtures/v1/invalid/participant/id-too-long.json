@@ -1,0 +1,15 @@
+{
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "role": "worker",
+  "harness": "fake",
+  "mode": "managed",
+  "sessionRef": "sess-boundary",
+  "capabilities": {
+    "spawn": true,
+    "attach": true,
+    "activation": "push",
+    "inspect": true,
+    "stop": true
+  },
+  "metadata": {}
+}

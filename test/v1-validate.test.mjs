@@ -22,7 +22,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
-import { ERROR_CODES, MESSAGE_TYPES, validate } from '../dist/index.js';
+import {
+  ERROR_CODES, GateError, MESSAGE_TYPES, requireTaskId, TASK_ID_RE as PROTOCOL_TASK_ID_RE, validate,
+} from '../dist/index.js';
+import { TASK_ID_RE as V1_TASK_ID_RE } from '../dist/v1/model.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMAS = path.join(here, '..', 'schemas', 'v1');
@@ -48,6 +51,18 @@ function fixtures(verdict, model) {
   return readdirSync(dir).filter((n) => n.endsWith('.json')).sort()
     .map((name) => ({ name, value: JSON.parse(readFileSync(path.join(dir, name), 'utf8')) }));
 }
+
+test('the CLI task-id gate shares the v1 128-character bound', () => {
+  const atBound = 'a'.repeat(128);
+  assert.equal(PROTOCOL_TASK_ID_RE, V1_TASK_ID_RE,
+    'the protocol and store task-id gates use different regex objects');
+  assert.equal(requireTaskId(atBound), atBound);
+
+  let refused = null;
+  try { requireTaskId(`${atBound}a`); } catch (e) { refused = e; }
+  assert.ok(refused instanceof GateError, 'the 129-character task id passed the CLI-facing gate');
+  assert.match(refused.message, /invalid task id/);
+});
 
 test('parity: valid fixtures are accepted by both validators', () => {
   for (const model of MODELS) {

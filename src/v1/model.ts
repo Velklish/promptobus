@@ -1,10 +1,10 @@
 // Protocol v1 models and the grammar of their fields.
 //
-// Forms and regular expressions only — no disk, no policy. The grammar is
-// declared once and read by both: the own validators ([validate.ts](validate.ts))
-// and the JSON Schemas in `schemas/v1` — their parity is held by
-// [v1-validate.test.mjs](../../test/v1-validate.test.mjs).
-import { MESSAGE_TYPES } from '../protocol.js';
+// Forms and regular expressions only — no disk, no policy. `TASK_ID_RE` lives in
+// [protocol.ts](../protocol.ts), so the CLI gate and store read one object;
+// `schemas/v1/{task,message}.schema.json` carry the same `{0,127}`, pinned by the
+// exact-bound fixtures in [v1-validate.test.mjs](../../test/v1-validate.test.mjs).
+import { MESSAGE_TYPES, TASK_ID_RE } from '../protocol.js';
 
 /** v1 record schema version: `task.json` and artifact metadata. */
 export const SCHEMA_VERSION = 1;
@@ -18,11 +18,11 @@ export const MODELS = ['task', 'participant', 'message', 'artifact'] as const;
 /** Model name. */
 export type ModelName = (typeof MODELS)[number];
 
-// Field grammar. A task identifier is more generous than the others: the
-// adapter assembles it from its own slug and stamp. A participant identifier
-// is its own and independent: role is never derived from it, so there is no
-// colon in it at all.
-export const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+// Field grammar exported to v1 consumers. The task grammar is the protocol-owned
+// exception described above: an adapter assembles the id from its own slug and
+// stamp. A participant identifier is its own and independent: role is never
+// derived from it, so there is no colon in it at all.
+export { TASK_ID_RE };
 export const PARTICIPANT_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const ROLE_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export const HARNESS_RE = /^[a-z][a-z0-9-]{0,31}$/;

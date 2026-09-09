@@ -31,7 +31,7 @@ export const UNDECLARED_HARNESS = 'undeclared';
 export const UNDECLARED_ROLE = 'undeclared';
 
 const ADDRESS_RE = /^(orchestrator|(?:worker|reviewer):[a-z0-9][a-z0-9-]*)$/;
-export const TASK_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+export const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 // A gate refusal is addressed to a person, not to a crash dump: printing it with a
 // stack would dress the most common lawful outcome as an internal CLI error. A
