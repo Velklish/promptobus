@@ -17,6 +17,9 @@ That number is written out by hand, and the suite compares it to `package.json` 
 | `lib/cli.js` → `./cli` | Command parser |
 | `schemas/v1/*.json` → `./schemas/*` | Task, participant, message, artifact schemas |
 
+The `.` entry point exports `Engine` and its public input and result types, including
+`SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.
+
 `src/` is TypeScript. `npm run build` emits `dist/`. `lib/*.js` is the JS runtime and the three harness drivers.
 
 ## Store home

@@ -11,15 +11,16 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
-  utimesSync, writeFileSync,
+  symlinkSync, utimesSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   ERROR_CODES, MECHANISM_VERSION_FIELD, MESSAGE_TYPES, MESSAGE_TYPES_V1, openEngine,
@@ -34,6 +35,7 @@ import { commitIntent } from '../dist/v1/messages.js';
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-v1-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const CAPS = { spawn: true, attach: true, activation: 'push', inspect: true, stop: true };
 
@@ -106,6 +108,39 @@ function refusal(fn) {
   }
   return null;
 }
+
+test('a consumer can import the public SendSyncInput type from promptobus', () => {
+  const dir = path.join(SB, 'send-sync-input-consumer');
+  mkdirSync(path.join(dir, 'node_modules'), { recursive: true });
+  symlinkSync(ROOT, path.join(dir, 'node_modules', 'promptobus'), 'dir');
+  writeFileSync(path.join(dir, 'consumer.mts'), [
+    "import type { SendSyncInput } from 'promptobus';",
+    'const input: SendSyncInput = {',
+    "  from: 'owner',",
+    "  to: ['worker:api'],",
+    "  type: 'task',",
+    "  body: 'compile the public contract',",
+    '};',
+    'void input;',
+    '',
+  ].join('\n'));
+  writeFileSync(path.join(dir, 'tsconfig.json'), `${JSON.stringify({
+    compilerOptions: {
+      target: 'ES2023',
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    files: ['consumer.mts'],
+  }, null, 2)}\n`);
+
+  const compiled = spawnSync(process.execPath, [
+    path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '--project', path.join(dir, 'tsconfig.json'),
+  ], { encoding: 'utf8' });
+  assert.equal(compiled.status, 0, `consumer compile failed:\n${compiled.stdout}${compiled.stderr}`);
+});
 
 async function refusalAsync(fn) {
   try {

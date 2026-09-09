@@ -22,7 +22,7 @@ export { INTENT_STALE_MS } from './messages.js';
 export { openEngine } from './engine.js';
 export type {
   Engine, EngineOptions, PruneResult, RecoverResult, RoutingDecision, RoutingPolicy, SendInput,
-  SendResult,
+  SendResult, SendSyncInput,
 } from './engine.js';
 export type { ArtifactSource } from './artifacts.js';
 export type { BrokenTask, Clock, NewTask, ParticipantPatch, ReaderVersion } from './store.js';
