@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host
+- **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host implementations must provide the layout guard argv before calling `install`, `spawn`, or `review`; otherwise guard hook assembly throws `TypeError` in `lib/install.js`, `lib/spawn.js`, or `lib/review.js`. (PB-103)
 
 ### Fixed
 
@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Claude Code's proven inventory now includes entitled Haiku.** Claude 2.1.263 accepted `claude-haiku-4-5` on a one-turn liftoff, so the driver publishes its `haiku` alias and model-scoped limit ids and the catalog carries a worker ladder rated from Anthropic's 73.3 % SWE-bench figure, Artificial Analysis's 81 tokens/s and the $1/$5 list price. The same check refused `claude-mythos-5-1`, which remains out. (PB-34.1)
 - **Telemetry no longer treats exhausted cache entries as fresh end readings.** A future-reset or sticky exhaustion remains live for routing, but its window percentage is `null` in participant telemetry once the sixty-second window TTL has passed, so `models calibrate` cannot mistake a frozen value for spend evidence. (PB-77)
 - **Live mixed-lineup matchers now read protocol v1 sender IDs.** Worker and reviewer checks share the normalized sender predicate, so a live run no longer waits for messages under the caller's unstored address spelling. (PB-67)
-- **Loop guard hooks now use the host's launch argv.** The generated command calls
+- **Loop guard hooks now use the host's launch argv.** The generated command calls the layout entry and host-declared subcommand path, so a non-default command name reaches `guard` instead of carrying a package-specific word. (PB-103)
 
 ## [0.5.1] - 2026-09-09
 
