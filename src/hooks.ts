@@ -40,9 +40,9 @@ export interface GuardIdentity {
   home: string;
 }
 
-export function renderBusHook(host: Pick<PromptobusHost, 'commandName'>): string {
+export function renderBusHook(host: Pick<PromptobusHost, 'syncHint'>): string {
   const file = new URL('../templates/bus-hook.mjs', import.meta.url);
-  return readFileSync(file, 'utf8').replaceAll('__COMMAND__', host.commandName);
+  return readFileSync(file, 'utf8').replaceAll('__SYNC__', host.syncHint());
 }
 
 export function busHookCommand(
@@ -103,7 +103,7 @@ export interface HookPlan {
 // Not a full PromptobusHost: the type declares which members the plan asks for,
 // and sync passes exactly those.
 export type PromptobusHookHost = Pick<PromptobusHost,
-  'commandName' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'guardArgv'>;
+  'syncHint' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'guardArgv'>;
 
 export function planPromptobusHooks(
   host: PromptobusHookHost,

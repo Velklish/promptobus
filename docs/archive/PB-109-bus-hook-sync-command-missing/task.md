@@ -1,9 +1,9 @@
 # PB-109 · The bus-hook header tells a reader to regenerate it with `promptobus sync`, a subcommand this CLI has never had, and `02-host.md` doesn't say the shipped bin always overrides the `commandName`/`version` fields it claims `promptobus.json` controls
 
-- **Order:** 960
 - **Scope:** `templates/bus-hook.mjs`, `src/hooks.ts`, `src/standalone.ts`, `bin/promptobus.js`, [02-host](../../reference/02-host.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-103
+- **Taken:** 2026-09-10
 
 ## Context
 

@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **The package test resolves every public exports-map specifier from an installed tarball, including host, hooks, driver, CLI and a protocol schema.** (PB-108)
-- **Live-run sweeps now age-filter mixed sandboxes, cover Codex and E2E prefixes, and report refused cleanup entries.** (PB-114)
-- **The test runner sweeps stale socket directories and preserves live neighbouring runs through owner and listener liveness checks.** (PB-144)
-
 ### Added
 
 - **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
@@ -22,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bus-hook headers now use the host's regeneration hint, and the reference documents the shipped bin's fixed command name and package version.** (PB-109)
 - **Codex approval checks use named request fields.** Text in patch diffs and commands no longer triggers config or privilege denials, while dangerous values in top-level or `item`-nested `sandbox`, `approvalPolicy`, and `permissions` fields remain denied unless an approval-policy or sandbox value echoes the session's recorded mode. (PB-88)
 - **The Codex session record no longer persists the caller's environment.** The detached holder inherits the sanitized launch environment directly, while newly created session directories use mode `0700` without changing the mode of an existing directory. (PB-152)
 - **Codex holder fallback sockets are isolated by registry home.** When a registry's nested session socket path is too long, the `/tmp/pb-cdx-…` fallback now hashes the registry `sessions` directory together with the session ref, so two registries cannot take over the same socket. (PB-115)
@@ -67,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Install check now includes the machine-local manifest, and dry-run lists only writes or removals that would change content.** (PB-100)
 - **Cursor install validates the merged hook event map before writing, so unknown event names refuse the install without changing the existing file.** (PB-154)
 - **Install documentation now describes Cursor's stop-only project hook and driver-injected bus feedback, including the invalid event-name warning.** (PB-76)
+- **The package test resolves every public exports-map specifier from an installed tarball, including host, hooks, driver, CLI and a protocol schema.** (PB-108)
+- **Live-run sweeps now age-filter mixed sandboxes, cover Codex and E2E prefixes, and report refused cleanup entries.** (PB-114)
+- **The test runner sweeps stale socket directories and preserves live neighbouring runs through owner and listener liveness checks.** (PB-144)
+- **Package tests now require the first dated release heading and any exact `v<version>` tag to match package.json; tag pushes run the existing CI workflow.** (PB-70)
 
 ## [0.5.1] - 2026-09-09
 
