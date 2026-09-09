@@ -1,9 +1,9 @@
 # PB-154 · Validate merged Cursor hook events before installing the file
 
-- **Order:** 360
 - **Scope:** `lib/install.js` (`assertCursorHookEvents`, `mergeHookEvents`, `driftOf`, `manifestWrite`), `test/install.test.mjs`, [guides/install.md](../../guides/install.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-100
+- **Taken:** 2026-09-10
 
 ## Context
 

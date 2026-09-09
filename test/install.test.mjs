@@ -410,6 +410,26 @@ test('cursor event-name gate matches the driver list and rejects any other name'
   assert.doesNotThrow(() => assertCursorHookEvents({ stop: [{}] }));
 });
 
+test('cursor install rejects unknown event names already present in hooks.json', () => {
+  const { dir, home } = sandbox();
+  const rel = path.join('.cursor', 'hooks.json');
+  const before = {
+    version: 1,
+    hooks: { postToolUse: [{ command: 'echo foreign-cursor-event' }] },
+  };
+  mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+  writeFileSync(path.join(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
+
+  assert.throws(
+    () => doInstall(dir, home, { harnesses: 'cursor' }),
+    (e) => e instanceof GateError && /unknown Cursor hook event "postToolUse"/.test(e.message),
+  );
+  assert.equal(fileText(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
+  assert.equal(existsSync(path.join(dir, 'promptobus.json')), false);
+  assert.equal(existsSync(path.join(dir, '.promptobus', 'manifest.json')), false);
+  assert.deepEqual(homeHits(home), []);
+});
+
 test('cursor install writes only known hook event names and does not write a bus-feedback group', () => {
   const { dir, home } = sandbox();
   doInstall(dir, home, { harnesses: 'cursor' });

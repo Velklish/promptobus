@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Guard ownership survives copied project hooks.** When the install manifest has no matching id, any `Stop`/`SessionStart` (`stop` for Cursor) command with the rendered guard shape is treated as ours regardless of its binary or paths and is replaced or removed; other guard-like commands remain foreign. (PB-52)
 - **Install leaves existing unselected harness files byte-identical, and check no longer reports drift for files it was not asked to manage.** (PB-53)
 - **Install check now includes the machine-local manifest, and dry-run lists only writes or removals that would change content.** (PB-100)
+- **Cursor install validates the merged hook event map before writing, so unknown event names refuse the install without changing the existing file.** (PB-154)
 
 ## [0.5.1] - 2026-09-09
 
