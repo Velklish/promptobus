@@ -29,16 +29,19 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { GateError } from '../dist/index.js';
-import { MODEL_FLAGS } from '../lib/model-routing/cache.js';
+import * as cacheRouting from '../lib/model-routing/cache.js';
 import {
   CATALOG_FILE, DEFAULT_POLICY, DEFAULTS, STALE_RATING_DAYS,
   loadCatalog, mergeRouting, readLayers, rulesFor, rulesForRole, rulesLabel,
 } from '../lib/model-routing/catalog.js';
+import * as catalogRouting from '../lib/model-routing/catalog.js';
 import {
   checkCatalogShape, checkOverlayShape, effortLevelsOf, knownHarnesses, validate, validateLayers,
 } from '../lib/model-routing/validate.js';
+import * as validateRouting from '../lib/model-routing/validate.js';
 import { MODEL_ALIASES, MODEL_IDS } from '../lib/driver-claude.js';
 import { routingContext } from '../lib/models.js';
+import * as resolverRouting from '../lib/model-routing/resolver.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -704,13 +707,43 @@ test('the constant, the overlay schema and the snapshot schema are ONE closed fl
   // flag the snapshot can never carry, and nothing would say so.
   const overlaySchema = readJson(path.join(SCHEMAS, 'overlay.schema.json'));
   const snapshotSchema = readJson(path.join(SCHEMAS, 'snapshot.schema.json'));
-  assert.deepEqual(overlaySchema.$defs.flagList.items.enum, MODEL_FLAGS);
-  assert.deepEqual(snapshotSchema.$defs.model.properties.flags.items.enum, MODEL_FLAGS);
+  assert.deepEqual(overlaySchema.$defs.flagList.items.enum, cacheRouting.MODEL_FLAGS);
+  assert.deepEqual(snapshotSchema.$defs.model.properties.flags.items.enum, cacheRouting.MODEL_FLAGS);
   assert.deepEqual(
     overlaySchema.$defs.roleSelectors.properties.flags.$ref,
     overlaySchema.$defs.selectors.properties.flags.$ref,
     'a byRole block selects by the same flags as an unscoped rule',
   );
+});
+
+test('routing vocabularies and their schema enums stay one closed list', () => {
+  const overlaySchema = readJson(path.join(SCHEMAS, 'overlay.schema.json'));
+  const snapshotSchema = readJson(path.join(SCHEMAS, 'snapshot.schema.json'));
+  const decisionSchema = readJson(path.join(SCHEMAS, 'decision.schema.json'));
+  const telemetrySchema = readJson(path.join(SCHEMAS, 'telemetry.schema.json'));
+
+  assert.ok(cacheRouting.TIER_NAME_RE, 'cache.js must export TIER_NAME_RE for schema parity');
+  assert.ok(validateRouting.WEIGHT_KEYS, 'validate.js must export WEIGHT_KEYS for schema parity');
+  assert.ok(resolverRouting.EXCLUSION_CODES, 'resolver.js must export EXCLUSION_CODES for schema parity');
+
+  assert.deepEqual(snapshotSchema.$defs.window.properties.kind.enum, cacheRouting.WINDOW_KINDS);
+  assert.deepEqual(telemetrySchema.$defs.windowDelta.properties.kind.enum, cacheRouting.WINDOW_KINDS);
+  assert.deepEqual(snapshotSchema.$defs.tier.properties.source.enum, cacheRouting.TIER_SOURCES);
+  assert.equal(snapshotSchema.$defs.tier.properties.name.pattern, cacheRouting.TIER_NAME_RE.source);
+
+  assert.deepEqual(overlaySchema.properties.defaults.properties.strategy.enum, catalogRouting.STRATEGIES);
+  assert.deepEqual(decisionSchema.properties.strategy.enum, catalogRouting.STRATEGIES);
+
+  const selectorKinds = [...catalogRouting.SELECTOR_KINDS].sort();
+  assert.deepEqual(
+    Object.keys(overlaySchema.$defs.selectors.properties).filter((name) => name !== 'byRole').sort(),
+    selectorKinds,
+  );
+  assert.deepEqual(Object.keys(overlaySchema.$defs.roleSelectors.properties).sort(), selectorKinds);
+
+  assert.deepEqual([...overlaySchema.$defs.weightSet.required].sort(), [...validateRouting.WEIGHT_KEYS].sort());
+  assert.deepEqual([...decisionSchema.$defs.warningCode.enum].sort(), [...resolverRouting.DECISION_WARNINGS].sort());
+  assert.deepEqual([...decisionSchema.$defs.exclusionCode.enum].sort(), [...resolverRouting.EXCLUSION_CODES].sort());
 });
 
 test('a weight set is replaced whole, not field by field', () => {
