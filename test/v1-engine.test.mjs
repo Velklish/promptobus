@@ -467,6 +467,21 @@ async function inFlight(root, body = 'в полёте') {
   return { id, dir, intent: path.join(dir, name), owner: path.join(dir, `${name.slice(0, -'.json'.length)}.owner`) };
 }
 
+function leaveIntent(engine, task, id, body) {
+  const ts = '2026-09-02T10:10:00.000Z';
+  commitIntent(engine.home, task, {
+    protocolVersion: 1,
+    id,
+    task,
+    sender: 'owner',
+    recipients: ['w-api'],
+    type: 'status',
+    body,
+    ts,
+  }, new Date(ts));
+  return { id, file: path.join(engine.home, 'tasks', task, 'intents', `${id}.json`) };
+}
+
 const lease = (file, pid, host = os.hostname()) => writeFileSync(file, `${JSON.stringify({ pid, host })}\n`);
 
 // Age the intent past the threshold. An hour is well above any threshold, so
@@ -741,6 +756,87 @@ test('a torn intent of a live neighbour stays in place until the owner is abando
     'the isolation directory was created on a clean slate');
 });
 
+test('an unreadable intent stays in place and completes on a later recovery pass', async () => {
+  const root = sandbox();
+  const { id, intent } = await inFlight(root, 'deliver after retry');
+  let refuseRead = true;
+  const healed = openEngine({
+    root,
+    policy: allowAll,
+    now: clock(),
+    recover: false,
+    faults: (step, info) => {
+      if (step !== 'intent-read' || info.name !== path.basename(intent) || !refuseRead) return;
+      throw Object.assign(new Error('EACCES: injected intent read refusal'), { code: 'EACCES' });
+    },
+  });
+
+  const first = healed.recover(id);
+  assert.deepEqual(first.repairs, [], 'the unreadable intent was reported as repaired');
+  assert.equal(first.broken.length, 1, 'the filesystem refusal was not reported');
+  assert.equal(first.broken[0].code, 'EACCES');
+  assert.equal(first.broken[0].attic, null, 'the unreadable intent was treated as corruption');
+  assert.ok(existsSync(intent), 'the unreadable intent was taken away instead of left for retry');
+  assert.ok(!existsSync(path.join(healed.home, 'tasks', id, 'broken', 'messages')),
+    'a transient read refusal created the corruption directory');
+
+  refuseRead = false;
+  assert.equal(healed.recover(id).repairs.length, 1);
+  assert.equal(healed.unread(id, 'w-api'), 1, 'the preserved intent did not complete fan-out');
+  assert.ok(!existsSync(intent), 'the intent stayed open after the read became available');
+});
+
+test('one unreadable intent does not stop recovery of another intent or task', () => {
+  const root = sandbox();
+  const seed = open(root, { recover: false });
+  const firstTask = taskWith(seed, 'alpha-t20260902-100000');
+  const secondTask = taskWith(seed, 'beta-t20260902-100000');
+  const unreadable = leaveIntent(seed, firstTask, '20260902T101000000-0001-aaaaaa', 'retry later');
+  const sameTask = leaveIntent(seed, firstTask, '20260902T101100000-0002-bbbbbb', 'same task');
+  const nextTask = leaveIntent(seed, secondTask, '20260902T101200000-0003-cccccc', 'next task');
+  const healed = open(root, {
+    recover: false,
+    faults: (step, info) => {
+      if (step !== 'intent-read' || info.name !== path.basename(unreadable.file)) return;
+      throw Object.assign(new Error('EACCES: injected intent read refusal'), { code: 'EACCES' });
+    },
+  });
+
+  const result = healed.recover();
+  assert.deepEqual(result.broken.map(({ name, code, attic }) => ({ name, code, attic })), [{
+    name: path.basename(unreadable.file), code: 'EACCES', attic: null,
+  }]);
+  assert.deepEqual(result.repairs.map((r) => [r.task, r.message]), [
+    [firstTask, sameTask.id],
+    [secondTask, nextTask.id],
+  ], 'recovery stopped after the unreadable intent');
+  assert.ok(existsSync(unreadable.file), 'the unreadable intent did not stay for retry');
+  assert.ok(!existsSync(sameTask.file), 'the next intent of the same task stayed open');
+  assert.ok(!existsSync(nextTask.file), 'the intent of the next task stayed open');
+  assert.equal(healed.unread(firstTask, 'w-api'), 1);
+  assert.equal(healed.unread(secondTask, 'w-api'), 1);
+});
+
+test('open-time recovery returns when one intent is unreadable and recovers another task', () => {
+  const root = sandbox();
+  const seed = open(root, { recover: false });
+  const firstTask = taskWith(seed, 'open-alpha-t20260902-100000');
+  const secondTask = taskWith(seed, 'open-beta-t20260902-100000');
+  const unreadable = leaveIntent(seed, firstTask, '20260902T101300000-0004-dddddd', 'retry on reopen');
+  leaveIntent(seed, secondTask, '20260902T101400000-0005-eeeeee', 'recover at open');
+
+  const healed = open(root, {
+    faults: (step, info) => {
+      if (step !== 'intent-read' || info.name !== path.basename(unreadable.file)) return;
+      throw Object.assign(new Error('EACCES: injected intent read refusal'), { code: 'EACCES' });
+    },
+  });
+
+  assert.ok(existsSync(unreadable.file), 'open-time recovery took the unreadable intent away');
+  assert.equal(healed.unread(firstTask, 'w-api'), 0);
+  assert.equal(healed.unread(secondTask, 'w-api'), 1, 'open-time recovery stopped before the next task');
+});
+
 // ── Mailbox and history ─────────────────────────────────────────────────────────────────
 
 test('a read moves the link to history and does not return what was already read', async () => {
@@ -765,6 +861,68 @@ test('a link in inbox and a record in history read the same contents', async () 
   const canonical = readFileSync(path.join(root, 'messages', `${message.id}.json`), 'utf8');
   assert.equal(inInbox, canonical);
   assert.equal(inHistory, canonical);
+});
+
+test('a transient inbox read refusal loses none of a three-message walk', async () => {
+  const root = sandbox();
+  let refusedName = null;
+  let refuseRead = true;
+  const engine = open(root, {
+    faults: (step, info) => {
+      if (step !== 'inbox-read' || info.name !== refusedName || !refuseRead) return;
+      throw Object.assign(new Error('EACCES: injected inbox read refusal'), { code: 'EACCES' });
+    },
+  });
+  const id = taskWith(engine);
+  for (const body of ['one', 'two', 'three']) {
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body });
+  }
+  const box = path.join(engine.home, 'tasks', id, 'inbox', 'w-api');
+  refusedName = readdirSync(box).sort()[1];
+
+  const first = engine.read(id, 'w-api');
+  assert.deepEqual(first.messages.map((m) => m.body), ['one', 'three'],
+    'messages already moved to history were not returned from the partial walk');
+  assert.equal(first.broken.length, 1, 'the transient refusal was not reported');
+  assert.equal(first.broken[0].code, 'EACCES');
+  assert.equal(first.broken[0].attic, null, 'the unreadable ref was treated as corruption');
+  assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'broken', 'inbox', 'w-api')),
+    'a transient read refusal created the corruption directory');
+
+  refuseRead = false;
+  const second = engine.read(id, 'w-api');
+  assert.deepEqual(second.messages.map((m) => m.body), ['two']);
+  assert.equal(engine.unread(id, 'w-api'), 0);
+});
+
+test('a transient history rename refusal loses none of a three-message walk', async () => {
+  const root = sandbox();
+  let refusedName = null;
+  let refuseRename = true;
+  const engine = open(root, {
+    faults: (step, info) => {
+      if (step !== 'history-ref' || info.name !== refusedName || !refuseRename) return;
+      throw Object.assign(new Error('EACCES: injected history rename refusal'), { code: 'EACCES' });
+    },
+  });
+  const id = taskWith(engine);
+  for (const body of ['one', 'two', 'three']) {
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body });
+  }
+  const box = path.join(engine.home, 'tasks', id, 'inbox', 'w-api');
+  refusedName = readdirSync(box).sort()[1];
+
+  const first = engine.read(id, 'w-api');
+  assert.deepEqual(first.messages.map((m) => m.body), ['one', 'three'],
+    'messages already moved to history were not returned from the partial walk');
+  assert.equal(first.broken.length, 1, 'the transient refusal was not reported');
+  assert.equal(first.broken[0].code, 'EACCES');
+  assert.equal(first.broken[0].attic, null, 'the unmovable ref was treated as corruption');
+
+  refuseRename = false;
+  const second = engine.read(id, 'w-api');
+  assert.deepEqual(second.messages.map((m) => m.body), ['two']);
+  assert.equal(engine.unread(id, 'w-api'), 0);
 });
 
 test('a broken message in the mailbox leaves for broken, and the rest arrive', async () => {

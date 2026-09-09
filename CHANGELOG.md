@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Routing policy overlays no longer move policy-block prototypes through `__proto__`.** The overlay merge skips the JSON key in weight and flat policy blocks, keeping routed policy fields own data and matching the existing guards for defaults and account blocks. (PB-155)
 - **Cursor wake buffers are private and cleaned up on every delivery exit.** Wake text is written with mode `0600`, regardless of umask, and the temporary `.buf` file is removed in `finally`, including when `tmux load-buffer` refuses the file. (PB-151)
 - **Routed catalog failures name the layer that caused them.** Host overlay declarations, unreadable or invalid overlay files, unsupported overlay schemas, and shipped-catalog failures now keep their source through the merge so routed calls return the same `overlay-invalid` or `catalog-invalid` attribution as `models validate`. (PB-78)
+- **Transient mailbox and intent I/O failures no longer masquerade as corrupt records or discard a partial pass.** An unreadable ref stays in the mailbox and is reported while messages already moved to history are returned. An unreadable intent is likewise reported and retained for retry while recovery continues through other intents and tasks. (PB-66)
 
 ## [0.5.1] - 2026-09-09
 

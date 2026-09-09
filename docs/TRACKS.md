@@ -92,7 +92,7 @@ Added after this snapshot: [PB-50.1](backlog/queue/PB-50.1-git-max-output-names-
 
 PB-63 and PB-66 are P0. PB-66 precedes PB-65 and reader taxonomy. PB-101 follows the version/error fixes; PB-147 tests its cleanup boundary.
 
-Queued assignments: [PB-63](backlog/active/PB-63-migrate-mark-never-removed.md), [PB-66](backlog/active/PB-66-recovery-misreads-errno-as-corruption.md), [PB-65](backlog/active/PB-65-recovery-open-failure-bricks-store.md), [PB-132](backlog/active/PB-132-task-id-grammar-two-homes.md), [PB-146](backlog/active/PB-146-unreadable-record-taxonomy-gap.md), [PB-102](backlog/active/PB-102-mixed-version-diagnosis-unreachable.md), [PB-101](backlog/active/PB-101-four-commands-bypass-host-home.md), [PB-131](backlog/active/PB-131-message-types-mutable-array.md), [PB-135](backlog/active/PB-135-sendsyncinput-not-exported.md), [PB-147](backlog/active/PB-147-prune-remove-seam-untested.md).
+Queued assignments: [PB-63](backlog/active/PB-63-migrate-mark-never-removed.md), [PB-66](archive/PB-66-recovery-misreads-errno-as-corruption/task.md), [PB-65](backlog/active/PB-65-recovery-open-failure-bricks-store.md), [PB-132](backlog/active/PB-132-task-id-grammar-two-homes.md), [PB-146](backlog/active/PB-146-unreadable-record-taxonomy-gap.md), [PB-102](backlog/active/PB-102-mixed-version-diagnosis-unreachable.md), [PB-101](backlog/active/PB-101-four-commands-bypass-host-home.md), [PB-131](backlog/active/PB-131-message-types-mutable-array.md), [PB-135](backlog/active/PB-135-sendsyncinput-not-exported.md), [PB-147](backlog/active/PB-147-prune-remove-seam-untested.md).
 
 ### C — Codex session lifecycle
 

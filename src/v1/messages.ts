@@ -47,13 +47,16 @@ import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import { validate } from './validate.js';
 
 /** Fan-out steps, after each of which the suite can crash the process. */
-export type FanoutStep = 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read';
+export type FanoutStep =
+  | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read'
+  | 'intent-read' | 'inbox-read' | 'history-ref';
 
 /**
- * Fault-injection seam. Called AFTER each durable step; a throw from it is
- * a crash exactly at that point. Not supplied in production at all, and that
- * is the only way to test recovery: a real process crash mid-step is not
- * reproduced by the suite.
+ * Fault-injection seam. Fan-out points are called AFTER each durable step; a
+ * throw from one is a crash exactly at that point. Read points are called
+ * immediately BEFORE their named filesystem operation so the suite can
+ * inject an errno without relying on platform permission semantics. Not
+ * supplied in production at all.
  */
 export type FaultHook = (step: FanoutStep, info: Record<string, unknown>) => void;
 
@@ -354,6 +357,7 @@ export function commitIntent(home: string, task: string, message: MessageV1, now
  */
 export interface BrokenNote {
   name: string;
+  /** Protocol validation code, or filesystem errno when the record stays for retry. */
   code: string;
   /** Why the record did not read. */
   note: string;
@@ -397,13 +401,17 @@ export function readInbox(home: string, task: string, participant: string, fault
     const file = path.join(dir, name);
     let raw;
     try {
+      fault('inbox-read', { task, participant, name });
       raw = readFileSync(file, 'utf8');
     } catch (e) {
       // A neighbour took it between the listing and the read — a skip, not a
       // refusal: the second reader took the message, and that reader will
       // deliver it.
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw e;
+      const errno = (e as NodeJS.ErrnoException).code;
+      if (typeof errno !== 'string') throw e;
+      broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
+      continue;
     }
     let parsed: unknown = null;
     let code = '';
@@ -430,12 +438,17 @@ export function readInbox(home: string, task: string, participant: string, fault
       continue;
     }
     try {
+      fault('history-ref', { task, participant, name });
       renameSync(file, historyRef(home, task, participant, (parsed as MessageV1).id));
     } catch (e) {
       // ENOENT here is the same neighbour who took it. A refusal from here
-      // would come from the MIDDLE of the walk, when some refs have already
-      // gone to history, and there would be nobody to put them back.
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      // comes from the MIDDLE of the walk, when some refs have already gone
+      // to history: report it, leave this ref in the inbox for the next read,
+      // and return what already moved instead of trying to put it back.
+      const errno = (e as NodeJS.ErrnoException).code;
+      if (errno === 'ENOENT') continue;
+      if (typeof errno !== 'string') throw e;
+      broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
       continue;
     }
     messages.push(parsed as MessageV1);
@@ -591,13 +604,23 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     // torn record is lawful too — `wx` creates the file atomically, and the
     // contents are written after, and a half of them is visible.
     if (!abandonedIntent(file)) continue;
+    let raw: string;
+    try {
+      fault('intent-read', { task, name });
+      raw = readFileSync(file, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      const errno = (e as NodeJS.ErrnoException).code;
+      if (typeof errno !== 'string') throw e;
+      broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
+      continue;
+    }
     let parsed: unknown = null;
     let code = '';
     let note = '';
     try {
-      parsed = JSON.parse(readFileSync(file, 'utf8'));
+      parsed = JSON.parse(raw);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
       code = 'schema-invalid';
       note = `intent did not parse (${(e as Error).message})`;
     }
