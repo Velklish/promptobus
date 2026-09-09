@@ -15,17 +15,19 @@
 //    BEFORE any mutation;
 // 2. assemble in `<root>/.promptobus.migrating` — next to the target, so the
 //    `rename` is atomic;
-// 3. `migrated.json` mark inside the assembled directory — before the switch;
+// 3. `migrating.json` mark inside the assembled directory — before the switch;
 // 4. `rename` the temporary directory to `.promptobus`;
-// 5. remove the former directory.
+// 5. remove the former directory, then the mark.
 //
 // **The mark closes the window between 4 and 5.** A process death exactly
 // there would leave both roots, and "both roots at once" is a refusal; a
 // person would hit a wall on a clear path. The mark names the legacy
-// directory the new one was built from: it is there — the migration
-// succeeded, and a repeat just finishes the cleanup. It is missing —
-// `.promptobus` came from somewhere else, and that is the very case the
-// refusal was introduced for.
+// directory the new one was built from: while it is there, the migration
+// succeeded and a repeat just finishes cleanup. It is missing when this move
+// never happened or when cleanup completed; either case carries no cleanup
+// authority, so a side-by-side former root is refused. Releases before this
+// rule left a distinct completed-move record, so that old name is deliberately
+// not a resume token.
 import {
   copyFileSync, cpSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync,
   rmSync, statSync, writeFileSync,
@@ -52,8 +54,8 @@ import type {
 import { validate } from './v1/validate.js';
 import type { HostLegacyLayout, PromptobusHost } from './host.js';
 
-/** Name of the successful-assembly mark. It lives inside the new root and survives `rename`. */
-const MARK = 'migrated.json';
+/** Transient successful-assembly mark. It survives `rename` and is removed after cleanup. */
+const MARK = 'migrating.json';
 
 /**
  * How long to wait for a neighbour that is already moving.
@@ -112,6 +114,8 @@ export interface MigrationReport {
 /** Preflight decision: whether migration is needed and what it refuses with. */
 export interface MigrationPlan {
   needed: boolean;
+  /** Only the transient mark remains; no former data will move. */
+  sweep: boolean;
   /** Human refusal text or `null`. A refusal is a lawful outcome, not a breakage. */
   refusal: string | null;
   legacyHome: string;
@@ -223,12 +227,22 @@ function requireLayout(
 export function preflight(root: string, layout: HostLegacyLayout | null): MigrationPlan {
   const named = requireLayout(layout, 'preflight');
   const target = homeOf(root);
-  const empty: MigrationPlan = { needed: false, refusal: null, legacyHome: '', target, active: [] };
+  const empty: MigrationPlan = {
+    needed: false, sweep: false, refusal: null, legacyHome: '', target, active: [],
+  };
   if (!named) return empty;
   const [outer, inner] = splitLegacyRel(named.rel);
   const legacyHome = path.join(root, outer, inner);
-  const plan: MigrationPlan = { needed: false, refusal: null, legacyHome, target, active: [] };
-  if (!existsSync(legacyHome)) return plan;
+  const plan: MigrationPlan = {
+    needed: false, sweep: false, refusal: null, legacyHome, target, active: [],
+  };
+  if (!existsSync(legacyHome)) {
+    if (markOf(target)?.from === legacyHome) {
+      plan.needed = true;
+      plan.sweep = true;
+    }
+    return plan;
+  }
   if (!isDir(legacyHome)) {
     plan.refusal = `${legacyHome} is not a directory: the former bus store is damaged, and there is nothing to move from it. `
       + `Remove it by hand if it is not needed, and repeat the command.`;
@@ -241,9 +255,10 @@ export function preflight(root: string, layout: HostLegacyLayout | null): Migrat
     return plan;
   }
   if (existsSync(target)) {
-    // Both roots at once. The mark tells an unfinished cleanup from a foreign
-    // `.promptobus`: the first we finish, the second is the very case the
-    // refusal was introduced for.
+    // Both roots at once. The current transient mark tells unfinished cleanup
+    // from a foreign `.promptobus`: the first we finish, the second is the very
+    // case the refusal was introduced for. An old completed-move record is not
+    // proof: previous releases left it behind after cleanup had finished.
     if (markOf(target)?.from === legacyHome) {
       plan.needed = true;
       return plan;
@@ -308,6 +323,10 @@ export function migrate(root: string, {
     root, from: plan.legacyHome, to: plan.target, tasks: [], brokenTasks: [], bindings: 0,
     moved: false, resumed: false,
   });
+  if (plan.sweep) {
+    rmSync(path.join(plan.target, MARK), { force: true });
+    return empty();
+  }
   if (!plan.needed) return empty();
 
   // **The move runs under a lock, and the lock is not a safety net here.** It
@@ -338,6 +357,10 @@ export function migrate(root: string, {
     // us, not a reason to refuse.
     const after = preflight(root, layout);
     if (after.refusal) throw new GateError(after.refusal);
+    if (after.sweep) {
+      rmSync(path.join(after.target, MARK), { force: true });
+      return empty();
+    }
     if (!after.needed) return empty();
     throw e.refusal;
   }
@@ -356,6 +379,10 @@ function migrateLocked(
   // the wait, and the decision from it has had time to go stale.
   const plan = preflight(root, layout);
   if (plan.refusal) throw new GateError(plan.refusal);
+  if (plan.sweep) {
+    rmSync(path.join(plan.target, MARK), { force: true });
+    return report;
+  }
   if (!plan.needed) return report;
   const { legacyHome, target } = plan;
 
@@ -365,6 +392,7 @@ function migrateLocked(
     report.resumed = true;
     fault('cleanup', { target });
     rmSync(legacyHome, { recursive: true, force: true });
+    rmSync(path.join(target, MARK), { force: true });
     return report;
   }
 
@@ -404,6 +432,7 @@ function migrateLocked(
   }
   fault('cleanup', { legacyHome });
   rmSync(legacyHome, { recursive: true, force: true });
+  rmSync(path.join(target, MARK), { force: true });
   report.moved = true;
   return report;
 }

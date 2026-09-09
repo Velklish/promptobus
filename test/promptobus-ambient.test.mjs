@@ -122,9 +122,8 @@ rule:
 
 // The package's legitimate stashes: key and reason. Every single one holds the state of ITS OWN
 // process and is filled by the package itself — no one puts anything into them from outside. The
-// list was checked against the tree, not copied from the spec: the `migrated` the spec names is
-// `const MARK = 'migrated.json'` (migrate.ts) — a string, not a stash, and the parse does not
-// find it.
+// list was checked against the tree, not copied from the spec: the `migrated` the spec names no
+// longer occurs in `src` at all, so the parse cannot find it.
 const ALLOWED = [
   ['src/fs/atomic.ts::atomicSeq',
     "suffix counter for the atomic write's temporary neighbor: names within the process must not collide"],

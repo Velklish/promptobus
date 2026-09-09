@@ -55,6 +55,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(here, 'fixtures', 'promptobus', 'legacy-v061');
 const ACTIVE = 't20260831-090000';
 const CLOSED = 't20260830-140000';
+const REAPPEARED = 't20260901-120000';
 
 let nth = 0;
 
@@ -111,6 +112,21 @@ function thrown(fn) {
   } catch (e) {
     return { threw: true, name: e?.constructor?.name, msg: e.message };
   }
+}
+
+function recreateLegacy(home) {
+  legacy.createTask(home, {
+    id: REAPPEARED,
+    title: 'new data in a reappeared legacy store',
+    slug: 'reappeared',
+  });
+  legacy.sendMessage(home, REAPPEARED, {
+    from: 'orchestrator',
+    to: 'orchestrator',
+    type: 'task',
+    body: 'this message exists only in the reappeared store',
+  });
+  legacy.closeTask(home, REAPPEARED);
 }
 
 // --- refusals before mutation ---------------------------------------------------------
@@ -206,6 +222,8 @@ test('golden: the v0.61.0 slice transfers in full', async (t) => {
 
   await t.test('legacy directory removed only after the switch', () => {
     assert.equal(existsSync(home), false);
+    assert.equal(existsSync(path.join(target, 'migrating.json')), false,
+      'the transient cleanup mark survived cleanup');
     assert.equal(existsSync(path.join(target, 'tasks', ACTIVE, 'task.json')), true);
   });
 
@@ -565,6 +583,8 @@ test('fault injection: a crash AFTER the switch is finished by a retry, not by a
     assert.equal(said.threw, true);
     assert.equal(existsSync(home), true);
     assert.equal(existsSync(target), true);
+    assert.equal(existsSync(path.join(target, 'migrating.json')), true,
+      'the transient cleanup mark is missing');
   });
 
   await t.test('a retry does not refuse with "both roots", it finishes the cleanup', () => {
@@ -573,7 +593,111 @@ test('fault injection: a crash AFTER the switch is finished by a retry, not by a
     const report = migrate(root);
     assert.equal(report.resumed, true);
     assert.equal(existsSync(home), false);
+    assert.equal(existsSync(path.join(target, 'migrating.json')), false,
+      'the transient cleanup mark survived cleanup');
     assert.equal(existsSync(path.join(target, 'tasks', ACTIVE, 'task.json')), true);
+  });
+});
+
+test('a transient mark left after cleanup is swept before a legacy store can reappear', async (t) => {
+  const { root, home, target } = workspace();
+  migrate(root);
+  const completed = treeDigest(target);
+  const mark = path.join(target, 'migrating.json');
+
+  // Simulate a process stopping after it removed the legacy directory and before it removed
+  // the transient mark. With no source directory, this mark cannot authorize any cleanup.
+  writeFileSync(mark, `${JSON.stringify({
+    from: home,
+    at: '2026-09-01T11:00:00.000Z',
+    tasks: 2,
+    brokenTasks: 0,
+  }, null, 2)}\n`);
+  const sweep = preflight(root);
+
+  await t.test('preflight names mark-only cleanup instead of a pending data move', () => {
+    assert.equal(sweep.needed, true);
+    assert.equal(sweep.sweep, true);
+    assert.equal(sweep.refusal, null);
+  });
+
+  await t.test('the next store open removes the dead mark without changing the completed store', () => {
+    assert.equal(store.promptobusHome(root, { legacyLayout: () => LAYOUT }), target);
+    assert.equal(existsSync(mark), false,
+      'the dead cleanup mark survived the next open');
+    assert.equal(treeDigest(target), completed, 'sweeping the dead mark changed the store');
+  });
+
+  await t.test('a direct sweep returns an empty report', () => {
+    writeFileSync(mark, `${JSON.stringify({ from: home })}\n`);
+    const report = migrate(root);
+    assert.equal(report.moved, false);
+    assert.equal(report.resumed, false);
+    assert.deepEqual(report.tasks, []);
+    assert.equal(existsSync(mark), false, 'the direct sweep left its mark behind');
+  });
+
+  recreateLegacy(home);
+  const legacyBefore = treeDigest(home);
+  const targetBefore = treeDigest(target);
+  const plan = preflight(root);
+  const said = thrown(() => migrate(root));
+
+  await t.test('a later legacy store is refused rather than treated as unfinished cleanup', () => {
+    assert.equal(plan.sweep, false);
+    assert.match(plan.refusal ?? '', /both bus stores sit side by side/,
+      'the dead cleanup mark authorized a later deletion');
+    assert.equal(said.name, 'GateError', said.msg);
+    assert.equal(said.msg, plan.refusal);
+  });
+
+  await t.test('both roots and the new message survive the refusal', () => {
+    assert.equal(existsSync(home), true, 'the reappeared legacy store was deleted');
+    assert.equal(treeDigest(home), legacyBefore, 'the reappeared legacy store changed');
+    assert.equal(treeDigest(target), targetBefore, 'the completed store changed');
+    assert.equal(names(path.join(home, 'tasks', REAPPEARED, 'inbox', 'orchestrator')).length, 1,
+      'the new message was deleted');
+  });
+});
+
+test('an old completed mark does not authorize deleting a reappeared legacy store', async (t) => {
+  const { root, home, target } = workspace();
+  migrate(root);
+
+  // Seed the mark left by releases before this fix. The current migration must not be the
+  // source of it: after the fix, a completed current migration removes its transient mark.
+  writeFileSync(path.join(target, 'migrated.json'), `${JSON.stringify({
+    from: home,
+    at: '2026-09-01T11:00:00.000Z',
+    tasks: 2,
+    brokenTasks: 0,
+  }, null, 2)}\n`);
+
+  recreateLegacy(home);
+
+  const legacyBefore = treeDigest(home);
+  const targetBefore = treeDigest(target);
+  const plan = preflight(root);
+  const said = thrown(() => migrate(root));
+
+  await t.test('preflight treats the two stores as side by side, not as unfinished cleanup', () => {
+    assert.match(plan.refusal ?? '', /both bus stores sit side by side/,
+      'the old completed mark authorized cleanup');
+  });
+
+  await t.test('migration refuses with the preflight GateError', () => {
+    assert.equal(said.name, 'GateError', said.msg);
+    assert.equal(said.msg, plan.refusal);
+  });
+
+  await t.test('neither root changed, and the new task and message survived', () => {
+    assert.equal(existsSync(home), true, 'the reappeared legacy store was deleted');
+    assert.equal(treeDigest(home), legacyBefore, 'the reappeared legacy store changed');
+    assert.equal(treeDigest(target), targetBefore, 'the current store changed');
+    assert.equal(existsSync(path.join(home, 'tasks', REAPPEARED, 'task.json')), true,
+      'the new task was deleted');
+    assert.equal(names(path.join(home, 'tasks', REAPPEARED, 'inbox', 'orchestrator')).length, 1,
+      'the new message was deleted');
   });
 });
 
