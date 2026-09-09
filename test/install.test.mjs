@@ -158,6 +158,26 @@ test('repeat install is byte-identical; later call without --harnesses uses the 
   assert.deepEqual(homeHits(home), []);
 });
 
+test('install leaves hand-formatted unselected harness files byte-identical and check clean', () => {
+  const { dir, home } = sandbox();
+  const cursorRel = path.join('.cursor', 'hooks.json');
+  const codexRel = path.join('.codex', 'hooks.json');
+  const cursorBefore = '{\n    "version": 1,\n    "extra": "keep-me",\n    "hooks": {\n        "stop": [{ "command": "echo foreign-cursor" }]\n    }\n}\n';
+  const codexBefore = '{\n  "notification": [{\n    "command": "echo foreign-codex"\n  }],\n  "keep": true\n}\n';
+  mkdirSync(path.dirname(path.join(dir, cursorRel)), { recursive: true });
+  mkdirSync(path.dirname(path.join(dir, codexRel)), { recursive: true });
+  writeFileSync(path.join(dir, cursorRel), cursorBefore);
+  writeFileSync(path.join(dir, codexRel), codexBefore);
+
+  assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
+  assert.equal(fileText(dir, cursorRel), cursorBefore);
+  assert.equal(fileText(dir, codexRel), codexBefore);
+  assert.equal(doInstall(dir, home, { check: true }), 0);
+  assert.equal(fileText(dir, cursorRel), cursorBefore);
+  assert.equal(fileText(dir, codexRel), codexBefore);
+  assert.deepEqual(homeHits(home), []);
+});
+
 test('merge keeps foreign settings, hook groups and unknown fields', () => {
   const { dir, home } = sandbox();
   putFixture(dir, path.join('.claude', 'settings.json'), 'foreign-claude.json');

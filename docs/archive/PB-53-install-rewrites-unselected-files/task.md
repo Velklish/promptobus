@@ -1,9 +1,9 @@
 # PB-53 · `promptobus install` rewrites the config file of every harness it was not asked to install, and `install --check` then reports permanent drift on it
 
-- **Order:** 340
 - **Scope:** `lib/install.js`, `test/install.test.mjs`, `docs/guides/install.md`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-52
+- **Taken:** 2026-09-09
 
 ## Context
 

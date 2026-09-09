@@ -101,6 +101,8 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 
 The runner script is generated under `.promptobus/hooks/` (`busHookRel()`). The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
 
+The installer leaves an existing unselected harness file byte-for-byte untouched. If it finds an owned hook group left by an earlier install, it rewrites that file only to remove the group; `install --check` reports drift for that cleanup when needed.
+
 When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Cleanup of a run must keep `.promptobus/hooks/`.
 
 A malformed or shared config file fails the command. The installer does not write a partial file.
