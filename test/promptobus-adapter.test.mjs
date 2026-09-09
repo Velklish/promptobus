@@ -27,13 +27,53 @@ const home = path.join(SB, 'ws', '.promptobus');
 function thrown(fn) {
   try {
     fn();
-    return { threw: false, name: '', msg: '' };
+    return { threw: false, name: '', code: '', msg: '' };
   } catch (e) {
-    return { threw: true, name: e?.constructor?.name, msg: e.message };
+    return { threw: true, name: e?.constructor?.name, code: e?.code, msg: e.message };
   }
 }
 
 // --- task journal in mechanism fields ------------------------------------------
+
+const unnamed = thrown(() => store.bus(home));
+check('bus: the first open must name the reader mechanism version',
+  unnamed.name === 'TypeError' && /reader mechanism version is required/.test(unnamed.msg),
+  `${unnamed.name} · ${unnamed.msg}`);
+
+const unversionedHome = path.join(SB, 'unversioned-reader', '.promptobus');
+const unversionedReads = captureSplit(() => {
+  store.taskExists(unversionedHome, 'missing-one');
+  store.taskExists(unversionedHome, 'missing-two');
+});
+const readerWarnings = unversionedReads.err.split('\n').filter((line) => line.includes('unversioned reader'));
+check('engine fallback: an unversioned reader warns once per home and names that home',
+  readerWarnings.length === 1 && readerWarnings[0].includes(unversionedHome),
+  JSON.stringify(readerWarnings));
+
+const unversionedWritesHome = path.join(SB, 'unversioned-writes', '.promptobus');
+const unversionedWrites = captureSplit(() => {
+  const warned = store.createTask(unversionedWritesHome, {
+    id: 'warning-t20260909-170000', title: 'writer warnings', owner: 'first-session',
+  });
+  store.claimOwnership(unversionedWritesHome, warned.id, 'second-session');
+  store.sendMessage(unversionedWritesHome, warned.id, {
+    from: 'worker:guest', to: store.ORCHESTRATOR, type: 'status', body: 'foreign update',
+  });
+});
+const writerWarnings = unversionedWrites.err.split('\n')
+  .filter((line) => line.includes('without mechanismVersion'));
+check('writer fallback: create, claim, and automatic sender warnings name the home and record',
+  writerWarnings.length === 3
+  && writerWarnings.every((line) => line.includes(unversionedWritesHome))
+  && writerWarnings.some((line) => line.includes('creating task warning-t20260909-170000 orchestrator participant'))
+  && writerWarnings.some((line) => line.includes('claiming task warning-t20260909-170000 orchestrator participant'))
+  && writerWarnings.some((line) => line.includes('automatically registering task warning-t20260909-170000 participant worker:guest')),
+  JSON.stringify(writerWarnings));
+
+check('participantRecord: an unnamed writer has no synthetic 0.0.0 version',
+  store.participantRecord('worker:unversioned').metadata.mechanismVersion === undefined,
+  JSON.stringify(store.participantRecord('worker:unversioned').metadata));
+store.bus(home, { cli: '0.5.1' });
 
 const task = store.createTask(home, {
   id: 't20260813-120000', title: 'трасса события через два сервиса', owner: null,
@@ -53,6 +93,65 @@ check('createTask: the task stamp lives in the journal\'s adapter and is written
   store.readTask(home, task.id).adapter.stamp === task.id
   && !store.readTask(home, task.id).adapter.slug,
   JSON.stringify(store.readTask(home, task.id).adapter));
+
+// --- reader and writer mechanism versions ----------------------------------------
+
+// The adapter opens the store with the host version before using its ordinary helpers.
+// A later reader in the same process deliberately names another version: the engine cache
+// must not hand it the writer's reader version. Both records carry an unfamiliar field as
+// if a newer mechanism had written them; the refusal must distinguish that from damage.
+for (const [suffix, writer] of [
+  ['plain', '0.6.0'], ['prerelease', '0.6.0-rc.1'], ['build', '0.6.0+build.7'],
+]) {
+  const mixedHome = path.join(SB, `mixed-${suffix}`, '.promptobus');
+  store.bus(mixedHome, { cli: writer });
+  const mixed = store.createTask(mixedHome, {
+    id: `${suffix}-t20260906-100000`, title: `${suffix} writer`, owner: 'writer-session',
+  });
+  const file = store.taskFile(mixedHome, mixed.id);
+  const meta = JSON.parse(readFileSync(file, 'utf8'));
+  meta.participants[0].brandNewField = true;
+  writeFileSync(file, JSON.stringify(meta, null, 2) + '\n');
+
+  const refusal = thrown(() => store.bus(mixedHome, { cli: '0.5.1' }).readTask(mixed.id));
+  check(`mixed versions: ${suffix} writer is diagnosed through the adapter`,
+    refusal.code === 'schema-version-unsupported'
+    && refusal.msg.includes(`written by mechanism ${writer}`)
+    && refusal.msg.includes('this session runs 0.5.1'),
+    `${refusal.code} · ${refusal.msg}`);
+}
+
+const senderHome = path.join(SB, 'automatic-sender-version', '.promptobus');
+store.bus(senderHome, { cli: '0.6.0' });
+const senderTask = store.createTask(senderHome, {
+  id: 'sender-t20260906-100050', title: 'automatic sender writer', owner: 'writer-session',
+});
+store.sendMessage(senderHome, senderTask.id, {
+  from: 'worker:guest', to: store.ORCHESTRATOR, type: 'status', body: 'foreign task update',
+});
+const senderFile = store.taskFile(senderHome, senderTask.id);
+const senderMeta = JSON.parse(readFileSync(senderFile, 'utf8'));
+senderMeta.participants.find((p) => p.metadata.address === 'worker:guest').brandNewField = true;
+writeFileSync(senderFile, JSON.stringify(senderMeta, null, 2) + '\n');
+
+const senderRefusal = thrown(() => store.bus(senderHome, { cli: '0.5.1' }).readTask(senderTask.id));
+check('mixed versions: an automatically registered sender names its writer release',
+  senderRefusal.code === 'schema-version-unsupported'
+  && senderRefusal.msg.includes('written by mechanism 0.6.0')
+  && senderRefusal.msg.includes('this session runs 0.5.1'),
+  `${senderRefusal.code} · ${senderRefusal.msg}`);
+
+const claimHome = path.join(SB, 'claim-version', '.promptobus');
+store.bus(claimHome, { cli: '0.5.1' });
+const claimed = store.createTask(claimHome, {
+  id: 'claim-t20260906-100100', title: 'claim writer', owner: 'old-session',
+});
+store.bus(claimHome, { cli: '0.6.0' });
+store.claimOwnership(claimHome, claimed.id, 'new-session');
+const claimedOwner = store.participantOf(store.readTask(claimHome, claimed.id), store.ORCHESTRATOR);
+check('claimOwnership: the orchestrator record carries the claiming mechanism version',
+  claimedOwner.metadata.owner === 'new-session' && claimedOwner.metadata.mechanismVersion === '0.6.0',
+  JSON.stringify(claimedOwner.metadata));
 
 // --- participant record: the address is rejected before the write -----------------------------
 

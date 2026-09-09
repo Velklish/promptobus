@@ -53,13 +53,15 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 // Numeric version compare: 0.10.0 is newer than 0.9.0; as strings it is the
-// other way around. Our own, not shared with the CLI: the package does not
-// import consumer modules at all, and standalone builds rest on that. `null`
-// — "nothing to compare": the journal number is written by the mechanism, but
-// we read it as foreign text.
+// other way around. A prerelease or build tail does not disarm the diagnosis:
+// comparison uses the numeric core and the refusal keeps the original string.
+// Our own, not shared with the CLI: the package does not import consumer
+// modules at all, and standalone builds rest on that. `null` — "nothing to
+// compare": the journal number is written by the mechanism, but we read it as
+// foreign text.
 function cmpVersion(a: string, b: string): number | null {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const pa = a.split(/[-+]/, 1)[0].split('.').map(Number);
+  const pb = b.split(/[-+]/, 1)[0].split('.').map(Number);
   if (![...pa, ...pb].every((n) => Number.isInteger(n) && n >= 0)) return null;
   for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
     const x = pa[i] ?? 0;

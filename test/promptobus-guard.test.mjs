@@ -11,12 +11,14 @@
 // What's checked is what the harness will see: the return code (2 — the turn is returned, 0 —
 // it isn't), the reason in stderr, and silence on a clean pass. Plus loop protection: the same
 // state is returned no more than twice in a row.
-import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
+import { Readable } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { captureSplit } from './console.mjs';
 import { makeSandbox, makeSockPath, stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-guard-');
@@ -34,6 +36,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'guard.js'));
 const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
+const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
 writeHostConfig(ROOT);
 
 store.createTask(HOME, { id: TASK, title: 'сторож цикла', owner: SESSION });
@@ -135,6 +138,51 @@ const asHook = (input, env = {}) => {
     encoding: 'utf8',
   });
 };
+
+// The hook's declared home may differ from the host's workspace home: participant configs
+// set PROMPTOBUS_HOME explicitly. The CLI dispatch must not prime the unrelated host home and
+// leave this reader unversioned. Run in-process so the selected reader can be inspected after
+// guard deliberately swallows the broken-journal refusal to keep the Stop hook alive.
+const MIXED_ROOT = path.join(ROOT, 'mixed-reader-host');
+const MIXED_HOME = path.join(ROOT, 'mixed-reader-declared-home');
+const MIXED_TASK = 'guard-mixed-t20260909-170100';
+writeHostConfig(MIXED_ROOT);
+const mixedSetup = captureSplit(() => {
+  store.createTask(MIXED_HOME, { id: MIXED_TASK, title: 'newer guard writer', owner: SESSION });
+  return store.taskFile(MIXED_HOME, MIXED_TASK);
+});
+const mixedFile = mixedSetup.value;
+const mixedMeta = JSON.parse(readFileSync(mixedFile, 'utf8'));
+mixedMeta.participants[0].metadata.mechanismVersion = '0.6.0';
+mixedMeta.participants[0].brandNewField = true;
+writeFileSync(mixedFile, JSON.stringify(mixedMeta, null, 2) + '\n');
+const mixedHost = createStandaloneHost({ cwd: MIXED_ROOT, binPath: BIN });
+await runPromptobus(['guard'], {
+  host: mixedHost,
+  cwd: MIXED_ROOT,
+  env: {
+    ...process.env,
+    PROMPTOBUS_HOME: MIXED_HOME,
+    PROMPTOBUS_TASK: MIXED_TASK,
+    PROMPTOBUS_ROLE: 'orchestrator',
+    CLAUDE_CODE_SESSION_ID: SESSION,
+  },
+  input: Readable.from([JSON.stringify({
+    session_id: SESSION, cwd: MIXED_ROOT, hook_event_name: 'Stop', stop_hook_active: false,
+  })]),
+});
+let mixedDiagnosis = null;
+try {
+  store.bus(MIXED_HOME).readTask(MIXED_TASK);
+} catch (e) {
+  mixedDiagnosis = e;
+}
+check('mixed-version guard: the declared home uses the host reader version',
+  mixedHost.promptobusHome() !== MIXED_HOME
+  && mixedDiagnosis?.code === 'schema-version-unsupported'
+  && mixedDiagnosis.message.includes('written by mechanism 0.6.0')
+  && mixedDiagnosis.message.includes(`this session runs ${mixedHost.version}`),
+  `${mixedDiagnosis?.code ?? mixedDiagnosis?.constructor?.name} · ${mixedDiagnosis?.message}`);
 
 const clean = cli();
 check('CLI: clean — code 0 and NOT A SINGLE line of output',
