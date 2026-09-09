@@ -1,0 +1,9 @@
+# PB-98 · Result
+
+**Closed 2026-09-10.** Completed. The "Codex sessions" guidance phrase the driver prints — where the participant threads live — no longer names the default `~/.promptobus/codex/sessions` regardless of configuration: `lib/driver-codex.js` resolves `sessionsDir()` lazily from the environment and the host's registry home (`PROMPTOBUS_CODEX_HOME` override, then `harnessStateHome`), and when the host cannot answer it catches only `GateError` and names the source it fell back to; any other error still propagates. `lib/harness-home.js` needed no change — its `harnessStateHome` already gives the env → host → `GateError` chain. 02-host and 03-cli § The Codex holder describe the resolved home and its source.
+
+**Verification.** Worker commit `4063f06` (worktree of `worker:codex`, on `main` `af39946`). Reproducer red before the repair: `node test/promptobus-driver-codex.test.mjs` exit 1, 122/123 — "Codex sessions phrase follows the host-selected registry home" (the phrase said the default path with a non-default home). After the repair 124/124, including the `GateError` source fallback. Gates on `4063f06`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 670 tracked files, 119 tarball entries. Mutation probe after the commit, tests kept: the literal phrase restored → 122/124 with the two named checks red; fix restored → 124/124. Review: the orchestrator read the diff in full — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** 02-host.md, 03-cli.md § The Codex holder, CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:codex`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.

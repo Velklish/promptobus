@@ -48,6 +48,7 @@ const {
   TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
+const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
@@ -460,6 +461,20 @@ check(': bus tool names are mcp__<override key>__name',
 
 check(': harness rules forbid questions and require the mailbox on every turn',
   /Do not ask questions/.test(PHRASES.promptRules) && /Fetch the mailbox at the start of every turn/.test(PHRASES.promptRules));
+
+const hostSessionsHome = path.join(SB, 'host-selected-codex-home');
+const previousCodexHome = process.env.PROMPTOBUS_CODEX_HOME;
+delete process.env.PROMPTOBUS_CODEX_HOME;
+bindHarnessHomes({ harnessStateHome: (harness) => harness === 'codex' ? hostSessionsHome : null });
+check(': Codex sessions phrase follows the host-selected registry home',
+  PHRASES.sessions === `participant threads — ${path.join(hostSessionsHome, 'sessions')}`,
+  PHRASES.sessions);
+bindHarnessHomes(null);
+check(': without a host home, Codex sessions phrase names its source',
+  PHRASES.sessions === 'participant threads — the registry the host names for `codex` (`PROMPTOBUS_CODEX_HOME` overrides it)',
+  PHRASES.sessions);
+if (previousCodexHome === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
+else process.env.PROMPTOBUS_CODEX_HOME = previousCodexHome;
 
 check(': a binary older than the proven version — refuse before lift',
   /0\.140/.test(String(codexDriver.optionRefusal({}, { version: '0.140.0' })))

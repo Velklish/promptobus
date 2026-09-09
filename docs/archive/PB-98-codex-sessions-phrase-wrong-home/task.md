@@ -1,9 +1,9 @@
 # PB-98 · Codex driver's `PHRASES.sessions` hardcodes `~/.promptobus/codex/sessions`, which is only the standalone host's answer
 
-- **Order:** 820
 - **Scope:** [02-host.md](../../reference/02-host.md), [03-cli](../../reference/03-cli.md) § The Codex holder, `lib/driver-codex.js`, `lib/codex-session.js`, `lib/harness-home.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-10
 
 ## Context
 
