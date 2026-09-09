@@ -508,6 +508,16 @@ check('section: the command calls an absolute node, an absolute binary, and the 
   && group.hooks[0].command === `"${process.execPath}" "${PACK_BIN}" promptobus guard`,
   group.hooks[0].command);
 
+const winIdentity = {
+  address: 'worker:space value',
+  taskId: 'task space',
+  home: 'C:\\Users\\A\\promptobus home',
+};
+const winCommand = guardHookSettings(layoutHost, winIdentity, 'win32')[GUARD_HOOK_EVENT][0].hooks[0].command;
+check('section: win32 quotes guard identity values but leaves command words and flags bare',
+  winCommand === `"${process.execPath}" "${PACK_BIN}" promptobus guard --role "worker:space value" --task "task space" --home "C:\\Users\\A\\promptobus home"`,
+  winCommand);
+
 // A live run of the assembly: exactly the command layout puts into settings.json is run with
 // the `Stop` event payload on stdin — that's how Claude Code calls it. We check what the
 // harness will see: code 2 and the reason in stderr. Measured on binary 2.1.251: code 2 gives

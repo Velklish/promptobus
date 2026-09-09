@@ -10,7 +10,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 - Identity: `id`, `commandName`, `version`, `locale`
 - Roots: `workspaceRoot()`, `promptobusHome()`, `findRoot(cwd)`
-- Binaries: `nodePath()`, `binPath()`, `layoutBinPath()`
+- Binaries and launch argv: `nodePath()`, `binPath()`, `layoutBinPath()`, `guardArgv(args)`
 - Layout relatives: tools manifest, skills, plugin, bus hook, install manifest
 - `cloneOf(abs)` — the clone a directory belongs to and its namespace path, or `null`; zones and namespace depth are the host's layout, the package never walks the tree
 - `declaredTools()` — harness names allowed for `--harness`
@@ -47,6 +47,18 @@ The interface for that file, `HostFile`, declares one field the standalone host 
 `harnessStateHome(harness)` answers `~/.promptobus/<harness>` — the path the package used to guess — so a single-user checkout sets no variable and notices no change.
 
 `syncHint()` returns `<commandName> install`.
+
+`guardArgv(args)` is a required member of `PromptobusHost`, next to
+`layoutBinPath()`. It returns the complete argv for the loop guard, without a
+leading `node`; `args` starts with `guard`. A host whose command lives below a
+prefix includes that prefix in the answer, for example
+`[layoutBinPath(), 'promptobus', 'guard', …]`. `guardHookCommand` quotes this
+host-provided argv and does not infer a command word. Existing host
+implementations must provide this member before calling `install`, `spawn`, or
+`review`; otherwise guard hook assembly throws `TypeError`.
+
+For the standalone host, the default `promptobus` entry retains the established
+optional prefix for byte-compatible installs.
 
 ## Model-routing paths
 

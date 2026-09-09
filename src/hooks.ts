@@ -65,19 +65,27 @@ export function busHookSettings(host: Pick<PromptobusHost, 'nodePath' | 'workspa
 }
 
 export function guardHookCommand(
-  host: Pick<PromptobusHost, 'nodePath' | 'layoutBinPath'>,
+  host: Pick<PromptobusHost, 'nodePath' | 'guardArgv'>,
   identity: GuardIdentity | null = null,
   platform = 'posix',
 ): string {
-  const flags = identity
-    ? ` --role ${quoteFlag(identity.address, platform)} --task ${quoteFlag(identity.taskId, platform)}`
-      + ` --home ${quoteFlag(identity.home, platform)}`
-    : '';
-  return `"${host.nodePath()}" "${host.layoutBinPath()}" promptobus guard${flags}`;
+  const argv = host.guardArgv(['guard']);
+  const identityFlags = identity
+    ? [
+      '--role', quoteFlag(identity.address, platform),
+      '--task', quoteFlag(identity.taskId, platform),
+      '--home', quoteFlag(identity.home, platform),
+    ]
+    : [];
+  return [
+    `"${host.nodePath()}"`,
+    ...argv.map((arg, index) => index === 0 ? `"${arg}"` : arg),
+    ...identityFlags,
+  ].join(' ');
 }
 
 export function guardHookSettings(
-  host: Pick<PromptobusHost, 'nodePath' | 'layoutBinPath'>,
+  host: Pick<PromptobusHost, 'nodePath' | 'guardArgv'>,
   identity: GuardIdentity | null = null,
   platform = 'posix',
 ): Record<string, unknown> {
@@ -95,7 +103,7 @@ export interface HookPlan {
 // Not a full PromptobusHost: the type declares which members the plan asks for,
 // and sync passes exactly those.
 export type PromptobusHookHost = Pick<PromptobusHost,
-  'commandName' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'layoutBinPath'>;
+  'commandName' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'guardArgv'>;
 
 export function planPromptobusHooks(
   host: PromptobusHookHost,

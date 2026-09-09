@@ -297,6 +297,15 @@ export interface PromptobusHost {
    * and exit 0.
    */
   busArgv(args: string[]): string[];
+  /**
+   * How to LAUNCH the loop guard hook: the whole argv, with no leading `node`.
+   *
+   * Unlike `busArgv`, this uses `layoutBinPath()` because the hook is written into
+   * project settings and must call the entry that belongs to that layout. `args`
+   * starts with `guard`; a host whose commands live under a prefix includes that
+   * prefix here. The hook planner does not infer either part.
+   */
+  guardArgv(args: string[]): string[];
   cloneHint(nsPath: string): string;
   syncHint(): string;
   workerPreamble(ctx: { taskId: string; nsPath: string; branch: string }): string;

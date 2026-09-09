@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
 - **Bulk task listings retain machine-readable failure codes.** Each `BrokenTask` now carries the exact typed refusal code, so callers can distinguish a newer mechanism record from a damaged or unreadable journal without parsing diagnostic text or reading the task again. (PB-146)
 
+### Changed
+
+- **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host
+
 ### Fixed
 
 - **Codex holder fallback sockets are isolated by registry home.** When a registry's nested session socket path is too long, the `/tmp/pb-cdx-…` fallback now hashes the registry `sessions` directory together with the session ref, so two registries cannot take over the same socket. (PB-115)
@@ -48,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Claude Code's proven inventory now includes entitled Haiku.** Claude 2.1.263 accepted `claude-haiku-4-5` on a one-turn liftoff, so the driver publishes its `haiku` alias and model-scoped limit ids and the catalog carries a worker ladder rated from Anthropic's 73.3 % SWE-bench figure, Artificial Analysis's 81 tokens/s and the $1/$5 list price. The same check refused `claude-mythos-5-1`, which remains out. (PB-34.1)
 - **Telemetry no longer treats exhausted cache entries as fresh end readings.** A future-reset or sticky exhaustion remains live for routing, but its window percentage is `null` in participant telemetry once the sixty-second window TTL has passed, so `models calibrate` cannot mistake a frozen value for spend evidence. (PB-77)
 - **Live mixed-lineup matchers now read protocol v1 sender IDs.** Worker and reviewer checks share the normalized sender predicate, so a live run no longer waits for messages under the caller's unstored address spelling. (PB-67)
+- **Loop guard hooks now use the host's launch argv.** The generated command calls
 
 ## [0.5.1] - 2026-09-09
 

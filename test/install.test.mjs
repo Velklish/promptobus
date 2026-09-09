@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -34,10 +35,10 @@ function sandbox() {
   return { dir, home };
 }
 
-function hostOf(dir) {
+function hostOf(dir, commandName = 'promptobus') {
   return createStandaloneHost({
     cwd: dir,
-    commandName: 'promptobus',
+    commandName,
     version: '0.1.0',
     binPath: BIN,
     nodePath: process.execPath,
@@ -254,6 +255,26 @@ test('--dry-run writes nothing; --check reports drift and returns non-zero', asy
     host: h, cwd: dir, env: envOf(home),
   });
   assert.equal(code, 1);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('guard hook argv follows a non-default host command name', async () => {
+  const { dir, home } = sandbox();
+  const host = hostOf(dir, 'bus');
+  assert.equal(install(host, { cwd: dir, env: envOf(home), harnesses: 'claude' }), 0);
+  const command = readJson(dir, path.join('.claude', 'settings.json'))
+    .hooks.Stop[0].hooks[0].command;
+  const prefix = `"${process.execPath}" "${BIN}" `;
+  assert.ok(command.startsWith(prefix), command);
+  const guardArgv = command.slice(prefix.length).trim().split(/\s+/);
+  assert.deepEqual(guardArgv, ['guard']);
+  assert.equal(await runPromptobus(guardArgv, {
+    host,
+    cwd: dir,
+    env: envOf(home),
+    input: Readable.from([]),
+    output: { write() {} },
+  }), 0);
   assert.deepEqual(homeHits(home), []);
 });
 

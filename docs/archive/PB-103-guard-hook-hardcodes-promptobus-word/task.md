@@ -1,9 +1,9 @@
 # PB-103 · The Stop/SessionStart guard hook hardcodes the word "promptobus" in its argv, so it silently demands that every consumer's bin accept that word, a host with another `commandName` gets a loop guard its own dispatcher refuses
 
-- **Order:** 320
 - **Scope:** `src/hooks.ts` (`guardHookCommand`), `src/host.ts` (`busArgv`), `src/standalone.ts` (`busArgv`), `lib/install.js`, `lib/cli.js`, [reference/02-host.md](../../reference/02-host.md) section What the host must answer
 - **Created:** 2026-09-06
 - **Dependencies:** PB-119
+- **Taken:** 2026-09-09
 
 ## Context
 

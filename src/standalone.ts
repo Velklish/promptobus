@@ -17,6 +17,7 @@ import type {
 } from './host.js';
 
 export const HOST_CONFIG = 'promptobus.json';
+const DEFAULT_COMMAND = 'promptobus';
 
 // Model-routing file names of the standalone host. Names, not a path: the two
 // homes they hang off differ — the user home for what belongs to the account,
@@ -129,7 +130,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
   const found = findConfig(options.cwd ?? '.');
   const config: HostFile = { ...found.config, ...(options.config ?? {}) };
   const root = found.root;
-  const commandName = options.commandName ?? config.commandName ?? 'promptobus';
+  const commandName = options.commandName ?? config.commandName ?? DEFAULT_COMMAND;
   const version = options.version ?? config.version ?? '0.0.0';
   const locale = options.locale ?? config.locale ?? 'en';
   const nodePath = options.nodePath ?? process.execPath;
@@ -307,6 +308,12 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     formatNpx: (args) => ['npx', commandName, ...args].join(' '),
     busCommand: (args) => [commandName, ...args].join(' '),
     busArgv: (args) => [binPath, ...args],
+    // Keep the established standalone command spelling for its default entry;
+    // a configured command name is already the dispatch word, so it must not
+    // receive the package's default prefix.
+    guardArgv: (args) => commandName === DEFAULT_COMMAND
+      ? [binPath, commandName, ...args]
+      : [binPath, ...args],
     cloneHint: (nsPath) => `git clone <url> ${nsPath}`,
     syncHint: () => `${commandName} install`,
     workerPreamble: ({ taskId, nsPath, branch }) => (
