@@ -1,9 +1,9 @@
 # PB-142 · Nine stand helpers are duplicated verbatim across the three harness modules, and diagnoseTrace has drifted so the Cursor and Codex stands hide scenario errors that the Claude stand surfaces first
 
-- **Order:** 690
 - **Scope:** `test/harness.mjs`, `test/harness-cursor.mjs`, `test/harness-codex.mjs`, `test/promptobus-driver-cursor.test.mjs`, `test/promptobus-driver-codex.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-141
+- **Taken:** 2026-09-10
 
 ## Context
 

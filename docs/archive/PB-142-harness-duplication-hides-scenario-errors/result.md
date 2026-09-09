@@ -1,0 +1,11 @@
+# PB-142 · Result
+
+**Closed 2026-09-09.** Completed with the narrow repair. The scenario-error diagnosis that the three harness stands duplicated — the `AUTHOR_ERROR_KINDS` classifier and the trace formatter that puts an author error (an unknown action, a failed action) at the head of the diagnosis — now lives once in `test/harness-shared.mjs`; the Claude, Cursor and Codex stands wrap it and keep their public signatures, home/address/tail contracts and default tails (Claude 6, Cursor and Codex 8). Before, only the Claude stand surfaced the scenario error ahead of the later red verdict; the Cursor and Codex copies had drifted and reported the red verdict alone, hiding the authoring mistake that caused it. No nine-helper refactor was made (TRACKS.md: no broad refactor); `AUTHOR_ERROR_KINDS` is unchanged.
+
+**Verification.** Worker commit `778f101` (worktree of `worker:verify`, on `main` `750ebf0`). Reproducer red before the repair: the Cursor and Codex driver tests' new checks — "diagnosis surfaces scenario errors before the later red verdict" — showed traces `[up, unknown-action, turn, later-red-verdict]` and `[up, action-failed, turn, later-red-verdict]` with no scenario-error head. After the repair the full runner is green with every stand at its previous size: `npm test` exit 0, 54/54 test files (mixed 48/48, e2e 53/53, cursor-wake 18/18, tmpdir-sweep 36/36, runner 33/33); `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 665 tracked files, 119 tarball entries. Mutation probe after the commit, tests kept: the old tail-only wrappers restored → both focused fixtures exit 1 with the same traces lacking the head; restored → green. Review: the orchestrator read the diff (one shared module, three thin wrappers, two regression fixtures, one CHANGELOG bullet) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Not run.** The live scripts and canary runs that also use the stands were not executed.
+
+**Documentation in the same pass.** CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:verify`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.

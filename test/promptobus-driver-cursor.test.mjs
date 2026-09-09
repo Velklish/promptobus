@@ -26,13 +26,27 @@ import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   CURSOR_HOME_VAR, HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
-  readTrace,
+  readTrace, traceFile,
 } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-cursor-');
 const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
+
+const DIAGNOSE_ADDRESS = 'worker:diagnose';
+const diagnosisTrace = [
+  { kind: 'up' },
+  { kind: 'unknown-action', action: { tool: 'legacy_send' } },
+  { kind: 'turn', no: 1 },
+  { kind: 'later-red-verdict' },
+];
+writeFileSync(traceFile(HARNESS, DIAGNOSE_ADDRESS), diagnosisTrace.map((e) => JSON.stringify(e)).join('\n') + '\n');
+const diagnosis = diagnoseTrace(HARNESS, DIAGNOSE_ADDRESS);
+check(': Cursor diagnosis surfaces scenario errors before the later red verdict',
+  diagnosis.startsWith(`scenario errors for ${DIAGNOSE_ADDRESS} (the cause is usually here):`)
+    && diagnosis.includes('unknown-action') && diagnosis.includes('later-red-verdict'),
+  diagnosis);
 
 const cursorModule = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {

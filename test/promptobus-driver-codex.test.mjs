@@ -17,7 +17,7 @@ import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
   HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
-  diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace,
+  diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace, traceFile,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { capture } from './console.mjs';
@@ -25,6 +25,20 @@ import { capture } from './console.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-codex-');
 const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
+
+const DIAGNOSE_ADDRESS = 'worker:diagnose';
+const diagnosisTrace = [
+  { kind: 'up' },
+  { kind: 'action-failed', action: { tool: 'legacy_send' }, error: 'not supported' },
+  { kind: 'turn', no: 1 },
+  { kind: 'later-red-verdict' },
+];
+writeFileSync(traceFile(HARNESS, DIAGNOSE_ADDRESS), diagnosisTrace.map((e) => JSON.stringify(e)).join('\n') + '\n');
+const diagnosis = diagnoseTrace(HARNESS, DIAGNOSE_ADDRESS);
+check(': Codex diagnosis surfaces scenario errors before the later red verdict',
+  diagnosis.startsWith(`scenario errors for ${DIAGNOSE_ADDRESS} (the cause is usually here):`)
+    && diagnosis.includes('action-failed') && diagnosis.includes('later-red-verdict'),
+  diagnosis);
 
 const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY,

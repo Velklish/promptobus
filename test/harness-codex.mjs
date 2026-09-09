@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +103,7 @@ export function readTrace(home, address) {
 }
 
 export function diagnoseTrace(home, address, tail = 8) {
-  return `trace for ${address}: ${JSON.stringify(readTrace(home, address).slice(-tail))}`;
+  return formatTraceDiagnosis(readTrace(home, address), address, tail);
 }
 
 function note(home, address, ev) {

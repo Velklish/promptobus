@@ -29,7 +29,11 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { authorErrors, diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+export { authorErrors };
 
 /** Harness home in the environment: both the stub binary and the participant read it. */
 export const HARNESS_HOME_VAR = 'PROMPTOBUS_E2E_HARNESS';
@@ -122,24 +126,9 @@ export function readTrace(home, address) {
   }
 }
 
-// SCENARIO errors of the participant, not of the mechanism: an unknown script action, a
-// failed action, a failed turn. The participant does not stop on them — a live session
-// does not crash on an unknown tool, and the stand repeats that — so the E2E goes red on
-// later steps, while the cause sits at the start of the trace. Live case: old
-// `{ tool: 'send' }` in the scenario after the tools were renamed — the participant wrote
-// `unknown-action` and carried on, the red was the eighth step, the diagnosis came from
-// reading the whole trace.
-const AUTHOR_ERROR_KINDS = new Set(['unknown-action', 'action-failed', 'turn-failed']);
-export function authorErrors(trace) {
-  return trace.filter((e) => AUTHOR_ERROR_KINDS.has(e?.kind));
-}
-
 /** Diagnosis from the participant trace for a red verdict: scenario errors first, then the tail of the trace. */
 export function diagnoseTrace(home, address, tail = 6) {
-  const trace = readTrace(home, address);
-  const errs = authorErrors(trace);
-  const head = errs.length ? `scenario errors for ${address} (the cause is usually here): ${JSON.stringify(errs)} · ` : '';
-  return `${head}trace for ${address}: ${JSON.stringify(trace.slice(-tail))}`;
+  return formatTraceDiagnosis(readTrace(home, address), address, tail);
 }
 
 /** Tail of the participant log — the test prints it on a red verdict, otherwise there is no diagnosis. */
