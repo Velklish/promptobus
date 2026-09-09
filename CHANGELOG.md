@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
+
 ### Fixed
 
 - **Routing policy overlays no longer move policy-block prototypes through `__proto__`.** The overlay merge skips the JSON key in weight and flat policy blocks, keeping routed policy fields own data and matching the existing guards for defaults and account blocks. (PB-155)
@@ -19,10 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A failed availability-cache write no longer hides a successful preflight.** The probed snapshot is returned with a warning naming the cache file, while explicit `clearExhausted` writes remain refusals. (PB-58)
 - **Cursor status reports the recorded turn count.** A participant's status uses the hook-owned `record.turns` counter instead of the transcript's end-of-file marker count. (PB-153)
 - **Cursor tmux discovery matches Cursor binary install locations.** The driver probes PATH plus the known install directories before refusing a persist session. (PB-85)
-
-### Added
-
-- **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
 - **A classified hard-link refusal no longer blocks every store command during open-time recovery.** Recovery retains that intent for retry and continues through neighbouring work; a message whose intent and canon disappeared before materialization is reported as permanently lost instead. The bus warns about either result while `status`, `history`, and `prune` remain usable; unrelated exceptions still escape. (PB-65)
 
 ## [0.5.1] - 2026-09-09
@@ -99,14 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **A hypothesis is a row that says so, not a row that is missing.** ADR-005 supersedes the wording ADR-004 left behind, which the catalog schema still carried: a row is omitted only when maintainers made **no assessment**: an assessed rating with no published figure stays in the catalog, named in `evidence.hypothesis`, so a model a person can actually launch is not silently removed from routing because a leaderboard has not got round to it. (PB-37, closing PB-29.1)
 
-
 - **The reviewer is told its diff file is a snapshot, and the journal says how far behind it is.** `promptobus review` writes `files/review-<worker>.diff` once, at the call, while the worker goes on committing — on 2026-09-06 two reviewers of the same run read an older state and reported findings the author had already closed. Nothing locks the worker's tree, so the file is not made to follow it; its age is named instead. The reviewer's prompt now calls the file a snapshot, gives the moment it was taken and the worktree HEAD it was taken from, and sends the reviewer to the working copy for the current state before it reports a finding. The command prints the same pair beside the `diff base` line, and the reviewer's participant record carries it (`metadata.diffAt`, `metadata.diffHead`), so `promptobus status` and `promptobus_task` answer "how far behind" without opening the file. A repeat of the command with `--task` re-snapshots — a new numbered diff file and its path to the live reviewer — and both the record and the line move with it, which is why there is no `--fresh` flag.
 
 ### Fixed
 
 - **Cursor's grok-4.6 tuples are paced against the pool Cursor actually bills them to.** The adapter mapped a model to the `auto` pool only when `autoBucketModels` named it, and that list lags Cursor's own billing: on the owner's account it names `grok-4.5` and `cursor-grok-4.5-*` and no `grok-4.6`, so every grok-4.6 tuple was paced against the `api` pool at 98.4 % and, under `balance`, looked exhausted and was never picked — while those are the account's most used models. One measured turn on 2026-09-06 settled which pool bills them: `cursor-grok-4.6-medium`, 14 950 input / 24 output tokens, 3.222 cents, moved `planUsage.autoPercentUsed` from 86.1025 to 86.105 and left `apiPercentUsed` at 98.4, with the aggregation row for that turn carrying `tier: 2`. So the adapter now asks a third method, `POST <backendUrl>/aiserver.v1.DashboardService/GetAggregatedUsageEvents`, which states the pool **per model** for every model with an event this cycle — `tier: 2` the Auto bucket, `tier: 1` the api pool — and the `auto` scope is the union of the bucket list's expansion and the `tier: 2` ids. The tier route matches by exact id and infers no family, which is ADR-004's rule unchanged; there is no prefix exception anywhere, and a model with neither a row nor a bucket entry stays in `api`, the conservative reading. The call is optional in the way the near-limit nudge is: a refusal, a timeout or an empty preflight budget costs the second route and leaves the bucket list as the whole answer. Cursor's own `thirdPartyUsageNudge`, which offers Grok 4.6 when the third-party pool runs short, corroborates the measurement and is not its source. (PB-38)
 - **A Codex worker now lifts when its first turn starts, rather than only when the whole task-shaped turn ends.** On codex-cli 0.146.0 the rollout is absent immediately after `thread/start` but already present at `turn/started`; the holder now marks the registry record alive at that event, records the eventual first-turn end only as history, and `status` reports the running participant as alive. Mail arriving during the turn is accepted with a queued `turn/start` instead of being steered into work already in progress. The default ready budget is now the app-server preamble plus the 15-second `turn/started` wait; `PROMPTOBUS_CODEX_TURN_MS` applies only to later wake request acknowledgements, and the wake's own socket wait follows that budget instead of a fixed 30 seconds, so a value above 30 s is no longer truncated in silence (PB-39).
-
 
 ## [0.4.0] — 2026-09-06
 
