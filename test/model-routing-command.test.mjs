@@ -382,6 +382,49 @@ test('`spawn --dry-run` with no --strategy takes the overlay default and records
   }
 });
 
+test('a broken overlay warns before an unrouted lift takes the legacy path', async () => {
+  // Keep the recorded default in the user layer so the workspace layer can be
+  // the broken one. Both failures used to return null with no diagnostic.
+  const cases = [
+    ['malformed JSON', '{"schemaVersion": 2,'],
+    ['schemaVersion 1 with scaled ratings', JSON.stringify({
+      schemaVersion: 1, ratings: { 'claude-opus-5': { quality: 8 } },
+    })],
+  ];
+  for (const [index, [label, contents]] of cases.entries()) {
+    dropOverlays();
+    const task = freshTask(`broken-default-t20260905-09001${index + 3}`);
+    const workspace = WORKSPACE_OVERLAY();
+    writeOverlay(USER_OVERLAY(), { schemaVersion: 1, defaults: { strategy: 'balance' } });
+    mkdirSync(path.dirname(workspace), { recursive: true });
+    writeFileSync(workspace, contents);
+    try {
+      const said = await captureSplit(() => spawnRaw(WS, {
+        repo: 'cargos-api',
+        brief: BRIEF,
+        task,
+        worker: `broken-default-${index}`,
+        dryRun: true,
+        tool: { ok: true, bin: path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude') },
+        adapterFor: probeSet(counter()),
+      }));
+      assert.match(said.err, /routing layer "workspace"/);
+      assert.ok(said.err.includes(workspace), `${label}: warning names the overlay path`);
+      assert.match(said.err, /promptobus models validate/);
+      assert.match(said.err, /reading the strategy default/);
+      assert.equal(/routing decision:/.test(said.out), false, `${label}: broken default is not treated as a route`);
+      await assert.rejects(() => quiet(() => models(WS, {})), (e) => {
+        assert.equal(e.code, 'overlay-invalid', `${label}: models refuses the broken stack`);
+        assert.match(e.message, /routing layer "workspace"/);
+        assert.ok(e.message.includes(workspace), `${label}: models names the overlay path`);
+        return true;
+      });
+    } finally {
+      dropOverlays();
+    }
+  }
+});
+
 test('a flag on the command line always wins over the default', async () => {
   // ADR-004's precedence, and the rule ADR-003 fixed for --harness, --model and
   // --effort: a named value is never replaced. This is the check the mutation
