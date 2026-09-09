@@ -5,7 +5,7 @@
 // a turn in progress, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -121,6 +121,243 @@ check(': a patch with an unreadable target — deny',
   })());
 check(': a relative patch inside cwd — allow',
   decideApproval('applyPatchApproval', { changes: { 'note.md': { type: 'add' } } }, patchRec).allow === true);
+function skipApprovalSymlinkCheck(name, reason) {
+  process.stdout.write(`↷ ${name} — skipped: ${reason}\n`);
+}
+
+const approvalSymlinkCheckNames = [
+  ': a target in the resolved spelling of a symlinked cwd — allow',
+  ': a target through the symlinked cwd — allow',
+  ': a parent traversal that remains inside — allow',
+  ': a plain parent traversal outside the root — deny',
+  ': a missing target through an escaping symlink — deny',
+  ': a missing segment cannot hide a later symlink escape — deny',
+  ': a symlink content with parent traversal — deny',
+  ': a relative symlink to the parent — deny',
+  ': a symlink chain escaping the root — deny',
+  ': a target with parent traversal — deny',
+  ': a dangling symlink target outside cwd — deny',
+  ': a symlink loop target is unreadable — deny',
+  ': a partly unresolved root is named on outside denial — deny',
+  ': a mixed-case spelling of an existing root — allow',
+  ': a differently-cased target under a case-insensitive root — deny',
+];
+const approvalSymlinkBase = path.join(SB, 'approval-symlinks');
+const approvalAllowed = path.join(approvalSymlinkBase, 'allowed');
+const approvalOutside = path.join(approvalSymlinkBase, 'outside');
+const approvalRootLink = path.join(approvalSymlinkBase, 'root-link');
+const approvalEscapeLink = path.join(approvalAllowed, 'escape');
+const approvalChainA = path.join(approvalAllowed, 'chain-a');
+const approvalChainB = path.join(approvalAllowed, 'chain-b');
+const approvalLinkWithParent = path.join(approvalAllowed, 'link-with-parent');
+const approvalUpLink = path.join(approvalAllowed, 'up');
+const approvalDanglingLink = path.join(approvalAllowed, 'dangling.md');
+const approvalDanglingTarget = path.join(approvalOutside, 'dangling.md');
+const approvalLoopA = path.join(approvalAllowed, 'loop-a');
+const approvalLoopB = path.join(approvalAllowed, 'loop-b');
+const approvalLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+let approvalSymlinkReason = '';
+let approvalResolvedRoot = null;
+try {
+  mkdirSync(approvalAllowed, { recursive: true });
+  mkdirSync(approvalOutside, { recursive: true });
+  mkdirSync(path.join(approvalAllowed, 'subdir'));
+  symlinkSync(approvalAllowed, approvalRootLink, approvalLinkType);
+  symlinkSync(approvalOutside, approvalEscapeLink, approvalLinkType);
+  symlinkSync(approvalOutside, approvalChainB, approvalLinkType);
+  symlinkSync('chain-b', approvalChainA, approvalLinkType);
+  symlinkSync('escape/..', approvalLinkWithParent, approvalLinkType);
+  symlinkSync('..', approvalUpLink, approvalLinkType);
+  symlinkSync(approvalDanglingTarget, approvalDanglingLink, 'file');
+  symlinkSync(approvalLoopB, approvalLoopA, 'file');
+  symlinkSync(approvalLoopA, approvalLoopB, 'file');
+  approvalResolvedRoot = realpathSync(approvalRootLink);
+} catch (error) {
+  approvalSymlinkReason = `symlink fixture unavailable (${error.code ?? error.message})`;
+}
+if (approvalSymlinkReason) {
+  for (const name of approvalSymlinkCheckNames) skipApprovalSymlinkCheck(name, approvalSymlinkReason);
+} else {
+  const symlinkApprovalRec = { cwd: approvalRootLink, addDirs: [], role: 'worker' };
+  const resolvedRootTarget = path.join(approvalResolvedRoot, 'not-yet-created.md');
+  const resolvedRootApproval = decideApproval(
+    'applyPatchApproval', { changes: { [resolvedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a target in the resolved spelling of a symlinked cwd — allow',
+    resolvedRootApproval.allow === true, JSON.stringify(resolvedRootApproval));
+
+  const linkedRootTarget = path.join(approvalRootLink, 'through-link.md');
+  const linkedRootApproval = decideApproval(
+    'applyPatchApproval', { changes: { [linkedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a target through the symlinked cwd — allow',
+    linkedRootApproval.allow === true, JSON.stringify(linkedRootApproval));
+
+  const safeParentTraversalTarget = `${approvalRootLink}${path.sep}subdir${path.sep}..${path.sep}safe.md`;
+  const safeParentTraversalApproval = decideApproval(
+    'applyPatchApproval', { changes: { [safeParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a parent traversal that remains inside — allow',
+    safeParentTraversalApproval.allow === true, JSON.stringify(safeParentTraversalApproval));
+
+  const approvalOutsideCanonical = realpathSync(approvalOutside);
+  const plainParentTraversalTarget = `${approvalRootLink}${path.sep}..${path.sep}plain-evil.md`;
+  const plainParentTraversalCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'plain-evil.md');
+  const plainParentTraversalApproval = decideApproval(
+    'applyPatchApproval', { changes: { [plainParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a plain parent traversal outside the root — deny',
+    plainParentTraversalApproval.allow === false
+    && plainParentTraversalApproval.why
+      === `action outside cwd/addDirs: ${plainParentTraversalTarget} → ${plainParentTraversalCanonicalTarget}`,
+    JSON.stringify(plainParentTraversalApproval));
+
+  const escapedTarget = path.join(approvalRootLink, 'escape', 'not-yet-created.md');
+  const escapedCanonicalTarget = path.join(approvalOutsideCanonical, 'not-yet-created.md');
+  const escapedApproval = decideApproval(
+    'applyPatchApproval', { changes: { [escapedTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a missing target through an escaping symlink — deny',
+    escapedApproval.allow === false
+    && escapedApproval.why === `action outside cwd/addDirs: ${escapedTarget} → ${escapedCanonicalTarget}`,
+    JSON.stringify(escapedApproval));
+
+  const missingTailTarget = `${approvalRootLink}${path.sep}nope${path.sep}..${path.sep}escape${path.sep}evil.md`;
+  const missingTailCanonicalTarget = path.join(approvalOutsideCanonical, 'evil.md');
+  const missingTailApproval = decideApproval(
+    'applyPatchApproval', { changes: { [missingTailTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a missing segment cannot hide a later symlink escape — deny',
+    missingTailApproval.allow === false
+    && missingTailApproval.why
+      === `action outside cwd/addDirs: ${missingTailTarget} → ${missingTailCanonicalTarget}`,
+    JSON.stringify(missingTailApproval));
+
+  const linkContentParentTarget = path.join(approvalLinkWithParent, 'evil.md');
+  const linkContentParentCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'evil.md');
+  const linkContentParentApproval = decideApproval(
+    'applyPatchApproval', { changes: { [linkContentParentTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a symlink content with parent traversal — deny',
+    linkContentParentApproval.allow === false
+    && linkContentParentApproval.why
+      === `action outside cwd/addDirs: ${linkContentParentTarget} → ${linkContentParentCanonicalTarget}`,
+    JSON.stringify(linkContentParentApproval));
+
+  const relativeLinkTarget = path.join(approvalUpLink, 'relative-link.md');
+  const relativeLinkCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'relative-link.md');
+  const relativeLinkApproval = decideApproval(
+    'applyPatchApproval', { changes: { [relativeLinkTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a relative symlink to the parent — deny',
+    relativeLinkApproval.allow === false
+    && relativeLinkApproval.why
+      === `action outside cwd/addDirs: ${relativeLinkTarget} → ${relativeLinkCanonicalTarget}`,
+    JSON.stringify(relativeLinkApproval));
+
+  const chainTarget = path.join(approvalChainA, 'chain-evil.md');
+  const chainCanonicalTarget = path.join(approvalOutsideCanonical, 'chain-evil.md');
+  const chainApproval = decideApproval(
+    'applyPatchApproval', { changes: { [chainTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a symlink chain escaping the root — deny',
+    chainApproval.allow === false
+    && chainApproval.why === `action outside cwd/addDirs: ${chainTarget} → ${chainCanonicalTarget}`,
+    JSON.stringify(chainApproval));
+
+  const parentTraversalTarget = `${approvalRootLink}${path.sep}escape${path.sep}..${path.sep}evil.md`;
+  const parentTraversalApproval = decideApproval(
+    'applyPatchApproval', { changes: { [parentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a target with parent traversal — deny',
+    parentTraversalApproval.allow === false
+    && parentTraversalApproval.why
+      === `action outside cwd/addDirs: ${parentTraversalTarget} → ${path.join(path.dirname(approvalOutsideCanonical), 'evil.md')}`,
+    JSON.stringify(parentTraversalApproval));
+
+  const danglingCanonicalTarget = path.join(approvalOutsideCanonical, 'dangling.md');
+  const danglingApproval = decideApproval(
+    'applyPatchApproval', { changes: { [approvalDanglingLink]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a dangling symlink target outside cwd — deny',
+    danglingApproval.allow === false
+    && danglingApproval.why === `action outside cwd/addDirs: ${approvalDanglingLink} → ${danglingCanonicalTarget}`,
+    JSON.stringify(danglingApproval));
+
+  const loopApproval = decideApproval(
+    'applyPatchApproval', { changes: { [approvalLoopA]: { type: 'add' } } }, symlinkApprovalRec,
+  );
+  check(': a symlink loop target is unreadable — deny',
+    loopApproval.allow === false
+    && loopApproval.why === `action target could not be resolved: ${approvalLoopA}`,
+    JSON.stringify(loopApproval));
+
+  const unresolvedRootsApproval = decideApproval(
+    'applyPatchApproval',
+    { changes: { [path.join(approvalAllowed, 'unresolved-roots.md')]: { type: 'add' } } },
+    { cwd: approvalLoopA, addDirs: [approvalLoopB], role: 'worker' },
+  );
+  check(': unresolved approval roots name the recorded cwd — deny',
+    unresolvedRootsApproval.allow === false
+    && unresolvedRootsApproval.why === 'the recorded cwd could not be resolved',
+    JSON.stringify(unresolvedRootsApproval));
+
+  const partlyUnresolvedTarget = path.join(approvalOutside, 'partly-unresolved.md');
+  const partlyUnresolvedCanonicalTarget = path.join(approvalOutsideCanonical, 'partly-unresolved.md');
+  const partlyUnresolvedRootApproval = decideApproval(
+    'applyPatchApproval', { changes: { [partlyUnresolvedTarget]: { type: 'add' } } },
+    { cwd: approvalRootLink, addDirs: [approvalLoopA], role: 'worker' },
+  );
+  check(': a partly unresolved root is named on outside denial — deny',
+    partlyUnresolvedRootApproval.allow === false
+    && partlyUnresolvedRootApproval.why
+      === `action outside cwd/addDirs: ${partlyUnresolvedTarget} → ${partlyUnresolvedCanonicalTarget}`
+        + ` (unresolved roots: ${approvalLoopA})`,
+    JSON.stringify(partlyUnresolvedRootApproval));
+
+  const approvalAllowedCanonical = realpathSync(approvalAllowed);
+  const mixedCaseAllowedSpelling = path.join(approvalSymlinkBase, 'ALLOWED');
+  let mixedCaseAllowedCanonical = null;
+  try {
+    mixedCaseAllowedCanonical = realpathSync(mixedCaseAllowedSpelling);
+  } catch {
+    // A case-sensitive volume has no mixed-case spelling to compare.
+  }
+  if (mixedCaseAllowedCanonical && mixedCaseAllowedCanonical !== approvalAllowedCanonical) {
+    const mixedCaseRec = { cwd: mixedCaseAllowedSpelling, addDirs: [], role: 'worker' };
+    const mixedCaseTarget = path.join(mixedCaseAllowedSpelling, 'mixed-case.md');
+    const mixedCaseApproval = decideApproval(
+      'applyPatchApproval', { changes: { [mixedCaseTarget]: { type: 'add' } } }, mixedCaseRec,
+    );
+    check(': a mixed-case spelling of an existing root — allow',
+      mixedCaseAllowedCanonical !== approvalAllowedCanonical && mixedCaseApproval.allow === true,
+      JSON.stringify({ approvalAllowedCanonical, mixedCaseAllowedCanonical, mixedCaseApproval }));
+
+    const differentlyCasedTarget = path.join(approvalAllowedCanonical, 'different-case.md');
+    const differentlyCasedApproval = decideApproval(
+      'applyPatchApproval', { changes: { [differentlyCasedTarget]: { type: 'add' } } }, mixedCaseRec,
+    );
+    process.stdout.write(`ℹ mixed-case fail-closed reason: ${differentlyCasedApproval.why}\n`);
+    check(': a differently-cased target under a case-insensitive root — deny',
+      differentlyCasedApproval.allow === false
+      && differentlyCasedApproval.why
+        === `action outside cwd/addDirs: ${differentlyCasedTarget} → ${differentlyCasedTarget}`,
+      JSON.stringify({ approvalAllowedCanonical, mixedCaseAllowedCanonical, differentlyCasedApproval }));
+  } else if (!mixedCaseAllowedCanonical) {
+    skipApprovalSymlinkCheck(
+      ': a mixed-case spelling of an existing root — allow',
+      'filesystem is case-sensitive; no alternate spelling resolves to the existing root',
+    );
+    skipApprovalSymlinkCheck(
+      ': a differently-cased target under a case-insensitive root — deny',
+      'filesystem is case-sensitive; no alternate spelling resolves to the existing root',
+    );
+  } else {
+    const reason = 'filesystem canonical spellings coincide; alternate case behavior is not observable';
+    skipApprovalSymlinkCheck(': a mixed-case spelling of an existing root — allow', reason);
+    skipApprovalSymlinkCheck(': a differently-cased target under a case-insensitive root — deny', reason);
+  }
+}
 check(': fileChange outside cwd — deny',
   (() => {
     const d = decideApproval('item/fileChange/requestApproval', { item: { path: '/etc/x' } }, patchRec);

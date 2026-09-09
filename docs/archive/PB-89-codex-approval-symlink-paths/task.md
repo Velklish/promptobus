@@ -1,9 +1,9 @@
 # PB-89 · The Codex approval gate compares paths as raw strings, so a worktree reached through a symlinked root is denied every mutation approval as outside cwd/addDirs
 
-- **Order:** 480
 - **Scope:** `lib/codex-session.js` (`decideApproval`, `resolveTarget`, `insideRoots`), `lib/driver-codex.js`, `test/promptobus-driver-codex.test.mjs`, [reference/03-cli.md](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** PB-88
+- **Taken:** 2026-09-10
 
 ## Context
 
