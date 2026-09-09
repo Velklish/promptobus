@@ -13,7 +13,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +23,9 @@ import test from 'node:test';
 import { ERROR_CODES, openEngine, PromptobusError } from '../dist/index.js';
 
 const DIST = new URL('../dist/index.js', import.meta.url).href;
+const STATUS = new URL('../lib/status.js', import.meta.url).href;
+const HISTORY = new URL('../lib/history.js', import.meta.url).href;
+const PRUNE = new URL('../lib/prune.js', import.meta.url).href;
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-v1-races-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
@@ -375,6 +378,44 @@ test('opening the engine at a neighbour does not break an in-flight send', async
 
 // ── Hard-link refusal ──────────────────────────────────────────────────────────────
 
+test('an intent lost before materialize is permanent, not a retryable link refusal', async () => {
+  const root = sandbox();
+  const engine = open(root, { recover: false });
+  const id = taskWith(engine, 'poterya-t20260902-110550');
+  const interrupted = open(root, {
+    recover: false,
+    faults: (step) => { if (step === 'intent') throw new Error('injected crash after intent'); },
+  });
+  await assert.rejects(
+    interrupted.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'will be lost' }),
+    /injected crash after intent/,
+  );
+  const intents = path.join(engine.home, 'tasks', id, 'intents');
+  const [intentName] = openIntents(intents);
+  assert.ok(intentName, 'the interrupted send left no intent to race');
+  const message = intentName.slice(0, -'.json'.length);
+  const intent = path.join(intents, intentName);
+  const canonical = path.join(engine.home, 'tasks', id, 'messages', intentName);
+  let raced = 0;
+  const report = open(root, {
+    recover: false,
+    faults: (step) => {
+      if (step !== 'intent-materialize') return;
+      raced += 1;
+      rmSync(intent, { force: true });
+      rmSync(canonical, { force: true });
+    },
+  }).recover(id);
+  assert.deepEqual(report.failed.map((f) => ({ task: f.task, message: f.message, code: f.code })), [
+    { task: id, message, code: 'intent-lost' },
+  ]);
+  assert.equal(raced, 1, 'recovery did not expose the loaded-intent/materialize race');
+  assert.match(report.failed[0].note, /intent is gone and there is no canon/);
+  assert.equal(existsSync(intent), false);
+  assert.deepEqual(open(root, { recover: false }).recover(id).failed, [],
+    'a permanently lost message was reported again as retryable');
+});
+
 test('the FS refused a hard link — a typed code, not a half-written record', async (t) => {
   // The FS requirement is inherited whole: hard links inside one volume.
   // Their absence is a lawful environment condition, and it must be
@@ -411,9 +452,69 @@ test('the FS refused a hard link — a typed code, not a half-written record', a
     assert.ok(ERROR_CODES.includes(refused.code));
     assert.match(String(refused.context.errno), /^E[A-Z]+$/);
   });
+  const intents = path.join(engine.home, 'tasks', id, 'intents');
+  const [intentName] = openIntents(intents);
+  assert.ok(intentName, 'the refused fan-out left no intent to recover');
+  const message = intentName.slice(0, -'.json'.length);
+  const neighbour = taskWith(engine, 'zdorovaya-t20260902-110601');
+  const interrupted = open(root, {
+    recover: false,
+    faults: (step) => { if (step === 'intent') throw new Error('injected crash after the neighbouring intent'); },
+  });
+  await assert.rejects(
+    interrupted.send(neighbour, { from: 'owner', to: ['w-api'], type: 'task', body: 'will recover' }),
+    /injected crash after the neighbouring intent/,
+  );
+  await t.test('link refusal: recovery reports the affected operation and leaves it for retry', () => {
+    const report = openEngine({ root, policy: allowAll, recover: false }).recover();
+    assert.deepEqual(report.failed.map((f) => ({ task: f.task, message: f.message, code: f.code })), [
+      { task: id, message, code: 'link-refused' },
+    ]);
+    assert.match(report.failed[0].note, /hard link was not created/);
+    assert.deepEqual(report.repairs.map((r) => r.task), [neighbour],
+      'the refused operation stopped recovery before the neighbouring task');
+    assert.deepEqual(openIntents(intents), [intentName]);
+  });
+  await t.test('link refusal: open-time recovery returns while the refusal is held', () => {
+    const reopened = openEngine({ root, policy: allowAll, recover: true });
+    assert.equal(reopened.readTask(id).id, id);
+    assert.deepEqual(openIntents(intents), [intentName]);
+  });
+  await t.test('link refusal: recovery does not catch a programmer failure', () => {
+    const programmer = new Error('programmer failure injected after materialize');
+    assert.throws(
+      () => openEngine({
+        root,
+        policy: allowAll,
+        recover: true,
+        faults: (step) => { if (step === 'canonical') throw programmer; },
+      }),
+      (e) => e === programmer,
+    );
+  });
+  await t.test('link refusal: status, history, and prune open independently and report recovery', async () => {
+    // These are fresh processes. Mark the former owner dead so each one sees
+    // an abandoned intent immediately instead of waiting out the stale lease.
+    writeFileSync(path.join(intents, `${message}.owner`),
+      `${JSON.stringify({ pid: 2_147_483_647, host: os.hostname() })}\n`);
+    const commands = [
+      ['status', `const { status } = await import(${J(STATUS)});\nstatus(${J(root)}, { task: ${J(id)}, sessions: {} });\n`],
+      ['history', `const { history } = await import(${J(HISTORY)});\nhistory(${J(root)}, { task: ${J(id)} });\n`],
+      ['prune', `const { prune } = await import(${J(PRUNE)});\nprune(${J(root)}, { olderThan: 0 });\n`],
+    ];
+    const runs = await Promise.all(commands.map(([, body]) => child(body)));
+    exitedZero(runs, (i) => commands[i][0]);
+    const warning = `bus recovery: task ${id}, message ${message} remains unfinished (link-refused)`;
+    for (const [i, run] of runs.entries()) {
+      assert.ok(run.err.includes(warning), `${commands[i][0]} stderr: ${run.err || 'empty'}`);
+    }
+    assert.ok(runs[0].out.includes(id), `status stdout: ${runs[0].out || 'empty'}`);
+    assert.ok(runs[1].out.includes('history is empty'), `history stdout: ${runs[1].out || 'empty'}`);
+    assert.ok(runs[2].out.includes('active tasks: 2'), `prune stdout: ${runs[2].out || 'empty'}`);
+  });
   await t.test('link refusal: the fan-out is not half — the intent is open and is taken through later', () => {
     const stuck = openEngine({ root, policy: allowAll, recover: false });
-    assert.equal(openIntents(path.join(stuck.home, 'tasks', id, 'intents')).length, 1);
+    assert.equal(openIntents(intents).length, 1);
     assert.equal(stuck.unread(id, 'w-docs'), 0, 'the second recipient did not get a link');
     chmodSync(box, 0o700);
     const healed = open(root);

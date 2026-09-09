@@ -37,7 +37,7 @@ import { randomBytes } from 'node:crypto';
 import type { NotificationMessage } from '../driver.js';
 import { pidAlive } from '../fs/proc.js';
 import { linkFailure } from './artifacts.js';
-import { fail } from './errors.js';
+import { fail, PromptobusError } from './errors.js';
 import {
   brokenInboxDir, brokenMessagesDir, historyDir, historyRef, inboxDir, inboxRef, intentFile,
   intentsDir, messageFile, messagesDir, ownerOfIntent, taskDir,
@@ -49,13 +49,15 @@ import { validate } from './validate.js';
 /** Fan-out steps, after each of which the suite can crash the process. */
 export type FanoutStep =
   | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read'
-  | 'intent-read' | 'inbox-read' | 'history-ref';
+  | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
 
 /**
  * Fault-injection seam. Fan-out points are called AFTER each durable step; a
  * throw from one is a crash exactly at that point. Read points are called
  * immediately BEFORE their named filesystem operation so the suite can
- * inject an errno without relying on platform permission semantics. Not
+ * inject an errno without relying on platform permission semantics. The
+ * recovery-only `intent-materialize` point is called after validation and
+ * immediately before materialization so the suite can inject that race. Not
  * supplied in production at all.
  */
 export type FaultHook = (step: FanoutStep, info: Record<string, unknown>) => void;
@@ -578,24 +580,35 @@ export interface Repair {
   canonical: boolean;
 }
 
+/** A classified fan-out failure: unfinished for retry, or permanently lost. */
+export interface RecoverFailure {
+  task: string;
+  message: string;
+  code: 'link-refused' | 'intent-lost';
+  note: string;
+}
+
 /**
  * Recover fan-out of one task: walk unclosed intents and write what is missing.
  *
  * Idempotent by construction: both the canon and every ref are put with
  * `link`, and `EEXIST` here means "already there". A second call on a
- * healthy store does nothing.
+ * healthy store does nothing. A classified hard-link refusal or permanent
+ * intent loss is returned for this message and does not stop recovery of its
+ * neighbours.
  */
 export function recoverTask(home: string, task: string, meta: TaskV1, fault: FaultHook = NO_FAULT): {
-  repairs: Repair[]; events: ActivationEvent[]; broken: BrokenNote[];
+  repairs: Repair[]; events: ActivationEvent[]; broken: BrokenNote[]; failed: RecoverFailure[];
 } {
   const repairs: Repair[] = [];
   const events: ActivationEvent[] = [];
   const broken: BrokenNote[] = [];
+  const failed: RecoverFailure[] = [];
   let entries: string[];
   try {
     entries = readdirSync(intentsDir(home, task)).sort();
   } catch {
-    return { repairs, events, broken };
+    return { repairs, events, broken, failed };
   }
   const names = entries.filter((n) => n.endsWith('.json') && !n.startsWith('.'));
   for (const name of names) {
@@ -645,7 +658,19 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     }
     const message = parsed as MessageV1;
     const hadCanonical = existsSync(messageFile(home, task, message.id));
-    const fresh = completeFanout(home, task, message, fault);
+    let fresh: string[];
+    try {
+      fault('intent-materialize', { task, message: message.id });
+      fresh = completeFanout(home, task, message, fault);
+    } catch (e) {
+      // A classified environmental refusal leaves the intent in place for a
+      // later pass. ENOENT at materialization means both sources are already
+      // gone, so the message cannot be retried. Everything else still escapes.
+      if (!(e instanceof PromptobusError) || e.code !== 'link-refused') throw e;
+      const failureCode = e.context.errno === 'ENOENT' ? 'intent-lost' : e.code;
+      failed.push({ task, message: message.id, code: failureCode, note: e.message });
+      continue;
+    }
     repairs.push({ task, message: message.id, recipients: fresh, canonical: !hadCanonical });
     for (const id of fresh) {
       const who = meta.participants.find((p) => p.id === id);
@@ -656,7 +681,7 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     }
   }
   sweepLeases(intentsDir(home, task), entries);
-  return { repairs, events, broken };
+  return { repairs, events, broken, failed };
 }
 
 /**

@@ -27,5 +27,6 @@ export type {
 export type { ArtifactSource } from './artifacts.js';
 export type { BrokenTask, Clock, NewTask, ParticipantPatch, ReaderVersion } from './store.js';
 export type {
-  ActivationEvent, BrokenNote, FanoutStep, FaultHook, HistoryEntry, HistoryPage, HistoryQuery, Repair,
+  ActivationEvent, BrokenNote, FanoutStep, FaultHook, HistoryEntry, HistoryPage, HistoryQuery,
+  RecoverFailure, Repair,
 } from './messages.js';

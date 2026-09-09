@@ -24,7 +24,7 @@ import {
   lastSentAt as lastSentAtOf, newMessage, newRecordId, peekInbox, readInbox, recoverTask,
 } from './messages.js';
 import type {
-  ActivationEvent, BrokenNote, FaultHook, HistoryPage, HistoryQuery, Repair,
+  ActivationEvent, BrokenNote, FaultHook, HistoryPage, HistoryQuery, RecoverFailure, Repair,
 } from './messages.js';
 import { MESSAGE_TYPES_V1 } from './model.js';
 import type { ArtifactV1, MessageV1, ParticipantV1, TaskV1 } from './model.js';
@@ -65,7 +65,7 @@ export interface EngineOptions {
   now?: Clock;
   /** Fault-injection seam. Not supplied in production. */
   faults?: FaultHook;
-  /** Whether to recover fan-out at open. Turned off only by the suite. */
+  /** Whether to recover fan-out at open. A consumer may recover explicitly to report the result. */
   recover?: boolean;
   /**
    * Version of the mechanism that reads journals through this engine. The
@@ -106,11 +106,12 @@ export interface SendResult {
   events: ActivationEvent[];
 }
 
-/** Recovery outcome: what was repaired and who must be woken for it. */
+/** Recovery outcome: completed work, wake events, unreadable records, and fan-out failures. */
 export interface RecoverResult {
   repairs: Repair[];
   events: ActivationEvent[];
   broken: BrokenNote[];
+  failed: RecoverFailure[];
 }
 
 /** What `prune` took. */
@@ -351,12 +352,13 @@ export function openEngine({
 
     recover(task) {
       const metas = task ? [readTask(home, task, cli)] : listTasks(home, cli).tasks;
-      const out: RecoverResult = { repairs: [], events: [], broken: [] };
+      const out: RecoverResult = { repairs: [], events: [], broken: [], failed: [] };
       for (const meta of metas) {
         const one = recoverTask(home, meta.id, meta, faults);
         out.repairs.push(...one.repairs);
         out.events.push(...one.events);
         out.broken.push(...one.broken);
+        out.failed.push(...one.failed);
       }
       return out;
     },

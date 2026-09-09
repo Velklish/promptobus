@@ -26,6 +26,10 @@ During a consuming mailbox read, a filesystem refusal while reading or moving on
 
 The engine does not wake anyone. It returns activation events. The warden and the driver wake the session.
 
+Recovery is local to one intent. `RecoverResult` carries `repairs`, activation `events`, unreadable `broken` records, and `failed` fan-outs. A classified hard-link refusal adds `{ task, message, code: "link-refused", note }` to `failed`, leaves the intent for the next pass, and continues through the other intents and tasks. If materialization finds that both the intent and canon are gone, the same entry instead carries `code: "intent-lost"`: the message is permanently lost and will not be retried, but recovery still continues. Neither result aborts `openEngine({ recover: true })`. Other exceptions escape; recovery does not hide programmer errors or broaden the filesystem refusal taxonomy.
+
+The bus adapter opens with implicit recovery disabled, calls `recover()` once on the first access to a store in the process, and prints warnings for repaired fan-outs, unreadable records, retryable refusals, and permanent message loss before caching the engine. Both failure classes are therefore visible while `status`, `history`, `prune`, the warden, and MCP calls can still open the store. A later process retries only a retained `link-refused` intent.
+
 Mail is kept until read. Read is a rename from `inbox/` to `history/`. There is no exactly-once processing after that.
 
 ## Participant metadata
