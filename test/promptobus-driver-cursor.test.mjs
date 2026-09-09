@@ -871,6 +871,15 @@ check('step 3: the turn ended — the session is alive, not busy, and is named w
     `${JSON.stringify(idle)} · ${idleLine}`);
 }
 
+const pb153Record = readSession(ref, env);
+const pb153TranscriptEnded = turnState(pb153Record, env).ended;
+writeSession({ ...pb153Record, turns: 2 }, env);
+const pb153Counted = cursorDriver.inspect(ref);
+writeSession(pb153Record, env);
+check('PB-153: status uses the recorded Cursor turn count, not transcript markers',
+  pb153Counted?.note?.includes('turns in total 2'),
+  `${JSON.stringify(pb153Counted)} · transcript ended ${pb153TranscriptEnded}`);
+
 check('step 3: the chat transcript was found by its id and written into the registry',
   !!transcriptOf(readSession(ref, env), env) && readSession(ref, env)?.transcript?.includes(record?.chatId),
   String(readSession(ref, env)?.transcript));

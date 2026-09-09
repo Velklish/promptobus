@@ -106,7 +106,7 @@ Added after this snapshot: [PB-156](backlog/queue/PB-156-codex-thread-name-ignor
 
 PB-45 is a cross-driver prerequisite and edits Codex too: finish it before C. PB-151 is the first Cursor repair. PB-120 is deferred.
 
-Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](archive/PB-151-cursor-inject-buffer-file-mode/task.md), [PB-148](archive/PB-148-limit-regex-alternation-order/task.md), [PB-153](backlog/active/PB-153-cursor-status-turn-count-wrong.md), [PB-85](backlog/active/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/active/PB-93-cursor-bin-name-order-mismatch.md).
+Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md), [PB-151](archive/PB-151-cursor-inject-buffer-file-mode/task.md), [PB-148](archive/PB-148-limit-regex-alternation-order/task.md), [PB-153](archive/PB-153-cursor-status-turn-count-wrong/task.md), [PB-85](backlog/active/PB-85-driver-cursor-tmux-path-only.md), [PB-93](backlog/active/PB-93-cursor-bin-name-order-mismatch.md).
 
 Added after this snapshot: [PB-45.1](backlog/active/PB-45.1-snapshot-path-hides-registry-refusal.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
 
