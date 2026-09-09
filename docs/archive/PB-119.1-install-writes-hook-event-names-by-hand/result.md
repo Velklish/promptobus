@@ -1,0 +1,9 @@
+# PB-119.1 · Result
+
+**Closed 2026-09-09.** Completed. `lib/install.js` no longer spells the Claude and Codex hook event names as literals: it imports `BUS_HOOK_EVENT`, `GUARD_HOOK_EVENT` and `GUARD_START_EVENT` from the compiled `dist/hooks.js` — the declarations `src/hooks.ts` already carried — and the generated event keys and the ownership event lists use them, so the settings the installer writes cannot drift from the hook planner's own names (the untied third door PB-119 left open). The Cursor event vocabulary is unchanged. 03-cli records the `SessionStart` decision and the compiled linkage.
+
+**Verification.** Worker commit `c5d2dfb` (worktree of `worker:hooks`, on `main` `a6bbd89`). Reproducer red before the repair: `node --test test/promptobus-package.test.mjs` exit 1 — "installed hook events follow the compiled hook declarations": generated keys matched the compiled values by coincidence, `imported: []`, six literals in `lib/install.js`. After the repair 29/29; install suite green. Gates on `c5d2dfb`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 660 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: the event tie in `lib/install.js` reverted → 28/29 with the same verdict (`imported: []`, six literals); restored → 29/29. Review: the orchestrator read the diff in full (three imports, six literal replacements, one reference paragraph, one CHANGELOG bullet, one package check) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** 03-cli.md, CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:hooks`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.

@@ -1,9 +1,9 @@
 # PB-119.1 · `lib/install.js` writes the hook event names as literals while importing the matcher from `dist`, so `GUARD_HOOK_EVENT` still has an untied third door
 
-- **Order:** 1070
 - **Scope:** `lib/install.js`, `src/hooks.ts`, `test/promptobus-package.test.mjs`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-07
 - **Dependencies:** PB-119
+- **Taken:** 2026-09-10
 
 ## Context
 

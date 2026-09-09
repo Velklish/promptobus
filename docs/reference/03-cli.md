@@ -701,7 +701,7 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
 
-`GUARD_HOOK_EVENT` in `src/hooks.ts` declares the Claude `Stop` event, and `lib/driver-claude.js` imports that compiled value for participant settings: those two cannot rename the event independently. `lib/install.js` still spells the event names out when it writes and cleans harness settings, so a rename there is not yet held to the declaration.
+`BUS_HOOK_EVENT`, `GUARD_HOOK_EVENT`, and `GUARD_START_EVENT` in `src/hooks.ts` declare the Claude `PostToolUse`, `Stop`, and `SessionStart` events. `lib/driver-claude.js` imports the compiled guard declaration, and `lib/install.js` imports all three for generated settings, so those doors cannot rename the events independently. Cursor's own `stop` event vocabulary remains separate.
 
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
 

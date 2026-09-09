@@ -348,6 +348,46 @@ check('PB-119 server contract: the shipped server name is promptobus on both doo
   && serverContract.matcher === 'mcp__promptobus__(promptobus_send|promptobus_mailbox)',
   JSON.stringify(serverContract));
 
+let hookContract = { compiled: [], generated: [], imported: [], literals: [], error: '' };
+if (built.status === 0) {
+  try {
+    const hooks = await import(pathToFileURL(path.join(COPY_ROOT, 'dist', 'hooks.js')).href);
+    const installer = await import(pathToFileURL(path.join(COPY_ROOT, 'lib', 'install.js')).href);
+    const root = path.join(SB, 'hook-plan');
+    const host = {
+      commandName: 'promptobus',
+      syncHint: () => 'promptobus install',
+      nodePath: () => process.execPath,
+      guardArgv: () => ['/bin/promptobus.js', 'guard'],
+      workspaceRoot: () => root,
+      busHookRel: () => path.join('.promptobus', 'hooks', 'bus.mjs'),
+      installManifestRel: () => path.join('.promptobus', 'manifest.json'),
+    };
+    const plan = installer.planHookInstall(host, root, ['claude']);
+    const settingsWrite = plan.writes.find((write) => write.rel === path.join('.claude', 'settings.json'));
+    const generated = settingsWrite ? JSON.parse(settingsWrite.text).hooks ?? {} : {};
+    const compiled = [hooks.BUS_HOOK_EVENT, hooks.GUARD_HOOK_EVENT, hooks.GUARD_START_EVENT];
+    const source = readFileSync(path.join(COPY_ROOT, 'lib', 'install.js'), 'utf8');
+    const importBlock = source.match(/import \{([\s\S]*?)\} from '\.\.\/dist\/hooks\.js';/)?.[1] ?? '';
+    const imported = ['BUS_HOOK_EVENT', 'GUARD_HOOK_EVENT', 'GUARD_START_EVENT']
+      .filter((name) => new RegExp(`\\b${name}\\b`).test(importBlock));
+    const literals = [...source.matchAll(/(['"])(PostToolUse|Stop|SessionStart)\1/g)]
+      .map((match) => match[0]);
+    hookContract = { compiled, generated: Object.keys(generated), imported, literals, error: '' };
+  } catch (e) {
+    hookContract.error = e.message;
+  }
+}
+const hookNames = ['BUS_HOOK_EVENT', 'GUARD_HOOK_EVENT', 'GUARD_START_EVENT'];
+check('PB-119.1 installed hook events follow the compiled hook declarations',
+  hookContract.error === ''
+  && hookContract.imported.length === hookNames.length
+  && hookContract.compiled.length === hookNames.length
+  && hookContract.generated.length === hookContract.compiled.length
+  && hookContract.generated.every((event, index) => event === hookContract.compiled[index])
+  && hookContract.literals.length === 0,
+  JSON.stringify(hookContract));
+
 function packList() {
   const r = npm(['pack', '--dry-run', '--json'], COPY_ROOT);
   if (r.status !== 0) return { ok: false, files: [], detail: why(r) };
