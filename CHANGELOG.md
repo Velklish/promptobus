@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Routing policy overlays no longer move policy-block prototypes through `__proto__`.** The overlay merge skips the JSON key in weight and flat policy blocks, keeping routed policy fields own data and matching the existing guards for defaults and account blocks. (PB-155)
+
 ## [0.5.1] - 2026-09-09
 
 ### Changed

@@ -714,6 +714,29 @@ test('a weight set is replaced whole, not field by field', () => {
   assert.deepEqual(merged.policy.weights.economy, DEFAULT_POLICY.weights.economy);
 });
 
+test('policy overlay blocks keep their prototype when an overlay names __proto__', () => {
+  // JSON.parse is deliberate: an object literal treats __proto__ as a setter,
+  // while an overlay read from disk carries it as an own key.
+  const overlay = overlayLayer('user', JSON.parse(`{
+    "schemaVersion": 2,
+    "weights": { "__proto__": { "totallyNewField": "x" } },
+    "penalties": { "__proto__": { "totallyNewField": "x" } },
+    "bonuses": { "__proto__": { "totallyNewField": "x" } },
+    "qualityFloor": { "__proto__": { "totallyNewField": "x" } },
+    "balance": { "__proto__": { "totallyNewField": "x" } },
+    "nearLimit": { "__proto__": { "totallyNewField": "x" } },
+    "payg": { "__proto__": { "totallyNewField": "x" } }
+  }`));
+  const merged = mergeRouting({ canonical: CATALOG, overlays: [overlay] });
+
+  for (const name of ['weights', 'penalties', 'bonuses', 'qualityFloor', 'balance', 'nearLimit', 'payg']) {
+    assert.equal(Object.getPrototypeOf(merged.policy[name]), Object.prototype,
+      `${name} prototype moved`);
+    assert.equal(merged.policy[name].totallyNewField, undefined,
+      `${name} read through a moved prototype`);
+  }
+});
+
 test('a missing overlay file is normal, not an error', () => {
   const merged = mergeRouting({ canonical: CATALOG, overlays: [absentLayer('user'), absentLayer('workspace')] });
   assert.deepEqual(merged.policy, JSON.parse(JSON.stringify(DEFAULT_POLICY)));

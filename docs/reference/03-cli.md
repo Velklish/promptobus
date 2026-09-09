@@ -281,6 +281,8 @@ Three library entry points, all in `lib/model-routing/`:
 
 `--harness`, `--model` and `--effort` reach the merge as constraints and are carried through untouched — the resolver applies them. `--allow-payg` is the one constraint that changes policy at that layer, and it is opt-in: its absence does not undo an overlay that opted pay-as-you-go in.
 
+Policy-block merges ignore a JSON `__proto__` key instead of assigning it to the merged object. This keeps the `weights`, `penalties`, `bonuses`, `qualityFloor`, `balance`, `nearLimit` and `payg` blocks on `Object.prototype` and prevents an overlay from adding inherited policy fields; the same guard applies to the other policy blocks that merge keys individually.
+
 **A ban is final from below, and a `deny` list accumulates.** [ADR-004](../adr/adr-004-subscription-balance.md) decision 5 supersedes ADR-003's "Clarification, 2026-09-05" whole: a deny list of any selector kind is the **union** across every layer that states one. A ban written in any layer stands, no layer above it lifts one, and lifting one means editing the layer that wrote it.
 
 ```text
