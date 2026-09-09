@@ -18,7 +18,7 @@
 // wall-clock time — the warden loop, a pause inside a turn — and therefore runs in a
 // serial runner group. Here everything that is judged without a clock.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -34,10 +34,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-cursor-');
 const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 
+const cursorModule = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
   cursorDriver, reviewSandbox, PROVEN_CURSOR_VERSION, PHRASES, KNOWN_HOOK_EVENTS,
   skillsNoteOf,
-} = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
+} = cursorModule;
 const {
   dropSession, injectText, launchScript, listSessions, readSession, readTranscript, sessionFile,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
@@ -278,6 +279,40 @@ if (process.argv.includes('-V')) process.stdout.write('tmux 3.6\\n');
 check('PB-85: real tmux resolver searches a known install location outside PATH',
   pb85Found === null,
   String(pb85Found));
+
+// PB-93: binary names are ranked before directories, so a Cursor binary wins over a
+// bare `agent` even when both are present on the same search path.
+const pb93BinPath = path.join(SB, 'pb93-bin-path');
+stubCommand(pb93BinPath, 'agent', '');
+stubCommand(pb93BinPath, 'cursor-agent', '');
+const pb93Find = typeof cursorModule.findCursorBin === 'function'
+  ? cursorModule.findCursorBin({ env: { PATH: pb93BinPath }, home: path.join(SB, 'pb93-home') })
+  : null;
+check('PB-93: findCursorBin prefers cursor-agent over a bare agent',
+  typeof cursorModule.findCursorBin === 'function'
+  && pb93Find?.path === path.join(pb93BinPath, 'cursor-agent'),
+  String(pb93Find));
+
+// PB-93: stop resolves with the caller's environment. Put a decoy in process.env and
+// the expected binary in a separate env; liveBin must use the latter.
+const pb93ProcessPath = path.join(SB, 'pb93-process-path');
+const pb93CallerPath = path.join(SB, 'pb93-caller-path');
+stubCommand(pb93ProcessPath, 'cursor-agent', '');
+stubCommand(pb93CallerPath, 'cursor-agent', '');
+const pb93PathBefore = process.env.PATH;
+let pb93Live;
+try {
+  process.env.PATH = pb93ProcessPath;
+  pb93Live = typeof cursorModule.liveBin === 'function'
+    ? cursorModule.liveBin('recorded-cursor', { env: { PATH: pb93CallerPath } })
+    : null;
+} finally {
+  process.env.PATH = pb93PathBefore;
+}
+check('PB-93: liveBin resolves against the caller environment',
+  typeof cursorModule.liveBin === 'function'
+  && pb93Live === realpathSync(path.join(pb93CallerPath, 'cursor-agent')),
+  `${String(pb93Live)} · ${realpathSync(path.join(pb93CallerPath, 'cursor-agent'))} · ${pb93Live === realpathSync(path.join(pb93CallerPath, 'cursor-agent'))}`);
 
 // --- lift plan ----------------------------------------------------------------------
 

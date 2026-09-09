@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cursor status reports the recorded turn count.** A participant's status uses the hook-owned `record.turns` counter instead of the transcript's end-of-file marker count. (PB-153)
 - **Cursor tmux discovery matches Cursor binary install locations.** The driver probes PATH plus the known install directories before refusing a persist session. (PB-85)
 - **A classified hard-link refusal no longer blocks every store command during open-time recovery.** Recovery retains that intent for retry and continues through neighbouring work; a message whose intent and canon disappeared before materialization is reported as permanently lost instead. The bus warns about either result while `status`, `history`, and `prune` remain usable; unrelated exceptions still escape. (PB-65)
+- **Cursor teardown prefers the declared binary and caller environment.** Stop resolution now prefers `cursor-agent` over a bare `agent` and uses the stop caller's environment for both lookup and execution. (PB-93)
 
 ## [0.5.1] - 2026-09-09
 
