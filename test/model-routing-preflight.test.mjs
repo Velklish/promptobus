@@ -25,7 +25,7 @@ import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -999,6 +999,32 @@ test('the cache lives where the host says and nowhere else', async () => {
   });
   assert.equal(validates(JSON.parse(readFileSync(elsewhere, 'utf8'))), true);
   assert.equal(statSync(elsewhere).mode & 0o777, 0o600);
+});
+
+test('an unwritable cache warns and returns the probed snapshot', async () => {
+  // The adapter has answered before persistence fails: keep that snapshot and
+  // make the failed cache path visible so the next command can probe again.
+  const host = sandboxHost();
+  const cacheDir = path.dirname(host.cacheFile);
+  mkdirSync(cacheDir, { recursive: true });
+  chmodSync(cacheDir, 0o500);
+  const previousWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message));
+
+  try {
+    const snapshot = await preflight({
+      host, harnesses: ['a'], adapterFor: adapterMap({ a: availableStub() }), budgetMs: 500,
+    });
+    assert.equal(snapshot.harnesses.a.state, 'available');
+    assert.equal(readSnapshot(host), null, 'a failed cache write does not leave a partial file');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /availability cache was not written/);
+    assert.ok(warnings[0].includes(host.cacheFile), 'the warning names the cache file');
+  } finally {
+    console.warn = previousWarn;
+    chmodSync(cacheDir, 0o700);
+  }
 });
 
 test('a cache that cannot be read is the same as no cache', () => {

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transient mailbox and intent I/O failures no longer masquerade as corrupt records or discard a partial pass.** An unreadable ref stays in the mailbox and is reported while messages already moved to history are returned. An unreadable intent is likewise reported and retained for retry while recovery continues through other intents and tasks. (PB-66)
 - **A completed migration marker can no longer authorize deletion of a legacy store that later reappears at the same path.** New migrations use `migrating.json` only across the atomic switch and legacy cleanup, then remove it after cleanup succeeds; if that final removal was interrupted, the next open sweeps the mark while its former path is absent. The `migrated.json` files left by older releases are not resume tokens, so two stores beside one another are refused without changing either one. (PB-63)
 - **Claude late-start limit classification checks reset wording independently.** A refusal containing both `hit your ... limit` and `limit ... resets` is recorded as `subscription_exhausted`. (PB-148)
+- **A failed availability-cache write no longer hides a successful preflight.** The probed snapshot is returned with a warning naming the cache file, while explicit `clearExhausted` writes remain refusals. (PB-58)
 
 ## [0.5.1] - 2026-09-09
 
