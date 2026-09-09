@@ -57,6 +57,7 @@ const BALANCE_CATALOG = fixture('balance-catalog.json');
 const BALANCE_SNAPSHOT = fixture('balance-snapshot.json');
 const BALANCE_FLOOR_CATALOG = fixture('balance-floor-catalog.json');
 const BALANCE_FLOOR_SNAPSHOT = fixture('balance-floor-snapshot.json');
+const NEAR_LIMIT_RATE_SNAPSHOT = fixture('near-limit-rate-snapshot.json');
 
 // The clock the fixtures README freezes: twelve seconds after the snapshot was
 // taken, which is where `ageSec: 12` comes from.
@@ -802,6 +803,7 @@ test('the balance fixtures are documents their own schemas accept', () => {
   assert.equal(ajvCatalog(BALANCE_CATALOG), true, ajv.errorsText(ajvCatalog.errors));
   assert.equal(ajvSnapshot(BALANCE_FLOOR_SNAPSHOT), true, ajv.errorsText(ajvSnapshot.errors));
   assert.equal(ajvCatalog(BALANCE_FLOOR_CATALOG), true, ajv.errorsText(ajvCatalog.errors));
+  assert.equal(ajvSnapshot(NEAR_LIMIT_RATE_SNAPSHOT), true, ajv.errorsText(ajvSnapshot.errors));
   assert.equal(BALANCE_SNAPSHOT.schemaVersion, 2, 'the pace layer reads a v2 snapshot and nothing else');
 });
 
@@ -1233,6 +1235,23 @@ test('economy is proposed only when EVERY paced harness is past the threshold', 
   const all = paced({ workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
   assert.equal(nearLimits(all).length, 3);
   for (const w of nearLimits(all)) assert.match(w.message, /Propose --strategy economy/);
+});
+
+test('rate-only short harnesses propose economy when balance is running', () => {
+  const decision = decide({
+    catalog: BALANCE_CATALOG,
+    snapshot: NEAR_LIMIT_RATE_SNAPSHOT,
+    strategy: 'balance',
+  });
+  const lines = nearLimits(decision);
+  assert.equal(lines.length, 3, lines.map((w) => w.message).join('\n'));
+  for (const warning of lines) {
+    assert.match(warning.message, /Propose --strategy economy/);
+    assert.match(warning.message, /points ahead of its own pace/);
+    assert.equal(/at or past the .* threshold/.test(warning.message), false,
+      'the rate-only fixture must not trip the level threshold');
+  }
+  validDecision(decision, 'a balance decision with every paced harness short by rate');
 });
 
 test('no line when the strategy it would propose is the one already running', () => {

@@ -221,10 +221,14 @@ This supersedes ADR-003's "A call with no `--strategy` routes nothing" **only wh
 
 `models` prints a `near-limit` line for a harness whose binding window is at or past `nearLimit.usedPercent` (default **80**), or whose underspend is below `nearLimit.underspend` (default **−15** percentage points — the account has spent fifteen points more of the window than has elapsed of it). A harness already reported as `exhausted` is not repeated as near-limit: it is a stronger statement about the same account.
 
+For this signal, a harness is **short** when either test is true: its binding window is at or past the level threshold, or its underspend is below the rate threshold. The phrase "past the threshold" below means this union of the level and rate tests, not the level test alone.
+
+**Amendment, 2026-09-09 (PB-105).** The strategy-proposal predicate is replaced: `economy` is proposed when every paced harness is short by either test; previously it was proposed only when every paced harness met the level test. The two thresholds and the condition for raising the line are unchanged. The fork put to the owner by PB-105 was decided by the owner on 2026-09-09 in favor of this union predicate.
+
 The line names the window, its reset time, and the strategy the rubric would switch to, by one rule:
 
-- **`economy`** when every paced harness is past the threshold — the account set as a whole is short, and the answer is to spend less per run;
-- **`balance`** otherwise — at least one other harness has room, and the answer is to spend it there instead.
+- **`economy`** when every paced harness is short by either test — the account set as a whole is short, and the answer is to spend less per run;
+- **`balance`** otherwise — at least one paced harness is not short, and the answer is to spend it there instead.
 
 When the strategy that would be named is the one already running, no line is printed: a warning that recommends what is already happening is noise.
 

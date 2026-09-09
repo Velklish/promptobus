@@ -80,7 +80,7 @@ Classify each track on its own. One run may spawn `quality` and `economy` side b
 
 ### When `models` says an account is running short
 
-A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its threshold, or which is spending faster than the window refills, and it names the strategy it would switch to — `economy` when every paced account is short, `balance` when at least one has room.
+A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its level threshold, or which is spending faster than the window refills past its rate threshold, and it names the strategy it would switch to — `economy` when every paced harness is short by either test, `balance` when at least one paced harness is not short.
 
 **Propose that switch to the person. Never make it.** The strategy envelope is what they approved, and a mechanism that quietly left it would make the envelope unauditable. Show them the line and the tuple it would change, and when they agree:
 
