@@ -39,7 +39,7 @@ import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mj
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
-import { sweepPreviousRuns } from './canary-runs.mjs';
+import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
@@ -560,8 +560,12 @@ process.stdout.write(`binary: ${tool.path}${tool.version ? ` (${tool.version})` 
 // the three newest stay, nothing younger than an hour is removed. The trouble
 // is the same — pile-up in a shared `$TMPDIR` — and it is healed by shared
 // code, not a second copy of the thresholds.
-const sweptLogs = sweepPreviousRuns(tmpdir(), { prefix: LOGS_PREFIX, current: KEPT_LOGS });
-if (sweptLogs.length) process.stdout.write(`previous-run logs swept (${sweptLogs.length}): ${sweptLogs.join(', ')}\n`);
+const refusedLogs = [];
+const sweptLogs = sweepPreviousRuns(tmpdir(), {
+  prefix: LOGS_PREFIX, current: KEPT_LOGS, refused: refusedLogs,
+});
+process.stdout.write(`${sweptLine('previous-run logs', sweptLogs)}\n`);
+if (refusedLogs.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedLogs.join(', ')}\n`);
 // The line is printed BY FACT: there may be no logs at all — the run broke
 // before the first turn — and promising a directory that is not there means
 // sending a person into a void.

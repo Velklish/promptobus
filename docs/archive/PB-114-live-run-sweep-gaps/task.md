@@ -1,9 +1,9 @@
 # PB-114 · The live-run sweep is half-built: two sandbox prefixes are on no sweep list while the comment claims they have their own, the leftover verdict has no age or ownership cut-off so one crashed run reddens every later run, and two of three callers discard the `refused` list
 
-- **Order:** 410
 - **Scope:** `scripts/live-mixed.mjs`, `scripts/live-codex.mjs`, `scripts/live-e2e.mjs`, `scripts/live-cursor.mjs`, `scripts/live-canary.mjs`, `scripts/canary-runs.mjs`, `test/tmpdir-sweep.mjs`, `test/tmpdir-sweep.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-67, PB-68, PB-69
+- **Taken:** 2026-09-09
 
 ## Context
 

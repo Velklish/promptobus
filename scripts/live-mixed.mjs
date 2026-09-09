@@ -37,7 +37,7 @@
 // verdict "the reviewer got the diff" rests on what actually went through the
 // diff file, not on the model's obedience to a brief it may not have read.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -146,6 +146,13 @@ const panesBefore = new Set(cursorPersist.listSessions().map((s) => s.name));
 // are swept by their own sweep. A shared start `promptobus-live-mixed-` on
 // both would mean the second run goes red on the first run's logs.
 const RUN_PREFIX = 'promptobus-live-mixed-run-';
+const born = Date.now();
+const bornAfter = (file) => {
+  try {
+    const st = statSync(file);
+    return (st.birthtimeMs || st.mtimeMs) >= born;
+  } catch { return false; }
+};
 const SB = makeSandbox(RUN_PREFIX);
 // Turn logs outlive the run: the sandbox is swept, and the Cursor transcript
 // and the Codex holder log are what a red is debugged by.
@@ -492,7 +499,9 @@ check('after the loop the mechanism session registries are clean — `done` drop
 // Logs under their own prefix do not land here at all — they legally live
 // until the sweep, and past-run directories cannot be subtracted by one
 // current pid.
-const tmpLeft = listing(tmpdir()).filter((n) => n.startsWith(RUN_PREFIX));
+const tmpLeft = listing(tmpdir())
+  .filter((n) => n.startsWith(RUN_PREFIX))
+  .filter((n) => bornAfter(path.join(tmpdir(), n)));
 check('no run directories left in $TMPDIR after the loop',
   tmpLeft.length === 0 && !existsSync(SB),
   `${tmpLeft.join(', ') || 'clean'} · sandbox ${existsSync(SB) ? SB : 'swept'}`);
@@ -510,7 +519,12 @@ process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, beca
 // the three newest stay, nothing younger than an hour is removed. The trouble
 // is shared — pile-up in a shared `$TMPDIR` — and it is healed by shared
 // code, not a second copy of the thresholds.
-process.stdout.write(`${sweptLine('previous-run logs', sweepPreviousRuns(tmpdir(), { prefix: LOGS_PREFIX, current: KEPT_LOGS }))}\n`);
+const refusedLogs = [];
+const sweptLogs = sweepPreviousRuns(tmpdir(), {
+  prefix: LOGS_PREFIX, current: KEPT_LOGS, refused: refusedLogs,
+});
+process.stdout.write(`${sweptLine('previous-run logs', sweptLogs)}\n`);
+if (refusedLogs.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedLogs.join(', ')}\n`);
 // The logs line is printed BY FACT: there may be none at all — the run broke
 // before the first turn — and promising a directory that is not there means
 // sending a person into a void.

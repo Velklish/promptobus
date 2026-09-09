@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Live-run sweeps now age-filter mixed sandboxes, cover Codex and E2E prefixes, and report refused cleanup entries.** (PB-114)
+
 ### Added
 
 - **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)

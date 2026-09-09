@@ -182,6 +182,39 @@ check(': the runner calls the sweep at start and gives it its run directory',
   /sweepTestSandboxes\(os\.tmpdir\(\), \{ current: RUN_TMP[^)]*\)/.test(runSrc),
   `import: ${/from '.\/tmpdir-sweep.mjs'/.test(runSrc)} · call: ${/sweepTestSandboxes\(/.test(runSrc)}`);
 
+// Live scripts are not imported: each one starts real harness sessions. Read
+// their source instead, and keep their cleanup checks next to the suite
+// sentinel so a new live prefix cannot hide outside every sweep.
+const scriptsDir = path.join(here, '..', 'scripts');
+const sourceOf = (name) => readFileSync(path.join(scriptsDir, name), 'utf8');
+const mixedSrc = sourceOf('live-mixed.mjs');
+const cursorSrc = sourceOf('live-cursor.mjs');
+const codexSrc = sourceOf('live-codex.mjs');
+const e2eSrc = sourceOf('live-e2e.mjs');
+const LIVE_PREFIXES = [
+  'promptobus-live-codex-', 'promptobus-live-cursor-', 'promptobus-live-e2e-',
+];
+
+check(': live-mixed ignores run directories older than this run',
+  /const tmpLeft[\s\S]*?bornAfter\(path\.join\(tmpdir\(\), n\)\)/.test(mixedSrc),
+  'the run-directory verdict has no birth-time cutoff');
+
+const ownSweep = (src, prefix) => /sweepPreviousRuns/.test(src)
+  && new RegExp(`prefix:\\s*['"]${prefix}['"]`).test(src)
+  && /current:\s*SB/.test(src);
+check(': live-codex sweeps old sandbox directories with its own prefix',
+  ownSweep(codexSrc, 'promptobus-live-codex-'),
+  'live-codex has no sweep for its sandbox prefix');
+check(': live-e2e sweeps old sandbox directories with its own prefix',
+  ownSweep(e2eSrc, 'promptobus-live-e2e-'),
+  'live-e2e has no sweep for its sandbox prefix');
+
+const refusedSweep = (src) => /const refused\w*\s*=\s*\[\]/.test(src)
+  && /sweepPreviousRuns\([\s\S]*?refused:\s*refused\w*/.test(src)
+  && /sweep refused/.test(src);
+check(': live-mixed reports refused log sweeps', refusedSweep(mixedSrc), 'live-mixed drops refused names');
+check(': live-cursor reports refused log sweeps', refusedSweep(cursorSrc), 'live-cursor drops refused names');
+
 // ── A sweep refusal does not fail the suite ───────────────────────────────────────────────────────
 //
 // A directory is in use or there are no permissions for it — sweep
@@ -268,9 +301,10 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
 // under `/tmp` past `os.tmpdir()` and is not the subject of THIS
 // sweep: its prefixes are watched by the section below.
 const declared = [];
-const SCAN = [here];
+const SCAN = [here, scriptsDir];
 for (const dir of SCAN) {
-  for (const file of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+  for (const file of readdirSync(dir).filter((n) => n.endsWith('.mjs')
+    && (dir === here || n.startsWith('live-')))) {
     // Comment lines are stripped: prose quotes the same calls in
     // this file and in [tmpdir-sweep.mjs](tmpdir-sweep.mjs) itself,
     // and a quoted sandbox does not create one.
@@ -285,7 +319,8 @@ for (const dir of SCAN) {
     }
   }
 }
-const uncovered = declared.filter(([, pre]) => !SUITE_PREFIXES.some((known) => pre.startsWith(known)));
+const uncovered = declared.filter(([, pre]) => !SUITE_PREFIXES.some((known) => pre.startsWith(known))
+  && !LIVE_PREFIXES.some((known) => pre.startsWith(known)));
 
 check(': the sweep prefix list covers every suite sandbox',
   declared.length > 0 && uncovered.length === 0,

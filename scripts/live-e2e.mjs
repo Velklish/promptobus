@@ -30,6 +30,7 @@ import { makeSandbox, makeSockDir, resolveToolBin } from '../test/sandbox.mjs';
 import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
+import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 
 // The mechanism under test is one root for the whole run, and the scenario declares
 // it (`PROMPTOBUS_E2E_ROOT`). Unset — the checkout, as before. Set — the installed
@@ -69,6 +70,12 @@ const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
 const SB = makeSandbox('promptobus-live-e2e-');
+const refusedRuns = [];
+const swept = sweepPreviousRuns(os.tmpdir(), {
+  prefix: 'promptobus-live-e2e-', current: SB, refused: refusedRuns,
+});
+process.stdout.write(`${sweptLine('previous-run sandboxes', swept)}\n`);
+if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
 // The run socket directory is its own, and it is removed in `finally` with the
 // sandbox. The exit hook in [sandbox.mjs](../test/sandbox.mjs) removes it too, but
 // only on its own process: a loop cut off mid-file never reaches the end, and

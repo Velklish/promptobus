@@ -15,13 +15,14 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
+import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 
 const { codexDriver, DEFAULT_MODEL } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const { readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
@@ -83,6 +84,12 @@ const pgrepBefore = {
 };
 
 const SB = makeSandbox('promptobus-live-codex-');
+const refusedRuns = [];
+const swept = sweepPreviousRuns(tmpdir(), {
+  prefix: 'promptobus-live-codex-', current: SB, refused: refusedRuns,
+});
+process.stdout.write(`${sweptLine('previous-run sandboxes', swept)}\n`);
+if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
 const TASK = `livecodex-t${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
 const WORKER = 'worker:live';
 const ORCH_SESSION = `orch-live-codex-${process.pid}`;

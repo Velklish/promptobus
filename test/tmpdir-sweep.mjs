@@ -76,11 +76,10 @@ export { sweptLine };
 // runner run directory.
 //
 // Foreign ones are not here and must not be: `promptobus-canary-`,
-// `promptobus-release-gates-`, `promptobus-live-e2e-`,
-// `promptobus-live-cursor-` are created by live runs and release
-// gates — they have their own sweep and their own thresholds —
-// `agents-review-` is created by production code
-// (`headless.js`). **`promptobus-e2e-` is
+// `promptobus-release-gates-`, and `promptobus-live-*` are created by
+// live runs and release gates, so their cleanup belongs to those scripts;
+// the suite must never sweep a live participant's directory. `agents-review-`
+// is created by production code (`headless.js`). **`promptobus-e2e-` is
 // shared**: `promptobus-e2e.test.mjs` creates it, and
 // `release-gates.mjs` counts such
 // directories as live-run sandboxes. The same age cut-off splits
