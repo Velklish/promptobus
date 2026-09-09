@@ -1,9 +1,9 @@
 # PB-56 · `calibrate` derives `speed` from `durationSec`, which for an accepted piece runs to the CLOSE of the task, not to the participant's own result — so every key of a run shares one end stamp
 
-- **Order:** 280
 - **Scope:** `lib/model-routing/calibrate.js`, `lib/model-routing/telemetry.js`, `schemas/model-routing/telemetry.schema.json`, `schemas/v1/message.schema.json`, [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-57
+- **Taken:** 2026-09-10
 
 ## Context
 

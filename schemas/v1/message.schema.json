@@ -44,6 +44,9 @@
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
     },
-    "ts": { "$ref": "urn:promptobus:v1:task#/$defs/timestamp" }
+    "ts": {
+      "description": "When this message was sent. Telemetry uses the sender's latest result timestamp as that participant's end stamp.",
+      "$ref": "urn:promptobus:v1:task#/$defs/timestamp"
+    }
   }
 }

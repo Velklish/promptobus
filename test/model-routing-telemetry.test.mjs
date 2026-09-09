@@ -112,8 +112,8 @@ const SPAWN_WINDOWS = [
 ];
 
 // Lift stamps are relative to the run's own clock: `durationSec` is measured
-// against the moment `done` closes the task, and a fixed date would be in the
-// future on any machine reading this after it.
+// against each participant's own result (or its dismissal/close), and a fixed
+// date would be in the future on any machine reading this after it.
 const NOW = Date.now();
 const ago = (minutes) => new Date(NOW - minutes * 60 * 1000).toISOString();
 const T0 = ago(180);
@@ -250,10 +250,11 @@ check(': a window the cache entry does not carry has no end reading, and is not 
   JSON.stringify(worker.windows[1]));
 check(': the run is named, not one participant — the neighbour live on that harness at spawn is counted',
   worker.concurrentParticipants === 1, String(worker.concurrentParticipants));
-check(': the duration runs from the lift to the close',
-  worker.spawnedAt === T1 && worker.durationSec >= 90 * 60
-  && worker.endedAt === worker.recordedAt, JSON.stringify({
-    from: worker.spawnedAt, to: worker.endedAt, sec: worker.durationSec,
+check(': the duration runs from the lift to the worker\'s last result',
+  worker.spawnedAt === T1 && worker.lastResultAt !== null
+  && worker.endedAt === worker.lastResultAt && worker.durationSec >= 90 * 60,
+  JSON.stringify({
+    from: worker.spawnedAt, result: worker.lastResultAt, to: worker.endedAt, sec: worker.durationSec,
   }));
 check(': throughput evidence is projected without using completion duration',
   worker.throughput?.outputTokens === 300
@@ -302,7 +303,8 @@ check(': mixed sidecar turns do not manufacture a pair across observations',
   JSON.stringify(mixedTotals));
 
 check(': a participant dismissed mid-run says so, and its record ends at the dismissal',
-  reviewer.dismissedBeforeDone === true && reviewer.endedAt === T2 && reviewer.durationSec === 2700,
+  reviewer.dismissedBeforeDone === true && reviewer.lastResultAt === null
+  && reviewer.endedAt === T2 && reviewer.durationSec === 2700,
   JSON.stringify({ d: reviewer.dismissedBeforeDone, end: reviewer.endedAt, sec: reviewer.durationSec }));
 check(': an explicit --model run is recorded too, with no strategy and no windows',
   hand.strategy === null && hand.strategySource === null && hand.tuple === null
@@ -801,3 +803,50 @@ const goodAddressRow = badAddressRows.find((row) => row.model === 'claude-opus' 
 check(': one invalid participant address does not prevent the valid row from being written',
   badAddressRows.length === 2 && goodAddressRow?.throughput?.outputTokens === 42,
   JSON.stringify(badAddressRows));
+
+// --- each participant's own result ends its duration ------------------------
+//
+// Two participants of one task finish at different moments, while `done` has
+// one close stamp for both. The canonical messages are rewritten only in this
+// fixture so the regression does not depend on wall-clock time or message
+// creation order; their envelopes remain schema-shaped and carry valid ts
+// values.
+const SB56 = makeSandbox('promptobus-telemetry-end-stamp-');
+writeHostConfig(SB56);
+const HOME56 = path.join(SB56, '.promptobus');
+const HOST56 = hostOf(SB56);
+const TASK56 = 'telemetriya-sobstvennyy-konets-t20260906-140000';
+const WORKER56_START = ago(120);
+const REVIEWER56_START = ago(105);
+const WORKER56_RESULT = ago(45);
+const REVIEWER56_RESULT = ago(15);
+store.createTask(HOME56, { id: TASK56, title: 'собственный конец участника', owner: null });
+for (const [address, model, started] of [
+  ['worker:stamp', 'claude-opus', WORKER56_START],
+  ['reviewer:stamp', 'claude-opus', REVIEWER56_START],
+]) {
+  store.upsertParticipant(HOME56, TASK56, store.participantRecord(address, {
+    harness: 'claude', mode: 'managed', sessionRef: `sess-${address.split(':')[1]}`,
+    model, started,
+  }));
+}
+const setResultStamp = (address, stamp) => {
+  const sent = store.sendMessage(HOME56, TASK56, {
+    from: address, to: 'orchestrator', type: 'result', body: `${address} finished`,
+  });
+  const file = path.join(store.taskDir(HOME56, TASK56), 'messages', `${sent.message.id}.json`);
+  const message = readJson(file);
+  message.ts = stamp;
+  writeFileSync(file, `${JSON.stringify(message, null, 2)}\n`);
+};
+setResultStamp('worker:stamp', WORKER56_RESULT);
+setResultStamp('reviewer:stamp', REVIEWER56_RESULT);
+const endStampRows = telemetry.telemetryRecords(HOST56, HOME56, store.readTask(HOME56, TASK56), { at: NOW });
+const worker56 = endStampRows.find((row) => row.role === 'worker');
+const reviewer56 = endStampRows.find((row) => row.role === 'reviewer');
+check(': worker and reviewer durations end at their own result stamps, not the shared close',
+  worker56?.lastResultAt === WORKER56_RESULT && reviewer56?.lastResultAt === REVIEWER56_RESULT
+  && worker56?.endedAt === WORKER56_RESULT && reviewer56?.endedAt === REVIEWER56_RESULT
+  && worker56?.recordedAt === reviewer56?.recordedAt
+  && worker56?.durationSec === 75 * 60 && reviewer56?.durationSec === 90 * 60,
+  JSON.stringify({ worker: worker56, reviewer: reviewer56 }));

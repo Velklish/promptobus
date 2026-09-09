@@ -47,8 +47,15 @@
         { "type": "null" }
       ]
     },
+    "lastResultAt": {
+      "description": "The timestamp of this participant's latest `result` message, or null when it sent no valid result. Additive: older records may omit this field.",
+      "oneOf": [
+        { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    },
     "endedAt": {
-      "description": "The participant's own end: its dismissal when it was dismissed mid-run, otherwise the moment the task was closed.",
+      "description": "The participant's own end: its latest result timestamp when it sent a result, otherwise its dismissal when it was dismissed mid-run, otherwise the moment the task was closed.",
       "$ref": "urn:promptobus:model-routing:telemetry#/$defs/timestamp"
     },
     "durationSec": {
@@ -173,8 +180,9 @@
       "strategy": "balance",
       "strategySource": "overlay:workspace",
       "spawnedAt": "2026-09-06T11:00:00.000Z",
-      "endedAt": "2026-09-06T12:30:00.000Z",
-      "durationSec": 5400,
+      "lastResultAt": "2026-09-06T12:15:00.000Z",
+      "endedAt": "2026-09-06T12:15:00.000Z",
+      "durationSec": 4500,
       "throughput": { "outputTokens": 2400, "generationDurationSec": 48, "tokensPerSecond": null },
       "turns": 9,
       "reviewRounds": 2,
@@ -211,8 +219,9 @@
       "strategy": null,
       "strategySource": null,
       "spawnedAt": "2026-09-06T12:00:00.000Z",
-      "endedAt": "2026-09-06T12:30:00.000Z",
-      "durationSec": 1800,
+      "lastResultAt": "2026-09-06T12:20:00.000Z",
+      "endedAt": "2026-09-06T12:20:00.000Z",
+      "durationSec": 1200,
       "throughput": null,
       "turns": 3,
       "reviewRounds": 0,
