@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-resolved CHANGELOG: 1 bullet(s) added
-=======
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -50,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Balance compares every eligible pool of a harness.** Each pool contributes its best eligible tuple to the pace comparison, and `models` prints one pace row per pool so a roomier Cursor pool is not hidden by a higher-scoring one. (PB-43)
 - **Terminal-Bench 4.0 now has a dated Claude Code anchor pair.** Fable 5.1 records the 4.0 leaderboard figure as supporting evidence but remains at its predecessor's band as a stated hypothesis under the successor rule; re-rating guidance keeps figures without an exact pair as hypotheses. (PB-37.3)
 - **Claude Code's proven inventory now includes entitled Haiku.** Claude 2.1.263 accepted `claude-haiku-4-5` on a one-turn liftoff, so the driver publishes its `haiku` alias and model-scoped limit ids and the catalog carries a worker ladder rated from Anthropic's 73.3 % SWE-bench figure, Artificial Analysis's 81 tokens/s and the $1/$5 list price. The same check refused `claude-mythos-5-1`, which remains out. (PB-34.1)
+- **Telemetry no longer treats exhausted cache entries as fresh end readings.** A future-reset or sticky exhaustion remains live for routing, but its window percentage is `null` in participant telemetry once the sixty-second window TTL has passed, so `models calibrate` cannot mistake a frozen value for spend evidence. (PB-77)
+- **Live mixed-lineup matchers now read protocol v1 sender IDs.** Worker and reviewer checks share the normalized sender predicate, so a live run no longer waits for messages under the caller's unstored address spelling. (PB-67)
 
 ## [0.5.1] - 2026-09-09
 
@@ -244,4 +243,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The bus itself:** TypeScript core with tasks, mailboxes, artifacts and the driver contract; a JavaScript runtime; drivers for Claude Code, Cursor and Codex; and the `promptobus` command.
 - **A host contract instead of an ambient workspace:** `PromptobusHost` is passed explicitly on every call, with a standalone implementation that reads `cwd`, Git and `promptobus.json`. A consumer with no previous store declares no legacy layout, and that is a normal state rather than a failure.
 - **Documentation for a first-time reader:** README in English and Russian, an architecture decision on the standalone boundary, and guides for installation, hooks and trust, and contributing.
->>>>>>> ce91567
