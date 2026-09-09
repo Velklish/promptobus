@@ -961,6 +961,22 @@ test('validate refuses an overlay that names something the catalog does not have
   }
 });
 
+test('validate refuses an account answer for an unknown harness', () => {
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('user', {
+      schemaVersion: 1,
+      account: { aider: { plan: 'example-ultra' } },
+    })],
+  });
+  assert.equal(verdict.ok, false);
+  const finding = verdict.errors.find((e) => e.at === 'account.aider');
+  assert.ok(finding, verdict.errors.map((e) => `${e.at}: ${e.message}`).join(' | '));
+  assert.equal(finding.code, 'overlay-invalid');
+  assert.equal(finding.layer, 'user');
+  assert.match(finding.message, /unknown harness "aider"/);
+});
+
 test('validate refuses weights that do not sum to 100, and rules that both allow and deny a name', () => {
   const weights = validateLayers({
     canonical: canonicalLayer(),
@@ -1350,6 +1366,17 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, reviewerQualityFloor: 5 },
     { schemaVersion: 1, qualityFloor: { reviewer: 5 } },
     { schemaVersion: 1, qualityFloor: { worker: 3, reviewer: 5 }, deny: { harnesses: ['cursor'] } },
+    // ADR-004's pace, default and account blocks belong to the same parity
+    // corpus: each has one lawful document and one document the two shapes must
+    // reject together.
+    { schemaVersion: 1, balance: { band: 5, spendUnit: 5 } },
+    { schemaVersion: 1, balance: { band: 'wide' } },
+    { schemaVersion: 1, nearLimit: { usedPercent: 80, underspend: -15 } },
+    { schemaVersion: 1, nearLimit: { usedPercent: 101 } },
+    { schemaVersion: 1, defaults: { strategy: 'balance' } },
+    { schemaVersion: 1, defaults: { strategy: 'auto' } },
+    { schemaVersion: 1, account: { cursor: { plan: 'example-ultra' } } },
+    { schemaVersion: 1, account: { cursor: { plan: '' } } },
     { schemaVersion: 1, payg: { allow: true } },
     { schemaVersion: 3 },
     { schemaVersion: 1, weight: {} },
