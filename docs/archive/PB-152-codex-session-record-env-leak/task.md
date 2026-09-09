@@ -1,9 +1,9 @@
 # PB-152 · The Codex session record carries the caller's whole environment as `childEnv` for the participant's whole life, though the detached holder reads it exactly once, at spawn
 
-- **Order:** 160
 - **Scope:** `lib/driver-codex.js` (`spawn`, `sessionEnv`, `SESSION_ENV_DROP`), `lib/codex-session.js` (`writeJson`, `holdMain`, `startHolder`), [reference/03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-09
 
 ## Context
 

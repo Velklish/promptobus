@@ -5,7 +5,7 @@
 // a turn in progress, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -302,6 +302,7 @@ const env = {
   PROMPTOBUS_HOME: home,
   CLAUDE_CODE_SESSION_ID: ORCH_SESSION,
   PROMPTOBUS_WARDEN: 'off',
+  CODEX_HOME: path.join(SB, 'caller-codex-home'),
   [CODEX_HOME_VAR]: HARNESS,
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
@@ -342,6 +343,32 @@ const record = readSession(ref, env);
 check('step 1: the thread landed in the mechanism registry — thread id and holder are alive',
   !!record?.threadId && record.state === 'alive' && typeof record.holderPid === 'number',
   JSON.stringify({ threadId: record?.threadId, state: record?.state, holder: record?.holderPid }));
+
+check(': the session record does not persist the caller environment',
+  !!record && !('childEnv' in record), Object.keys(record ?? {}).sort().join(','));
+
+const appThread = (() => {
+  try {
+    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${record?.threadId ?? ''}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+check(': the holder app-server drops CODEX_HOME but keeps PROMPTOBUS_CODEX_HOME',
+  appThread?.appServerEnv?.CODEX_HOME === undefined
+    && appThread?.appServerEnv?.PROMPTOBUS_CODEX_HOME === stateHome,
+  JSON.stringify(appThread?.appServerEnv ?? null));
+
+const modeEnv = { ...env, PROMPTOBUS_CODEX_HOME: path.join(SB, 'fresh-mode-state') };
+const modeRef = 'fresh-mode-probe';
+writeSession({ ref: modeRef }, modeEnv);
+const sessionsMode = statSync(sessionsDir(modeEnv)).mode & 0o777;
+check(': a freshly created Codex sessions directory is private',
+  process.platform === 'win32' || sessionsMode === 0o700,
+  process.platform === 'win32'
+    ? 'win32: POSIX mode assertion skipped because Windows uses ACLs'
+    : sessionsMode.toString(8));
+dropSession(modeRef, modeEnv);
 
 check('step 1: the session handle is the thread id',
   wp?.metadata?.session === record?.threadId, `${wp?.metadata?.session} · ${record?.threadId}`);

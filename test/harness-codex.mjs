@@ -427,6 +427,10 @@ async function appServer() {
         turnStarted: false,
         turnId: null,
         status: 'idle',
+        appServerEnv: {
+          CODEX_HOME: process.env.CODEX_HOME,
+          PROMPTOBUS_CODEX_HOME: process.env.PROMPTOBUS_CODEX_HOME,
+        },
       });
       const reasoningEffort = params.config?.model_reasoning_effort;
       reply(id, {
