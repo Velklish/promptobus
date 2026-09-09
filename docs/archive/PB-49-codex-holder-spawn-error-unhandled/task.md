@@ -1,9 +1,9 @@
 # PB-49 · The Codex holder attaches no `error` listener to the spawned app-server, so a binary that cannot be spawned kills the holder silently, leaves the record at `state: starting`, and the lift stalls the full 133 s ready budget before blaming the timeout instead of ENOENT
 
-- **Order:** 110
 - **Scope:** [03-cli](../../reference/03-cli.md) § The Codex holder, `lib/codex-session.js`, `lib/codex-rpc.js`, `lib/driver-codex.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-08
 
 ## Context
 
