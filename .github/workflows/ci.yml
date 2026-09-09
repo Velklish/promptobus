@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -13,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: [20]
+        node: [20, 22]
 
     steps:
       - uses: actions/checkout@v4
@@ -39,20 +40,18 @@ jobs:
       # The ambient gate asserts that ast-grep is present: without it the gate
       # would go quiet instead of red, which is the failure it exists to prevent.
       - name: Install ast-grep
-        run: npm install -g @ast-grep/cli
+        run: npm install -g @ast-grep/cli@0.45.3
 
-      # No compile/build step yet: this package has no source tree and no
-      # TypeScript/bundler config. Implementation arrives in follow-up work.
-      # Do not add a silent no-op "build" that hides the missing compile.
+      # Build is explicit so TypeScript failures are named; npm ci and npm test also
+      # invoke it through prepare and pretest.
+      - name: Build
+        run: npm run build
 
       - name: Test
         run: npm test
 
       - name: Publicity audit
         run: npm run audit
-
-      - name: Pack dry-run
-        run: npm pack --dry-run
 
       # Adapter outputs and the Claude stub are generated, not stored in git, so a
       # fresh checkout has none of them and the gate would fail on their absence.

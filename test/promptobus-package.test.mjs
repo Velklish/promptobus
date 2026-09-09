@@ -389,6 +389,43 @@ const overview = readFileSync(path.join(REPO, 'docs', 'reference', '01-overview.
 const overviewVersion = overview.match(/Version in `package\.json` is `([^`]+)`/)?.[1] ?? null;
 check('docs/reference/01-overview.md names the version package.json carries',
   overviewVersion === pkg.version, `overview says ${overviewVersion}, package.json says ${pkg.version}`);
+const changelog = readFileSync(path.join(REPO, 'CHANGELOG.md'), 'utf8');
+const firstReleaseHeading = changelog.match(/^## \[(\d+\.\d+\.\d+)\]\s+(?:-|—)\s+([^\r\n]+)$/m);
+const changelogVersion = firstReleaseHeading?.[1] ?? null;
+const changelogDate = firstReleaseHeading?.[2] ?? null;
+check('CHANGELOG first release heading names package version and a date',
+  changelogVersion === pkg.version && /^\d{4}-\d{2}-\d{2}$/.test(changelogDate ?? ''),
+  `CHANGELOG says ${changelogVersion ?? 'none'} — ${changelogDate ?? 'none'}, package.json says ${pkg.version}`);
+const exactTag = run('git', ['describe', '--exact-match', '--tags', 'HEAD'], {
+  cwd: REPO, encoding: 'utf8',
+});
+const tagName = exactTag.status === 0 ? exactTag.stdout.trim() : null;
+check('exact git tag matches package version when HEAD has one',
+  exactTag.status !== 0 || tagName === `v${pkg.version}`,
+  exactTag.status === 0 ? `tag ${tagName}, package.json says ${pkg.version}` : 'HEAD is not exactly tagged');
+const workflow = readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'), 'utf8');
+const astGrepVersion = workflow.match(/^\s+run: npm install -g @ast-grep\/cli@(\d+\.\d+\.\d+)$/m)?.[1] ?? null;
+check('CI pins ast-grep to an exact version',
+  astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
+const backslopRef = /github:Velklish\/backslop#[^\s'"`]+/;
+const workflowBackslopRef = workflow.match(backslopRef)?.[0] ?? null;
+const packageBackslopRef = pkg.scripts?.['lint:backslop']?.match(backslopRef)?.[0] ?? null;
+check('CI and package lint use the same backslop ref',
+  workflowBackslopRef !== null && workflowBackslopRef === packageBackslopRef,
+  `CI says ${workflowBackslopRef ?? 'no ref'}, package.json says ${packageBackslopRef ?? 'no ref'}`);
+const buildStep = workflow.match(/^\s+- name: Build\n\s+run: npm run build$/m);
+const testStep = workflow.indexOf('- name: Test');
+check('CI names the build before the test step',
+  buildStep !== null && testStep >= 0 && buildStep.index < testStep,
+  'the workflow must run npm run build before Test');
+const nodeMatrix = workflow.match(/^\s+node:\s*\[([^\]]+)\]$/m)?.[1]
+  ?.split(',').map((major) => Number(major.trim())).filter(Number.isInteger) ?? [];
+check('CI covers more than one supported Node major',
+  nodeMatrix.includes(20) && nodeMatrix.some((major) => major !== 20) && nodeMatrix.every((major) => major >= 20),
+  `Node matrix: ${nodeMatrix.join(', ') || 'none'}; package engines: ${pkg.engines?.node ?? 'none'}`);
+check('CI does not duplicate package tarball coverage',
+  !/^\s+- name: Pack dry-run$/m.test(workflow) && !/^\s+run: npm pack --dry-run$/m.test(workflow),
+  'remove the standalone Pack dry-run step; package tests already pack and install the tarball');
 const runtimeDeps = ['dependencies', 'peerDependencies', 'optionalDependencies', 'bundleDependencies']
   .flatMap((field) => Object.keys(pkg[field] ?? {}));
 check('package has no runtime dependencies', runtimeDeps.length === 0, runtimeDeps.join(', '));

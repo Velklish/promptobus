@@ -1,9 +1,9 @@
 # PB-70 · Version is declared in four places (package.json, package-lock.json, docs/reference/01-overview.md, CHANGELOG.md) and only one comparison is gated — the CHANGELOG heading and the git tag are exactly the two that have already drifted
 
-- **Order:** 570
 - **Scope:** [reference/01](../../reference/01-overview.md), `test/promptobus-package.test.mjs`, `CHANGELOG.md`, `.github/workflows/ci.yml`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-108
+- **Taken:** 2026-09-10
 
 ## Context
 

@@ -1,11 +1,13 @@
 # Contributing
 
-This repository is run entirely through [backslop](https://github.com/Velklish/backslop) `v0.3.0`. There is no issue tracker beside it. The pin is `backslop.json`.
+This repository is run entirely through [backslop](https://github.com/Velklish/backslop) `v0.4.0`. There is no issue tracker beside it. The pin is `backslop.json`.
 
 ```bash
 npx github:Velklish/backslop#v0.4.0 status
 npx github:Velklish/backslop#v0.4.0 lint
 ```
+
+The CI and package lint commands deliberately use the mutable `v0.4.0` tag: it is owned by the same person who owns this repository, and `backslop upgrade` moves both references together.
 
 English is the language of new strings, comments, commit messages, and checks. `README.ru.md` is the only file that may use Cyrillic.
 

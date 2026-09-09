@@ -1,9 +1,9 @@
 # PB-94 · CI resolves ast-grep and the backslop tag at run time from mutable sources, so a green pipeline can turn red with no commit in this repository
 
-- **Order:** 610
 - **Scope:** `.github/workflows/ci.yml`, `package.json`, `test/promptobus-package.test.mjs`, `scripts/audit-public.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-70
+- **Taken:** 2026-09-10
 
 ## Context
 
