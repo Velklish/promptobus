@@ -129,7 +129,7 @@ check(': an empty sweep summary names both thresholds, and at keep = 0 — only 
 // would be green; without the old — a sweep that removed nothing
 // at all.
 const BOXES = makeSandbox('promptobus-sweep-tmp-');
-const OLD = ['promptobus-sync-old', 'promptobus-promptobus spawn-old', 'promptobus-bushook-old',
+const OLD = ['promptobus-telemetry-old', 'promptobus-promptobus spawn-old', 'promptobus-ambient-old',
   'promptobus-cursor-wake-old', 'promptobus-test-run-old',
   // Nested-package suite sandbox: a hand `npm test --prefix` pours
   // it into the same system `$TMPDIR`, and it is swept on a par with
@@ -335,7 +335,7 @@ check(': live-cursor reports refused log sweeps', refusedSweep(cursorSrc), 'live
 // runs as root.
 if (process.platform !== 'win32' && process.getuid?.() !== 0) {
   const LOCKED = makeSandbox('promptobus-sweep-tmp-');
-  const stuck = plant(LOCKED, 'promptobus-sync-locked', 3 * DAY);
+  const stuck = plant(LOCKED, 'promptobus-telemetry-locked', 3 * DAY);
   const lock = path.join(stuck, 'lock');
   mkdirSync(lock, { recursive: true });
   writeFileSync(path.join(lock, 'held'), 'held\n');
@@ -347,7 +347,7 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
   // checking a sweep refusal.
   const aged = new Date(NOW - 3 * DAY);
   utimesSync(stuck, aged, aged);
-  const doomed = plant(LOCKED, 'promptobus-sync-doomed', 2 * DAY);
+  const doomed = plant(LOCKED, 'promptobus-telemetry-doomed', 2 * DAY);
 
   let threw = null;
   let sweptLocked = [];
@@ -359,11 +359,11 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
     threw === null, `threw: ${threw?.message ?? '—'}`);
 
   check(': a refusal does not take the name of a swept neighbour — the list names it',
-    sweptLocked.join(',') === 'promptobus-sync-doomed' && !existsSync(doomed),
+    sweptLocked.join(',') === 'promptobus-telemetry-doomed' && !existsSync(doomed),
     `swept: ${sweptLocked.join(', ') || 'none'}`);
 
   check(': the unyielding directory is named in a separate list and stayed in place',
-    refused.join(',') === 'promptobus-sync-locked' && existsSync(stuck),
+    refused.join(',') === 'promptobus-telemetry-locked' && existsSync(stuck),
     `refused: ${refused.join(', ') || 'none'} · ${existsSync(stuck)}`);
 }
 
@@ -371,9 +371,10 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
 //
 // The list is hand-built by grepping the directory, and a new prefix
 // would leak past the sweep in silence. The check repeats the same
-// grep: every `makeSandbox('…')` and every `mkdtemp` of a temp
-// directory literal in `test/` must be covered by the list. The same
-// way [runner.test.mjs](runner.test.mjs) checks `SERIAL` against the
+// grep in both directions: every `makeSandbox('…')` and every `mkdtemp`
+// of a temp directory literal in `test/` must be covered by the list,
+// and every list entry must cover a literal. The same way
+// [runner.test.mjs](runner.test.mjs) checks `SERIAL` against the
 // directory.
 //
 // **The temp directory is spelled two ways, and the pattern takes
@@ -419,6 +420,11 @@ check(': the sweep prefix list covers every suite sandbox',
   declared.length > 0 && uncovered.length === 0,
   `literals found: ${declared.length} · uncovered: `
   + `${uncovered.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
+
+const dead = SUITE_PREFIXES.filter((known) => !declared.some(([, pre]) => pre.startsWith(known)));
+check(': the sweep prefix list has no dead entries',
+  dead.length === 0,
+  `dead: ${dead.join(', ') || '—'}`);
 
 // ── Socket-prefix sentinel of the runner sweep ────────────────────────────
 //

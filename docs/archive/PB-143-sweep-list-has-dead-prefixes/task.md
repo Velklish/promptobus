@@ -1,9 +1,9 @@
 # PB-143 · 32 of the 59 sweep prefixes have no producer in this repository, and the completeness gate is one-directional so the dead half can never go red
 
-- **Order:** 700
 - **Scope:** `test/tmpdir-sweep.mjs`, `test/tmpdir-sweep.test.mjs`, `docs/guides/contributing.md` § Suite isolation
 - **Created:** 2026-09-06
 - **Dependencies:** PB-144
+- **Taken:** 2026-09-10
 
 ## Context
 

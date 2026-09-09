@@ -100,29 +100,22 @@ export const SUITE_PREFIXES = [
   // for the sweep's convenience. Each is specific enough not to catch a
   // stranger in a shared `$TMPDIR`; `pb-hooks-` covers `pb-hooks-home-`.
   'pb-home-', 'pb-hooks-', 'pb-install-',
-  'promptobus-activation-', 'promptobus-ambient-', 'promptobus-archive-',
-  'promptobus-base-', 'promptobus-bgsess-', 'promptobus-bootstrap-', 'promptobus-bushook-',
-  'promptobus-check-', 'promptobus-cli-flags-', 'promptobus-codex-', 'promptobus-console-',
-  'promptobus-copy-', 'promptobus-cursor-', 'promptobus-doctor-', 'promptobus-driver-',
-  'promptobus-e2e-', 'promptobus-env-', 'promptobus-exec-', 'promptobus-external-',
-  'promptobus-fresh-', 'promptobus-harness-', 'promptobus-home-', 'promptobus-homedir-',
-  'promptobus-hooks-test-', 'promptobus-host-', 'promptobus-legacy-', 'promptobus-lint-',
-  'promptobus-manifest-',
-  'promptobus-mcp-', 'promptobus-migration-', 'promptobus-modules-', 'promptobus-package-',
-  'promptobus-plugin-', 'promptobus-promptobus', 'promptobus-publish-', 'promptobus-races-',
-  'promptobus-refs-', 'promptobus-review-', 'promptobus-root-',
+  'promptobus-ambient-', 'promptobus-codex-',
+  'promptobus-copy-', 'promptobus-cursor-', 'promptobus-driver-',
+  'promptobus-e2e-', 'promptobus-harness-', 'promptobus-home-',
+  'promptobus-host-', 'promptobus-legacy-',
+  'promptobus-mcp-', 'promptobus-migration-', 'promptobus-package-',
+  'promptobus-promptobus', 'promptobus-races-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
   // that starts with it.
   'promptobus-routing-',
-  'promptobus-rules-',
-  'promptobus-runner-', 'promptobus-setup-', 'promptobus-skills-', 'promptobus-smoke-',
-  'promptobus-store-', 'promptobus-sweep-', 'promptobus-sync-',
+  'promptobus-runner-',
+  'promptobus-store-', 'promptobus-sweep-',
   // Covers the five sandboxes of model-routing-telemetry.test.mjs: one
   // workspace per case, and an entry sweeps everything that starts with it.
   'promptobus-telemetry-',
   'promptobus-test-',
-  'promptobus-tools-', 'promptobus-util-', 'promptobus-v1-', 'promptobus-wt-',
-  'promptobus-zone-',
+  'promptobus-v1-', 'promptobus-wt-',
 ];
 
 /**

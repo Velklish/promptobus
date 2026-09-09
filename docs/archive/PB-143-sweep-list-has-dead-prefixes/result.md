@@ -1,0 +1,9 @@
+# PB-143 · Result
+
+**Closed 2026-09-09.** Completed. The suite's sandbox-prefix list in `test/tmpdir-sweep.mjs` no longer carries entries nothing creates: thirty-two dead prefixes came off, and the sentinel in `test/tmpdir-sweep.test.mjs` is now two-directional — every `makeSandbox` literal must be on the list (as before) AND every listed prefix must have a literal — so a prefix cannot outlive its creator, and a stale entry cannot become a silent deletion rule in a shared `$TMPDIR` (the hazard PB-144 named for the socket list, closed there the same way). Two fixture names that referenced removed prefixes were moved to listed ones. contributing.md § Suite isolation states the two-way rule.
+
+**Verification.** Worker commit `f18d688` (worktree of `worker:verify`, on `main` `40d8244`). Reproducer red before the repair: the reverse assertion added to `node test/tmpdir-sweep.test.mjs` exit 1 naming all thirty-two dead prefixes. After the prune 36/36. Gates on `f18d688`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 664 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: `promptobus-sync-` re-inserted → 35/36 with `dead: promptobus-sync-`; restored → 36/36. Review: the orchestrator read the diff in full (the list, one reverse check, two fixture names, one guide sentence, one CHANGELOG bullet) — no isolated reviewer session was spent on it. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** guides/contributing.md § Suite isolation, CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:verify`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator.
