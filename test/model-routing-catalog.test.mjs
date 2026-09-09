@@ -1073,6 +1073,66 @@ test('a stale assessedAt is a warning and never an exclusion', () => {
   assert.deepEqual(mergeRouting({ canonical: CATALOG, now }).warnings, []);
 });
 
+test('an expired promotional quota citation warns without invalidating the catalog', () => {
+  const expired = clone(CATALOG);
+  const row = expired.tuples.find((tuple) => tuple.id === 'codex-terra-max');
+  const citation = row.evidence.sources.find((source) => source.rating === 'quotaCost');
+  citation.figure = '$2.25 per 1M tokens (promotional blend)';
+  citation.validUntil = '2026-09-06';
+  citation.listFigure = '$4.50 per 1M tokens blended ($1.50 in / $7.50 out list)';
+  citation.listBand = 2;
+  const now = Date.parse('2026-09-09T00:00:00.000Z');
+
+  const verdict = validateLayers({ canonical: canonicalLayer(expired), now });
+  assert.equal(verdict.ok, true, verdict.errors.map((error) => error.message).join(' | '));
+  const warning = verdict.warnings.find((entry) => entry.code === 'promotion-expired' && entry.tupleId === row.id);
+  assert.ok(warning, verdict.warnings.map((entry) => entry.code).join(' | '));
+  assert.match(warning.message, /codex-terra-max/);
+  assert.match(warning.message, /\$2\.25/);
+  assert.match(warning.message, /\$4\.50/);
+  assert.match(warning.message, /band 2/);
+
+  const future = clone(expired);
+  for (const tuple of future.tuples) {
+    for (const source of tuple.evidence.sources ?? []) {
+      if (source.rating === 'quotaCost' && source.validUntil !== undefined) source.validUntil = '2026-09-10';
+    }
+  }
+  const futureVerdict = validateLayers({ canonical: canonicalLayer(future), now });
+  assert.equal(futureVerdict.ok, true);
+  assert.equal(futureVerdict.warnings.some((entry) => entry.code === 'promotion-expired' && entry.tupleId === row.id), false);
+});
+
+test('validate refuses a promotional citation without list replacement facts', () => {
+  const incomplete = clone(CATALOG);
+  const row = incomplete.tuples.find((tuple) => tuple.id === 'codex-terra-max');
+  const citation = row.evidence.sources.find((source) => source.rating === 'quotaCost');
+  citation.validUntil = '2026-09-06';
+
+  const verdict = validateLayers({ canonical: canonicalLayer(incomplete) });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.errors.some((error) => error.at.endsWith('.listFigure')),
+    verdict.errors.map((error) => error.message).join(' | '));
+  assert.ok(verdict.errors.some((error) => error.at.endsWith('.listBand')),
+    verdict.errors.map((error) => error.message).join(' | '));
+});
+
+test('validate refuses promotion metadata outside a quotaCost citation', () => {
+  const invalid = clone(CATALOG);
+  const row = invalid.tuples.find((tuple) => tuple.evidence?.sources?.some((source) => source.rating === 'quality'));
+  const citation = row.evidence.sources.find((source) => source.rating === 'quality');
+  citation.validUntil = '2026-09-06';
+  citation.listFigure = '$4.50 per 1M tokens blended';
+  citation.listBand = 2;
+
+  const verdict = validateLayers({ canonical: canonicalLayer(invalid) });
+  assert.equal(verdict.ok, false);
+  for (const key of ['validUntil', 'listFigure', 'listBand']) {
+    assert.ok(verdict.errors.some((error) => error.at.endsWith(`.${key}`)
+      && error.message.includes('quotaCost')), `${key}: ${verdict.errors.map((error) => error.message).join(' | ')}`);
+  }
+});
+
 test('the canonical-priority convention is enforced as a warning, not an error', () => {
   const duplicate = clone(CATALOG);
   duplicate.tuples[1].priority = duplicate.tuples[0].priority;
@@ -1359,6 +1419,21 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
       c.tuples[0].evidence = {
         text: 'x',
         sources: [{ rating: 'quality', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '06-09-2026' }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{
+          rating: 'quality', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '2026-09-06',
+          validUntil: '2026-09-06', listFigure: '$4.50', listBand: 2,
+        }],
+      };
+    },
+    (c) => {
+      c.tuples[0].evidence = {
+        text: 'x',
+        sources: [{ rating: 'quotaCost', basis: 'b', version: 'v', agentHarness: 'h', figure: 'f', url: 'u', date: '2026-09-06', validUntil: '2026-09-06' }],
       };
     },
     (c) => {
