@@ -1,6 +1,6 @@
 # PB-116 · The codex `initialize` handshake (clientInfo + capabilities) is built independently in codex-session.js and adapter-codex.js — the probe hardcodes clientInfo.version as '0.0.0' instead of reusing the holder's hostClientInfo()
 
-- **Order:** 900
+- **Order:** 90
 - **Scope:** `lib/codex-session.js` (`hostClientInfo`, `packageIdentity`), `lib/model-routing/adapter-codex.js`, [03-cli](../../reference/03-cli.md) § Codex availability, § The Codex holder
 - **Created:** 2026-09-06
 - **Dependencies:** PB-90
@@ -57,3 +57,11 @@ The `capabilities` object is byte-identical between the two files; only `clientI
 - **Priority:** P2.
 - **Evidence level:** source/definition review at `1e0401a`, including `lib/codex-session.js:914`, `lib/model-routing/adapter-codex.js:357`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Triage — 2026-09-10
+
+- **Track:** C — Codex session lifecycle (moved from R: it edits `lib/codex-session.js` beside PB-88.2 and PB-88.1 and follows them).
+- **Priority:** P2.
+- **Evidence level:** re-verified at `3ccdf27`: `lib/model-routing/adapter-codex.js:358` still sends `version: '0.0.0'`; `lib/codex-session.js:44-56` defines `packageIdentity` and `hostClientInfo` without exporting them; PB-90 is on `main`.
+- **Decision (owner, 2026-09-10):** taken into this run.
+- **Next step:** implement as written; the `initialize` params become one exported builder used by the holder and the probe.

@@ -88,11 +88,15 @@ Queued assignments: [PB-71](archive/PB-71-gates-omit-npm-test/task.md), [PB-141]
 
 Added after this snapshot: [PB-50.1](archive/PB-50.1-git-max-output-names-a-process-wide-budget/task.md) — the shared output budget kept a git-specific name when PB-50 widened its reach.
 
+Added after this snapshot (triage of 2026-09-10): [PB-159](backlog/queue/PB-159-preflight-test-wall-clock-red-in-pool.md) — the preflight test's wall-clock checks go red in the pooled suite under machine load; it joins the serial group and the runner keeps a red file's last lines.
+
 ### S — Store integrity and public engine
 
 PB-63 and PB-66 are P0. PB-66 precedes PB-65 and reader taxonomy. PB-101 follows the version/error fixes; PB-147 tests its cleanup boundary.
 
 Queued assignments: [PB-63](archive/PB-63-migrate-mark-never-removed/task.md), [PB-66](archive/PB-66-recovery-misreads-errno-as-corruption/task.md), [PB-65](archive/PB-65-recovery-open-failure-bricks-store/task.md), [PB-132](archive/PB-132-task-id-grammar-two-homes/task.md), [PB-146](archive/PB-146-unreadable-record-taxonomy-gap/task.md), [PB-102](archive/PB-102-mixed-version-diagnosis-unreachable/task.md), [PB-101](archive/PB-101-four-commands-bypass-host-home/task.md), [PB-131](archive/PB-131-message-types-mutable-array/task.md), [PB-135](archive/PB-135-sendsyncinput-not-exported/task.md), [PB-147](archive/PB-147-prune-remove-seam-untested/task.md).
+
+Added after this snapshot (triage of 2026-09-10, findings of this track's own run): [PB-146.1](backlog/queue/PB-146.1-direct-reads-flatten-errno-to-not-found.md), [PB-65.1](backlog/queue/PB-65.1-fanout-mkdir-refusal-escapes-classification.md), [PB-63.1](backlog/queue/PB-63.1-migration-needed-true-on-sweep-only-plan.md), [PB-146.2](backlog/queue/PB-146.2-recover-history-discard-broken-tasks.md), [PB-66.1](backlog/queue/PB-66.1-inbox-unreadable-ref-knock-loop-unbounded.md), in that order.
 
 ### C — Codex session lifecycle
 
@@ -101,6 +105,8 @@ PB-97 before PB-41; PB-49/PB-99 before PB-42. Do not conflate a protocol collisi
 Queued assignments: [PB-97](archive/PB-97-codex-rpc-id-collision/task.md), [PB-49](archive/PB-49-codex-holder-spawn-error-unhandled/task.md), [PB-41](archive/PB-41-codex-reviewer-hangs-after-elicitation-allow/task.md), [PB-99](archive/PB-99-codex-rising-branch-ignores-error-age/task.md), [PB-42](archive/PB-42-codex-activity-watchdog/task.md), [PB-115](archive/PB-115-codex-socket-fallback-collision/task.md), [PB-152](archive/PB-152-codex-session-record-env-leak/task.md), [PB-88](archive/PB-88-codex-approval-text-match-false-positive/task.md), [PB-89](archive/PB-89-codex-approval-symlink-paths/task.md), [PB-90](archive/PB-90-codex-reviewer-effort-dropped/task.md), [PB-150](archive/PB-150-currenttime-read-approve-table/task.md), [PB-98](archive/PB-98-codex-sessions-phrase-wrong-home/task.md), [PB-121](archive/PB-121-codex-dry-run-prompt-via-argv/task.md).
 
 Added after this snapshot: [PB-156](archive/PB-156-codex-thread-name-ignores-chosen-session-name/task.md) — the Codex thread takes a machine name and never receives the readable session name the mechanism chose.
+
+Added after this snapshot (triage of 2026-09-10): [PB-88.2](backlog/queue/PB-88.2-measure-app-server-approval-params-shape.md) — the approval params measured from the generated app-server schema of codex-cli 0.146.0 — then [PB-88.1](backlog/queue/PB-88.1-worker-permissions-request-bypasses-containment.md); [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md) moves here from R and follows them, because all three edit `lib/codex-session.js`.
 
 ### D — Harness registries and Cursor / Claude drivers
 
@@ -116,6 +122,8 @@ Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh
 
 PB-155/PB-78/PB-58 first. PB-43 precedes PB-59/PB-105. Keep their policy choices explicit. PB-116 waits for C; PB-38.2 is deferred. PB-34.1/PB-37.3 are evidence work, not permission to run paid probes or invent ratings.
 
+Triage of 2026-09-10: PB-37.5 is closed by the owner's decision (validate-only stays); PB-116 is executed under C; [PB-104.1](backlog/queue/PB-104.1-hidden-rows-adr-004-intent-vs-shipped.md) — amend ADR-004 to the shipped hidden-row behaviour — is added, documentation only.
+
 Queued assignments: [PB-155](archive/PB-155-catalog-merge-proto-guard-gap/task.md), [PB-78](archive/PB-78-catalog-layer-attribution-wrong/task.md), [PB-58](archive/PB-58-preflight-cache-write-throws/task.md), [PB-60](archive/PB-60-strategy-default-silent-drop/task.md), [PB-43](archive/PB-43-balance-representative-hides-better-paced-pool/task.md), [PB-59](archive/PB-59-balance-floor-warning-false/task.md), [PB-149](archive/PB-149-cursor-stdout-error-listener/task.md), [PB-136](archive/PB-136-overlay-parity-corpus-gap/task.md), [PB-37.1](archive/PB-37.1-promotional-price-band-has-no-expiry-signal/task.md), [PB-61](archive/PB-61-models-flags-wrong-subcommand/task.md), [PB-105](archive/PB-105-near-limit-strategy-mismatch/task.md), [PB-125](archive/PB-125-unvalidated-harness-cache-key/task.md), [PB-124](archive/PB-124-routing-vocab-parity-gap/task.md), [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md), [PB-37.3](archive/PB-37.3-terminal-bench-4-0-has-no-anchor-pair/task.md), [PB-34.1](archive/PB-34.1-claude-inventory-narrower-than-baked-table/task.md).
 
 Deferred assignments: [PB-38.2](backlog/deferred/PB-38.2-cursor-tier-unknown-until-first-turn.md).
@@ -125,6 +133,8 @@ Deferred assignments: [PB-38.2](backlog/deferred/PB-38.2-cursor-tier-unknown-unt
 PB-77 plus PB-37.2 before PB-57; resolve the throughput-versus-duration contract before PB-56 or changing speed ratings. PB-62/PB-91/PB-106 protect the write workflow. PB-48 comes after timestamp/tally semantics.
 
 Queued assignments: [PB-77](archive/PB-77-telemetry-end-reading-stale-exhausted/task.md), [PB-37.2](archive/PB-37.2-done-does-not-refresh-windows-so-calibrate-loses-spend/task.md), [PB-57](archive/PB-57-calibrate-speed-per-effort-rung/task.md), [PB-56](archive/PB-56-calibrate-speed-shared-end-stamp/task.md), [PB-62](archive/PB-62-calibrate-confirm-before-print/task.md), [PB-91](archive/PB-91-calibrate-write-shadowed-silently/task.md), [PB-106](archive/PB-106-calibrate-write-overlay-gaps/task.md), [PB-145](archive/PB-145-pivot-tie-break-untested/task.md), [PB-48](archive/PB-48-review-rounds-not-exposed-mid-run/task.md).
+
+Deferred after this snapshot (triage of 2026-09-10): [PB-57.1](backlog/deferred/PB-57.1-harness-throughput-producers-absent.md) — no harness reports a complete throughput observation; it returns when one exposes tokens with model-active generation time.
 
 ### H — Hook installation and host commands
 
@@ -143,6 +153,8 @@ Queued assignments: [PB-87](archive/PB-87-reviewer-mcp-write-isolation/task.md),
 Added after this snapshot: [PB-158](archive/PB-158-done-keeps-a-branch-it-proved-merged/task.md) — `done` removes a worktree on proven squash containment but leaves its own branch, because the branch check falls back to an ancestry test a squash cannot satisfy.
 
 Added after this snapshot: [PB-157](archive/PB-157-review-snapshot-reads-dirty-worktree/task.md) — the review snapshot is taken from the working tree, so a mandated post-commit mutation probe removes the reviewed change from the diff. Ordered near the top: it is a verification prerequisite for every track.
+
+Added after this snapshot (triage of 2026-09-10): [PB-140.1](backlog/queue/PB-140.1-default-literals-behind-hint-params.md) — the fourteen default literals behind hint parameters go, the gate's allowlist empties — then [PB-87.1](backlog/queue/PB-87.1-reviewer-mcp-deny-cursor-verification-and-completeness.md) — the Codex reviewer's mechanical MCP deny through `disabled_tools` and a completeness signal on the host answer; it follows the C additions. Deferred: [PB-87.2](backlog/deferred/PB-87.2-cursor-mcp-deny-syntax-live-lift.md) — the Cursor deny syntax waits for a live lift after the Cursor window is restored.
 
 ### W — Guard and warden delivery
 

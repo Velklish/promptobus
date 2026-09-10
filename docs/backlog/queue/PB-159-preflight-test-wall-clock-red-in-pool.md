@@ -1,5 +1,6 @@
 # PB-159 · `model-routing-preflight.test.mjs` goes red in the pooled `npm test` under machine load while every standalone run is green, so a full-suite gate fails for reasons unrelated to the change under test
 
+- **Order:** 10
 - **Scope:** `test/model-routing-preflight.test.mjs`, `test/run.mjs` (the pool and serial groups), [guides/contributing](../../guides/contributing.md) § gates
 - **Created:** 2026-09-10
 - **Dependencies:** none
@@ -29,3 +30,11 @@ The file carries the only wall-clock assertions in the suite that depend on the 
 - With the machine under load (for example two full `npm test` runs started in parallel), the pooled suite stays 54/54 across three consecutive runs.
 - A pooled red of any file prints its failing assertion in the runner summary (probe: make one assertion fail on purpose, read the summary, restore).
 - `npm test` green.
+
+## Triage — 2026-09-10
+
+- **Track:** Q — Verification, shared execution and documentation.
+- **Priority:** P1 — a pooled gate that goes red on a sound tree stops being read.
+- **Evidence level:** source review at `3ccdf27`: `test/run.mjs:299` (the serial group holds five files), `:417` (a file's whole output is printed when it ends) and `:578-579` (the end summary names the file and its exit only); the wall-clock checks at `test/model-routing-preflight.test.mjs:157` and `:192-193`, plus two more of the same kind at `:296` and `:346` (`elapsed < 2_000`) that move with the file. The pooled reds of 2026-09-09/10 were not re-measured.
+- **Decision:** the file joins the serial group; the runner keeps the last lines of a red file's output in the end summary; contributing § gates names the serial files and why. The counted-evidence rewrite is not taken. A test-only change: no CHANGELOG entry.
+- **Next step:** implement as decided; Verification as written.
