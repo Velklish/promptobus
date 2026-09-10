@@ -95,6 +95,7 @@ function runHold(file) {
     'exec 0<&-',
     'printf \'{"jsonrpc":"2.0","id":1,"result":{}}\\n\'',
     'printf \'{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"primary":{"usedPercent":0}}}\\n\'',
+    'printf \'{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","server":"acme_tools_promptobus","tool":"promptobus_send","status":"failed","error":{"message":"stub: tool not found"}}}}\\n\'',
     'exec /bin/sleep 3600',
     '',
   ].join('\n'));
@@ -139,6 +140,12 @@ function runHold(file) {
   check(': holder initialize carries the package version',
     initRequest?.method === 'initialize' && initRequest.params?.clientInfo?.version === PACKAGE_VERSION,
     JSON.stringify({ initRequest, packageVersion: PACKAGE_VERSION }));
+  // PB-160: a failed MCP call is named in the holder log with server, tool, status and
+  // the reason — before this line the log said only `event item/completed`, and a bus
+  // call dying in 0 ms looked exactly like a dead server.
+  check(': a failed MCP call reaches the holder log with server, tool, status and reason',
+    /event item\/completed mcp acme_tools_promptobus\/promptobus_send failed .*stub: tool not found/.test(log),
+    `log=${log.slice(0, 600)}`);
   check(': the stub answered initialize only after closing stdin',
     initialized && /initialize ok/.test(log),
     `log=${log.slice(0, 400)} stderr=${stderr.slice(0, 200)}`);

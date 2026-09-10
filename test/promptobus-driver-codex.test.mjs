@@ -42,7 +42,7 @@ check(': Codex diagnosis surfaces scenario errors before the later red verdict',
   diagnosis);
 
 const {
-  codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY,
+  codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
@@ -643,10 +643,24 @@ check(': the Codex vocabulary is its own — binary, model, reviewer sandbox',
   && JSON.stringify(codexDriver.options.permissionModes) === JSON.stringify(['read-only', 'workspace-write']),
   JSON.stringify(codexDriver.options));
 
-check(': bus tool names are mcp__<override key>__name',
-  PHRASES.tool('promptobus', 'promptobus_send', HOST) === `mcp__${codexMcpName('promptobus', PREFIX)}__promptobus_send`
-  && PHRASES.tool('promptobus', 'promptobus_send', HOST) !== 'mcp__promptobus__promptobus_send',
+// The told name is the key AS CODEX EXPOSES IT: sanitized, every character outside
+// `[A-Za-z0-9_]` → `_` (PB-160, measured on codex-cli 0.146.0). The raw key is what
+// the participant was told before, and every call by it died in 0 ms.
+const codexSees = (key, tool) => `mcp__${key.replace(/[^A-Za-z0-9_]/g, '_')}__${tool}`;
+check(': bus tool names are mcp__<override key as Codex exposes it>__name',
+  PHRASES.tool('promptobus', 'promptobus_send', HOST) === codexSees(codexMcpName('promptobus', PREFIX), 'promptobus_send')
+  && PHRASES.tool('promptobus', 'promptobus_send', HOST) !== 'mcp__promptobus__promptobus_send'
+  && !PHRASES.tool('promptobus', 'promptobus_send', HOST).includes('-'),
   PHRASES.tool('promptobus', 'promptobus_send', HOST));
+check(': a hyphenated consumer prefix is told as Codex lists it, not as the config key',
+  (() => {
+    const hyphenHost = { ...HOST, commandName: 'acme-tools' };
+    const told = PHRASES.tool('promptobus', 'promptobus_send', hyphenHost);
+    return codexMcpPrefix(hyphenHost) === 'acme-tools-'
+      && told === 'mcp__acme_tools_promptobus__promptobus_send'
+      && codexToolSegment('acme-tools-promptobus') === 'acme_tools_promptobus';
+  })(),
+  `${codexMcpPrefix({ ...HOST, commandName: 'acme-tools' })} → ${PHRASES.tool('promptobus', 'promptobus_send', { ...HOST, commandName: 'acme-tools' })}`);
 
 check(': harness rules forbid questions and require the mailbox on every turn',
   /Do not ask questions/.test(PHRASES.promptRules) && /Fetch the mailbox at the start of every turn/.test(PHRASES.promptRules));
@@ -716,9 +730,9 @@ check(': override keys carry the prefix — canonical names do not go into the c
   JSON.stringify(Object.keys(translated.servers)));
 
 check(': toolName and phrases.tool call the override key, not the canonical name',
-  toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === `mcp__${PREFIX}promptobus__promptobus_send`
+  toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === codexSees(`${PREFIX}promptobus`, 'promptobus_send')
   && toolName(codexDriver, 'promptobus', 'promptobus_mailbox', HOST) === PHRASES.tool('promptobus', 'promptobus_mailbox', HOST)
-  && toolName(codexDriver, 'memory-hooks', 'search_facts', HOST) === `mcp__${PREFIX}memory-hooks__search_facts`,
+  && toolName(codexDriver, 'memory-hooks', 'search_facts', HOST) === codexSees(`${PREFIX}memory-hooks`, 'search_facts'),
   toolName(codexDriver, 'promptobus', 'promptobus_send', HOST));
 
 // The prefix is the consumer's identity, and two consumers in one process are lawful:
@@ -732,8 +746,8 @@ check(': two hosts in one process — different keys, and each prompt names its 
     const myKey = Object.keys(codexMcpServers(set, codexMcpPrefix(HOST)).servers)[0];
     const theirKey = Object.keys(codexMcpServers(set, codexMcpPrefix(OTHER)).servers)[0];
     return myKey === 'promptobus-promptobus' && theirKey === 'otherbus-promptobus'
-      && toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === `mcp__${myKey}__promptobus_send`
-      && toolName(codexDriver, 'promptobus', 'promptobus_send', OTHER) === `mcp__${theirKey}__promptobus_send`;
+      && toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === codexSees(myKey, 'promptobus_send')
+      && toolName(codexDriver, 'promptobus', 'promptobus_send', OTHER) === codexSees(theirKey, 'promptobus_send');
   })(),
   `${toolName(codexDriver, 'promptobus', 'promptobus_send', HOST)} / ${toolName(codexDriver, 'promptobus', 'promptobus_send', OTHER)}`);
 
@@ -781,7 +795,7 @@ const seamNote = {
 check(': the wake text calls the mailbox by the Codex name, taken off the session record',
   (() => {
     const text = codexDriver.renderNotification(seamNote);
-    return text.includes(`mcp__${codexMcpName('promptobus', PREFIX)}__promptobus_mailbox`) && text.includes('BODY');
+    return text.includes(codexSees(codexMcpName('promptobus', PREFIX), 'promptobus_mailbox')) && text.includes('BODY');
   })());
 
 // The seam has to return a string. A registry that holds no such record cannot know

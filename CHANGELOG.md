@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Codex participants are told the MCP tool names Codex actually exposes.** The order text, the wake text and the consumer host's `toolName()` glued the override key verbatim (`mcp__acme-tools-promptobus__promptobus_send` for a consumer CLI named `acme-tools`), while Codex lists the key sanitized (`mcp__acme_tools_promptobus__…`, every character outside `[A-Za-z0-9_]` → `_`, measured on codex-cli 0.146.0); a call by the told name died in 0 ms inside Codex's `exec` harness with no text, and the participant spent its turn on CLI workarounds (found by a consumer on a live run). `codexToolSegment` in `lib/driver-codex.js` is the one place the sanitization lives; the config key stays raw. The holder log now names a failed MCP call with server, tool, status and reason (`event item/completed mcp <server>/<tool> failed {…}`) instead of a bare `event item/completed`. (PB-160)
 - **Warden postcards and participant status now name unreadable mailbox refs with their errno and ref name, while retries remain unbounded until the filesystem refusal clears.** (PB-66.1)
 - **Classified recipient inbox directory refusals now use the retryable `link-refused` classification during fan-out.** The intent stays open while recovery and store commands continue. (PB-65.1)
 - **Refusal and stall guidance now uses the host's bus command formatter, with a regression gate for hardcoded subcommand literals.** (PB-140)
