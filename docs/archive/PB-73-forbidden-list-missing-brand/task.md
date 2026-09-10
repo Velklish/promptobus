@@ -1,9 +1,9 @@
 # PB-73 · Publicity gate's FORBIDDEN list has no bare-brand entry, so `atiRouting` (lib/store.js), the "ATI implementation" comment (src/host.ts → dist/host.d.ts), and two literal ati-workspace-<hash> ids (live-canary.mjs) ship in the public tarball while `npm run audit` reports clean
 
-- **Order:** 590
 - **Scope:** `scripts/audit-public.mjs`, `lib/store.js`, `src/host.ts`, `scripts/live-canary.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-101
+- **Taken:** 2026-09-10
 
 ## Context
 

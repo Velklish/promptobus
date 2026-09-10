@@ -26,6 +26,15 @@ function checkRun(cmd, args, result) {
   throw new Error(`${cmd} ${args.join(' ')} failed: ${detail}`);
 }
 
+const TEXT = /\.(m?js|ts|json|md|ya?ml|txt|mjs)$/;
+const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
+const BRAND_FRAGMENT = ['A', 'TI'].join('');
+const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
+const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
+const BRAND_ID = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}-workspace-[0-9a-f]+\\b`, 'iu');
+
+const normalizedName = (name) => name.replace(/^(?:tarball:)?package\//, '');
+
 const FORBIDDEN = [
   ['host of the origin forge', ['gitlab', '.ati', '.st'].join('')],
   ['origin CLI name', ['ati', '-agents'].join('')],
@@ -34,10 +43,14 @@ const FORBIDDEN = [
   ['origin environment prefix', ['ATI', '_'].join('')],
   ['origin memory service', ['context', '-store'].join('')],
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
+  ['origin brand', (name, text) => {
+    const normalized = normalizedName(name);
+    const runtime = RUNTIME_PATH.test(normalized);
+    const evidenceCard = name.startsWith('docs/archive/') || name.startsWith('docs/backlog/');
+    return (runtime && (BRAND_WORD.test(text) || BRAND_CAMEL.test(text)))
+      || (!evidenceCard && BRAND_ID.test(text));
+  }],
 ];
-
-const TEXT = /\.(m?js|ts|json|md|ya?ml|txt|mjs)$/;
-const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
 const CYRILLIC = /[\u0400-\u04FF]/u;
 const CYRILLIC_ALLOWLIST = [
   ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u], // transliteration table
@@ -49,12 +62,10 @@ const GENERATED_FROM = new Map([
 const failures = [];
 
 function scan(label, name, text, needle) {
-  const hit = needle instanceof RegExp ? needle.test(text) : text.includes(needle);
+  const hit = typeof needle === 'function'
+    ? needle(name, text)
+    : needle instanceof RegExp ? needle.test(text) : text.includes(needle);
   if (hit) failures.push(`${label}: ${name}`);
-}
-
-function normalizedName(name) {
-  return name.replace(/^package\//, '');
 }
 
 function scanCyrillic(name, text) {

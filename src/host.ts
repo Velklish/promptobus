@@ -75,7 +75,7 @@ export interface HostToolBin {
    * the path under its own title — `path`, `binPath` — would silently break
    * participant lift: `lib/**` is JavaScript, types check nothing there, and
    * `run(undefined)` is only visible in a live run. That is exactly what
-   * happened at the extract: the ATI implementation returned `path`, consumers
+   * happened at the extract: the consumer's implementation returned `path`, consumers
    * read `path`, and the declared name was `bin` — the drift lived until the
    * first suite run.
    */

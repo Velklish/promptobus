@@ -271,8 +271,8 @@ check('canary: the installed tarball answers --version',
 // with its own `requireRoot()`: under a temporary macOS directory it arrives
 // as `/private/var/…`, while here the same directory is called `/var/…`, and
 // the hashes of the two spellings differ (live case of the 2026-09-02 run:
-// `sync` registered `ati-workspace-005c0315`, a recount of the rule gave
-// `ati-workspace-d6c0cbf8`). The snapshot need not know that even more: it
+// `sync` registered one `<brand>-workspace-<hash>` id, and a recount of the rule gave
+// another `<brand>-workspace-<hash>` id). The snapshot need not know that even more: it
 // compares the WHOLE registry, not one name, and with it both other doors.
 //
 // There is no self-cleanup here on purpose: a mode that still wrote into the
