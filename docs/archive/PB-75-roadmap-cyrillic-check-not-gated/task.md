@@ -1,9 +1,9 @@
 # PB-75 · ROADMAP goal 5's English-output claim is verified by a hand-run grep, and audit-public.mjs already has the exact two-surface scanning machinery to gate it instead
 
-- **Order:** 600
 - **Scope:** [reference/README](../../reference/README.md), docs/ROADMAP.md, scripts/audit-public.mjs, docs/guides/contributing.md, .github/workflows/ci.yml
 - **Created:** 2026-09-06
 - **Dependencies:** PB-72
+- **Taken:** 2026-09-10
 
 ## Context
 

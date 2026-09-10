@@ -37,11 +37,33 @@ const FORBIDDEN = [
 ];
 
 const TEXT = /\.(m?js|ts|json|md|ya?ml|txt|mjs)$/;
+const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
+const CYRILLIC = /[\u0400-\u04FF]/u;
+const CYRILLIC_ALLOWLIST = [
+  ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u], // transliteration table
+  ['templates/bus-hook.mjs', /воркер\|ревьюер/u], // bilingual address-prefix regex
+];
+const GENERATED_FROM = new Map([
+  ['dist/protocol.js', 'src/protocol.ts'],
+]);
 const failures = [];
 
 function scan(label, name, text, needle) {
   const hit = needle instanceof RegExp ? needle.test(text) : text.includes(needle);
   if (hit) failures.push(`${label}: ${name}`);
+}
+
+function normalizedName(name) {
+  return name.replace(/^package\//, '');
+}
+
+function scanCyrillic(name, text) {
+  const normalized = normalizedName(name);
+  if (!RUNTIME_PATH.test(normalized)) return;
+  const source = GENERATED_FROM.get(normalized) ?? normalized;
+  const exemption = CYRILLIC_ALLOWLIST.find(([file]) => file === source);
+  const remaining = exemption ? text.replace(exemption[1], '') : text;
+  if (CYRILLIC.test(remaining)) failures.push(`Cyrillic runtime text: ${name}`);
 }
 
 // --- surface 1: what git tracks -------------------------------------------
@@ -52,6 +74,7 @@ for (const rel of tracked) {
   if (!TEXT.test(rel)) continue;
   const text = readFileSync(path.join(ROOT, rel), 'utf8');
   for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
+  scanCyrillic(rel, text);
 }
 
 // Links that point outside this repository are the quieter half of the same
@@ -102,6 +125,7 @@ try {
     if (!existsSync(abs)) continue;
     const text = readFileSync(abs, 'utf8');
     for (const [label, needle] of FORBIDDEN) scan(label, `tarball:${entry}`, text, needle);
+    scanCyrillic(entry, text);
   }
 } finally {
   rmSync(tmp, { recursive: true, force: true });

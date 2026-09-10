@@ -9,7 +9,7 @@ npx github:Velklish/backslop#v0.4.0 lint
 
 The CI and package lint commands deliberately use the mutable `v0.4.0` tag: it is owned by the same person who owns this repository, and `backslop upgrade` moves both references together.
 
-English is the language of new strings, comments, commit messages, and checks in the runtime directories `bin/`, `lib/`, `src/`, `schemas/`, and `templates/`. `README.ru.md` may use Cyrillic; `scripts/` and `test/` are exempt from the current sweep.
+English is the language of new strings, comments, commit messages, and checks in the runtime directories `bin/`, `lib/`, `src/`, `schemas/`, and `templates/`. `README.ru.md` may use Cyrillic; `scripts/` and `test/` are exempt from the current sweep. `npm run audit` enforces this scope on tracked runtime files and the packed tarball.
 
 ## Roles
 
