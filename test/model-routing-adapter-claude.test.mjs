@@ -84,6 +84,7 @@ function sandbox(body, { version = '2.1.251', ok = true } = {}) {
     argv: () => JSON.parse(readFileSync(argvFile, 'utf8')),
     host: {
       kind: 'promptobus-host',
+      busCommand: (argv) => `promptobus ${argv.join(' ')}`,
       resolveToolBin: (name) => (ok
         ? { ok: true, bin: path.join(dir, name), version }
         : { ok: false, reason: 'not found' }),

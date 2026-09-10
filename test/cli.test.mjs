@@ -240,24 +240,6 @@ test('no message names a command the CLI does not have', () => {
 
   const literalStray = [];
   const STRING = /(['"`])((?:\\.|(?!\1)[^\\\r\n])*)\1/g;
-  // Low-level driver and store seams may be called without a host; their fallback
-  // keeps the pre-host wording, while host-aware production callers pass a hint.
-  const literalAllowlist = [
-    { file: 'lib/codex-session.js', command: 'status', text: 'promptobus status', reason: 'detached holder has no host; its record carries the formatted hint when launched' },
-    { file: 'lib/driver-claude.js', command: 'models', text: 'promptobus models --clear-exhausted ${CLAUDE}', reason: 'direct late-start driver seam has no host; lift callers pass the command through' },
-    { file: 'lib/driver-claude.js', command: 'review', text: 'promptobus review', reason: 'direct stall-route seam has no host; status and warden callers pass the formatted review hint' },
-    { file: 'lib/driver-claude.js', command: 'status', text: 'promptobus status', reason: 'direct option-refusal seam has no host; lift callers pass the formatted status hint' },
-    { file: 'lib/driver-codex.js', command: 'done', text: 'promptobus done', reason: 'direct phrase and stall-route seams have no host; lift/status callers pass the formatted done hint' },
-    { file: 'lib/driver-codex.js', command: 'review', text: 'promptobus review', reason: 'direct stall-route seam has no host; status and warden callers pass the formatted review hint' },
-    { file: 'lib/driver-codex.js', command: 'status', text: 'promptobus status', reason: 'direct stall-route seam has no host; status and warden callers pass the formatted status hint' },
-    { file: 'lib/driver-cursor.js', command: 'review', text: 'promptobus review', reason: 'direct stall-route seam has no host; status and warden callers pass the formatted review hint' },
-    { file: 'lib/driver-cursor.js', command: 'done', text: 'promptobus done', reason: 'direct stall-route seam has no host; status and warden callers pass the formatted done hint' },
-    { file: 'lib/model-routing/adapter-claude.js', command: 'models', text: 'promptobus models --clear-exhausted claude', reason: 'direct adapter seam has no host; preflight passes the formatted clear hint' },
-    { file: 'lib/model-routing/resolver.js', command: 'models', text: 'promptobus models strategy --set ${proposed}', reason: 'pure resolver has no host; routingContext passes formatted strategy hints' },
-    { file: 'lib/store.js', command: 'spawn', text: 'promptobus spawn --repo', reason: 'direct store seam has no host; command entry points pass formatted spawn hints' },
-    { file: 'lib/store.js', command: 'spawn', text: 'promptobus spawn --new-task', reason: 'direct store seam has no host; command entry points pass formatted spawn hints' },
-    { file: 'lib/store.js', command: 'status', text: 'promptobus status', reason: 'direct store seam has no host; host-bound MCP service passes the formatted status hint' },
-  ];
   for (const file of jsFiles(LIB)) {
     const relative = path.relative(path.join(LIB, '..'), file);
     const lines = readFileSync(file, 'utf8').split('\n');
@@ -269,9 +251,7 @@ test('no message names a command the CLI does not have', () => {
           if (!known.has(match[1])) continue;
           const before = line.slice(0, literal.index);
           const wrapped = /\b(?:busCommand|formatCommand|formatNpx)\s*\([^)]*$/.test(before);
-          const allowed = literalAllowlist.some((entry) => entry.file === relative
-            && entry.command === match[1] && text.includes(entry.text));
-          if (!wrapped && !allowed) literalStray.push(`${relative}:${lineNumber + 1}: ${match[1]}`);
+          if (!wrapped) literalStray.push(`${relative}:${lineNumber + 1}: ${match[1]}`);
         }
       }
     }

@@ -23,6 +23,11 @@ const SB = realpathSync(makeSandbox('promptobus-promptobus-adapter-'));
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 
 const home = path.join(SB, 'ws', '.promptobus');
+const HINTS = {
+  spawnRepo: 'promptobus spawn --repo <name> --brief <file>',
+  spawnNewTask: 'promptobus spawn --new-task',
+  status: 'promptobus status',
+};
 
 function thrown(fn) {
   try {
@@ -207,7 +212,7 @@ check(': an address without a slug yields no path — the refusal names the addr
 
 const bad = (patch) => thrown(() => store.sendMessage(home, task.id, {
   from: store.ORCHESTRATOR, to: 'worker:a', type: 'task', body: 'текст', ...patch,
-}));
+}, HINTS));
 
 check('validation: an unknown message type is rejected', bad({ type: 'gossip' }).threw
   && /protocol/i.test(bad({ type: 'gossip' }).msg));
@@ -316,24 +321,24 @@ store.readInbox(home, task.id, store.ORCHESTRATOR);
 // --- task lifecycle ----------------------------------------------------
 
 check('resolveTaskId: one active task — it is the current one',
-  store.resolveTaskId(home, null, null) === task.id);
+  store.resolveTaskId(home, null, null, HINTS) === task.id);
 
 const second = store.createTask(home, { id: 't20260813-130000', title: 'вторая', owner: null });
-const many = thrown(() => store.resolveTaskId(home, null, null));
+const many = thrown(() => store.resolveTaskId(home, null, null, HINTS));
 check('resolveTaskId: several active → refusal with a list',
   many.threw && many.msg.includes(task.id) && many.msg.includes(second.id), many.msg);
 
 check('resolveTaskId: an explicit declaration outweighs the search',
-  store.resolveTaskId(home, second.id, null) === second.id);
+  store.resolveTaskId(home, second.id, null, HINTS) === second.id);
 
 store.closeTask(home, second.id);
 check('closeTask: the task is closed, the closing mark lives in adapter, there is again one active',
   store.readTask(home, second.id).status === 'done'
   && typeof store.readTask(home, second.id).adapter.closed === 'string'
-  && store.resolveTaskId(home, null, null) === task.id);
+  && store.resolveTaskId(home, null, null, HINTS) === task.id);
 
 check('resolveTaskId: a nonexistent task → refusal',
-  thrown(() => store.resolveTaskId(home, 'нет-такой', null)).threw);
+  thrown(() => store.resolveTaskId(home, 'нет-такой', null, HINTS)).threw);
 
 // --- : message to a nonexistent addressee -------------------------------
 
@@ -345,7 +350,7 @@ const ghostArt = path.join(SB, 'bl156-artifact.json');
 writeFileSync(ghostArt, '{"never":"sent"}\n');
 const toGhost = thrown(() => store.sendMessage(bl156, addressed.id, {
   from: store.ORCHESTRATOR, to: 'worker:opechatka', type: 'task', body: 'бриф в пустоту', artifactPath: ghostArt,
-}));
+}, HINTS));
 
 check(': the addressee is outside the task participants — a refusal, not a silent success',
   toGhost.threw && toGhost.msg.includes('worker:opechatka'), toGhost.msg);

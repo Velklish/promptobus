@@ -142,7 +142,11 @@ function live(ref, extra) {
       && view.stall.kind !== 'watchdog'
       && !/the turn is running/.test(String(view.note)),
     JSON.stringify(view));
-  const route = codexDriver.stallRoute({ kind: 'pending-request', address: 'worker:x' }, 't-live');
+  const route = codexDriver.stallRoute({
+    kind: 'pending-request',
+    address: 'worker:x',
+    statusCommand: 'promptobus status',
+  }, 't-live');
   check(': the pending-request route distinguishes the holder reply from serverRequest/resolved',
     /JSON-RPC reply is not serverRequest\/resolved/.test(route), route);
   if (was === undefined) delete process.env.PROMPTOBUS_CODEX_IDLE_MS;

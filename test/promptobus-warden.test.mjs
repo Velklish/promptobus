@@ -1111,15 +1111,18 @@ check(`: the route for a worker's dead record calls for raising it with the same
 // note). The one documented live ghost is exactly a reviewer session.
 const REVIEWER_REPO = path.join(SB, 'repos', 'loads_search', 'cargos-api');
 const rStaleReviewer = stallRoute(
-  { kind: 'stale', address: 'reviewer:cargos-api', repoAbs: REVIEWER_REPO, task: DIAG },
+  {
+    kind: 'stale', address: 'reviewer:cargos-api', repoAbs: REVIEWER_REPO, task: DIAG,
+    reviewCommand: HOST.busCommand(['review', `"${REVIEWER_REPO}"`, `--task ${DIAG}`]),
+  },
   'ghost2', 'Review: X',
 );
 check(`: a reviewer's dead record is raised with promptobus review, not a worker's spawn`,
   rStaleReviewer.includes(`promptobus review "${REVIEWER_REPO}" --task ${DIAG}`)
   && !/same spawn/.test(rStaleReviewer) && !/worktree/.test(rStaleReviewer), rStaleReviewer);
 check(': the clone path is unknown — the route does not invent it, it names the gap',
-  stallRoute({ kind: 'stale', address: 'reviewer:x' }, 'g', 'n').includes('<clone path>'),
-  stallRoute({ kind: 'stale', address: 'reviewer:x' }, 'g', 'n'));
+  stallRoute({ kind: 'stale', address: 'reviewer:x', reviewCommand: HOST.busCommand(['review', '"<clone path>"']) }, 'g', 'n').includes('<clone path>'),
+  stallRoute({ kind: 'stale', address: 'reviewer:x', reviewCommand: HOST.busCommand(['review', '"<clone path>"']) }, 'g', 'n'));
 
 // --- : the lines about stalled participants are the same across every channel --------------------
 //
@@ -1220,9 +1223,17 @@ check('review note: the route for a vanished one tells delivered work apart from
   /claude stop/.test(goneRoute) && /Work delivered/.test(goneRoute)
   && /not delivered/.test(goneRoute), goneRoute);
 check(`: the route for a vanished reviewer — promptobus review against its clone, not spawn`,
-  stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n')
+  stallRoute({
+    kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG,
+    reviewCommand: HOST.busCommand(['review', '"/tmp/klon"', `--task ${DIAG}`]),
+    doneCommand: HOST.busCommand(['done']),
+  }, null, 'n')
     .includes(`promptobus review "/tmp/klon" --task ${DIAG}`),
-  stallRoute({ kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG }, null, 'n'));
+  stallRoute({
+    kind: 'gone', address: 'reviewer:api', repoAbs: '/tmp/klon', task: DIAG,
+    reviewCommand: HOST.busCommand(['review', '"/tmp/klon"', `--task ${DIAG}`]),
+    doneCommand: HOST.busCommand(['done']),
+  }, null, 'n'));
 check(': the line for a vanished one is its own — not "stalled" and not "LISTED"',
   stallLine(goneSeen[0], DIAG).includes('GONE: no session record in claude agents')
   && !/stalled|LISTED/.test(stallLine(goneSeen[0], DIAG)), stallLine(goneSeen[0], DIAG));

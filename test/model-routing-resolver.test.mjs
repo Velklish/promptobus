@@ -68,6 +68,10 @@ const NOW = Date.parse('2026-09-05T09:00:12.000Z');
 // so the test drives it with paths no machine has.
 const HOME = path.join(path.sep, 'home', 'someone');
 const WORKSPACE = path.join(path.sep, 'repos', 'thing');
+const STRATEGY_COMMANDS = {
+  economy: 'promptobus models strategy --set economy',
+  balance: 'promptobus models strategy --set balance',
+};
 
 // `strict: false` for the reason the sibling routing files give: the schemas'
 // own vocabulary is suspicious to ajv in strict mode, and the subject is the verdict.
@@ -112,6 +116,7 @@ function decide({
     policy: policyOf({ catalog, user, workspace, constraints, now }),
     snapshot,
     liveParticipants,
+    strategyCommands: STRATEGY_COMMANDS,
     now,
   });
 }
