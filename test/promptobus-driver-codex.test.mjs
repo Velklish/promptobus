@@ -45,7 +45,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs,
-  TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath,
+  TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath, startHolder, waitReady, reapHolder,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
@@ -63,6 +63,7 @@ const PREFIX = codexMcpPrefix(HOST);
 
 const TASK = 'codexbus-t20260903-000000';
 const WORKER = 'worker:cdx';
+const SECOND_WORKER = 'worker:cdx-second';
 const REVIEWER = 'reviewer:cdx';
 const ORCH_SESSION = `orch-codex-${process.pid}`;
 
@@ -461,6 +462,8 @@ check(': bus tool names are mcp__<override key>__name',
 
 check(': harness rules forbid questions and require the mailbox on every turn',
   /Do not ask questions/.test(PHRASES.promptRules) && /Fetch the mailbox at the start of every turn/.test(PHRASES.promptRules));
+check(': Codex naming describes only the harness-owned thread id',
+  PHRASES.naming === 'the thread id is chosen by app-server itself and printed on lift', PHRASES.naming);
 
 const hostSessionsHome = path.join(SB, 'host-selected-codex-home');
 const previousCodexHome = process.env.PROMPTOBUS_CODEX_HOME;
@@ -669,16 +672,16 @@ const dry = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
 check(': --dry-run prints app-server --stdio and writes nothing to disk',
   dry.status === 0 && /app-server --stdio/.test(dry.out) && /dry-run: nothing written to disk, worker not started/.test(dry.out),
   dry.out.slice(-500));
-check(': --dry-run names the thread id and that the prompt goes out as turn/start',
-  /harness session name: the thread id is chosen by app-server/.test(dry.out)
-  && /the prompt then goes out as a turn\/start request/.test(dry.out),
+check(': --dry-run names the harness-owned thread id',
+  /harness session name: the thread id is chosen by app-server itself and printed on lift/.test(dry.out),
   dry.out.slice(-400));
 check(': Codex --dry-run does not present the prompt as a positional app-server argument',
   !/app-server --stdio <prompt>/.test(dry.out)
   && /turn\/start request/.test(dry.out), dry.out.slice(-600));
 
+const CHOSEN_TITLE = 'Codex named slice';
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
-  '--worker', 'cdx', '--harness', 'codex'], { cwd: ws, env });
+  '--worker', 'cdx', '--title', CHOSEN_TITLE, '--harness', 'codex'], { cwd: ws, env });
 check('step 1: promptobus spawn --harness codex lifted the participant',
   spawned.status === 0 && /worker worker:cdx lifted/.test(spawned.out), spawned.out.slice(-800));
 
@@ -707,6 +710,74 @@ check(': the holder app-server drops CODEX_HOME but keeps PROMPTOBUS_CODEX_HOME'
   appThread?.appServerEnv?.CODEX_HOME === undefined
     && appThread?.appServerEnv?.PROMPTOBUS_CODEX_HOME === stateHome,
   JSON.stringify(appThread?.appServerEnv ?? null));
+
+check(': Codex thread name equals the chosen session name in the participant record',
+  /^Worker: Codex named slice \(\d{4}-\d{4}\)$/.test(wp?.metadata?.name ?? '')
+    && record?.name === wp?.metadata?.name
+    && appThread?.name === wp?.metadata?.name,
+  JSON.stringify({ recordName: record?.name, sessionRef: wp?.metadata?.name, threadName: appThread?.name }));
+
+const legacyRef = 'legacy-codex-name-fallback';
+writeSession({
+  ref: legacyRef,
+  cwd: ws,
+  bin: path.join(SB, 'bin', 'codex'),
+  role: 'worker',
+  startedAt: new Date().toISOString(),
+  threadId: null,
+  holderPid: null,
+  appPid: null,
+  rpcSocket: null,
+  state: 'starting',
+  sandbox: 'workspace-write',
+  approvalPolicy: 'on-request',
+  model: DEFAULT_MODEL,
+  effort: null,
+  addDirs: [],
+  mcpServers: {},
+  mcpPrefix: PREFIX,
+  prompt: 'legacy prompt',
+  home,
+  task: TASK,
+  address: 'worker:legacy-name',
+  argv: ['app-server', '--stdio'],
+  turns: 0,
+}, env);
+startHolder(legacyRef, env);
+const legacyReady = await waitReady(legacyRef, env, 20000);
+let legacyThread = null;
+try {
+  legacyThread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${legacyReady.record?.threadId ?? ''}.json`), 'utf8'));
+} catch { /* no thread */ }
+check(': an old Codex record without a name uses the machine-name fallback',
+  legacyReady.ok && legacyThread?.name === `promptobus:${TASK}:worker:legacy-name`,
+  JSON.stringify({ ready: legacyReady, name: legacyThread?.name }));
+await reapHolder(legacyRef, env);
+dropSession(legacyRef, env);
+
+const SECOND_TITLE = 'Second Codex named slice';
+planParticipant(HARNESS, SECOND_WORKER, { turns: [{ do: [] }] });
+const secondSpawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'cdx-second', '--title', SECOND_TITLE, '--harness', 'codex'], { cwd: ws, env });
+const secondWp = store.participantOf(store.readTask(home, TASK), SECOND_WORKER);
+const secondRef = secondWp?.sessionRef ?? '';
+const secondRecord = readSession(secondRef, env);
+let secondThread = null;
+try {
+  secondThread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${secondRecord?.threadId ?? ''}.json`), 'utf8'));
+} catch { /* no thread */ }
+check(': two Codex workers on one task keep distinct title-based names',
+  secondSpawned.status === 0
+    && wp?.metadata?.name !== secondWp?.metadata?.name
+    && wp?.metadata?.name?.includes(CHOSEN_TITLE)
+    && secondWp?.metadata?.name?.includes(SECOND_TITLE)
+    && secondRecord?.name === secondWp?.metadata?.name
+    && secondThread?.name === secondWp?.metadata?.name
+    && !wp?.metadata?.name?.includes(WORKER)
+    && !secondWp?.metadata?.name?.includes(SECOND_WORKER),
+  JSON.stringify({ first: wp?.metadata?.name, second: secondWp?.metadata?.name,
+    firstThread: appThread?.name, secondThread: secondThread?.name }));
+if (secondRef) await codexDriver.stop(secondRef);
 
 const modeEnv = { ...env, PROMPTOBUS_CODEX_HOME: path.join(SB, 'fresh-mode-state') };
 const modeRef = 'fresh-mode-probe';

@@ -1,9 +1,9 @@
 # PB-156 · The Codex thread is named `promptobus:<task>:<address>`, so the readable session name the mechanism already chose and stored is invisible in the Codex UI
 
-- **Order:** 1040
 - **Scope:** `lib/codex-session.js`, `lib/driver-codex.js`, [02-host](../../reference/02-host.md), Codex session tests
 - **Created:** 2026-09-07
 - **Dependencies:** none
+- **Taken:** 2026-09-10
 
 ## Context
 
