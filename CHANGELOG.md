@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Classified recipient inbox directory refusals now use the retryable `link-refused` classification during fan-out.** The intent stays open while recovery and store commands continue. (PB-65.1)
 - **Refusal and stall guidance now uses the host's bus command formatter, with a regression gate for hardcoded subcommand literals.** (PB-140)
 - **Review layout and argument refusals now print as one plain CLI error without a stack trace.** (PB-54)
 - **Solo review now picks up an active task from its reviewer record when the target directory has no worker worktree claim.** (PB-96)

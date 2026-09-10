@@ -104,10 +104,16 @@ export function newRecordId(now: Date): string {
 }
 
 // Idempotent hard link: `true` — we put it, `false` — it was already there.
-// `EEXIST` here is not a refusal, it is the whole point of the step:
-// recovery writes what is missing and does not touch what is ready.
+// `EEXIST` from the LINK is not a refusal, it is the whole point of the step:
+// recovery writes what is missing and does not touch what is ready. From the
+// `mkdir` above it, `EEXIST` is a refusal — a non-directory sits where the
+// directory must be — and goes out classified like any other mkdir errno.
 function linkOnce(from: string, to: string): boolean {
-  mkdirSync(path.dirname(to), { recursive: true });
+  try {
+    mkdirSync(path.dirname(to), { recursive: true });
+  } catch (e) {
+    throw linkFailure(e, path.dirname(to));
+  }
   try {
     linkSync(from, to);
     return true;

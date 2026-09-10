@@ -526,3 +526,56 @@ test('the FS refused a hard link — a typed code, not a half-written record', a
   // hit a closed directory.
   if (existsSync(box)) chmodSync(box, 0o700);
 });
+
+test('the FS refused a recipient inbox mkdir — recovery keeps the intent open', async (t) => {
+  // The refusal must happen while creating the recipient directory, not while
+  // linking into one that already exists: recursive mkdir is the boundary
+  // that used to sit outside link-refused classification.
+  if (process.getuid?.() === 0) {
+    t.skip('under root directory permissions do not apply, a mkdir refusal cannot be pictured; the check runs under an unprivileged user');
+    return;
+  }
+  const root = sandbox();
+  const engine = open(root);
+  const id = taskWith(engine, 'mkdir-refused-t20260910-095700');
+  const inbox = path.join(engine.home, 'tasks', id, 'inbox');
+  const recipient = path.join(inbox, 'w-api');
+  mkdirSync(inbox, { recursive: true });
+  rmSync(recipient, { recursive: true, force: true });
+  assert.equal(existsSync(recipient), false, 'the recipient directory must be absent before fan-out');
+  chmodSync(inbox, 0o500);
+  try {
+    let refused = null;
+    try {
+      await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'mkdir refused' });
+    } catch (e) {
+      refused = e;
+    }
+    assert.equal(refused?.code, 'link-refused', String(refused));
+
+    const intents = path.join(engine.home, 'tasks', id, 'intents');
+    const [intentName] = openIntents(intents);
+    assert.ok(intentName, 'the refused fan-out left no intent to recover');
+    const message = intentName.slice(0, -'.json'.length);
+    const owner = path.join(intents, `${message}.owner`);
+    writeFileSync(owner, `${JSON.stringify({ pid: 2_147_483_647, host: os.hostname() })}\n`);
+
+    const reopened = openEngine({ root, policy: allowAll, recover: true });
+    const report = reopened.recover(id);
+    assert.deepEqual(report.failed.map((f) => ({ task: f.task, message: f.message, code: f.code })), [
+      { task: id, message, code: 'link-refused' },
+    ]);
+    assert.ok(report.failed[0].note.endsWith(path.join('inbox', 'w-api')), report.failed[0].note);
+    assert.deepEqual(openIntents(intents), [intentName], 'the refused fan-out intent was not retained');
+
+    const commands = [
+      ['status', `const { status } = await import(${J(STATUS)});\nstatus(${J(root)}, { task: ${J(id)}, sessions: {} });\n`],
+      ['history', `const { history } = await import(${J(HISTORY)});\nhistory(${J(root)}, { task: ${J(id)} });\n`],
+      ['prune', `const { prune } = await import(${J(PRUNE)});\nprune(${J(root)}, { olderThan: 0 });\n`],
+    ];
+    const runs = await Promise.all(commands.map(([, body]) => child(body)));
+    exitedZero(runs, (i) => commands[i][0]);
+  } finally {
+    if (existsSync(inbox)) chmodSync(inbox, 0o700);
+  }
+});
