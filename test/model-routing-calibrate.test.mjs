@@ -522,7 +522,13 @@ test('--write on a terminal with a yes merges only ratings, and keeps every othe
       note: 'the person wrote this',
       defaults: { strategy: 'balance' },
       deny: { models: ['gpt-5.4-mini'] },
-      ratings: { 'claude-sonnet-xhigh': { quality: 8 }, 'codex-sol-max': { speed: 4 } },
+      ratings: {
+        // `quotaCost` is the field this fixture proposes, so the deliberate
+        // ADR-005 overwrite is covered directly rather than inferred from a
+        // neighbouring field.
+        'claude-sonnet-xhigh': { quality: 8, quotaCost: 9 },
+        'codex-sol-max': { speed: 4 },
+      },
     }, null, 2)}\n`);
     const code = await models(w.host, {
       subcommand: 'calibrate', write: true, output: sink(), stdin: { isTTY: true }, ask: () => 'y',
@@ -539,6 +545,25 @@ test('--write on a terminal with a yes merges only ratings, and keeps every othe
       'claude-sonnet-xhigh': { quality: 8, quotaCost: 4 },
       'codex-sol-max': { speed: 4 },
     });
+  } finally { w.drop(); }
+});
+
+test('--write refuses a present non-object user overlay without changing it', async () => {
+  const w = workspace();
+  try {
+    const original = '[1,2,3]\n';
+    writeFileSync(w.user.path, original);
+    await assert.rejects(
+      models(w.host, {
+        subcommand: 'calibrate', write: true, yes: true, output: sink(),
+        stdin: { isTTY: false }, ask: never,
+      }),
+      (e) => e instanceof GateError
+        && e.message.includes(w.user.path)
+        && /array|plain object|non-object/.test(e.message),
+    );
+    assert.equal(readFileSync(w.user.path, 'utf8'), original,
+      'a refused write must leave the person\'s non-object overlay byte-for-byte intact');
   } finally { w.drop(); }
 });
 

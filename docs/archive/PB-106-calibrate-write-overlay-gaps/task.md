@@ -1,9 +1,9 @@
 # PB-106 · `calibrate --write`: the CLI reference promises a hand-set rating survives when the code replaces it, and a `user` overlay whose top-level JSON is not an object is rewritten with junk keys under `✔ merged`
 
-- **Order:** 310
 - **Scope:** [03-cli](../../reference/03-cli.md), [ADR-005](../../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), `lib/models.js`, `lib/model-routing/catalog.js`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-91
+- **Taken:** 2026-09-10
 
 ## Context
 
