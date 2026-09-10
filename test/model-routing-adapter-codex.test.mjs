@@ -44,7 +44,7 @@ import {
 import { makeSandbox, resolveToolBin } from './sandbox.mjs';
 import {
   HARNESS_VERSION, LIMIT_VAR, PROBE_VAR, STUB_RESET_CREDITS, STUB_RESET_PRIMARY, STUB_RESET_SECONDARY,
-  installHarness,
+  INIT_CAPTURE_VAR, installHarness,
 } from './harness-codex.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -265,6 +265,21 @@ test('an authenticated account is available, with both windows and the model inv
   // The one field an `available` verdict may not carry: a reason on `available`
   // is a contract breach, and the preflight turns it into `probe_failed`.
   assert.equal(verdict.reason, null);
+});
+
+test('the probe initializes with the package version', async () => {
+  const capture = path.join(SB, 'probe-initialize.json');
+  process.env[INIT_CAPTURE_VAR] = capture;
+  let verdict;
+  try {
+    verdict = await probe();
+  } finally {
+    delete process.env[INIT_CAPTURE_VAR];
+  }
+  const init = JSON.parse(readFileSync(capture, 'utf8'));
+  const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(verdict.state, 'available', verdict.message);
+  assert.equal(init.clientInfo?.version, pkg.version);
 });
 
 test('a model app-server hides is KEPT, with the mark on it', async () => {

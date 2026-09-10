@@ -48,6 +48,7 @@ function validateCodexFixture(label, validate, value) {
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
+export const INIT_CAPTURE_VAR = 'CODEX_STUB_INIT_CAPTURE';
 export const CURRENT_TIME_VAR = 'CODEX_STUB_CURRENT_TIME';
 export const ELICIT_VAR = 'CODEX_STUB_ELICIT';
 export const ELICIT_HANG_VAR = 'CODEX_STUB_ELICIT_HANG';
@@ -343,6 +344,8 @@ async function appServer() {
   async function handle(msg) {
     const { id, method, params = {} } = msg;
     if (method === 'initialize') {
+      const capture = process.env[INIT_CAPTURE_VAR];
+      if (capture) writeFileSync(capture, `${JSON.stringify(params)}\n`);
       // A binary that never answers: the probe has to end on its own budget, not
       // on a reply. The stand does not close stdin either — a closed stream is a
       // different failure and has its own case.

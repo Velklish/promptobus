@@ -14,6 +14,7 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const HOLD_JS = path.join(here, '..', 'lib', 'codex-hold.js');
+const PACKAGE_VERSION = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8')).version;
 const HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-codex-'));
 process.on('exit', () => { try { rmSync(HOME, { recursive: true, force: true }); } catch { /* gone */ } });
 const env = {
@@ -21,6 +22,8 @@ const env = {
   PROMPTOBUS_CODEX_HOME: HOME,
   PROMPTOBUS_CODEX_READY_MS: '4000',
   PROMPTOBUS_CODEX_LIMIT_MS: '50',
+  PROMPTOBUS_HOST_NAME: '',
+  PROMPTOBUS_HOST_VERSION: '',
 };
 
 function recordOf(ref, bin) {
@@ -84,9 +87,11 @@ function runHold(file) {
   // id 1 in a fresh holder) only after that close, and stays alive. The
   // holder's next RPC write (thread/start) is then EPIPE.
   const dying = path.join(HOME, 'closed-stdio.sh');
+  const initCapture = path.join(HOME, 'closed-stdio-initialize.json');
   writeFileSync(dying, [
     '#!/bin/sh',
     'IFS= read -r line',
+    `printf '%s\\n' "$line" > "${initCapture}"`,
     'exec 0<&-',
     'printf \'{"jsonrpc":"2.0","id":1,"result":{}}\\n\'',
     'printf \'{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"primary":{"usedPercent":0}}}\\n\'',
@@ -129,6 +134,11 @@ function runHold(file) {
   ]);
   let log = '';
   try { log = readFileSync(logFile, 'utf8'); } catch { /* none */ }
+  let initRequest = null;
+  try { initRequest = JSON.parse(readFileSync(initCapture, 'utf8')); } catch { /* none */ }
+  check(': holder initialize carries the package version',
+    initRequest?.method === 'initialize' && initRequest.params?.clientInfo?.version === PACKAGE_VERSION,
+    JSON.stringify({ initRequest, packageVersion: PACKAGE_VERSION }));
   check(': the stub answered initialize only after closing stdin',
     initialized && /initialize ok/.test(log),
     `log=${log.slice(0, 400)} stderr=${stderr.slice(0, 200)}`);
