@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host implementations must provide the layout guard argv before calling `install`, `spawn`, or `review`; otherwise guard hook assembly throws `TypeError` in `lib/install.js`, `lib/spawn.js`, or `lib/review.js`. (PB-103)
 - **Participant telemetry now ends completion duration at the latest result message, falling back to dismissal and then task close.** The record carries that additive timestamp so worker and reviewer runs no longer share a close stamp. (PB-56)
 - **The reference now matches the current store protocol, host surface and task layout, including recovery, validation and fault-injection contracts.** (PB-112)
+- **ROADMAP now matches the shipped catalog's tuple count and default quality floors, with a catalog regression check.** (PB-46)
 
 ### Fixed
 

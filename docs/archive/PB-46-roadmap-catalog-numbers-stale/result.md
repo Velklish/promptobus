@@ -1,0 +1,9 @@
+# PB-46 · Result
+
+**Closed 2026-09-10.** Completed. The ROADMAP's evidence for routed model choice now states the figures the shipped tree carries — 51 rated tuples in `models/catalog.json` (the card, citing an older commit, counted 48; PB-34.1 added six) and the default quality floors `worker: 5, reviewer: 9` from `DEFAULT_POLICY` — and a catalog test holds both sentences against the shipped catalog and policy, so the next drift is a red test rather than a stale claim.
+
+**Verification.** Worker commit `faf19f4`, worktree of `worker:docs`, squashed. Reproducer red before the change: `node --test --test-name-pattern='ROADMAP catalog figures match shipped routing defaults' test/model-routing-catalog.test.mjs` exit 1, "docs/ROADMAP.md rated tuple count must match models/catalog.json", `45 !== 51`; after the change the catalog file 60/60. Gates on the committed content: `npm test` exit 0, 54/54 test files on the escalated rerun (a first pooled run showed `model-routing-preflight.test.mjs` red with no overlap with this change; that file was green 35/35 twice standalone and is recorded as PB-159); `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 691 tracked files, 119 tarball entries. Mutation probe, test kept: the stale figures restored in ROADMAP → the focused test exit 1 with the same assertion; restored → 1/1. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** This task is documentation: `docs/ROADMAP.md` goal 4 and goal 6 figures, CHANGELOG entry under Changed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:docs`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator diff read; approver Павел Ким's orchestrator session.

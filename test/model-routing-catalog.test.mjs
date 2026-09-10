@@ -106,6 +106,22 @@ test('the shipped catalog validates against its own schema', () => {
   assert.ok(CATALOG.tuples.length >= 1);
 });
 
+test('ROADMAP catalog figures match shipped routing defaults', () => {
+  const roadmap = readFileSync(path.join(ROOT, 'docs', 'ROADMAP.md'), 'utf8');
+  const tupleCount = roadmap.match(/`models\/catalog\.json` \((\d+) rated tuples\)/);
+  assert.ok(tupleCount, 'docs/ROADMAP.md rated tuple count statement not found');
+  assert.equal(Number(tupleCount[1]), CATALOG.tuples.length,
+    'docs/ROADMAP.md rated tuple count must match models/catalog.json');
+
+  const floors = roadmap.match(/quality floors are `qualityFloor: \{ worker: (\d+), reviewer: (\d+) \}`/);
+  assert.ok(floors, 'docs/ROADMAP.md qualityFloor statement not found');
+  assert.deepEqual(
+    { worker: Number(floors[1]), reviewer: Number(floors[2]) },
+    DEFAULT_POLICY.qualityFloor,
+    'docs/ROADMAP.md quality floors must match DEFAULT_POLICY',
+  );
+});
+
 test('Fable 5.1 keeps its predecessor quality band as a hypothesis', () => {
   const successor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-51-xhigh');
   const predecessor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-xhigh');
