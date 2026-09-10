@@ -166,6 +166,8 @@ The Stop guard (`promptobus guard`) returns the turn when the mailbox is unread.
 
 A worker's first bus message is `status`: what it read, what it will do. Further `status` on every visible step. Background work longer than a couple of minutes is announced with volume and a measured estimate before the worker goes quiet.
 
+The spawn preamble reports repository dependency state. On a fresh worktree, the repository generator runs before dependency installation, and dependency installation runs before launch files are written; the launch files are written once with both outcomes. The preamble says when installation succeeded and need not be repeated, when it refused and which command to run by hand, or when there is no lock to install. A repeat spawn does not rerun or check dependencies in the surviving worktree, so the worker must look before relying on them. If installation is interrupted, the worktree can temporarily have its journal record but no launch files; a repeat spawn rewrites the launch files without checking dependencies.
+
 A worker that cannot continue sends `question` and ends the turn. You answer with `answer`. Do not guess for the user.
 
 When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). You review. Findings go back as `review`. The worker fixes and sends `result` again.

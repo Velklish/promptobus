@@ -1118,9 +1118,13 @@ clearNpm();
 npmSays(0, { stdout: 'added 1 package in 12ms\n' });
 const optsLock = { repo: 'node-svc', brief: BRIEF, task: DEPS_TASK, worker: 'withlock' };
 const planLock = await planSpawn(WS, optsLock);
+check(': the plan preamble names the dependency install that a fresh spawn will run',
+  planLock.prompt.includes(`Worktree dependencies: package-lock.json is present; a fresh spawn will run ${npmCiCommand()} before writing launch files.`),
+  planLock.prompt.split('\n').find((l) => /Worktree dependencies/.test(l)) ?? planLock.prompt);
 claudeSays([{ id: 'sess-lock', name: planLock.name, state: 'working', pid: 4501 }]);
 resetCliCaches();
-const lockOut = await capture(() => spawnWorker(WS, optsLock));
+let lockRun = null;
+const lockOut = await capture(() => spawnWorker(WS, optsLock).then((r) => { lockRun = r; }));
 const lockCalls = npmCalls();
 const lockLog = `${planLock.worktreePath}.npm-ci.log`;
 const ciArgs = npmCiCommand().split(' ').slice(1).join(' ');
@@ -1135,12 +1139,36 @@ check(': a successful install is named in the output together with the duration'
 check(': the install log sits next to the directory and carries npm output',
   existsSync(lockLog) && readFileSync(lockLog, 'utf8').includes('added 1 package'),
   existsSync(lockLog) ? readFileSync(lockLog, 'utf8') : `no ${lockLog}`);
+check(': a successful install is named in the worker preamble and need not be repeated',
+  String(lockRun?.prompt).includes(`Worktree dependencies were installed in this worktree: ${npmCiCommand()} already ran; `
+    + 'you do not need to run it again before you work.'),
+  String(lockRun?.prompt).split('\n').find((l) => /Worktree dependencies/.test(l)) ?? String(lockRun?.prompt));
+
+// A repeat spawn keeps the surviving worktree and does not rerun or check its dependencies.
+store.dismissParticipant(HOME, DEPS_TASK, 'worker:withlock');
+claudeSays([]);
+resetCliCaches();
+const repeatOpts = { ...optsLock, sessions: {} };
+const repeatPlan = await planSpawn(WS, repeatOpts);
+check(': a repeat plan warns that surviving worktree dependencies were not checked',
+  /Worktree dependencies were not re-run or checked: this is a repeat spawn into an existing worktree\./
+    .test(repeatPlan.prompt),
+  repeatPlan.prompt.split('\n').find((l) => /Worktree dependencies/.test(l)) ?? repeatPlan.prompt);
+claudeSays([{ id: 'sess-lock-repeat', name: repeatPlan.name, state: 'working', pid: 4506 }]);
+resetCliCaches();
+let repeatRun = null;
+await capture(() => spawnWorker(WS, repeatOpts).then((r) => { repeatRun = r; }));
+check(': a repeat spawn keeps the dependency warning and does not call npm again',
+  npmCalls().length === 1
+  && String(repeatRun?.prompt).includes('Worktree dependencies were not re-run or checked: this is a repeat spawn into an existing worktree.'),
+  `${JSON.stringify(npmCalls())} · ${String(repeatRun?.prompt).split('\n').find((l) => /Worktree dependencies/.test(l)) ?? repeatRun?.prompt}`);
 
 clearNpm();
 npmSays(0);
 const dryLock = await capture(() => spawnWorker(WS, { ...optsLock, worker: 'drylock', dryRun: true }));
 check(': --dry-run prints the install intent and does not call npm itself',
   dryLock.includes(`worktree dependencies: ${npmCiCommand()}`)
+  && dryLock.includes(`Worktree dependencies: package-lock.json is present; a fresh spawn will run ${npmCiCommand()} before writing launch files.`)
   && npmCalls().length === 0, dryLock);
 
 clearNpm();
@@ -1149,10 +1177,12 @@ const optsNoLock = { repo: 'cargos-api', brief: BRIEF, task: DEPS_TASK, worker: 
 const planNoLock = await planSpawn(WS, optsNoLock);
 claudeSays([{ id: 'sess-nolock', name: planNoLock.name, state: 'working', pid: 4502 }]);
 resetCliCaches();
-const noLockOut = await capture(() => spawnWorker(WS, optsNoLock));
-check(': without package-lock.json npm is not called and the install line is not printed',
-  npmCalls().length === 0 && !/worktree dependencies/.test(noLockOut),
-  `${JSON.stringify(npmCalls())} · ${noLockOut.split('\n').filter((l) => /dependenc|npm ci/.test(l)).join(' | ')}`);
+let noLockRun = null;
+const noLockOut = await capture(() => spawnWorker(WS, optsNoLock).then((r) => { noLockRun = r; }));
+check(': without package-lock.json npm is not called and the preamble says there is nothing to install',
+  npmCalls().length === 0
+  && String(noLockRun?.prompt).includes('Worktree dependencies: no package-lock.json was found, so there is nothing to install.'),
+  `${JSON.stringify(npmCalls())} · ${String(noLockRun?.prompt).split('\n').find((l) => /Worktree dependencies/.test(l)) ?? noLockOut}`);
 
 clearNpm();
 npmSays(7, { stderr: 'ERESOLVE unable to resolve dependency tree\n' });
@@ -1160,7 +1190,8 @@ const optsFail = { repo: 'node-svc', brief: BRIEF, task: DEPS_TASK, worker: 'fai
 const planFail = await planSpawn(WS, optsFail);
 claudeSays([{ id: 'sess-fail', name: planFail.name, state: 'working', pid: 4503 }]);
 resetCliCaches();
-const failDepsOut = await capture(() => spawnWorker(WS, optsFail));
+let failRun = null;
+const failDepsOut = await capture(() => spawnWorker(WS, optsFail).then((r) => { failRun = r; }));
 const failLog = `${planFail.worktreePath}.npm-ci.log`;
 check(': an npm ci refusal does not break spawn — the worker is lifted, there is a warning with the code and the command',
   failDepsOut.includes('worktree dependencies not installed')
@@ -1175,6 +1206,9 @@ check(': an npm ci refusal does not break spawn — the worker is lifted, there 
 check(': the refusal log is written and named in the warning',
   existsSync(failLog) && readFileSync(failLog, 'utf8').includes('ERESOLVE'),
   existsSync(failLog) ? readFileSync(failLog, 'utf8') : `no ${failLog}`);
+check(': a refused install names its reason, hand command, and first-status instruction in the preamble',
+  String(failRun?.prompt).includes(`Worktree dependencies were NOT installed: exited with code 7: ERESOLVE unable to resolve dependency tree; run ${npmCiCommand()} by hand before you work, and say so in your first status.`),
+  String(failRun?.prompt).split('\n').find((l) => /Worktree dependencies/.test(l)) ?? String(failRun?.prompt));
 
 clearNpm();
 process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
