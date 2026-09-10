@@ -1350,6 +1350,46 @@ test('a damaged task blocks only itself', async (t) => {
   });
 });
 
+test('history and recovery cover readable tasks while listing names a broken journal', async () => {
+  const root = sandbox();
+  const seed = open(root, { recover: false });
+  const readable = taskWith(seed, 'readable-t20260910-100000');
+  const broken = taskWith(seed, 'broken-t20260910-100001');
+  await seed.send(readable, { from: 'owner', to: ['w-api'], type: 'task', body: 'history' });
+  await seed.send(broken, { from: 'owner', to: ['w-api'], type: 'task', body: 'discarded' });
+  seed.read(readable, 'w-api');
+  seed.read(broken, 'w-api');
+
+  // Leave a recoverable intent under the readable task, then spoil the other
+  // task's journal. The two records model one task that can be served and one
+  // that the list walk must report without opening.
+  const interrupted = crashAt(root, 'intent');
+  await refusalAsync(() => interrupted.send(readable, {
+    from: 'owner', to: ['w-api'], type: 'status', body: 'recover',
+  }));
+  const interruptedBroken = crashAt(root, 'intent');
+  await refusalAsync(() => interruptedBroken.send(broken, {
+    from: 'owner', to: ['w-api'], type: 'status', body: 'discarded recovery',
+  }));
+  writeFileSync(path.join(seed.home, 'tasks', broken, 'task.json'), '{unreadable journal');
+
+  const engine = open(root, { recover: false });
+  const listed = engine.listTasks();
+  const history = engine.history({ all: true });
+  const recovered = engine.recover();
+
+  assert.deepEqual(listed.tasks.map((task) => task.id), [readable]);
+  assert.deepEqual(listed.broken.map(({ id, code }) => ({ id, code })), [
+    { id: broken, code: 'task-broken' },
+  ]);
+  assert.deepEqual(history.entries.map((entry) => entry.task), [readable]);
+  assert.deepEqual(history.entries.map((entry) => entry.message.body), ['history']);
+  assert.deepEqual(history.broken, []);
+  assert.deepEqual(recovered.repairs.map(({ task }) => task), [readable]);
+  assert.deepEqual(recovered.broken, []);
+  assert.deepEqual(recovered.failed, []);
+});
+
 // ── a mix of mechanism versions ────────────────────────────────────────────────────
 //
 // After `sync` a live session keeps working with the bus MCP server raised
