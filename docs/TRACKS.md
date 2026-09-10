@@ -88,7 +88,7 @@ Queued assignments: [PB-71](archive/PB-71-gates-omit-npm-test/task.md), [PB-141]
 
 Added after this snapshot: [PB-50.1](archive/PB-50.1-git-max-output-names-a-process-wide-budget/task.md) — the shared output budget kept a git-specific name when PB-50 widened its reach.
 
-Added after this snapshot (triage of 2026-09-10): [PB-159](backlog/queue/PB-159-preflight-test-wall-clock-red-in-pool.md) — the preflight test's wall-clock checks go red in the pooled suite under machine load; it joins the serial group and the runner keeps a red file's last lines.
+Added after this snapshot (triage of 2026-09-10): [PB-159](archive/PB-159-preflight-test-wall-clock-red-in-pool/task.md) — the preflight test's wall-clock checks go red in the pooled suite under machine load; it joins the serial group and the runner keeps a red file's last lines.
 
 ### S — Store integrity and public engine
 

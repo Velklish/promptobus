@@ -205,6 +205,11 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 //   nested copy itself opens up to six lanes — it would take time from
 //   neighbours on the run, not because the verdict needs a still
 //   machine.
+// - `model-routing-preflight.test.mjs`: its wall-clock guards cover a
+//   200 ms budget, a 400 ms in-flight probe, a 1 s memoised binary
+//   resolve, and 400 ms budgeted resolves. The counted interval check
+//   is sound under load, but the elapsed guards measure the machine's
+//   neighbours, so the whole file runs here without them.
 //
 // Who is not in the group, and why. `promptobus-mcp.test.mjs` has no
 // wall-clock thresholds left: its checks look at response contents and
@@ -213,13 +218,6 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // In `install.test.mjs` and `zone.test.mjs` `Date.now()` builds fixture
 // age, and there is no clock threshold at all: load does not move
 // those files.
-// `model-routing-preflight.test.mjs` has one threshold — the whole
-// preflight under a 200 ms budget must end inside 5 000 ms, the same
-// twenty-five-fold margin as `fresh.test.mjs` — and the stand-in
-// adapter it is measured against answers at 30 s, so a machine under
-// load moves the measurement nowhere near the verdict. Everything
-// else in the file is file contents, permissions and TTL arithmetic
-// against a fixed instant, which load does not touch.
 // `model-routing-adapter-codex.test.mjs` has one threshold, written to
 // the same shape: the probe of an app-server that never answers runs
 // under a 400 ms budget and must end inside 10 000 ms — the same
@@ -296,7 +294,7 @@ const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 // the seal itself is watched by the gate at the tail of this file —
 // whose boundary is `run` in [exec.js](../lib/exec.js), not a test
 // file's own `spawnSync`.
-const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'runner.test.mjs'];
+const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
 // waited on the child with no deadline, and anything can hang a file —
@@ -360,6 +358,12 @@ if (!files.length) {
 }
 
 const failed = [];
+const FAILURE_TAIL_LINES = 20;
+
+function failureTail(out) {
+  const text = out.trimEnd();
+  return text ? text.split(/\r?\n/).slice(-FAILURE_TAIL_LINES) : [];
+}
 
 // One file: own process, own environment, own output buffer. The buffer
 // is a file on disk, not a string in memory: one descriptor for the
@@ -417,7 +421,7 @@ function report({ name, ms, out, why }) {
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
   if (why) {
     console.error(`✖ ${name} — failed (${why})`);
-    failed.push({ name, why });
+    failed.push({ name, why, tail: failureTail(out) });
   }
 }
 
@@ -576,7 +580,13 @@ if (interrupted) {
   const passed = files.length - failed.length;
   if (failed.length) {
     console.error(`\n✖ ${failed.length} of ${files.length} files failed, ${passed} passed:`);
-    for (const f of failed) console.error(`  ✖ ${f.name} — ${f.why}`);
+    for (const f of failed) {
+      console.error(`  ✖ ${f.name} — ${f.why}`);
+      if (f.tail.length) {
+        console.error('    output tail:');
+        for (const line of f.tail) console.error(`      ${line}`);
+      }
+    }
   }
   if (raised.length) {
     console.error(`\n✖ wardens were raised under this run (${raised.length}) — these processes outlive the run:`);
