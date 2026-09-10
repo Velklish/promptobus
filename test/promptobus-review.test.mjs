@@ -400,6 +400,13 @@ check('argv: standalone — there is no plugin directory',
 check(`reviewer's settings: there are no plugin-install keys in the participant file`,
   plan.settings.enabledPlugins === undefined && plan.settings.extraKnownMarketplaces === undefined,
   JSON.stringify(plan.settings));
+const standaloneDryRun = await capture(() => review(WS, {
+  target: REPO, title: 'standalone plugin warning', dryRun: true,
+}));
+check('PB-51: standalone review dry-run has no missing-plugin warning',
+  !standaloneDryRun.includes('plugin directory is missing')
+  && /workspace skills: not attached — .*ships no workspace-skills plugin/.test(standaloneDryRun),
+  standaloneDryRun);
 check(`reviewer's settings: personal skill duplicates are suppressed by name`,
   plan.settings.skillOverrides?.['ненужный-скилл'] === 'off', JSON.stringify(plan.settings));
 // The reviewer's MCP set equals the worker's set (owner decision 2026-08-28).

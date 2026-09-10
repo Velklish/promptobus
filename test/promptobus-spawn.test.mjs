@@ -42,8 +42,8 @@ const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobu
 const here = path.dirname(fileURLToPath(import.meta.url));
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
 const {
-  planSpawn, spawn: spawnRaw, repoSkillsLine, runRepoGenerator, sayWorktreeDeps, writeSecret,
-  SKILL_KEYS, skillSettings,
+  liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
+  runRepoGenerator, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings,
 } = await import(spawnUrl);
 const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const spawnWorker = (root, opts = {}) => spawnRaw(root, {
@@ -104,6 +104,33 @@ const settingsSample = skillSettings(WS);
 check(': spawn reads skillOverrides from workspace settings',
   settingsSample.skillOverrides?.['ненужный-скилл'] === 'off',
   JSON.stringify(settingsSample));
+
+const standaloneHost = hostOf(WS);
+let standalonePluginDir;
+const standalonePluginOutput = capture(() => {
+  standalonePluginDir = participantPluginDir(standaloneHost);
+});
+const standaloneSkills = skillsNote({
+  pluginDir: standalonePluginDir,
+  driver: liftHarness(standaloneHost),
+});
+check('PB-51: a standalone plugin-less host has no plugin warning and an honest skills note',
+  standalonePluginDir === null
+  && standalonePluginOutput === ''
+  && /ships no workspace-skills plugin/.test(standaloneSkills)
+  && !/plugin directory is missing/.test(standaloneSkills),
+  `${standalonePluginOutput} · ${standaloneSkills}`);
+
+const checkedManifest = path.join(WS, '.workspace-plugin', 'manifest.json');
+const declaredPluginHost = {
+  ...standaloneHost,
+  pluginDir: () => path.dirname(checkedManifest),
+  pluginManifestRel: () => path.relative(WS, checkedManifest),
+};
+const declaredPluginOutput = capture(() => participantPluginDir(declaredPluginHost));
+check('PB-51: a declared plugin host warning names the manifest it checks',
+  declaredPluginOutput.includes(checkedManifest)
+  && !declaredPluginOutput.includes('.claude-plugin/plugin.json'), declaredPluginOutput);
 
 // Origin is a bare repository on disk: `freshenRepo` talks to it with a real fetch,
 // but never touches the network. With no origin at all the default branch would not
