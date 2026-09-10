@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import Ajv from 'ajv';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
@@ -44,7 +45,7 @@ const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
-  readSession, writeSession, dropSession, decideApproval, readyMs, preambleMs,
+  readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
   TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath, startHolder, waitReady, reapHolder,
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
@@ -111,9 +112,120 @@ check(': default readyMs = preamble + turn/started, independent of the full-turn
 
 const patchRec = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
 const policyRec = { ...patchRec, sandbox: 'workspace-write', approvalPolicy: 'on-failure' };
+const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', '0.146.0');
+const codexFixtureAjv = new Ajv({
+  strict: false,
+  allErrors: true,
+  formats: { int64: true, uint64: true, uint32: true, uint: true, double: true },
+});
+const codexServerRequest = codexFixtureAjv.compile(
+  JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8')),
+);
+const approvalResponseNames = new Map([
+  ['applyPatchApproval', 'ApplyPatchApproval'],
+  ['item/commandExecution/requestApproval', 'CommandExecutionRequestApproval'],
+  ['execCommandApproval', 'ExecCommandApproval'],
+  ['item/fileChange/requestApproval', 'FileChangeRequestApproval'],
+  ['item/permissions/requestApproval', 'PermissionsRequestApproval'],
+]);
+const codexApprovalResponses = new Map(
+  [...approvalResponseNames].map(([method, name]) => [
+    method,
+    codexFixtureAjv.compile(JSON.parse(readFileSync(path.join(codexFixtureDir, `${name}Response.json`), 'utf8'))),
+  ]),
+);
+
+const approvalReplyChecks = [...approvalResponseNames].map(([method]) => {
+  const validate = codexApprovalResponses.get(method);
+  const checkReply = (allow) => {
+    const reply = approvalReply(method, allow);
+    const valid = validate(reply);
+    return { valid, ...(valid ? {} : { errors: validate.errors }), reply };
+  };
+  return { method, ok: checkReply(true), no: checkReply(false) };
+});
+check(': every measured approval reply row validates against its response schema',
+  approvalReplyChecks.every(({ ok, no }) => ok.valid && no.valid),
+  JSON.stringify(approvalReplyChecks));
+
+const unhandledApprovalMethods = [
+  'item/tool/call',
+  'account/chatgptAuthTokens/refresh',
+  'attestation/generate',
+];
+const unhandledApprovalReplies = unhandledApprovalMethods.map((method) => ({
+  method,
+  reply: approvalReply(method, false),
+}));
+check(': measured server requests without approval rows return JSON-RPC method-not-found errors',
+  unhandledApprovalReplies.every(({ method, reply }) => reply.__error?.code === -32601
+    && reply.__error.message === `no handler for server request ${method}`),
+  JSON.stringify(unhandledApprovalReplies));
+
+const measuredPatchRequest = {
+  jsonrpc: '2.0',
+  id: 'server-1',
+  method: 'applyPatchApproval',
+  params: {
+    callId: 'call-1',
+    conversationId: 'thread-1',
+    fileChanges: { '/tmp/wt/note.md': { type: 'add', content: '' } },
+    grantRoot: null,
+    reason: null,
+  },
+};
+check(': measured applyPatchApproval request and reply validate against the fixture',
+  codexServerRequest(measuredPatchRequest)
+    && codexApprovalResponses.get('applyPatchApproval')(approvalReply('applyPatchApproval', true)),
+  `${JSON.stringify(codexServerRequest.errors)} · ${JSON.stringify(codexApprovalResponses.get('applyPatchApproval').errors)}`);
+
+const grantRootApproval = decideApproval('applyPatchApproval', {
+  ...measuredPatchRequest.params,
+  grantRoot: '/tmp/outside',
+}, patchRec);
+const reviewerGrantRootApproval = decideApproval('applyPatchApproval', {
+  ...measuredPatchRequest.params,
+  grantRoot: '/tmp/outside',
+}, { ...patchRec, role: 'reviewer' });
+
+const measuredFileChangeRequest = {
+  jsonrpc: '2.0',
+  id: 'server-2',
+  method: 'item/fileChange/requestApproval',
+  params: {
+    itemId: 'item-1',
+    startedAtMs: 1,
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    grantRoot: null,
+    reason: null,
+  },
+};
+const fileChangeApproval = decideApproval(measuredFileChangeRequest.method, measuredFileChangeRequest.params, patchRec);
+const fileChangeGrantRootApproval = decideApproval(measuredFileChangeRequest.method, {
+  ...measuredFileChangeRequest.params,
+  grantRoot: '/tmp/outside',
+}, patchRec);
+const reviewerFileChangeGrantRootApproval = decideApproval(measuredFileChangeRequest.method, {
+  ...measuredFileChangeRequest.params,
+  grantRoot: '/tmp/outside',
+}, { ...patchRec, role: 'reviewer' });
+check(': grantRoot escalation is denied for workers and reviewers',
+  [grantRootApproval, reviewerGrantRootApproval, fileChangeGrantRootApproval, reviewerFileChangeGrantRootApproval]
+    .every((approval) => approval.allow === false && /grantRoot/.test(approval.why)),
+  JSON.stringify({ grantRootApproval, reviewerGrantRootApproval, fileChangeGrantRootApproval, reviewerFileChangeGrantRootApproval }));
+check(': measured fileChange approval without paths is denied because the request has no path',
+  codexServerRequest(measuredFileChangeRequest)
+    && fileChangeApproval.allow === false
+    && /no path/i.test(fileChangeApproval.why)
+    && codexApprovalResponses.get('item/fileChange/requestApproval')(approvalReply(
+      'item/fileChange/requestApproval', fileChangeApproval.allow,
+    )),
+  `${JSON.stringify(fileChangeApproval)} · ${JSON.stringify(codexServerRequest.errors)}`);
+
 check(': a patch outside cwd — deny',
   (() => {
-    const d = decideApproval('applyPatchApproval', { changes: { '/etc/passwd': { type: 'add' } } }, patchRec);
+    const d = decideApproval('applyPatchApproval', { fileChanges: { '/etc/passwd': { type: 'add' } } }, patchRec);
     return d.allow === false && /outside cwd/.test(d.why);
   })());
 check(': a patch with an unreadable target — deny',
@@ -122,7 +234,7 @@ check(': a patch with an unreadable target — deny',
     return d.allow === false && /unreadable/.test(d.why);
   })());
 check(': a relative patch inside cwd — allow',
-  decideApproval('applyPatchApproval', { changes: { 'note.md': { type: 'add' } } }, patchRec).allow === true);
+  decideApproval('applyPatchApproval', { fileChanges: { 'note.md': { type: 'add' } } }, patchRec).allow === true);
 function skipApprovalSymlinkCheck(name, reason) {
   process.stdout.write(`↷ ${name} — skipped: ${reason}\n`);
 }
@@ -183,21 +295,21 @@ if (approvalSymlinkReason) {
   const symlinkApprovalRec = { cwd: approvalRootLink, addDirs: [], role: 'worker' };
   const resolvedRootTarget = path.join(approvalResolvedRoot, 'not-yet-created.md');
   const resolvedRootApproval = decideApproval(
-    'applyPatchApproval', { changes: { [resolvedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [resolvedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a target in the resolved spelling of a symlinked cwd — allow',
     resolvedRootApproval.allow === true, JSON.stringify(resolvedRootApproval));
 
   const linkedRootTarget = path.join(approvalRootLink, 'through-link.md');
   const linkedRootApproval = decideApproval(
-    'applyPatchApproval', { changes: { [linkedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [linkedRootTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a target through the symlinked cwd — allow',
     linkedRootApproval.allow === true, JSON.stringify(linkedRootApproval));
 
   const safeParentTraversalTarget = `${approvalRootLink}${path.sep}subdir${path.sep}..${path.sep}safe.md`;
   const safeParentTraversalApproval = decideApproval(
-    'applyPatchApproval', { changes: { [safeParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [safeParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a parent traversal that remains inside — allow',
     safeParentTraversalApproval.allow === true, JSON.stringify(safeParentTraversalApproval));
@@ -206,7 +318,7 @@ if (approvalSymlinkReason) {
   const plainParentTraversalTarget = `${approvalRootLink}${path.sep}..${path.sep}plain-evil.md`;
   const plainParentTraversalCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'plain-evil.md');
   const plainParentTraversalApproval = decideApproval(
-    'applyPatchApproval', { changes: { [plainParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [plainParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a plain parent traversal outside the root — deny',
     plainParentTraversalApproval.allow === false
@@ -217,7 +329,7 @@ if (approvalSymlinkReason) {
   const escapedTarget = path.join(approvalRootLink, 'escape', 'not-yet-created.md');
   const escapedCanonicalTarget = path.join(approvalOutsideCanonical, 'not-yet-created.md');
   const escapedApproval = decideApproval(
-    'applyPatchApproval', { changes: { [escapedTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [escapedTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a missing target through an escaping symlink — deny',
     escapedApproval.allow === false
@@ -227,7 +339,7 @@ if (approvalSymlinkReason) {
   const missingTailTarget = `${approvalRootLink}${path.sep}nope${path.sep}..${path.sep}escape${path.sep}evil.md`;
   const missingTailCanonicalTarget = path.join(approvalOutsideCanonical, 'evil.md');
   const missingTailApproval = decideApproval(
-    'applyPatchApproval', { changes: { [missingTailTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [missingTailTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a missing segment cannot hide a later symlink escape — deny',
     missingTailApproval.allow === false
@@ -238,7 +350,7 @@ if (approvalSymlinkReason) {
   const linkContentParentTarget = path.join(approvalLinkWithParent, 'evil.md');
   const linkContentParentCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'evil.md');
   const linkContentParentApproval = decideApproval(
-    'applyPatchApproval', { changes: { [linkContentParentTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [linkContentParentTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a symlink content with parent traversal — deny',
     linkContentParentApproval.allow === false
@@ -249,7 +361,7 @@ if (approvalSymlinkReason) {
   const relativeLinkTarget = path.join(approvalUpLink, 'relative-link.md');
   const relativeLinkCanonicalTarget = path.join(path.dirname(approvalOutsideCanonical), 'relative-link.md');
   const relativeLinkApproval = decideApproval(
-    'applyPatchApproval', { changes: { [relativeLinkTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [relativeLinkTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a relative symlink to the parent — deny',
     relativeLinkApproval.allow === false
@@ -260,7 +372,7 @@ if (approvalSymlinkReason) {
   const chainTarget = path.join(approvalChainA, 'chain-evil.md');
   const chainCanonicalTarget = path.join(approvalOutsideCanonical, 'chain-evil.md');
   const chainApproval = decideApproval(
-    'applyPatchApproval', { changes: { [chainTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [chainTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a symlink chain escaping the root — deny',
     chainApproval.allow === false
@@ -269,7 +381,7 @@ if (approvalSymlinkReason) {
 
   const parentTraversalTarget = `${approvalRootLink}${path.sep}escape${path.sep}..${path.sep}evil.md`;
   const parentTraversalApproval = decideApproval(
-    'applyPatchApproval', { changes: { [parentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [parentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a target with parent traversal — deny',
     parentTraversalApproval.allow === false
@@ -279,7 +391,7 @@ if (approvalSymlinkReason) {
 
   const danglingCanonicalTarget = path.join(approvalOutsideCanonical, 'dangling.md');
   const danglingApproval = decideApproval(
-    'applyPatchApproval', { changes: { [approvalDanglingLink]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [approvalDanglingLink]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a dangling symlink target outside cwd — deny',
     danglingApproval.allow === false
@@ -287,7 +399,7 @@ if (approvalSymlinkReason) {
     JSON.stringify(danglingApproval));
 
   const loopApproval = decideApproval(
-    'applyPatchApproval', { changes: { [approvalLoopA]: { type: 'add' } } }, symlinkApprovalRec,
+    'applyPatchApproval', { fileChanges: { [approvalLoopA]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a symlink loop target is unreadable — deny',
     loopApproval.allow === false
@@ -296,7 +408,7 @@ if (approvalSymlinkReason) {
 
   const unresolvedRootsApproval = decideApproval(
     'applyPatchApproval',
-    { changes: { [path.join(approvalAllowed, 'unresolved-roots.md')]: { type: 'add' } } },
+    { fileChanges: { [path.join(approvalAllowed, 'unresolved-roots.md')]: { type: 'add' } } },
     { cwd: approvalLoopA, addDirs: [approvalLoopB], role: 'worker' },
   );
   check(': unresolved approval roots name the recorded cwd — deny',
@@ -307,7 +419,7 @@ if (approvalSymlinkReason) {
   const partlyUnresolvedTarget = path.join(approvalOutside, 'partly-unresolved.md');
   const partlyUnresolvedCanonicalTarget = path.join(approvalOutsideCanonical, 'partly-unresolved.md');
   const partlyUnresolvedRootApproval = decideApproval(
-    'applyPatchApproval', { changes: { [partlyUnresolvedTarget]: { type: 'add' } } },
+    'applyPatchApproval', { fileChanges: { [partlyUnresolvedTarget]: { type: 'add' } } },
     { cwd: approvalRootLink, addDirs: [approvalLoopA], role: 'worker' },
   );
   check(': a partly unresolved root is named on outside denial — deny',
@@ -329,7 +441,7 @@ if (approvalSymlinkReason) {
     const mixedCaseRec = { cwd: mixedCaseAllowedSpelling, addDirs: [], role: 'worker' };
     const mixedCaseTarget = path.join(mixedCaseAllowedSpelling, 'mixed-case.md');
     const mixedCaseApproval = decideApproval(
-      'applyPatchApproval', { changes: { [mixedCaseTarget]: { type: 'add' } } }, mixedCaseRec,
+      'applyPatchApproval', { fileChanges: { [mixedCaseTarget]: { type: 'add' } } }, mixedCaseRec,
     );
     check(': a mixed-case spelling of an existing root — allow',
       mixedCaseAllowedCanonical !== approvalAllowedCanonical && mixedCaseApproval.allow === true,
@@ -337,7 +449,7 @@ if (approvalSymlinkReason) {
 
     const differentlyCasedTarget = path.join(approvalAllowedCanonical, 'different-case.md');
     const differentlyCasedApproval = decideApproval(
-      'applyPatchApproval', { changes: { [differentlyCasedTarget]: { type: 'add' } } }, mixedCaseRec,
+      'applyPatchApproval', { fileChanges: { [differentlyCasedTarget]: { type: 'add' } } }, mixedCaseRec,
     );
     process.stdout.write(`ℹ mixed-case fail-closed reason: ${differentlyCasedApproval.why}\n`);
     check(': a differently-cased target under a case-insensitive root — deny',
@@ -360,15 +472,9 @@ if (approvalSymlinkReason) {
     skipApprovalSymlinkCheck(': a differently-cased target under a case-insensitive root — deny', reason);
   }
 }
-check(': fileChange outside cwd — deny',
-  (() => {
-    const d = decideApproval('item/fileChange/requestApproval', { item: { path: '/etc/x' } }, patchRec);
-    return d.allow === false && /outside cwd/.test(d.why);
-  })());
-
 check(': an escalation flag in an in-cwd patch diff is not an escalation request',
   decideApproval('applyPatchApproval', {
-    changes: { 'note.md': { type: 'edit', diff: 'do not use --dangerously-bypass-approvals' } },
+    fileChanges: { 'note.md': { type: 'edit', diff: 'do not use --dangerously-bypass-approvals' } },
   }, patchRec).allow === true);
 check(': config/read in an in-cwd command is not a config/read request',
   decideApproval('execCommandApproval', {
@@ -404,13 +510,16 @@ check(': an array permission value is denied',
     }, patchRec);
     return d.allow === false && /privilege escalation denied/.test(d.why);
   })());
-check(': a nested item permissions value is denied',
-  (() => {
-    const d = decideApproval('item/permissions/requestApproval', {
-      item: { permissions: 'danger-full-access' },
-    }, patchRec);
-    return d.allow === false && /privilege escalation denied/.test(d.why);
-  })());
+check(': an item wrapper is not an escalation field',
+  decideApproval('execCommandApproval', {
+    callId: 'call-1',
+    command: ['true'],
+    conversationId: 'thread-1',
+    cwd: '/tmp/wt',
+    parsedCmd: [{ cmd: 'true', type: 'unknown' }],
+    item: { permissions: 'danger-full-access' },
+    reason: null,
+  }, patchRec).allow === true);
 check(': a permission map key is treated as a named mode',
   (() => {
     const d = decideApproval('item/permissions/requestApproval', {

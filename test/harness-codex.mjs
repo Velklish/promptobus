@@ -14,10 +14,36 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import Ajv from 'ajv';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', '0.146.0');
+const codexFixtureAjv = new Ajv({
+  strict: false,
+  allErrors: true,
+  formats: { int64: true, uint64: true, uint32: true, uint: true, double: true },
+});
+const validateServerRequest = codexFixtureAjv.compile(
+  JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8')),
+);
+const approvalResponseNames = {
+  applyPatchApproval: 'ApplyPatchApproval',
+  'item/commandExecution/requestApproval': 'CommandExecutionRequestApproval',
+  'item/fileChange/requestApproval': 'FileChangeRequestApproval',
+  'item/permissions/requestApproval': 'PermissionsRequestApproval',
+  execCommandApproval: 'ExecCommandApproval',
+};
+const validateApprovalResponse = new Map(Object.entries(approvalResponseNames).map(([method, name]) => [
+  method,
+  codexFixtureAjv.compile(JSON.parse(readFileSync(path.join(codexFixtureDir, `${name}Response.json`), 'utf8'))),
+]));
+
+function validateCodexFixture(label, validate, value) {
+  if (validate(value)) return;
+  throw new Error(`${label} does not match the codex-cli 0.146.0 fixture: ${codexFixtureAjv.errorsText(validate.errors)}`);
+}
 
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
@@ -271,9 +297,15 @@ async function appServer() {
 
   const ask = (method, params) => {
     const id = `srv-${randomUUID()}`;
+    const request = { jsonrpc: '2.0', id, method, params };
+    const responseValidator = validateApprovalResponse.get(method);
+    if (responseValidator) validateCodexFixture(`server request ${method}`, validateServerRequest, request);
     const done = new Promise((resolve) => {
-      pendingApprovals.set(id, resolve);
-      emit({ jsonrpc: '2.0', id, method, params });
+      pendingApprovals.set(id, (result) => {
+        if (responseValidator) validateCodexFixture(`holder response ${method}`, responseValidator, result);
+        resolve(result);
+      });
+      emit(request);
     });
     done.requestId = id;
     return done;
@@ -575,7 +607,67 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   const address = addressOf(t);
   const sandbox = t.sandbox;
   if (process.env[APPROVAL_VAR] === '1') {
-    await ask('execCommandApproval', { command: 'true', cwd: t.cwd });
+    const startedAtMs = Date.now();
+    await ask('execCommandApproval', {
+      approvalId: null,
+      callId: randomUUID(),
+      command: ['true'],
+      conversationId: t.id,
+      cwd: t.cwd,
+      parsedCmd: [{ cmd: 'true', type: 'unknown' }],
+      reason: null,
+    });
+    await ask('applyPatchApproval', {
+      callId: randomUUID(),
+      conversationId: t.id,
+      fileChanges: {
+        [path.join(t.cwd, 'approval.md')]: { type: 'add', content: '' },
+      },
+      grantRoot: null,
+      reason: null,
+    });
+    await ask('item/commandExecution/requestApproval', {
+      approvalId: null,
+      command: 'true',
+      commandActions: null,
+      cwd: t.cwd,
+      environmentId: null,
+      itemId: randomUUID(),
+      networkApprovalContext: null,
+      proposedExecpolicyAmendment: null,
+      proposedNetworkPolicyAmendments: null,
+      reason: null,
+      startedAtMs,
+      threadId: t.id,
+      turnId,
+    });
+    await ask('item/fileChange/requestApproval', {
+      grantRoot: null,
+      itemId: randomUUID(),
+      reason: null,
+      startedAtMs,
+      threadId: t.id,
+      turnId,
+    });
+    await ask('item/permissions/requestApproval', {
+      cwd: t.cwd,
+      itemId: randomUUID(),
+      permissions: {
+        fileSystem: {
+          entries: [{
+            access: 'write',
+            path: { type: 'path', path: path.join(t.cwd, 'approval-extra') },
+          }],
+          read: [],
+          write: [],
+        },
+        network: { enabled: false },
+      },
+      reason: null,
+      startedAtMs,
+      threadId: t.id,
+      turnId,
+    });
   }
   if (process.env[CURRENT_TIME_VAR] === '1') {
     const first = await ask('currentTime/read', {});
