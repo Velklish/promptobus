@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Self-wake health replaces a stale knock error when a contact point disappears.** The warden records the no-contact-point reason, clears the old fingerprint, and status prints the current diagnosis. (PB-79)
 - **Review and spawn Git reads now share bounded wait/output ceilings and consistent non-ASCII path rendering; tracked `.cursor` checks are included in the execution trace.** (PB-126)
 - **`models calibrate --write` now names higher-layer rating shadows in its warning and JSON write outcome.** (PB-91)
+- **Guard successor detection now uses the production hint seam, and hook stdin has a deadline.** The unused verdict entry point is gone, while an unclosed event stream becomes an empty payload after the shared 200 ms budget. (PB-123)
 
 ## [0.5.1] - 2026-09-09
 

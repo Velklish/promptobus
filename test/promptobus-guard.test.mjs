@@ -32,16 +32,42 @@ const TASK = 'guard-t20260829-120000';
 const SESSION = 'sess-guard-1111';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const guardModule = await import(path.join(here, '..', 'lib', 'guard.js'));
 const {
   guardVerdict, guardMarkFile, GUARD_MARK, GUARD_BLOCK_LIMIT,
-  successorLine, successorVerdict, probeContactPoint,
-} = await import(path.join(here, '..', 'lib', 'guard.js'));
+  successorLine, successorHint, readEvent, probeContactPoint,
+} = guardModule;
 const { readThroughputSidecar, throughputSidecarFile } = await import(
   path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
 const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
 writeHostConfig(ROOT);
+
+const hangingStdin = new Readable({ read() {} });
+let readTimer;
+const event = await Promise.race([
+  readEvent(hangingStdin),
+  new Promise((resolve) => { readTimer = setTimeout(() => resolve(null), 1500); }),
+]);
+clearTimeout(readTimer);
+hangingStdin.destroy();
+check('readEvent returns an empty payload when stdin never ends',
+  event && typeof event === 'object' && Object.keys(event).length === 0,
+  JSON.stringify(event));
+
+const completeStdin = new Readable({ read() {} });
+completeStdin.push(JSON.stringify({ session_id: 'sess-complete-2222', cwd: ROOT }));
+let completeTimer;
+const complete = await Promise.race([
+  readEvent(completeStdin),
+  new Promise((resolve) => { completeTimer = setTimeout(() => resolve(null), 1800); }),
+]);
+clearTimeout(completeTimer);
+completeStdin.destroy();
+check('readEvent keeps a complete payload when stdin never ends',
+  complete?.session_id === 'sess-complete-2222' && complete?.cwd === ROOT,
+  JSON.stringify(complete));
 
 store.createTask(HOME, { id: TASK, title: 'сторож цикла', owner: SESSION });
 const WORKER_NAME = `a2a-${TASK}-api`;
@@ -713,7 +739,7 @@ const countingProbe = async (socket) => {
   probeCalls += 1;
   return probeContactPoint(socket);
 };
-await successorVerdict(HOME, SB, HEIR, undefined, countingProbe);
+await successorHint({ home: HOME }, SB, HEIR, undefined, countingProbe);
 check('successor: live owner — probe is not called',
   probeCalls === 0, String(probeCalls));
 
@@ -809,10 +835,11 @@ check('successor: successorLine names the task, the owner, the time, and the cla
   verdictLine.includes(SUCC) && verdictLine.includes(OLD_ORCH)
   && verdictLine.includes('promptobus_mailbox {claim: true}'),
   verdictLine);
-const direct = await successorVerdict(HOME, SB, HEIR);
-check('successor: successorVerdict sees SUCC\'s dead socket and stays silent about the live TASK',
-  typeof direct === 'string' && direct.includes(SUCC) && !direct.includes(TASK),
-  String(direct));
+const direct = await successorHint({ home: HOME }, SB, 'sess-direct-ffff');
+const directText = direct?.payload?.systemMessage ?? '';
+check('successor: successorHint sees SUCC\'s dead socket and stays silent about the live TASK',
+  typeof directText === 'string' && directText.includes(SUCC) && !directText.includes(TASK),
+  directText || JSON.stringify(direct));
 check('successor: the mailbox after a hint is untouched — the guard is not a reader and not a claim',
   store.countInbox(HOME, SUCC, 'orchestrator') === 2
   && store.taskOwner(HOME, SUCC) === OLD_ORCH,
