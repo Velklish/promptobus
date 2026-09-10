@@ -50,11 +50,21 @@ The reviewer is read-only in two layers. A driver that declares mechanical MCP
 denial receives the host's canonical external write-tool classification and places
 the translated ids in its deny settings; the shipped Claude driver provides this
 layer. The prompt remains the second layer for every external MCP action outside
-that classification. Cursor and Codex are prompt-only for MCP writes in this
-release; their `denyTools` settings still protect the file and command surface. A
-harness that cannot deny session tools must fail before spawn (`src/driver.ts`
+that classification. Codex places each classified tool in its server's
+`disabled_tools` entry for each server supplied by the mechanism; the owner's personal
+MCP set is also lifted by app-server and stays under the prompt layer. Cursor remains
+prompt-only until its MCP deny syntax is verified. An incomplete host classification,
+or a missing member where the host hands the participant any server but the bus,
+refuses a mechanical reviewer before launch files are written — the classification
+must cover every server the participant receives, not only the third-party ones. Their `denyTools` settings still protect the
+file and command surface.
+A harness that cannot deny session tools must fail before spawn (`src/driver.ts`
 `denyTools`). The Promptobus bus tools stay available so the reviewer can deliver
 its `result`.
+
+The Codex measurement is recorded in the [0.146.0 no-turn fixture](../../test/fixtures/codex-app-server/0.146.0/McpServerStatusList-0.146.0-2026-09-10.json): `initialize` and `thread/start` accepted an external `config.mcp_servers` entry carrying `disabled_tools`, and the entry reported `ready`. No `turn/start` was sent. The subsequent thread-scoped `mcpServerStatus/list` request did not reply within the bounded probe window on codex-cli 0.146.0, so this capture proves configuration acceptance and startup readiness but does not claim a returned tool-list absence.
+
+The owner accepts this residual until the turn-level measurement of PB-87.3.
 
 The review verdict is a result from the reviewer participant, not any result already visible in the orchestrator's mailbox. A live wait therefore matches the normalized `sender` together with `type: result`; an earlier worker result remains unread until its participant is consumed and cannot satisfy the review step.
 

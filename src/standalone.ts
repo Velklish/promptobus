@@ -12,7 +12,7 @@ import {
 } from './host.js';
 import type {
   HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
-  HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
+  HostMcpToolClassification, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
   HostClone,
 } from './host.js';
 
@@ -218,7 +218,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       servers: { ...mcp },
       external: [],
     }),
-    participantDenyTools: () => [],
+    participantDenyTools: (): HostMcpToolClassification => ({ tools: [], complete: true }),
     memorySection: () => null,
 
     resolveRepo: async (query: string): Promise<HostRepo> => {

@@ -154,7 +154,7 @@ Added after this snapshot: [PB-158](archive/PB-158-done-keeps-a-branch-it-proved
 
 Added after this snapshot: [PB-157](archive/PB-157-review-snapshot-reads-dirty-worktree/task.md) — the review snapshot is taken from the working tree, so a mandated post-commit mutation probe removes the reviewed change from the diff. Ordered near the top: it is a verification prerequisite for every track.
 
-Added after this snapshot (triage of 2026-09-10): [PB-140.1](archive/PB-140.1-default-literals-behind-hint-params/task.md) — the fourteen default literals behind hint parameters go, the gate's allowlist empties — then [PB-87.1](backlog/queue/PB-87.1-reviewer-mcp-deny-cursor-verification-and-completeness.md) — the Codex reviewer's mechanical MCP deny through `disabled_tools` and a completeness signal on the host answer; it follows the C additions. Deferred: [PB-87.2](backlog/deferred/PB-87.2-cursor-mcp-deny-syntax-live-lift.md) — the Cursor deny syntax waits for a live lift after the Cursor window is restored.
+Added after this snapshot (triage of 2026-09-10): [PB-140.1](archive/PB-140.1-default-literals-behind-hint-params/task.md) — the fourteen default literals behind hint parameters go, the gate's allowlist empties — then [PB-87.1](archive/PB-87.1-reviewer-mcp-deny-cursor-verification-and-completeness/task.md) — the Codex reviewer's mechanical MCP deny through `disabled_tools` and a completeness signal on the host answer; it follows the C additions. Deferred: [PB-87.2](backlog/deferred/PB-87.2-cursor-mcp-deny-syntax-live-lift.md) — the Cursor deny syntax waits for a live lift after the Cursor window is restored.
 
 ### W — Guard and warden delivery
 

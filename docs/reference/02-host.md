@@ -38,7 +38,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
-| `participantDenyTools` | `participantDenyTools?(role: string): HostMcpTool[]` | Optional member; absent, or an empty array, means the host classifies no external MCP write tools and the reviewer keeps the prompt-only guard for them. |
+| `participantDenyTools` | `participantDenyTools?(role: string): HostMcpToolClassification` | Optional member; `{ tools, complete: true }` is a complete classification (including an empty `tools` array), while `complete: false` is an incomplete answer for a mechanical reviewer. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
 | `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
@@ -108,17 +108,22 @@ implementations must provide this member before calling `install`, `spawn`, or
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.
 
-`participantDenyTools(role)` is an optional compatibility member. For `reviewer`,
-it returns the exact `{ server, tool }` pairs that the host knows are write tools
-of its canonical external MCP servers; it must not infer them from names and must
-not return the Promptobus bus. The review path asks this member only for a driver
-that declares mechanical MCP denial, and that driver translates the canonical
-pairs into its own deny syntax. An absent member or an empty answer leaves the
-driver's built-in deny list unchanged, so the prompt remains the only MCP-write
-guard for those tools. A host exposing canonical external MCP servers must provide
-this classification before its next package pin if it needs the mechanical review
-layer; the standalone host returns `[]` because its `mcp` map is opaque and has no
-external write policy.
+`participantDenyTools(role)` is an optional member. For `reviewer`, it returns
+`{ tools, complete }`, where `tools` contains the exact `{ server, tool }` pairs
+that the host knows are write tools of its canonical external MCP servers; it must
+not infer them from names and must not return the Promptobus bus. `complete: true`
+means the host has finished classifying its canonical external servers, even when
+there are no write tools. A mechanical reviewer refuses before launch when the
+answer is incomplete, or when a host that hands the participant any server but the
+bus has no member — the classification must cover every server the host hands the
+participant, not only the third-party ones; the refusal names the host and servers
+left unclassified. A host with a
+complete answer lets the driver translate the pairs into its own deny syntax. The
+standalone host returns `{ tools: [], complete: true }` because its `mcp` map is
+opaque and has no external write policy.
+
+This is a breaking shape migration: a legacy array answer is incomplete, so the host
+must ship `{ tools, complete }` in the same pin.
 
 This member and the optional `mcpDenyTools` capability flag are contract extensions,
 so a host and package release must advance together. When a participant journal from

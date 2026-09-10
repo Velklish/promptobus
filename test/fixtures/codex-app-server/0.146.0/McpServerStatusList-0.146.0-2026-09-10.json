@@ -1,0 +1,158 @@
+{
+  "codexCli": "0.146.0",
+  "capturedOn": "2026-09-10",
+  "purpose": "No-turn probe of a thread-scoped MCP server with one disabled tool",
+  "normalization": "The thread id and filesystem paths are placeholders; dynamic fields not relevant to the probe are omitted.",
+  "turnStarted": false,
+  "exchange": [
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "clientInfo": {
+            "name": "promptobus",
+            "version": "0.5.1"
+          },
+          "capabilities": {
+            "experimentalApi": true
+          }
+        }
+      }
+    },
+    {
+      "direction": "reply",
+      "message": {
+        "id": 1,
+        "result": {
+          "userAgent": "promptobus/0.146.0 (Mac OS 26.6.2; arm64) dumb (promptobus; 0.5.1)",
+          "codexHome": "<codex-home>",
+          "platformFamily": "unix",
+          "platformOs": "macos"
+        }
+      }
+    },
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "thread/start",
+        "params": {
+          "cwd": "<worktree>",
+          "sandbox": "read-only",
+          "approvalPolicy": "on-request",
+          "model": "gpt-5.6-sol",
+          "config": {
+            "mcp_servers": {
+              "promptobus-probe": {
+                "command": "node",
+                "args": [
+                  "-e",
+                  "<fixture MCP server>"
+                ],
+                "disabled_tools": [
+                  "write_tool"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "direction": "reply",
+      "message": {
+        "id": 2,
+        "result": {
+          "thread": {
+            "id": "<thread-id>",
+            "status": {
+              "type": "idle"
+            }
+          },
+          "model": "gpt-5.6-sol",
+          "cwd": "<worktree>",
+          "approvalPolicy": "on-request",
+          "sandbox": {
+            "type": "readOnly",
+            "networkAccess": false
+          }
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "thread/started",
+        "params": {
+          "thread": {
+            "id": "<thread-id>",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "promptobus-probe",
+          "status": "starting",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "promptobus-probe",
+          "status": "ready",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "mcpServerStatus/list",
+        "params": {
+          "threadId": "<thread-id>",
+          "detail": "full"
+        }
+      }
+    }
+  ],
+  "unanswered": [
+    {
+      "id": 3,
+      "method": "mcpServerStatus/list",
+      "reason": "No reply was observed within the bounded probe window."
+    }
+  ],
+  "observed": {
+    "threadStartAccepted": true,
+    "serverStartupStatus": "ready",
+    "classifiedTool": "write_tool",
+    "disabledTools": {
+      "server": "promptobus-probe",
+      "tools": [
+        "write_tool"
+      ]
+    },
+    "toolListProvedAbsent": false
+  }
+}

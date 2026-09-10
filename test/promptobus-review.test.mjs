@@ -318,9 +318,13 @@ check('read-only: deny overrides writing and executing',
   && plan.settings.permissions.deny === REVIEWER_DENY);
 const classifiedHost = {
   ...hostOf(WS),
+  participantServers: () => ({
+    servers: { catalog: { type: 'http', url: 'http://catalog.invalid/mcp' } },
+    external: [],
+  }),
   participantDenyTools: (role) => role === 'reviewer'
-    ? [{ server: 'catalog', tool: 'create_entry' }]
-    : [],
+    ? { tools: [{ server: 'catalog', tool: 'create_entry' }], complete: true }
+    : { tools: [], complete: true },
 };
 const classifiedPlan = planReview(classifiedHost, { target: REPO, title: 'classified MCP tools' });
 check('PB-87: Claude reviewer denies the host-classified MCP write tool',
@@ -331,7 +335,7 @@ check('PB-87: Claude reviewer keeps the bus tool out of host-derived denies',
   JSON.stringify(classifiedPlan.settings.permissions.deny));
 const emptyClassificationHost = {
   ...hostOf(WS),
-  participantDenyTools: () => [],
+  participantDenyTools: () => ({ tools: [], complete: true }),
 };
 const emptyClassificationPlan = planReview(emptyClassificationHost, { target: REPO, title: 'empty MCP classification' });
 check('PB-87: an empty host classification preserves Claude built-in denies',
@@ -343,8 +347,31 @@ const noClassificationPlan = planReview(hostWithoutClassification, {
   target: REPO, title: 'missing MCP classification',
 });
 check('PB-87: a host without classification preserves Claude built-in denies',
-  JSON.stringify(noClassificationPlan.settings.permissions.deny) === JSON.stringify(REVIEWER_DENY),
-  JSON.stringify(noClassificationPlan.settings.permissions.deny));
+  JSON.stringify(noClassificationPlan.settings.permissions.deny) === JSON.stringify(REVIEWER_DENY)
+  && noClassificationPlan.refusal == null,
+  JSON.stringify({ deny: noClassificationPlan.settings.permissions.deny, refusal: noClassificationPlan.refusal }));
+const noMemberCodexHost = { ...classifiedHost, commandName: 'missing-review-classification' };
+delete noMemberCodexHost.participantDenyTools;
+const noMemberCodexPlan = planReview(noMemberCodexHost, {
+  target: REPO, title: 'missing Codex classification', harness: 'codex',
+});
+check('PB-87.1: Codex refuses a host with declared servers and no classification member',
+  typeof noMemberCodexPlan.refusal === 'string'
+  && noMemberCodexPlan.refusal.includes('missing-review-classification')
+  && noMemberCodexPlan.refusal.includes('catalog'),
+  String(noMemberCodexPlan.refusal));
+const legacyArrayCodexHost = {
+  ...classifiedHost,
+  commandName: 'legacy-array-review-host',
+  participantDenyTools: () => [{ server: 'catalog', tool: 'create_entry' }],
+};
+const legacyArrayCodexPlan = planReview(legacyArrayCodexHost, {
+  target: REPO, title: 'legacy Codex classification', harness: 'codex',
+});
+check('PB-87.1: Codex refuses the legacy array classification shape',
+  typeof legacyArrayCodexPlan.refusal === 'string'
+  && legacyArrayCodexPlan.refusal.includes('pre-{ tools, complete } shape'),
+  String(legacyArrayCodexPlan.refusal));
 const cursorClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Cursor tools', harness: 'cursor',
 });
@@ -355,13 +382,48 @@ check('PB-87: Cursor does not consume Claude MCP deny ids',
 const codexClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Codex tools', harness: 'codex',
 });
-check('PB-87: Codex keeps its sandbox plan and prompt-only MCP boundary',
+check('PB-87.1: Codex applies its sandbox plan and mechanical MCP boundary',
   codexClassifiedPlan.settings.sandbox === 'read-only'
   && codexClassifiedPlan.settings.approvalPolicy === 'on-request'
   && !JSON.stringify(codexClassifiedPlan.settings).includes('mcp__catalog__create_entry')
-  && /prompt-only guard/.test(codexClassifiedPlan.prompt)
-  && /does not mechanically deny MCP writes/.test(codexClassifiedPlan.prompt),
+  && codexClassifiedPlan.mcpConfig.mcpServers.catalog.disabled_tools?.join(',') === 'create_entry'
+  && /mechanism-supplied server/.test(codexClassifiedPlan.prompt)
+  && /configuration was accepted on codex-cli 0\.146\.0/.test(codexClassifiedPlan.prompt)
+  && /enforcement was not observed on a model turn/.test(codexClassifiedPlan.prompt)
+  && /every external MCP write is forbidden by this prompt regardless/.test(codexClassifiedPlan.prompt),
   `${JSON.stringify(codexClassifiedPlan.settings)}\n${codexClassifiedPlan.prompt}`);
+const incompleteCodexHost = {
+  ...hostOf(WS),
+  commandName: 'incomplete-review-host',
+  participantServers: () => ({
+    servers: { catalog: { type: 'http', url: 'http://catalog.invalid/mcp' } },
+    external: [],
+  }),
+  participantDenyTools: () => ({
+    tools: [], complete: false,
+  }),
+};
+const incompleteCodexPlan = planReview(incompleteCodexHost, {
+  target: REPO, title: 'incomplete Codex classification', harness: 'codex',
+});
+check('PB-87.1: Codex refuses an incomplete external MCP classification before launch',
+  typeof incompleteCodexPlan.refusal === 'string'
+  && incompleteCodexPlan.refusal.includes('incomplete-review-host')
+  && incompleteCodexPlan.refusal.includes('catalog'),
+  String(incompleteCodexPlan.refusal));
+const completeCodexHost = {
+  ...incompleteCodexHost,
+  participantDenyTools: () => ({
+    tools: [{ server: 'catalog', tool: 'create_entry' }], complete: true,
+  }),
+};
+const completeCodexPlan = planReview(completeCodexHost, {
+  target: REPO, title: 'complete Codex classification', harness: 'codex',
+});
+check('PB-87.1: a complete external MCP classification permits the Codex launch plan',
+  completeCodexPlan.refusal == null
+  && completeCodexPlan.mcpConfig.mcpServers.catalog.disabled_tools?.join(',') === 'create_entry',
+  JSON.stringify({ refusal: completeCodexPlan.refusal, mcp: completeCodexPlan.mcpConfig }));
 // : read-only isn't a wish, it's a capability of the driver. A harness unable to strip
 // tools would raise the reviewer with write access to the tree under review, so the
 // refusal stands BEFORE the raise and before any write to disk. There's no live driver

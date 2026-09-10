@@ -99,8 +99,8 @@ check(': the Codex driver sits in the registry map and is taken by name',
 check(': without a name the previous driver is taken — Claude Code argv does not move',
   liftDriver().id === 'claude');
 
-check(': Codex capabilities are declared, all nine',
-  ['spawn', 'attach', 'activation', 'inspect', 'stop', 'denyTools', 'systemPrompt', 'sessionList', 'enter']
+check(': Codex capabilities are declared, all ten',
+  ['spawn', 'attach', 'activation', 'inspect', 'stop', 'denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter']
     .every((k) => codexDriver.capabilities[k] !== undefined)
   && codexDriver.capabilities.attach === false && codexDriver.capabilities.activation === 'push',
   JSON.stringify(codexDriver.capabilities));
@@ -121,6 +121,21 @@ const codexFixtureAjv = new Ajv({
 const codexServerRequest = codexFixtureAjv.compile(
   JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8')),
 );
+const mcpDenyCapture = JSON.parse(readFileSync(
+  path.join(codexFixtureDir, 'McpServerStatusList-0.146.0-2026-09-10.json'), 'utf8',
+));
+const mcpCaptureMessages = mcpDenyCapture.exchange.map(({ message }) => message);
+const mcpThreadStart = mcpCaptureMessages.find((message) => message.method === 'thread/start');
+const mcpStatusRequest = mcpCaptureMessages.find((message) => message.method === 'mcpServerStatus/list');
+check('PB-87.1: the Codex MCP capture accepts disabled_tools without a model turn',
+  mcpDenyCapture.turnStarted === false
+  && mcpThreadStart?.params?.config?.mcp_servers?.['promptobus-probe']?.disabled_tools?.join(',') === 'write_tool'
+  && mcpDenyCapture.observed?.threadStartAccepted === true
+  && mcpDenyCapture.observed?.serverStartupStatus === 'ready'
+  && mcpStatusRequest?.id === 3
+  && !mcpCaptureMessages.some((message) => message.method === 'turn/start')
+  && !mcpDenyCapture.exchange.some(({ direction, message }) => direction === 'reply' && message.id === mcpStatusRequest?.id),
+  JSON.stringify(mcpDenyCapture.observed));
 const approvalResponseNames = new Map([
   ['applyPatchApproval', 'ApplyPatchApproval'],
   ['item/commandExecution/requestApproval', 'CommandExecutionRequestApproval'],
@@ -779,6 +794,23 @@ check(': reviewer — sandbox read-only, same cwd, no files',
   reviewerPlan.settings.sandbox === 'read-only' && reviewerPlan.cwd === ctx.cwd
   && reviewerPlan.files.length === 0,
   JSON.stringify(reviewerPlan.settings));
+
+const classifiedCodexPlan = codexDriver.prepare({
+  ...ctx,
+  mcp: {
+    servers: {
+      promptobus: { command: 'node', args: ['x'], env: {} },
+      catalog: { type: 'http', url: 'http://catalog.invalid/mcp' },
+    },
+  },
+  denyTools: [...REVIEWER_DENY, { server: 'catalog', tool: 'create_entry' }],
+  role: 'reviewer',
+});
+const classifiedCodexServers = codexMcpServers(classifiedCodexPlan.mcpConfig.mcpServers, PREFIX).servers;
+check('PB-87.1: Codex carries the classified MCP tool into prefixed disabled_tools',
+  classifiedCodexPlan.mcpConfig.mcpServers.catalog?.disabled_tools?.join(',') === 'create_entry'
+  && classifiedCodexServers[codexMcpName('catalog', PREFIX)]?.disabled_tools?.join(',') === 'create_entry',
+  JSON.stringify({ config: classifiedCodexPlan.mcpConfig, servers: classifiedCodexServers }));
 
 // `renderNotification` takes ONE argument — the arity the driver contract declares —
 // and finds the override key prefix on the session record, the same channel the

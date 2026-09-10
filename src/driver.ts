@@ -150,6 +150,9 @@ export interface McpDescriptor {
   servers: Record<string, unknown>;
 }
 
+/** A driver deny rule: plain harness ids, or structured MCP rules kept until prepare. */
+export type DriverDenyTool = string | HostMcpTool;
+
 /**
  * Launch context: everything the driver needs, and nothing about its harness. Not a
  * single argv, flag name, or home path is here — the driver assembles those itself
@@ -181,7 +184,7 @@ export interface SpawnContext {
   /** Loop-guard command: the driver wraps it in its own hook form. */
   guardCommand?: string;
   /** Tools taken from the participant (requires the `denyTools` capability). */
-  denyTools?: string[] | null;
+  denyTools?: DriverDenyTool[] | null;
   /** Workspace settings addressed to the participant: the driver puts them in its file. */
   extraSettings?: Record<string, unknown>;
   /** The rest is the consumer's business: the driver reads only what the contract named. */
@@ -261,6 +264,8 @@ export interface DriverPhrases {
    * workspace ignores the argument.
    */
   tool(server: string, name: string, host: PromptobusHost): string;
+  /** The reviewer's MCP boundary in this harness's own measured vocabulary. */
+  mcpBoundary: string;
   /**
    * Rules of THIS harness appended to the participant prompt: what belongs to the
    * tool, not the assignment — its headless habits. Empty — nothing to append, and
@@ -439,7 +444,7 @@ export interface Driver {
    */
   prepare?(context: SpawnContext): LaunchPlan;
   /** Translate canonical host MCP write-tool identities into this harness's deny rules. */
-  mcpDenyTools?(tools: readonly HostMcpTool[]): string[];
+  mcpDenyTools?(tools: readonly HostMcpTool[]): DriverDenyTool[];
   spawn?(plan: LaunchPlan, runtime: SpawnContext): Promise<unknown>;
   attach?(plan: LaunchPlan, runtime: SpawnContext): Promise<unknown>;
   /** What was said about the launch after success: unconfirmed check, unparsed id. */

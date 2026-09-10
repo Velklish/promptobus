@@ -48,6 +48,7 @@ export interface HostRepoModule {
 
 export interface HostServers {
   servers: Record<string, unknown>;
+  /** Names of externally authorized servers that did not travel to the participant. */
   external: string[];
 }
 
@@ -55,6 +56,12 @@ export interface HostServers {
 export interface HostMcpTool {
   server: string;
   tool: string;
+}
+
+/** The host's complete answer about canonical external MCP write tools. */
+export interface HostMcpToolClassification {
+  tools: HostMcpTool[];
+  complete: boolean;
 }
 
 export interface HostFreshness {
@@ -247,7 +254,7 @@ export interface PromptobusHost {
 
   participantServers(): HostServers;
   /** Optional write-tool classification for the reviewer; never include the Promptobus bus. */
-  participantDenyTools?(role: string): HostMcpTool[];
+  participantDenyTools?(role: string): HostMcpToolClassification;
   memorySection(toolName: (server: string, name: string) => string): string | null;
 
   resolveRepo(query: string): Promise<HostRepo>;
