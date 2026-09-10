@@ -1,6 +1,6 @@
 // Package packing gates for the public promptobus repo. Does not recurse into npm test.
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
+  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -422,6 +422,38 @@ check('tarball contains the model catalog',
   files.filter((f) => f.startsWith('models/')).join(', ') || files.join(', '));
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
+check('publicity audit derives its root through import.meta.url',
+  /path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/.test(publicityAudit),
+  'audit-public.mjs must use path.dirname(fileURLToPath(import.meta.url))');
+const rawAuditLaunches = [...publicityAudit.matchAll(/\bexecFileSync\(\s*['"](npm|tar)['"]/g)]
+  .map((match) => match[1]);
+check('publicity audit launches npm and tar through the shared process runner',
+  rawAuditLaunches.length === 0
+  && /\brun\(\s*['"]npm['"]/.test(publicityAudit)
+  && /\brun\(\s*['"]tar['"]/.test(publicityAudit),
+  rawAuditLaunches.length ? `raw launchers: ${rawAuditLaunches.join(', ')}` : 'missing run() launchers');
+const failingNpmDir = path.join(SB, 'failing-audit-bin');
+mkdirSync(failingNpmDir);
+const npmFailure = process.platform === 'win32'
+  ? path.join(failingNpmDir, 'npm.cmd')
+  : path.join(failingNpmDir, 'npm');
+writeFileSync(npmFailure, process.platform === 'win32'
+  ? ['@echo off', 'exit /b 17', ''].join('\r\n')
+  : '#!/usr/bin/env node\nprocess.exit(17);\n');
+if (process.platform !== 'win32') chmodSync(npmFailure, 0o755);
+const failingAudit = spawnSync(process.execPath, [path.join(REPO, 'scripts', 'audit-public.mjs')], {
+  cwd: REPO,
+  encoding: 'utf8',
+  env: {
+    ...env,
+    [PATH_KEY]: `${failingNpmDir}${path.delimiter}${env[PATH_KEY] ?? ''}`,
+  },
+});
+const failureOutput = `${failingAudit.stdout ?? ''}${failingAudit.stderr ?? ''}`;
+check('publicity audit refuses a failed build',
+  failingAudit.status !== 0 && failureOutput.includes('npm run build failed'),
+  failureOutput.slice(-400));
 // The overview writes the version out by hand and says it moves only with a release
 // (PB-20.2): this is the gate that line said it did not have. Both READMEs and the
 // install guide had drifted a whole minor version before anything noticed.

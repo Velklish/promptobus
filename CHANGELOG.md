@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The contributing guide now matches the current gates, publicity audit, suite-isolation count and Cyrillic sweep scope.** It no longer duplicates the backslop version pin and records that `scripts/` and `test/` remain outside the current sweep. (PB-72)
 - **The process-wide child output ceiling is named independently of the git callers while the legacy util export remains compatible.** (PB-50.1)
+- **The publicity audit resolves its root portably and launches npm and tar through the shared process runner.** (PB-138)
 - **CI now pins ast-grep, names the existing TypeScript build, covers Node 20 and 22, and relies on the package test for tarball coverage.** (PB-94)
 - **Package metadata now declares the public GitHub repository so registry-rendered README links resolve to their source files.** (PB-137)
 - **The suite sandbox-prefix sentinel now rejects both uncovered literals and dead list entries.** (PB-143)

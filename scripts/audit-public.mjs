@@ -13,9 +13,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { run } from '../lib/exec.js';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const say = (s) => process.stdout.write(`${s}\n`);
+function checkRun(cmd, args, result) {
+  if (!result.error && result.status === 0) return result;
+  const detail = result.error?.code === 'ETIMEDOUT'
+    ? `timed out: ${result.error.message}`
+    : result.error?.message ?? `exited with status ${result.status}`;
+  throw new Error(`${cmd} ${args.join(' ')} failed: ${detail}`);
+}
 
 const FORBIDDEN = [
   ['host of the origin forge', ['gitlab', '.ati', '.st'].join('')],
@@ -76,11 +85,16 @@ for (const rel of tracked) {
 // --- surface 2: what npm would ship ---------------------------------------
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'promptobus-audit-'));
 try {
-  execFileSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'ignore' });
-  const packed = execFileSync('npm', ['pack', '--pack-destination', tmp], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n').pop();
+  const buildArgs = ['run', 'build'];
+  checkRun('npm', buildArgs, run('npm', buildArgs, { cwd: ROOT, stdio: 'ignore' }));
+  const packArgs = ['pack', '--pack-destination', tmp];
+  const packedResult = checkRun('npm', packArgs, run('npm', packArgs, { cwd: ROOT, encoding: 'utf8' }));
+  const packed = packedResult.stdout.trim().split('\n').pop();
   const tarball = path.join(tmp, packed);
-  execFileSync('tar', ['-xzf', tarball, '-C', tmp]);
-  const listed = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  const extractArgs = ['-xzf', tarball, '-C', tmp];
+  checkRun('tar', extractArgs, run('tar', extractArgs));
+  const listArgs = ['-tzf', tarball];
+  const listed = checkRun('tar', listArgs, run('tar', listArgs, { encoding: 'utf8' })).stdout.split('\n').filter(Boolean);
   say(`tarball: ${packed} · ${listed.length} entries`);
   for (const entry of listed) {
     if (entry.endsWith('/') || !TEXT.test(entry)) continue;

@@ -1,9 +1,9 @@
 # PB-138 · `scripts/audit-public.mjs` uses `import.meta.dirname` (needs Node ≥20.11, but engines says ≥20) and calls `npm`/`tar` via raw `execFileSync` instead of the repo's `run()` helper
 
-- **Order:** 680
 - **Scope:** `scripts/audit-public.mjs`, `lib/exec.js`, `test/promptobus-package.test.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-122
+- **Taken:** 2026-09-10
 
 ## Context
 
