@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CLI help now explains the recorded strategy default that effectiveStrategy applies for spawn, review and models.** (PB-84)
 - **`status` now prints each participant's review-round, question and result counts from canonical messages before `done`.** (PB-48)
 - **Calibration documents and tests now pin the deterministic eligible-key pivot tie-break.** (PB-145)
 - **The glossary now defines holder, contact point, persist session, thread and session record, and the Codex holder reference points to those terms.** (PB-110)
