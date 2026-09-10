@@ -506,6 +506,21 @@ check(': lift names already-tracked .cursor files — gitignore will not protect
   /cli\.json/.test(trackedWarns) && trackedWarns.includes(tracked),
   trackedWarns);
 
+const trackedCursorTrace = path.join(SB, 'tracked-cursor-trace.tsv');
+const savedExecTrace = process.env.PROMPTOBUS_EXEC_TRACE;
+process.env.PROMPTOBUS_EXEC_TRACE = trackedCursorTrace;
+try {
+  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files);
+} finally {
+  if (savedExecTrace === undefined) delete process.env.PROMPTOBUS_EXEC_TRACE;
+  else process.env.PROMPTOBUS_EXEC_TRACE = savedExecTrace;
+}
+const trackedCursorTraceText = existsSync(trackedCursorTrace)
+  ? readFileSync(trackedCursorTrace, 'utf8') : '';
+check(': tracked .cursor warning git launch is present in the execution trace',
+  trackedCursorTraceText.split('\n').some((line) => line.startsWith('git\t')),
+  trackedCursorTraceText || '(missing)');
+
 check(': skillsNoteOf without a source — the same honest line as the plan without a root',
   skillsNoteOf({ src: null }) === workerPlan.skillsNote, skillsNoteOf({ src: null }));
 

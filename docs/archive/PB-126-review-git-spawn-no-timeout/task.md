@@ -1,9 +1,9 @@
 # PB-126 · None of review.js's nine bare git spawnSync calls carries a timeout, one crashes instead of refusing when the spawn itself fails, and spawn.js's git call bypasses run() so it escapes the exec trace
 
-- **Order:** 510
 - **Scope:** `lib/review.js`, `lib/spawn.js`, `lib/worktree.js`, `lib/exec.js`, `lib/util.js`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-50, PB-122
+- **Taken:** 2026-09-10
 
 ## Context
 

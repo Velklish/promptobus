@@ -12,7 +12,7 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
@@ -1817,6 +1817,38 @@ const flood = planReview(WS, { target: FLOOD, task: floodTask.id });
 check(': an untracked-file list longer than a megabyte does not crash the command',
   flood.untracked.length === FLOOD_N, `${flood.untracked.length} of ${FLOOD_N}`);
 store.closeTask(home, floodTask.id);
+
+// A failed git spawn must stay a legal no-base outcome. In particular, the
+// current-branch probe in detectBase cannot read stdout after the shared gitIn
+// helper reports ENOENT/EACCES, because Node returns no stdout for that failure.
+const reviewProbeSource = readFileSync(path.join(here, '..', 'lib', 'review.js'), 'utf8')
+  .replaceAll('gitIn(', 'reviewProbeGitIn(')
+  .replace('function detectBase(repoDir) {', `function reviewProbeGitIn(_dir, args) {
+  if (args.includes('--abbrev-ref')) {
+    const error = new Error('git unavailable');
+    error.code = 'ENOENT';
+    return { error, status: null, stdout: null, stderr: null };
+  }
+  return { error: null, status: 1, stdout: '', stderr: '' };
+}
+function detectBase(repoDir) {`)
+  .replace('function detectBase(repoDir) {', 'export function detectBase(repoDir) {')
+  .replace(/from '(\.\.?\/[^']+)'/g, (_, spec) => `from ${JSON.stringify(
+    pathToFileURL(path.resolve(here, '..', 'lib', spec)).href,
+  )}`);
+const reviewProbePath = path.join(SB, 'review-spawn-error.mjs');
+writeFileSync(reviewProbePath, reviewProbeSource);
+const reviewProbe = await import(pathToFileURL(reviewProbePath).href);
+let detectBaseError = null;
+let detectBaseResult = null;
+try {
+  detectBaseResult = reviewProbe.detectBase('/unavailable');
+} catch (e) {
+  detectBaseError = e;
+}
+check(': a git spawn error in detectBase is a refusal, not a stdout TypeError',
+  detectBaseError === null && detectBaseResult === null,
+  detectBaseError?.message ?? String(detectBaseResult));
 
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.
