@@ -409,7 +409,7 @@ export function readInbox(home: string, task: string, participant: string, fault
     const file = path.join(dir, name);
     let raw;
     try {
-      fault('inbox-read', { task, participant, name });
+      fault('inbox-read', { task, participant, name, mode: 'read' });
       raw = readFileSync(file, 'utf8');
     } catch (e) {
       // A neighbour took it between the listing and the read — a skip, not a
@@ -769,20 +769,36 @@ export function peekInbox(home: string, task: string, participant: string): {
 
 /**
  * Glance into the mailbox in silence: touches no refs and sets no broken
- * aside. Needed by the supervisor — its diagnostics go to `stdio: 'ignore'`,
- * and what was set aside would vanish without a word to anyone.
+ * aside. A filesystem refusal is reported in `broken` and the ref stays in
+ * place for a later glance. Needed by the supervisor — its diagnostics go to
+ * `stdio: 'ignore'`, and what was set aside would vanish without a word to anyone.
  */
-export function glanceInbox(home: string, task: string, participant: string): MessageV1[] {
+export function glanceInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
+  messages: MessageV1[]; broken: BrokenNote[];
+} {
   const dir = inboxDir(home, task, participant);
   const messages: MessageV1[] = [];
+  const broken: BrokenNote[] = [];
   for (const name of inboxNames(dir)) {
+    let raw: string;
     try {
-      messages.push(JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as MessageV1);
+      fault('inbox-read', { task, participant, name, mode: 'glance' });
+      raw = readFileSync(path.join(dir, name), 'utf8');
+    } catch (e) {
+      // The owner took it between the listing and the read: they will deliver the message.
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      const errno = (e as NodeJS.ErrnoException).code;
+      if (typeof errno !== 'string') throw e;
+      broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
+      continue;
+    }
+    try {
+      messages.push(JSON.parse(raw) as MessageV1);
     } catch {
-      // Broken, or taken by a neighbour — not our problem: the reader takes the mailbox, and that reader will report.
+      // Malformed records remain for the consuming reader to classify and set aside.
     }
   }
-  return messages;
+  return { messages, broken };
 }
 
 /**

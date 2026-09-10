@@ -328,7 +328,7 @@ export function openEngine({
     },
 
     peek: (task, participant) => peekInbox(home, task, participant),
-    glance: (task, participant) => glanceInbox(home, task, participant),
+    glance: (task, participant) => glanceInbox(home, task, participant).messages,
 
     unread: (task, participant) => countInbox(home, task, participant),
 

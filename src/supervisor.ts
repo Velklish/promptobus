@@ -19,6 +19,7 @@ import type { Stalls, Wake } from './sidecar.js';
 import { addressOf, dismissedOf, foreignSessionOf, repoAbsOf, sessionIdOf, sessionOf, startedOf } from './protocol.js';
 import { readArtifact } from './v1/artifacts.js';
 import { countInbox, glanceInbox, lastSentAt } from './v1/messages.js';
+import type { BrokenNote, FaultHook } from './v1/messages.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './v1/model.js';
 import { readTask } from './v1/store.js';
 import { driverFor, harnessOf, pushes, sessionRefOf } from './driver.js';
@@ -54,6 +55,8 @@ export const ROUND_FAIL_LIMIT = 3;
 // start, not death.
 export const SPAWN_GRACE_SEC = 30;
 
+const NO_FAULT: FaultHook = () => {};
+
 /** Health mark of one address. Fields are appended by the round, and read by it and by `promptobus status`. */
 interface HealthMark {
   unread?: number;
@@ -68,6 +71,7 @@ interface HealthMark {
   knockError?: string | null;
   wake?: string | null;
   wakeSession?: string | null;
+  unreadableRefs?: string[];
   [key: string]: unknown;
 }
 
@@ -527,6 +531,18 @@ function previewOf(home: string, meta: TaskV1, m: MessageV1): NotificationMessag
   };
 }
 
+/** Keep a filesystem refusal visible in the same preview budget as a message. */
+function brokenPreview(note: BrokenNote, now: number): NotificationMessage {
+  return {
+    id: null,
+    type: 'mailbox-broken',
+    from: 'promptobus',
+    ts: new Date(now).toISOString(),
+    body: `unreadable ref ${note.name}: ${note.code}`,
+    artifact: null,
+  };
+}
+
 /**
  * One watch round: look at all task mailboxes, wake those who have unread,
  * update health. Activation goes through the participant's driver, taken
@@ -534,8 +550,10 @@ function previewOf(home: string, meta: TaskV1, m: MessageV1): NotificationMessag
  * last heartbeat: the round runs once a second, and it is not allowed its
  * own poll. `null` — there is no session state, and that is unknown.
  */
-export async function supervisorRound(home: string, task: string, { now = Date.now(), registry, sessions = null as SessionSnapshot }: {
-  now?: number; registry: Registry; sessions?: SessionSnapshot;
+export async function supervisorRound(home: string, task: string, {
+  now = Date.now(), registry, sessions = null as SessionSnapshot, faults = NO_FAULT,
+}: {
+  now?: number; registry: Registry; sessions?: SessionSnapshot; faults?: FaultHook;
 }): Promise<{ stop: string | null; events: string[] }> {
   let meta;
   try {
@@ -576,6 +594,7 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
           triedAt: null,
           knocks: 0,
           escalatedAt: null,
+          unreadableRefs: [],
         };
         changed = true;
       }
@@ -686,9 +705,12 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
       h.triedAt = new Date(now).toISOString();
       h.wake = print;
       // The mailbox is read exactly here, not every round. `glanceInbox`,
-      // not `peekInbox`: the warden does not inspect a broken one and does
-      // not set it aside.
-      const box = glanceInbox(home, task, p.id);
+      // not `peekInbox`: the warden does not set a broken ref aside, but its
+      // refusal is carried in the postcard for the next retry.
+      // A non-errno exception from this test-only hook intentionally propagates;
+      // production has no hook, and engine.glance does not carry it to this path.
+      const { messages: box, broken } = glanceInbox(home, task, p.id, faults);
+      h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
       // A retry carries only what arrived after the last knock: before, it
       // listed the whole box again, up to six messages in one postcard.
       // How many sit in total is said by the counter in the header. The
@@ -701,8 +723,12 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
       const restarted = wakeSession !== (was.wakeSession ?? null);
       const upTo = restarted ? null : was.knockedTo ?? null;
       const msgs = upTo === null ? box : box.filter((m) => String(m?.id ?? '') > upTo);
+      const previews = [
+        ...msgs.map((m) => previewOf(home, meta, m)),
+        ...broken.map((note) => brokenPreview(note, now)),
+      ];
       const r = await activate(driver, { ref: sessionRefOf(p), endpoint }, {
-        kind: 'unread', task, address: addr, unread, messages: msgs.map((m) => previewOf(home, meta, m)),
+        kind: 'unread', task, address: addr, unread, messages: previews,
       });
       if (r?.ok) {
         // The channel is the driver's declaration, not the contact-point
@@ -717,8 +743,10 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
         // How far we knocked: not only what was shown, but also what went
         // into the "and N more" tail — the postcard said it, and there is
         // no need to repeat it a second time.
-        if (box.length) h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
+        if (box.length && !broken.length) h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
+        const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
         events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
+          + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`
           + `${moved ? ' (contact point rewritten)' : ''}`);
       } else {
         // Once per reason: a dead channel returns the same error every two minutes.

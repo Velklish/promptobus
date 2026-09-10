@@ -13,7 +13,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -24,6 +24,7 @@ const store = await import('../lib/store.js');
 const { bindHarnessHomes } = await import('../lib/harness-home.js');
 const { createStandaloneHost } = await import('../dist/host-index.js');
 const { status } = await import('../lib/status.js');
+const { previewBlock } = await import('../lib/notification.js');
 const { capture } = await import('./console.mjs');
 
 // A routing policy is required when the engine is opened, and its rule is the
@@ -541,6 +542,50 @@ test('a push-driver wakes the addressee of the unread, and the notification carr
   await t.test('the round event is named', () => {
     assert.ok(r.events.some((e) => /notification worker:a/.test(e)), r.events.join('\n'));
   });
+});
+
+test('an unreadable inbox ref is named in the postcard and clears on a later glance', async () => {
+  const task = newTask();
+  const driver = fakeDriver('fake');
+  const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
+  put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
+  bus.writeWake(home, task, 'worker:a', { socket: path.join(SB, 'inbox-ref.sock') });
+  send(task, 'worker:a', 'task', 'the first message');
+  send(task, 'worker:a', 'task', 'the second message');
+  const refs = readdirSync(engine.inboxPath(task, 'worker-a')).sort();
+  assert.equal(refs.length, 2);
+  const refusedRef = refs[0];
+
+  let refuse = true;
+  const faults = (step, info) => {
+    if (refuse && step === 'inbox-read' && info.mode === 'glance' && info.name === refusedRef) {
+      throw Object.assign(new Error('EACCES: injected inbox read refusal'), { code: 'EACCES' });
+    }
+  };
+  const firstRound = await bus.supervisorRound(home, task, { registry, faults });
+  const first = driver.calls.activate[0].notification;
+  const firstPostcard = previewBlock(first.messages);
+  assert.ok(firstPostcard.includes('EACCES'), firstPostcard);
+  assert.ok(firstPostcard.includes(refusedRef), firstPostcard);
+  assert.ok(firstPostcard.includes('the second message'), firstPostcard);
+  assert.ok(first.messages.some((message) => message.type === 'mailbox-broken' && message.ts), firstPostcard);
+  assert.ok(firstRound.events.some((event) => event.includes(`EACCES ${refusedRef}`)), firstRound.events.join('\n'));
+  const firstStatus = capture(() => status(path.dirname(home), { task, sessions: {} }));
+  const firstStatusLine = firstStatus.split('\n').find((line) => line.includes('worker:a')) ?? firstStatus;
+  assert.ok(firstStatusLine.includes(`unreadable refs: EACCES ${refusedRef}`), firstStatus);
+
+  refuse = false;
+  const triedAt = Date.parse(bus.readHealth(home, task)['worker:a'].triedAt);
+  await bus.supervisorRound(home, task, {
+    registry,
+    faults,
+    now: triedAt + bus.KNOCK_RETRY_SEC * 1000 + 1,
+  });
+  const second = driver.calls.activate[1].notification;
+  assert.ok(second.messages.some((message) => message.body === 'the first message'));
+  const secondStatus = capture(() => status(path.dirname(home), { task, sessions: {} }));
+  const secondStatusLine = secondStatus.split('\n').find((line) => line.includes('worker:a')) ?? secondStatus;
+  assert.ok(!secondStatusLine.includes('unreadable refs:'), secondStatus);
 });
 
 test('a pull-driver does not wake at all, but its unread is visible', async () => {

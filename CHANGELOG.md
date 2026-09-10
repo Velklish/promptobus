@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Warden postcards and participant status now name unreadable mailbox refs with their errno and ref name, while retries remain unbounded until the filesystem refusal clears.** (PB-66.1)
 - **Classified recipient inbox directory refusals now use the retryable `link-refused` classification during fan-out.** The intent stays open while recovery and store commands continue. (PB-65.1)
 - **Refusal and stall guidance now uses the host's bus command formatter, with a regression gate for hardcoded subcommand literals.** (PB-140)
 - **Review layout and argument refusals now print as one plain CLI error without a stack trace.** (PB-54)
