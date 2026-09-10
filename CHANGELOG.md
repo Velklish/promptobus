@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The live canary now narrates and verifies the tarball install, version check and whole-run home snapshot that it actually performs.** (PB-113)
 - **The publicity audit now rejects private runtime identifiers and workspace ids while preserving historical evidence cards.** (PB-73)
 - **The publicity audit now enforces the ROADMAP English-runtime claim on tracked runtime files and the packed tarball, with narrow exemptions for functional Cyrillic data.** (PB-75)
 - **The contributing guide now matches the current gates, publicity audit, suite-isolation count and Cyrillic sweep scope.** It no longer duplicates the backslop version pin and records that `scripts/` and `test/` remain outside the current sweep. (PB-72)

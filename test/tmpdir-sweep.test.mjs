@@ -284,9 +284,18 @@ const mixedSrc = sourceOf('live-mixed.mjs');
 const cursorSrc = sourceOf('live-cursor.mjs');
 const codexSrc = sourceOf('live-codex.mjs');
 const e2eSrc = sourceOf('live-e2e.mjs');
+const canarySrc = sourceOf('live-canary.mjs');
 const LIVE_PREFIXES = [
   'promptobus-live-codex-', 'promptobus-live-cursor-', 'promptobus-live-e2e-',
 ];
+
+check(': live-canary narrates only current checks and keeps its whole-run home snapshot',
+  !/\bsync\b|\bdoctor\b/.test(canarySrc)
+  && !/release-gates\.mjs|base\.js/.test(canarySrc)
+  && !/homeAfterSync|syncDiff/.test(canarySrc)
+  && /homeBefore/.test(canarySrc)
+  && /homeAfterRun/.test(canarySrc),
+  'live-canary still names a removed command/file or its redundant intermediate snapshot');
 
 check(': live-mixed ignores run directories older than this run',
   /const tmpLeft[\s\S]*?bornAfter\(path\.join\(tmpdir\(\), n\)\)/.test(mixedSrc),

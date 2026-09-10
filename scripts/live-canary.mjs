@@ -3,34 +3,26 @@
 //
 //   node scripts/live-canary.mjs
 //
-// Release gates (`release-gates.mjs`) prove that a tarball is
-// packed and contains what was promised. The canary proves the next thing: the
+// Packaging checks prove that a tarball is packed and contains what was
+// promised. The canary proves the next thing: the
 // packed package WORKS — in a separate clean workspace, on real Claude, through a
 // full orchestration loop.
 //
 // What is done here and what is NOT. The whole bus loop lives in the scenario
 // ([scenario.mjs](../test/scenario.mjs)) — one for the stub and live harnesses, and
 // a check edit goes into both runs at once. This script prepares and tears down the
-// world around the scenario: a temporary workspace, package install, `sync` and
-// `doctor` from it, a live run on the tree under test, and proof of cleanup. It
-// does not check the bus at all.
+// world around the scenario: a temporary workspace, package install, the installed
+// bin's `--version` check, a live run on the tree under test, and proof of cleanup.
+// It does not check the bus at all.
 //
-// **The workspace gets its base as a clone of THIS branch by a local path.** Not
-// from GitLab: base and CLI must be one version (the equality gate in
-// `base.js`), and the commit under test is not in the registry
-// yet. The clone is local — the canary goes without the network.
+// The package under test is installed from the tarball in a clean workspace, so
+// the source checkout and the installed package are deliberately separate.
 //
 // **The canary does not touch the person's home at all, and that is its subject,
-// not its politeness.** `sync` is called with `--no-global`: Claude Code plugin
-// registration, memory hooks in the home, and a global `ast-grep` install are
-// skipped. The opposite used to stand here — the run wrote and then cleaned up
-// after itself — and the price was double: a precondition that could stop the
-// canary on drifted hooks, and a cleanup that might not finish (an exception or
-// Ctrl-C between `sync` and the end of the loop left a record in the person's
-// home forever). Now what is proved is not cleanup but untouchedness: a home
-// snapshot before `sync` and a compare against it twice — right after `sync` and
-// at the very end, over the whole run. Drifted — a red verdict with a list and
-// the remove command: cleaning up after the mode by hand would hide its break.
+// not its politeness.** The home snapshot is taken before the installed bin's
+// `--version` check and compared again after the whole live run. Drift is a red
+// verdict with a list of changed fields; the canary does not clean up a person's
+// home because doing so would hide its own break.
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
   writeFileSync,
@@ -50,10 +42,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, '..');
 const REPO = CLI;
 const LIVE_E2E = path.join(here, 'live-e2e.mjs');
-// Everything `sync` writes outside the workspace directory through its three
-// doors: Claude Code global state, the memory-hooks home, and Claude Code
-// personal settings. `--no-global` touches none of these paths, and a snapshot
-// of them is the subject of the check.
+// These are the home paths the canary must leave unchanged: Claude Code global
+// state and personal settings. A snapshot of them is the subject of the check.
 const CLAUDE_PLUGINS = path.join(os.homedir(), '.claude', 'plugins');
 const KNOWN_MARKETPLACES = path.join(CLAUDE_PLUGINS, 'known_marketplaces.json');
 const INSTALLED_PLUGINS = path.join(CLAUDE_PLUGINS, 'installed_plugins.json');
@@ -64,15 +54,13 @@ const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 // harness registry by this. The substring «e2e» would catch foreign sessions of
 // a person running a release.
 const E2E_TASK = 'e2ebus';
-// What has no right to outlive the run. The list is the same as the release
-// gates (`release-gates.mjs`): the live loop raises
-// participants, the warden, and bus stdio servers, and stops the last without
-// waiting.
+// What has no right to outlive the run: the live loop raises participants, the
+// warden, and bus stdio servers, and stops the last without waiting.
 //
 // **It is judged against ITS own tree, not the whole machine.** These commands
 // are not started by the canary alone: on a machine with a going run the same
 // three templates match foreign processes from `workspace/node_modules`, and the
-// verdict went red on them — measured 2026-09-03 (a `sync` worker run): four
+// verdict went red on them — measured 2026-09-03 (a worker run): four
 // processes of a foreign run, none of its own. The cut-off is `under()` by the
 // run directory: the canary installs its own tree itself and wholly into it, so
 // the binary path in the process command line is the mark of belonging.
@@ -88,7 +76,7 @@ const born = startedAt.getTime();
 const STEPS = [
   'tarball installed in a clean workspace, the installed bin answers --version',
   'live orchestration loop on the tree under test — complete, by scenario steps',
-  'the person home is untouched: the snapshot before install is compared after --version and at the end of the run',
+  'the person home is untouched: the snapshot before the version check is compared at the end of the run',
   'cleanup: sessions, sandboxes, sockets, processes, the workspace itself',
 ];
 
@@ -137,7 +125,7 @@ const swept = sweepPreviousRuns(os.tmpdir(), { current: RUN, refused: refusedRun
 note(sweptLine('previous-run directories', swept));
 if (refusedRuns.length) note(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}`);
 
-// ── Step 1: clean workspace, install, sync and doctor ─────────────────────────────
+// ── Step 1: clean workspace, install and version check ─────────────────────────────
 const branch = (spawnSync('git', ['-C', REPO, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).stdout ?? '').trim();
 const head = (spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout ?? '').trim();
 
@@ -146,12 +134,6 @@ mkdirSync(packDir, { recursive: true });
 const packed = run('npm', ['pack', '--pack-destination', packDir], { cwd: CLI, encoding: 'utf8' });
 const tgzName = listOf(packDir).find((n) => n.endsWith('.tgz'));
 const tgz = tgzName ? path.join(packDir, tgzName) : null;
-
-// Base source is a bare clone of THIS branch: `sync` will `git clone` it for
-// real, but will not touch the network, and the version-equality gate will
-// match on its own — base and CLI are one commit.
-const baseOrigin = path.join(RUN, 'base-origin.git');
-const mirrored = spawnSync('git', ['clone', '--bare', '--quiet', '--single-branch', '--branch', branch, REPO, baseOrigin], { encoding: 'utf8' });
 
 const ws = path.join(RUN, 'ws');
 mkdirSync(ws, { recursive: true });
@@ -176,7 +158,7 @@ if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} KB)
 // it before the tag, and in runs the workers drive it. A leaked
 // `PROMPTOBUS_HOME` is stronger than a home search from cwd and would send the
 // run into the LIVE bus journal of the workspace, `PROMPTOBUS_TASK` — onto a
-// live-run task (measured 2026-09-03: a live loop of a `sync` worker raised
+// live-run task (measured 2026-09-03: a worker run raised
 // spawn, review and the warden with the live-task environment). The list is
 // imported from the same home as the suite ([hygiene.mjs](../test/hygiene.mjs));
 // there is no second copy here.
@@ -187,7 +169,7 @@ if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} KB)
 //
 // It is computed on EVERY call, not once at file load (review note): each child
 // gets a fresh copy after session identity is stripped. The live binary check is
-// PATH-only, so this canary leaves PATH unchanged for `sync`, `doctor`, and the
+// PATH-only, so this canary leaves PATH unchanged for the version check and the
 // live run. An environment copy per call costs microseconds, and the canary has
 // a handful of calls.
 const childEnv = () => dropSessionLeaks({ ...process.env });
@@ -215,34 +197,11 @@ try {
   ({ bgSessions, resetBgSessionsCache } = await import(path.join(PKG, 'lib', 'liftoff.js')));
 } catch { bgSessions = null; }
 
-// **The home snapshot is BEFORE `sync`, and it is the measure of the whole
-// check.** A precondition used to stand here: `sync` wrote memory hooks into
-// the user HOME, and on drifted hooks the canary refused without starting the
-// run — otherwise it would overwrite live-session settings for the person,
-// including the session the release is driven from. With `--no-global`, `sync`
-// has no right to write outside the workspace directory at all, so there is
-// nothing to ask permission for: we snapshot all three doors and compare
-// against them twice.
-//
-// Hook state is asked of the MECHANISM itself (`hooksState` of the installed
-// tree), not of our own file compare: a copy of the rule would drift from it
-// in silence and would not tell "they diverged" from "the home has none at
-// all". Next to its verdict sit hashes of the files themselves — the verdict
-// answers "are they fresh", and the snapshot needs another: "are they the
-// same bytes".
-let hooksState = null;
-try {
-  ({ hooksState } = await import(path.join(PKG, 'dist', 'hooks.js')));
-} catch { hooksState = null; }
-
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 const fileMark = (file) => { try { return sha(readFileSync(file)); } catch { return '(no file)'; } };
-const dirMark = (dir) => listOf(dir).sort().map((n) => `${n}:${fileMark(path.join(dir, n))}`).join(' ');
 /**
- * State of the three `sync` doors outward as one object. Compare is over the
- * whole object, not one field: there are three doors, and each being closed is
- * half the answer. The diff is printed by field, so the fields are named as a
- * person calls them.
+ * State of the home paths as one object. Compare is over the whole object, not
+ * one field, so the diff is printed by field and names what changed.
  */
 const homeSnapshot = () => ({
   'marketplace entries': marketplaceIds().sort().join(' ') || '(none)',
@@ -256,42 +215,20 @@ const homeDiff = (before, after) => Object.keys(before)
   .map((k) => `${k}: was «${before[k]}» became «${after[k]}»`);
 
 const homeBefore = homeSnapshot();
-note(`home snapshot before sync: ${Object.entries(homeBefore).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
+note(`home snapshot before the version check: ${Object.entries(homeBefore).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
 
 const versioned = existsSync(BIN) ? cli(['--version']) : { status: 1, stdout: '', stderr: `missing ${BIN}` };
 check('canary: the installed tarball answers --version',
   versioned.status === 0,
   `code ${versioned.status} · ${tail(`${versioned.stdout}${versioned.stderr}`)}`);
 
-// **The mode verdict is a compare against the snapshot, not a recount of
-// names.** The opposite used to stand here: the run looked for ITS new
-// marketplace entry by a registry diff and removed it. By a diff because the
-// name cannot be recounted from outside — the rule (`marketplaceName` in
-// the host adapter) hashes the root path, and the command resolves the root
-// with its own `requireRoot()`: under a temporary macOS directory it arrives
-// as `/private/var/…`, while here the same directory is called `/var/…`, and
-// the hashes of the two spellings differ (live case of the 2026-09-02 run:
-// `sync` registered one `<brand>-workspace-<hash>` id, and a recount of the rule gave
-// another `<brand>-workspace-<hash>` id). The snapshot need not know that even more: it
-// compares the WHOLE registry, not one name, and with it both other doors.
-//
-// There is no self-cleanup here on purpose: a mode that still wrote into the
-// home is a red verdict, not a reason to remove traces by hand. So the detail
-// names both what is left and the remove command — the person decides.
-const homeAfterSync = homeSnapshot();
-const syncDiff = homeDiff(homeBefore, homeAfterSync);
-check('canary: sync --no-global wrote nothing outside the workspace directory',
-  syncDiff.length === 0,
-  `${syncDiff.join(' · ')}. Remove the marketplace entry: claude plugin marketplace remove <id>;`
-  + ` the same command does not remove the cache directory ${PLUGIN_CACHE}/<id> — remove it by hand`);
-
 let failure = null;
 try {
 
   // ── Live loop ──────────────────────────────────────────────────────────────────────
   // The mechanism under test is the installed tree whole, one root. The workspace
-  // is the one `sync` laid out: the scenario must go in the world the canary
-  // exists for.
+  // is the clean workspace prepared for the installed package: the scenario
+  // must go in the world the canary exists for.
   const liveEnv = {
     ...childEnv(),
     PROMPTOBUS_E2E_ROOT: PKG,
@@ -334,7 +271,7 @@ try {
 } finally {
   // ── The person home ──────────────────────────────────────────────────────────────────
   // The second verdict on the same snapshot and the first in `finally`: the
-  // compare is over the WHOLE run, not one `sync`. The live loop raises real
+  // compare is over the WHOLE run, not one preliminary check. The live loop raises real
   // Claude Code sessions, and they have no right to touch the person home
   // either — a participant gets the canonical plugin by `--plugin-dir`, not by
   // an install. It sits in `finally` because a broken run must still speak of
@@ -342,10 +279,9 @@ try {
   // the loop verdicts.
   const homeAfterRun = homeSnapshot();
   const runDiff = homeDiff(homeBefore, homeAfterRun);
-  check('the person home: nothing sync writes changed over the whole run',
+  check('the person home: the canary left no changes over the whole run',
     runDiff.length === 0,
-    `${runDiff.join(' · ')}. Remove the marketplace entry: claude plugin marketplace remove <id>;`
-    + ` the same command does not remove the cache directory ${PLUGIN_CACHE}/<id> — remove it by hand`);
+    runDiff.join(' · '));
   note(`home snapshot after the run: ${Object.entries(homeAfterRun).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
 
   // ── Cleanup ────────────────────────────────────────────────────────────────────────
@@ -412,7 +348,6 @@ try {
   // first.
   rmSync(ws, { recursive: true, force: true });
   rmSync(packDir, { recursive: true, force: true });
-  rmSync(baseOrigin, { recursive: true, force: true });
   check('cleanup: the canary workspace and its store are swept',
     !existsSync(ws) && !existsSync(packDir), `${ws} · ${packDir}`);
 
