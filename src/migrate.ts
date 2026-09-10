@@ -329,7 +329,7 @@ function activeLegacyTasks(legacyHome: string): string[] {
   return active;
 }
 
-/** Whether migration is needed at all. A separate predicate: it is called before every access. */
+/** Whether migration is needed at all, including a mark-only sweep. Use `preflight().sweep` to distinguish it from a data move. */
 export function migrationNeeded(root: string, layout: HostLegacyLayout | null): boolean {
   return preflight(root, layout).needed;
 }

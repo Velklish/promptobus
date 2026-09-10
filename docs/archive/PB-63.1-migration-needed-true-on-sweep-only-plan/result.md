@@ -1,0 +1,9 @@
+# PB-63.1 · Result
+
+**Closed 2026-09-10.** Completed as decided at triage: the predicate keeps its answer. `migrationNeeded()` in `src/migrate.ts` still returns `preflight().needed`, so a sweep-only plan — the transient `migrating.json` left with its former directory already gone — answers `true`, because `migrate()` is what removes the dead mark and PB-63 read the predicate as "call `migrate` before access"; the doc comment now says a mark-only sweep counts and points a caller who must tell a data move from a sweep at `preflight().sweep`, and 02-host § `legacyLayout()` says the same beside the sweep rule. A test on the dead-mark fixture PB-63 added pins the meaning: `migrationNeeded` is `true` while `preflight().sweep` is `true`.
+
+**Verification.** Worker commit `167ffce`, worktree of `worker:store`, squashed. The test is a characterization of the decided meaning and was green before the edit by design; its proof is the mutation probe after the commit, test kept: the predicate replaced by the rejected `needed && !sweep` → the focused dead-mark test exit 1, `a sweep-only plan still requires migration` (`false !== true`); restored → 6/6. Gates on `167ffce`: `npm test` exit 0, 54/54 test files (`promptobus-migration.test.mjs` 83/83); `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 720 tracked files, 119 tarball entries (escalated reruns). Approver: squash of the worker branch onto `main`; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** `docs/reference/02-host.md` § `legacyLayout()`; the `migrationNeeded` doc comment; `CHANGELOG.md` `[Unreleased]` › Changed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:store`, strategy `balance`, bus task `pb-run-0910-t20260910-085454`). Review: orchestrator diff read; approver Павел Ким's orchestrator session.

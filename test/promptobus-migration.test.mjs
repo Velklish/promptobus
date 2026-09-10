@@ -39,7 +39,7 @@ import test from 'node:test';
 // substitution seam for this: everything now arrives as an argument).
 const store = await import('../lib/store.js');
 const bus = await import('../dist/index.js');
-const { legacy, preflight: preflightOf, ROOT_DIR } = bus;
+const { legacy, migrationNeeded, preflight: preflightOf, ROOT_DIR } = bus;
 
 const LAYOUT = { rel: 'legacy/a2a', done: 'promptobus done <id>' };
 const LEGACY_DONE = LAYOUT.done;
@@ -659,6 +659,8 @@ test('a transient mark left after cleanup is swept before a legacy store can rea
   const sweep = preflight(root);
 
   await t.test('preflight names mark-only cleanup instead of a pending data move', () => {
+    assert.equal(migrationNeeded(root, LAYOUT), true,
+      'a sweep-only plan still requires migration');
     assert.equal(sweep.needed, true);
     assert.equal(sweep.sweep, true);
     assert.equal(sweep.refusal, null);
