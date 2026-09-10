@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The orchestrate skill's CLI synopsis now tracks spawn, done and review flags through a drift gate.** (PB-47)
 - **The model-routing reference now distinguishes hidden rows retained in availability snapshots from rows filtered by the resolver and `models` output.** (PB-104)
+- **ADR-004 now records the shipped hidden-row projections.** Hidden rows remain in availability snapshots, while the resolver's inventory, `runtime` list and `models` output filter them; hidden-model exclusions name the account. (PB-104.1)
 - **CLI help now explains the recorded strategy default that effectiveStrategy applies for spawn, review and models.** (PB-84)
 - **`status` now prints each participant's review-round, question and result counts from canonical messages before `done`.** (PB-48)
 - **Calibration documents and tests now pin the deterministic eligible-key pivot tie-break.** (PB-145)

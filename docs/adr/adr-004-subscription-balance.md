@@ -98,9 +98,7 @@ A harness gains `tier: { name, source } | null`. `source` is a closed list of fo
 
 The tier does not break the cache's promise. A tier name is a property of a **plan**, shared by everyone on it, and the derived form carries the plan's *included* amount, never the account's *used* amount — so the file still holds no token, no e-mail and no account id. The tier follows the auth TTL (one hour); the limit windows keep theirs (sixty seconds).
 
-A model gains `hidden: boolean`. A hidden row is **carried and never chosen**: carried because a person asking `models` should see that the harness holds a row it declines to offer, and an inventory that quietly differed from the harness's own was the previous behaviour; never chosen because the harness hides what it does not serve. The resolver's inventory is the rows with `hidden !== true`, so a catalog tuple naming a hidden model is excluded as `model-not-in-inventory` — which is true of it from the resolver's side — and no code is added.
-
-This supersedes the sentence in [03-cli](../reference/03-cli.md) that says the Codex adapter leaves hidden rows out of the inventory; PB-28 is the task that changes both the adapter and that paragraph.
+A model gains `hidden: boolean`. **On 2026-09-10, the owner decided to keep the shipped behaviour:** a hidden row is carried in the availability snapshot so the cache matches what the harness lists; the resolver's inventory and the `runtime` list are the rows with `hidden !== true`; `models` prints those projections; and a catalog tuple naming a hidden model is excluded as `model-not-in-inventory`, with the exclusion detail naming the account.
 
 Codex's `credits`, `spendControlReached` and the count of full-reset credits are carried as **informational** fields on the harness. Nothing scores them, and nothing spends a reset credit: spending one is money-adjacent and is a person's decision, which is the same line ADR-003 drew around pay-as-you-go.
 
