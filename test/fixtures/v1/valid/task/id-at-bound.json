@@ -18,7 +18,8 @@
         "attach": true,
         "activation": "push",
         "inspect": true,
-        "stop": true
+        "stop": true,
+        "mcpDenyTools": true
       },
       "metadata": {}
     }

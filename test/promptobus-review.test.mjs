@@ -306,6 +306,52 @@ check('prompt: rules — repository (standalone: without a workspace module)',
 check('read-only: deny overrides writing and executing',
   ['Edit', 'Write', 'NotebookEdit', 'Bash'].every((t) => plan.settings.permissions.deny.includes(t))
   && plan.settings.permissions.deny === REVIEWER_DENY);
+const classifiedHost = {
+  ...hostOf(WS),
+  participantDenyTools: (role) => role === 'reviewer'
+    ? [{ server: 'catalog', tool: 'create_entry' }]
+    : [],
+};
+const classifiedPlan = planReview(classifiedHost, { target: REPO, title: 'classified MCP tools' });
+check('PB-87: Claude reviewer denies the host-classified MCP write tool',
+  classifiedPlan.settings.permissions.deny.includes('mcp__catalog__create_entry'),
+  JSON.stringify(classifiedPlan.settings.permissions.deny));
+check('PB-87: Claude reviewer keeps the bus tool out of host-derived denies',
+  !classifiedPlan.settings.permissions.deny.includes('mcp__promptobus__promptobus_send'),
+  JSON.stringify(classifiedPlan.settings.permissions.deny));
+const emptyClassificationHost = {
+  ...hostOf(WS),
+  participantDenyTools: () => [],
+};
+const emptyClassificationPlan = planReview(emptyClassificationHost, { target: REPO, title: 'empty MCP classification' });
+check('PB-87: an empty host classification preserves Claude built-in denies',
+  JSON.stringify(emptyClassificationPlan.settings.permissions.deny) === JSON.stringify(REVIEWER_DENY),
+  JSON.stringify(emptyClassificationPlan.settings.permissions.deny));
+const hostWithoutClassification = { ...hostOf(WS) };
+delete hostWithoutClassification.participantDenyTools;
+const noClassificationPlan = planReview(hostWithoutClassification, {
+  target: REPO, title: 'missing MCP classification',
+});
+check('PB-87: a host without classification preserves Claude built-in denies',
+  JSON.stringify(noClassificationPlan.settings.permissions.deny) === JSON.stringify(REVIEWER_DENY),
+  JSON.stringify(noClassificationPlan.settings.permissions.deny));
+const cursorClassifiedPlan = planReview(classifiedHost, {
+  target: REPO, title: 'classified Cursor tools', harness: 'cursor',
+});
+check('PB-87: Cursor does not consume Claude MCP deny ids',
+  JSON.stringify(cursorClassifiedPlan.settings.permissions.deny) === JSON.stringify(['Write(**)', 'Shell(**)'])
+  && !JSON.stringify(cursorClassifiedPlan.settings).includes('mcp__catalog__create_entry'),
+  JSON.stringify(cursorClassifiedPlan.settings));
+const codexClassifiedPlan = planReview(classifiedHost, {
+  target: REPO, title: 'classified Codex tools', harness: 'codex',
+});
+check('PB-87: Codex keeps its sandbox plan and prompt-only MCP boundary',
+  codexClassifiedPlan.settings.sandbox === 'read-only'
+  && codexClassifiedPlan.settings.approvalPolicy === 'on-request'
+  && !JSON.stringify(codexClassifiedPlan.settings).includes('mcp__catalog__create_entry')
+  && /prompt-only guard/.test(codexClassifiedPlan.prompt)
+  && /does not mechanically deny MCP writes/.test(codexClassifiedPlan.prompt),
+  `${JSON.stringify(codexClassifiedPlan.settings)}\n${codexClassifiedPlan.prompt}`);
 // : read-only isn't a wish, it's a capability of the driver. A harness unable to strip
 // tools would raise the reviewer with write access to the tree under review, so the
 // refusal stands BEFORE the raise and before any write to disk. There's no live driver

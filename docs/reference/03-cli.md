@@ -46,7 +46,15 @@ The worker goes on committing after the call: from that moment the file only age
 
 Every Git read in `review` uses the same wait ceiling and output budget. It also sets `core.quotePath=false`, so non-ASCII paths have one spelling across base detection, snapshots and refusal diagnostics. Base-detection helpers retain their legal `null` or boolean outcomes; the diff wrappers retain their `{ out }` or `{ refusal }` result shape.
 
-The reviewer is read-only. A harness that cannot deny tools must fail before spawn (`src/driver.ts` `denyTools`).
+The reviewer is read-only in two layers. A driver that declares mechanical MCP
+denial receives the host's canonical external write-tool classification and places
+the translated ids in its deny settings; the shipped Claude driver provides this
+layer. The prompt remains the second layer for every external MCP action outside
+that classification. Cursor and Codex are prompt-only for MCP writes in this
+release; their `denyTools` settings still protect the file and command surface. A
+harness that cannot deny session tools must fail before spawn (`src/driver.ts`
+`denyTools`). The Promptobus bus tools stay available so the reviewer can deliver
+its `result`.
 
 The review verdict is a result from the reviewer participant, not any result already visible in the orchestrator's mailbox. A live wait therefore matches the normalized `sender` together with `type: result`; an earlier worker result remains unread until its participant is consumed and cannot satisfy the review step.
 

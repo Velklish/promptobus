@@ -11,7 +11,7 @@
 // Constraint invisible from this file: no harness name is here and none can be —
 // the package set gate watches for that.
 import { addressOf, GateError } from './protocol.js';
-import type { PromptobusHost } from './host.js';
+import type { HostMcpTool, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
@@ -28,8 +28,8 @@ export type Activation = 'push' | 'pull';
 /**
  * What the driver can do. The snapshot is stored in the participant record.
  *
- * There are nine flags, in two kinds. The first five declare OPERATIONS — each has
- * a same-named method, and `requireCapability` asks for them. The last four
+ * There are ten flags, in two kinds. The first five declare OPERATIONS — each has
+ * a same-named method, and `requireCapability` asks for them. The last five
  * declare harness PROPERTIES, which have no method: they must be asked before
  * launch, because without them a role or an output line cannot be assembled —
  * not a separate call.
@@ -47,6 +47,11 @@ export interface DriverCapabilities {
    * the code under review.
    */
   denyTools?: boolean;
+  /**
+   * Whether the harness can mechanically deny canonical MCP write tools for a
+   * reviewer. An absent flag means MCP writes remain prompt-only for that harness.
+   */
+  mcpDenyTools?: boolean;
   /**
    * Whether the harness can accept its settings file or a system prompt for a single launch.
    * Today only the capabilities SNAPSHOT in the participant record reads it — evidence of
@@ -433,6 +438,8 @@ export interface Driver {
    * starts nothing: `--dry-run` prints exactly what `spawn` will execute.
    */
   prepare?(context: SpawnContext): LaunchPlan;
+  /** Translate canonical host MCP write-tool identities into this harness's deny rules. */
+  mcpDenyTools?(tools: readonly HostMcpTool[]): string[];
   spawn?(plan: LaunchPlan, runtime: SpawnContext): Promise<unknown>;
   attach?(plan: LaunchPlan, runtime: SpawnContext): Promise<unknown>;
   /** What was said about the launch after success: unconfirmed check, unparsed id. */
@@ -571,7 +578,7 @@ export function requireCapability(driver: Driver, op: 'spawn' | 'attach' | 'insp
 }
 
 /** Harness properties without their own operation: asked by the flag, not by method presence. */
-export type DriverFeature = 'denyTools' | 'systemPrompt' | 'sessionList' | 'enter';
+export type DriverFeature = 'denyTools' | 'mcpDenyTools' | 'systemPrompt' | 'sessionList' | 'enter';
 
 /**
  * Whether the driver declared a harness property. Such flags have no operation, so

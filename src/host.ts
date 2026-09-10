@@ -51,6 +51,12 @@ export interface HostServers {
   external: string[];
 }
 
+/** A canonical MCP tool identity, independent of a harness's spelling. */
+export interface HostMcpTool {
+  server: string;
+  tool: string;
+}
+
 export interface HostFreshness {
   branch: string | null;
   checkout: string | null;
@@ -240,6 +246,8 @@ export interface PromptobusHost {
   reviewSkillDir(name: string): string;
 
   participantServers(): HostServers;
+  /** Optional write-tool classification for the reviewer; never include the Promptobus bus. */
+  participantDenyTools?(role: string): HostMcpTool[];
   memorySection(toolName: (server: string, name: string) => string): string | null;
 
   resolveRepo(query: string): Promise<HostRepo>;

@@ -8,7 +8,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 ## What the host must answer
 
-The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 45 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
+The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 46 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
 
 | Member | Signature | Meaning of `null` or an absent answer |
 |---|---|---|
@@ -38,6 +38,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
+| `participantDenyTools` | `participantDenyTools?(role: string): HostMcpTool[]` | Optional member; absent, or an empty array, means the host classifies no external MCP write tools and the reviewer keeps the prompt-only guard for them. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
 | `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
@@ -104,6 +105,24 @@ implementations must provide this member before calling `install`, `spawn`, or
 
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.
+
+`participantDenyTools(role)` is an optional compatibility member. For `reviewer`,
+it returns the exact `{ server, tool }` pairs that the host knows are write tools
+of its canonical external MCP servers; it must not infer them from names and must
+not return the Promptobus bus. The review path asks this member only for a driver
+that declares mechanical MCP denial, and that driver translates the canonical
+pairs into its own deny syntax. An absent member or an empty answer leaves the
+driver's built-in deny list unchanged, so the prompt remains the only MCP-write
+guard for those tools. A host exposing canonical external MCP servers must provide
+this classification before its next package pin if it needs the mechanical review
+layer; the standalone host returns `[]` because its `mcp` map is opaque and has no
+external write policy.
+
+This member and the optional `mcpDenyTools` capability flag are contract extensions,
+so a host and package release must advance together. When a participant journal from
+the newer release contains that capability and an older reader sees the unknown key,
+the mechanism marker makes the diagnosis `schema-version-unsupported`: start a new
+session rather than repairing a valid journal.
 
 ## Model-routing paths
 

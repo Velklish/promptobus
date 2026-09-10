@@ -68,13 +68,13 @@ function version(value: unknown, at: string, expected: number): Verdict | null {
   return bad(at, `expected ${expected}`);
 }
 
-// Five required and four optional: a contract extension must not make a
+// Five required and five optional: a contract extension must not make a
 // record written before it unreadable — those sit in live task journals.
 const CAPABILITY_KEYS = [
   'spawn', 'attach', 'activation', 'inspect', 'stop',
-  'denyTools', 'systemPrompt', 'sessionList', 'enter',
+  'denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter',
 ] as const;
-const CAPABILITY_OPTIONAL = ['denyTools', 'systemPrompt', 'sessionList', 'enter'] as const;
+const CAPABILITY_OPTIONAL = ['denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter'] as const;
 const PARTICIPANT_KEYS = ['id', 'role', 'harness', 'mode', 'sessionRef', 'capabilities', 'metadata'] as const;
 const TASK_KEYS = ['schemaVersion', 'id', 'title', 'status', 'owner', 'created', 'updated', 'participants', 'adapter'] as const;
 const MESSAGE_KEYS = ['protocolVersion', 'id', 'task', 'sender', 'recipients', 'type', 'body', 'artifact', 'ts'] as const;

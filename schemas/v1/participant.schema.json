@@ -32,7 +32,7 @@
       "minLength": 1
     },
     "capabilities": {
-      "description": "A snapshot of the driver's capabilities at spawn time. The last four fields are optional: older records without them sit in live journals and must remain readable.",
+      "description": "A snapshot of the driver's capabilities at spawn time. The last five fields are optional: older records without them sit in live journals and must remain readable.",
       "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["spawn", "attach", "activation", "inspect", "stop"],
@@ -43,6 +43,7 @@
         "inspect": { "type": "boolean" },
         "stop": { "type": "boolean" },
         "denyTools": { "type": "boolean" },
+        "mcpDenyTools": { "type": "boolean" },
         "systemPrompt": { "type": "boolean" },
         "sessionList": { "type": "boolean" },
         "enter": { "type": "boolean" }

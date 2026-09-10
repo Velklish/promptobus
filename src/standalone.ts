@@ -218,6 +218,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       servers: { ...mcp },
       external: [],
     }),
+    participantDenyTools: () => [],
     memorySection: () => null,
 
     resolveRepo: async (query: string): Promise<HostRepo> => {

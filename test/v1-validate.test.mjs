@@ -64,6 +64,26 @@ test('the CLI task-id gate shares the v1 128-character bound', () => {
   assert.match(refused.message, /invalid task id/);
 });
 
+test('the optional MCP denial capability is valid at the participant id bound and remains optional', () => {
+  const atBound = JSON.parse(readFileSync(path.join(FIXTURES, 'valid', 'participant', 'id-at-bound.json'), 'utf8'));
+  assert.equal(atBound.id.length, 64);
+  assert.equal(atBound.capabilities.mcpDenyTools, true);
+  assert.equal(validate('participant', atBound).ok, true);
+  assert.equal(reference.participant(atBound), true);
+
+  const former = structuredClone(atBound);
+  delete former.capabilities.mcpDenyTools;
+  assert.equal(validate('participant', former).ok, true);
+  assert.equal(reference.participant(former), true);
+
+  const malformed = structuredClone(atBound);
+  malformed.capabilities.mcpDenyTools = 'yes';
+  const verdict = validate('participant', malformed);
+  assert.equal(verdict.code, 'schema-invalid');
+  assert.equal(verdict.at, 'capabilities.mcpDenyTools');
+  assert.equal(reference.participant(malformed), false);
+});
+
 test('parity: valid fixtures are accepted by both validators', () => {
   for (const model of MODELS) {
     const set = fixtures('valid', model);

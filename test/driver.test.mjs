@@ -177,9 +177,9 @@ test('a capability is asked both as a declaration and as an operation', () => {
 
 test('a harness property is asked by the flag, not by operation presence', () => {
   const full = fakeDriver('fake', {
-    features: { denyTools: true, systemPrompt: true, sessionList: true, enter: true },
+    features: { denyTools: true, mcpDenyTools: true, systemPrompt: true, sessionList: true, enter: true },
   });
-  for (const feature of ['denyTools', 'systemPrompt', 'sessionList', 'enter']) {
+  for (const feature of ['denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter']) {
     assert.equal(bus.hasFeature(full, feature), true, feature);
   }
   // Declared as false — "cannot", and that is the case the flag was introduced
@@ -191,7 +191,7 @@ test('a harness property is asked by the flag, not by operation presence', () =>
   // It is read as "cannot": the silent "it probably can" is exactly what the
   // flag guards against.
   const old = fakeDriver('fake');
-  for (const feature of ['denyTools', 'systemPrompt', 'sessionList', 'enter']) {
+  for (const feature of ['denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter']) {
     assert.equal(bus.hasFeature(old, feature), false, feature);
   }
 });
@@ -199,7 +199,7 @@ test('a harness property is asked by the flag, not by operation presence', () =>
 test('the capabilities snapshot carries the new flags, and a former-edition record is read without them', () => {
   const task = newTask();
   const driver = fakeDriver('fake', {
-    features: { denyTools: true, systemPrompt: false, sessionList: true, enter: false },
+    features: { denyTools: true, mcpDenyTools: true, systemPrompt: false, sessionList: true, enter: false },
   });
   const registry = bus.createRegistry({ drivers: { fake: driver } });
   const { meta } = bus.openParticipant(home, task,
@@ -207,7 +207,7 @@ test('the capabilities snapshot carries the new flags, and a former-edition reco
   const p = meta.participants.find((x) => bus.addressOf(x) === 'worker:a');
   assert.deepEqual(p.capabilities, {
     spawn: true, attach: false, activation: 'push', inspect: true, stop: false,
-    denyTools: true, systemPrompt: false, sessionList: true, enter: false,
+    denyTools: true, mcpDenyTools: true, systemPrompt: false, sessionList: true, enter: false,
   });
   // A record made BEFORE the contract extension must be accepted by the schema
   // as-is: such records sit in live journals, and were it to require the new
