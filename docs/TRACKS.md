@@ -106,7 +106,7 @@ Queued assignments: [PB-97](archive/PB-97-codex-rpc-id-collision/task.md), [PB-4
 
 Added after this snapshot: [PB-156](archive/PB-156-codex-thread-name-ignores-chosen-session-name/task.md) — the Codex thread takes a machine name and never receives the readable session name the mechanism chose.
 
-Added after this snapshot (triage of 2026-09-10): [PB-88.2](archive/PB-88.2-measure-app-server-approval-params-shape/task.md) — the approval params measured from the generated app-server schema of codex-cli 0.146.0 — then [PB-88.1](backlog/queue/PB-88.1-worker-permissions-request-bypasses-containment.md); [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md) moves here from R and follows them, because all three edit `lib/codex-session.js`.
+Added after this snapshot (triage of 2026-09-10): [PB-88.2](archive/PB-88.2-measure-app-server-approval-params-shape/task.md) — the approval params measured from the generated app-server schema of codex-cli 0.146.0 — then [PB-88.1](archive/PB-88.1-worker-permissions-request-bypasses-containment/task.md); [PB-116](backlog/queue/PB-116-codex-initialize-handshake-duplicated.md) moves here from R and follows them, because all three edit `lib/codex-session.js`.
 
 ### D — Harness registries and Cursor / Claude drivers
 

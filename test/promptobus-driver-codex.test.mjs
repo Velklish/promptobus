@@ -223,6 +223,85 @@ check(': measured fileChange approval without paths is denied because the reques
     )),
   `${JSON.stringify(fileChangeApproval)} · ${JSON.stringify(codexServerRequest.errors)}`);
 
+const permissionsResponse = codexApprovalResponses.get('item/permissions/requestApproval');
+const permissionCases = [
+  {
+    name: 'outside cwd',
+    permissions: {
+      fileSystem: {
+        entries: [{ access: 'write', path: { type: 'path', path: '/tmp/outside' } }],
+        read: [],
+        write: [],
+      },
+      network: { enabled: false },
+    },
+    names: ['/tmp/outside', 'network.enabled=false'],
+  },
+  {
+    name: 'inside cwd',
+    permissions: {
+      fileSystem: {
+        entries: [{ access: 'write', path: { type: 'path', path: '/tmp/wt/inside' } }],
+        read: [],
+        write: [],
+      },
+      network: { enabled: false },
+    },
+    names: ['/tmp/wt/inside', 'network.enabled=false'],
+  },
+  {
+    name: 'network',
+    permissions: {
+      fileSystem: {
+        entries: [{ access: 'write', path: { type: 'path', path: '/tmp/wt/network-request.md' } }],
+        read: [],
+        write: [],
+      },
+      network: { enabled: true },
+    },
+    names: ['/tmp/wt/network-request.md', 'network.enabled=true'],
+  },
+  {
+    name: 'named danger value',
+    record: { ...patchRec, role: 'reviewer' },
+    permissions: 'danger-full-access',
+    names: ['danger-full-access'],
+    measured: false,
+  },
+];
+for (const { name, record = patchRec, permissions, names, measured = true } of permissionCases) {
+  const request = {
+    jsonrpc: '2.0',
+    id: `permissions-${name}`,
+    method: 'item/permissions/requestApproval',
+    params: {
+      cwd: '/tmp/wt',
+      itemId: `item-${name}`,
+      permissions,
+      reason: null,
+      startedAtMs: 1,
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+    },
+  };
+  const decision = decideApproval(request.method, request.params, record);
+  const reply = approvalReply(request.method, decision.allow);
+  check(`: ${record.role} permissions request ${name} — deny`,
+    (measured ? codexServerRequest(request) : true)
+      && decision.allow === false
+      && names.every((value) => decision.why.includes(value))
+      && permissionsResponse(reply),
+    `${JSON.stringify({ decision, reply })} · ${JSON.stringify(codexServerRequest.errors)} · ${JSON.stringify(permissionsResponse.errors)}`);
+}
+check(': permissions approvals have no granting reply',
+  JSON.stringify(approvalReply('item/permissions/requestApproval', true))
+    === JSON.stringify(approvalReply('item/permissions/requestApproval', false))
+    && permissionsResponse(approvalReply('item/permissions/requestApproval', false)),
+  JSON.stringify({
+    ok: approvalReply('item/permissions/requestApproval', true),
+    no: approvalReply('item/permissions/requestApproval', false),
+  }));
+
 check(': a patch outside cwd — deny',
   (() => {
     const d = decideApproval('applyPatchApproval', { fileChanges: { '/etc/passwd': { type: 'add' } } }, patchRec);
