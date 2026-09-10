@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`models calibrate` derives one constant `speed` band per harness/model from pooled throughput observations; completion duration remains evidence only, and missing throughput never produces a rating.** Participant records retain the harness-reported output-token evidence with missing components as `null`; the guard appends per-turn evidence to `waits/<addr>.throughput.jsonl` for `done` to project. (PB-57)
 - **Codex mutation approvals compare canonical paths and fail closed.** Symlinked roots are accepted; segment-wise traversal follows symlink targets before containment, including missing tails, and denies escapes or resolution failures while retaining requested and resolved spellings and the TOCTOU boundary. (PB-89)
 - **Warden wake fingerprints now separate turn ends from session restarts.** A pid or hand-over-time change on the same socket no longer triggers an immediate duplicate knock, while turn-counter socket rewrites still wake immediately and repeat only messages a restarted session has not seen. (PB-64)
+- **Self-wake health replaces a stale knock error when a contact point disappears.** The warden records the no-contact-point reason, clears the old fingerprint, and status prints the current diagnosis. (PB-79)
 
 ## [0.5.1] - 2026-09-09
 

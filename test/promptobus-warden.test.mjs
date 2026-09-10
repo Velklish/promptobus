@@ -20,7 +20,7 @@
 // The socket here is real (`net.createServer` on a unix path): among other things this checks
 // the wire's shape — two lines of JSON, auth first. The test never touches a live `claude`.
 import { createServer } from 'node:net';
-import { existsSync, linkSync, mkdirSync, statSync, readFileSync, utimesSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, statSync, readFileSync, utimesSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -310,6 +310,23 @@ check('the attempt time is recorded, and the delivery time is not overwritten by
 check('a repeated failure with the same reason does not flood the log',
   !(await wdn.wardenRound(HOME, TASK, { knock: stubKnock({ ok: false, error: 'ENOENT' }), now: T1 + wdn.KNOCK_RETRY_SEC * 1000 + 1000 }))
     .events.some((e) => /fell back to self-wake orchestrator/.test(e)));
+
+// If the refused contact point then disappears, the current fact is no longer the old
+// knock error. The fallback must transition to the no-contact-point reason and clear the
+// stale fingerprint, even though the channel is already self-wake.
+rmSync(store.wakeFile(HOME, TASK, 'orchestrator'), { force: true });
+const vanished = stubKnock();
+const rVanished = await wdn.wardenRound(HOME, TASK, {
+  knock: vanished, now: T1 + wdn.KNOCK_RETRY_SEC * 1000 + 2000,
+});
+const vanishedHealth = health().orchestrator;
+const noContactReason = 'no contact point — the participant did not hand over a socket';
+check('a vanished contact point logs the no-contact-point fallback',
+  rVanished.events.some((e) => e.includes(`fell back to self-wake orchestrator: ${noContactReason}`)),
+  JSON.stringify(rVanished.events));
+check('a vanished contact point clears the stale knock error and fingerprint',
+  vanishedHealth.channel === 'self-wake' && vanishedHealth.knockError === noContactReason
+  && vanishedHealth.wake === null, JSON.stringify(vanishedHealth));
 
 // The participant restarted and handed over a DIFFERENT socket: the previous address is dead
 // by construction, and sitting out the threshold on it would mean keeping the participant

@@ -660,11 +660,13 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
       // There is no contact point — nothing to knock with, and this is not
       // held back by the threshold: the participant can hand over the
       // channel after the message has already landed.
-      if (h.channel !== 'self-wake') {
-        h.channel = 'self-wake';
-        h.wake = null;
-        events.push(`fell back to self-wake ${addr}: no contact point — the participant did not hand over a socket`);
+      const why = 'no contact point — the participant did not hand over a socket';
+      if (h.channel !== 'self-wake' || h.knockError !== why) {
+        events.push(`fell back to self-wake ${addr}: ${why}`);
       }
+      h.channel = 'self-wake';
+      h.knockError = why;
+      h.wake = null;
     } else if (taken) {
       // Another session holds the contact point (`wakeTakenBy` above). Do
       // not knock on it: it is not dead, it leads into a FOREIGN session —
