@@ -1,9 +1,9 @@
 # PB-62 · `models calibrate --write` asks for agreement before it prints the proposal, and its non-interactive refusal is gated on whether anything moved
 
-- **Order:** 290
 - **Scope:** `lib/models.js` (`calibrateCommand`), [ADR-005](../../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) § `models calibrate`, [02-host](../../reference/02-host.md) § The writable layer, [03-cli](../../reference/03-cli.md) § Commands
 - **Created:** 2026-09-06
 - **Dependencies:** PB-56
+- **Taken:** 2026-09-10
 
 ## Context
 

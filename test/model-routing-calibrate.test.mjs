@@ -490,16 +490,24 @@ test('--write on a terminal asks, and a no writes nothing', async () => {
   const w = workspace();
   try {
     let asked = null;
+    const events = [];
+    const collected = sink();
+    const out = {
+      write: (chunk) => { events.push('output'); collected.write(chunk); },
+      get text() { return collected.text; },
+    };
     const code = await models(w.host, {
       subcommand: 'calibrate',
       write: true,
-      output: sink(),
+      output: out,
       stdin: { isTTY: true },
-      ask: (q) => { asked = q; return 'n'; },
+      ask: (q) => { events.push('ask'); asked = q; return 'n'; },
     });
     assert.equal(code, 0);
     assert.match(asked, /merge 1 rating override\(s\)/);
     assert.match(asked, new RegExp(w.user.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.ok(events.indexOf('output') < events.indexOf('ask'),
+      `the proposal must be printed before confirmation: ${events.join(', ')}`);
     assert.equal(existsSync(w.user.path), false);
   } finally { w.drop(); }
 });
@@ -562,6 +570,21 @@ test('--write with nothing to write creates no file and says so', async () => {
       subcommand: 'calibrate', write: true, yes: true, output: sink(), stdin: { isTTY: false }, ask: never,
     });
     assert.equal(code, 0);
+    assert.equal(existsSync(w.user.path), false);
+  } finally { w.drop(); }
+});
+
+test('--write without a terminal refuses even when nothing would move', async () => {
+  const w = workspace();
+  try {
+    // Two records only: nothing reaches the threshold, so nothing moves.
+    writeFileSync(telemetryFileOf(w.host), RECORDS.slice(0, 2).map((r) => JSON.stringify(r)).join('\n'));
+    await assert.rejects(
+      models(w.host, {
+        subcommand: 'calibrate', write: true, output: sink(), ask: never, stdin: { isTTY: false },
+      }),
+      (e) => e instanceof GateError && /stdin is not a terminal/.test(e.message) && /--yes/.test(e.message),
+    );
     assert.equal(existsSync(w.user.path), false);
   } finally { w.drop(); }
 });
