@@ -42,7 +42,7 @@ The report arrives as `type=result` on the bus.
 1. End the turn. The warden knocks when the report is in the mailbox.
 2. Read with `promptobus_mailbox`, even if the knock looks complete.
 3. If the reviewer is alive and sends `type=question`, answer with `promptobus_send` to that address.
-4. After you fix findings, rerun the command that `promptobus review` printed, with `--task <id>`. The same reviewer gets the new diff. `--task` is required on that repeat: without it the command would open a second task.
+4. After you fix findings, rerun the command that `promptobus review` printed. Directory pickup recognizes the reviewer's own active record, while `--task <id>` remains an explicit alternative when the target is ambiguous. The same reviewer gets the new diff.
 
 ## Close
 

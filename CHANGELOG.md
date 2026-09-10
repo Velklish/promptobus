@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Review layout and argument refusals now print as one plain CLI error without a stack trace.** (PB-54)
+- **Solo review now picks up an active task from its reviewer record when the target directory has no worker worktree claim.** (PB-96)
 - **Prune and calibration hints now use the host's bus command formatter for package-owned commands.** (PB-55)
 - **Review snapshots now refresh Git's index stat data, so touching or rewriting a tracked file with identical content no longer reports a dirty tree.** (PB-157.1)
 - **`done` now removes a mechanism-created `worktree-` branch together with its worktree when content measurements prove the work merged, including a squash merge.** Branches moved by a worker and worktrees without proof remain in place. (PB-158)

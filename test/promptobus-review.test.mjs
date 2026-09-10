@@ -868,9 +868,20 @@ check(`spawn reviewer: effort is written to the participant, same as for the wor
 store.sendMessage(home, task.id, {
   from: 'reviewer:cargos-api', to: 'orchestrator', type: 'result', body: 'лежит в чужой задаче',
 });
-const freshTaskOut = await capture(() => review(WS, { tool: TOOL, target: REPO, title: 'работа оркестратора в cargos-api' }));
+const FRESH = path.join(WS, 'repos', 'loads_search', 'fresh-api');
+mkdirSync(FRESH, { recursive: true });
+g(FRESH, 'init', '-b', 'main');
+writeFileSync(path.join(FRESH, 'a.txt'), 'v1\n');
+g(FRESH, 'add', '.');
+g(FRESH, 'commit', '-m', 'init', '-q');
+writeFileSync(path.join(FRESH, 'a.txt'), 'v2\n');
+let freshPlan;
+const freshTaskOut = await capture(async () => {
+  freshPlan = await review(WS, { tool: TOOL, target: FRESH, title: 'работа оркестратора в fresh-api' });
+});
 check(': a review opening its own task does not name someone else\'s counter',
   !/unread/.test(freshTaskOut), freshTaskOut);
+store.closeTask(home, freshPlan.taskId);
 store.readInbox(home, task.id, 'orchestrator');
 
 const plainTask = store.createTask(home, { id: 't20260825-150000', title: 'ревью без effort' });
@@ -899,10 +910,10 @@ const foreign = store.createTask(home, {
 });
 let own;
 const secondOut = await capture(async () => {
-  own = await review(WS, { target: REPO, title: 'работа оркестратора в cargos-api', dryRun: true });
+  own = await review(WS, { target: FRESH, title: 'работа оркестратора в fresh-api', dryRun: true });
 });
 check('without --task: a review opens its own task instead of sneaking into a foreign active one',
-  own.taskId !== foreign.id && own.createNew?.title === 'работа оркестратора в cargos-api',
+  own.taskId !== foreign.id && own.createNew?.title === 'работа оркестратора в fresh-api',
   `${own.taskId} vs ${foreign.id}`);
 const joined = planReview(WS, { target: REPO, task: foreign.id });
 check('--task: joining an existing task happens only with an explicit flag',
@@ -1293,6 +1304,44 @@ check(': the picked-up task is the same one --task would have named, and it does
 // changed between them), and is taken from there.
 check(': an explicit --task outweighs the pickup',
   forcedPlan.taskId === task.id, forcedPlan.taskId);
+
+// A reviewer's own main directory can be the only claim: its participant record names
+// the literal directory in `repoAbs`, while no worker worktree record points at it.
+// Directory pickup must still find the active review task instead of planning a second.
+const reviewerOnly = store.createTask(home, {
+  id: 'reviewer-only-t20260827-091000', title: 'ревью каталога без worker',
+});
+store.upsertParticipant(home, reviewerOnly.id, store.participantRecord('reviewer:base-api', {
+  repo: 'loads_search/base-api',
+  repoAbs: W3,
+  name: 'a2a-reviewer-only-t20260827-091000',
+}));
+const reviewerPickup = planReview(WS, { target: W3 });
+check(`: a reviewer's own directory without --task picks up its active task`,
+  reviewerPickup.taskId === reviewerOnly.id && reviewerPickup.createNew === null
+  && reviewerPickup.owner === null && reviewerPickup.address === 'reviewer:base-api',
+  `${reviewerPickup.taskId} · ${reviewerPickup.address}`);
+store.closeTask(home, reviewerOnly.id);
+
+// A worker worktree and a separate reviewer record may claim the same directory. The
+// existing several-claims gate must see both records rather than choosing either one.
+const reviewerClaim = store.createTask(home, {
+  id: 'reviewer-claim-t20260827-091500', title: 'второе ревью каталога',
+});
+store.upsertParticipant(home, reviewerClaim.id, store.participantRecord('reviewer:pervyy', {
+  repo: 'loads_search/a2a-pervyy',
+  repoAbs: W1,
+  name: 'a2a-reviewer-claim-t20260827-091500',
+}));
+let reviewerAmbiguous = '';
+try { planReview(WS, { target: W1 }); } catch (e) { reviewerAmbiguous = e.message; }
+check(': a worker and reviewer claim on one directory — a refusal names both tasks',
+  /several active tasks at once/.test(reviewerAmbiguous)
+  && reviewerAmbiguous.includes(owned.id)
+  && reviewerAmbiguous.includes(reviewerClaim.id)
+  && /--task/.test(reviewerAmbiguous), reviewerAmbiguous);
+store.closeTask(home, reviewerClaim.id);
+
 // A foreign directory does not get a pickup: a review outside the current task is a
 // legitimate move, which is what  was resolved for. There, the prior behavior applies —
 // its own task and a warning that there will be several active ones.
@@ -1724,17 +1773,17 @@ const FAIL_TITLE = 'ревью, которое не поднялось';
 claudeFails();
 const failed = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});\n`
-  + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({ target: REPO, title: FAIL_TITLE })});`,
+  + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({ target: FRESH, title: FAIL_TITLE })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const failText = `${failed.stdout}${failed.stderr}`;
 const orphanTask = store.activeTasks(home).find((t) => t.title === FAIL_TITLE);
-const failedReviewer = store.participantOf(orphanTask, 'reviewer:cargos-api')?.metadata;
+const failedReviewer = store.participantOf(orphanTask, 'reviewer:fresh-api')?.metadata;
 check(': a failed launch refuses instead of staying silent',
   failed.status === 1 && /claude --bg exited with code 1/.test(failText),
   `status=${failed.status} ${failText}`);
 check(': the participant is recorded before launch and the session is not fabricated',
-  !!failedReviewer && failedReviewer.repo === 'repos/loads_search/cargos-api'
-  && failedReviewer.repoAbs === realpathSync(REPO) && failedReviewer.name?.startsWith('Review: ')
+  !!failedReviewer && failedReviewer.repo === 'repos/loads_search/fresh-api'
+  && failedReviewer.repoAbs === realpathSync(FRESH) && failedReviewer.name?.startsWith('Review: ')
   && !failedReviewer.session, JSON.stringify(failedReviewer));
 // review() itself sets the mark, not the test: without it a repeat of the command would
 // take this record for a live reviewer and send the diff into a mailbox behind which
@@ -1743,9 +1792,9 @@ check(': a record from a failed launch is marked pending',
   failedReviewer?.pending === true, JSON.stringify(failedReviewer));
 check(': the orphan task\'s diff and configs are kept for diagnostics',
   !!orphanTask
-  && existsSync(path.join(store.filesDir(home, orphanTask.id), 'review-cargos-api.diff'))
-  && existsSync(path.join(store.workersDir(home, orphanTask.id), 'reviewer-cargos-api.settings.json'))
-  && existsSync(path.join(store.workersDir(home, orphanTask.id), 'reviewer-cargos-api.mcp.json')),
+  && existsSync(path.join(store.filesDir(home, orphanTask.id), 'review-fresh-api.diff'))
+  && existsSync(path.join(store.workersDir(home, orphanTask.id), 'reviewer-fresh-api.settings.json'))
+  && existsSync(path.join(store.workersDir(home, orphanTask.id), 'reviewer-fresh-api.mcp.json')),
   String(orphanTask?.id));
 check(': the refusal names the orphan and a ready-made close command',
   !!orphanTask && /active orphan task/.test(failText)
