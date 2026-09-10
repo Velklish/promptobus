@@ -131,12 +131,14 @@ const rm = removeWorktree(REPO, CLEAN, 'worktree-a2a-clean');
 check('removal: the directory is gone', rm.removed && !existsSync(CLEAN), JSON.stringify(rm));
 check('removal: the merged branch was deleted along with the directory',
   rm.branchDeleted && !git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-clean').stdout.trim());
-// git will not give up a branch with work not yet taken in, even on direct request: `-d`
-// is a second gate on top of our own check, and if the two disagree, git wins.
-const rmAhead = removeWorktree(REPO, AHEAD, 'worktree-a2a-ahead');
-check('removal of an unmerged branch: the directory is removed, but the branch with the work survives',
-  rmAhead.removed && rmAhead.branchDeleted === false
-  && !!git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-ahead').stdout.trim(), JSON.stringify(rmAhead));
+// An unmerged branch never reaches removal: the content disposition keeps both the
+// directory and its worktree-created branch, so the force delete below is not used.
+const aheadInfo = inspectWorktree(REPO, AHEAD, 'master');
+const aheadDisposition = worktreeDisposition(aheadInfo);
+check('an unmerged branch keeps both directory and branch',
+  aheadDisposition.action === 'keep' && existsSync(AHEAD)
+  && !!git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-ahead').stdout.trim(),
+JSON.stringify({ info: aheadInfo, disposition: aheadDisposition }));
 
 // Directory removal does not touch a branch that spawn did not create: the worker moved
 // onto it at the task's request, a human named it for some reason, and whether it's merged
@@ -234,13 +236,12 @@ check('fixture: after the squash, the branch\'s commits are still listed outside
 check('squash merge: the branch adds nothing to the base — the directory is removed',
   sq.adds === false && worktreeDisposition(sq).action === 'remove'
   && /squash/.test(worktreeDisposition(sq).reason), JSON.stringify(worktreeDisposition(sq)));
-// Removal goes through the production path: for a squashed branch, `git branch -d` cannot
-// see that it is merged (it counts by ancestry), so the directory goes but the branch stays
-// — and it must be named, otherwise branches pile up silently.
+// Removal goes through the production path: content measurements proved the squash, so the
+// mechanism-created branch goes with its worktree even though ancestry cannot see the merge.
 const rmSq = removeWorktree(REPO, SQ, 'worktree-a2a-squashed');
-check('squashed branch: the directory is removed, the branch remains and is named',
-  rmSq.removed && rmSq.branchDeleted === false && rmSq.branchStuck === 'worktree-a2a-squashed'
-  && rmSq.branchKept === null, JSON.stringify(rmSq));
+check('squashed branch: the directory and mechanism branch are removed',
+  rmSq.removed && rmSq.branchDeleted === true && rmSq.branchStuck === null
+  && !git(REPO, 'rev-parse', '--verify', '-q', 'worktree-a2a-squashed').stdout.trim(), JSON.stringify(rmSq));
 git(REPO, 'branch', '-D', 'worktree-a2a-squashed');
 
 // --- squash merge, and then the base moves over the same file --------------------
