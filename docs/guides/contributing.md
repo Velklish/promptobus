@@ -1,6 +1,6 @@
 # Contributing
 
-This repository is run entirely through [backslop](https://github.com/Velklish/backslop) `v0.4.0`. There is no issue tracker beside it. The pin is `backslop.json`.
+This repository is run entirely through [backslop](https://github.com/Velklish/backslop). There is no issue tracker beside it. The pin is `backslop.json`.
 
 ```bash
 npx github:Velklish/backslop#v0.4.0 status
@@ -9,7 +9,7 @@ npx github:Velklish/backslop#v0.4.0 lint
 
 The CI and package lint commands deliberately use the mutable `v0.4.0` tag: it is owned by the same person who owns this repository, and `backslop upgrade` moves both references together.
 
-English is the language of new strings, comments, commit messages, and checks. `README.ru.md` is the only file that may use Cyrillic.
+English is the language of new strings, comments, commit messages, and checks in the runtime directories `bin/`, `lib/`, `src/`, `schemas/`, and `templates/`. `README.ru.md` may use Cyrillic; `scripts/` and `test/` are exempt from the current sweep.
 
 ## Roles
 
@@ -30,7 +30,7 @@ Procedure text lives in `AGENTS.md` (backslop block) and in the `backslop-task` 
    - A tiny change that does not alter a contract may skip a tracker file if one pass finishes it.
 2. **Change the code.** Reverse a prior decision by deleting it. Do not strike through. Use [glossary](../GLOSSARY.md) names. If a name is missing, propose a row.
 3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.4.0 adr <slug>` and a row in [docs/README.md](../README.md).
-4. **Gates on an unchanged tree.** Commands in `backslop.json` `gates` must exit 0. Today that is `npx github:Velklish/backslop#v0.4.0 lint`. Also run `npm test` when you touch runtime code. A test change needs a mutation probe: commit first, then break the assertion, then revert. A gate with an early cutoff needs a second probe that feeds a false positive.
+4. **Gates on an unchanged tree.** Commands in `backslop.json` `gates` must exit 0. Also run `npm test` when you touch runtime code. A test change needs a mutation probe: commit first, then break the assertion, then revert. A gate with an early cutoff needs a second probe that feeds a false positive.
 
 Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.4.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
 
@@ -60,7 +60,7 @@ A task reaches the default branch as one commit. Intermediate worker and review 
 
 ## Suite isolation
 
-The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. Four rules keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.
+The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. Five rules keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.
 
 **Every sandbox and socket prefix is on the sweep list.** A run that is cut off — Ctrl-C, a file taken down at the file timeout, a crash — never reaches its own cleanup, and the leftovers are removed by the sweep at the start of the next run ([test/tmpdir-sweep.mjs](../../test/tmpdir-sweep.mjs)). Suite sandboxes use the hand-built `SUITE_PREFIXES` list in `$TMPDIR`; a two-way sentinel in `tmpdir-sweep.test.mjs` greps `test/` for every `makeSandbox('…')` and every `mkdtemp` of a temp directory, requires every literal to be covered, and rejects every list entry that covers no literal. The grep takes both spellings of the directory — `os.tmpdir()` and an imported `tmpdir()`, `path.join` and a bare `join` — because while it demanded the qualified one, a file that imported `tmpdir` was invisible to it and its prefix leaked past the sweep with the check green. Test harness sockets have short paths, so their directories live directly under shared `/tmp`; the runner sweeps their `SOCK_PREFIXES` after the same one-hour cutoff. It writes an owner marker with the run pid as a second line of defence, then probes each aged socket; a live listener or any unknown probe result holds the directory instead of deleting it. Adding a sandbox or socket with a new prefix means adding the prefix; the sentinels say so on the next run.
 
@@ -78,4 +78,4 @@ The seal is watched, not assumed. Every command the package launches through `ru
 
 ## Public surface
 
-Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. See the publicity checks in the project gates when they land.
+Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. `npm run audit` runs `scripts/audit-public.mjs`, which scans tracked files and the packed tarball for forbidden strings and checks tracked links for repository leaks.

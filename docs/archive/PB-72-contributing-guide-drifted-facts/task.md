@@ -1,9 +1,9 @@
 # PB-72 · contributing.md has drifted from backslop.json and the shipped code on five points: a stale v0.3.0 pin sentence, one gate named where two exist, a landed publicity gate still called future work, "Four rules" where there are five, and an English-only rule with no gate and violations in scripts/ and test/
 
-- **Order:** 580
 - **Scope:** `docs/guides/contributing.md`, `backslop.json`, `scripts/audit-public.mjs`, `docs/ROADMAP.md`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-71
+- **Taken:** 2026-09-10
 
 ## Context
 
