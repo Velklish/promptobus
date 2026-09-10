@@ -1,9 +1,9 @@
 # PB-91 · models calibrate --write always merges into the lowest-precedence user overlay and reports success even when a layer above it overrides every rating just written
 
-- **Order:** 300
 - **Scope:** `lib/models.js` (`calibrateCommand`, `userLayer`), `lib/model-routing/catalog.js` (`applyOverlayToTuples`), `lib/model-routing/calibrate.js` (`ratingLine`), [reference/03-cli.md](../../reference/03-cli.md) § Commands, [reference/02-host.md](../../reference/02-host.md) § The writable layer, `test/model-routing-calibrate.test.mjs`. Related: ADR-004 § Host contract (`docs/adr/adr-004-subscription-balance.md:204`), ADR-005 (`docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md`), PB-32 (archived — added the shadow warning to `strategy --set`), PB-37 (archived — added `models calibrate`)
 - **Created:** 2026-09-06
 - **Dependencies:** PB-62
+- **Taken:** 2026-09-10
 
 ## Context
 

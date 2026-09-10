@@ -542,6 +542,77 @@ test('--write on a terminal with a yes merges only ratings, and keeps every othe
   } finally { w.drop(); }
 });
 
+test('--write names higher-layer rating shadows in text and JSON', async () => {
+  const w = workspace();
+  try {
+    const higher = w.host.routingPaths().overlays.find((l) => l.id === 'workspace');
+    mkdirSync(path.dirname(higher.path), { recursive: true });
+    writeFileSync(higher.path, `${JSON.stringify({
+      schemaVersion: 2,
+      ratings: { 'claude-sonnet-xhigh': { speed: 9, quotaCost: 9 } },
+    }, null, 2)}\n`);
+
+    const textWarnings = [];
+    const previousWarn = console.warn;
+    console.warn = (...args) => textWarnings.push(args.join(' '));
+    try {
+      const out = sink();
+      const code = await models(w.host, {
+        subcommand: 'calibrate', write: true, yes: true, output: out,
+        stdin: { isTTY: false }, ask: never,
+      });
+      assert.equal(code, 0);
+      assert.equal(textWarnings.length, 1);
+      assert.match(textWarnings[0], /what was just written is shadowed/);
+      assert.match(textWarnings[0], /overlay "workspace"/);
+      assert.match(textWarnings[0], /claude-sonnet-xhigh.*quotaCost|quotaCost.*claude-sonnet-xhigh/);
+      assert.doesNotMatch(textWarnings[0], /speed/);
+      assert.match(out.text, /quotaCost: 2 → 4 \(catalog 2, overlay "workspace" 9\)/);
+    } finally { console.warn = previousWarn; }
+
+    const jsonWarnings = [];
+    const jsonPreviousWarn = console.warn;
+    console.warn = (...args) => jsonWarnings.push(args.join(' '));
+    try {
+      const out = sink();
+      const code = await models(w.host, {
+        subcommand: 'calibrate', json: true, write: true, yes: true, output: out,
+        stdin: { isTTY: false }, ask: never,
+      });
+      assert.equal(code, 0);
+      assert.deepEqual(JSON.parse(out.text).write.shadowedBy, [{
+        layer: 'workspace', tuple: 'claude-sonnet-xhigh', ratings: ['quotaCost'],
+      }]);
+      assert.equal(jsonWarnings.length, 1);
+    } finally { console.warn = jsonPreviousWarn; }
+  } finally { w.drop(); }
+});
+
+test('--write stays silent when higher layers name no proposed rating', async () => {
+  const w = workspace();
+  try {
+    const higher = w.host.routingPaths().overlays.find((l) => l.id === 'workspace');
+    mkdirSync(path.dirname(higher.path), { recursive: true });
+    writeFileSync(higher.path, `${JSON.stringify({
+      schemaVersion: 2,
+      ratings: { 'claude-sonnet-xhigh': { quality: 9 } },
+    }, null, 2)}\n`);
+    const warnings = [];
+    const previousWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+      const out = sink();
+      const code = await models(w.host, {
+        subcommand: 'calibrate', json: true, write: true, yes: true, output: out,
+        stdin: { isTTY: false }, ask: never,
+      });
+      assert.equal(code, 0);
+      assert.deepEqual(JSON.parse(out.text).write.shadowedBy, []);
+    } finally { console.warn = previousWarn; }
+    assert.deepEqual(warnings, []);
+  } finally { w.drop(); }
+});
+
 test('--yes writes with no terminal, and raises a version 1 overlay to 2 with the ratings', async () => {
   const w = workspace();
   try {
@@ -682,7 +753,7 @@ test('--json puts exactly one document on stdout, write outcome included', async
     // document, which is the only way a machine reader can see it.
     const doc = JSON.parse(out.text);
     assert.deepEqual(doc.write, {
-      layer: 'user', path: w.user.path, tuples: 1, applied: true,
+      layer: 'user', path: w.user.path, tuples: 1, applied: true, shadowedBy: [],
     });
     assert.deepEqual(JSON.parse(readFileSync(w.user.path, 'utf8')).ratings, {
       'claude-sonnet-xhigh': { quotaCost: 4 },
