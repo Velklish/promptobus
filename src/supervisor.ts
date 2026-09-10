@@ -67,6 +67,7 @@ interface HealthMark {
   channel?: string | null;
   knockError?: string | null;
   wake?: string | null;
+  wakeSession?: string | null;
   [key: string]: unknown;
 }
 
@@ -616,11 +617,10 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
     // thresholds — a hijacked channel is not "not yet time", it is
     // "nowhere to knock".
     const taken = wakeTakenBy(home, task, p, endpoint);
-    // Contact-point fingerprint: channel address and hand-over time. If the
-    // participant rewrote their contact point — the session restarted, the
-    // channel changed — activate IMMEDIATELY, without sitting out the
-    // knock-retry threshold: the previous address is dead by construction.
-    const print = endpoint?.socket ? `${endpoint.socket}#${endpoint.at ?? ''}` : null;
+    // Contact-point fingerprint: channel address only. A pid or hand-over time can
+    // change when the Stop hook and the bus server hand over the same session's point.
+    // A driver that needs an immediate wake can encode its turn counter in the socket.
+    const print = endpoint?.socket ? endpoint.socket : null;
     const moved = print !== null && was.wake !== undefined && print !== was.wake;
 
     // The knock-retry threshold is counted from ATTEMPT TIME, not success:
@@ -690,12 +690,14 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
       // A retry carries only what arrived after the last knock: before, it
       // listed the whole box again, up to six messages in one postcard.
       // How many sit in total is said by the counter in the header. The
-      // full list goes where the session has not seen the previous knock:
-      // there was none at all, or the participant rewrote the contact
-      // point, that is restarted. The cutoff is by message id, not by
-      // time: names in the mailbox are sorted by send order (`readInbox`),
-      // and a second clock is not needed for that.
-      const upTo = moved ? null : was.knockedTo ?? null;
+      // full list goes where the session has not seen the previous knock: there
+      // was none at all, or the participant restarted. A changed contact-point
+      // socket alone is not enough: turn-aware drivers change it at every turn end.
+      // The cutoff is by message id, not by time: names in the mailbox are sorted
+      // by send order (`readInbox`), and a second clock is not needed for that.
+      const wakeSession = endpoint?.session ?? null;
+      const restarted = wakeSession !== (was.wakeSession ?? null);
+      const upTo = restarted ? null : was.knockedTo ?? null;
       const msgs = upTo === null ? box : box.filter((m) => String(m?.id ?? '') > upTo);
       const r = await activate(driver, { ref: sessionRefOf(p), endpoint }, {
         kind: 'unread', task, address: addr, unread, messages: msgs.map((m) => previewOf(home, meta, m)),
@@ -709,6 +711,7 @@ export async function supervisorRound(home: string, task: string, { now = Date.n
         h.knockError = null;
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
+        h.wakeSession = wakeSession;
         // How far we knocked: not only what was shown, but also what went
         // into the "and N more" tail — the postcard said it, and there is
         // no need to repeat it a second time.

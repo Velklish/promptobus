@@ -706,6 +706,8 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
 
+The warden fingerprints a contact point by its socket address; a changed pid or hand-over time does not mean a session restart. Cursor and Codex encode an ended-turn counter in that socket to request an immediate knock, while the full mailbox is repeated only when the contact point's session differs from the session behind the last successful knock.
+
 No driver call on the warden beat path may block without a ceiling. Every launch through `run` carries the shared 60-second timeout and 32 MiB output budget; a call site may override either value.
 
 ## The Codex holder

@@ -159,7 +159,8 @@ export function writeWake(home: string, id: string, addr: string, {
     at: new Date().toISOString(),
   };
   const was = readWake(home, id, addr);
-  if (was && was.socket === next.socket && was.token === next.token && was.pid === next.pid) return was;
+  if (was && was.socket === next.socket && was.token === next.token
+    && was.pid === next.pid && was.session === next.session) return was;
   writeFileAtomic(wakeFile(home, id, addr), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
   return next;
 }

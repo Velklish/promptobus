@@ -148,7 +148,7 @@ Added after this snapshot: [PB-157](archive/PB-157-review-snapshot-reads-dirty-w
 
 After PB-42, fix PB-64, then PB-79, then PB-123. Preserve the distinction between a new turn and a restarted session.
 
-Queued assignments: [PB-64](backlog/queue/PB-64-warden-fingerprint-conflates-restart.md), [PB-79](backlog/queue/PB-79-self-wake-missing-contact-reason.md), [PB-123](backlog/queue/PB-123-guard-verdict-and-stdin-deadline.md).
+Queued assignments: [PB-64](archive/PB-64-warden-fingerprint-conflates-restart/task.md), [PB-79](backlog/queue/PB-79-self-wake-missing-contact-reason.md), [PB-123](backlog/queue/PB-123-guard-verdict-and-stdin-deadline.md).
 
 ### X — Deferred structural work
 

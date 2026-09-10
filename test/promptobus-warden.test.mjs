@@ -1477,7 +1477,11 @@ const KNOCK_SOCK = sockPath('bl418');
 store.createTask(HOME, { id: KNOCK_TASK, title: 'перестук в занятую сессию' });
 store.upsertParticipant(HOME, KNOCK_TASK, store.participantRecord('worker:api', { name: KNOCK_NAME }));
 registerWake(HOME, KNOCK_TASK, 'worker:api',
-  { CLAUDE_CODE_MESSAGING_SOCKET: KNOCK_SOCK, CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+  {
+    CLAUDE_CODE_MESSAGING_SOCKET: KNOCK_SOCK,
+    CLAUDE_CODE_MESSAGING_TOKEN: 't',
+    CLAUDE_CODE_SESSION_ID: 'knock-session-1',
+  });
 const knockSend = (body) => store.sendMessage(HOME, KNOCK_TASK,
   { from: 'orchestrator', to: 'worker:api', type: 'task', body });
 const busyList = [{ id: 'k1', name: KNOCK_NAME, pid: 4242, state: 'blocked', status: 'busy' }];
@@ -1547,12 +1551,64 @@ check(': a record with no status field is not attributed busyness',
 // out as the full list: the "knocked up to here" mark was left over from a session that no
 // longer exists.
 registerWake(HOME, KNOCK_TASK, 'worker:api',
-  { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('bl418b'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+  {
+    CLAUDE_CODE_MESSAGING_SOCKET: sockPath('bl418b'),
+    CLAUDE_CODE_MESSAGING_TOKEN: 't',
+    CLAUDE_CODE_SESSION_ID: 'knock-session-2',
+  });
 const kMoved = stubKnock();
 await knockRound(kMoved, idleList, T418 + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 4000);
 check(': a rewritten contact point returns the full list — the session never saw it',
   kMoved.calls.length === 1 && kMoved.calls[0].body.includes('первое')
   && kMoved.calls[0].body.includes('второе'), kMoved.calls[0].body);
+
+// A Claude turn-end hook has a different pid from the long-lived bus server, but the
+// contact point still belongs to the same session. Refreshing that pid alone must not
+// bypass the retry threshold or send the same mailbox again.
+const pidWake = store.readWake(HOME, KNOCK_TASK, 'worker:api');
+store.writeWake(HOME, KNOCK_TASK, 'worker:api', {
+  socket: pidWake.socket,
+  token: pidWake.token,
+  pid: (pidWake.pid ?? process.pid) + 1,
+  session: pidWake.session ?? null,
+});
+const pidOnly = stubKnock();
+const pidOnlyNow = Date.parse(knockHealth().triedAt) + 1000;
+await knockRound(pidOnly, idleList, pidOnlyNow);
+check(': a pid-only rewrite of the same contact point waits for the retry threshold',
+  pidOnly.calls.length === 0, JSON.stringify(pidOnly.calls));
+
+// Cursor and Codex encode an ended-turn counter in the contact point. That is an immediate
+// wake signal, but it is still the same session, so only messages after the previous cutoff
+// belong in the notification.
+const COUNTER_TASK = 'counter-t20260909-000000';
+const COUNTER_ADDR = 'worker:counter';
+const COUNTER_SESSION = 'counter-session';
+const COUNTER_SOCKET = sockPath('counter');
+store.createTask(HOME, { id: COUNTER_TASK, title: 'turn counter fingerprint' });
+store.upsertParticipant(HOME, COUNTER_TASK, store.participantRecord(COUNTER_ADDR));
+store.writeWake(HOME, COUNTER_TASK, COUNTER_ADDR, {
+  socket: `${COUNTER_SOCKET}#1`, token: 't', session: COUNTER_SESSION,
+});
+const counterSend = (body) => store.sendMessage(HOME, COUNTER_TASK,
+  { from: 'orchestrator', to: COUNTER_ADDR, type: 'task', body });
+const counterRound = (knock, now) => wdn.wardenRound(HOME, COUNTER_TASK, {
+  knock, sessions: [], now,
+});
+counterSend('counter first');
+const counterFirst = stubKnock();
+await counterRound(counterFirst);
+counterSend('counter second');
+store.writeWake(HOME, COUNTER_TASK, COUNTER_ADDR, {
+  socket: `${COUNTER_SOCKET}#2`, token: 't', session: COUNTER_SESSION,
+});
+const counterMoved = stubKnock();
+const counterNow = Date.parse(store.readHealth(HOME, COUNTER_TASK)[COUNTER_ADDR].triedAt) + 1000;
+await counterRound(counterMoved, counterNow);
+check(': a same-session turn-counter rewrite wakes immediately with only new messages',
+  counterMoved.calls.length === 1
+  && counterMoved.calls[0].body.includes('counter second')
+  && !counterMoved.calls[0].body.includes('counter first'), counterMoved.calls[0]?.body);
 
 // Busyness for a participant WITHOUT a bg session (review note). The orchestrator is the
 // human's session: it has no name in the log, and an interactive `claude agents --json`
