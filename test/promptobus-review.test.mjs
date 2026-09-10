@@ -1372,6 +1372,10 @@ const reviewCli = (args) => {
   return { status: r.status, text: `${r.stdout}${r.stderr}` };
 };
 const noStack = (run) => run.status === 1 && !/\n\s+at /.test(run.text) && !/^Error:/m.test(run.text);
+const missingReviewPath = reviewCli([]);
+check(': review without a path is a plain refusal without a stack',
+  noStack(missingReviewPath) && /repository path is required/.test(missingReviewPath.text),
+  `status=${missingReviewPath.status} ${missingReviewPath.text}`);
 const missingReviewTask = reviewCli([REPO, '--task', 'net-takoy-bl394', '--dry-run']);
 check(': review --task on a nonexistent task is printed without a stack',
   noStack(missingReviewTask) && /there is no task net-takoy-bl394/.test(missingReviewTask.text),

@@ -1,0 +1,9 @@
+# PB-54 · Result
+
+**Closed 2026-09-10.** Completed. The eight layout and argument refusals of `promptobus review` that threw a plain `Error` — the missing target, `not-clone`, `outside`, `no-clone`, a directory listed in several active tasks, a declared review skill that is not laid out, a new review task without a name, and the second missing-target site — throw `GateError`, the class every sibling refusal in `lib/review.js` already used, so the CLI catch (by class since PB-80) prints one plain line and no stack trace. A test holds it: `review` without a path exits 1 with the refusal text and no `    at ` frame. `lib/cli.js` needed no change.
+
+**Verification.** Worker commit `7300d1e`, worktree of `worker:launch`, squashed. Reproducer red with the eight constructors returned to `Error`: `node test/promptobus-review.test.mjs` exit 1, 217/218 — "review without a path is a plain refusal without a stack — status=1 Error: repository path is required: promptobus review <path> …" followed by frames at `runPromptobus (lib/cli.js:222)` and `bin/promptobus.js:37`; with `GateError` 218/218, and `throw new Error` no longer occurs in `lib/review.js`. Gates on `7300d1e`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 706 tracked files, 119 tarball entries. Mutation probe after the commit, test kept: one site returned to `Error` → exit 1, 217/218 with `Error:` and stack frames; restored → 218/218. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** `docs/reference/03-cli.md` § Review (a refusal is one plain line), CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:launch`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator diff read; approver Павел Ким's orchestrator session.
