@@ -40,13 +40,13 @@ A foreign-mailbox header means the originals stay with the owner. If the mail is
 ## CLI
 
 ```bash
-promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--harness <h>] [--strategy <s>] [--allow-payg] [--dry-run]
+promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
-promptobus done [--task <id>]
+promptobus done [--task <id>] [--keep-sessions]
 promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
-promptobus review <path> [--task <id> | --title <name>] [--harness <h>] [--strategy <s>] [--allow-payg]
+promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
 promptobus models [--strategy <s>] [--role <worker|reviewer>] [--refresh] [--json]
 ```
 

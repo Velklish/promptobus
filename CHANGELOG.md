@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The orchestrate skill's CLI synopsis now tracks spawn, done and review flags through a drift gate.** (PB-47)
 - **The model-routing reference now distinguishes hidden rows retained in availability snapshots from rows filtered by the resolver and `models` output.** (PB-104)
 - **CLI help now explains the recorded strategy default that effectiveStrategy applies for spawn, review and models.** (PB-84)
 - **`status` now prints each participant's review-round, question and result counts from canonical messages before `done`.** (PB-48)

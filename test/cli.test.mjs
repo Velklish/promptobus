@@ -129,6 +129,78 @@ function subcommands() {
   return new Set([...cli.matchAll(/^\s*case '([^']+)':/gm)].map((m) => m[1]));
 }
 
+function optionNames(command) {
+  const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
+  const start = cli.indexOf(`case '${command}':`);
+  assert.notEqual(start, -1, `dispatcher case for ${command} was not found`);
+  const end = cli.indexOf('\n      case ', start + 1);
+  const body = cli.slice(start, end === -1 ? cli.length : end);
+  const options = body.indexOf('options: {');
+  assert.notEqual(options, -1, `${command} has no parseArgs options object`);
+  const open = body.indexOf('{', options);
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < body.length; i += 1) {
+    const char = body[i];
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  assert.notEqual(close, -1, `${command} options object is not closed`);
+  const object = body.slice(open + 1, close);
+  return new Set([...object.matchAll(/(?:'([^']+)'|([A-Za-z][\w-]*))\s*:/g)]
+    .filter((match) => {
+      const before = object.slice(0, match.index);
+      return (before.match(/{/g)?.length ?? 0) === (before.match(/}/g)?.length ?? 0);
+    })
+    .map((match) => match[1] ?? match[2]));
+}
+
+function skillSynopsisFlags() {
+  const skills = path.join(LIB, '..', 'skills');
+  const flags = new Map();
+  for (const entry of readdirSync(skills, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(skills, entry.name, 'SKILL.md');
+    let text;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    for (const block of text.matchAll(/```bash\s*\n([\s\S]*?)```/g)) {
+      for (const line of block[1].split('\n')) {
+        const command = line.match(/^\s*promptobus\s+(\w+)/)?.[1];
+        if (!command) continue;
+        const commandFlags = flags.get(command) ?? new Set();
+        for (const flag of line.matchAll(/--[a-z][a-z-]*/g)) commandFlags.add(flag[0].slice(2));
+        flags.set(command, commandFlags);
+      }
+    }
+  }
+  return flags;
+}
+
+test('skill CLI synopses stay aligned with parseArgs options', () => {
+  const documented = skillSynopsisFlags();
+  const mismatches = [];
+  for (const command of ['spawn', 'done', 'review']) {
+    const cli = optionNames(command);
+    const skill = documented.get(command) ?? new Set();
+    const missing = [...cli].filter((flag) => !skill.has(flag)).sort();
+    const extra = [...skill].filter((flag) => !cli.has(flag)).sort();
+    if (missing.length || extra.length) mismatches.push({ command, missing, extra });
+  }
+  assert.deepEqual(mismatches, []);
+});
+
 /**
  * Commands the CONSUMER CLI owns, which the package prints through the host without
  * having them itself. The list is one entry long and each entry names the task that
