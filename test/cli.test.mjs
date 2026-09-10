@@ -3,12 +3,16 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { GateError as ProtocolGateError, PromptobusError } from '../dist/index.js';
+import { HostResolveError } from '../dist/host.js';
 import { helpText, runPromptobus } from '../lib/cli.js';
+import { expectFail } from './console.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join(here, '..', 'lib');
@@ -41,6 +45,14 @@ function fakeHost(commandName, version = '0.0.0') {
   };
 }
 
+function cliHost(root, workspaceRoot) {
+  return {
+    ...fakeHost('promptobus'),
+    workspaceRoot,
+    promptobusHome: () => path.join(root, '.promptobus'),
+  };
+}
+
 test('runPromptobus accepts two different hosts in one process', async () => {
   const a = collect();
   const b = collect();
@@ -68,6 +80,43 @@ test('helpText takes the command name from the host, not a literal', () => {
   assert.match(text, /gamma spawn /);
   const banned = ['ati', 'agents'].join('-');
   assert.equal(text.includes(banned), false);
+});
+
+test('CLI recognizes expected errors by class, not constructor name', async () => {
+  const expectedErrors = [
+    new ProtocolGateError('gate refusal'),
+    new PromptobusError('strategy-unknown', 'routing refusal'),
+    new HostResolveError('host resolution refusal'),
+  ];
+
+  for (const error of expectedErrors) {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
+    try {
+      const host = cliHost(root, () => { throw error; });
+      const result = await expectFail(() => runPromptobus(['spawn'], {
+        host, cwd: root, env: {}, input: null, output: collect().stream,
+      }));
+      assert.equal(result.failed, true);
+      assert.equal(result.out, `✖ ${error.message}\n`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  class GateError extends Error {}
+  const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-run-'));
+  try {
+    const host = cliHost(root, () => { throw new GateError('name collision'); });
+    const result = await expectFail(() => runPromptobus(['spawn'], {
+      host, cwd: root, env: {}, input: null, output: collect().stream,
+    }));
+    assert.equal(result.failed, true);
+    assert.match(result.out, /Error: name collision/);
+    assert.match(result.out, /at runPromptobus \(.*lib\/cli\.js:/);
+    assert.match(result.out, /✖ name collision\n$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 /**
