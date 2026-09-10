@@ -21,6 +21,7 @@ import { fail, PromptobusError } from './errors.js';
 import {
   artifactFile, artifactsDir, blobFile, blobOf, blobRef, blobsDir, brokenArtifactsDir,
 } from './layout.js';
+import type { FaultHook } from './messages.js';
 import { FILENAME_RE, SCHEMA_VERSION } from './model.js';
 import type { ArtifactV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
@@ -34,6 +35,7 @@ export type ArtifactSource =
   | { stream: NodeJS.ReadableStream; filename: string };
 
 let tmpSeq = 0;
+const NO_FAULT: FaultHook = () => {};
 
 /**
  * Artifact file name — from the source. Called BEFORE the blob is written: a
@@ -193,16 +195,24 @@ export function newArtifact(id: string, sha256: string, filename: string, size: 
 }
 
 /**
- * Read metadata. Invalid metadata goes to `broken/artifacts` — one corrupt
- * record must not cost the task the rest.
+ * Read metadata. Missing — `artifact-not-found`; unreadable for another errno
+ * — `artifact-broken`, the errno in context. Invalid metadata goes to
+ * `broken/artifacts` — one corrupt record must not cost the task the rest.
  */
-export function readArtifact(home: string, task: string, id: string): ArtifactV1 {
+export function readArtifact(home: string, task: string, id: string, fault: FaultHook = NO_FAULT): ArtifactV1 {
   const file = artifactFile(home, task, id);
   let raw;
   try {
+    fault('artifact-read', { task, artifact: id, file });
     raw = readFileSync(file, 'utf8');
-  } catch {
-    fail('artifact-not-found', `artifact ${id} is not in task ${task}`, { task, artifact: id });
+  } catch (e) {
+    const errno = (e as NodeJS.ErrnoException).code;
+    if (errno === 'ENOENT') {
+      fail('artifact-not-found', `artifact ${id} is not in task ${task}`, { task, artifact: id, file, errno });
+    }
+    if (typeof errno !== 'string') throw e;
+    fail('artifact-broken', `artifact ${id} metadata could not be read (${errno}): ${(e as Error).message}`,
+      { task, artifact: id, file, errno });
   }
   let meta: unknown;
   try {
@@ -237,16 +247,25 @@ function isolateArtifact(home: string, task: string, name: string): void {
 /**
  * Read the artifact payload, checking the digest. A mismatch is a typed
  * refusal, not a quiet read: a corrupt blob handed over as payload is the
- * case artifacts are hash-addressed for.
+ * case artifacts are hash-addressed for. A missing blob is `artifact-not-found`;
+ * a blob that cannot be read for another errno is `artifact-broken`, the errno
+ * in context.
  */
-export function readBlob(home: string, task: string, meta: ArtifactV1): Buffer {
+export function readBlob(home: string, task: string, meta: ArtifactV1, fault: FaultHook = NO_FAULT): Buffer {
   const file = blobOf(home, task, meta);
   let content: Buffer;
   try {
+    fault('artifact-read', { task, artifact: meta.id, file });
     content = readFileSync(file);
-  } catch {
-    fail('artifact-not-found', `blob ${meta.sha256} is not in task ${task}`,
-      { task, artifact: meta.id, sha256: meta.sha256 });
+  } catch (e) {
+    const errno = (e as NodeJS.ErrnoException).code;
+    if (errno === 'ENOENT') {
+      fail('artifact-not-found', `blob ${meta.sha256} is not in task ${task}`,
+        { task, artifact: meta.id, sha256: meta.sha256, file, errno });
+    }
+    if (typeof errno !== 'string') throw e;
+    fail('artifact-broken', `blob ${meta.sha256} could not be read (${errno}): ${(e as Error).message}`,
+      { task, artifact: meta.id, sha256: meta.sha256, file, errno });
   }
   const actual = createHash('sha256').update(content).digest('hex');
   if (actual !== meta.sha256) {

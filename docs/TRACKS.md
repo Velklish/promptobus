@@ -96,7 +96,7 @@ PB-63 and PB-66 are P0. PB-66 precedes PB-65 and reader taxonomy. PB-101 follows
 
 Queued assignments: [PB-63](archive/PB-63-migrate-mark-never-removed/task.md), [PB-66](archive/PB-66-recovery-misreads-errno-as-corruption/task.md), [PB-65](archive/PB-65-recovery-open-failure-bricks-store/task.md), [PB-132](archive/PB-132-task-id-grammar-two-homes/task.md), [PB-146](archive/PB-146-unreadable-record-taxonomy-gap/task.md), [PB-102](archive/PB-102-mixed-version-diagnosis-unreachable/task.md), [PB-101](archive/PB-101-four-commands-bypass-host-home/task.md), [PB-131](archive/PB-131-message-types-mutable-array/task.md), [PB-135](archive/PB-135-sendsyncinput-not-exported/task.md), [PB-147](archive/PB-147-prune-remove-seam-untested/task.md).
 
-Added after this snapshot (triage of 2026-09-10, findings of this track's own run): [PB-146.1](backlog/queue/PB-146.1-direct-reads-flatten-errno-to-not-found.md), [PB-65.1](backlog/queue/PB-65.1-fanout-mkdir-refusal-escapes-classification.md), [PB-63.1](backlog/queue/PB-63.1-migration-needed-true-on-sweep-only-plan.md), [PB-146.2](backlog/queue/PB-146.2-recover-history-discard-broken-tasks.md), [PB-66.1](backlog/queue/PB-66.1-inbox-unreadable-ref-knock-loop-unbounded.md), in that order.
+Added after this snapshot (triage of 2026-09-10, findings of this track's own run): [PB-146.1](archive/PB-146.1-direct-reads-flatten-errno-to-not-found/task.md), [PB-65.1](backlog/queue/PB-65.1-fanout-mkdir-refusal-escapes-classification.md), [PB-63.1](backlog/queue/PB-63.1-migration-needed-true-on-sweep-only-plan.md), [PB-146.2](backlog/queue/PB-146.2-recover-history-discard-broken-tasks.md), [PB-66.1](backlog/queue/PB-66.1-inbox-unreadable-ref-knock-loop-unbounded.md), in that order.
 
 ### C — Codex session lifecycle
 

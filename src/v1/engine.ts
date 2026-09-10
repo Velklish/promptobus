@@ -363,8 +363,8 @@ export function openEngine({
       return out;
     },
 
-    readArtifact: (task, id) => readArtifact(home, task, id),
-    readArtifactContent: (task, id) => readBlob(home, task, readArtifact(home, task, id)),
+    readArtifact: (task, id) => readArtifact(home, task, id, faults),
+    readArtifactContent: (task, id) => readBlob(home, task, readArtifact(home, task, id, faults), faults),
     listArtifacts: (task) => listArtifacts(home, task),
     orphanBlobs: (task) => orphanBlobs(home, task),
 

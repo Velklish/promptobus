@@ -49,7 +49,7 @@ import { validate } from './validate.js';
 /** Fan-out steps, after each of which the suite can crash the process. */
 export type FanoutStep =
   | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read'
-  | 'task-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
+  | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
 
 /**
  * Fault-injection seam. Fan-out points are called AFTER each durable step; a

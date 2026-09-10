@@ -1228,6 +1228,50 @@ test('artifact: unparseable metadata is schema-invalid, not absent', () => {
   assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'broken', 'artifacts', `${corrupt}.json`)));
 });
 
+test('artifact metadata and blob reads classify non-ENOENT refusals as artifact-broken', async () => {
+  const root = sandbox();
+  const seed = open(root, { recover: false });
+  const id = taskWith(seed, 'unreadable-artifact-t20260902-100013');
+  const source = path.join(SB, 'unreadable-artifact.patch');
+  writeFileSync(source, 'artifact metadata read refusal\n');
+  const sent = await seed.send(id, {
+    from: 'owner', to: ['w-api'], type: 'artifact', body: 'artifact', artifact: { path: source },
+  });
+  const metadata = path.join(seed.home, 'tasks', id, 'artifacts', `${sent.artifact.id}.json`);
+  const blob = path.join(seed.home, 'tasks', id, 'blobs', sent.artifact.sha256);
+  let target = metadata;
+  let errno = 'EACCES';
+  const engine = open(root, {
+    recover: false,
+    faults: (step, info) => {
+      if (step !== 'artifact-read' || info.task !== id || info.artifact !== sent.artifact.id || info.file !== target) return;
+      throw Object.assign(new Error(`${errno}: injected artifact read refusal`), { code: errno });
+    },
+  });
+
+  assert.ok(existsSync(metadata), 'the refused artifact metadata was not present on disk');
+  const refused = refusal(() => engine.readArtifact(id, sent.artifact.id));
+  assert.equal(refused?.code, 'artifact-broken');
+  assert.equal(refused?.context.errno, 'EACCES');
+
+  errno = 'ENOENT';
+  const missing = refusal(() => engine.readArtifact(id, sent.artifact.id));
+  assert.equal(missing?.code, 'artifact-not-found');
+  assert.equal(missing?.context.errno, 'ENOENT');
+
+  target = blob;
+  errno = 'EACCES';
+  assert.ok(existsSync(blob), 'the refused blob was not present on disk');
+  const blobRefused = refusal(() => engine.readArtifactContent(id, sent.artifact.id));
+  assert.equal(blobRefused?.code, 'artifact-broken');
+  assert.equal(blobRefused?.context.errno, 'EACCES');
+
+  errno = 'ENOENT';
+  const blobMissing = refusal(() => engine.readArtifactContent(id, sent.artifact.id));
+  assert.equal(blobMissing?.code, 'artifact-not-found');
+  assert.equal(blobMissing?.context.errno, 'ENOENT');
+});
+
 test('artifact: broken metadata is isolated, the other task records are read', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);

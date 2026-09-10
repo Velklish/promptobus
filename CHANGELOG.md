@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Recovery results expose unfinished and permanently lost fan-outs.** The exported `RecoverFailure` and `RecoverResult.failed` identify a retryable hard-link refusal as `link-refused` and an intent lost before materialization as `intent-lost`, with the affected task, message, and diagnostic note. (PB-65)
 - **Bulk task listings retain machine-readable failure codes.** Each `BrokenTask` now carries the exact typed refusal code, so callers can distinguish a newer mechanism record from a damaged or unreadable journal without parsing diagnostic text or reading the task again. (PB-146)
+- **Artifact metadata and blob read refusals have their own typed code.** `artifact-not-found` is reserved for `ENOENT` on both the metadata and the blob read; another read errno is reported as `artifact-broken` with the errno in `context`. (PB-146.1)
 
 ### Changed
 

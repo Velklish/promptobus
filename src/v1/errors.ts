@@ -33,6 +33,7 @@ export const ERROR_CODES = [
   // artifacts
   'artifact-source',
   'artifact-not-found',
+  'artifact-broken',
   'artifact-integrity',
   // disk
   'lock-busy',
