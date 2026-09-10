@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Calibration documents and tests now pin the deterministic eligible-key pivot tie-break.** (PB-145)
 - **The glossary now defines holder, contact point, persist session, thread and session record, and the Codex holder reference points to those terms.** (PB-110)
 - **`models calibrate --write` now prints its text proposal before confirmation and refuses non-interactive writes without `--yes` even when no rating would move.** (PB-62)
 - **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host implementations must provide the layout guard argv before calling `install`, `spawn`, or `review`; otherwise guard hook assembly throws `TypeError` in `lib/install.js`, `lib/spawn.js`, or `lib/review.js`. (PB-103)

@@ -144,22 +144,22 @@ test('records group by (harness, model, effort) with aliases folded in — never
   assert.equal(RECORDS.every((x) => x.tuple === null), true);
   assert.equal(r.keys.length, 6);
   const opus = keyOf(r, 'claude', 'claude-opus-5', 'xhigh');
-  // Four runs typed `--model opus` and four typed the full id: one key of eight.
-  assert.equal(opus.runs, 8);
+  // Four runs typed `--model opus` and three typed the full id: one key of seven.
+  assert.equal(opus.runs, 7);
   assert.deepEqual(opus.aliasesSeen, ['opus']);
   assert.equal(opus.tuple, 'claude-opus-xhigh');
 });
 
 test('a dismissed run counts as a run and as spend, and never as a finished piece', () => {
   const sonnet = keyOf(report(), 'claude', 'claude-sonnet-5', 'xhigh');
-  assert.equal(sonnet.runs, 6);
+  assert.equal(sonnet.runs, 7);
   assert.equal(sonnet.dismissed, 1);
-  assert.equal(sonnet.acceptedPieces, 5);
+  assert.equal(sonnet.acceptedPieces, 6);
   // The dismissed run lasted 9000 s — the time until someone stopped it, not the
   // time to a finished piece. Its window delta of 24 pp is still real spend.
-  assert.equal(sonnet.durationSamples, 5);
-  assert.equal(sonnet.durationSec, 2000);
-  assert.equal(sonnet.windowSamples, 6);
+  assert.equal(sonnet.durationSamples, 6);
+  assert.equal(sonnet.durationSec, 1950);
+  assert.equal(sonnet.windowSamples, 7);
   assert.equal(sonnet.windowDelta, 20);
 });
 
@@ -186,7 +186,7 @@ test('runs on a model the catalog does not rate get medians and no proposal', ()
 test('the pivot is the most-observed eligible key and keeps its catalog bands', () => {
   const r = report();
   assert.deepEqual(r.pivot, {
-    harness: 'claude', model: 'claude-opus-5', effort: 'xhigh', tuple: 'claude-opus-xhigh', runs: 8,
+    harness: 'claude', model: 'claude-opus-5', effort: 'xhigh', tuple: 'claude-opus-xhigh', runs: 7,
   });
   const opus = keyOf(r, 'claude', 'claude-opus-5', 'xhigh');
   assert.equal(opus.proposal.pivot, true);
@@ -196,6 +196,15 @@ test('the pivot is the most-observed eligible key and keeps its catalog bands', 
   assert.equal(opus.proposal.quotaCost.band, opus.catalog.quotaCost);
   // And it is therefore never in the merge payload.
   assert.equal(Object.hasOwn(r.ratings, 'claude-opus-xhigh'), false);
+});
+
+test('an eligible run-count tie chooses the earlier key order', () => {
+  const r = report();
+  assert.equal(keyOf(r, 'claude', 'claude-opus-5', 'xhigh').runs, 7);
+  assert.equal(keyOf(r, 'claude', 'claude-sonnet-5', 'xhigh').runs, 7);
+  assert.deepEqual(r.pivot, {
+    harness: 'claude', model: 'claude-opus-5', effort: 'xhigh', tuple: 'claude-opus-xhigh', runs: 7,
+  });
 });
 
 test('a ratio moves a band only when it surprises the catalog, and never by more than two', () => {
@@ -216,7 +225,7 @@ test('a key window moves quotaCost independently of its missing throughput', () 
   assert.equal(sonnet.proposal.speed.band, null);
   assert.match(sonnet.proposal.speed.why, /no throughput observation/);
   // Completion duration remains visible evidence, but never supplies speed.
-  assert.equal(sonnet.durationSec, 2000);
+  assert.equal(sonnet.durationSec, 1950);
   // quotaCost: band 2 against the pivot's 5 implies 1.25^-3 of its window
   // movement; the run actually moved twice as much — two bands up.
   assert.equal(sonnet.catalog.quotaCost, 2);
@@ -328,12 +337,12 @@ test('the merge payload carries only ratings that moved', () => {
 
 test('the printed proposal carries the numbers behind it and never a quality rating', () => {
   const text = renderCalibration(report());
-  assert.match(text, /pivot \(local anchor\): claude · claude-opus-5 · xhigh — 8 run\(s\)/);
+  assert.match(text, /pivot \(local anchor\): claude · claude-opus-5 · xhigh — 7 run\(s\)/);
   assert.match(text, /speed: no proposal — no throughput observation for this model \(catalog 2\)/);
   assert.match(text, /quotaCost: 2 → 4 \(catalog 2\)/);
-  assert.match(text, /median completion duration 2000s over 5 sample\(s\)/);
+  assert.match(text, /median completion duration 1950s over 6 sample\(s\)/);
   assert.match(text, /median throughput — tokens\/s over 0 sample\(s\)/);
-  assert.match(text, /median window delta 20 pp over 6 sample\(s\)/);
+  assert.match(text, /median window delta 20 pp over 7 sample\(s\)/);
   assert.match(text, /duration is completion-duration evidence and is not used for speed/);
   assert.match(text, /quality is not proposed from telemetry/);
   // The overlay block is what a person pastes, and it is the merge payload.
@@ -399,7 +408,7 @@ test('a median of zero is below the measurement resolution, and proposes nothing
     { tuples: TUPLES, aliases: ALIASES });
   const key = keyOf(r, 'claude', 'claude-sonnet-5', 'xhigh');
   assert.equal(key.windowDelta, 0);
-  assert.equal(key.windowSamples, 6, 'the zeros are samples — they are read, and then declined');
+  assert.equal(key.windowSamples, 7, 'the zeros are samples — they are read, and then declined');
   assert.equal(key.proposal.quotaCost.band, null);
   assert.match(key.proposal.quotaCost.why, /below what this measurement can resolve/);
   assert.equal(Object.hasOwn(r.ratings['claude-sonnet-xhigh'] ?? {}, 'quotaCost'), false);

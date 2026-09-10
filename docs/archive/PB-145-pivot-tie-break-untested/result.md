@@ -1,0 +1,9 @@
+# PB-145 · Result
+
+**Closed 2026-09-10.** Completed as a test and documentation change; the code was already right. `calibrate` picks the pivot by strict greater-than over run counts, so an equal count keeps the earlier `(harness, model, effort)` key, but the fixture had a unique maximum and nothing held that rule. One existing full-id Opus record in the telemetry fixture now stands as a Sonnet record, so the two top eligible keys tie at seven runs with Opus earlier; the fixture-derived assertions are updated and a new case asserts the earlier key wins. The CLI reference and ADR-005 state the tie rule (lexicographic key order).
+
+**Verification.** Worker commit `c3178a5`, worktree of `worker:telemetry`, squashed. Reproducer red before the fixture change: `node --test --test-name-pattern='an eligible run-count tie chooses the earlier key order' test/model-routing-calibrate.test.mjs` exit 1, "Expected values to be strictly equal: 8 !== 7"; after it, the calibrate file 43/43. Gates on `c3178a5`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 687 tracked files, 119 tarball entries. Mutation probe, test kept: `k.runs > best.runs` changed to `>=` in `lib/model-routing/calibrate.js` → exit 1, the pivot became the Sonnet key (`claude-sonnet-xhigh`, 7 runs) instead of the Opus one; restored → 1/1. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** `docs/reference/03-cli.md` and ADR-005 § `models calibrate` (the tie rule), CHANGELOG entry under Changed (the wording changed; the code did not).
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:telemetry`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator; approver Павел Ким's orchestrator session.
