@@ -106,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`models calibrate --write` now names higher-layer rating shadows in its warning and JSON write outcome.** (PB-91)
 - **Guard successor detection now uses the production hint seam, and hook stdin has a deadline.** The unused verdict entry point is gone, while an unclosed event stream becomes an empty payload after the shared 200 ms budget. (PB-123)
 - **`models calibrate --write` and `models strategy` now refuse non-object overlays before writing, preserving the person's original file.** The calibration reference also states that a proposed rating replaces a hand-set value for the same tuple and field. (PB-106)
+- **Spawn and review now print the rules file list on real lifts as well as dry-runs, so the participant preamble is available for the first-status check.** (PB-44)
 
 ## [0.5.1] - 2026-09-09
 

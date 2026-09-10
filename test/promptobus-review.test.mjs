@@ -19,6 +19,16 @@ import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
 
+function rulesBlock(text, role, expectedFiles) {
+  const lines = String(text).split('\n');
+  const start = lines.findIndex((line) => line.trim() === `${role} rules:`);
+  if (start < 0 || expectedFiles.length === 0) return null;
+  const printed = lines.slice(start + 1, start + 1 + expectedFiles.length).map((line) => line.trim());
+  if (printed.length !== expectedFiles.length
+    || printed.some((line, index) => line !== expectedFiles[index])) return null;
+  return [`${role} rules:`, ...printed].join('\n');
+}
+
 // realpath: the scheduler canonicalizes the root (macOS: /var → /private/var), and the
 // test's expectations must be compared against canonical paths.
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus-review-')));
@@ -1137,6 +1147,12 @@ check('PB-35 output: the snapshot moment and the worktree HEAD stand beside the 
 const drySnapOut = await capture(() => review(WS, { target: W2, task: owned.id, dryRun: true }));
 check('PB-35 output: --dry-run prints the same pair beside the base',
   SNAPSHOT_LINE.test(drySnapOut) && drySnapOut.includes(gOut(W2, 'rev-parse', 'HEAD')), drySnapOut);
+const dryReviewerRules = rulesBlock(drySnapOut, 'reviewer', second.rules);
+const liveReviewerRules = rulesBlock(liveOut, 'reviewer', second.rules);
+check(': dry-run and real review print the same reviewer rules block',
+  second.rules.length > 0 && dryReviewerRules !== null && liveReviewerRules !== null
+  && dryReviewerRules === liveReviewerRules,
+  `dry-run=${dryReviewerRules} · real=${liveReviewerRules}`);
 
 // A re-review of the same subject must stay the same: the same directory and the same
 // --task go to the same reviewer, not raise a second one.

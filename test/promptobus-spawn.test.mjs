@@ -70,6 +70,16 @@ const throughput = await import(path.join(here, '..', 'lib', 'model-routing', 't
 const { GUARD_HOOK_EVENT, guardHookCommand, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { shellQuote } = await import(path.join(here, '..', 'lib', 'util.js'));
 
+function rulesBlock(text, role, expectedFiles) {
+  const lines = String(text).split('\n');
+  const start = lines.findIndex((line) => line.trim() === `${role} rules:`);
+  if (start < 0 || expectedFiles.length === 0) return null;
+  const printed = lines.slice(start + 1, start + 1 + expectedFiles.length).map((line) => line.trim());
+  if (printed.length !== expectedFiles.length
+    || printed.some((line, index) => line !== expectedFiles[index])) return null;
+  return [`${role} rules:`, ...printed].join('\n');
+}
+
 check(`: participant keys — skillOverrides, and spawn reads them from workspace settings`,
   SKILL_KEYS.length > 0 && SKILL_KEYS.includes('skillOverrides'),
   SKILL_KEYS.join(', '));
@@ -960,13 +970,19 @@ resetCliCaches();
 const planNew453 = await planSpawn(WS, optsNew453);
 claudeSays([{ id: 'sess-0447', name: planNew453.name, state: 'working', pid: 4447 }]);
 resetCliCaches();
-await quiet(() => spawnWorker(WS, optsNew453));
+const live453 = await capture(() => spawnWorker(WS, optsNew453));
 const backRec = store.participantOf(store.readTask(HOME, TASK453), 'worker:store');
 const back = backRec?.metadata;
 const reusedSidecar = throughput.throughputSidecarFile(HOME, TASK453, 'worker:store');
 check(': a new lift clears the prior address sidecar before replacing its record',
   existsSync(reusedSidecar) && throughput.readThroughputSidecar(HOME, TASK453, 'worker:store') === null,
   JSON.stringify(throughput.readThroughputSidecar(HOME, TASK453, 'worker:store')));
+const dryWorkerRules = rulesBlock(dry453, 'worker', planNew453.rules);
+const liveWorkerRules = rulesBlock(live453, 'worker', planNew453.rules);
+check(': dry-run and real spawn print the same worker rules block',
+  planNew453.rules.length > 0 && dryWorkerRules !== null && liveWorkerRules !== null
+  && dryWorkerRules === liveWorkerRules,
+  `dry-run=${dryWorkerRules} · real=${liveWorkerRules}`);
 
 // A failed telemetry cleanup must not turn a new assignment into a failed lift.
 // The sidecar is restored after the probe so the remainder of the fixture can

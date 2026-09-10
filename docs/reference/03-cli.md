@@ -16,7 +16,7 @@ Declaring a harness is a hand edit of the tool manifest — under the standalone
 
 `--new-task` and `--task` conflict. Without `--task`, spawn joins the only active task, or opens a new one when several actives exist and this session has no binding. A task owned by another session refuses a silent join.
 
-`--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan. For Codex, its command line is descriptive: `codex app-server --stdio` receives the prompt through a `turn/start` request, so the prompt is not a positional `<prompt>` argument; other drivers print their runnable argv with the placeholder.
+`--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan. A real lift prints the `worker rules:` block too, listing the rule files handed to the participant; the dry-run and real-lift lists are the same. For Codex, its command line is descriptive: `codex app-server --stdio` receives the prompt through a `turn/start` request, so the prompt is not a positional `<prompt>` argument; other drivers print their runnable argv with the placeholder.
 
 The worker gets an isolated git worktree. The main tree is not edited. Read the branch from `promptobus status` or `promptobus_task`, not from the worktree name.
 
@@ -38,7 +38,7 @@ The participant preamble names the generator and dependency outcomes in every ca
 
 ## Review
 
-The path is required. There is no cwd resolve. `--title` is required to open a new review task. `--task` sends a new diff to the existing reviewer. `--base` sets the diff base. `--dry-run` prints the plan.
+The path is required. There is no cwd resolve. `--title` is required to open a new review task. `--task` sends a new diff to the existing reviewer. `--base` sets the diff base. `--dry-run` prints the plan. A new reviewer lift prints the `reviewer rules:` block too, listing the rule files handed to that participant; the dry-run and real-lift lists are the same.
 
 **The diff file is a snapshot, and a re-review re-snapshots.** `files/review-<worker>.diff` is written once, at the call, and compares the selected base with the working tree — not with `HEAD`, because reviewing purely uncommitted work is supported. Before the snapshot pass, review refreshes Git's index stat data with `git update-index -q --refresh`, so a timestamp-only rewrite remains clean while content that differs from `HEAD` is still named. One `git diff --raw --stat --patch` pass reads the patch, its stat and raw tracked-tree records; those records are compared with the captured `HEAD` without reading the tracked tree again, while untracked paths are listed separately. The command says `tracked tree clean`, or says `tracked tree dirty` and names the modified tracked paths. The reviewer prompt instead says `At snapshot time the tracked tree was clean/dirty` and, for dirty state, names those paths. A dirty tracked tree changes the snapshot in both directions: a mutation probe can temporarily remove content already committed at `HEAD`, while an uncommitted edit can enter the review although no commit contains it. The command warns about that state but neither waits, locks the worker nor changes the comparison.
 
