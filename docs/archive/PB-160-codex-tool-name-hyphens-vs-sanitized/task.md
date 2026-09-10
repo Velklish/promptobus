@@ -1,23 +1,23 @@
 # PB-160 · Codex participant is told hyphenated MCP tool names, but Codex exposes them sanitized to underscores — every call by the told name fails in 0 ms
 
-- **Scope:** `lib/driver-codex.js` (`mcpToolName`), `lib/codex-session.js` (`codexMcpName`), participant order text; consumer ati-agents BL-517.2
+- **Scope:** `lib/driver-codex.js` (`mcpToolName`), `lib/codex-session.js` (`codexMcpName`), participant order text; the consumer's own card
 - **Created:** 2026-09-10
 - **Dependencies:** none
 
 ## Context
 
-Found by the consumer (ati-agents, `BL-517.2`) on a live `live-codex.mjs` run, 2026-09-10 12:52 UTC, codex-cli 0.146.0, promptobus v0.5.1, model `gpt-5.6-sol`, sandbox read-only.
+Found by the consumer (on its own card) on a live `live-codex.mjs` run, 2026-09-10 12:52 UTC, codex-cli 0.146.0, promptobus v0.5.1, model `gpt-5.6-sol`, sandbox read-only.
 
-The participant order text names the bus tools by `mcpToolName(server, name, prefix)` → `mcp__ati-agents-promptobus__promptobus_send` (the override key `ati-agents-promptobus` glued verbatim). Codex itself lists the same tools **sanitized**: the rollout of thread `01a08b5f-f340-7e90-9c37-1e0ceed0df64` shows `ALL_TOOLS` containing `mcp__ati_agents_promptobus__promptobus_mailbox`, `…__promptobus_send`, `…__promptobus_task` (hyphens → underscores). The same happens to the consumer's memory section: `mcp__ati-agents-context-store__search_facts` is told, `mcp__ati_agents_context_store__…` exists.
+The participant order text names the bus tools by `mcpToolName(server, name, prefix)` → `mcp__consumer-cli-promptobus__promptobus_send` (the override key `consumer-cli-promptobus` glued verbatim). Codex itself lists the same tools **sanitized**: the rollout of thread `01a08b5f-f340-7e90-9c37-1e0ceed0df64` shows `ALL_TOOLS` containing `mcp__consumer_cli_promptobus__promptobus_mailbox`, `…__promptobus_send`, `…__promptobus_task` (hyphens → underscores). The same happens to the consumer's memory section: `mcp__consumer-cli-memory-mcp__search_facts` is told, `mcp__consumer_cli_memory_mcp__…` exists.
 
-Codex calls tools through its `exec` JS harness (`tools.<name>(...)`). A name with hyphens is not even a valid property: `tools.mcp__ati-agents-promptobus__promptobus_send({...})` parses as a subtraction and throws before any server is reached — which is exactly the shape of the original finding: four calls in a row `status: failed`, `durationMs: 0`, no error text, then five minutes of CLI workarounds (`BL-517.2`). Today's run passed 11/11 only because the model did not trust the order: it filtered `ALL_TOOLS` by "promptobus" first and called the sanitized names — `promptobus_mailbox` Ok in 2 ms, `promptobus_send` Ok in 5 ms, `LIVE-CODEX-HELLO` delivered in 50 s.
+Codex calls tools through its `exec` JS harness (`tools.<name>(...)`). A name with hyphens is not even a valid property: `tools.mcp__consumer-cli-promptobus__promptobus_send({...})` parses as a subtraction and throws before any server is reached — which is exactly the shape of the original finding: four calls in a row `status: failed`, `durationMs: 0`, no error text, then five minutes of CLI workarounds (`the consumer's card`). Today's run passed 11/11 only because the model did not trust the order: it filtered `ALL_TOOLS` by "promptobus" first and called the sanitized names — `promptobus_mailbox` Ok in 2 ms, `promptobus_send` Ok in 5 ms, `LIVE-CODEX-HELLO` delivered in 50 s.
 
 Name forms in that transcript: told form ×14 (prompt), listed/called form ×8 (tools list and calls). The rule Codex applies, as measured: every character outside `[A-Za-z0-9_]` in the server key becomes `_`.
 
 ## Work to do
 
 - `mcpToolName` for the Codex harness renders the name the way Codex exposes it: server key sanitized (`[^A-Za-z0-9_]` → `_`), then `mcp__<key>__<tool>`. One function, as today, so the order text, the wake text (`orderBody`) and the consumer host (`toolName(server, name)` in the ATI host memory section) all follow.
-- A verdict in the suite: the told name for a key with a hyphen (the consumer prefix is `ati-agents-`) equals the sanitized form; a mutation back to the raw key must go red.
+- A verdict in the suite: the told name for a key with a hyphen (the consumer prefix is `consumer-cli-`) equals the sanitized form; a mutation back to the raw key must go red.
 - The holder surfaces an MCP call failure as an event with a reason (today: `failed`, 0 ms, no text — undistinguishable from a dead server), so a live stand can stop with a diagnosis instead of waiting out the 300 s ceiling.
 
 ## Out of scope
