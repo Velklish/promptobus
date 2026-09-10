@@ -1,6 +1,6 @@
 {
   "name": "promptobus",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
   "license": "MIT",
   "repository": "github:Velklish/promptobus",
