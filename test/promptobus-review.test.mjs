@@ -9,7 +9,7 @@
 // CLI called branches, worktree directories, and sessions, and they check that the hard
 // rename didn't break what was already established. Details are in
 // `promptobus.test.mjs`, the file's header comment.
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1077,6 +1077,28 @@ check('PB-157 prompt: a clean snapshot says so explicitly and carries no modifie
   && second.prompt.includes('git show <sha> -- <path>')
   && second.reReview.includes('At snapshot time the tracked tree was clean.'),
   JSON.stringify(second.snapshot));
+
+const secondFile = path.join(W2, 'vtoroy.txt');
+const secondContents = readFileSync(secondFile, 'utf8');
+const touchedAt = new Date(Date.now() + 2000);
+utimesSync(secondFile, touchedAt, touchedAt);
+const touchedSnapshot = planReview(WS, { target: W2, task: owned.id });
+check('PB-157.1 snapshot: touching a tracked file without changing content stays clean',
+  touchedSnapshot.snapshot.clean === true && touchedSnapshot.snapshot.modifiedTracked.length === 0,
+  JSON.stringify(touchedSnapshot.snapshot));
+writeFileSync(secondFile, secondContents);
+const identicalSnapshot = planReview(WS, { target: W2, task: owned.id });
+check('PB-157.1 snapshot: rewriting identical content stays clean',
+  identicalSnapshot.snapshot.clean === true && identicalSnapshot.snapshot.modifiedTracked.length === 0,
+  JSON.stringify(identicalSnapshot.snapshot));
+writeFileSync(secondFile, 'изменённое содержимое\n');
+const changedSnapshot = planReview(WS, { target: W2, task: owned.id });
+check('PB-157.1 snapshot: rewriting different content lists the tracked path',
+  changedSnapshot.snapshot.clean === false
+  && JSON.stringify(changedSnapshot.snapshot.modifiedTracked) === JSON.stringify(['vtoroy.txt']),
+  JSON.stringify(changedSnapshot.snapshot));
+writeFileSync(secondFile, secondContents);
+g(W2, 'update-index', '-q', '--refresh');
 check(': a second worker of the same repository gets its own reviewer, not the first one\'s reviewer',
   second.address === 'reviewer:vtoroy' && second.address !== first.address, second.address);
 check(': the second one\'s reviewer sees its own diff',

@@ -1,0 +1,9 @@
+# PB-157.1 · Result
+
+**Closed 2026-09-10.** Completed. `snapshotDiff` in `lib/review.js` refreshes Git's index stat data (`git update-index -q --refresh`) before the single `diff --raw --stat --patch` pass, so a tracked file that was only touched, or rewritten with identical content, no longer carries a zero blob id on the working-tree side and is no longer reported as modified; a file whose content differs from HEAD is still listed. The refresh's own outcome does not gate the snapshot: a refusal leaves the previous behaviour. The orchestrator's workaround — `git update-index -q --refresh` by hand before every review — is no longer needed, and the reference's snapshot paragraph says so.
+
+**Verification.** Worker commit `d9b1154`, worktree of `worker:launch2`, squashed. Reproducer red before the repair: `node test/promptobus-review.test.mjs` exit 1, 213/215 — "touching a tracked file without changing content stays clean" and "rewriting identical content stays clean" (both `clean: false`, `modifiedTracked: ["vtoroy.txt"]`), while the rewrite-different case already listed the path; after the repair 215/215. Gates on `d9b1154`: `npm test` exit 0, 54/54 test files; `npx github:Velklish/backslop#v0.4.0 lint` exit 0, 0 errors; `npm run audit` exit 0, 700 tracked files, 119 tarball entries (escalated reruns). Mutation probe, tests kept: the refresh removed → exit 1, 213/215 with the same two assertions; restored → 215/215. Approver: squash of the worker branch onto `main`; CHANGELOG union; `backslop lint` and `npm run audit` on the integrated tree exit 0.
+
+**Documentation in the same pass.** `docs/reference/03-cli.md` § Review (the snapshot paragraph), CHANGELOG entry under Fixed.
+
+**Acceptance.** Implementation: Codex `gpt-5.6-luna` max (`worker:launch2`, strategy `balance`, bus task `pb-run-0909b-t20260909-184312`). Review: orchestrator diff read; approver Павел Ким's orchestrator session.
