@@ -215,20 +215,28 @@ test('no message names a command the CLI does not have', () => {
   // caught it until someone tried to document the command (PB-1).
   //
   // The subject is the FIRST element of the argument list: `busCommand(['done', …])`
-  // names `done`, and everything after it is that command's flags.
+  // names `done`, and everything after it is that command's flags. A package-owned
+  // command must use `busCommand`, not a consumer-command wrapper such as `formatNpx`.
   const known = subcommands();
-  const HEAD = /\b(?:busCommand|formatCommand|formatNpx)\(\s*\[\s*'([^']+)'/g;
+  const HEAD = /\b(busCommand|formatCommand|formatNpx)\(\s*\[\s*'([^']+)'/g;
   const stray = [];
+  const wrongWrapper = [];
   // Recursive: `lib/model-routing/` is a whole subsystem, and a gate that read only the
   // top level would be green about the half of the runtime it never opened.
   for (const file of jsFiles(LIB)) {
     for (const m of readFileSync(file, 'utf8').matchAll(HEAD)) {
-      if (!known.has(m[1])) {
-        stray.push(`${path.relative(path.join(LIB, '..'), file)}: ${m[1]}`);
+      const wrapper = m[1];
+      const command = m[2];
+      const relative = path.relative(path.join(LIB, '..'), file);
+      if (!known.has(command)) {
+        stray.push(`${relative}: ${command}`);
+      } else if (wrapper !== 'busCommand') {
+        wrongWrapper.push(`${relative}: ${wrapper}(${command})`);
       }
     }
   }
   assert.deepEqual(stray, []);
+  assert.deepEqual(wrongWrapper, []);
 });
 
 test('the gate above reads a command list that is not empty and holds the real commands', () => {

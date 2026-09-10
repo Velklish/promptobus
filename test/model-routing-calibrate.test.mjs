@@ -49,6 +49,7 @@ import { claudeDriver } from '../lib/driver-claude.js';
 import { telemetryFileOf } from '../lib/model-routing/telemetry.js';
 import { hostOf } from '../lib/host.js';
 import { models } from '../lib/models.js';
+import { captureSplit } from './console.mjs';
 import { writeHostConfig } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -460,6 +461,26 @@ test('calibrate prints the proposal and writes nothing', async () => {
     assert.match(out.text, /claude-sonnet-xhigh/);
     assert.match(out.text, /speed: no proposal — no throughput observation/);
     assert.equal(existsSync(w.user.path), false);
+  } finally { w.drop(); }
+});
+
+test('calibrate hint uses the consumer host bus command', async () => {
+  const w = workspace();
+  try {
+    const consumerHost = {
+      ...w.host,
+      formatNpx: (args) => ['npx', 'consumer', ...args].join(' '),
+      busCommand: (args) => ['consumer', 'promptobus', ...args].join(' '),
+    };
+    const out = sink();
+    const said = await captureSplit(() => models(consumerHost, {
+      subcommand: 'calibrate', output: out, ask: never, stdin: { isTTY: false },
+    }));
+    const code = said.value;
+    assert.equal(code, 0);
+    const text = `${said.out}${out.text}`;
+    assert.match(text, /to apply these lines: consumer promptobus models calibrate --write/);
+    assert.doesNotMatch(text, /to apply these lines: npx consumer models calibrate/);
   } finally { w.drop(); }
 });
 

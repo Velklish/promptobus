@@ -55,7 +55,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `substituteVars` | `substituteVars(value: unknown): unknown` | `null` may be a legitimate transformed value, not an absent host answer. |
 | `legacyLayout` | `legacyLayout(): HostLegacyLayout \| null` | `null` means this workspace has no former store and migration does not run. |
 | `formatCommand` | `formatCommand(args: string[]): string` | Never absent; it formats a command for a person. |
-| `formatNpx` | `formatNpx(args: string[]): string` | Never absent; it formats the package command for a person. |
+| `formatNpx` | `formatNpx(args: string[]): string` | Never absent; it formats a consumer-owned command for a person, never a bus subcommand. |
 | `busCommand` | `busCommand(args: string[]): string` | Never absent; it formats a bus command for diagnostics. |
 | `busArgv` | `busArgv(args: string[]): string[]` | Never `null`; it returns the complete launch argv without a leading `node`. |
 | `guardArgv` | `guardArgv(args: string[]): string[]` | Never `null`; it returns the complete hook launch argv without a leading `node`. |
@@ -65,6 +65,8 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `liveRunNote` | `liveRunNote(nsPath: string): string` | Never absent; an empty string means this host has no extra live-run note. |
 
 `promptobusHome()` is the authoritative task-store path. Store commands use that answer directly; they do not rebuild `<workspaceRoot>/.promptobus`, because a host may deliberately choose another home. A host whose `legacyLayout()` is not `null` MUST run `preflight()` and, when its plan says so, `migrate()` inside its own `promptobusHome()`; both functions are package-root exports, and a preflight refusal must surface from that member. The `status`, `history`, `dismiss`, and `prune` commands no longer perform migration on the host's behalf. The standalone host returns its configured `home` directly and declares `legacyLayout() === null`, so there is no migration to skip.
+
+`formatNpx()` exists for commands owned by the consumer CLI. It must never wrap a bus subcommand: package-owned hints use `busCommand()`, whose host-defined spelling places the command under the bus entry point. The two formatters may happen to return similar text on the standalone host, but they are separate contract members because a consumer host can place its own commands and the bus at different command paths.
 
 ## `legacyLayout()`
 
