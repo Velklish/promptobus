@@ -8,19 +8,60 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 ## What the host must answer
 
-- Identity: `id`, `commandName`, `version`, `locale`
-- Roots: `workspaceRoot()`, `promptobusHome()`, `findRoot(cwd)`
-- Binaries and launch argv: `nodePath()`, `binPath()`, `layoutBinPath()` (the entry a host uses to build `guardArgv`; the package itself no longer calls it), `guardArgv(args)`
-- Layout relatives: tools manifest, skills, plugin, bus hook, install manifest
-- `cloneOf(abs)` — the clone a directory belongs to and its namespace path, or `null`; zones and namespace depth are the host's layout, the package never walks the tree
-- `declaredTools()` — harness names allowed for `--harness`
-- Rules and module notes for a repo directory
-- `participantServers()` — MCP map copied to a spawned session (the bus server is added by the CLI)
-- `resolveRepo`, freshness, extra env, tool binaries
-- `legacyLayout()` — former store, or `null`
-- `routingPaths()` — model-routing files: the availability cache and the overlay layers, lowest precedence first
-- `harnessStateHome(harness)` — where the package keeps its session registry for one harness, or `null`
-- Command formatting and worker preamble text
+The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 45 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
+
+| Member | Signature | Meaning of `null` or an absent answer |
+|---|---|---|
+| `kind` | `readonly kind: typeof HOST_KIND` | Never absent; it is the host marker checked by `isPromptobusHost`. |
+| `id` | `readonly id: string` | Never absent; it identifies this host instance. |
+| `commandName` | `readonly commandName: string` | Never absent; it is the command word used in diagnostics and consumer tool names. |
+| `version` | `readonly version: string` | Never absent; it is the reader version selected for this host's store. |
+| `locale` | `readonly locale: string` | Never absent; it selects the host's presentation locale. |
+| `workspaceRoot` | `workspaceRoot(): string` | Never absent; it is the workspace root. |
+| `promptobusHome` | `promptobusHome(): string` | Never absent; it is the authoritative task-store home. |
+| `findRoot` | `findRoot(cwd: string): string \| null` | `null` means no host root was found for the path; standalone falls back to the resolved `cwd`. |
+| `routingPaths` | `routingPaths(): HostRoutingPaths` | Never absent; the returned cache path and overlay list are the routing declaration. |
+| `harnessStateHome` | `harnessStateHome(harness: string): string \| null` | `null` means the host names no registry for that harness, so a session operation refuses instead of guessing. |
+| `nodePath` | `nodePath(): string` | Never absent; it is the Node executable used for launches. |
+| `binPath` | `binPath(): string` | Never absent; it is the host's CLI entry used by participant launches. |
+| `layoutBinPath` | `layoutBinPath(): string` | Never absent; it is the entry path written into project hooks. |
+| `toolsManifestRel` | `toolsManifestRel(): string` | Never absent; it is the workspace-relative harness declaration path. |
+| `skillsDir` | `skillsDir(): string \| null` | `null` means the workspace has no configured process-skills directory. |
+| `pluginDir` | `pluginDir(): string \| null` | `null` means no plugin directory is available for the workspace. |
+| `pluginManifestRel` | `pluginManifestRel(): string` | Never absent; it is the workspace-relative plugin manifest path. |
+| `busHookRel` | `busHookRel(): string` | Never absent; it is the workspace-relative bus-hook path. |
+| `installManifestRel` | `installManifestRel(): string` | Never absent; it is the workspace-relative install manifest path. |
+| `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
+| `declaredTools` | `declaredTools(): string[]` | Never `null`; an empty array means the workspace declares no harnesses. |
+| `collectRules` | `collectRules(repoDir: string): string[]` | Never `null`; an empty array means no rule files were found for the repository. |
+| `moduleNote` | `moduleNote(repoDir: string): HostModuleNote` | Never absent; the note is `info` or `warn` even when the repository has no module-specific guidance. |
+| `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
+| `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
+| `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
+| `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
+| `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
+| `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
+| `isClone` | `isClone(abs: string): boolean` | Never `null`; `false` means the path is not a clone. |
+| `formatCandidate` | `formatCandidate(candidate: HostRepoCandidate): string` | Never absent; it supplies the human-readable candidate text. |
+| `inWorkspace` | `inWorkspace(abs: string): boolean` | Never `null`; `false` means the path is outside the host workspace. |
+| `cloneOf` | `cloneOf(abs: string): HostClone \| null` | `null` means no clone in this workspace contains the path. |
+| `reviewLayoutError` | `reviewLayoutError(kind: 'not-clone' \| 'outside' \| 'no-clone' \| 'cwd-outside' \| 'ask-path', ctx?: { targetDir?: string; repoDir?: string; abs?: string; dir?: string }): string \| null` | `null` means this host has no extra refusal text for that layout case. |
+| `defaultBranch` | `defaultBranch(repoDir: string): string \| null` | `null` means Git could not identify a default branch. |
+| `freshenRepo` | `freshenRepo(repoDir: string): HostFreshness` | The result is required; its nullable freshness fields mean Git could not measure those fields. |
+| `reportFresh` | `reportFresh(result: HostFreshness, label: string): void` | No answer is expected; the host reports or deliberately ignores freshness. |
+| `extraEnv` | `extraEnv(): Record<string, string>` | Never `null`; an empty object means no host environment overrides. |
+| `resolveToolBin` | `resolveToolBin(name: string): HostToolBin` | The result is required; `bin` may be absent when no launch path is available, and `version` absent means unread, not old. |
+| `substituteVars` | `substituteVars(value: unknown): unknown` | `null` may be a legitimate transformed value, not an absent host answer. |
+| `legacyLayout` | `legacyLayout(): HostLegacyLayout \| null` | `null` means this workspace has no former store and migration does not run. |
+| `formatCommand` | `formatCommand(args: string[]): string` | Never absent; it formats a command for a person. |
+| `formatNpx` | `formatNpx(args: string[]): string` | Never absent; it formats the package command for a person. |
+| `busCommand` | `busCommand(args: string[]): string` | Never absent; it formats a bus command for diagnostics. |
+| `busArgv` | `busArgv(args: string[]): string[]` | Never `null`; it returns the complete launch argv without a leading `node`. |
+| `guardArgv` | `guardArgv(args: string[]): string[]` | Never `null`; it returns the complete hook launch argv without a leading `node`. |
+| `cloneHint` | `cloneHint(nsPath: string): string` | Never absent; it gives the person a clone command or equivalent guidance. |
+| `syncHint` | `syncHint(): string` | Never absent; it gives the command that refreshes project integration. |
+| `workerPreamble` | `workerPreamble(ctx: { taskId: string; nsPath: string; branch: string }): string` | Never absent; it supplies the worker's host-specific preamble. |
+| `liveRunNote` | `liveRunNote(nsPath: string): string` | Never absent; an empty string means this host has no extra live-run note. |
 
 `promptobusHome()` is the authoritative task-store path. Store commands use that answer directly; they do not rebuild `<workspaceRoot>/.promptobus`, because a host may deliberately choose another home. A host whose `legacyLayout()` is not `null` MUST run `preflight()` and, when its plan says so, `migrate()` inside its own `promptobusHome()`; both functions are package-root exports, and a preflight refusal must surface from that member. The `status`, `history`, `dismiss`, and `prune` commands no longer perform migration on the host's behalf. The standalone host returns its configured `home` directly and declares `legacyLayout() === null`, so there is no migration to skip.
 

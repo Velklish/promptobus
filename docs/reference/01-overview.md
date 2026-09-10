@@ -11,7 +11,7 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `bin/promptobus.js` | CLI. Help and `--version` use a thin host. Other commands load `createStandaloneHost`. |
 | `lib/cli.js` | `runPromptobus(argv, { host, … })`. Host is required. |
 | `src/index.ts` → `.` | Protocol, store v1, MCP factory, driver contract, host types, standalone host |
-| `src/host-index.ts` → `./host` | Host contract only |
+| `src/host-index.ts` → `./host` | Host contract and the standalone implementation |
 | `src/hooks.ts` → `./hooks` | Hook planner |
 | `src/driver.ts` → `./driver` | Driver contract |
 | `lib/cli.js` → `./cli` | Command parser |
@@ -33,14 +33,26 @@ Layout of one task:
 ```
 .promptobus/tasks/<task-id>/
   task.json
+  .lock/
   messages/
   intents/
+    <id>.owner
   inbox/<participant-id>/
   history/<participant-id>/
   blobs/
   artifacts/
+  broken/
+    inbox/<participant-id>/
+    artifacts/
+    messages/
   files/
 ```
+
+- `.lock/` is created while a read-modify-write is in progress; delete it only after the writing process is gone, following the refusal's `ps` or manual-cleanup guidance.
+- `intents/<id>.owner` is written beside an open intent; remove it only with an intent that is no longer open, while recovery sweeps orphaned leases.
+- `broken/inbox/<participant-id>/` is written by mailbox readers when they isolate malformed refs; it is safe to delete after retaining its diagnostic and any record needed for repair.
+- `broken/artifacts/` is written by artifact readers when they isolate malformed metadata; it is safe to delete after retaining its diagnostic and any record needed for repair.
+- `broken/messages/` is written by recovery for malformed intents; it is safe to delete after retaining its diagnostic and any record needed for repair.
 
 `files/` is the folder a person opens, and it holds two kinds of file: artifacts that arrived through the bus — hard links to their blobs under the names they came with — and what the mechanism puts there itself, the `review` diff (`review-<worker>.diff`) and the `spawn` brief (`brief-<worker>.md`). A taken name is never overwritten: the next file of that stem takes the following number (`brief-<worker>-2.md`).
 
