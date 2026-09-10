@@ -562,9 +562,9 @@ const ctx = {
   addDirs: ['/tmp/rules'],
 };
 const workerPlan = codexDriver.prepare(ctx);
-check(': argv is app-server --stdio, prompt last; no files on disk',
-  workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
-  && workerPlan.argv.at(-1) === 'PROMPT' && workerPlan.files.length === 0
+check(': argv is app-server --stdio, prompt separate; no files on disk',
+  workerPlan.argv.length === 2 && workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
+  && workerPlan.prompt === 'PROMPT' && workerPlan.files.length === 0
   && workerPlan.settings.sandbox === 'workspace-write'
   && workerPlan.settings.approvalPolicy === 'on-request',
   JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files.length, settings: workerPlan.settings }));
@@ -673,6 +673,9 @@ check(': --dry-run names the thread id and that the prompt goes out as turn/star
   /harness session name: the thread id is chosen by app-server/.test(dry.out)
   && /the prompt then goes out as a turn\/start request/.test(dry.out),
   dry.out.slice(-400));
+check(': Codex --dry-run does not present the prompt as a positional app-server argument',
+  !/app-server --stdio <prompt>/.test(dry.out)
+  && /turn\/start request/.test(dry.out), dry.out.slice(-600));
 
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cdx', '--harness', 'codex'], { cwd: ws, env });

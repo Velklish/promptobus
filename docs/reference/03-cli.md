@@ -16,7 +16,7 @@ Declaring a harness is a hand edit of the tool manifest — under the standalone
 
 `--new-task` and `--task` conflict. Without `--task`, spawn joins the only active task, or opens a new one when several actives exist and this session has no binding. A task owned by another session refuses a silent join.
 
-`--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan.
+`--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan. For Codex, its command line is descriptive: `codex app-server --stdio` receives the prompt through a `turn/start` request, so the prompt is not a positional `<prompt>` argument; other drivers print their runnable argv with the placeholder.
 
 The worker gets an isolated git worktree. The main tree is not edited. Read the branch from `promptobus status` or `promptobus_task`, not from the worktree name.
 

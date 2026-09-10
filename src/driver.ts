@@ -198,8 +198,18 @@ export interface LaunchFile {
  * would silently diverge.
  */
 export interface LaunchPlan {
-  /** Launch arguments. The consumer neither assembles nor edits them — only prints. */
+  /** Launch arguments, excluding a prompt delivered through a non-positional channel. */
   argv: string[];
+  /**
+   * Assignment text when the harness does not take it as a positional argument.
+   * A driver with such a channel delivers it itself, for example through a `turn/start` request.
+   */
+  prompt?: string;
+  /**
+   * Descriptive command line for `--dry-run` when `argv` alone is not the runnable
+   * command. Absent — the consumer prints `<tool> <argv without the last element> <prompt>`.
+   */
+  dryRunCommand?: string;
   /** MCP config in the harness form: `--dry-run` reads it and the consumer writes it to disk. */
   mcpConfig: unknown;
   /** Settings file in the harness form. */

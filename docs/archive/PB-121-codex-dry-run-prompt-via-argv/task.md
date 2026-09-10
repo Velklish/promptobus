@@ -1,9 +1,9 @@
 # PB-121 · Codex's `prepare()` carries the prompt inside `argv`, so `promptobus spawn --dry-run --harness codex` prints `codex app-server --stdio <prompt>` — a line the mechanism never runs and that drops the prompt entirely if a person runs it, since `app-server` reads JSON-RPC from stdin, not a positional argument
 
-- **Order:** 830
 - **Scope:** `lib/driver-codex.js`, `lib/spawn.js`, `lib/review.js`, `lib/codex-session.js`, [03-cli](../../reference/03-cli.md) § `--dry-run`
 - **Created:** 2026-09-06
 - **Dependencies:** PB-90
+- **Taken:** 2026-09-10
 
 ## Context
 
