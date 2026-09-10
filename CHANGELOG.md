@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The glossary now defines holder, contact point, persist session, thread and session record, and the Codex holder reference points to those terms.** (PB-110)
 - **`models calibrate --write` now prints its text proposal before confirmation and refuses non-interactive writes without `--yes` even when no rating would move.** (PB-62)
 - **`guardArgv(args)` is now required on `PromptobusHost`.** Existing host implementations must provide the layout guard argv before calling `install`, `spawn`, or `review`; otherwise guard hook assembly throws `TypeError` in `lib/install.js`, `lib/spawn.js`, or `lib/review.js`. (PB-103)
 - **Participant telemetry now ends completion duration at the latest result message, falling back to dismissal and then task close.** The record carries that additive timestamp so worker and reviewer runs no longer share a close stamp. (PB-56)
