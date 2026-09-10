@@ -141,7 +141,7 @@ An explicit `--harness`, `--model` or `--effort` from the user travels to the CL
 
 ### Step up after two rounds
 
-Two review rounds on one worker with no progress — the same findings return, or a fix breaks what it fixed — mean the model is under the task. Step up once, and only once, without asking again if it stays inside the envelope:
+`promptobus status` prints the review-round count on each participant line. When it reaches two, inspect the rounds for progress: two review rounds on one worker with no progress — the same findings return, or a fix breaks what it fixed — mean the model is under the task. Step up once, and only once, without asking again if it stays inside the envelope:
 
 1. the next strategy up the rubric, or
 2. an explicit `--harness` / `--model` / `--effort` tuple you name.

@@ -827,6 +827,31 @@ test('a routed spawn keeps its decision on the participant, and status prints it
   assert.ok(said.out.includes(routingLine(routing)), 'the status line is the shared renderer, not a second copy');
 });
 
+test('status prints review rounds, questions and results before done', async () => {
+  const task = freshTask('status-rounds-t20260910-010000');
+  store.upsertParticipant(HOME, task, store.participantRecord('worker:status-rounds'));
+  store.sendMessage(HOME, task, {
+    from: 'orchestrator', to: 'worker:status-rounds', type: 'review', body: 'first review',
+  });
+  store.sendMessage(HOME, task, {
+    from: 'orchestrator', to: 'worker:status-rounds', type: 'review', body: 'second review',
+  });
+
+  const said = await captureSplit(() => status(WS, { task, sessions: {} }));
+  assert.match(said.out, /worker:status-rounds.*rounds 2/);
+  assert.match(said.out, /questions 0 · results 0/);
+});
+
+test('status omits the traffic fragment when a participant has no messages', async () => {
+  const task = freshTask('status-empty-t20260910-010001');
+  store.upsertParticipant(HOME, task, store.participantRecord('worker:status-empty'));
+
+  const said = await captureSplit(() => status(WS, { task, sessions: {} }));
+  const line = said.out.split('\n').find((entry) => entry.includes('worker:status-empty'));
+  assert.ok(line, 'the participant line is present');
+  assert.doesNotMatch(line, /rounds \d+|questions \d+|results \d+/);
+});
+
 // --- the reviewer side --------------------------------------------------------
 
 test('a routed review dry run prints the decision, writes nothing, and measures against the worker', async () => {
