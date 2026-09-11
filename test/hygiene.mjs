@@ -29,7 +29,13 @@
 //   measure 2026-08-29: one run left six such processes, and they
 //   started waking the developer's session at addresses from fixtures.
 //   Cleanup in the test does not fix this: the process is detached by
-//   construction;
+//   construction. **The switch travels as far as the environment does,
+//   and no further.** A child that composes its own environment rather
+//   than inheriting one is outside this list unless the code composing
+//   it names the switch: the Codex driver's participant MCP entry is
+//   such a child, and `mcpConfig` in
+//   [driver-codex.js](../lib/driver-codex.js) forwards the switch and
+//   the run's trace by name for that reason (PB-166.2);
 // - **contact point of this session** (`CLAUDE_CODE_MESSAGING_SOCKET`/
 //   `_TOKEN`). A bus command hands the task store the socket address
 //   of its session, and under a test its session is the session of the
