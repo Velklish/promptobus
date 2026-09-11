@@ -1214,16 +1214,8 @@ check('PB-87.1: Codex carries the classified MCP tool into prefixed disabled_too
   && classifiedCodexServers[codexMcpName('catalog', PREFIX)]?.disabled_tools?.join(',') === 'create_entry',
   JSON.stringify({ config: classifiedCodexPlan.mcpConfig, servers: classifiedCodexServers }));
 
-// PB-166.2. The bus entry's `env` is COMPOSED, not inherited, so a name absent from the
-// composition does not reach the participant's MCP server — and a warden auto-lifted
-// from that server is neither stopped by the switch nor written to the run's trace.
-// Measured here on the composition rather than on a lift: the lift is a paid turn, and
-// the subject is which names the entry carries.
-//
-// The values are SENTINELS, not the run's own: under the runner this process already has
-// both variables set (hygiene puts the switch on, run.mjs names the trace), so asserting
-// the run's values would pass on a driver that hardcoded them. A verbatim sentinel is the
-// difference between forwarding and inventing.
+// PB-166.2: the composition, not a lift — the lift is a paid turn and carries no more.
+// A sentinel, not the run's own trace path: the run already has both names set.
 const wardenEnv0 = {
   PROMPTOBUS_WARDEN: process.env.PROMPTOBUS_WARDEN,
   PROMPTOBUS_WARDEN_TRACE: process.env.PROMPTOBUS_WARDEN_TRACE,
@@ -1233,9 +1225,7 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 process.env.PROMPTOBUS_WARDEN_TRACE = WARDEN_TRACE_SENTINEL;
 const wardenOnBus = codexDriver.prepare({ ...ctx, ref: 'warden-forward-probe' })
   .mcpConfig.mcpServers.promptobus?.env ?? {};
-// Negative control: with neither name in the environment the composition must invent
-// neither. An unconditional forward would put `undefined` in the entry and read as green
-// against a check that only looked at the first half.
+// Negative control: an unconditional forward writes `undefined`, which only `in` catches.
 delete process.env.PROMPTOBUS_WARDEN;
 delete process.env.PROMPTOBUS_WARDEN_TRACE;
 const wardenOffBus = codexDriver.prepare({ ...ctx, ref: 'warden-forward-probe' })
@@ -1247,7 +1237,7 @@ for (const [name, was] of Object.entries(wardenEnv0)) {
 check('PB-166.2: the warden switch and its trace reach the participant MCP entry, and only when set',
   wardenOnBus.PROMPTOBUS_WARDEN === 'off'
   && wardenOnBus.PROMPTOBUS_WARDEN_TRACE === WARDEN_TRACE_SENTINEL
-  // The session file still travels beside them — the forward is an addition, not a swap.
+  // The session file survives beside them: the forward adds, it does not swap.
   && typeof wardenOnBus[SESSION_ENV_VAR] === 'string' && wardenOnBus[SESSION_ENV_VAR] !== ''
   && !('PROMPTOBUS_WARDEN' in wardenOffBus) && !('PROMPTOBUS_WARDEN_TRACE' in wardenOffBus),
   JSON.stringify({ set: wardenOnBus, unset: wardenOffBus }));

@@ -565,19 +565,8 @@ if (interrupted) {
   // The gate has one boundary, named in [warden.js](../lib/warden.js):
   // a warden started by hand leaves no trace. The rule forbids
   // auto-lift, and the suite does not start one by hand.
-  //
-  // The other boundary is the ENVIRONMENT, and it is not the process
-  // tree: both halves of this gate are variable names, so it reaches
-  // exactly as far as `PROMPTOBUS_WARDEN` and `PROMPTOBUS_WARDEN_TRACE`
-  // do. A child that INHERITS its environment is inside it for free; a
-  // child that COMPOSES one is inside it only because the code that
-  // composes it names the two. The participant's MCP server is the
-  // second kind — `mcpConfig` in [driver-codex.js](../lib/driver-codex.js)
-  // writes the bus entry's `env` rather than inheriting it — and until
-  // PB-166.2 it carried neither name: a warden raised from there was
-  // unstopped by the switch and unwritten to this trace. The gate was
-  // green because the suite lifts no real participant, not because it
-  // covered that process class.
+  // The other boundary is the ENVIRONMENT: a child composing its own is
+  // outside the gate unless named there (contributing.md § Suite isolation).
   let raised = [];
   try {
     raised = readFileSync(path.join(RUN_TMP, RAISED_LOG), 'utf8').split('\n').filter(Boolean);

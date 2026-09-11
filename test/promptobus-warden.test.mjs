@@ -267,9 +267,7 @@ const r3 = await wdn.wardenRound(HOME, TASK, { knock: noWake });
 check(`no contact point — no knock, and the channel is self-wake`,
   noWake.calls.length === 0 && health().orchestrator.channel === 'self-wake',
   JSON.stringify(health().orchestrator));
-// PB-168: which of the three fallbacks it was. `channel` is `self-wake` for all three and
-// therefore says nothing a reader can act on; this field is what separates them, and the
-// round is the only place that knows.
+// PB-168: `channel` is `self-wake` for all three; this field is what separates them.
 check('PB-168: the start-up fallback records its own state, and no channel refused anything',
   health().orchestrator.selfWake === 'starting' && health().orchestrator.selfWakeChannel === null,
   JSON.stringify(health().orchestrator));
@@ -298,9 +296,7 @@ const r4 = await wdn.wardenRound(HOME, TASK, { knock: refused, now: T1 });
 check('the socket did not accept the notification — the channel falls back to self-wake with a reason',
   health().orchestrator.channel === 'self-wake' && health().orchestrator.knockError === 'ENOENT',
   JSON.stringify(health().orchestrator));
-// PB-168: a different state from the start-up one above — the same address, the same
-// `channel`, and the previous state overwritten rather than left standing. The channel is
-// carried too: the journal line names it, and `status` had only the raw error.
+// PB-168: a different state at the same address, and the channel the journal names.
 check('PB-168: a refusing channel records the refusing state and the channel that refused',
   health().orchestrator.selfWake === 'refused' && health().orchestrator.selfWakeChannel === 'socket',
   JSON.stringify(health().orchestrator));
@@ -1979,12 +1975,8 @@ check('PB-168: a hijacked contact point records the taken state, and names no ch
 
 // --- PB-168: the three self-wake states as a human sees them ----------------------------
 
-// The subject is the CONFLATION, so the check is written against it and not against the
-// wording: the three lines must differ from one another, and the start-up one must differ
-// from the refusing one — that pair is the live misreading the card was filed for (the
-// orchestrator of the 2026-09-10 run read its own start-up label as a broken channel).
-// Asserting the sentences themselves would go red on a rewording that fixed nothing and
-// green on three sentences that still said the same thing.
+// Written against the CONFLATION, not the wording: sentences would go red on a reword
+// that fixed nothing and green on three that still said the same thing.
 const PROG = 'prognosis-t20260912-000000';
 store.createTask(HOME, { id: PROG, title: 'три состояния self-wake', owner: SESSION });
 const PROG_STATES = [
@@ -1996,16 +1988,12 @@ const PROG_STATES = [
   { socket: sockPath('prog-taken'), token: 't', session: 'sess-own' }],
   ['worker:refused', { channel: 'self-wake', selfWake: 'refused', selfWakeChannel: 'rpc',
     knockError: 'ENOENT' }, { socket: sockPath('prog-refused'), token: 't', session: 'sess-own' }],
-  // A record written before this field existed. It must still produce a line — the caller
-  // swallows a throw from `wakePart`, so "did not crash" is not the property; "the line is
-  // there" is.
+  // Written before the field. `wakePart` throws are swallowed by the caller, so the
+  // property is "the line is there", not "it did not crash".
   ['worker:legacy', { channel: 'self-wake', knockError: 'ENOENT' },
     { socket: sockPath('prog-legacy'), token: 't', session: 'sess-own' }],
-  // No health mark and no contact point: the warden has not run a round for this address
-  // yet. This is the card's bare `alarm: self-wake` with no parenthesis at all, and it is
-  // the ONLY row that reaches the wake-record fallback — every row above carries
-  // `selfWake`, so without this one that branch would be unmeasured while the file looked
-  // covered.
+  // The only row reaching the wake-record fallback: every row above carries `selfWake`,
+  // so without this one that branch is unmeasured while the file looks covered.
   ['worker:fresh', {}, null],
 ];
 const progHealth = {};
@@ -2017,8 +2005,7 @@ for (const [addr, mark, wake] of PROG_STATES) {
 store.writeHealth(HOME, PROG, progHealth);
 const progOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) }));
 const progLine = (addr) => progOut.split('\n').find((l) => l.includes(addr)) ?? '';
-// Each line's alarm part, cut away from the address and the counters around it, so the
-// comparison is between the alarms and not between the participant names.
+// The alarm alone, so the comparison is between alarms and not participant names.
 const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].trim();
 const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
 check('PB-168: every one of the five rows prints a self-wake line at all',
@@ -2027,9 +2014,7 @@ check('PB-168: the three known states do not read alike — no two of their alar
   new Set(progAlarms.slice(0, 3)).size === 3, JSON.stringify(progAlarms.slice(0, 3)));
 check('PB-168: start-up is distinguishable from a refusing channel without reading the journal',
   alarmOf('worker:starting') !== alarmOf('worker:refused')
-  // …and not only by the reason text, which a reader already had: the two carry different
-  // reasons, so an implementation that changed nothing would pass a bare inequality.
-  // Strip the reason and the difference must survive.
+  // The reasons already differ, so a bare inequality passes on the old code. Strip them.
   && alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, '')
      !== alarmOf('worker:refused').replace(/ \(reason:[^)]*\)/, ''),
   `${alarmOf('worker:starting')}  ||  ${alarmOf('worker:refused')}`);
@@ -2039,10 +2024,8 @@ check('PB-168: the refusing state names the channel the journal names',
 check('PB-168: a health record written before the field still prints its line, reason and all',
   alarmOf('worker:legacy').includes('alarm: self-wake') && alarmOf('worker:legacy').includes('ENOENT'),
   alarmOf('worker:legacy') || progOut);
-// The wake record carries the one state it can show on its own. Compared against the row
-// whose state came from the field, because the two must arrive at the same reading — the
-// fallback exists so that an address the warden has not reached yet does not read as a
-// break.
+// Compared against the row whose state came from the field: an address the warden has
+// not reached yet must not read as a break.
 check('PB-168: no health mark and no contact point reads as start-up, off the wake record alone',
   alarmOf('worker:fresh') === alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, ''),
   `${alarmOf('worker:fresh')}  ||  ${alarmOf('worker:starting')}`);

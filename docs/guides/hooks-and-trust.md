@@ -76,6 +76,22 @@ If you skip trust, spawn still works, but project hooks do not run: Claude Code 
 | Partial hook file after a crash | The installer must refuse a malformed file and write nothing. Restore the file from git and run `promptobus install --check`. |
 | Home-directory hooks changed | That is a bug. Project install never writes under `~/.<harness>`. Report it with the path and a diff. |
 
+### The three `self-wake` states
+
+The warden falls back to `self-wake` from three branches and records which one in the health mark (`selfWake`, written by the round in `src/supervisor.ts`). They share a label and nothing else, so `promptobus status` prints the prognosis after the reason:
+
+| State | Reason it prints | Prognosis | How well it is known |
+|---|---|---|---|
+| `starting` | no contact point handed over | clears on the first knock | verified from a run journal |
+| `taken` | the contact point is held by another session | clears when the address's own session takes it back, and not at all if that session is gone | the round expects the rewrite at that session's next end of turn, and the suite checks that delivery resumes after it |
+| `refused` | the driver's channel did not accept the notification | it stays until the channel accepts | retried, so it clears if the channel returns — but nothing in the mechanism makes it return |
+
+Only `refused` has a channel to name, and it is named the way the warden journal names it — `socket` for Claude Code, `inject` for Cursor, `rpc` for Codex.
+
+Why the prognosis is printed at all: without it the label reads as a break in every case, and it is not one in two of them. Measured on 2026-09-10, before the field existed — the orchestrator of that run read the start-up label on its own address as a broken channel and went looking for the break.
+
+A health record written before the field carries no `selfWake`. The prognosis is then not said rather than guessed, with one exception the wake record settles on its own: no contact point handed over at all is the start-up state whoever wrote the health file, and it is also what an address the warden has not yet reached looks like.
+
 Postcard text is a copy, not a read. Only `promptobus_mailbox` marks mail read. If a knock repeats, the mailbox still has unread items.
 
 ## Related

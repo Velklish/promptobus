@@ -57,19 +57,7 @@ export const SPAWN_GRACE_SEC = 30;
 
 const NO_FAULT: FaultHook = () => {};
 
-/**
- * The three ways a round ends at `self-wake`, kept apart because their PROGNOSIS differs
- * and `channel` alone says `self-wake` for all three:
- *
- * - `starting` — no contact point handed over yet. Clears on the warden's first knock;
- *   verified from a run journal (PB-168);
- * - `taken` — a foreign session holds the contact point. Clears when the address's own
- *   session rewrites the record with its own, which the branch below expects at that
- *   session's next end of turn, and which the suite checks; it does not clear if that
- *   session is gone for good;
- * - `refused` — the driver's channel did not accept the notification. Retried, so it too
- *   clears if the channel comes back, but nothing here makes it come back.
- */
+/** Which fallback put `channel` at `self-wake`; prognosis per state in guides/hooks-and-trust.md. */
 export type SelfWakeState = 'starting' | 'taken' | 'refused';
 
 /** Health mark of one address. Fields are appended by the round, and read by it and by `promptobus status`. */
@@ -84,11 +72,8 @@ interface HealthMark {
   escalatedAt?: string | null;
   channel?: string | null;
   knockError?: string | null;
-  // Which of the three fallbacks put `channel` at `self-wake`, and — for the refusing
-  // one — the channel that refused. Written because only the round knows which branch it
-  // took, and `knockError` alone does not say which without parsing its sentence. Absent
-  // on a record written before PB-168; a reader must treat that as "not said" rather than
-  // as any one of the three.
+  // Only the round knows which branch it took. Absent on a record written before the
+  // field: that is "not said", never one of the three.
   selfWake?: SelfWakeState | null;
   selfWakeChannel?: string | null;
   wake?: string | null;
@@ -845,8 +830,7 @@ export async function supervisorRound(home: string, task: string, {
         h.channel = 'self-wake';
         h.knockError = why;
         h.selfWake = 'refused';
-        // The same label the journal line above uses. `status` had only the raw error,
-        // so the one fallback that DOES involve a delivery channel could not name it.
+        // The label the journal line above uses; `status` had only the raw error.
         h.selfWakeChannel = label;
       }
       // There is no write here: the state comparison below decides that.
