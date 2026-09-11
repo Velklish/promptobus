@@ -71,7 +71,7 @@ If you skip trust, spawn still works, but project hooks do not run: Claude Code 
 | MCP tools missing | The session has no `promptobus` stdio server, or `PROMPTOBUS_HOME` is wrong. Compare the path with `promptobus status`. |
 | Foreign mailbox header | You resolved another task. Pass `task` to the tool, or `promptobus_mailbox` with `claim: true` if this is your task and a new session. |
 | Stop hook loops | Guard returns 2 at most twice on the same unread set, then warns and lets the turn end (`lib` guard). Empty the mailbox. Do not delete the Stop hook to "fix" a loop. |
-| Warden silent | `PROMPTOBUS_WARDEN=off`, or the participant has no contact point (`self-wake` in `promptobus status`). Mail is still in the mailbox. Call `promptobus_mailbox`. |
+| Warden silent | `PROMPTOBUS_WARDEN=off`, or the participant is on `self-wake` in `promptobus status`. Three different things end there, and the line now says which: `starting up` is the participant not having handed over a contact point yet and clears on the first knock; a contact point held by another session clears when the address's own session takes it back; a channel that refused stays until the channel accepts. Mail is in the mailbox either way — call `promptobus_mailbox`. |
 | Worker worktree has no Stop hook | The driver writes that hook at spawn, not `promptobus install`. Re-spawn the participant. |
 | Partial hook file after a crash | The installer must refuse a malformed file and write nothing. Restore the file from git and run `promptobus install --check`. |
 | Home-directory hooks changed | That is a bug. Project install never writes under `~/.<harness>`. Report it with the path and a diff. |

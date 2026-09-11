@@ -267,6 +267,12 @@ const r3 = await wdn.wardenRound(HOME, TASK, { knock: noWake });
 check(`no contact point — no knock, and the channel is self-wake`,
   noWake.calls.length === 0 && health().orchestrator.channel === 'self-wake',
   JSON.stringify(health().orchestrator));
+// PB-168: which of the three fallbacks it was. `channel` is `self-wake` for all three and
+// therefore says nothing a reader can act on; this field is what separates them, and the
+// round is the only place that knows.
+check('PB-168: the start-up fallback records its own state, and no channel refused anything',
+  health().orchestrator.selfWake === 'starting' && health().orchestrator.selfWakeChannel === null,
+  JSON.stringify(health().orchestrator));
 check('the fallback is named in the warden log',
   r3.events.some((e) => /fell back to self-wake orchestrator/.test(e)), JSON.stringify(r3.events));
 
@@ -291,6 +297,12 @@ const r4 = await wdn.wardenRound(HOME, TASK, { knock: refused, now: T1 });
 // (`driver.test.mjs`): a failure writes `inject` / `rpc`, not the literal "socket".
 check('the socket did not accept the notification — the channel falls back to self-wake with a reason',
   health().orchestrator.channel === 'self-wake' && health().orchestrator.knockError === 'ENOENT',
+  JSON.stringify(health().orchestrator));
+// PB-168: a different state from the start-up one above — the same address, the same
+// `channel`, and the previous state overwritten rather than left standing. The channel is
+// carried too: the journal line names it, and `status` had only the raw error.
+check('PB-168: a refusing channel records the refusing state and the channel that refused',
+  health().orchestrator.selfWake === 'refused' && health().orchestrator.selfWakeChannel === 'socket',
   JSON.stringify(health().orchestrator));
 check('the failure reason is named in the log',
   r4.events.some((e) => /did not accept the notification \(ENOENT\)/.test(e)), JSON.stringify(r4.events));
@@ -1959,6 +1971,68 @@ const takenLine = takenOut.split('\n').find((l) => l.includes('worker:api')) ?? 
 check(': promptobus status prints the fallback reason in the alarm line',
   /alarm: self-wake \(reason: contact point is held by session /.test(takenLine)
   && takenLine.includes(ALIEN), takenLine || takenOut);
+// PB-168: the third of the three states, recorded by the round the same way as the other two.
+check('PB-168: a hijacked contact point records the taken state, and names no channel',
+  (store.readHealth(HOME, TAKEN)['worker:api'] ?? {}).selfWake === 'taken'
+  && (store.readHealth(HOME, TAKEN)['worker:api'] ?? {}).selfWakeChannel === null,
+  JSON.stringify(store.readHealth(HOME, TAKEN)['worker:api'] ?? {}));
+
+// --- PB-168: the three self-wake states as a human sees them ----------------------------
+
+// The subject is the CONFLATION, so the check is written against it and not against the
+// wording: the three lines must differ from one another, and the start-up one must differ
+// from the refusing one — that pair is the live misreading the card was filed for (the
+// orchestrator of the 2026-09-10 run read its own start-up label as a broken channel).
+// Asserting the sentences themselves would go red on a rewording that fixed nothing and
+// green on three sentences that still said the same thing.
+const PROG = 'prognosis-t20260912-000000';
+store.createTask(HOME, { id: PROG, title: 'три состояния self-wake', owner: SESSION });
+const PROG_STATES = [
+  // address, health mark, wake record
+  ['worker:starting', { channel: 'self-wake', selfWake: 'starting', selfWakeChannel: null,
+    knockError: 'no contact point — the participant did not hand over a socket' }, null],
+  ['worker:taken', { channel: 'self-wake', selfWake: 'taken', selfWakeChannel: null,
+    knockError: 'contact point is held by session sess-alien, while the address is bound to sess-own' },
+  { socket: sockPath('prog-taken'), token: 't', session: 'sess-own' }],
+  ['worker:refused', { channel: 'self-wake', selfWake: 'refused', selfWakeChannel: 'rpc',
+    knockError: 'ENOENT' }, { socket: sockPath('prog-refused'), token: 't', session: 'sess-own' }],
+  // A record written before this field existed. It must still produce a line — the caller
+  // swallows a throw from `wakePart`, so "did not crash" is not the property; "the line is
+  // there" is.
+  ['worker:legacy', { channel: 'self-wake', knockError: 'ENOENT' },
+    { socket: sockPath('prog-legacy'), token: 't', session: 'sess-own' }],
+];
+const progHealth = {};
+for (const [addr, mark, wake] of PROG_STATES) {
+  store.upsertParticipant(HOME, PROG, store.participantRecord(addr, { name: addr.split(':')[1] }));
+  progHealth[addr] = mark;
+  if (wake) store.writeWake(HOME, PROG, addr, wake);
+}
+store.writeHealth(HOME, PROG, progHealth);
+const progOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) }));
+const progLine = (addr) => progOut.split('\n').find((l) => l.includes(addr)) ?? '';
+// Each line's alarm part, cut away from the address and the counters around it, so the
+// comparison is between the alarms and not between the participant names.
+const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].trim();
+const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
+check('PB-168: all four self-wake lines are printed at all',
+  progAlarms.every((a) => a.startsWith('alarm: self-wake')), JSON.stringify(progAlarms));
+check('PB-168: the three known states do not read alike — no two of their alarms are equal',
+  new Set(progAlarms.slice(0, 3)).size === 3, JSON.stringify(progAlarms.slice(0, 3)));
+check('PB-168: start-up is distinguishable from a refusing channel without reading the journal',
+  alarmOf('worker:starting') !== alarmOf('worker:refused')
+  // …and not only by the reason text, which a reader already had: the two carry different
+  // reasons, so an implementation that changed nothing would pass a bare inequality.
+  // Strip the reason and the difference must survive.
+  && alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, '')
+     !== alarmOf('worker:refused').replace(/ \(reason:[^)]*\)/, ''),
+  `${alarmOf('worker:starting')}  ||  ${alarmOf('worker:refused')}`);
+check('PB-168: the refusing state names the channel the journal names',
+  /\brpc\b/.test(alarmOf('worker:refused')) && !/\brpc\b/.test(alarmOf('worker:taken')),
+  `${alarmOf('worker:refused')}  ||  ${alarmOf('worker:taken')}`);
+check('PB-168: a health record written before the field still prints its line, reason and all',
+  alarmOf('worker:legacy').includes('alarm: self-wake') && alarmOf('worker:legacy').includes('ENOENT'),
+  alarmOf('worker:legacy') || progOut);
 // A previous release's record carries no full id at all — the rule there stays the prefix,
 // or a participant raised before this task would be left with no contact point forever.
 check(': with no full id in the record the rule stays the prefix',
