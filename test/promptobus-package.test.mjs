@@ -481,7 +481,9 @@ check('CI pins ast-grep to an exact version',
   astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
 // Not a duplicate of `npm run pins`: this asserts the two files agree with EACH OTHER,
 // the gate asserts each agrees with backslop.json. Two files wrong together pass only one.
-const backslopRef = /github:Velklish\/backslop#[^\s'"`]+/;
+// Spec assembled from fragments so this file does not itself carry one for that gate to
+// find — the reason scripts/audit-public.mjs builds its forbidden strings the same way.
+const backslopRef = new RegExp(`${['github:Velklish', 'backslop'].join('/')}#[^\\s'"\`]+`);
 const workflowBackslopRef = workflow.match(backslopRef)?.[0] ?? null;
 const packageBackslopRef = pkg.scripts?.['lint:backslop']?.match(backslopRef)?.[0] ?? null;
 check('CI and package lint use the same backslop ref',

@@ -74,6 +74,10 @@ for (const rel of tracked) {
 
 const seen = `${read} of ${tracked.length} tracked file(s) read · ${live.pins} live ref(s) in ${live.files} file(s), ${kept.pins} historical ref(s) in ${kept.files} record(s) left alone`;
 
+// Findings print before either verdict: an empty live set and an unreadable file happen
+// together exactly when the second explains the first, and that is when it is needed.
+for (const f of failures) say(`✖ ${f}`);
+
 if (!guarded) {
   say(`✖ pin gate: nothing outside ${CONFIG} names ${SPEC}${SEPCHAR}<ref> — the spec moved or the walk read the wrong tree`);
   say(`✖ pin gate: ${seen}`);
@@ -81,7 +85,6 @@ if (!guarded) {
 }
 
 if (failures.length) {
-  for (const f of failures) say(`✖ ${f}`);
   say(`✖ pin gate: ${failures.length} finding(s) · ${seen}`);
   process.exit(1);
 }
