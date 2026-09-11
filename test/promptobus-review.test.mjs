@@ -387,10 +387,16 @@ check('PB-87.1: Codex applies its sandbox plan and mechanical MCP boundary',
   && codexClassifiedPlan.settings.approvalPolicy === 'on-request'
   && !JSON.stringify(codexClassifiedPlan.settings).includes('mcp__catalog__create_entry')
   && codexClassifiedPlan.mcpConfig.mcpServers.catalog.disabled_tools?.join(',') === 'create_entry'
-  && /mechanism-supplied server/.test(codexClassifiedPlan.prompt)
-  && /configuration was accepted on codex-cli 0\.146\.0/.test(codexClassifiedPlan.prompt)
-  && /enforcement was not observed on a model turn/.test(codexClassifiedPlan.prompt)
-  && /every external MCP write is forbidden by this prompt regardless/.test(codexClassifiedPlan.prompt),
+  // Since PB-161 the sentence no longer carves out a personal set beside the
+  // mechanism's entries: a Codex reviewer lifts in an isolated home and there is none.
+  && /no MCP server but the ones the mechanism gave it/.test(codexClassifiedPlan.prompt)
+  && /isolated Codex home/.test(codexClassifiedPlan.prompt)
+  && !/personal MCP set/.test(codexClassifiedPlan.prompt)
+  // PB-87.3 turned the hedge into a measurement: the sentence now states the absence
+  // from the thread inventory instead of saying enforcement was not observed.
+  && /absent from the thread's tool inventory, measured/.test(codexClassifiedPlan.prompt)
+  && !/was not observed/.test(codexClassifiedPlan.prompt)
+  && /[Ee]very external MCP write is forbidden by this prompt as well/.test(codexClassifiedPlan.prompt),
   `${JSON.stringify(codexClassifiedPlan.settings)}\n${codexClassifiedPlan.prompt}`);
 const incompleteCodexHost = {
   ...hostOf(WS),

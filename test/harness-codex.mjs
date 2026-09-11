@@ -8,7 +8,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-  appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
+  appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -179,6 +179,35 @@ function listThreads(home) {
 
 function newId() {
   return `01e2e${randomUUID().replace(/-/g, '').slice(0, 21)}`;
+}
+
+/**
+ * What the app-server found in its `CODEX_HOME` — the config text, the entry names,
+ * and whether the credentials copy is there with the mode it was copied at. The stand
+ * records rather than interprets: a check reads these, and nothing here decides
+ * whether a home is right. The credential CONTENT is never read.
+ */
+function readCodexHome(dir) {
+  if (!dir) return null;
+  let config = null;
+  try {
+    config = readFileSync(path.join(dir, 'config.toml'), 'utf8');
+  } catch {
+    config = null;
+  }
+  let auth = null;
+  try {
+    auth = `0${(statSync(path.join(dir, 'auth.json')).mode & 0o777).toString(8)}`;
+  } catch {
+    auth = null;
+  }
+  let entries = [];
+  try {
+    entries = readdirSync(dir).sort();
+  } catch {
+    entries = [];
+  }
+  return { dir, config, auth, entries };
 }
 
 export function pidAlive(pid) {
@@ -468,6 +497,11 @@ async function appServer() {
           CODEX_HOME: process.env.CODEX_HOME,
           PROMPTOBUS_CODEX_HOME: process.env.PROMPTOBUS_CODEX_HOME,
         },
+        // The real binary reads its configuration out of `CODEX_HOME` before it
+        // answers this request; the stand does not parse TOML, it records what was
+        // there so a check can read it. `codexHome` is the directory listing, so a
+        // check can also say what a home does NOT contain.
+        codexHome: readCodexHome(process.env.CODEX_HOME),
       });
       const reasoningEffort = params.config?.model_reasoning_effort;
       reply(id, {
@@ -571,8 +605,73 @@ async function appServer() {
 // the `PROMPTOBUS_ROLE` / `PROMPTOBUS_ADDRESS` env, not a key literal: after a rename
 // the literal would silently return null, and the E2E loop would go green on a start
 // with no tool calls.
+// --- the participant home config, read back the way the binary reads it -------------
+//
+// The stand PARSES the `config.toml` the driver wrote instead of pattern-matching it.
+// The binary loads this file before it answers `thread/start`, and a whole config that
+// fails to load takes the participant's MCP set with it — so a stand that accepted a
+// shape codex would refuse would hide exactly the break that matters. The vocabulary is
+// the one the driver writes and nothing more: `[a.b."c d"]` headers, `key = "string"`,
+// `key = ["s", "s"]`. Anything else throws, and the participant then has no bus server,
+// no address, and an empty trace — which is what a check reads.
+const TOML_HEADER = /^\[(.+)\]$/;
+const TOML_PAIR = /^([A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*")\s*=\s*(.+)$/;
+const TOML_STRING = /"(?:[^"\\]|\\.)*"/g;
+
+function tomlHeaderParts(header) {
+  const parts = [];
+  let rest = header.trim();
+  while (rest) {
+    const quoted = /^"(?:[^"\\]|\\.)*"/.exec(rest);
+    const bare = /^[A-Za-z0-9_-]+/.exec(rest);
+    const token = quoted?.[0] ?? bare?.[0];
+    if (!token) throw new Error(`codex-stub: unreadable TOML header [${header}]`);
+    parts.push(token.startsWith('"') ? JSON.parse(token) : token);
+    rest = rest.slice(token.length).replace(/^\s*\.\s*/, '');
+  }
+  return parts;
+}
+
+function tomlValueOf(raw) {
+  const text = raw.trim();
+  if (!text.startsWith('[')) return JSON.parse(text);
+  const inner = text.slice(1, -1);
+  const items = [...inner.matchAll(TOML_STRING)].map((m) => JSON.parse(m[0]));
+  if (inner.replace(TOML_STRING, '').replace(/[\s,]/g, '')) {
+    throw new Error(`codex-stub: unreadable TOML array ${text}`);
+  }
+  return items;
+}
+
+export function parseHomeToml(text) {
+  const out = {};
+  let table = out;
+  for (const line of String(text ?? '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const header = TOML_HEADER.exec(trimmed);
+    if (header) {
+      table = tomlHeaderParts(header[1]).reduce((node, key) => {
+        node[key] ??= {};
+        return node[key];
+      }, out);
+      continue;
+    }
+    const pair = TOML_PAIR.exec(trimmed);
+    if (!pair) throw new Error(`codex-stub: unreadable TOML line ${trimmed}`);
+    table[pair[1].startsWith('"') ? JSON.parse(pair[1]) : pair[1]] = tomlValueOf(pair[2]);
+  }
+  return out;
+}
+
 function busServer(thread) {
-  const servers = thread.config?.mcp_servers;
+  let servers = null;
+  try {
+    servers = parseHomeToml(thread.codexHome?.config).mcp_servers ?? null;
+  } catch (err) {
+    process.stderr.write(`${err.message}\n`);
+    return null;
+  }
   if (!servers || typeof servers !== 'object') return null;
   for (const cfg of Object.values(servers)) {
     const env = cfg?.env;
@@ -652,6 +751,41 @@ async function playTurn(home, started, turnId, params, ask, notify) {
       threadId: t.id,
       turnId,
     });
+    // A command inside the writable root that asks to leave the network sandbox: the
+    // cwd passes containment, and only the two network fields say what it wants.
+    t.networkApproval = await ask('item/commandExecution/requestApproval', {
+      approvalId: null,
+      command: 'curl https://packages.invalid/x',
+      commandActions: null,
+      cwd: t.cwd,
+      environmentId: null,
+      itemId: randomUUID(),
+      networkApprovalContext: { host: 'packages.invalid', protocol: 'https' },
+      proposedExecpolicyAmendment: null,
+      proposedNetworkPolicyAmendments: [{ action: 'allow', host: 'packages.invalid' }],
+      reason: 'request for network access',
+      startedAtMs,
+      threadId: t.id,
+      turnId,
+    });
+    // The same command without the network fields, so a check can say the refusal is
+    // the network's doing and not the command's.
+    t.plainApproval = await ask('item/commandExecution/requestApproval', {
+      approvalId: null,
+      command: 'curl https://packages.invalid/x',
+      commandActions: null,
+      cwd: t.cwd,
+      environmentId: null,
+      itemId: randomUUID(),
+      networkApprovalContext: null,
+      proposedExecpolicyAmendment: null,
+      proposedNetworkPolicyAmendments: null,
+      reason: null,
+      startedAtMs,
+      threadId: t.id,
+      turnId,
+    });
+    writeThread(home, t);
     await ask('item/permissions/requestApproval', {
       cwd: t.cwd,
       itemId: randomUUID(),

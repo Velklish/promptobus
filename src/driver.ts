@@ -450,6 +450,20 @@ export interface Driver {
   /** What was said about the launch after success: unconfirmed check, unparsed id. */
   saidLiftoff?(result: unknown): void;
   inspect?(ref: string): SessionView | null;
+  /**
+   * Remove the harness state of one closed participant that does NOT live in its
+   * worktree. `done` calls it for a participant whose session is dead, with or without
+   * a worktree; a driver that keeps nothing outside one does not declare it.
+   *
+   * It exists because the worktree sweep cannot reach what sits elsewhere, and
+   * `stop` — which can — is only called for a session that is still alive. A harness
+   * that gives each participant a private directory outside the worktree therefore has
+   * one leak with no cleanup path: the participant whose process was killed rather
+   * than stopped. When that directory holds credentials, leaving it is the whole
+   * problem. Called after the task is closed, so it must not throw for anything the
+   * caller can survive.
+   */
+  sweepParticipant?(participant: unknown, taskId: string): unknown;
   /** Forget the remembered session list: after launch and stop it is stale. */
   forgetSessions?(): void;
   activate?(target: ActivationTarget, notification: Notification): Promise<ActivateResult> | ActivateResult;

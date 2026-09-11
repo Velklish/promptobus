@@ -1,0 +1,92 @@
+{
+  "codexCli": "0.146.0",
+  "capturedOn": "2026-09-11",
+  "purpose": "Whether codex-cli withholds a tool listed in disabled_tools, measured on the form PB-161 ships: the entries live in the participant home config.toml, not in a thread/start override",
+  "normalization": "Participant home and stand paths are placeholders. Tool and server names are as configured.",
+  "form": {
+    "mcpEntriesFrom": "CODEX_HOME/config.toml",
+    "threadStartCarriedMcpServers": false,
+    "server": "promptobus-probe",
+    "offeredByTheServer": [
+      "read_tool",
+      "write_tool"
+    ],
+    "model": "gpt-5.6-sol",
+    "sandbox": "read-only"
+  },
+  "decisive": {
+    "method": "mcpServerStatus/list",
+    "turnStarted": false,
+    "note": "Thread-scoped, asked ~8 s after thread/start and given ~8 s to answer. The 2026-09-10 capture recorded this request unanswered within its bounded window; on this form and with those waits it answered.",
+    "withDisabledTools": {
+      "disabled_tools": [
+        "write_tool"
+      ],
+      "serverAskedForItsTools": true,
+      "serverAnsweredWith": [
+        "read_tool",
+        "write_tool"
+      ],
+      "threadInventory": [
+        "read_tool"
+      ]
+    },
+    "withoutDisabledTools": {
+      "disabled_tools": null,
+      "serverAskedForItsTools": true,
+      "serverAnsweredWith": [
+        "read_tool",
+        "write_tool"
+      ],
+      "threadInventory": [
+        "read_tool",
+        "write_tool"
+      ]
+    },
+    "verdict": "A tool named in disabled_tools is absent from the thread tool inventory app-server reports, while the MCP server itself was asked for its tools and answered with both. The filtering is app-server's, above the server. What this does not state: the exact tool payload of the model request, which no client-visible method returns."
+  },
+  "paidTurns": [
+    {
+      "attempt": 1,
+      "spentOn": "2026-09-11",
+      "prompt": "List every tool you have whose name starts with mcp__promptobus_probe__. Answer with just those tool names, one per line, and nothing else. Do not call any tool, do not run any command, do not read any file.",
+      "turnStatus": "completed",
+      "durationMs": 4145,
+      "tokenUsage": {
+        "totalTokens": 18370,
+        "inputTokens": 18276,
+        "cachedInputTokens": 11264,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 94,
+        "reasoningOutputTokens": 88
+      },
+      "captured": false,
+      "why": "The final answer arrived as item/started and item/completed with text: \"\", and the rollout .jsonl under the participant home was removed before it was read."
+    },
+    {
+      "attempt": 2,
+      "spentOn": "2026-09-11",
+      "prompt": "List every tool you have whose name starts with mcp__promptobus_probe__. Answer with just those tool names, one per line, and nothing else. Do not call any tool, do not run any command, do not read any file.",
+      "turnStatus": "completed",
+      "durationMs": 4666,
+      "tokenUsage": {
+        "totalTokens": 18380,
+        "inputTokens": 18280,
+        "cachedInputTokens": 11264,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 100,
+        "reasoningOutputTokens": 94
+      },
+      "captured": true,
+      "rolloutAssistantMessage": "",
+      "rolloutLastAgentMessage": null,
+      "why": "The rollout was copied out of the home before removal and is unambiguous: the assistant message is genuinely empty, and task_complete carries last_agent_message: null. item/agentMessage/delta never fired. The model reasoned for 94 of 100 output tokens and then answered nothing, so the turn says nothing about which tools it was offered. The rollout does not record the tool payload of the model request."
+    }
+  ],
+  "observed": {
+    "enforcementObserved": true,
+    "enforcementLevel": "thread tool inventory reported by app-server",
+    "modelRequestPayloadObserved": false,
+    "turnAnswerUsable": false
+  }
+}

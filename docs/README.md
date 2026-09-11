@@ -21,6 +21,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-004-subscription-balance.md](adr/adr-004-subscription-balance.md) | Subscription balance: the tier and every window per harness, the `balance` strategy, quality floors per role, overlay lists by union | Accepted |
 | [adr/adr-005-ten-point-scale-absolute-bands-calibrate.md](adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) | Ratings on a 1–10 scale with absolute benchmark bands and local calibration proposals | Accepted |
 | [adr/adr-006-guard-hook-ownership-by-command-signature.md](adr/adr-006-guard-hook-ownership-by-command-signature.md) | Guard hook ownership by rendered command signature; no committed manifest | Accepted |
+| [adr/adr-007-codex-participant-isolated-home.md](adr/adr-007-codex-participant-isolated-home.md) | A Codex participant runs in an isolated `CODEX_HOME`: the owner's auth copied in, mechanism-only MCP in its `config.toml`, the worker worktree trusted by realpath, workspace skills copied into that worktree | Accepted |
 
 ## Cross-cutting principles
 

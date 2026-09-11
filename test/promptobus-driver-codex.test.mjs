@@ -5,10 +5,10 @@
 // a turn in progress, the limit gate, denyTools as the sandbox, an empty
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import net from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -18,7 +18,7 @@ import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
   HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
-  diagnoseTrace, installHarness, pidAlive, planParticipant, readTrace, traceFile,
+  diagnoseTrace, installHarness, parseHomeToml, pidAlive, planParticipant, readTrace, traceFile,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { capture } from './console.mjs';
@@ -43,6 +43,8 @@ check(': Codex diagnosis surfaces scenario errors before the later red verdict',
 
 const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
+  codexHomeConfig, makeParticipantHome, participantHomesRoot, removeParticipantHome, skillsNoteOf,
+  sweepParticipantHomes, trustPath, workspaceSkillsDir,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
@@ -52,7 +54,7 @@ const {
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
-const { liftHarness, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { liftHarness, skillsNote, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 
 // The override key prefix is the CONSUMER's name, so it comes from a host and not from
@@ -67,6 +69,33 @@ const WORKER = 'worker:cdx';
 const SECOND_WORKER = 'worker:cdx-second';
 const REVIEWER = 'reviewer:cdx';
 const ORCH_SESSION = `orch-codex-${process.pid}`;
+
+// The owner's Codex home: read-only to the mechanism, and the only place `auth.json`
+// is copied from. The content is a stand-in — nothing reads it, the MODE is what a
+// check asks about. The config gets one personal server, so a check can say the
+// participant did not get it.
+const callerCodexHome = path.join(SB, 'caller-codex-home');
+mkdirSync(callerCodexHome, { recursive: true });
+writeFileSync(path.join(callerCodexHome, 'auth.json'), '{"stub":"credentials"}\n', { mode: 0o600 });
+writeFileSync(path.join(callerCodexHome, 'config.toml'), '[mcp_servers.owner_personal]\nurl = "http://owner.invalid/mcp"\n');
+const ownerConfigBefore = readFileSync(path.join(callerCodexHome, 'config.toml'), 'utf8');
+const participantHome = codexDriver.participantCodexHome({ task: TASK, address: WORKER });
+// Participant homes live in `$TMPDIR` and go away with their session — `stop` removes
+// them. A participant this file lifts and never stops, or one whose lift was refused
+// on purpose, would leave its home behind; the sweep is by this task's own name prefix,
+// which every home of this file carries and no neighbour's does.
+const homePrefix = `${TASK.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-`;
+process.on('exit', () => {
+  let names = [];
+  try {
+    names = readdirSync(participantHomesRoot());
+  } catch {
+    names = [];
+  }
+  for (const name of names.filter((n) => n.startsWith(homePrefix))) {
+    rmSync(path.join(participantHomesRoot(), name), { recursive: true, force: true });
+  }
+});
 
 const collisionRef = 'same-ref-in-two-registries';
 const collisionEnvA = {
@@ -136,6 +165,41 @@ check('PB-87.1: the Codex MCP capture accepts disabled_tools without a model tur
   && !mcpCaptureMessages.some((message) => message.method === 'turn/start')
   && !mcpDenyCapture.exchange.some(({ direction, message }) => direction === 'reply' && message.id === mcpStatusRequest?.id),
   JSON.stringify(mcpDenyCapture.observed));
+// PB-87.3: the enforcement capture. The two branches differ only in `disabled_tools`,
+// so the check is that they differ in exactly one tool and in the right direction —
+// and that the MCP server itself was told to hand over both, which is what makes the
+// filtering app-server's rather than the server's.
+const enforcement = JSON.parse(readFileSync(
+  path.join(codexFixtureDir, 'DisabledToolsEnforcement-0.146.0-2026-09-11.json'), 'utf8',
+));
+check('PB-87.3: a disabled tool is absent from the thread inventory and present without the key',
+  enforcement.decisive.turnStarted === false
+  && enforcement.decisive.withDisabledTools.threadInventory.join(',') === 'read_tool'
+  && enforcement.decisive.withoutDisabledTools.threadInventory.join(',') === 'read_tool,write_tool'
+  && enforcement.decisive.withDisabledTools.serverAnsweredWith.join(',') === 'read_tool,write_tool'
+  && enforcement.decisive.withDisabledTools.serverAskedForItsTools === true
+  && enforcement.observed.enforcementObserved === true,
+  JSON.stringify(enforcement.decisive));
+
+check('PB-87.3: the capture names its ceiling and does not lean on the turns that answered nothing',
+  enforcement.observed.modelRequestPayloadObserved === false
+  && enforcement.observed.turnAnswerUsable === false
+  && enforcement.paidTurns.length === 2
+  && enforcement.paidTurns.every((t) => t.turnStatus === 'completed')
+  && enforcement.paidTurns[1].captured === true
+  && enforcement.paidTurns[1].rolloutAssistantMessage === ''
+  && enforcement.form.threadStartCarriedMcpServers === false
+  && enforcement.form.mcpEntriesFrom === 'CODEX_HOME/config.toml',
+  JSON.stringify({ observed: enforcement.observed, turns: enforcement.paidTurns.map((t) => t.captured) }));
+
+check('PB-87.3: the reviewer prompt phrase says the measured thing and no more',
+  /absent from the thread's tool inventory, measured/.test(PHRASES.mcpBoundary)
+  && /isolated Codex home/.test(PHRASES.mcpBoundary)
+  && !/personal MCP set/.test(PHRASES.mcpBoundary)
+  && !/was not observed/.test(PHRASES.mcpBoundary)
+  && /forbidden by this prompt as well/.test(PHRASES.mcpBoundary),
+  PHRASES.mcpBoundary);
+
 const approvalResponseNames = new Map([
   ['applyPatchApproval', 'ApplyPatchApproval'],
   ['item/commandExecution/requestApproval', 'CommandExecutionRequestApproval'],
@@ -163,18 +227,25 @@ check(': every measured approval reply row validates against its response schema
   approvalReplyChecks.every(({ ok, no }) => ok.valid && no.valid),
   JSON.stringify(approvalReplyChecks));
 
-const unhandledApprovalMethods = [
-  'item/tool/call',
-  'account/chatgptAuthTokens/refresh',
-  'attestation/generate',
-];
+// PB-88.4: the list is READ from the measured `ServerRequest`, not retyped. The three
+// requests that have no approval row are a property of the protocol, and a re-capture
+// that adds a fourth must fail here rather than have it answered by a fallback nobody
+// decided on.
+const serverRequestMethods = JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8'))
+  .oneOf.flatMap((arm) => arm.properties?.method?.enum ?? []);
+const unhandledApprovalMethods = serverRequestMethods
+  .filter((method) => approvalReply(method, false).__error)
+  .sort();
 const unhandledApprovalReplies = unhandledApprovalMethods.map((method) => ({
   method,
   reply: approvalReply(method, false),
+  decision: decideApproval(method, {}, patchRec),
 }));
-check(': measured server requests without approval rows return JSON-RPC method-not-found errors',
-  unhandledApprovalReplies.every(({ method, reply }) => reply.__error?.code === -32601
-    && reply.__error.message === `no handler for server request ${method}`),
+check('PB-88.4: exactly three measured server requests have no approval row, and each is answered -32601',
+  unhandledApprovalMethods.join(',') === 'account/chatgptAuthTokens/refresh,attestation/generate,item/tool/call'
+  && unhandledApprovalReplies.every(({ method, reply, decision }) => reply.__error?.code === -32601
+    && reply.__error.message === `no handler for server request ${method}`
+    && decision.allow === false && decision.unknown === true),
   JSON.stringify(unhandledApprovalReplies));
 
 const measuredPatchRequest = {
@@ -642,6 +713,78 @@ check(': an approval policy change is denied',
     }, policyRec);
     return d.allow === false && /privilege escalation denied/.test(d.why);
   })());
+// --- PB-88.3: a command that asks to leave the network sandbox -----------------------
+//
+// The refusal is driven by the measured shape, so the shape is read from the fixture
+// rather than retyped: a re-capture that drops either field turns the deny into dead
+// code, and this is where that shows.
+const commandApprovalParams = JSON.parse(readFileSync(
+  path.join(codexFixtureDir, 'CommandExecutionRequestApprovalParams.json'), 'utf8',
+));
+const networkContextShape = commandApprovalParams.definitions?.NetworkApprovalContext?.required ?? [];
+const networkAmendmentShape = commandApprovalParams.definitions?.NetworkPolicyAmendment?.required ?? [];
+check('PB-88.3: the measured command approval still carries both network fields',
+  'networkApprovalContext' in (commandApprovalParams.properties ?? {})
+  && 'proposedNetworkPolicyAmendments' in (commandApprovalParams.properties ?? {})
+  && networkContextShape.slice().sort().join(',') === 'host,protocol'
+  && networkAmendmentShape.slice().sort().join(',') === 'action,host',
+  JSON.stringify({ networkContextShape, networkAmendmentShape }));
+
+const inRootNetwork = {
+  cwd: '/tmp/wt',
+  command: 'curl https://packages.invalid/x',
+  networkApprovalContext: Object.fromEntries(networkContextShape.map((k) => [k, k === 'host' ? 'packages.invalid' : 'https'])),
+};
+check('PB-88.3: a worker command inside the roots is refused when it asks for network egress',
+  (() => {
+    const d = decideApproval('item/commandExecution/requestApproval', inRootNetwork, patchRec);
+    const plain = decideApproval('item/commandExecution/requestApproval',
+      { cwd: '/tmp/wt', command: 'curl https://packages.invalid/x' }, patchRec);
+    return d.allow === false && /network egress denied: https to packages\.invalid/.test(d.why)
+      && plain.allow === true;
+  })(),
+  JSON.stringify(decideApproval('item/commandExecution/requestApproval', inRootNetwork, patchRec)));
+
+check('PB-88.3: a proposed network policy amendment alone is enough to refuse, for either role',
+  (() => {
+    const params = {
+      cwd: '/tmp/wt',
+      command: 'true',
+      networkApprovalContext: null,
+      proposedNetworkPolicyAmendments: [
+        Object.fromEntries(networkAmendmentShape.map((k) => [k, k === 'host' ? 'packages.invalid' : 'allow'])),
+      ],
+    };
+    const worker = decideApproval('item/commandExecution/requestApproval', params, patchRec);
+    const legacy = decideApproval('execCommandApproval', params, patchRec);
+    const reviewer = decideApproval('item/commandExecution/requestApproval', params,
+      { ...patchRec, role: 'reviewer' });
+    return worker.allow === false && /network policy amendment denied: packages\.invalid/.test(worker.why)
+      && legacy.allow === false && /network policy amendment denied/.test(legacy.why)
+      && reviewer.allow === false && /network policy amendment denied/.test(reviewer.why);
+  })(),
+  JSON.stringify(decideApproval('item/commandExecution/requestApproval', {
+    cwd: '/tmp/wt', proposedNetworkPolicyAmendments: [{ action: 'allow', host: 'packages.invalid' }],
+  }, patchRec)));
+
+// The fields Codex sends as `null` and `[]` on every ordinary command are not an
+// escalation, and the check is scoped to command approvals: a file change does not
+// carry them in the measured shape, and reading them there would invent a refusal.
+check('PB-88.3: a null context and an empty amendment list are not an escalation, and the check is command-scoped',
+  decideApproval('item/commandExecution/requestApproval',
+    { cwd: '/tmp/wt', networkApprovalContext: null, proposedNetworkPolicyAmendments: [] }, patchRec).allow === true
+  && decideApproval('item/fileChange/requestApproval',
+    { cwd: '/tmp/wt', networkApprovalContext: { host: 'x', protocol: 'https' }, fileChanges: { '/tmp/wt/a': {} } },
+    patchRec).allow === true,
+  JSON.stringify(decideApproval('item/fileChange/requestApproval',
+    { cwd: '/tmp/wt', networkApprovalContext: { host: 'x', protocol: 'https' }, fileChanges: { '/tmp/wt/a': {} } },
+    patchRec)));
+
+check('PB-88.3: the refusal reply is the measured decline — no amendment arm is ever sent',
+  JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)) === '{"decision":"decline"}'
+  && !JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)).includes('NetworkPolicyAmendment'),
+  JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)));
+
 check(': mixed-case dangerous sandbox mode is denied',
   (() => {
     const d = decideApproval('item/permissions/requestApproval', { sandbox: 'DANGER-FULL-ACCESS' }, patchRec);
@@ -795,6 +938,167 @@ check(': reviewer — sandbox read-only, same cwd, no files',
   && reviewerPlan.files.length === 0,
   JSON.stringify(reviewerPlan.settings));
 
+// --- PB-161: the plan names a home, and the skills canon travels as files ------------
+
+check('PB-161: two participants of one task get two homes, both under the homes root',
+  codexDriver.participantCodexHome({ task: TASK, address: WORKER })
+    !== codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
+  && path.dirname(codexDriver.participantCodexHome({ task: TASK, address: WORKER })) === participantHomesRoot()
+  && participantHomesRoot().startsWith(tmpdir())
+  && codexDriver.participantCodexHome({ task: TASK, address: WORKER })
+    === codexDriver.participantCodexHome({ task: TASK, address: WORKER }),
+  codexDriver.participantCodexHome({ task: TASK, address: WORKER }));
+
+// Two addresses whose readable head is identical past the truncation point. The head
+// is cosmetic; the hash carries task and address in full, and it is what keeps them apart.
+const longA = `worker:${'a'.repeat(60)}-one`;
+const longB = `worker:${'a'.repeat(60)}-two`;
+check('PB-161: two long addresses with the same readable head do not share a home',
+  codexDriver.participantCodexHome({ task: TASK, address: longA })
+    !== codexDriver.participantCodexHome({ task: TASK, address: longB }),
+  `${codexDriver.participantCodexHome({ task: TASK, address: longA })} / ${codexDriver.participantCodexHome({ task: TASK, address: longB })}`);
+
+// The owner's home is the directory this guard exists for, so whether it is there is
+// read ONCE, before the calls, and compared with what is there after them.
+const ownerHomeWasThere = existsSync(path.join(homedir(), '.codex'));
+check('PB-161: an owner home is never removed as a participant home',
+  removeParticipantHome(path.join(homedir(), '.codex')) === false
+  && removeParticipantHome(participantHomesRoot()) === false
+  && removeParticipantHome(path.join(participantHomesRoot(), 'x', 'nested')) === false
+  && removeParticipantHome('') === false
+  && existsSync(path.join(homedir(), '.codex')) === ownerHomeWasThere,
+  `owner home present before: ${ownerHomeWasThere}, after: ${existsSync(path.join(homedir(), '.codex'))}`);
+
+const guardVictim = path.join(participantHomesRoot(), 'pb161-guard-probe');
+mkdirSync(guardVictim, { recursive: true });
+check('PB-161: a direct child of the homes root is removed',
+  removeParticipantHome(guardVictim) === true && !existsSync(guardVictim), guardVictim);
+
+// The home path is derived from task and address, so a neighbour on a shared temporary
+// directory can get there first. `mkdirSync` with `recursive` follows an existing
+// symlink without a word, and a link aimed at the owner's home would have the mechanism
+// write its `config.toml` over theirs.
+const symVictim = path.join(SB, 'sym-victim-codex-home');
+const symHome = path.join(participantHomesRoot(), 'pb161-symlink-probe');
+mkdirSync(symVictim, { recursive: true });
+writeFileSync(path.join(symVictim, 'config.toml'), 'owner = "do not touch"\n');
+// The homes root is shared with every other run on this machine, so the probe clears
+// its own name first: a link left by a run that died mid-file would make this one
+// throw on `symlinkSync` instead of checking anything. `unlinkSync` removes the LINK;
+// `rmSync` calls a link to a directory EISDIR.
+try { unlinkSync(symHome); } catch { rmSync(symHome, { recursive: true, force: true }); }
+symlinkSync(symVictim, symHome);
+const symRefusal = thrown(() => makeParticipantHome({ dir: symHome, config: '[mcp_servers.x]\ncommand = "node"\n' }));
+check('PB-161: a symlink at the home path is refused, and what it points at is untouched',
+  symRefusal.threw && /not a directory \(symbolic link\)/.test(symRefusal.msg)
+  && readFileSync(path.join(symVictim, 'config.toml'), 'utf8') === 'owner = "do not touch"\n'
+  && !existsSync(path.join(symVictim, 'auth.json')),
+  `${symRefusal.msg} · ${readFileSync(path.join(symVictim, 'config.toml'), 'utf8')}`);
+unlinkSync(symHome); // the link itself, not what it points at — rmSync calls a link to a directory EISDIR
+
+// A home nothing names is a home whose session is over. The sweep is what covers the
+// ways the record-bound removal cannot be reached: a holder killed outright, a lift
+// that died before writing its record, a task closed on a dead app-server.
+const orphanHome = path.join(participantHomesRoot(), 'pb161-orphan-probe');
+mkdirSync(orphanHome, { recursive: true });
+writeFileSync(path.join(orphanHome, 'auth.json'), '{"stub":"credentials"}\n', { mode: 0o600 });
+const sweptOrphans = sweepParticipantHomes({ PROMPTOBUS_CODEX_HOME: path.join(SB, 'sweep-empty-registry') });
+check('PB-161: a home no session record names is swept, credentials copy and all',
+  sweptOrphans.includes(orphanHome) && !existsSync(orphanHome),
+  JSON.stringify(sweptOrphans));
+
+// And the reverse, which is what makes the sweep safe to run at every lift: a home a
+// live record names is not touched by it.
+const liveHome = path.join(participantHomesRoot(), 'pb161-live-probe');
+const sweepRegistry = { PROMPTOBUS_CODEX_HOME: path.join(SB, 'sweep-live-registry') };
+mkdirSync(liveHome, { recursive: true });
+writeSession({ ref: 'pb161-live-ref', codexHome: liveHome, state: 'alive' }, sweepRegistry);
+const sweptBeside = sweepParticipantHomes(sweepRegistry);
+check('PB-161: a home a live record names survives the sweep',
+  !sweptBeside.includes(liveHome) && existsSync(liveHome), JSON.stringify(sweptBeside));
+
+// `dropSession` is where the record goes, so it is where the home goes: every path
+// that drops a record — stop, a failed lift, anything later — takes the home with it
+// without having to remember to.
+dropSession('pb161-live-ref', sweepRegistry);
+check('PB-161: dropping the record drops the home it names',
+  !existsSync(liveHome), liveHome);
+
+// `done` calls this for a participant whose session is dead, with or without a
+// worktree. A reviewer has none, and its home holds the same credentials copy.
+const sweptByTask = path.join(participantHomesRoot(), path.basename(
+  codexDriver.participantCodexHome({ task: 'pb161-sweep-task', address: 'reviewer:none' }),
+));
+mkdirSync(sweptByTask, { recursive: true });
+check('PB-161: a closed participant with no session record is swept by task and address',
+  codexDriver.sweepParticipant({ metadata: { address: 'reviewer:none' } }, 'pb161-sweep-task', sweepRegistry) === true
+  && !existsSync(sweptByTask)
+  && codexDriver.sweepParticipant({ metadata: {} }, 'pb161-sweep-task', sweepRegistry) === false,
+  sweptByTask);
+
+// The trust key measured on codex-cli 0.146.0: the RESOLVED spelling is trusted and
+// the unresolved one is not, so a link in the path is the case that decides it. A
+// sandbox whose paths are already resolved cannot tell `realpath` from `resolve`.
+const trustReal = path.join(SB, 'trust-real');
+const trustLink = path.join(SB, 'trust-link');
+mkdirSync(path.join(trustReal, 'inner'), { recursive: true });
+symlinkSync(trustReal, trustLink);
+check('PB-161: the trust key follows the link to the real directory',
+  trustPath(path.join(trustLink, 'inner')) === path.join(realpathSync(trustReal), 'inner')
+  && trustPath(path.join(trustLink, 'inner')) !== path.join(trustLink, 'inner')
+  && path.resolve(path.join(trustLink, 'inner')) === path.join(trustLink, 'inner')
+  // A directory that is not there yet still gets a record, and it is the resolved one.
+  && trustPath(path.join(SB, 'trust-absent')) === path.resolve(path.join(SB, 'trust-absent')),
+  `${trustPath(path.join(trustLink, 'inner'))} vs ${path.join(trustLink, 'inner')}`);
+
+check('PB-161: the home config carries quoted keys for a prefixed server and an absolute project path',
+  (() => {
+    const text = codexHomeConfig({
+      servers: { 'promptobus-bus': { command: 'node', args: ['a b'], env: { K: 'v"q' } } },
+      trusted: ['/private/var/a b/wt'],
+    });
+    return text.includes('[mcp_servers.promptobus-bus]')
+      && text.includes('args = ["a b"]')
+      && text.includes('[mcp_servers.promptobus-bus.env]')
+      && text.includes('K = "v\\"q"')
+      && text.includes('[projects."/private/var/a b/wt"]')
+      && text.includes('trust_level = "trusted"');
+  })(),
+  codexHomeConfig({ servers: { 'promptobus-bus': { command: 'node', args: ['a b'], env: { K: 'v"q' } } }, trusted: ['/private/var/a b/wt'] }));
+
+check('PB-161: an empty set writes an empty config rather than an empty table',
+  codexHomeConfig({}) === '' && codexHomeConfig({ servers: { a: { command: 'x', args: [], env: {} } } })
+    === '[mcp_servers.a]\ncommand = "x"\nargs = []\n',
+  JSON.stringify(codexHomeConfig({ servers: { a: { command: 'x', args: [], env: {} } } })));
+
+const skillsRoot = path.join(SB, 'skills-root');
+mkdirSync(path.join(skillsRoot, '.codex', 'skills', 'alpha'), { recursive: true });
+writeFileSync(path.join(skillsRoot, '.codex', 'skills', 'alpha', 'SKILL.md'), '# alpha\n');
+mkdirSync(path.join(skillsRoot, '.codex', 'skills', '_shared'), { recursive: true });
+const skillsPlan = codexDriver.prepare({ ...ctx, root: skillsRoot, task: TASK, address: WORKER });
+check('PB-161: the worker plan copies the canon into <worktree>/.codex/skills and hides it from git',
+  skillsPlan.files.length === 2
+  && skillsPlan.files[0].path === path.join(ctx.cwd, '.codex', '.gitignore')
+  && skillsPlan.files[0].text === '*\n'
+  && skillsPlan.files[1].copyFrom === path.join(skillsRoot, '.codex', 'skills')
+  && skillsPlan.files[1].path === path.join(ctx.cwd, '.codex', 'skills')
+  && /^1 from /.test(skillsPlan.skillsNote)
+  && skillsPlan.codexHome === participantHome,
+  JSON.stringify({ files: skillsPlan.files, note: skillsPlan.skillsNote }));
+
+check('PB-161: skillsNote tells the truth in all three shapes',
+  workerPlan.skillsNote === skillsNoteOf({ src: null, role: 'worker' })
+  && /no \.codex\/skills/.test(workerPlan.skillsNote)
+  && /tree under review/.test(reviewerPlan.skillsNote)
+  && skillsNote({ launch: skillsPlan, pluginDir: null, driver: codexDriver }) === skillsPlan.skillsNote
+  && workspaceSkillsDir(null) === null
+  && workspaceSkillsDir(path.join(SB, 'no-such-root')) === null,
+  `${workerPlan.skillsNote} | ${reviewerPlan.skillsNote}`);
+
+check('PB-161: a reviewer plan writes nothing into the tree under review',
+  codexDriver.prepare({ ...ctx, root: skillsRoot, denyTools: REVIEWER_DENY, role: 'reviewer' }).files.length === 0,
+  JSON.stringify(codexDriver.prepare({ ...ctx, root: skillsRoot, role: 'reviewer' }).files));
+
 const classifiedCodexPlan = codexDriver.prepare({
   ...ctx,
   mcp: {
@@ -845,6 +1149,12 @@ check(': with no record behind it the seam names the tool without a key, and doe
 
 const { ws, repoAbs, repo } = buildWorkspace(SB);
 writeHostConfig(ws, { tools: ['claude', 'codex'] });
+
+// The workspace `sync` render of the Codex skills canon — the source the participant
+// worktree gets a copy of. One skill with a marker file, so a check can say the copy
+// arrived rather than that a directory exists.
+mkdirSync(path.join(ws, '.codex', 'skills', 'codex-canon-probe'), { recursive: true });
+writeFileSync(path.join(ws, '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'), '# codex canon probe\n');
 const home = path.join(ws, '.promptobus');
 const brief = path.join(SB, 'worker-brief.md');
 writeFileSync(brief, '# Codex driver probe\n\nSend the orchestrator a status and end the turn.\n');
@@ -885,7 +1195,7 @@ const env = {
   PROMPTOBUS_HOME: home,
   CLAUDE_CODE_SESSION_ID: ORCH_SESSION,
   PROMPTOBUS_WARDEN: 'off',
-  CODEX_HOME: path.join(SB, 'caller-codex-home'),
+  CODEX_HOME: callerCodexHome,
   [CODEX_HOME_VAR]: HARNESS,
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
@@ -909,6 +1219,17 @@ check(': --dry-run prints app-server --stdio and writes nothing to disk',
 check(': --dry-run names the harness-owned thread id',
   /harness session name: the thread id is chosen by app-server itself and printed on lift/.test(dry.out),
   dry.out.slice(-400));
+// PB-161 review: `--dry-run` has to print the home. The line above it says CODEX_HOME
+// is dropped from the parent, which alone reads as "the session will use ~/.codex" —
+// the opposite of what happens. And the path must be the one a real lift uses, which
+// is what makes the name deterministic rather than mkdtemp.
+check('PB-161: spawn --dry-run names the participant home, next to the dropped-variable line',
+  /dropped from the parent[^\n]*CODEX_HOME/.test(dry.out)
+  && dry.out.includes(`Codex home: ${codexDriver.participantCodexHome({ task: TASK, address: WORKER })}`)
+  && /CODEX_HOME is dropped from the parent and set to this/.test(dry.out)
+  && dry.out.indexOf('Codex home:') > dry.out.indexOf('dropped from the parent'),
+  dry.out.split('\n').filter((l) => /CODEX_HOME|Codex home/.test(l)).join(' | '));
+
 check(': Codex --dry-run does not present the prompt as a positional app-server argument',
   !/app-server --stdio <prompt>/.test(dry.out)
   && /turn\/start request/.test(dry.out), dry.out.slice(-600));
@@ -940,10 +1261,44 @@ const appThread = (() => {
     return null;
   }
 })();
-check(': the holder app-server drops CODEX_HOME but keeps PROMPTOBUS_CODEX_HOME',
-  appThread?.appServerEnv?.CODEX_HOME === undefined
+check('PB-161: the holder app-server runs in the participant home, not the caller CODEX_HOME',
+  appThread?.appServerEnv?.CODEX_HOME === participantHome
+    && appThread?.appServerEnv?.CODEX_HOME !== callerCodexHome
+    && record?.codexHome === participantHome
     && appThread?.appServerEnv?.PROMPTOBUS_CODEX_HOME === stateHome,
-  JSON.stringify(appThread?.appServerEnv ?? null));
+  JSON.stringify({ env: appThread?.appServerEnv ?? null, record: record?.codexHome, want: participantHome }));
+
+// What the app-server found in that home at `thread/start`: the mechanism's MCP
+// entries, the trust record for the worktree by its RESOLVED path, and a copy of the
+// owner's credentials at 0600. The owner's own home is not read for any of it beyond
+// the one file that is copied.
+const homeSeen = appThread?.codexHome ?? null;
+check('PB-161: the participant home carries the mechanism MCP set and nothing of the owner`s',
+  typeof homeSeen?.config === 'string'
+    && homeSeen.config.includes(`[mcp_servers.${codexMcpName('promptobus', PREFIX)}]`)
+    && !homeSeen.config.includes('[mcp_servers.promptobus]')
+    && homeSeen.entries.includes('config.toml'),
+  JSON.stringify({ entries: homeSeen?.entries, config: homeSeen?.config }));
+
+check('PB-161: the worktree is trusted by its realpath, and the record is in the home, not in the owner`s config',
+  typeof homeSeen?.config === 'string'
+    && homeSeen.config.includes(`[projects."${realpathSync(wp?.metadata?.worktree ?? repoAbs)}"]`)
+    && /trust_level = "trusted"/.test(homeSeen.config),
+  String(homeSeen?.config).slice(-300));
+
+check('PB-161: the owner auth travels as a copy at mode 0600',
+  homeSeen?.auth === '0600' && homeSeen.entries.includes('auth.json'),
+  JSON.stringify({ auth: homeSeen?.auth, entries: homeSeen?.entries }));
+
+check('PB-161: no config.mcp_servers override rides on thread/start any more',
+  appThread?.config?.mcp_servers === undefined,
+  JSON.stringify(appThread?.config ?? null));
+
+check('PB-161: the workspace .codex/skills canon is copied into the worktree and ignored by git',
+  existsSync(path.join(wp?.metadata?.worktree ?? '', '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'))
+    && readFileSync(path.join(wp?.metadata?.worktree ?? '', '.codex', '.gitignore'), 'utf8') === '*\n'
+    && spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim() === '',
+  spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain'], { encoding: 'utf8' }).stdout);
 
 check(': Codex thread name equals the chosen session name in the participant record',
   /^Worker: Codex named slice \(\d{4}-\d{4}\)$/.test(wp?.metadata?.name ?? '')
@@ -1174,10 +1529,57 @@ check(': a reviewer elicitation is declined and the report still arrives',
     && !revElicitLog.includes('SECRET-PROMPT-DO-NOT-LOG'),
   revElicitLog.slice(-500));
 
+// The reviewer's own home: the same isolation, and two things deliberately absent
+// from it. Its working directory is the tree UNDER REVIEW, so it is not trusted — a
+// repository would otherwise hand its own `.codex/config.toml` to the session judging
+// it — and no skills canon is copied into that tree.
+const revThread = (() => {
+  try {
+    const rec = readSession(revPart?.sessionRef ?? '', env);
+    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${rec?.threadId ?? ''}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+check('PB-161: the reviewer lifts in its own home, with no trust record for the tree under review',
+  revThread?.appServerEnv?.CODEX_HOME === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
+    && revThread.appServerEnv.CODEX_HOME !== participantHome
+    && typeof revThread.codexHome?.config === 'string'
+    && !revThread.codexHome.config.includes('[projects.')
+    && revThread.codexHome.config.includes(`[mcp_servers.${codexMcpName('promptobus', PREFIX)}]`),
+  JSON.stringify({ home: revThread?.appServerEnv?.CODEX_HOME, config: revThread?.codexHome?.config }));
+
+const reviewDry = cli(['review', wt, '--task', TASK, '--harness', 'codex', '--dry-run'], { cwd: ws, env });
+check('PB-161: a reviewer plan says out loud that it brings no skills into that tree, and writes nothing',
+  /workspace skills: not attached — a Codex reviewer works in the tree under review/.test(reviewDry.out)
+    && /dry-run: nothing written to disk/.test(reviewDry.out),
+  reviewDry.out.slice(-900));
+
+check('PB-161: review --dry-run names the reviewer home too — both dry-run paths print it',
+  reviewDry.out.includes(`Codex home: ${codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })}`)
+    && /CODEX_HOME is dropped from the parent and set to this/.test(reviewDry.out),
+  reviewDry.out.split('\n').filter((l) => /CODEX_HOME|Codex home/.test(l)).join(' | '));
+
+// The owner's `~/.codex` after a worker, a reviewer and a stop: section by section,
+// not by file hash. The marketplace snapshot rewrites that file on its own schedule
+// without a turn on its own schedule, so a hash is not a gate — the sections the
+// mechanism could have written are.
+const ownerConfigAfter = readFileSync(path.join(callerCodexHome, 'config.toml'), 'utf8');
+const sectionsOf = (text) => (text.match(/^\[[^\]]+\]/gm) ?? []);
+check('PB-161: the owner config gained no [projects] and no section at all across the run',
+  sectionsOf(ownerConfigAfter).join(',') === sectionsOf(ownerConfigBefore).join(',')
+    && !/\[projects/.test(ownerConfigAfter)
+    && !existsSync(path.join(callerCodexHome, 'sessions')),
+  JSON.stringify({ before: sectionsOf(ownerConfigBefore), after: sectionsOf(ownerConfigAfter) }));
+
 const stopped = await codexDriver.stop(ref);
 check('step 6: stop kills the holder and drops the record',
   stopped.ok && stopped.stopped && !readSession(ref, env),
   JSON.stringify(stopped));
+
+check('PB-161: stop takes the participant home with the record — the credentials copy does not outlive the session',
+  !existsSync(participantHome) && existsSync(path.join(callerCodexHome, 'auth.json')),
+  JSON.stringify({ participantHome, gone: !existsSync(participantHome) }));
 
 const gone = codexDriver.inspect(ref);
 check('step 6: inspect after stop — gone',
@@ -1199,6 +1601,19 @@ check('step 7: an approval request without a hang — the driver replied, the pa
   approved.status === 0 && /worker worker:apr lifted/.test(approved.out), approved.out.slice(-500));
 
 const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
+// The approvals are asked INSIDE the turn, and `spawn` returns at `turn/started`. The
+// participant's own status is the first event that is provably after all of them.
+const aprSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  .find((m) => String(m.body ?? '').includes('CODEX-APR')) ?? null, { timeoutMs: 20000 });
+const aprThread = harnessThread(apr, env);
+let aprLog = '';
+try { aprLog = readFileSync(holderLogFile(apr?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+check('PB-88.3: the live network escalation is declined and the same command without it is accepted',
+  !!aprSent
+  && JSON.stringify(aprThread?.networkApproval) === '{"decision":"decline"}'
+  && JSON.stringify(aprThread?.plainApproval) === '{"decision":"accept"}'
+  && /approval deny item\/commandExecution\/requestApproval network egress denied: https to packages\.invalid/.test(aprLog),
+  `${JSON.stringify({ network: aprThread?.networkApproval, plain: aprThread?.plainApproval })} · ${aprLog.slice(-400)}`);
 if (apr?.sessionRef) await codexDriver.stop(apr.sessionRef);
 const rev = store.participantOf(store.readTask(home, TASK), REVIEWER);
 if (rev?.sessionRef) await codexDriver.stop(rev.sessionRef);
@@ -1506,10 +1921,12 @@ check(': waitReady waits for a delayed first turn and does not give up before th
 const slowPart = store.participantOf(store.readTask(home, TASK), 'worker:slow');
 if (slowPart?.sessionRef) await codexDriver.stop(slowPart.sessionRef);
 
-// Second step: what actually went into `thread/start`. The stand puts `params.config`
-// into its thread record — that is what we read. Until this point the stand workspace
-// canon was a single bus entry, so lift never saw a url-server; here the canon gets one
-// and the participant is lifted with both transports at once.
+// Second step: what actually reached the app-server. Since PB-161 that is the
+// `config.toml` of the participant home, which the stand PARSES the way the binary
+// does — an unreadable file leaves the participant with no MCP set at all. Until this
+// point the stand workspace canon was a single bus entry, so lift never saw a
+// url-server; here the canon gets one and the participant is lifted with both
+// transports at once.
 writeHostConfig(ws, {
   tools: ['claude', 'codex'],
   mcp: {
@@ -1534,15 +1951,21 @@ const mcpThread = (() => {
     return null;
   }
 })();
-const started = mcpThread?.config?.mcp_servers ?? {};
+const started = (() => {
+  try {
+    return parseHomeToml(mcpThread?.codexHome?.config).mcp_servers ?? {};
+  } catch (e) {
+    return { __unreadable: e.message };
+  }
+})();
 const busKey = codexMcpName('promptobus', PREFIX);
 const httpKey = codexMcpName('probe-http', PREFIX);
-check(': in thread/start the url-server went out in url form, the bus in stdio form',
+check('PB-161: in the home config the url-server is in url form, the bus in stdio form',
   Object.keys(started[httpKey] ?? {}).sort().join(',') === 'http_headers,url'
   && started[httpKey].http_headers.api_key === 'PROBE-TOKEN'
   && Object.keys(started[busKey] ?? {}).sort().join(',') === 'args,command,env',
   JSON.stringify(started));
-check(': in thread/start there are no canonical names — the bus went out under the prefix',
+check('PB-161: in the home config there are no canonical names — the bus is under the prefix',
   !('promptobus' in started) && !('probe-http' in started)
   && busKey in started && httpKey in started,
   JSON.stringify(Object.keys(started)));
@@ -1687,5 +2110,39 @@ for (const pid of [reapRec?.holderPid, reapRec?.appPid]) {
     try { process.kill(pid, 'SIGKILL'); } catch { /* gone between the read and the kill */ }
   }
 }
+
+// ── The home does not outlive the task, even when the holder died first ───────────
+//
+// `done` stops only participants whose session is ALIVE. A Codex participant whose
+// app-server died reports `stale`, which is `dead` to the walk — so its `stop` is
+// never called, and before this the only thing that removed the home was `stop`. What
+// was left behind was a directory holding a copy of the owner's credentials and the
+// canonical MCP set's `http_headers` in the clear.
+planParticipant(HARNESS, 'worker:orphan', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-ORPHAN' } }] }],
+});
+const orphanUp = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'orphan', '--harness', 'codex'], { cwd: ws, env });
+const orphanPart = store.participantOf(store.readTask(home, TASK), 'worker:orphan');
+const orphanRec = readSession(orphanPart?.sessionRef ?? '', env);
+const orphanHomeLive = orphanRec?.codexHome ?? '';
+// Killed, not stopped: this is the take-down that reaches no hook.
+for (const pid of [orphanRec?.holderPid, orphanRec?.appPid]) {
+  if (pidAlive(pid)) {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* no group */ }
+    try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+}
+const orphanDead = await waitFor(() => !pidAlive(orphanRec?.holderPid) && !pidAlive(orphanRec?.appPid),
+  { timeoutMs: 20_000, stepMs: 250 });
+check('PB-161: a participant whose holder was killed still has its home, and its record still names it',
+  orphanUp.status === 0 && orphanDead && !!orphanHomeLive && existsSync(orphanHomeLive)
+    && codexDriver.inspect(orphanPart?.sessionRef ?? '').state === 'stale',
+  `${orphanHomeLive} · ${JSON.stringify(codexDriver.inspect(orphanPart?.sessionRef ?? ''))}`);
+
+const doneOut = cli(['done', '--task', TASK], { cwd: ws, env });
+check('PB-161: done takes the home of a participant whose session died without a stop',
+  doneOut.status === 0 && !existsSync(orphanHomeLive),
+  `${doneOut.status} · ${orphanHomeLive} · ${doneOut.out.slice(-400)}`);
 
 restore();
