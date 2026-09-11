@@ -1,22 +1,13 @@
 // Generation of project-level bus hooks. The record shape is the harness
-// contract; the command is the host: absolute node and bin, script path from
-// host.busHookRel(). A consumer layout is not baked in here.
-//
-// The hook script lives as a template next to the sources (`templates/bus-hook.mjs`),
-// not as a string literal: generated edits stay apart from the TypeScript core.
+// contract; the command is the host: absolute node and bin.
 
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
 import type { PromptobusHost } from './host.js';
 
+// The feed hook is gone (PB-173). This name survives it because `install` still
+// has to find and delete an entry an older version wrote. See guides/install.md.
 export const BUS_HOOK_EVENT = 'PostToolUse';
-export const BUS_HOOK_SEP = '\n';
-// Bus server name. `src/contract.ts` owns the literal; this alias and
-// `lib/contract.js` both expose its compiled value. Drift from the server name
-// would break the staged-hook matcher: the group would not be found.
 export { BUS_SERVER };
-export const BUS_HOOK_MATCHER = `mcp__${BUS_SERVER}__(promptobus_send|promptobus_mailbox)`;
 
 export const GUARD_HOOK_EVENT = 'Stop';
 export const GUARD_START_EVENT = 'SessionStart';
@@ -38,30 +29,6 @@ export interface GuardIdentity {
   address: string;
   taskId: string;
   home: string;
-}
-
-export function renderBusHook(host: Pick<PromptobusHost, 'syncHint'>): string {
-  const file = new URL('../templates/bus-hook.mjs', import.meta.url);
-  return readFileSync(file, 'utf8').replaceAll('__SYNC__', host.syncHint());
-}
-
-export function busHookCommand(
-  host: Pick<PromptobusHost, 'nodePath' | 'workspaceRoot' | 'busHookRel'>,
-  extraArgs: readonly string[] = [],
-  platform = 'posix',
-): string {
-  const script = path.join(host.workspaceRoot(), host.busHookRel());
-  const extra = extraArgs.map((arg) => quoteFlag(arg, platform)).join(' ');
-  return `"${host.nodePath()}" "${script}"${extra ? ` ${extra}` : ''}`;
-}
-
-export function busHookSettings(host: Pick<PromptobusHost, 'nodePath' | 'workspaceRoot' | 'busHookRel'>): Record<string, unknown> {
-  return {
-    [BUS_HOOK_EVENT]: [{
-      matcher: BUS_HOOK_MATCHER,
-      hooks: [{ type: 'command', command: busHookCommand(host) }],
-    }],
-  };
 }
 
 export function guardHookCommand(
@@ -94,28 +61,20 @@ export function guardHookSettings(
   return { [GUARD_HOOK_EVENT]: group(), [GUARD_START_EVENT]: group() };
 }
 
+// No `rel`/`text`: the plan wrote a runner script while the feed hook existed,
+// and the guard needs no file of its own — it runs the bin.
 export interface HookPlan {
-  rel: string;
-  text: string;
   settings: Record<string, unknown>;
 }
 
 // Not a full PromptobusHost: the type declares which members the plan asks for,
 // and sync passes exactly those.
-export type PromptobusHookHost = Pick<PromptobusHost,
-  'syncHint' | 'workspaceRoot' | 'busHookRel' | 'nodePath' | 'guardArgv'>;
+export type PromptobusHookHost = Pick<PromptobusHost, 'nodePath' | 'guardArgv'>;
 
 export function planPromptobusHooks(
   host: PromptobusHookHost,
   identity: GuardIdentity | null = null,
   platform = 'posix',
 ): HookPlan {
-  return {
-    rel: host.busHookRel(),
-    text: renderBusHook(host),
-    settings: {
-      ...busHookSettings(host),
-      ...guardHookSettings(host, identity, platform),
-    },
-  };
+  return { settings: guardHookSettings(host, identity, platform) };
 }

@@ -93,17 +93,19 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 
 ### What the installer writes
 
-| Harness | Project file | Bus feedback | Loop guard |
-|---|---|---|---|
-| Claude Code | `.claude/settings.json` | `PostToolUse` matcher on `promptobus_send` / `promptobus_mailbox`; runner field `systemMessage` | `Stop` and `SessionStart` |
-| Cursor | `.cursor/hooks.json` (`version` 1) | driver injection; no project hook | `stop` |
-| Codex | `.codex/hooks.json` | `PostToolUse`; runner field `systemMessage` | `Stop` and `SessionStart` |
+| Harness | Project file | Loop guard |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | `Stop` and `SessionStart` |
+| Cursor | `.cursor/hooks.json` (`version` 1) | `stop` |
+| Codex | `.codex/hooks.json` | `Stop` and `SessionStart` |
 
-The runner script is generated under `.promptobus/hooks/` (`busHookRel()`). The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
+The loop guard is the only hook installed. A `PostToolUse` hook that echoed each bus call into the session was installed until the 0.6.x line; an install now removes it where an earlier one wrote it, together with the runner script it ran. Nothing is generated under `.promptobus/hooks/` any more — `busHookRel()` survives as the path that recognises such a leftover, and removing it would remove the ability to clean one up.
+
+The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
 
 The installer leaves an existing unselected harness file byte-for-byte untouched. If it finds an owned hook group left by an earlier install, it rewrites that file only to remove the group; `install --check` reports drift for that cleanup when needed.
 
-When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. Cleanup of a run must keep `.promptobus/hooks/`.
+When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. Cleanup of a run must keep `.promptobus/`.
 
 A malformed or shared config file fails the command. The installer does not write a partial file.
 

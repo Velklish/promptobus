@@ -1,6 +1,8 @@
 # Hooks, trust, and troubleshooting
 
-Project hooks give the orchestrator a line in the session after bus mail where the harness supports it, and a Stop guard that refuses to end a turn with unread mail. Cursor receives bus feedback by driver injection rather than a project hook. Participant worktrees get their own Stop hook from the driver. This guide is for Claude Code, Cursor, and Codex.
+Project hooks are one thing: a Stop guard that refuses to end a turn with unread mail. Participant worktrees get their own Stop hook from the driver. This guide is for Claude Code, Cursor, and Codex.
+
+There used to be a second one — a `PostToolUse` line echoing each bus call back into the session. It is gone, and an install removes it where an earlier one wrote it. Nothing of the working machinery ran through it: the turn is returned by the Stop guard, unread counts ride in the MCP reply itself, and delivery to a participant is the warden's over its own channel.
 
 Install first: [install.md](install.md).
 
@@ -10,13 +12,13 @@ Only project files next to `promptobus.json`:
 
 | Harness | File | Owned records |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | `PostToolUse` matcher `mcp__promptobus__(promptobus_send\|promptobus_mailbox)`; `Stop` and `SessionStart` running `promptobus guard` |
+| Claude Code | `.claude/settings.json` | `Stop` and `SessionStart` running `promptobus guard` |
 | Cursor | `.cursor/hooks.json` | `stop` running `promptobus guard` only |
-| Codex | `.codex/hooks.json` | `PostToolUse` (runner field `systemMessage`); `Stop` and `SessionStart` running `promptobus guard` |
+| Codex | `.codex/hooks.json` | `Stop` and `SessionStart` running `promptobus guard` |
 
-The generated runner is `.promptobus/hooks/bus.mjs`. `src/hooks.ts` plans the Claude-shaped settings. The installer maps that plan onto each harness file.
+`src/hooks.ts` plans the Claude-shaped settings; the installer maps that plan onto each harness file. Nothing generates a runner script any more. `.promptobus/hooks/bus.mjs` is the path an install still knows, because it is how it recognises and deletes a feed hook an earlier version wrote — and it deletes the script with it.
 
-Owned records are identified by exact install ids first, not by file position. Guard records without a manifest id use the portable command signature described in [install.md](install.md); bus feedback uses its matcher. A later install with a shorter `--harnesses` list deletes owned records of the harnesses you dropped. Foreign groups stay, except guard-shaped commands described in [install.md](install.md).
+Owned records are identified by exact install ids first, not by file position. Guard records without a manifest id use the portable command signature described in [install.md](install.md); a leftover feed hook is recognised by the runner path its command still names. A later install with a shorter `--harnesses` list deletes owned records of the harnesses you dropped. Foreign groups stay, except guard-shaped commands described in [install.md](install.md).
 
 ## What is never touched
 
@@ -58,9 +60,9 @@ Review: Codex requires /hooks; project hooks also depend on workspace trust.
 
 **Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback reaches a Cursor participant by driver injection, not a project hook. The loop guard is `stop`. Cursor does not recognise `postToolUse`; adding it or another unknown event name to `.cursor/hooks.json` silently disables every hook in the file, so do not add one by hand. The installer validates the merged event map before writing and refuses an unknown event.
 
-**Codex.** Review the new project hooks with `/hooks` before you rely on them. The runner default field is `systemMessage`. Project hooks also depend on trusting this workspace.
+**Codex.** Review the new project hooks with `/hooks` before you rely on them. Project hooks also depend on trusting this workspace.
 
-If you skip trust, spawn still works, but project hooks do not run: Claude Code and Codex lose their tape line, and each harness loses its project Stop guard. Cursor bus feedback is the separate driver-injection path. The warden can still knock. `promptobus_mailbox` is still the source of truth.
+If you skip trust, spawn still works, but project hooks do not run: each harness loses its project Stop guard. The warden can still knock. `promptobus_mailbox` is still the source of truth.
 
 ## Troubleshooting
 

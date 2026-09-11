@@ -327,7 +327,7 @@ check('package sources import only Node built-ins and their own files',
 const built = npm(['run', 'build'], COPY_ROOT);
 check('copy of the repo builds', built.status === 0, why(built));
 
-let serverContract = { adapter: null, hook: null, matcher: null, error: '' };
+let serverContract = { adapter: null, hook: null, error: '' };
 if (built.status === 0) {
   try {
     const adapter = await import(pathToFileURL(path.join(COPY_ROOT, 'lib', 'contract.js')).href);
@@ -335,20 +335,20 @@ if (built.status === 0) {
     serverContract = {
       adapter: adapter.PROMPTOBUS_SERVER,
       hook: hooks.BUS_SERVER,
-      matcher: hooks.BUS_HOOK_MATCHER,
       error: '',
     };
   } catch (e) {
     serverContract.error = e.message;
   }
 }
-check('PB-119 server contract: the shipped server name is promptobus on both doors and in the hook matcher',
+check('PB-119 server contract: the shipped server name is promptobus on both doors',
   serverContract.adapter === serverContract.hook
-  && serverContract.adapter === 'promptobus'
-  && serverContract.matcher === 'mcp__promptobus__(promptobus_send|promptobus_mailbox)',
+  && serverContract.adapter === 'promptobus',
   JSON.stringify(serverContract));
 
-let hookContract = { compiled: [], generated: [], imported: [], literals: [], error: '' };
+let hookContract = {
+  compiled: [], generated: [], imported: [], literals: [], busEvent: null, wroteBus: null, error: '',
+};
 if (built.status === 0) {
   try {
     const hooks = await import(pathToFileURL(path.join(COPY_ROOT, 'dist', 'hooks.js')).href);
@@ -366,14 +366,20 @@ if (built.status === 0) {
     const plan = installer.planHookInstall(host, root, ['claude']);
     const settingsWrite = plan.writes.find((write) => write.rel === path.join('.claude', 'settings.json'));
     const generated = settingsWrite ? JSON.parse(settingsWrite.text).hooks ?? {} : {};
-    const compiled = [hooks.BUS_HOOK_EVENT, hooks.GUARD_HOOK_EVENT, hooks.GUARD_START_EVENT];
+    const compiled = [hooks.GUARD_HOOK_EVENT, hooks.GUARD_START_EVENT];
     const source = readFileSync(path.join(COPY_ROOT, 'lib', 'install.js'), 'utf8');
     const importBlock = source.match(/import \{([\s\S]*?)\} from '\.\.\/dist\/hooks\.js';/)?.[1] ?? '';
     const imported = ['BUS_HOOK_EVENT', 'GUARD_HOOK_EVENT', 'GUARD_START_EVENT']
       .filter((name) => new RegExp(`\\b${name}\\b`).test(importBlock));
     const literals = [...source.matchAll(/(['"])(PostToolUse|Stop|SessionStart)\1/g)]
       .map((match) => match[0]);
-    hookContract = { compiled, generated: Object.keys(generated), imported, literals, error: '' };
+    hookContract = {
+      compiled, generated: Object.keys(generated), imported, literals,
+      // PB-173: the feed hook is not written any more, and this name is what
+      // `install` still finds an older one by. Losing it loses the removal.
+      busEvent: hooks.BUS_HOOK_EVENT, wroteBus: Object.hasOwn(generated, hooks.BUS_HOOK_EVENT),
+      error: '',
+    };
   } catch (e) {
     hookContract.error = e.message;
   }
@@ -382,10 +388,17 @@ const hookNames = ['BUS_HOOK_EVENT', 'GUARD_HOOK_EVENT', 'GUARD_START_EVENT'];
 check('PB-119.1 installed hook events follow the compiled hook declarations',
   hookContract.error === ''
   && hookContract.imported.length === hookNames.length
-  && hookContract.compiled.length === hookNames.length
   && hookContract.generated.length === hookContract.compiled.length
   && hookContract.generated.every((event, index) => event === hookContract.compiled[index])
   && hookContract.literals.length === 0,
+  JSON.stringify(hookContract));
+// PB-173: the third imported name is not written and must not be. It is the needle
+// `install` removes an older feed hook by, so a pass that deletes it as unused takes
+// the removal with it — and nothing else in the suite would notice.
+check('PB-173 the bus event name is still declared and imported, and nothing writes it',
+  hookContract.busEvent === 'PostToolUse'
+  && hookContract.imported.includes('BUS_HOOK_EVENT')
+  && hookContract.wroteBus === false,
   JSON.stringify(hookContract));
 
 function packList() {
@@ -409,9 +422,11 @@ check('tarball contains built dist with declarations',
   && files.includes('dist/driver.js') && files.includes('dist/host-index.js')
   && files.includes('dist/hooks.js') && files.includes('dist/contract.js'),
   files.filter((f) => f.startsWith('dist/')).join(', '));
-check('tarball contains the bus-hook template',
-  packed.ok && files.includes('templates/bus-hook.mjs'),
-  files.filter((f) => f.includes('template')).join(', ') || files.join(', '));
+// PB-173: the feed hook was the only template, and it is gone. A tarball that ships
+// one again means someone brought the hook back without re-deciding it.
+check('PB-173 the tarball ships no hook template',
+  packed.ok && files.filter((f) => f.startsWith('templates/')).length === 0,
+  files.filter((f) => f.startsWith('templates/')).join(', ') || '(none)');
 const SCHEMAS_V1 = ['task', 'participant', 'message', 'artifact']
   .map((model) => `schemas/v1/${model}.schema.json`);
 const missingSchemas = SCHEMAS_V1.filter((f) => !files.includes(f));
@@ -479,6 +494,8 @@ const workflow = readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'),
 const astGrepVersion = workflow.match(/^\s+run: npm install -g @ast-grep\/cli@(\d+\.\d+\.\d+)$/m)?.[1] ?? null;
 check('CI pins ast-grep to an exact version',
   astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
+// Never a plain live literal here: it would be a real ref in a tracked file and the pin
+// gate would redden on the test that checks the pin (44 refs in 11 files, not 43 in 10).
 const backslopRef = /github:Velklish\/backslop#[^\s'"`]+/;
 const workflowBackslopRef = workflow.match(backslopRef)?.[0] ?? null;
 const packageBackslopRef = pkg.scripts?.['lint:backslop']?.match(backslopRef)?.[0] ?? null;

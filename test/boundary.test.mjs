@@ -172,7 +172,7 @@ test('declared exports resolve and yield a surface', async () => {
 
   const hooks = await load(pkg.exports['./hooks'].default);
   assert.equal(typeof hooks.planPromptobusHooks, 'function');
-  assert.equal(typeof hooks.renderBusHook, 'function');
+  assert.equal(typeof hooks.guardHookCommand, 'function');
 
   for (const model of ['task', 'participant', 'message', 'artifact']) {
     const file = path.join(ROOT, 'schemas', 'v1', `${model}.schema.json`);

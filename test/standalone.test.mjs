@@ -45,7 +45,7 @@ test('entry point "./host" yields the contract and the standalone implementation
 test('entry point "./hooks" yields the hook plan', async () => {
   const hooks = await import('../dist/hooks.js');
   assert.equal(typeof hooks.planPromptobusHooks, 'function');
-  assert.equal(typeof hooks.renderBusHook, 'function');
+  assert.equal(typeof hooks.guardHookCommand, 'function');
 });
 
 test('declarations are built next to the code', async () => {

@@ -29,7 +29,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `skillsDir` | `skillsDir(): string \| null` | `null` means the workspace has no configured process-skills directory. |
 | `pluginDir` | `pluginDir(): string \| null` | `null` means no plugin directory is available for the workspace. |
 | `pluginManifestRel` | `pluginManifestRel(): string` | Never absent; it is the workspace-relative plugin manifest path. |
-| `busHookRel` | `busHookRel(): string` | Never absent; it is the workspace-relative bus-hook path. |
+| `busHookRel` | `busHookRel(): string` | Never absent. Nothing is written there any more; it is the path by which `install` recognises and removes a feed hook an earlier version left. |
 | `installManifestRel` | `installManifestRel(): string` | Never absent; it is the workspace-relative install manifest path. |
 | `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
 | `declaredTools` | `declaredTools(): string[]` | Never `null`; an empty array means the workspace declares no harnesses. |
