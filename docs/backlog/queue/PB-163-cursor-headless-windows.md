@@ -7,7 +7,7 @@
 
 ## Context
 
-Owner decision of 2026-09-11 (harness-parity run): Windows is in scope for both Cursor and Codex participants. The consumer's card ati-agents BL-507 states the shape: the persist session through `tmux` stays a Unix path; on Windows the participant must run headless turns (`agent -p --resume`), and `tmux` must be neither probed, nor required, nor installed there. The differences of the two paths — a live process, delivery of a message during a turn (only between turns without persist), `attach` — must be named in the docs rather than discovered. Nobody on the mechanism side has a Windows stand: the live run is the owner's, code goes by the docs and by tests with a faked platform.
+Owner decision of 2026-09-11 (harness-parity run): Windows is in scope for both Cursor and Codex participants. The consumer's card the consumer's Windows card states the shape: the persist session through `tmux` stays a Unix path; on Windows the participant must run headless turns (`agent -p --resume`), and `tmux` must be neither probed, nor required, nor installed there. The differences of the two paths — a live process, delivery of a message during a turn (only between turns without persist), `attach` — must be named in the docs rather than discovered. Nobody on the mechanism side has a Windows stand: the live run is the owner's, code goes by the docs and by tests with a faked platform.
 
 ## Work to do
 

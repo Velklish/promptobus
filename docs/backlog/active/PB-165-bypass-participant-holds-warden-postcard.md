@@ -7,7 +7,7 @@
 
 ## Context
 
-Filed from the consumer's finding ati-agents BL-640 (run 0911a, 2026-09-11, claude 2.1.263). Three workers were lifted with `--permission-mode bypassPermissions`. The warden's first postcard to one of them was not delivered but held by the session as a dialog — `claude logs` of the worker, ANSI stripped:
+Filed from the consumer's finding the consumer's finding of 2026-09-11 (claude 2.1.263). Three workers were lifted with `--permission-mode bypassPermissions`. The warden's first postcard to one of them was not delivered but held by the session as a dialog — `claude logs` of the worker, ANSI stripped:
 
 ```
 Held peer message — from an unidentified session [verified pid <warden pid>]; preview: «Promptobus service notification. The mailbox for address worker:codex-agents on task … has unread: …» — not delivered to Claude (1 held): sender did not attest its permission mode and this session bypasses prompts. Review it below, or set "crossSessionInbound" to "accept".
@@ -23,7 +23,7 @@ The same postcard reaches a participant lifted in `auto` mode (run 0910a, inject
 
 ## Out of scope
 
-- The consumer's rule text about when to use `bypassPermissions` (ati-agents BL-640 keeps that).
+- The consumer's rule text about when to use `bypassPermissions` (the consumer keeps that).
 
 ## Verification
 

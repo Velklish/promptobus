@@ -7,7 +7,7 @@
 
 ## Context
 
-Filed from the consumer's card ati-agents BL-552.1 (2026-09-09). The penalties block knows `unknownAvailability`, `liveParticipantPerHarness` and `liveParticipantCap`, but under `balance` the harness is chosen by `pace.effective` inside the band and the penalty only orders candidates within it: a harness whose window is ahead of the others attracts the third and the fourth worker too. Measured 2026-09-06 (BL-552): three workers in a row went to Codex Plus, the five-hour window was exhausted in forty minutes, all three stalled mid-turn, and `near-limit` had no chance to warn — the window record lives sixty seconds in the cache. The consumer holds the rule "no more than two Codex participants at once" in prose (its orchestration skill), which the resolver cannot see.
+Filed from the consumer's card the consumer's card of 2026-09-09. The penalties block knows `unknownAvailability`, `liveParticipantPerHarness` and `liveParticipantCap`, but under `balance` the harness is chosen by `pace.effective` inside the band and the penalty only orders candidates within it: a harness whose window is ahead of the others attracts the third and the fourth worker too. Measured 2026-09-06 (the consumer's live run of 2026-09-06): three workers in a row went to Codex Plus, the five-hour window was exhausted in forty minutes, all three stalled mid-turn, and `near-limit` had no chance to warn — the window record lives sixty seconds in the cache. The consumer holds the rule "no more than two Codex participants at once" in prose (its orchestration skill), which the resolver cannot see.
 
 ## Work to do
 
