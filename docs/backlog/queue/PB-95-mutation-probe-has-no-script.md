@@ -1,5 +1,6 @@
 # PB-95 · The mutation probe that validates a test change is a manual multi-step dance with no script, no gate, and no record that it happened
 
+- **Order:** 170
 - **Scope:** `AGENTS.md`, `docs/guides/contributing.md`, `scripts/`, `test/run.mjs`, `package.json`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -15,6 +16,27 @@ test/run.mjs walks the whole `test/` directory by filename glob — its own head
 The manual procedure repeats heavily by hand: docs/archive/PB-16-cursor-availability-adapter/result.md records "Mutation probes, commit-first, 23 in all, 22 red with the module loadable each time" in one task; docs/archive/PB-39-codex-lift-waits-for-first-turn-end/result.md records "three mutation probes after commits" in another. Both are records of the procedure being performed manually, not a proposal or decision to keep it manual — no ADR or result.md argues for that.
 
 Not tracked: grepped docs/backlog/{queue,active,deferred,triage} for "mutation probe" / "scripts/mutation" — no match.
+
+
+## Third occurrence, 2026-09-12, and it moves the argument
+
+Filed as deferred; returned to the queue on 2026-09-12 after the same loss happened a third time
+in two days. Two of the three were caught by their own author; the first pair was not — two
+fixes were lost to `git checkout --` during a probe over uncommitted work and reported as done,
+and a reviewer found them.
+
+**What the third case adds is not another tally mark.** It was caught by a *harness*
+notification — the session was told the file on disk had changed — and not by anything in this
+repository. On a harness without that notification, or in a non-interactive session, the edit
+goes silently, which is exactly how the first pair went. So "commit first" is held today by a
+property of the tool the agent happens to be running in, and the case for a script rather than a
+rule is stronger than this card's own context states.
+
+**And it widens the scope.** The probe that lost work was a probe of a **gate**, not of a test:
+`scripts/check-pins.mjs` driven by mutations of `package.json` and `.github/workflows/ci.yml`.
+A refusal on a dirty `git status --porcelain` inside `scripts/mutation-probe.mjs` would not have
+helped, because that script would never have been called. Whatever enforces "commit first" has
+to cover a probe of anything the repository gates with, not only a probe of a test.
 
 ## Work to do
 
