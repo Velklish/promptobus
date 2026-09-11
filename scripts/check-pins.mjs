@@ -20,7 +20,11 @@ if (!parsed) {
   process.exit(1);
 }
 const [, SPEC, SEP, EXPECTED] = parsed;
-const PIN = new RegExp(`${escape(SPEC)}${escape(SEP)}(\\d+\\.\\d+\\.\\d+)`, 'g');
+// Any ref, not only a semver one: `#main`, `#v0.6` and a sha are divergences too, and a
+// gate blind to them is green while two live files agree with each other on the wrong ref.
+const SEPCHAR = SEP[0];
+const WANT = `${SEP.slice(1)}${EXPECTED}`;
+const PIN = new RegExp(`${escape(SPEC)}${escape(SEPCHAR)}([^\\s'"\`)\\],;]+)`, 'g');
 
 // Restated from backslop's `liveMarkdown`, not imported: the CLI arrives by npx.
 const DOCS = cfg.docs ?? 'docs';
@@ -42,13 +46,18 @@ const kept = { pins: 0, files: 0 };
 // itself whatever the walk does, and a floor it satisfies alone is no floor.
 let guarded = 0;
 
+// A file this gate could not read is a failure, never a skip: it cannot vouch for what it
+// did not open, and a silent skip is the shape of divergence it exists to catch.
+let read = 0;
 for (const rel of tracked) {
   let text;
   try {
     text = readFileSync(path.join(ROOT, rel), 'utf8');
-  } catch {
+  } catch (e) {
+    failures.push(`${rel}: unreadable (${e.code ?? e.message}) — the gate cannot vouch for it`);
     continue;
   }
+  read += 1;
   const hits = [...text.matchAll(PIN)];
   if (!hits.length) continue;
   const bucket = historical(rel) ? kept : live;
@@ -57,24 +66,24 @@ for (const rel of tracked) {
   if (bucket === kept) continue;
   if (rel !== CONFIG) guarded += hits.length;
   for (const m of hits) {
-    if (m[1] === EXPECTED) continue;
+    if (m[1] === WANT) continue;
     const line = text.slice(0, m.index).split('\n').length;
-    failures.push(`${rel}:${line}: names ${SPEC}${SEP}${m[1]}, expected ${SEP}${EXPECTED} from ${CONFIG} “cli”`);
+    failures.push(`${rel}:${line}: names ${SPEC}${SEPCHAR}${m[1]}, expected ${SEPCHAR}${WANT} from ${CONFIG} “cli”`);
   }
 }
 
-const seen = `${live.pins} live pin(s) in ${live.files} file(s), ${kept.pins} historical pin(s) in ${kept.files} record(s) left alone`;
+const seen = `${read} of ${tracked.length} tracked file(s) read · ${live.pins} live ref(s) in ${live.files} file(s), ${kept.pins} historical ref(s) in ${kept.files} record(s) left alone`;
 
 if (!guarded) {
-  say(`✖ pin gate: nothing outside ${CONFIG} names ${SPEC}${SEP}<version> — the spec moved or the walk read the wrong tree`);
-  say(`✖ pin gate: ${tracked.length} tracked file(s) scanned · ${seen}`);
+  say(`✖ pin gate: nothing outside ${CONFIG} names ${SPEC}${SEPCHAR}<ref> — the spec moved or the walk read the wrong tree`);
+  say(`✖ pin gate: ${seen}`);
   process.exit(1);
 }
 
 if (failures.length) {
   for (const f of failures) say(`✖ ${f}`);
-  say(`✖ pin gate: ${failures.length} disagreeing pin(s) · ${seen}`);
+  say(`✖ pin gate: ${failures.length} finding(s) · ${seen}`);
   process.exit(1);
 }
 
-say(`✔ pin gate: ${SEP}${EXPECTED} throughout · ${seen}, ${guarded} of them outside ${CONFIG}`);
+say(`✔ pin gate: ${SEPCHAR}${WANT} throughout · ${seen}, ${guarded} live ref(s) outside ${CONFIG}`);

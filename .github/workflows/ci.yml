@@ -53,10 +53,8 @@ jobs:
       - name: Publicity audit
         run: npm run audit
 
-      # Ahead of init on purpose. The step below runs backslop at the pin this
-      # file names, and init rewrites the AGENTS.md block and the adapter output
-      # to that version — so a workflow left behind by a raise would undo it on
-      # every push. The gate refuses before that happens rather than after.
+      # Ahead of init: that step runs backslop at the pin THIS file names and rewrites
+      # AGENTS.md to it, so after it the gate would blame AGENTS.md instead of ci.yml.
       - name: Pin gate
         run: npm run pins
 

@@ -479,6 +479,8 @@ const workflow = readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'),
 const astGrepVersion = workflow.match(/^\s+run: npm install -g @ast-grep\/cli@(\d+\.\d+\.\d+)$/m)?.[1] ?? null;
 check('CI pins ast-grep to an exact version',
   astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
+// Not a duplicate of `npm run pins`: this asserts the two files agree with EACH OTHER,
+// the gate asserts each agrees with backslop.json. Two files wrong together pass only one.
 const backslopRef = /github:Velklish\/backslop#[^\s'"`]+/;
 const workflowBackslopRef = workflow.match(backslopRef)?.[0] ?? null;
 const packageBackslopRef = pkg.scripts?.['lint:backslop']?.match(backslopRef)?.[0] ?? null;
