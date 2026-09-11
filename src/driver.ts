@@ -360,7 +360,7 @@ export interface DriverOptions {
    * when the harness offers none. It answers for ONE path — a command the session runs —
    * and not for an MCP server child, whose environment a harness may scrub entirely
    * (measured on one of them). A driver that has nothing to offer declares `null`; the
-   * core then says so instead of returning a plausible value. See 02-host.md and ADR-035.
+   * core then says so instead of returning a plausible value. See 02-host.md and ADR-009.
    */
   identityVar: string | null;
   /** Ancestor variables that must not reach the session. */

@@ -191,6 +191,16 @@ That is why `DriverPhrases.tool(server, name, host)` takes a host. A driver whos
 
 The spawn path chooses a readable participant session name from the work-slice title (`Worker: <title> (<MMDD-HHMM>)`; a reviewer uses `Review:`), stores it as `sessionRef`, and passes it through a driver-owned name seam when the harness accepts one. Codex applies that value with `thread/name/set`; its thread id remains harness-owned and is the lookup handle. A Codex record written before the name field existed falls back to `promptobus:<task>:<address>`, keeping older sessions addressable while new lifts remain readable. Cursor still lets the harness invent its persist session name.
 
+## Session identity
+
+**Who a session is comes from its driver, not from one harness's variable.** `DriverOptions.identityVar` names the environment variable a harness uses to name its own session, or `null` when it has none: `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID`, `CODEX_THREAD_ID`. Task ownership, `claim`, the warden's claim and the loop guard all read the answer — 23 call sites across 8 modules — and until [ADR-009](../adr/adr-009-session-identity-is-a-driver-member.md) every one of them read the first of those three directly.
+
+**The member answers for ONE path, and the distinction is measured rather than cautionary.** It answers for a command the session runs. It does NOT answer for the session's own MCP server: codex-cli 0.146.0 hands an MCP server child eleven variables — `HOME LOGNAME PATH PWD SHELL SHLVL TERM TMPDIR USER _ __CF_USER_TEXT_ENCODING` — with nothing harness-specific among them, so on that path identity from the environment is impossible, not merely unsupported. On the other path the old reader was worse than empty: a live Codex participant's environment carries its orchestrator's `CLAUDE_CODE_SESSION_ID`, and the reader returned **the parent's id** as the participant's own.
+
+**Two claimants are refused, never picked.** `resolveSessionIdentity` gives the id when exactly one declared variable is set; `null` with a reason when none is; and `null` with a reason naming both claimants and their variables when two are — that pair is the leaked shape above, and choosing between them would hand out someone else's id. The contested case is warned once per process so the leak is readable; an environment that names no harness is a legal state and is not warned about, its reason staying on the resolver's `why`.
+
+**The resolver is injected, not imported.** `lib/drivers.js` exports it and `lib/cli.js` binds it with `bindSessionIdentity`, beside `bindHarnessHomes`, which is a named exception of the same kind and for the same reason: the core cannot import the driver registry. Every driver imports `lib/store.js`, so the back edge is a real cycle — with a direct import the package loads when `store.js` is the entry module and dies with `ReferenceError: Cannot access 'CLAUDE' before initialization` when a driver module is. Unbound, the core answers `null` and says once that no registry is bound; it never falls back to reading a variable itself.
+
 ## Passing the host
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.

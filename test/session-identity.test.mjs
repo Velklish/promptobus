@@ -2,6 +2,7 @@
 // The environments below are fixtures of MEASURED shapes, named beside each case.
 import { check } from './check.mjs';
 import { identityCandidates, resolveSessionIdentity, REGISTRY } from '../lib/drivers.js';
+import { bindSessionIdentity, sessionIdentity } from '../lib/store.js';
 
 const VARS = Object.fromEntries(
   Object.entries(REGISTRY.drivers).map(([h, d]) => [h, d.options.identityVar]),
@@ -67,4 +68,19 @@ for (const [harness, variable] of Object.entries(VARS)) {
   check(': candidates name the variable they were read from',
     list.length === 1 && list[0].variable === VARS.cursor && list[0].harness === 'cursor',
     JSON.stringify(list));
+}
+
+// The core's own door, which is where the defect lived. Unbound it must not fall back to
+// one harness's variable — the fallback IS the defect.
+{
+  const env = { [VARS.claude]: 'sid-unbound' };
+  bindSessionIdentity(null);
+  check(': unbound, the core answers null rather than reading a harness variable itself',
+    sessionIdentity(env) === null, JSON.stringify(sessionIdentity(env)));
+  bindSessionIdentity(resolveSessionIdentity);
+  check(': bound, the same environment gets its id',
+    sessionIdentity(env) === 'sid-unbound', JSON.stringify(sessionIdentity(env)));
+  check(': bound, the leaked pair gets null through the core too — not the parent id',
+    sessionIdentity({ [VARS.codex]: 'mine', [VARS.claude]: 'my-parent' }) === null,
+    JSON.stringify(sessionIdentity({ [VARS.codex]: 'mine', [VARS.claude]: 'my-parent' })));
 }
