@@ -13,20 +13,22 @@ person at the panel at any point). Three dialogs of the same harness, three diff
 
 | Dialog | Without a person | Evidence |
 |---|---|---|
-| `SwitchMode` (approval) | rejected by a timer; the agent is told `Mode switch was rejected by the user. Do not attempt to switch modes again.` | panel footer `auto-rejects when the bar runs out`; the tool's own reply text |
-| `AskQuestion` | **not rejected at all** — the turn is held until a key is pressed | 4 min 35 s of standstill, transcript stops growing, watchdog at 234 s |
+| `SwitchMode` (approval) | refused at once by the harness — under a second; the agent is told `Mode switch was rejected by the user. Do not attempt to switch modes again.` | the call returned inside the same parallel batch as a 771 ms shell, with no further model turn |
+| `AskQuestion` | **not refused at all** — the turn is held until a key is pressed | `278.497 s` between the call and its return, ended by a person's `Escape`; transcript stops growing; watchdog at 234 s |
 | `Write` under `plan` | refused immediately, in words about markdown/canvas | the refusal text in full; `Shell` writes the same file, exit 0 |
 
 **The `AskQuestion` measurement, by the clock.** `02:28:53` the participant calls it with two
 options — the last record its transcript ever receives
 (`~/.cursor/projects/…/agent-transcripts/15082a1e-….jsonl` stops growing there). The panel
 renders a live dialog whose footer reads `↑/↓ option · ←/→ question · Space select · Enter
-next/submit · Esc to skip` — **no countdown bar**, unlike `SwitchMode`. At `02:31:06`
+next/submit · Esc to skip`. At `02:31:06`
 `promptobus status` still says `session … is alive (a turn is running)`. At `02:32:47` the
 stall watchdog fires: *the turn transcript has been silent for 234 s (threshold 180 s), no tool
 processes under the pane, and nothing was written in the worktree for 829 s — none of the three
 liveness signals answered*. At `02:33:28` a person presses `Escape` and the session resumes
-immediately. **Four minutes thirty-five seconds, ended by a keypress and not by a timer.**
+immediately: `before=1789169333.575`, `after=1789169612.072`, **`delta = 278.497 s`**, and the
+difference matches the moment of the keypress. **No upper bound was measured** — establishing
+one would have meant not pressing the key. That a timeout exists further out is a hypothesis.
 
 **What is wrong in this package.** The participant prompt written by the Cursor driver tells the
 model:
@@ -39,10 +41,14 @@ is false, and the model reads the reason. A participant that believes a question
 gracefully will ask one; what it gets is a held turn.
 
 **And `SwitchMode` is the opposite failure.** No person is present, yet the agent is told a
-person refused, plus an instruction never to try again. Absence becomes an assertion, and the
-session obeys it honestly. It is the same family as the Codex approval that turned a missing
-person into a lost call, one step further along: there, silence lost the report; here, silence
-speaks in a person's name.
+person refused, plus an instruction never to try again. The harness signs **its own** refusal
+with the user's name — and it does so at once, not after a wait, so there is not even a pause to
+notice. Absence becomes an assertion, and the session obeys it honestly.
+
+**In neither case can the participant tell a person from the mechanism.** Both outcomes read as
+a user's action — `rejected by the user` and `Questions skipped by user` — and the tool result
+carries no timeout, timer or auto flag. The panel's footer text never reaches it: the
+participant sees the tool result and never the dialog.
 
 **The watchdog is the good news and belongs in the reference.** It named all three liveness
 signals with a number each, which is what separates "stalled" from "a long gate is legitimately
