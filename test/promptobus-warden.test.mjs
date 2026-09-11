@@ -2007,17 +2007,18 @@ const progOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) 
 const progLine = (addr) => progOut.split('\n').find((l) => l.includes(addr)) ?? '';
 // The alarm alone, so the comparison is between alarms and not participant names.
 const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].trim();
+// …and without the reason, which differed between all three before the prognosis
+// existed: comparing whole alarms measures the reasons and passes on the old code.
+const alarmCore = (addr) => alarmOf(addr).replace(/ \(reason:[^)]*\)/, '');
 const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
 check('PB-168: every one of the five rows prints a self-wake line at all',
   progAlarms.every((a) => a.startsWith('alarm: self-wake')), JSON.stringify(progAlarms));
-check('PB-168: the three known states do not read alike — no two of their alarms are equal',
-  new Set(progAlarms.slice(0, 3)).size === 3, JSON.stringify(progAlarms.slice(0, 3)));
+const progCores = PROG_STATES.slice(0, 3).map(([addr]) => alarmCore(addr));
+check('PB-168: the three known states do not read alike once the reason is taken out',
+  new Set(progCores).size === 3, JSON.stringify(progCores));
 check('PB-168: start-up is distinguishable from a refusing channel without reading the journal',
-  alarmOf('worker:starting') !== alarmOf('worker:refused')
-  // The reasons already differ, so a bare inequality passes on the old code. Strip them.
-  && alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, '')
-     !== alarmOf('worker:refused').replace(/ \(reason:[^)]*\)/, ''),
-  `${alarmOf('worker:starting')}  ||  ${alarmOf('worker:refused')}`);
+  alarmCore('worker:starting') !== alarmCore('worker:refused'),
+  `${alarmCore('worker:starting')}  ||  ${alarmCore('worker:refused')}`);
 check('PB-168: the refusing state names the channel the journal names',
   /\brpc\b/.test(alarmOf('worker:refused')) && !/\brpc\b/.test(alarmOf('worker:taken')),
   `${alarmOf('worker:refused')}  ||  ${alarmOf('worker:taken')}`);
@@ -2027,8 +2028,8 @@ check('PB-168: a health record written before the field still prints its line, r
 // Compared against the row whose state came from the field: an address the warden has
 // not reached yet must not read as a break.
 check('PB-168: no health mark and no contact point reads as start-up, off the wake record alone',
-  alarmOf('worker:fresh') === alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, ''),
-  `${alarmOf('worker:fresh')}  ||  ${alarmOf('worker:starting')}`);
+  alarmCore('worker:fresh') === alarmCore('worker:starting'),
+  `${alarmCore('worker:fresh')}  ||  ${alarmCore('worker:starting')}`);
 // A previous release's record carries no full id at all — the rule there stays the prefix,
 // or a participant raised before this task would be left with no contact point forever.
 check(': with no full id in the record the rule stays the prefix',
