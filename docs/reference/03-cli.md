@@ -770,6 +770,8 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `dismiss <address>` drops a finished participant from watch.
 
+**What each of the three commands does to a PROCESS, in one place, because today the boundary is learned by hitting it.** `done` stops every session of the task — the whole run at once, and `--keep-sessions` leaves them all running; there is no subset. `dismiss <address>` stops the warden's reports about one address and **never touches its process**: it changes the participant's journal and says so itself, which is the right behaviour for what it promises. Between them there is nothing: **no command stops one participant's session while the task stays open.** That gap is `PB-174`, and it is not a documentation gap — a worker running a two-participant measurement task on 2026-09-12 needed to stop one of them and had to kill the holder by hand from the pid in the registry record (`holderPid` and `appPid`, both gone from `ps` after the `kill`), freeing 172 MB — a 45 MB holder and its 127 MB `app-server` — on a machine at 89.3 % swap under four workers. **A hand kill leaves a lie behind**: the registry record stayed at `state: alive`, and only `done` on that task will clear it. Until the door exists, read a Codex participant's liveness from its process and not from that record — the same rule the contact point above needs, and for the same reason: both artefacts are written at birth and nothing is obliged to erase them at death.
+
 `history` prints **read** mail, oldest first. Default limit 50. `--all` drops the limit. It does not mark mail read.
 
 `prune` previews deletions. `--yes` deletes. `--older-than <days>` changes the age.
