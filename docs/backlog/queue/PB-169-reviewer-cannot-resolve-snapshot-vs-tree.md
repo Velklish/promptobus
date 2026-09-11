@@ -8,9 +8,9 @@
 
 ## Context
 
-Recorded in the consumer's tracker as `BL-634.1` (ati-agents, 2026-09-10) with the note "the
-change belongs in the promptobus package; the mechanism is a consumer, the repin follows".
-Moved here on 2026-09-12 so the release can carry it. The consumer's copy is archived.
+Recorded in a consumer's tracker on 2026-09-10, with the note that the change belongs in this
+package and the consumer's repin follows. Moved here on 2026-09-12 so the release can carry it;
+the consumer's copy is archived.
 
 A run orchestrator proposed fixing this on the reviewer's side — "read `git diff <base>..<sha>`
 instead of the working tree, that is immune to the directory moving" — and asked whether it is
@@ -54,7 +54,7 @@ whole.
 - Removing `Bash` from the reviewer's deny list: the read-only guarantee rests on that list,
   and it is not to be touched for convenience of resolution.
 - The ordering rule "the worker finishes first, then the reviewer" — that is the consumer's
-  `BL-634`, needed regardless of what the reviewer is handed.
+  parent task, needed regardless of what the reviewer is handed.
 
 ## Verification
 

@@ -7,9 +7,9 @@
 
 ## Context
 
-Recorded in the consumer's tracker as `BL-631.1` (ati-agents, 2026-09-10) with the note "the
-change belongs in the promptobus package; the mechanism is a consumer, the repin follows".
-Moved here on 2026-09-12 so the release can carry it. The consumer's copy is archived.
+Recorded in a consumer's tracker on 2026-09-10, with the note that the change belongs in this
+package and the consumer's repin follows. Moved here on 2026-09-12 so the release can carry it;
+the consumer's copy is archived.
 
 The warden enters `self-wake` from three different branches (`dist/supervisor.js`, lines 655,
 671, 736):
@@ -48,7 +48,7 @@ That states 2 and 3 do **not** clear themselves is read from the code and was ne
 
 ## Out of scope
 
-- The orchestration skill's wording — that was `BL-631` in the consumer, already closed there.
+- The orchestration skill's wording — that was the consumer's parent task, already closed there.
 - The warden's behaviour: three fallback branches are legitimate; only their display is the
   subject.
 
