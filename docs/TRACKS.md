@@ -1,6 +1,6 @@
 # Backlog tracks — 2026-09-07
 
-This document records triage decisions and execution boundaries, not a second status board. Status is the task directory; priority is its `Order` field. Use `npx github:Velklish/backslop#v0.4.0 status` for the current queue. Track assignments below are a planning snapshot and do not imply a running worker.
+This document records triage decisions and execution boundaries, not a second status board. Status is the task directory; priority is its `Order` field. Use `npx github:Velklish/backslop#v0.6.0 status` for the current queue. Track assignments below are a planning snapshot and do not imply a running worker.
 
 ## Scope and evidence
 

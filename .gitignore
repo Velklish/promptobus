@@ -23,3 +23,10 @@ coverage/
 .agents/skills/backslop-batch/
 .agents/skills/backslop-seed/
 /CLAUDE.md
+
+# backslop:start
+.claude/skills/backslop-*
+.cursor/rules/backslop-*
+.agents/skills/backslop-*
+/CLAUDE.md
+# backslop:end

@@ -3,11 +3,13 @@
 This repository is run entirely through [backslop](https://github.com/Velklish/backslop). There is no issue tracker beside it. The pin is `backslop.json`.
 
 ```bash
-npx github:Velklish/backslop#v0.4.0 status
-npx github:Velklish/backslop#v0.4.0 lint
+npx github:Velklish/backslop#v0.6.0 status
+npx github:Velklish/backslop#v0.6.0 lint
 ```
 
-The CI and package lint commands deliberately use the mutable `v0.4.0` tag: it is owned by the same person who owns this repository, and `backslop upgrade` moves both references together.
+The CI and package lint commands name the same tag, but `backslop upgrade` does not move them. Measured at v0.4.0 → v0.6.0: it rewrote the pin in `backslop.json`, in `docs/**` and in root `*.md`, left `package.json` and `.github/workflows/ci.yml` exactly as they were, and `lint` stayed green with both still naming the old pin. Raise the pin in those two files by hand in the same pass.
+
+Why it matters is an inference, not a measurement. Measured: `init` at a given pin rewrites the `AGENTS.md` backslop block and the adapter output to that version — at v0.6.0 it changed fourteen lines of `AGENTS.md`. Inferred from that: the workflow runs `init` at the pin it names before `npm run lint:backslop`, so one left on the old pin would be expected to regenerate the old block on every push and undo the raise. No CI run has been made to confirm it.
 
 English is the language of new strings, comments, commit messages, and checks in the runtime directories `bin/`, `lib/`, `src/`, `schemas/`, and `templates/`. `README.ru.md` may use Cyrillic; `scripts/` and `test/` are exempt from the current sweep. `npm run audit` enforces this scope on tracked runtime files and the packed tarball.
 
@@ -25,14 +27,14 @@ Procedure text lives in `AGENTS.md` (backslop block) and in the `backslop-task` 
 ## Worker path
 
 1. **Take the first queued task** from `status`, or create one:
-   - `npx github:Velklish/backslop#v0.4.0 new <slug> --title "…"` → triage
+   - `npx github:Velklish/backslop#v0.6.0 new <slug> --title "…"` → triage
    - add `--queue` to put it in the queue
    - A tiny change that does not alter a contract may skip a tracker file if one pass finishes it.
 2. **Change the code.** Reverse a prior decision by deleting it. Do not strike through. Use [glossary](../GLOSSARY.md) names. If a name is missing, propose a row.
-3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.4.0 adr <slug>` and a row in [docs/README.md](../README.md).
+3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.6.0 adr <slug>` and a row in [docs/README.md](../README.md).
 4. **Gates on an unchanged tree.** Commands in `backslop.json` `gates` must exit 0. Also run `npm test` when you touch runtime code. The runner puts `promptobus-e2e.test.mjs`, `promptobus-mixed.test.mjs`, `promptobus-cursor-wake.test.mjs`, `promptobus-warden.test.mjs`, `model-routing-preflight.test.mjs`, and `runner.test.mjs` in the serial group because their wall-clock checks or nested pool measure machine neighbours. A test change needs a mutation probe: commit first, then break the assertion, then revert. A gate with an early cutoff needs a second probe that feeds a false positive.
 
-Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.4.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
+Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.6.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
 
 Commit subject: `PB-N: <what was done>` when the change has a task number.
 
@@ -41,7 +43,7 @@ Commit subject: `PB-N: <what was done>` when the change has a task number.
 Review the diff. Then archive and triage in one pass:
 
 ```bash
-npx github:Velklish/backslop#v0.4.0 archive N
+npx github:Velklish/backslop#v0.6.0 archive N
 ```
 
 Fill `docs/archive/<id>-<slug>/result.md` (outcome, what was done, verification). `[TODO]` in that file fails lint. Review every `triage/` entry: merge, clarify, `mv N queue`, or `mv N deferred` with a return condition. Ask the owner only before rejecting.

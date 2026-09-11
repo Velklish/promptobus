@@ -1,0 +1,19 @@
+# PB-167 · Result
+
+**Closed 2026-09-12.** Done. The pin moved `v0.4.0` → `v0.6.0`, and the line the Definition of Done asks for is now producible: `gates 3, green 3`, exit 0, on a clean tree.
+
+**The card's premise was confirmed by measurement, not quoted:** `npx …backslop#v0.4.0 gates` exits 1 with `unknown command "gates"`. Two workers on consecutive days — runs 0911e and 0912a — had hit that step, spent a turn on it and each ran the three commands from the `gates` key by hand, both refusing to invent the summary line. The generator side is `BS-51` in backslop's own tracker.
+
+**`migrate` touched zero card files** — `nothing to migrate: file format did not change from v0.4.0 through v0.6.0`; only the version stamp moved. The single file inside `docs/backlog/` that changed is its rules `README.md`, ten pin-only lines.
+
+**Scope was extended by one judgment call, and it was the right one.** `upgrade` rewrites the pin in `backslop.json`, `docs/**` and root `*.md` — it does not reach `package.json` or `.github/workflows/ci.yml`, and both carried live commands on the old pin. They were moved by hand. What is measured: `init` at a given pin rewrites the `AGENTS.md` block and the adapter output to that version — fourteen lines at v0.6.0. What is inferred: a workflow left on the old pin would be expected to do the same on every push and undo the raise. **No CI run was made to confirm it**, and all three texts that carry the claim — the contributing guide, PB-167.1 and the CHANGELOG — say so in that grammar after a second pass. The inference was strong enough to act on and not strong enough to record as a measurement; that distinction is written into the card rather than left to the reader.
+
+**Filed rather than fixed.** [PB-167.1](../../backlog/queue/PB-167.1-upgrade-misses-package-and-ci-pins.md) — the pin lives in files `upgrade` does not rewrite and whose divergence `lint` does not check, because that check scans `docs/**` and root `*.md` only. It stayed green while two live commands named the old pin. **This is a gate aimed away from its subject** — the third instance of that shape in two days' work, after a negative control that could not see its own mutation and a process counter scoped to nothing. The workaround shipped here is a paragraph of prose standing where a check belongs, and the card says so; the choice between a local gate and an upstream report is the owner's. [PB-167.2](../../backlog/queue/PB-167.2-gitignore-duplicates-managed-block.md) — `init` appended its managed block on top of the hand-written `.gitignore` list, duplicating thirteen lines. Left in place: project content outside this card.
+
+**A false sentence in the contributing guide was corrected in the same pass:** it claimed `backslop upgrade` moves both references together. It does not — measured.
+
+**An accidental red probe of the quote gate.** The new `lint` went red on a repo-relative quote path in PB-167.2 and green on the card-relative one. No probe was due for this pass — no test and no gate assertion changed — but the new version's own quote check was exercised against a real defect by mistake, which is worth more than a probe run for form.
+
+**Left standing on purpose:** `v0.3.0` in four lines of `docs/adr/adr-001-process.md`. `upgrade` excludes ADRs by design, because an ADR records a moment — the version there dates the decision rather than describing the present. Named here so it is not rediscovered as a defect.
+
+**Gates on `068aada`.** `npx …backslop#v0.6.0 gates --require-clean` → exit 0, `gates 3, green 3`, tree stamped clean by the runner itself; 2 min 47 s. From the log: `npm test` code 0, 55/55 test files, 160534 ms; `backslop lint` code 0; `npm run audit` code 0. `grep -cE '✖|FAIL|not ok'` over the whole 3456-line log → 0. The grammar commit `d3ee894` on top changes prose only and was verified with `lint` alone — nothing in it touches code, config, tests or the gate list.
