@@ -1,27 +1,46 @@
 # Promptobus
 
+[![CI](https://github.com/Velklish/promptobus/actions/workflows/ci.yml/badge.svg)](https://github.com/Velklish/promptobus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
+
+Шина для агентских сессий, не привязанная к инструменту: задачи, почтовые ящики, артефакты и сессии участников.
+
 [English](README.md)
 
-Promptobus — локальный почтовый ящик и шина задач для сессий агентов. Оркестратор и воркеры обмениваются типизированными сообщениями, артефактами и статусом через задачу на диске. Общей чат-ленты у них нет.
+Promptobus даёт одной агентской сессии — оркестратору — передать работу другим сессиям и получить её обратно. Worker'ы правят изолированные git worktree, ревьюер читает дифф свежим взглядом, и все они обмениваются типизированными сообщениями, артефактами и статусом через задачу, лежащую на диске в `.promptobus/`. Ни одна сессия не видит чужую переписку, а умершую заменяет та, что забрала её ящик и продолжила работу.
 
-Пакет вынесли из закрытого инструмента для агентского рабочего места. Теперь шина работает сама.
+Шина не знает вашего рабочего места. Каждый вызов получает **host**, который отвечает за текущий каталог, git и `promptobus.json`; CLI собирает самостоятельный host, а инструмент-потребитель передаёт свой. Пакет вынесен из частного рабочего инструмента, чтобы шина работала сама по себе, и ведёт сессии Claude Code, Cursor и Codex по одному контракту драйвера.
 
-Канон — английский текст. Русский README — единственное другое место с кириллицей в этом репозитории.
+Канонический язык — английский. Русский README — единственный перевод в этом репозитории.
 
-## Зачем
+## Что умеет
 
-Когда работа уходит в другие сессии, пропадают задание, ответы и файлы. Promptobus держит их на диске в `.promptobus/`. Новая сессия забирает ящик и продолжает. Воркеры не пишут друг другу. Почта идёт через оркестратора.
-
-Шина не знает ваше рабочее место. В каждый вызов вы передаёте [host](docs/adr/adr-002-standalone-host-contract.md). CLI собирает standalone host из текущего каталога, Git и `promptobus.json`.
+- **Хранилище задач на диске.** Каталог на задачу: `task.json`, ящики и история каждого участника, артефакты жёсткими ссылками на свои блобы и папка `files/`, которую человек может открыть. Семь типов сообщений — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — и JSON-схема на каждую форму записи.
+- **Worker'ы в worktree.** `promptobus spawn` поднимает сессию в изолированном git worktree целевого репозитория, отдаёт ей бриф и шину и не трогает основное дерево.
+- **Изолированное ревью.** `promptobus review` поднимает read-only ревьюера на снимке диффа; находки приходят шиной, а повторный вызов отдаёт тому же ревьюеру свежий снимок.
+- **Три инструмента, один контракт.** Драйверы Claude Code, Cursor и Codex; `promptobus.json` перечисляет, кого рабочему месту разрешено поднимать.
+- **MCP-сервер и хуки.** `promptobus mcp` отдаёт три инструмента по stdio. `promptobus install` пишет project-level хуки — отклик шины после каждого её вызова и Stop guard, возвращающий ход, пока почта не прочитана, — а надзиратель будит адресата, когда почта приходит.
+- **Маршрутизация моделей.** Вместо модели называешь стратегию, и резолвер выбирает инструмент, модель и усилие из оценённого каталога, пересечённого с тем, что аккаунты могут поднять прямо сейчас. Пять стратегий, overlay-файлы для локальных поправок и команда калибровки, предлагающая строки overlay по собственной телеметрии.
+- **Библиотека, а не только CLI.** Движок, контракт host'а, контракт драйвера и планировщик хуков экспортированы с типами TypeScript, и у пакета нет runtime-зависимостей.
+- **Процессные скиллы в комплекте.** `skills/orchestrate` и `skills/solo-review` объясняют агенту, как вести прогон и как просить ревью.
 
 ## Требования
 
-- Node.js 20 или новее (`engines` в `package.json`)
-- Git: worktree и проверка свежести
+- Node.js 20 или новее
+- Git — worktree, диффы и проверка свежести
+- Хотя бы один CLI инструмента в `PATH` для `spawn` и `review`: Claude Code, Cursor (`cursor-agent` плюс `tmux`) или Codex
+- Для работы над самим пакетом: `tmux` и `ast-grep` (см. [Разработка](#разработка))
 
-## Как поставить пакет
+## Установка
 
-Из клона этого репозитория:
+Пакета нет в реестре npm. Ставится он с GitHub, пином на тег релиза из [CHANGELOG.md](CHANGELOG.md):
+
+```bash
+npm install github:Velklish/promptobus#v<version>
+```
+
+Добавьте `-g`, чтобы команда `promptobus` появилась в `PATH`. Из клона:
 
 ```bash
 npm install
@@ -29,19 +48,11 @@ npm run build
 node bin/promptobus.js --version
 ```
 
-Команда печатает `promptobus` и версию из `package.json`. После глобальной установки или `npx` тот же бинарь — `promptobus`.
+Последняя команда печатает `promptobus` и версию из `package.json`.
 
-Как библиотека:
+### 1. Объявить рабочее место
 
-```bash
-npm install promptobus
-```
-
-`package.json` отдаёт `.`, `./host`, `./hooks`, `./driver`, `./cli` и `./schemas/*`.
-
-## Как настроить рабочее место
-
-Создайте `promptobus.json` в корне рабочего места. Standalone host ищет его вверх от текущего каталога. Store лежит рядом, в `.promptobus/`.
+Создайте `promptobus.json` в корне рабочего места. Самостоятельный host ищет его вверх от текущего каталога и держит хранилище в `.promptobus/` рядом — добавьте этот каталог в `.gitignore`.
 
 ```json
 {
@@ -49,162 +60,171 @@ npm install promptobus
 }
 ```
 
-`tools` — harness'ы, которые это место может поднимать. `--harness` должен назвать один из них. Без флага spawn и review берут `claude` (`lib/drivers.js`).
+`tools` — это список разрешённых к подъёму: `--harness` обязан назвать одного из них, а без флага `spawn` и `review` берут `claude`. Необязательные ключи, которые читает host: `commandName`, `locale`, `version`, `rules` (дополнительные файлы правил участнику), `mcp` (серверы, копируемые участнику), `skills` (каталог процессных скиллов). Репозиторий, который генерирует свои процессные скиллы, объявляет команду в своём `promptobus.json` под ключом `generate` массивом argv.
 
-`promptobus install` пишет в тот же файл поле `harnesses`: последний установленный список hooks. Это не список для spawn.
+### 2. Дать оркестратору MCP-сервер
 
-Необязательные ключи, которые читает standalone host: `commandName`, `locale`, `version`. Ещё `rules` (дополнительные файлы правил), `mcp` (серверы участника), `skills` (каталог скиллов процесса).
+Spawn пишет запись MCP каждому worker'у и ревьюеру. Сессии оркестратора нужен тот же stdio-сервер в project-файле MCP её инструмента:
 
-## Как подключить MCP-сервер
-
-Шина — MCP-сервер на stdio:
-
-```bash
-promptobus mcp
+```json
+{
+  "mcpServers": {
+    "promptobus": {
+      "type": "stdio",
+      "command": "promptobus",
+      "args": ["mcp"],
+      "env": { "PROMPTOBUS_HOME": "/absolute/path/to/workspace/.promptobus" }
+    }
+  }
+}
 ```
 
-Укажите harness'у эту команду. Задайте `PROMPTOBUS_HOME` — каталог store (папка `.promptobus`). Spawn пишет эту запись каждому воркеру и ревьюеру. Сессии оркестратора нужен тот же сервер.
+Без глобальной установки `command` — это `node`, а `args` — `["/absolute/path/to/bin/promptobus.js", "mcp"]`. Имя сервера обязано остаться `promptobus`: из него собираются матчеры хуков и имена инструментов.
 
-Инструменты:
+### 3. Поставить project hooks
 
-- `promptobus_send` — отправить типизированное сообщение (`task`, `status`, `question`, `answer`, `artifact`, `result`, `review`)
-- `promptobus_mailbox` — забрать непрочитанное (это помечает его прочитанным)
-- `promptobus_task` — метаданные задачи, участники, каталог артефактов
-
-Полные имена, которые видит сессия: `mcp__promptobus__promptobus_send` и тот же префикс у двух других (`lib/contract.js`).
-
-## Как поставить project hooks
-
-Установка hooks — отдельная команда. Это не npm `postinstall`. См. [docs/guides/install.md](docs/guides/install.md).
-
-```text
-promptobus install --harnesses claude,cursor,codex
-promptobus install --check
-promptobus install --dry-run
-promptobus uninstall [--harnesses claude,cursor,codex]
-```
-
-Доверие и разбор проблем: [docs/guides/hooks-and-trust.md](docs/guides/hooks-and-trust.md).
-
-## Как начать
-
-Напишите файл брифа. Дальше:
+Установка хуков — отдельная команда, а не `postinstall` пакета:
 
 ```bash
-promptobus spawn --repo ./my-repo --brief ./brief.md
+promptobus install --harnesses claude,cursor,codex   # список обязателен при первой установке
+promptobus install --check                          # exit 1, когда файлы проекта разъехались
+promptobus install --dry-run                        # напечатать будущие записи, не писать ничего
+promptobus uninstall                                # снять только свои хуки
+```
+
+Установщик правит `.claude/settings.json`, `.cursor/hooks.json` и `.codex/hooks.json`, сохраняет чужие хуки и незнакомые поля и записывает поставленный список в `promptobus.json` под ключом `harnesses` — это не список разрешённых к подъёму. После установки выдайте project hooks доверие в своём инструменте: [Хуки, доверие и разбор неполадок](docs/guides/hooks-and-trust.md).
+
+## Как пользоваться
+
+### Быстрый старт
+
+Напишите бриф — файл Markdown с заданием, — затем:
+
+```bash
+promptobus spawn --repo ./my-repo --brief ./brief.md --task-title "Rename the billing module"
 promptobus status
 ```
 
-`--repo` — путь на диске. `--brief` обязателен. `--new-task` открывает новую задачу. `--task <id>` сажает воркера в уже открытую. `--title` называет кусок этого воркера. `--task-title` называет задачу. `--harness cursor` или `--harness codex` выбирает runtime. `--dry-run` печатает план. Он ничего не пишет.
+`--repo` — путь на диске, `--brief` обязателен. Worker получает worktree, бриф и шину; первым его сообщением идёт `status`. Почту из сессии оркестратора забирайте инструментом `promptobus_mailbox` — надзиратель стучит, когда что-то приходит, а Stop guard не даёт ходу кончиться, пока почта не прочитана. На `question` отвечайте `promptobus_send`, `result` принимайте, находки ревью отправляйте обратно.
 
-Изолированное ревью:
-
-```bash
-promptobus review ./my-repo --title "Review the change"
-```
-
-Путь обязателен. `--title` обязателен, чтобы открыть новую задачу ревью. Повтор с `--task <id>` шлёт новый дифф на тот же адрес.
-
-## Model routing
-
-Назовите намерение — стратегию — вместо модели, и CLI сам подберёт кортеж `role + harness + model + effort`: рейтинговый каталог из пакета, пересечённый с тем, что аккаунты действительно могут запустить прямо сейчас, с печатью всех кандидатов и причин.
+Независимое прочтение диффа:
 
 ```bash
-promptobus models --strategy balanced          # что выбрал бы резолвер и почему
-promptobus models --strategy balance           # …и какую из подписок он бы потратил
-promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
+promptobus review ./my-repo --title "Review the rename"
 ```
 
-Вид вывода, сокращённый по строкам `…`. Числа взяты из фикстуры снапшота, которую фиксирует набор тестов (`test/fixtures/model-routing/balance-snapshot.json`), прогнанной против каталога из пакета, — читатель может их воспроизвести. Проценты реального аккаунта принадлежат этому аккаунту:
+Путь обязателен, `--title` заводит новую задачу ревью, а `--task <id>` отдаёт новый снимок уже поднятому ревьюеру. Когда работа принята, задачу закрывают:
 
-```text
-$ promptobus models --strategy balance
-strategy: balance · role: worker
-snapshot: 2026-09-06T02:17:43.464Z · 0 s old · source cache
-overlays: user (absent) · workspace (absent)
-chosen: codex-sol-medium · codex / gpt-5.6-sol medium · score 78.10
+```bash
+promptobus done
+```
 
-candidates:
-  * codex-sol-medium        codex / gpt-5.6-sol medium       available     78.10
-    claude-opus-medium      claude / claude-opus-5 medium    available     74.25
-    codex-sol-high          codex / gpt-5.6-sol high         available     73.10
-    claude-opus-high        claude / claude-opus-5 high      available     73.00
-    …
+`done` гасит сессии, поднятые шиной (оставить их — `--keep-sessions`), сносит заведённый механизмом worktree вместе с веткой, когда работа доказанно слита, и дописывает по одной записи телеметрии на участника.
 
-pace — percentage points of each binding window · band 5.0 · spend unit 5.0:
-  * codex   codex-sol-medium · secondary weekly · 46.0% used · 62.5% elapsed · underspend +16.50 · penalty -1.25 · effective +15.25
-    claude  claude-opus-medium · 7d weekly · 30.0% used · 40.5% elapsed · underspend +10.48 · penalty -1.25 · effective +9.23
-    cursor  cursor-composer-2.5 · cycle-auto monthly · 62.0% used · 47.9% elapsed · underspend -14.08 · penalty -1.25 · effective -15.33
-
-availability:
-  claude  available  tier example-max (credentials)
-      5h        session 8.0% used · 18000 s · account · resets 2026-09-06T06:17:43.464Z
-      7d        weekly  30.0% used · 604800 s · account · resets 2026-09-10T06:17:43.464Z
-      7d-fable  weekly  38.0% used · 604800 s · model Fable · resets 2026-09-10T06:17:43.464Z
-  cursor  available  tier included:2000 (derived)
-      cycle-auto  monthly 62.0% used · 2592000 s · pool auto · resets 2026-09-21T17:17:43.464Z
-      cycle-api   monthly 72.0% used · 2592000 s · pool api · resets 2026-09-21T17:17:43.464Z
-  codex   available  tier example-pro (probe) · credits none · reset credits 2
-      primary    session 0.0% used · 18000 s · account · resets 2026-09-06T04:17:43.464Z
-      secondary  weekly  46.0% used · 604800 s · account · resets 2026-09-08T17:17:43.464Z
-
-runtime models — not rated, never chosen automatically:
-    cursor / gpt-5.6-via-cursor  [no-zdr]
-    …```
-
-Стратегий пять: `quality`, `balanced`, `speed`, `economy` и `balance`. Первые четыре взвешивают качества кортежа. `balance` отвечает на другой вопрос — какую из подписок тратить. Его берут, когда платят за несколько harness и хотят расходовать их равномерно: он предпочитает harness, сильнее прочих отставший от темпа собственного лимитного окна, внутри harness упорядочивает кортежи по `balanced`, а когда темп не считается ни для одного окна — откатывается к `balanced` с предупреждением. Блок `availability:` над ним — это то, что ответил каждый аккаунт: состояние, тариф и каждое лимитное окно с его видом, израсходованной долей, длиной, тем, что оно связывает, и временем сброса. Таблица `pace` печатается только под `balance`.
-
-**Приоритет: флаг → записанный default overlay → ничего.** `--strategy` в командной строке всегда выигрывает. Ниже — `defaults.strategy` из слитых overlay, записанный default. Ещё ниже — ничего: `spawn` и `review` не маршрутизируют и идут своим обычным путём, ровно как раньше. `--harness`, `--model` и `--effort` в эту лестницу не входят вовсе: они остаются **ограничениями** выбора резолвера, и стратегия их не подменяет.
-
-`models` читает кэш доступности и ни о чём не спрашивает harness — опрашивает только `--refresh`, и он же единственный, кто пишет запись в кэш.
-
-Когда у аккаунта остаётся мало, `models` печатает строку `near-limit`: окно, время его сброса, что именно сработало — уровень или темп — и стратегию, на которую стоит перейти. **Само ничего не переключается.** Агент предлагает переход вам; после согласия `promptobus models strategy --set <name>` записывает `defaults.strategy` в записываемый слой overlay, и каждый следующий `spawn` и `review` без `--strategy` маршрутизируется с ним. `--clear` убирает запись, а `promptobus models strategy` без аргумента печатает действующий default и слой, из которого он взят.
-
-Единственный вопрос, на который не отвечает ни один метод harness, — название тарифа Cursor. Эту строку вы добавляете один раз в overlay `user`, в `account: { "cursor": { "plan": "<name>" } }`. Её никто не пишет, она только отображается и ни во что не оценивается.
-
-`models validate` проверяет каталог из пакета и каждый слой overlay; `models --clear-exhausted <harness>` снимает отметку об исчерпании, у которой нет известного времени сброса. `promptobus done` дописывает по одной телеметрической записи на участника в `telemetry.jsonl` рядом с кэшем доступности — локально, режим `0600`, никуда не отправляется и не содержит ни промптов, ни путей, ни идентификаторов сессий, ни содержимого токенов; числовой счётчик выходных токенов может попасть туда как свидетельство throughput. `models` печатает, сколько записей в файле. При закрытии `done` сам обновляет harness с окнами в пределах бюджета preflight, поэтому запись может нести конечное значение каждого окна; отказ или timeout оставляет конечное чтение этого harness равным `null` и печатает причину. Поверхность команд — [Model routing](docs/reference/03-cli.md#model-routing); каталог, слои и файл overlay для копирования — [docs/guides/model-routing.md](docs/guides/model-routing.md).
-
-## Команды
+### Команды
 
 | Команда | Что делает |
 |---|---|
-| `promptobus spawn` | Поднять воркера в изолированном git worktree |
-| `promptobus review` | Поднять read-only ревьюера на путь |
-| `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта; `strategy --set <name>` записывает default, с которым согласился человек, `validate` проверяет каталог, `--clear-exhausted <harness>` снимает залипшую отметку об исчерпании |
-| `promptobus status` | Список активных задач, участники, непрочитанное |
-| `promptobus done` | Закрыть задачу. Гасит сессии, которые подняла шина, если нет `--keep-sessions`, и дописывает по одной локальной телеметрической записи на участника |
-| `promptobus dismiss <address>` | Снять сданного участника с наблюдения |
-| `promptobus history` | Печатает **прочитанную** почту, от старых к новым (по умолчанию последние 50) |
-| `promptobus prune` | Показать или удалить журналы давно закрытых задач (порог 14 дней) |
-| `promptobus guard` | Сторож цикла для Stop-хука. Код 2 возвращает ход |
-| `promptobus warden` | Слушатель задачи. Любая команда шины поднимает его. `PROMPTOBUS_WARDEN=off` гасит автоподъём |
-| `promptobus mcp` | MCP-сервер на stdio |
-| `promptobus install` | Записать project-level hooks (`--harnesses`, `--check`, `--dry-run`) |
-| `promptobus uninstall` | Снять только свои project-level hooks |
+| `promptobus spawn --repo <path> --brief <file>` | Поднять worker'а в изолированном git worktree. `--new-task` или `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
+| `promptobus review <path>` | Поднять read-only ревьюера на снимке диффа. `--title` или `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
+| `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта. Подкоманды `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
+| `promptobus status` | Активные задачи: участники, непрочитанная почта, состояние сессий, маршрут и счёт проходов ревью |
+| `promptobus done` | Закрыть задачу; погасить поднятые шиной сессии, если не задан `--keep-sessions` |
+| `promptobus dismiss <address>` | Перестать следить за отработавшим участником |
+| `promptobus history` | Журнал прочитанной почты, от старого к новому; `--limit <n>` или `--all` |
+| `promptobus prune` | Показать журналы задач, закрытых больше 14 дней назад; удалить — `--yes` |
+| `promptobus guard` | Сторож цикла для хука Stop: exit 2 возвращает ход, пока почта не прочитана |
+| `promptobus warden` | Слушатель задачи. Поднимает его любая команда шины; `PROMPTOBUS_WARDEN=off` выключает авто-подъём |
+| `promptobus mcp` | MCP-сервер по stdio |
+| `promptobus install` / `uninstall` | Поставить или снять project-level хуки |
 
-`promptobus help` и `promptobus --version` работают без файла host.
+`promptobus help` печатает все флаги; она и `--version` работают без `promptobus.json`.
+
+### Инструменты MCP
+
+| Инструмент | Вход | Что делает |
+|---|---|---|
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Послать типизированное сообщение; `to` — это `orchestrator`, `worker:<slug>` или `reviewer:<slug>` |
+| `promptobus_mailbox` | `{ claim?, task? }` | Забрать непрочитанное и пометить прочитанным; `claim: true` перехватывает ящик у прежней сессии |
+| `promptobus_task` | `{ task? }` | Метаданные задачи, участники, каталог артефактов |
+
+Полные имена, которые видит сессия, — `mcp__promptobus__promptobus_send` и тот же префикс у остальных двух. Без `task` сервер берёт `PROMPTOBUS_TASK`, затем привязку сессии, затем единственную активную задачу.
+
+### Маршрутизация моделей
+
+```bash
+promptobus models --strategy balanced                       # выбор, все кандидаты, все причины
+promptobus spawn --repo ./my-repo --brief ./brief.md --strategy quality
+promptobus models strategy --set balance                    # записать умолчание для будущих spawn и review
+promptobus models calibrate                                 # предложить оценки overlay по локальной телеметрии
+```
+
+Стратегий пять: `quality`, `balanced`, `speed`, `economy` и `balance`. Первые четыре взвешивают качества тройки `harness + model + effort`; `balance` отвечает на другой вопрос — какую из подписок тратить, — и предпочитает инструмент, сильнее прочих отставший от темпа собственного окна лимита. Приоритет такой: флаг, затем записанное умолчание overlay, затем ничего — вызов без стратегии идёт немаршрутизированным путём. `--harness`, `--model` и `--effort` ограничивают выбор резолвера и никогда не подменяются.
+
+`models` читает кэш доступности и ничего не спрашивает у инструментов; пробует только `--refresh`. Когда у аккаунта остаётся мало, печатается строка `near-limit` со стратегией, на которую стоит перейти, и ничего не переключается само. Кэш и файл телеметрии лежат в домашнем каталоге с правами `0600`, не содержат ни промптов, ни токенов и никуда не отправляются. Команды, коды причин и коды ошибок — [reference/03-cli.md § Model routing](docs/reference/03-cli.md#model-routing); каталог и overlay-файл для копирования — [guides/model-routing.md](docs/guides/model-routing.md).
+
+### Переменные окружения
+
+| Переменная | Что делает |
+|---|---|
+| `PROMPTOBUS_HOME` | Каталог хранилища для процесса, который его уже знает, — его и выставляет spawn MCP-серверу участника |
+| `PROMPTOBUS_TASK` | Id задачи, который берут инструменты MCP, когда вызов не назвал её |
+| `PROMPTOBUS_WARDEN=off` | Выключить авто-подъём надзирателя; участники тогда опрашивают `promptobus_mailbox` сами |
 
 ## Библиотека
 
 ```js
-import { openEngine } from 'promptobus';
+import { openEngine, PROTOCOL_VERSION } from 'promptobus';
 import { createStandaloneHost } from 'promptobus/host';
 import { planPromptobusHooks } from 'promptobus/hooks';
+import { createRegistry } from 'promptobus/driver';
+import { runPromptobus } from 'promptobus/cli';
 ```
 
-`openEngine` требует место store (`root` или `home`) и routing policy. Engine не ищет рабочее место на диске. См. [docs/reference/01-overview.md](docs/reference/01-overview.md).
+| Спецификатор | Что внутри |
+|---|---|
+| `promptobus` | Протокол и хранилище v1: `openEngine`, задачи, участники, сообщения, артефакты, восстановимый fan-out, история; фабрика MCP; типы host'а и драйвера |
+| `promptobus/host` | Контракт `PromptobusHost` и `createStandaloneHost` |
+| `promptobus/hooks` | Планировщик хуков: отклик шины и сторож, которые нужны файлу инструмента |
+| `promptobus/driver` | Контракт драйвера, `createRegistry`, помощники сессий, типы маршрутизации моделей |
+| `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
+| `promptobus/schemas/*` | JSON-схемы задачи, участника, сообщения, артефакта и документов маршрутизации |
+
+`openEngine` принимает расположение хранилища (`root` или `home`) и политику маршрутизации; диск в поисках рабочего места он не обходит. Исходники пакета импортируют только встроенные модули Node и никогда не читают `process.env` и не пишут в stdout — диагностика, идентичность сессии и имя инструмента приходят аргументами, так что окружение и вывод остаются у потребителя. Подробности — [reference/01-overview.md](docs/reference/01-overview.md), [reference/02-host.md](docs/reference/02-host.md), [reference/04-protocol.md](docs/reference/04-protocol.md).
+
+## Разработка
+
+```bash
+git clone https://github.com/Velklish/promptobus.git
+cd promptobus
+npm ci               # собирает dist/ через prepare
+npm run build        # tsc -p tsconfig.json
+npm test             # test/run.mjs гоняет каждый test/*.test.mjs
+npm run audit        # аудит публичной поверхности по tracked-файлам и собранному tarball
+npm run lint:backslop
+```
+
+`src/` — это TypeScript, компилируемый в `dist/`; `lib/` — рантайм на JavaScript и три драйвера; `skills/`, `templates/`, `schemas/` и `models/` едут в tarball.
+
+Набору нужны `git`, `tmux` и `ast-grep` (`npm install -g @ast-grep/cli@0.45.3` — версия, которую пинит CI). Он гоняет файлы пулом процессов, держа файлы с замером настенного времени в серийной группе в конце, даёт каждому файлу свой дом и свой временный каталог, запечатывает `PATH` каталогом заглушек, чтобы ни один настоящий бинарь инструмента не был вызван, и отказывает прогону, оставившему за собой процесс. Живые прогоны инструментов в CI не запускаются никогда. `lint:backslop` нужен сгенерированный adapter output, которого в свежем чекауте нет, — сначала `npx --yes github:Velklish/backslop#v0.6.0 init --prefix PB --lang en --tools claude,cursor,codex`.
+
+CI гоняет те же шаги на Node 20 и 22, на Ubuntu и macOS ([ci.yml](.github/workflows/ci.yml)). Гейты, которые обязана пройти правка, перечислены под ключом `gates` в [backslop.json](backslop.json): `npm test`, `backslop lint`, `npm run audit`.
+
+## Как участвовать
+
+Задачи и решения живут в `docs/` и ведутся через [backslop](https://github.com/Velklish/backslop); `npx github:Velklish/backslop#v0.6.0 status` печатает очередь. Правка завершена, когда вместе с ней переехали справочник, затронутый README и `CHANGELOG.md`, и каждый гейт выше вышел с кодом 0. Тема коммита начинается с номера задачи: `PB-N: <что сделано>`. Новые строки, комментарии и проверки в `bin/`, `lib/`, `src/`, `schemas/` и `templates/` пишутся по-английски, и ничто не называет внутренний продукт и не ссылается в чужой репозиторий. Полная процедура — [docs/guides/contributing.md](docs/guides/contributing.md).
 
 ## Документация
 
-- [Установка](docs/guides/install.md)
-- [Hooks, доверие, разбор проблем](docs/guides/hooks-and-trust.md)
-- [Model routing: каталог и overlays](docs/guides/model-routing.md)
-- [Как контрибутить (backslop)](docs/guides/contributing.md)
-- [Контракт host](docs/adr/adr-002-standalone-host-contract.md)
-- [Глоссарий](docs/GLOSSARY.md)
-- [Справочник](docs/reference/README.md)
-- Скиллы процесса: [skills/orchestrate](skills/orchestrate/SKILL.md), [skills/solo-review](skills/solo-review/SKILL.md)
+- [Install](docs/guides/install.md) — пакет, файл рабочего места, MCP-сервер, project hooks
+- [Hooks, trust, and troubleshooting](docs/guides/hooks-and-trust.md)
+- [Model routing: the catalog and overlays](docs/guides/model-routing.md)
+- [Reference](docs/reference/README.md) — обзор, host, CLI, протокол
+- [Glossary](docs/GLOSSARY.md) и [Roadmap](docs/ROADMAP.md)
+- [Documentation index](docs/README.md) — гайды, справочник и журнал решений
+- Процессные скиллы: [orchestrate](skills/orchestrate/SKILL.md), [solo-review](skills/solo-review/SKILL.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## Лицензия
 
-MIT
+[MIT](LICENSE)

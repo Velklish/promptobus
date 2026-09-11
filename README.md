@@ -1,27 +1,46 @@
 # Promptobus
 
+[![CI](https://github.com/Velklish/promptobus/actions/workflows/ci.yml/badge.svg)](https://github.com/Velklish/promptobus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
+
+Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.
+
 [Russian](README.ru.md)
 
-Promptobus is a local mailbox and task bus for agent sessions. An orchestrator and workers exchange typed messages, artifacts, and status through an on-disk task. They do not share one chat transcript.
+Promptobus lets one agent session — the orchestrator — hand work to other sessions and get it back. Workers edit isolated git worktrees, a reviewer reads a diff with fresh eyes, and all of them exchange typed messages, artifacts and status through a task kept on disk under `.promptobus/`. No session shares another's chat transcript, and a session that dies is replaced by one that claims the same mailbox and continues.
 
-The package was extracted from a private agent-workspace tool so the bus can run on its own.
+The bus does not know your workspace. Every call receives a **host** that answers for the current directory, Git and `promptobus.json`; the CLI builds a standalone one, and a consumer tool can pass its own. The package was extracted from a private workspace tool so that the bus can run on its own, and it drives Claude Code, Cursor and Codex sessions through one driver contract.
 
 English is canonical. The Russian README is the only other language in this repository.
 
-## Why
+## Features
 
-A split across sessions loses the assignment, the replies, and the files. Promptobus keeps them on disk under `.promptobus/`. A new session claims the mailbox and continues. Workers do not write to each other. Mail goes through the orchestrator.
-
-The bus does not know your workspace. You pass a [host](docs/adr/adr-002-standalone-host-contract.md) into every call. The CLI builds a standalone host from the current directory, Git, and `promptobus.json`.
+- **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
+- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
+- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
+- **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
+- **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread — and a warden wakes the addressee when mail arrives.
+- **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
+- **A library, not only a CLI.** Engine, host contract, driver contract and hook planner are exported with TypeScript types, and the package has no runtime dependencies.
+- **Process skills included.** `skills/orchestrate` and `skills/solo-review` tell an agent how to run a split and how to ask for a review.
 
 ## Requirements
 
-- Node.js 20 or newer (`package.json` `engines`)
-- Git, for worktrees and freshness checks
+- Node.js 20 or newer
+- Git — worktrees, diffs and freshness checks
+- At least one harness CLI on `PATH` for `spawn` and `review`: Claude Code, Cursor (`cursor-agent`, plus `tmux`), or Codex
+- For working on the package itself: `tmux` and `ast-grep` (see [Development](#development))
 
-## Install the package
+## Installation
 
-From a clone of this repository:
+The package is not on the npm registry. Install it from GitHub, pinned to a release tag from [CHANGELOG.md](CHANGELOG.md):
+
+```bash
+npm install github:Velklish/promptobus#v<version>
+```
+
+Add `-g` to get the `promptobus` command on `PATH`. From a clone:
 
 ```bash
 npm install
@@ -29,19 +48,11 @@ npm run build
 node bin/promptobus.js --version
 ```
 
-The command prints `promptobus` and the version in `package.json`. After a global or `npx` install the same binary is `promptobus`.
+The last command prints `promptobus` and the version from `package.json`.
 
-As a library:
+### 1. Declare the workspace
 
-```bash
-npm install promptobus
-```
-
-`package.json` exports `.`, `./host`, `./hooks`, `./driver`, `./cli`, and `./schemas/*`.
-
-## Configure a workspace
-
-Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it. The store is `.promptobus/` next to that file.
+Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it and keeps the store in `.promptobus/` beside it — add that directory to `.gitignore`.
 
 ```json
 {
@@ -49,163 +60,171 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 }
 ```
 
-`tools` lists harnesses this workspace may spawn. `--harness` must name one of them. Without the flag, spawn and review use `claude` (`lib/drivers.js`).
+`tools` is the spawn allow-list: `--harness` must name one of them, and without the flag `spawn` and `review` use `claude`. Optional keys the host reads: `commandName`, `locale`, `version`, `rules` (extra rule files for participants), `mcp` (servers copied to a participant), `skills` (a directory of process skills). A repository that generates its own process skills declares the command in its own `promptobus.json` under `generate`, as an argv array.
 
-`promptobus install` writes `harnesses` in the same file: the last installed hook list. That field is not the spawn allow-list.
+### 2. Give the orchestrator the MCP server
 
-Optional keys the standalone host reads: `commandName`, `locale`, `version`, `rules` (extra rule files), `mcp` (servers copied to a participant), `skills` (directory of process skills).
+Spawn writes an MCP entry for every worker and reviewer. The orchestrator session needs the same stdio server in the harness's project MCP file:
 
-## Add the MCP server
-
-The bus is an MCP stdio server:
-
-```bash
-promptobus mcp
+```json
+{
+  "mcpServers": {
+    "promptobus": {
+      "type": "stdio",
+      "command": "promptobus",
+      "args": ["mcp"],
+      "env": { "PROMPTOBUS_HOME": "/absolute/path/to/workspace/.promptobus" }
+    }
+  }
+}
 ```
 
-Point the harness at that command. Set `PROMPTOBUS_HOME` to the store directory (the `.promptobus` folder). Spawn writes this entry for each worker and reviewer. The orchestrator session needs the same server.
+Without a global install, `command` is `node` and `args` is `["/absolute/path/to/bin/promptobus.js", "mcp"]`. The server name must stay `promptobus`: hook matchers and tool names are built from it.
 
-Tools:
+### 3. Install the project hooks
 
-- `promptobus_send` — send a typed message (`task`, `status`, `question`, `answer`, `artifact`, `result`, `review`)
-- `promptobus_mailbox` — read unread mail (this marks it read)
-- `promptobus_task` — task metadata, participants, artifact directory
-
-Full names the session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other two (`lib/contract.js`).
-
-## Install project hooks
-
-Hook install is a separate command. It is not npm `postinstall`. See [docs/guides/install.md](docs/guides/install.md).
-
-```text
-promptobus install --harnesses claude,cursor,codex
-promptobus install --check
-promptobus install --dry-run
-promptobus uninstall [--harnesses claude,cursor,codex]
-```
-
-Trust and troubleshooting: [docs/guides/hooks-and-trust.md](docs/guides/hooks-and-trust.md).
-
-## Start
-
-Write a brief file. Then:
+Hook install is a separate command, not an npm `postinstall`:
 
 ```bash
-promptobus spawn --repo ./my-repo --brief ./brief.md
+promptobus install --harnesses claude,cursor,codex   # the list is required on the first install
+promptobus install --check                          # exit 1 when the project files drifted
+promptobus install --dry-run                        # print the pending writes, write nothing
+promptobus uninstall                                # remove owned hooks only
+```
+
+The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json`, keeps foreign hooks and unknown fields, and records the installed list as `harnesses` in `promptobus.json` — that field is not the spawn allow-list. Trust the project hooks in your harness afterwards: [Hooks, trust, and troubleshooting](docs/guides/hooks-and-trust.md).
+
+## Usage
+
+### Quick start
+
+Write a brief — a Markdown file with the assignment — then:
+
+```bash
+promptobus spawn --repo ./my-repo --brief ./brief.md --task-title "Rename the billing module"
 promptobus status
 ```
 
-`--repo` is a path on disk. `--brief` is required. `--new-task` opens a new task. `--task <id>` attaches to an existing one. `--title` names this worker's slice. `--task-title` names the task. `--harness cursor` or `--harness codex` selects the runtime. `--dry-run` prints the plan and writes nothing.
+`--repo` is a path on disk and `--brief` is required. The worker gets a worktree, the brief and the bus; its first message is a `status`. Read mail from the orchestrator session with the `promptobus_mailbox` tool — the warden knocks when something arrives, and the Stop guard does not let a turn end while mail is unread. Answer a `question` with `promptobus_send`, accept a `result`, or send `review` findings back.
 
-Isolated review:
-
-```bash
-promptobus review ./my-repo --title "Review the change"
-```
-
-The path is required. `--title` is required to open a new review task. Repeat with `--task <id>` to send a new diff to the same reviewer.
-
-## Model routing
-
-Name an intent — a strategy — instead of a model, and the CLI picks the `role + harness + model + effort` tuple for you: the rated catalog it ships, intersected with what your accounts can actually run right now, with every candidate and every reason printed.
+Ask for an independent reading of the diff:
 
 ```bash
-promptobus models --strategy balanced          # what the resolver would pick, and why
-promptobus models --strategy balance           # …and which of your subscriptions it would spend
-promptobus spawn --repo my-repo --brief ./brief.md --strategy balanced
+promptobus review ./my-repo --title "Review the rename"
 ```
 
-The shape of the output, abridged at the `…` lines. The numbers are the snapshot fixture the suite pins (`test/fixtures/model-routing/balance-snapshot.json`) run against the shipped catalog, so a reader can reproduce them; the percentages of a real account are that account's own:
+The path is required, `--title` opens a new review task, and `--task <id>` sends a new snapshot to a reviewer that is already up. Close the task when the work is accepted:
 
-```text
-$ promptobus models --strategy balance
-strategy: balance · role: worker
-snapshot: 2026-09-06T02:17:43.464Z · 0 s old · source cache
-overlays: user (absent) · workspace (absent)
-chosen: codex-sol-medium · codex / gpt-5.6-sol medium · score 78.10
-
-candidates:
-  * codex-sol-medium        codex / gpt-5.6-sol medium       available     78.10
-    claude-opus-medium      claude / claude-opus-5 medium    available     74.25
-    codex-sol-high          codex / gpt-5.6-sol high         available     73.10
-    claude-opus-high        claude / claude-opus-5 high      available     73.00
-    …
-
-pace — percentage points of each binding window · band 5.0 · spend unit 5.0:
-  * codex   codex-sol-medium · secondary weekly · 46.0% used · 62.5% elapsed · underspend +16.50 · penalty -1.25 · effective +15.25
-    claude  claude-opus-medium · 7d weekly · 30.0% used · 40.5% elapsed · underspend +10.48 · penalty -1.25 · effective +9.23
-    cursor  cursor-composer-2.5 · cycle-auto monthly · 62.0% used · 47.9% elapsed · underspend -14.08 · penalty -1.25 · effective -15.33
-
-availability:
-  claude  available  tier example-max (credentials)
-      5h        session 8.0% used · 18000 s · account · resets 2026-09-06T06:17:43.464Z
-      7d        weekly  30.0% used · 604800 s · account · resets 2026-09-10T06:17:43.464Z
-      7d-fable  weekly  38.0% used · 604800 s · model Fable · resets 2026-09-10T06:17:43.464Z
-  cursor  available  tier included:2000 (derived)
-      cycle-auto  monthly 62.0% used · 2592000 s · pool auto · resets 2026-09-21T17:17:43.464Z
-      cycle-api   monthly 72.0% used · 2592000 s · pool api · resets 2026-09-21T17:17:43.464Z
-  codex   available  tier example-pro (probe) · credits none · reset credits 2
-      primary    session 0.0% used · 18000 s · account · resets 2026-09-06T04:17:43.464Z
-      secondary  weekly  46.0% used · 604800 s · account · resets 2026-09-08T17:17:43.464Z
-
-runtime models — not rated, never chosen automatically:
-    cursor / gpt-5.6-via-cursor  [no-zdr]
-    …
+```bash
+promptobus done
 ```
 
-The five strategies are `quality`, `balanced`, `speed`, `economy` and `balance`. The first four weigh the qualities of a tuple. `balance` answers a different question — which of your subscriptions to spend — and it is the one to reach for when you pay for several harnesses and want them spent evenly: it prefers the harness furthest behind the pace of its own limit window, orders tuples inside a harness by `balanced`, and falls back to `balanced` with a warning when no window can be paced. The `availability:` block above it is what each account answered: its state, its tier, and every limit window with its kind, how much of it is gone, how long it is, what it binds and when it resets. The `pace` table is printed under `balance` only.
+`done` stops the sessions the bus started (keep them with `--keep-sessions`), removes a mechanism-created worktree and its branch once the work is proven merged, and appends one local telemetry record per participant.
 
-**Precedence: flag → overlay default → none.** `--strategy` on the command line always wins. Below it, `defaults.strategy` from the merged overlays — the recorded default. Below that, nothing: `spawn` and `review` route nothing and take their usual path, exactly as before. `--harness`, `--model` and `--effort` are not part of that ladder at all — they stay **constraints** on the resolver's choice and are never replaced by a strategy.
-
-`models` reads the availability cache and asks no harness anything — `--refresh` is the only flag that probes, and therefore the only one that writes a cache entry.
-
-When an account is running short, `models` prints a `near-limit` line: the window, its reset, whether the level or the rate tripped it, and the strategy to switch to. **Nothing switches on its own.** An agent proposes the switch to you; once you agree, `promptobus models strategy --set <name>` records `defaults.strategy` in the host's writable overlay so every following `spawn` and `review` without `--strategy` routes with it. `--clear` removes it, and `promptobus models strategy` alone prints the effective default and the layer it came from.
-
-One question no harness method answers — Cursor's plan name — is a line you add once, to the `user` overlay under `account: { "cursor": { "plan": "<name>" } }`. Nothing writes it, and it is displayed and scored by nothing.
-
-`models validate` checks the shipped catalog and every overlay layer; `models --clear-exhausted <harness>` lifts an exhaustion the cache is holding with no known reset. `promptobus done` appends one telemetry record per participant to `telemetry.jsonl` beside the availability cache — local, mode `0600`, never sent anywhere, and holding no prompt, path, session id or token contents; it may carry a numeric output-token count as throughput evidence without carrying token data. `models` prints how many records it holds. At close, `done` refreshes the window-bearing harnesses automatically within the preflight budget, so the record can carry an end value for each window; a refusal or timeout leaves that harness's end reading `null` and prints the reason. The command surface is [Model routing](docs/reference/03-cli.md#model-routing); the catalog, the layers and the overlay file to copy are in [docs/guides/model-routing.md](docs/guides/model-routing.md).
-
-## Commands
+### Commands
 
 | Command | What it does |
 |---|---|
-| `promptobus spawn` | Start a worker in an isolated git worktree |
-| `promptobus review` | Start a read-only reviewer on a path |
-| `promptobus models` | What the resolver would pick now, and what each account has left; `strategy --set <name>` records the default a person agreed to, `validate` checks the catalog, `--clear-exhausted <harness>` lifts a stuck exhaustion |
-| `promptobus status` | List active tasks, participants, unread counts |
-| `promptobus done` | Close a task. Stops sessions the bus started unless `--keep-sessions`, and appends one local telemetry record per participant |
+| `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
+| `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
+| `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
+| `promptobus status` | Active tasks: participants, unread mail, session state, routing and review-round counts |
+| `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus dismiss <address>` | Stop watching a finished participant |
-| `promptobus history` | Print **read** mail, oldest first (default last 50) |
-| `promptobus prune` | Preview or delete journals of old closed tasks (default 14 days) |
-| `promptobus guard` | Loop guard for the Stop hook. Exit 2 returns the turn |
-| `promptobus warden` | Task listener. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start |
-| `promptobus mcp` | MCP stdio server |
-| `promptobus install` | Write project-level hooks (`--harnesses`, `--check`, `--dry-run`) |
-| `promptobus uninstall` | Remove owned project-level hooks |
+| `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
+| `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
+| `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread |
+| `promptobus warden` | Task listener. Any bus command starts it; `PROMPTOBUS_WARDEN=off` disables auto-start |
+| `promptobus mcp` | MCP server over stdio |
+| `promptobus install` / `uninstall` | Write or remove the project-level hooks |
 
-`promptobus help` and `promptobus --version` work without a host file.
+`promptobus help` prints every flag; it and `--version` work without a `promptobus.json`.
+
+### MCP tools
+
+| Tool | Input | Does |
+|---|---|---|
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>` or `reviewer:<slug>` |
+| `promptobus_mailbox` | `{ claim?, task? }` | Read unread mail and mark it read; `claim: true` takes over a mailbox from a previous session |
+| `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
+
+The full names a session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other two. Without `task` the server uses `PROMPTOBUS_TASK`, then the session's binding, then the only active task.
+
+### Model routing
+
+```bash
+promptobus models --strategy balanced                       # the pick, every candidate, every reason
+promptobus spawn --repo ./my-repo --brief ./brief.md --strategy quality
+promptobus models strategy --set balance                    # record a default for later spawn and review
+promptobus models calibrate                                 # propose overlay ratings from local telemetry
+```
+
+The strategies are `quality`, `balanced`, `speed`, `economy` and `balance`. The first four weigh the qualities of a `harness + model + effort` tuple; `balance` answers which of your subscriptions to spend, preferring the harness furthest behind the pace of its own limit window. Precedence is the flag, then the recorded overlay default, then nothing — a call without a strategy takes the unrouted path. `--harness`, `--model` and `--effort` are constraints on the resolver's choice and are never replaced.
+
+`models` reads the availability cache and asks no harness anything; `--refresh` is the only flag that probes. When an account runs short it prints a `near-limit` line with the strategy to switch to, and nothing switches on its own. The cache and the telemetry file live under your home directory with mode `0600`, hold no prompt or token contents, and are never sent anywhere. Commands, reason codes and error codes: [reference/03-cli.md § Model routing](docs/reference/03-cli.md#model-routing); the catalog and the overlay file to copy: [guides/model-routing.md](docs/guides/model-routing.md).
+
+### Environment
+
+| Variable | Effect |
+|---|---|
+| `PROMPTOBUS_HOME` | Store directory for a process that already knows it — what spawn sets for a participant's MCP server |
+| `PROMPTOBUS_TASK` | Task id the MCP tools use when the call names none |
+| `PROMPTOBUS_WARDEN=off` | Disable the warden auto-start; participants then poll `promptobus_mailbox` |
 
 ## Library
 
 ```js
-import { openEngine } from 'promptobus';
+import { openEngine, PROTOCOL_VERSION } from 'promptobus';
 import { createStandaloneHost } from 'promptobus/host';
 import { planPromptobusHooks } from 'promptobus/hooks';
+import { createRegistry } from 'promptobus/driver';
+import { runPromptobus } from 'promptobus/cli';
 ```
 
-`openEngine` needs a store location (`root` or `home`) and a routing policy. The engine does not search the disk for a workspace. See [docs/reference/01-overview.md](docs/reference/01-overview.md).
+| Specifier | Contents |
+|---|---|
+| `promptobus` | Protocol and store v1: `openEngine`, tasks, participants, messages, artifacts, recoverable fan-out, history; the MCP factory; host and driver types |
+| `promptobus/host` | The `PromptobusHost` contract and `createStandaloneHost` |
+| `promptobus/hooks` | Hook planner: the bus feedback and guard hooks a harness file needs |
+| `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
+| `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
+| `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact and the model-routing documents |
+
+`openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](docs/reference/01-overview.md), [reference/02-host.md](docs/reference/02-host.md), [reference/04-protocol.md](docs/reference/04-protocol.md).
+
+## Development
+
+```bash
+git clone https://github.com/Velklish/promptobus.git
+cd promptobus
+npm ci               # builds dist/ through prepare
+npm run build        # tsc -p tsconfig.json
+npm test             # test/run.mjs runs every test/*.test.mjs
+npm run audit        # publicity audit over tracked files and the packed tarball
+npm run lint:backslop
+```
+
+`src/` is TypeScript compiled to `dist/`; `lib/` is the JavaScript runtime and the three drivers; `skills/`, `templates/`, `schemas/` and `models/` ship in the tarball.
+
+The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. Live harness runs are never started in CI. `lint:backslop` needs the generated adapter output, which a fresh checkout does not have — run `npx --yes github:Velklish/backslop#v0.6.0 init --prefix PB --lang en --tools claude,cursor,codex` first.
+
+CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](.github/workflows/ci.yml)). The gates a change must pass are listed under `gates` in [backslop.json](backslop.json): `npm test`, `backslop lint`, `npm run audit`.
+
+## Contributing
+
+Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx github:Velklish/backslop#v0.6.0 status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. New strings, comments and checks in `bin/`, `lib/`, `src/`, `schemas/` and `templates/` are English, and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](docs/guides/contributing.md).
 
 ## Documentation
 
-- [Install](docs/guides/install.md)
-- [Hooks, trust, troubleshooting](docs/guides/hooks-and-trust.md)
+- [Install](docs/guides/install.md) — package, workspace file, MCP server, project hooks
+- [Hooks, trust, and troubleshooting](docs/guides/hooks-and-trust.md)
 - [Model routing: the catalog and overlays](docs/guides/model-routing.md)
-- [Contribute (backslop)](docs/guides/contributing.md)
-- [Host contract](docs/adr/adr-002-standalone-host-contract.md)
-- [Glossary](docs/GLOSSARY.md)
-- [Reference](docs/reference/README.md)
-- Process skills: [skills/orchestrate](skills/orchestrate/SKILL.md), [skills/solo-review](skills/solo-review/SKILL.md)
+- [Reference](docs/reference/README.md) — overview, host, CLI, protocol
+- [Glossary](docs/GLOSSARY.md) and [Roadmap](docs/ROADMAP.md)
+- [Documentation index](docs/README.md) — guides, reference and the decision records
+- Process skills: [orchestrate](skills/orchestrate/SKILL.md), [solo-review](skills/solo-review/SKILL.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 
-MIT
+[MIT](LICENSE)
