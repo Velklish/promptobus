@@ -18,6 +18,15 @@ The manual procedure repeats heavily by hand: docs/archive/PB-16-cursor-availabi
 Not tracked: grepped docs/backlog/{queue,active,deferred,triage} for "mutation probe" / "scripts/mutation" — no match.
 
 
+## `AGENTS.md` cannot carry the rule — measured
+
+An earlier draft of this card asked for the rule to be written into `AGENTS.md`. That line is
+inside the managed backslop block (`backslop:start` at line 1, `backslop:end` at line 19), so it is
+regenerated: a marker written into line 13 survived until `backslop … init`, which reported
+`AGENTS.md: backslop block updated` and restored the generated text. CI runs `init` on every push,
+so an edit there would not outlive a single one. The wording lives in the backslop template, and
+asking for it is a consumer request upstream — filed separately — not work in this repository.
+
 ## Third occurrence, 2026-09-12, and it moves the argument
 
 Filed as deferred; returned to the queue on 2026-09-12 after the same loss happened a third time
@@ -49,7 +58,6 @@ to cover a probe of anything the repository gates with, not only a probe of a te
 ## Out of scope
 
 - Choosing which mutation is meaningful for a given test, or deciding whether a gate needs the second false-positive probe — both stay the agent's judgment.
-- Extending the probe to non-test files or to gates other than `npm test`.
 
 ## Verification
 

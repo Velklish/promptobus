@@ -4,7 +4,8 @@
 - **Scope:** `lib/driver-cursor.js` (`inspect`, `stallRoute` for `kind === 'question'`),
   `test/harness-cursor.mjs`
 - **Created:** 2026-09-12
-- **Dependencies:** `PB-181` (the route's text, fixed there)
+- **Dependencies:** `PB-181` — the route's text is fixed there, on the branch that closed it; in
+  `main` it still reads the way this card quotes
 
 ## Context
 
@@ -31,11 +32,21 @@ rendered.
 **And one stale line beside it.** `test/harness-cursor.mjs` carries a comment saying "a question
 gets a skip", which `PB-181` measured to be false.
 
+## Decision, taken 2026-09-12
+
+**Retire the kind and fold its guidance into the verdict that does fire.** At the moment of the
+hold all three liveness signals are silent, and that is exactly what the watchdog verdict already
+reports with a number each; what it lacks is not detection but the sentence telling a person what
+to do. Moving that sentence there closes the gap with what already fires.
+
+**Rejected: teaching `inspect` to return `question`.** It is feasible — the dialog's text is
+rendered in the panel and can be read with `capture-pane`, measured on a live session — but it puts
+a panel read into every liveness check, for a state the existing verdict already establishes. A
+second detector for an already-detected state is cost without an answer.
+
 ## Work to do
 
-- Teach `inspect` to return `question` from production signals, or decide in writing that the
-  kind is retired and fold its text into the verdict that does fire. Either closes the gap; a
-  branch that only the stand reaches does not.
+- Retire `kind === 'question'` and carry its guidance into the watchdog verdict.
 - Whatever is chosen, the check must exercise the production path, not the fixture's shortcut.
 - Correct the stale comment in the stand.
 
