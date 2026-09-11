@@ -1,34 +1,5 @@
-// Pin gate. Fails when a tracked file names a backslop release that disagrees
-// with `cli` in backslop.json.
-//
-// `backslop upgrade` rewrites the pin in backslop.json, in `docs/**` and in the
-// root `*.md`, and `backslop lint` warns over that same set. Neither reaches
-// `package.json` or `.github/workflows/ci.yml`, and both of those are live
-// commands rather than prose: a workflow left on the old pin runs `init` at the
-// version it names and regenerates the `AGENTS.md` block a raise had just
-// moved. PB-167 found the divergence by hand and moved both files by hand;
-// nothing stood between the next raise and the same silence. This is that
-// guard.
-//
-// The expected version is read from backslop.json and never written here. A
-// gate carrying a literal pin would be one more place for the next raise to
-// miss — the shape it exists to catch.
-//
-// The skipped set is backslop's own `liveMarkdown`, restated rather than
-// imported: the CLI is fetched by npx and is not a dependency of this package,
-// so the only way to keep the two in step is to say out loud which set this is
-// a copy of. Records that describe a moment rather than a runnable command keep
-// their historical pins — CHANGELOG.md, ADRs, the task archive, and task cards.
-//
-// A gate that matches nothing is green for the wrong reason, so a live set
-// holding nothing but backslop.json is a failure and both counts are printed on
-// success: a reader can see what the walk actually looked at instead of
-// trusting that it looked anywhere. The config is discounted deliberately — it
-// is where the expected spec is read from, so it matches itself whatever the
-// walk does, and a floor it can satisfy alone is no floor at all. That was
-// measured rather than reasoned: pointed at a spec no file in the tree carries,
-// the first version of this gate reported “1 live pin(s) in 1 file(s)” and
-// exited 0.
+// Pin gate: red when a tracked file names a backslop release disagreeing with `cli`
+// in backslop.json. Why it exists and what it skips: docs/guides/contributing.md.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -41,11 +12,8 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const cfg = JSON.parse(readFileSync(path.join(ROOT, CONFIG), 'utf8'));
 
-// The spec and its separator, read off `cli` the way backslop's own `parseCli`
-// reads them: `npx [flags] <spec>#v<version>` for a GitHub source, `@<version>`
-// for an npm one. A `cli` without a pinned version is a configuration error and
-// is reported as one rather than passed over — an unpinned project has nothing
-// for this gate to compare against, and saying so beats going quietly green.
+// Spec and separator read off `cli`, the way backslop's own `parseCli` reads them.
+// An unpinned `cli` has nothing to compare against and is reported, not passed over.
 const parsed = String(cfg.cli ?? '').match(/^npx\s+(?:-\S+\s+)*(\S+?)(#v|@)(\d+\.\d+\.\d+)$/);
 if (!parsed) {
   say(`✖ ${CONFIG}: “cli” is not an npx spec with a pinned version: ${JSON.stringify(cfg.cli ?? null)}`);
@@ -54,6 +22,7 @@ if (!parsed) {
 const [, SPEC, SEP, EXPECTED] = parsed;
 const PIN = new RegExp(`${escape(SPEC)}${escape(SEP)}(\\d+\\.\\d+\\.\\d+)`, 'g');
 
+// Restated from backslop's `liveMarkdown`, not imported: the CLI arrives by npx.
 const DOCS = cfg.docs ?? 'docs';
 const PREFIX = cfg.prefix ?? '';
 const ARCHIVE = new RegExp(`^${escape(DOCS)}/archive/${escape(PREFIX)}-\\d`);
@@ -69,6 +38,8 @@ const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' 
 const failures = [];
 const live = { pins: 0, files: 0 };
 const kept = { pins: 0, files: 0 };
+// The floor discounts CONFIG: it holds the spec this gate reads, so it matches
+// itself whatever the walk does, and a floor it satisfies alone is no floor.
 let guarded = 0;
 
 for (const rel of tracked) {
