@@ -321,6 +321,28 @@ export interface DriverOptions {
    * instead of promising the participant skills it never received.
    */
   skillsDir?: boolean;
+  /**
+   * Directories inside the participant's working directory that this driver's launch
+   * files claim.
+   *
+   * Before the first write the caller asks Git what the lift is about to overwrite, and
+   * it asks about **the paths the lift writes** — never about the claimed directory as a
+   * whole. A declared directory is not a claim on everything under it: a repository may
+   * lawfully keep files of its own there, and a lift that does not write them must not
+   * announce them. What this field supplies is the boundary — where a launch file's
+   * absolute path stops being the working directory and becomes the pathspec Git is
+   * asked about.
+   *
+   * A launch file that copies a whole directory is the one that matters most: its
+   * destination is erased before the copy, so everything tracked under that one path is
+   * lost rather than merely rewritten. It needs no separate declaration — the
+   * destination is itself a written path, and a directory in a pathspec covers its
+   * subtree.
+   *
+   * Optional: a driver whose launch files land outside the repository claims none and is
+   * asked nothing.
+   */
+  launchDirs?: string[];
   /** Tools taken from a read-only participant (`denyTools` capability). */
   denyTools: string[];
   /** Harness version on which the wake channel was proven. Not a gate — evidence. */

@@ -76,6 +76,27 @@ One consequence to know rather than rediscover: refusal paths that used to reach
 
 The seal is watched, not assumed. Every command the package launches through `run` is appended to the run's resolve trace ([lib/exec.js](../../lib/exec.js), variable `PROMPTOBUS_EXEC_TRACE`), and the runner refuses a run in which any of those paths lies outside its own run directory. A name that resolved to nothing is not counted — that is the seal working. The boundary is `run` itself: a test file that calls `spawnSync` on its own does not pass through it and is not traced; those calls are `process.execPath` and stub binaries inside the file's own sandbox, and the route the gate exists for is the one through the bus boundary.
 
+## What the stands prove, and what they cannot
+
+A harness stand is a stub binary, not the tool. It answers the protocol the driver speaks
+and does nothing else, so a check written against one proves the mechanism's half of an
+exchange and never the harness's. Where the two are confused, a probe comes back green on
+a broken mechanism.
+
+The measured case, because it cost a regression: **the Codex stand records the `cwd` it is
+handed on `thread/start` and never enters it.** A working directory that does not exist is
+therefore invisible to every check built on that stand — only the real binary would refuse
+it. So a property like "the participant's working directory is on disk before the lift"
+cannot be asserted through a lifted thread at all; it has to be asserted where the
+mechanism creates the directory, which for launch files is the plan (PB-161.2 moved a
+reviewer's directory creation into its plan for exactly this reason, and the mutation probe
+that had been silent then bit).
+
+The general rule that follows: when a mutation probe leaves the suite green, ask what the
+stand observes before concluding the code is unnecessary. Two outcomes are legitimate — the
+code is genuinely dead and goes, or the property is real and must be re-expressed where the
+suite can see it. "The probe was silent" is not a third one.
+
 ## Public surface
 
 Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. `npm run audit` runs `scripts/audit-public.mjs`, which scans tracked files and the packed tarball for forbidden strings and checks tracked links for repository leaks.

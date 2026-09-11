@@ -97,18 +97,19 @@ model sees is derived from the config key, and moving the key would rename every
 tool the participant was told about. `ThreadStartParams.config` keeps
 `model_reasoning_effort`, which is per-turn rather than per-home.
 
-**3C.** The trust record names the worker's worktree, by its realpath. A reviewer's
-working directory is the tree UNDER REVIEW, and trusting it would let the repository
-being judged put MCP servers into the session that judges it — measured: a trusted
-project's own `.codex/config.toml` server comes up in the thread. For a worker that
-same effect is the point: the repository is already executing in that session, and the
-isolated home keeps its project layer away from the owner's set.
+**3C.** The trust record names the participant's own working directory, by its realpath —
+measured: a trusted project's own `.codex/config.toml` server comes up in the thread, and
+the unresolved spelling of the same path does not. For a worker that effect is the point:
+the repository is already executing in that session, and the isolated home keeps its
+project layer away from the owner's set. Which directory a reviewer works in, and why the
+tree under review is never the trusted one, is
+[ADR-008](adr-008-codex-reviewer-working-directory.md).
 
 **4B.** The worker's worktree gets a copy of the workspace `.codex/skills` canon, plus
 a self-ignoring `.gitignore` inside `.codex/` so the copy stays out of the worker's diff
 and goes away with the worktree at `done`. Codex reads a project's `.codex/skills`
-always, trusted or not, so the copy alone is enough. A reviewer gets no copy and is told
-so in its lift output.
+always, trusted or not, so the copy alone is enough. Where a reviewer's copy lands is
+[ADR-008](adr-008-codex-reviewer-working-directory.md).
 
 ## Consequences
 
@@ -135,11 +136,9 @@ so in its lift output.
 - The session rollout an operator may want to read is inside the participant home and
   goes away with it. `phrases.logs` names that home rather than `~/.codex`.
 - A repository that tracks `.codex/skills` of its own would have it overwritten by the
-  copy and its worktree left dirty. `spawn` warns about that for `.cursor` paths and
-  not for `.codex`; closing that is PB-161.1.
-- A Codex reviewer gets no workspace skills, because it has no working directory of its
-  own to put them in. Giving it one — the Cursor driver's `reviewSandbox` shape — is
-  PB-161.2.
+  copy and its worktree left dirty. `spawn` warns before the first write about any path
+  Git already tracks under a directory the driver's launch files claim — `.cursor` and
+  `.codex` alike.
 - Future changes to the home's contents must move together: `codexHomeConfig`, the
   narrow TOML writer beside it, `03-cli` § Spawn and § The Codex holder, and this ADR.
   The writer's vocabulary is strings, string arrays and one level of string-valued

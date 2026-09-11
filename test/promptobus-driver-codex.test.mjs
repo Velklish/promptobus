@@ -43,8 +43,8 @@ check(': Codex diagnosis surfaces scenario errors before the later red verdict',
 
 const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
-  codexHomeConfig, makeParticipantHome, participantHomesRoot, removeParticipantHome, skillsNoteOf,
-  sweepParticipantHomes, trustPath, workspaceSkillsDir,
+  codexHomeConfig, makeParticipantHome, participantHomesRoot, removeParticipantHome, reviewSandbox,
+  skillsNoteOf, sweepParticipantHomes, trustPath, workspaceSkillsDir,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
@@ -54,7 +54,7 @@ const {
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
-const { liftHarness, skillsNote, toolName } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { liftHarness, skillsNote, toolName, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 
 // The override key prefix is the CONSUMER's name, so it comes from a host and not from
@@ -923,6 +923,9 @@ const ctx = {
   model: DEFAULT_MODEL,
   cwd: '/tmp/wt',
   addDirs: ['/tmp/rules'],
+  // The reviewer's own working directory is derived from this path, the way the Cursor
+  // sandbox is: one participant file stem, one directory beside it in the task store.
+  settingsPath: path.join(SB, 'plan', 'reviewer-cdx.settings.json'),
 };
 const workerPlan = codexDriver.prepare(ctx);
 check(': argv is app-server --stdio, prompt separate; no files on disk',
@@ -933,10 +936,20 @@ check(': argv is app-server --stdio, prompt separate; no files on disk',
   JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files.length, settings: workerPlan.settings }));
 
 const reviewerPlan = codexDriver.prepare({ ...ctx, denyTools: REVIEWER_DENY, role: 'reviewer' });
-check(': reviewer — sandbox read-only, same cwd, no files',
-  reviewerPlan.settings.sandbox === 'read-only' && reviewerPlan.cwd === ctx.cwd
-  && reviewerPlan.files.length === 0,
-  JSON.stringify(reviewerPlan.settings));
+check('PB-161.2: reviewer — read-only, a working directory of its own, the reviewed tree attached as a read',
+  reviewerPlan.settings.sandbox === 'read-only'
+  && reviewerPlan.cwd === reviewSandbox(ctx.settingsPath)
+  && reviewerPlan.cwd !== ctx.cwd
+  && reviewerPlan.settings.addDirs.includes(ctx.cwd)
+  && reviewerPlan.settings.addDirs.includes('/tmp/rules')
+  // No canon at this root, and still one file: the `.gitignore` is what creates the
+  // reviewer's directory before the lift, and app-server is handed that path as the
+  // thread cwd. A worker with no canon writes nothing — its worktree already exists.
+  && reviewerPlan.files.length === 1
+  && reviewerPlan.files[0].path === path.join(reviewSandbox(ctx.settingsPath), '.codex', '.gitignore')
+  && reviewerPlan.files[0].text === '*\n'
+  && workerPlan.files.length === 0,
+  JSON.stringify({ cwd: reviewerPlan.cwd, files: reviewerPlan.files, settings: reviewerPlan.settings }));
 
 // --- PB-161: the plan names a home, and the skills canon travels as files ------------
 
@@ -1086,18 +1099,103 @@ check('PB-161: the worker plan copies the canon into <worktree>/.codex/skills an
   && skillsPlan.codexHome === participantHome,
   JSON.stringify({ files: skillsPlan.files, note: skillsPlan.skillsNote }));
 
-check('PB-161: skillsNote tells the truth in all three shapes',
-  workerPlan.skillsNote === skillsNoteOf({ src: null, role: 'worker' })
+check('PB-161.2: skillsNote has one sentence for both roles — a count, or the honest absence',
+  workerPlan.skillsNote === skillsNoteOf({ src: null })
   && /no \.codex\/skills/.test(workerPlan.skillsNote)
-  && /tree under review/.test(reviewerPlan.skillsNote)
+  && reviewerPlan.skillsNote === workerPlan.skillsNote
   && skillsNote({ launch: skillsPlan, pluginDir: null, driver: codexDriver }) === skillsPlan.skillsNote
   && workspaceSkillsDir(null) === null
   && workspaceSkillsDir(path.join(SB, 'no-such-root')) === null,
   `${workerPlan.skillsNote} | ${reviewerPlan.skillsNote}`);
 
-check('PB-161: a reviewer plan writes nothing into the tree under review',
-  codexDriver.prepare({ ...ctx, root: skillsRoot, denyTools: REVIEWER_DENY, role: 'reviewer' }).files.length === 0,
-  JSON.stringify(codexDriver.prepare({ ...ctx, root: skillsRoot, role: 'reviewer' }).files));
+const reviewerSkills = codexDriver.prepare({
+  ...ctx, root: skillsRoot, denyTools: REVIEWER_DENY, role: 'reviewer',
+});
+check('PB-161.2: the reviewer copy lands in its own directory, and nothing of it in the tree under review',
+  reviewerSkills.files.length === 2
+  && reviewerSkills.files.every((f) => f.path.startsWith(`${reviewSandbox(ctx.settingsPath)}${path.sep}`))
+  && !reviewerSkills.files.some((f) => f.path.startsWith(`${ctx.cwd}${path.sep}`))
+  && reviewerSkills.files[1].copyFrom === path.join(skillsRoot, '.codex', 'skills')
+  && reviewerSkills.files[1].path === path.join(reviewSandbox(ctx.settingsPath), '.codex', 'skills')
+  && /^1 from /.test(reviewerSkills.skillsNote),
+  JSON.stringify({ files: reviewerSkills.files, note: reviewerSkills.skillsNote }));
+
+// PB-161.1: the copy WIPES its destination before writing, so a repository that lawfully
+// tracks `.codex/skills` of its own would lose it at lift and its branch would be dirty
+// from the first second — `done` would not sweep the directory either. The guard is the
+// hazard's, not one harness's: the driver names the directory its launch files claim and
+// Git is asked about that one.
+const gitIn = (cwd, ...args) => spawnSync('git', ['-C', cwd, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args],
+  { encoding: 'utf8' });
+const trackedCodex = path.join(SB, 'tracked-codex-clone');
+mkdirSync(path.join(trackedCodex, '.codex', 'skills', 'own'), { recursive: true });
+gitIn(trackedCodex, 'init', '-q', '-b', 'master');
+writeFileSync(path.join(trackedCodex, '.codex', 'skills', 'own', 'SKILL.md'), '# the repository`s own\n');
+gitIn(trackedCodex, 'add', '.codex/skills/own/SKILL.md');
+gitIn(trackedCodex, 'commit', '-qm', 'tracked codex skills');
+let codexTrackedWarns = '';
+const codexWarn0 = console.warn;
+console.warn = (m) => { codexTrackedWarns += `${m}\n`; };
+writeLaunchFiles(
+  codexDriver.prepare({ ...ctx, cwd: trackedCodex, root: skillsRoot, task: TASK, address: WORKER }).files,
+  codexDriver.options.launchDirs,
+);
+console.warn = codexWarn0;
+check('PB-161.1: lift names an already-tracked .codex path the copy is about to wipe',
+  /own\/SKILL\.md/.test(codexTrackedWarns)
+  && codexTrackedWarns.includes(trackedCodex)
+  && JSON.stringify(codexDriver.options.launchDirs) === JSON.stringify(['.codex']),
+  codexTrackedWarns || '(silent)');
+
+// The check above matched through the `.gitignore` written BESIDE the copy. The copy
+// destination itself is the shape that wipes, and the guard must not need a sibling file
+// to notice it: handed that one path alone, it names the same tracked file. (`git
+// ls-files` reads the index, so the path is still tracked after the copy above removed
+// it from disk — which is exactly the loss this warning exists to announce.)
+let destOnlyWarns = '';
+const destOnlyWarn0 = console.warn;
+console.warn = (m) => { destOnlyWarns += `${m}\n`; };
+writeLaunchFiles(
+  [{
+    path: path.join(trackedCodex, '.codex', 'skills'),
+    copyFrom: path.join(skillsRoot, '.codex', 'skills'),
+    text: '',
+    secret: false,
+  }],
+  codexDriver.options.launchDirs,
+);
+console.warn = destOnlyWarn0;
+check('PB-161.1: the copy destination alone is enough — the guard needs no sibling file',
+  /own\/SKILL\.md/.test(destOnlyWarns) && destOnlyWarns.includes(trackedCodex),
+  destOnlyWarns || '(silent)');
+
+// And the other half of the same rule, which is the one a false warning would live in.
+// A repository may lawfully keep its own `.codex/config.toml` and `.codex/agents` — the
+// trust record of ADR-007 exists so a worker READS exactly those — and no lift writes
+// them. Asking Git about the claimed directory whole would name them on every single
+// lift and call them about to be overwritten; asking about the paths the lift writes
+// says nothing.
+const lawfulCodex = path.join(SB, 'lawful-codex-clone');
+mkdirSync(path.join(lawfulCodex, '.codex', 'agents'), { recursive: true });
+gitIn(lawfulCodex, 'init', '-q', '-b', 'master');
+writeFileSync(path.join(lawfulCodex, '.codex', 'config.toml'), '[mcp_servers.own]\ncommand = "node"\n');
+writeFileSync(path.join(lawfulCodex, '.codex', 'agents', 'reviewer.md'), '# the project`s own agent\n');
+gitIn(lawfulCodex, 'add', '.codex/config.toml', '.codex/agents/reviewer.md');
+gitIn(lawfulCodex, 'commit', '-qm', 'a lawful project codex layer');
+let lawfulWarns = '';
+const lawfulWarn0 = console.warn;
+console.warn = (m) => { lawfulWarns += `${m}\n`; };
+writeLaunchFiles(
+  codexDriver.prepare({ ...ctx, cwd: lawfulCodex, root: skillsRoot, task: TASK, address: WORKER }).files,
+  codexDriver.options.launchDirs,
+);
+console.warn = lawfulWarn0;
+check('PB-161.1: a tracked .codex path the lift does not write is not called about to be overwritten',
+  lawfulWarns === ''
+  // …and the files are still tracked afterwards, so the silence is the guard's judgement
+  // and not a tree that lost them.
+  && String(gitIn(lawfulCodex, 'ls-files', '--', '.codex').stdout ?? '').includes('.codex/config.toml'),
+  lawfulWarns || '(silent)');
 
 const classifiedCodexPlan = codexDriver.prepare({
   ...ctx,
@@ -1502,6 +1600,16 @@ check('step 4: the queued wake ran only after the busy turn ended, without turn/
   `${JSON.stringify(queuedSent)} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
 const wt = wp?.metadata?.worktree ?? ws;
+// PB-161.2: a marker in the reviewed tree's own `.codex/skills`. A reviewer copy into
+// that tree would WIPE the destination first and take this file with it, so its survival
+// is the check that the lift wrote nothing there.
+const reviewedTreeMarker = path.join(wt, '.codex', 'skills', 'reviewed-tree-marker.md');
+mkdirSync(path.dirname(reviewedTreeMarker), { recursive: true });
+writeFileSync(reviewedTreeMarker, '# the reviewed tree keeps its own\n');
+// The store home as the MECHANISM spells it: `planReview` realpaths the workspace root,
+// and on macOS `/var/…` resolves to `/private/var/…`. A path built from the unresolved
+// spelling would name a directory that exists and is not the one the lift used.
+const reviewerSandboxDir = reviewSandbox(store.participantSettingsPath(realpathSync(home), TASK, REVIEWER));
 const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex'], { cwd: ws, env: elicitEnv });
 check('step 5: promptobus review --harness codex lifted the reviewer',
   reviewed.status === 0 && /reviewer reviewer:cdx started/.test(reviewed.out), reviewed.out.slice(-600));
@@ -1514,8 +1622,10 @@ check('step 5: the reviewer report reached the orchestrator',
   `${JSON.stringify(reviewSent)} · ${diagnoseTrace(HARNESS, REVIEWER)}`);
 
 check('step 5: the read-only reviewer did not write a file — there is no machine sign of refusal, we check the disk',
-  !existsSync(path.join(wt, FORBIDDEN)),
-  existsSync(path.join(wt, FORBIDDEN)) ? 'file exists' : 'no file');
+  // Both places: the reviewer's cwd is its own directory now, and a write that slipped
+  // through would land there rather than in the tree under review.
+  !existsSync(path.join(wt, FORBIDDEN)) && !existsSync(path.join(reviewerSandboxDir, FORBIDDEN)),
+  existsSync(path.join(wt, FORBIDDEN)) ? 'file exists in the reviewed tree' : 'no file');
 
 const reviewDenied = readTrace(HARNESS, REVIEWER).some((e) => e.kind === 'write-denied');
 check('step 5: the stand refused the reviewer a write',
@@ -1529,10 +1639,10 @@ check(': a reviewer elicitation is declined and the report still arrives',
     && !revElicitLog.includes('SECRET-PROMPT-DO-NOT-LOG'),
   revElicitLog.slice(-500));
 
-// The reviewer's own home: the same isolation, and two things deliberately absent
-// from it. Its working directory is the tree UNDER REVIEW, so it is not trusted — a
-// repository would otherwise hand its own `.codex/config.toml` to the session judging
-// it — and no skills canon is copied into that tree.
+// The reviewer's own home and its own working directory. The trust record names that
+// directory — never the tree under review, which would let the repository being judged
+// hand MCP servers to the session judging it — and the record lands in the participant's
+// disposable home, not in the owner's `~/.codex/config.toml`.
 const revThread = (() => {
   try {
     const rec = readSession(revPart?.sessionRef ?? '', env);
@@ -1541,17 +1651,66 @@ const revThread = (() => {
     return null;
   }
 })();
-check('PB-161: the reviewer lifts in its own home, with no trust record for the tree under review',
+check('PB-161: the reviewer lifts in a home of its own, carrying the mechanism MCP set',
   revThread?.appServerEnv?.CODEX_HOME === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
     && revThread.appServerEnv.CODEX_HOME !== participantHome
     && typeof revThread.codexHome?.config === 'string'
-    && !revThread.codexHome.config.includes('[projects.')
     && revThread.codexHome.config.includes(`[mcp_servers.${codexMcpName('promptobus', PREFIX)}]`),
   JSON.stringify({ home: revThread?.appServerEnv?.CODEX_HOME, config: revThread?.codexHome?.config }));
 
+const revSession = readSession(revPart?.sessionRef ?? '', env);
+check('PB-161.2: the reviewer thread runs in a directory of its own, with the reviewed tree attached as a read',
+  revThread?.cwd === reviewerSandboxDir
+    && revThread.cwd !== wt
+    && (revSession?.addDirs ?? []).includes(wt)
+    // Containment roots are the record's cwd and addDirs — they moved with the directory.
+    && revSession?.cwd === reviewerSandboxDir,
+  JSON.stringify({ cwd: revThread?.cwd, sandbox: reviewerSandboxDir, addDirs: revSession?.addDirs }));
+
+check('PB-161.2: the trust record names the reviewer directory, never the tree under review, and lands in the participant home',
+  revThread?.codexHome?.dir === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
+    && revThread.codexHome.dir !== callerCodexHome
+    && revThread.codexHome.config.includes(`[projects."${realpathSync(reviewerSandboxDir)}"]`)
+    && !revThread.codexHome.config.includes(realpathSync(wt))
+    && /trust_level = "trusted"/.test(revThread.codexHome.config),
+  JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300) }));
+
+check('PB-161.2: the workspace canon reached the reviewer directory, and the reviewed tree kept its own',
+  existsSync(path.join(reviewerSandboxDir, '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'))
+    // The reviewed tree is this run's worker worktree, so it holds the canon the WORKER
+    // lift copied. What the reviewer must not have done is wipe it: the marker laid
+    // before the review lift is the file a copy into that tree would have taken.
+    && existsSync(reviewedTreeMarker),
+  JSON.stringify({
+    sandbox: readdirSync(path.join(reviewerSandboxDir, '.codex', 'skills')),
+    reviewed: readdirSync(path.join(wt, '.codex', 'skills')),
+  }));
+
+check('PB-161.2: the real lift names the reviewer directory and the canon that went into it',
+  reviewed.out.includes(`reviewer home: ${reviewerSandboxDir}`)
+    // The canon travels as files, so whether it arrived is a fact about THIS lift, and
+    // `--dry-run` is not where an operator of a real one can read it.
+    && reviewed.out.includes('workspace skills: 1 from ')
+    && reviewed.out.includes(path.join(reviewerSandboxDir, '.codex', 'skills')),
+  reviewed.out.split('\n').filter((l) => /reviewer home|workspace skills/.test(l)).join(' | ') || '(no line)');
+
+// The directory is TRUSTED, so what sits in its project layer is what the lifted session
+// may load. The lift erases the skills destination and nothing above it, so the claim
+// that holds it safe is «nothing else writes here» — pinned by this check rather than
+// left as a sentence in ADR-008. It fails the day the mechanism puts something else in.
+check('PB-161.2: the trusted directory holds exactly what the lift put there',
+  // The ROOT as well as `.codex/`: the root is the working directory of the trusted
+  // session, and a file dropped beside `.codex` is as much «something else wrote here»
+  // as one inside it. The lift writes only `.codex/…`, so both assertions are exact.
+  readdirSync(reviewerSandboxDir).sort().join(',') === '.codex'
+    && readdirSync(path.join(reviewerSandboxDir, '.codex')).sort().join(',') === '.gitignore,skills',
+  `${readdirSync(reviewerSandboxDir).sort().join(',')} · ${readdirSync(path.join(reviewerSandboxDir, '.codex')).sort().join(',')}`);
+
 const reviewDry = cli(['review', wt, '--task', TASK, '--harness', 'codex', '--dry-run'], { cwd: ws, env });
-check('PB-161: a reviewer plan says out loud that it brings no skills into that tree, and writes nothing',
-  /workspace skills: not attached — a Codex reviewer works in the tree under review/.test(reviewDry.out)
+check('PB-161.2: the dry run names the same directory a real lift used, and the canon that goes into it',
+  reviewDry.out.includes(`reviewer home: ${revThread.cwd}`)
+    && reviewDry.out.includes('workspace skills: 1 from ')
+    && reviewDry.out.includes(path.join(revThread.cwd, '.codex', 'skills'))
     && /dry-run: nothing written to disk/.test(reviewDry.out),
   reviewDry.out.slice(-900));
 

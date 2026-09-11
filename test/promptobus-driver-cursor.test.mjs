@@ -500,17 +500,31 @@ gitAt(tracked, 'commit', '-qm', 'tracked cursor');
 let trackedWarns = '';
 const trackedWarn0 = console.warn;
 console.warn = (m) => { trackedWarns += `${m}\n`; };
-writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files);
+writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files,
+  cursorDriver.options.launchDirs);
 console.warn = trackedWarn0;
-check(': lift names already-tracked .cursor files — gitignore will not protect them',
-  /cli\.json/.test(trackedWarns) && trackedWarns.includes(tracked),
+check('PB-161.1: lift names already-tracked .cursor files — gitignore will not protect them',
+  /cli\.json/.test(trackedWarns) && trackedWarns.includes(tracked)
+  && JSON.stringify(cursorDriver.options.launchDirs) === JSON.stringify(['.cursor']),
   trackedWarns);
+
+// The guard is the driver's declaration and nothing else: with no claimed directory
+// handed over, the same tracked tree gets no warning. That is what makes the rule
+// harness-neutral rather than a needle spelled `.cursor` inside the caller.
+let unclaimedWarns = '';
+const unclaimedWarn0 = console.warn;
+console.warn = (m) => { unclaimedWarns += `${m}\n`; };
+writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files);
+console.warn = unclaimedWarn0;
+check('PB-161.1: a driver that claims no directory is asked nothing',
+  unclaimedWarns === '', unclaimedWarns || '(silent)');
 
 const trackedCursorTrace = path.join(SB, 'tracked-cursor-trace.tsv');
 const savedExecTrace = process.env.PROMPTOBUS_EXEC_TRACE;
 process.env.PROMPTOBUS_EXEC_TRACE = trackedCursorTrace;
 try {
-  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files);
+  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).files,
+    cursorDriver.options.launchDirs);
 } finally {
   if (savedExecTrace === undefined) delete process.env.PROMPTOBUS_EXEC_TRACE;
   else process.env.PROMPTOBUS_EXEC_TRACE = savedExecTrace;
