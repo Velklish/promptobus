@@ -928,12 +928,16 @@ const ctx = {
   settingsPath: path.join(SB, 'plan', 'reviewer-cdx.settings.json'),
 };
 const workerPlan = codexDriver.prepare(ctx);
-check(': argv is app-server --stdio, prompt separate; no files on disk',
-  workerPlan.argv.length === 2 && workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
+// PB-170: the hook-trust bypass is a GLOBAL option and the whole defect was its position,
+// so the assertion is on the ORDER — `argv.includes(flag)` is green on the broken form too.
+check(': argv is the bypass flag, then app-server --stdio; prompt separate; no files on disk',
+  workerPlan.argv.length === 3
+  && workerPlan.argv.indexOf('--dangerously-bypass-hook-trust') < workerPlan.argv.indexOf('app-server')
+  && workerPlan.argv[1] === 'app-server' && workerPlan.argv[2] === '--stdio'
   && workerPlan.prompt === 'PROMPT' && workerPlan.files.length === 0
   && workerPlan.settings.sandbox === 'workspace-write'
   && workerPlan.settings.approvalPolicy === 'on-request',
-  JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files.length, settings: workerPlan.settings }));
+  JSON.stringify({ argv: workerPlan.argv, files: workerPlan.files.length, settings: workerPlan.settings }));
 
 const reviewerPlan = codexDriver.prepare({ ...ctx, denyTools: REVIEWER_DENY, role: 'reviewer' });
 check('PB-161.2: reviewer — read-only, a working directory of its own, the reviewed tree attached as a read',
