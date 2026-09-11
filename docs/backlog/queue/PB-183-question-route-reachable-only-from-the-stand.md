@@ -1,6 +1,6 @@
 # PB-183 · The human-facing route for a held Cursor dialog is reachable only from the stand, so nothing tests it against production
 
-- **Order:** 170
+- **Order:** 175
 - **Scope:** `lib/driver-cursor.js` (`inspect`, `stallRoute` for `kind === 'question'`),
   `test/harness-cursor.mjs`
 - **Created:** 2026-09-12
