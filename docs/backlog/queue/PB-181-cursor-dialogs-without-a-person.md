@@ -2,7 +2,7 @@
 
 - **Order:** 8
 - **Scope:** `lib/driver-cursor.js` (the participant prompt), `lib/cursor-persist.js` (the stall
-  verdict), [03-cli](../../reference/03-cli.md) § Status, [15](../../reference/15-warden.md)
+  verdict), [03-cli](../../reference/03-cli.md) § Status
 - **Created:** 2026-09-12
 - **Dependencies:** none
 
