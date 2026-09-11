@@ -317,7 +317,37 @@ const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'prompto
 // ([sandbox.mjs](sandbox.mjs)), and a file stuck inside its own
 // handler would survive a soft signal. Sandboxes still live in the run
 // directory, which the runner removes.
+//
+// This is the SECOND deadline on a file, and the later of the two. The
+// shared helper every suite file imports ([home.mjs](home.mjs)) arms an
+// unref'd watchdog at 240 s, so under a run a file that is still alive
+// names what holds its event loop before this one takes it down with no
+// diagnosis at all. The order matters and the numbers must keep it: this
+// deadline is the backstop for what a watchdog cannot reach — a file
+// spinning inside synchronous work runs no timer of its own.
 const FILE_TIMEOUT_MS = 300_000;
+
+// Take a file down WITH its children. `child.kill` signals one process, and a
+// suite file spawns them by the dozen — the real CLI, git, stub binaries, a
+// nested runner. Whatever such a file had started when the signal arrived was
+// reparented to `init` and stayed on the machine: the card's own table holds two
+// pairs of exactly that shape, a file process and its child runner, both at
+// `PPID 1` (PB-166). Reproduced on this tree 2026-09-12 — a fixture file that
+// spawns a marked child and then hangs, under a runner copy with a 2 s deadline,
+// left the child alive at `PPID 1`.
+//
+// So files are spawned `detached`: each becomes its own process-group leader, and
+// the negative pid takes the whole group at once. This is not an invention here —
+// [runner.test.mjs](runner.test.mjs) has done it for the nested runner copy since
+// that probe was written, for the same reason, and this is the same solution on
+// the neighbouring path. The single-process kill stays behind it as the fallback:
+// on a platform with no process groups the negative pid refuses, and the file
+// itself must still go.
+function killTree(child) {
+  try { process.kill(-child.pid, 'SIGKILL'); } catch { /* no group, or already dead */ }
+  try { child.kill('SIGKILL'); } catch { /* already dead */ }
+}
+
 let cleaned = false;
 function cleanup() {
   if (cleaned) return;
@@ -344,9 +374,7 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     if (interrupted) return;
     interrupted = sig;
     interruptedOn = [...live.keys()];
-    for (const child of live.values()) {
-      try { child.kill('SIGKILL'); } catch { /* already dead */ }
-    }
+    for (const child of live.values()) killTree(child);
   });
 }
 
@@ -380,13 +408,18 @@ function runFile(name) {
     const child = spawn(process.execPath, [path.join(here, name)], {
       stdio: ['ignore', fd, fd],
       env: testEnv(RUN_TMP),
+      // Own process group, so a take-down reaches the file's children too —
+      // the reason is at `killTree` above. The runner still waits on the
+      // child, so it is not `unref`'d: detached here buys the group and
+      // nothing else.
+      detached: true,
     });
     live.set(name, child);
     if (live.size > peakLive) peakLive = live.size;
     let done = false;
     let timedOut = false;
     let error = null;
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, FILE_TIMEOUT_MS);
+    const timer = setTimeout(() => { timedOut = true; killTree(child); }, FILE_TIMEOUT_MS);
     // `error` and `close` both fire when the child did not start at
     // all — the flag keeps the parse on the first of them.
     const finish = (status, signal) => {
@@ -459,9 +492,12 @@ if (!interrupted) await runGroup(serial, 1);
 // holder this run started and still holding a live session record when it ended.
 //
 // **Before the interrupt branch, not inside the clean one.** Ctrl-C is one of the
-// two routes that leaks — the runner answers it with `child.kill('SIGKILL')`, and
-// no cleanup hook of a file survives that — so a gate that only ran on a clean
-// finish would miss the case its own reproduction names first.
+// two routes that leaks — the runner answers it with `killTree` (SIGKILL to the
+// file's process group since PB-166), and no cleanup hook of a file survives that —
+// so a gate that only ran on a clean finish would miss the case its own reproduction
+// names first. The group kill does not change what this gate measures: a holder is
+// started `detached` and is its own group leader, so it is not in the file's group
+// and survives the take-down exactly as it did before.
 //
 // Established by reproduction rather than by reading (PB-2.1). Running the Codex
 // file and taking it down three ways: SIGKILL leaves the holder and its

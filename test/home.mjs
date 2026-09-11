@@ -44,7 +44,7 @@
 // [hygiene.mjs](hygiene.mjs), which is also where each name's reason is written.
 // One `process.env` edit is inherited by every process the file starts later, so
 // one apply covers the whole tree below it.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -72,3 +72,96 @@ function sandboxHome() {
 const REAL_HOME = os.userInfo().homedir;
 const home = HOME_VARS.some((name) => process.env[name] === REAL_HOME) ? sandboxHome() : null;
 applyHygiene(process.env, { home });
+
+// Watchdog: a suite file must exit on its own, and a file run BY HAND has nothing
+// to make it.
+//
+// [run.mjs](run.mjs) gives every file of a run a deadline and takes a late one down
+// with SIGKILL. A single-file run — `node test/<file>.test.mjs`, the form the
+// mutation-probe rule prescribes — has no deadline, no child bookkeeping and no
+// parent to notice: when the session that started it dies, the file becomes an
+// orphan with `PPID 1` that nothing will ever collect. Measured on the owner's
+// machine at the end of run 0911e: five such processes, all older than the sessions
+// that could have started them, one of them holding a core for two days (PB-166).
+//
+// **Unref'd, and that is the whole mechanism.** A file that has FINISHED its work
+// empties its event loop and exits, and an unref'd timer neither holds the loop open
+// nor ever fires — so a finished file pays nothing for this. A file still alive at
+// the deadline has, by definition, something holding its loop, and
+// `getActiveResourcesInfo()` names it. The diagnosis is the point: the runner's own
+// take-down says "taken down as hung" and nothing about what held it.
+//
+// **`unref` saves the file that finished, and only that one. This is a second
+// deadline on a file's WHOLE WORK, and it is stated as one rather than sold as free.**
+// A file still honestly working at the deadline has a live loop like any other, so it
+// is taken down too — the timer cannot tell unfinished work from a leaked handle, and
+// the message below therefore names both readings instead of accusing the file.
+//
+// What the second ceiling actually costs, in the two forms separately:
+//
+//   • under `npm test` it moves the ceiling from the runner's 300 s to 240 s, four
+//     fifths. A file in that band was already failing before this — the runner would
+//     have SIGKILLed it at 300 s as "hung" — so what changes there is 60 s of headroom
+//     and a diagnosis in place of a blind kill;
+//   • run BY HAND there was no ceiling at all, and now there is one. That is a NEW
+//     constraint on a form that previously had none, and it is the honest cost of
+//     closing the hole: an orphan cannot be prevented without some deadline.
+//
+// The margin is not as wide as the fast case suggests. The slowest file measured
+// alone is 44.5 s (2026-09-12, all 55 run one by one), but [run.mjs](run.mjs) records
+// `promptobus-package.test.mjs` at **186.5 s** under the pool on a machine at load
+// average 8 (2026-09-02, before the fix that brought it to 14.4 s). That is 0.78 of
+// this ceiling. A file that legitimately needs longer must be split, moved to the
+// serial group, or given a larger number here — and the number lives in one place so
+// that raising it is one edit.
+//
+// **What it cannot catch, and this is a limit, not an oversight:** a file spinning
+// inside synchronous work never returns to its event loop, so no timer of its own
+// ever runs. That is the shape of the orphan the card measured at 100 % of a core,
+// and the same reason SIGTERM did not touch it — no JS handler of any kind runs
+// there. Only the runner's SIGKILL reaches that one, and only under a run.
+//
+// Written to descriptor 2 past `console` for the reason [check.mjs](check.mjs)
+// writes past it — suite files swap `console` to catch CLI output — and the exit
+// goes through the `process.exit` captured above, for the reason the signal hooks
+// use it: files swap it with a thrower to catch `fail()` refusals.
+//
+// The write goes through the same drain loop as the verdict printer, and for the same
+// reason: a bare `writeSync` onto a non-blocking pipe raises EAGAIN, and here that
+// would be an uncaught exception at the exact moment the diagnostic matters — the
+// process would still exit non-zero and the message this whole mechanism exists to
+// print would be gone. Under the runner descriptor 2 is a file and cannot refuse;
+// a hand run into a pipe can, and a hand run is what this watchdog is for. The loop
+// is written out rather than imported: `check.mjs` is where it lives, and `check.mjs`
+// imports THIS file — the one direction the dependency may not take.
+const PAUSE = new Int32Array(new SharedArrayBuffer(4));
+
+function out(line) {
+  const buf = Buffer.from(line);
+  let off = 0;
+  while (off < buf.length) {
+    try {
+      off += writeSync(2, buf, off);
+    } catch (e) {
+      // EAGAIN — the pipe is full; wait for the reader instead of spinning hot on it.
+      // Anything else means there is nowhere left to write, and the exit below still
+      // carries the verdict.
+      if (e.code !== 'EAGAIN') return;
+      Atomics.wait(PAUSE, 0, 0, 2);
+    }
+  }
+}
+const WATCHDOG_MS = 240_000;
+setTimeout(() => {
+  const held = [...new Set(process.getActiveResourcesInfo())].sort();
+  // Both readings, in this order, because the watchdog cannot tell them apart and an
+  // accusation it cannot support is worse than no message. Unfinished work comes
+  // first: it is the one a person can act on by reading the file's own output above.
+  out(`\n✖ watchdog: still alive ${WATCHDOG_MS / 1000} s after start, and the event loop is not empty.`
+    + ' Either the work is not done — then this file needs splitting, the serial group, or a'
+    + ' larger WATCHDOG_MS in test/home.mjs — or the work IS done and something holds the loop'
+    + ' open, in which case the file would outlive the session that started it.\n'
+    + `  what holds the loop: ${held.length ? held.join(', ') : '(nothing named)'}\n`
+    + '  the file\'s own verdicts above say which of the two this is.\n');
+  exit0.call(process, 1);
+}, WATCHDOG_MS).unref();

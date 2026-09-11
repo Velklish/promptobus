@@ -55,10 +55,33 @@ const sweepCopy = sweepSrc.replace(RUNS_MOD,
 check(': thresholds import in the sweep copy is rewritten to the real module',
   sweepCopy !== sweepSrc && !sweepCopy.includes(RUNS_MOD));
 
-function plant(dir, source) {
+// The watchdog in the shared helper is swapped the same way the file timeout is,
+// and for the same reason: a probe that waited out the real 240 s would be a probe
+// nobody runs. Its own check watches the swap — one that missed the constant would
+// go green on the real deadline, i.e. on nothing.
+const homeSrc = readFileSync(path.join(here, 'home.mjs'), 'utf8');
+const WATCHDOG_CAP_MS = 1500;
+const homeCopy = homeSrc.replace(/const WATCHDOG_MS = [\d_]+;/, `const WATCHDOG_MS = ${WATCHDOG_CAP_MS};`);
+check('watchdog deadline in the helper copy is swapped — we exercise the shortened one, not the real one',
+  homeCopy !== homeSrc && homeCopy.includes(`const WATCHDOG_MS = ${WATCHDOG_CAP_MS};`));
+
+// The watchdog probe needs the runner deadline WELL above the watchdog's, not just
+// above it. The runner's timer starts at `spawn`; the watchdog's starts only once node
+// has booted and `home.mjs` has evaluated — measured at 100–400 ms later. The real pair
+// absorbs that in 60 s of slack (240 s against 300 s); a 1500/2000 pair has 500 ms, and
+// under the two parallel `npm test` runs this suite treats as normal the shift can eat
+// it and redden both conditions at once on healthy code. Four seconds of slack costs a
+// green run nothing — the fixture still dies at its own 1.5 s — and keeps the
+// discrimination: the watchdog must fire FIRST, and be seen to.
+const ROOMY_CAP_MS = 6000;
+const roomyCopy = src.replace(/const FILE_TIMEOUT_MS = [\d_]+;/, `const FILE_TIMEOUT_MS = ${ROOMY_CAP_MS};`);
+check('file timeout in the roomy copy is swapped — the watchdog probe is not racing the runner',
+  roomyCopy !== src && roomyCopy.includes(`const FILE_TIMEOUT_MS = ${ROOMY_CAP_MS};`));
+
+function plant(dir, source, { watchdog = false } = {}) {
   writeFileSync(path.join(dir, 'run.mjs'), source);
   copyFileSync(path.join(here, 'hygiene.mjs'), path.join(dir, 'hygiene.mjs'));
-  copyFileSync(path.join(here, 'home.mjs'), path.join(dir, 'home.mjs'));
+  writeFileSync(path.join(dir, 'home.mjs'), watchdog ? homeCopy : homeSrc);
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
 }
 plant(SB, copy);
@@ -85,6 +108,26 @@ writeFileSync(path.join(SB, 'b-zhivoy.test.mjs'), "console.log('live file reache
 // So output goes to a file, the copy has its own process group
 // (`detached`), and at the deadline the whole group is taken down
 // at once.
+//
+// The group holds the runner and no longer holds its files: since
+// PB-166 the runner puts each file in a group of ITS own, so that a
+// take-down reaches the file's children. That is right for the runner
+// and it opens one hole here — the path this deadline exists for, a
+// runner whose own file timeout is broken, is exactly the path on
+// which the hung fixture would now survive the group kill. So the
+// sweep below finishes the job. It is scoped by the SANDBOX PATH in
+// the argv, which this probe alone owns: a second `npm test` on the
+// machine is the normal state, and `node` is the commonest name on it.
+function sweepStrays(dir) {
+  const listed = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' });
+  for (const line of (listed.stdout ?? '').split('\n')) {
+    if (!line.includes(dir)) continue;
+    const pid = Number(line.trim().split(/\s+/)[0]);
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+    try { process.kill(pid, 'SIGKILL'); } catch { /* gone already */ }
+  }
+}
+
 async function runCopy(dir, env = {}) {
   const log = path.join(dir, 'run.log');
   const fd = openSync(log, 'w');
@@ -93,6 +136,7 @@ async function runCopy(dir, env = {}) {
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => {
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* group already dead */ }
+      sweepStrays(dir);
       resolve(null);
     }, 60_000);
     child.on('exit', (c) => { clearTimeout(timer); resolve(c); });
@@ -494,3 +538,127 @@ const arrived = (piped.stdout ?? '').split('\n')
 check(': a red run finishes the buffer into the pipe, and does not cut it off on exit',
   arrived === LINES && piped.status === 1,
   `${arrived} of ${LINES} lines arrived, code ${piped.status}`);
+
+// --- a take-down reaches the file's children ------------------------------------------
+//
+// `child.kill` signals one process. A suite file spawns them by the dozen — the
+// real CLI, git, stub binaries, a nested runner — and whatever it had started when
+// the deadline fired used to be reparented to `init` and stay on the machine. The
+// card's own table holds two pairs of exactly that shape: a file process and its
+// child runner, both at `PPID 1`, both older than the run (PB-166).
+//
+// The child is found by a mark in its own command line, never by program name: a
+// second `npm test` on the same machine is the normal state, and `node` is the most
+// common name on it. The mark carries this file's pid, so two probes running at once
+// do not see each other — the register of machine-wide reads in
+// [run.mjs](run.mjs) asks for exactly that.
+const SB5 = makeSandbox('promptobus-runner-kids-');
+plant(SB5, copy);
+const KID_MARK = `pb166-kid-${process.pid}`;
+// The child announces itself by writing its pid, and that file is a POSITIVE CONTROL
+// rather than bookkeeping. Without it "nothing is left at PPID 1" is also green when
+// the child never started — a `node -e` that died on its own is equally absent from
+// `ps`, and the check would pass having checked nothing. The two neighbouring swap
+// guards in this file exist for the same reason: a probe must first prove it has a
+// subject.
+const KID_PID_FILE = path.join(SB5, 'kid.pid');
+// The mark goes in the child's source, not in `process.title`: `ps` prints argv, and
+// a title rewrite is a platform courtesy rather than a contract.
+writeFileSync(path.join(SB5, 'a-s-detmi.test.mjs'),
+  "import { spawn } from 'node:child_process';\n"
+  // `import()`, not `require`: the child inherits a cwd under a `"type": "module"`
+  // package, where `node -e` has no `require` at all — written with one first, and
+  // the positive control below caught it on the first run, which is what it is for.
+  + `spawn(process.execPath, ['-e', '/* ${KID_MARK} */ import("node:fs").then(fs =>`
+  // One `JSON.stringify`, not two: the inner source sits inside single quotes in the
+  // generated file, so the path needs quoting exactly once. Stringified twice it became
+  // a path with literal quote characters in its name and the write went nowhere.
+  + ` fs.writeFileSync(${JSON.stringify(KID_PID_FILE)}, String(process.pid)));`
+  + ` setInterval(() => {}, 1000);'],\n`
+  + "  { stdio: 'ignore' });\n"
+  + 'setInterval(() => {}, 1000);\nawait new Promise(() => {});\n');
+const kids = await runCopy(SB5);
+check(': the file that spawned children is itself taken down at the deadline',
+  kids.status === 1 && /a-s-detmi\.test\.mjs — failed \(did not finish in 2 s — taken down as hung\)/.test(kids.out),
+  `status=${kids.status} ${kids.out.slice(-400)}`);
+// Positive control, and it must pass before the verdict below means anything.
+let kidPid = null;
+try { kidPid = Number(readFileSync(KID_PID_FILE, 'utf8').trim()); } catch { /* never started */ }
+check(': the marked child really did start — otherwise "nothing is left" checks nothing',
+  Number.isInteger(kidPid) && kidPid > 0, `pid file: ${kidPid ?? '(absent)'}`);
+// The system needs a moment to reap the group before the process table is honest.
+await new Promise((r) => { setTimeout(r, 1500); });
+const kidLines = (spawnSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' }).stdout ?? '')
+  .split('\n').filter((l) => l.includes(KID_MARK));
+check(': and its child goes with it — nothing is left at PPID 1',
+  kidLines.length === 0, kidLines.join(' · ') || '(none)');
+// Whatever survived is this probe's own litter: leaving it would be the very leak
+// under test. Nothing to kill on sound code — the check above is already green.
+for (const line of kidLines) {
+  const pid = Number(line.trim().split(/\s+/)[0]);
+  if (Number.isInteger(pid) && pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+}
+
+// --- the watchdog in the shared helper ------------------------------------------------
+//
+// The runner protects a run. A file run BY HAND — `node test/<file>.test.mjs`, the
+// form the mutation-probe rule prescribes — has no runner at all, and when the
+// session that started it dies it becomes an orphan nothing will collect. The
+// watchdog in [home.mjs](home.mjs) is what covers that form, and every suite file
+// imports the helper, so it needs no edit in any of them.
+//
+// Asked twice, because the two forms fail differently. Under a runner the file must
+// be REPORTED rather than silently taken down; by hand there is nobody to report to
+// and the file itself must go, with a diagnosis and a non-zero code.
+const SB6 = makeSandbox('promptobus-runner-watchdog-');
+plant(SB6, roomyCopy, { watchdog: true });
+// Holds the loop with a timer and never resolves — the same shape as the hung file
+// above, and the shape an unclosed socket or a live child leaves behind. The helper
+// import is what arms the watchdog, and it is the whole of the file's protection.
+writeFileSync(path.join(SB6, 'a-storozh.test.mjs'),
+  "import './home.mjs';\n"
+  + "console.log('checks are done, the loop is not');\n"
+  + 'setInterval(() => {}, 1000);\nawait new Promise(() => {});\n');
+// The sound neighbour IMPORTS the helper, and that import is what makes it a control
+// rather than decoration. Written without it first, and the probe said so: dropping
+// `.unref()` from the watchdog left every check here green, because a file that never
+// arms the timer cannot observe it. A negative control has to sit on the same
+// mechanism as the thing it controls for.
+writeFileSync(path.join(SB6, 'b-zhivoy.test.mjs'),
+  "import './home.mjs';\nconsole.log('live file reached the end');\n");
+const watched = await runCopy(SB6);
+check(': under a run the watchdog fires before the runner deadline, so the file is reported and not just killed',
+  /✖ watchdog: still alive 1\.5 s after start/.test(watched.out)
+  && /a-storozh\.test\.mjs — failed \(code 1\)/.test(watched.out)
+  && !/taken down as hung/.test(watched.out), watched.out.slice(-600));
+check(': the report names what holds the event loop, which a blind SIGKILL never does',
+  /what holds the loop: .*Timeout/.test(watched.out), watched.out.slice(-600));
+check(': the run is red and the rest of the chain still runs',
+  watched.status === 1 && /live file reached the end/.test(watched.out),
+  `status=${watched.status} ${watched.out.slice(-300)}`);
+
+// By hand: no runner, no deadline above the file, nobody to notice. This is the form
+// the orphans came from, and the watchdog has to close it on its own.
+const byHand = spawnSync(process.execPath, [path.join(SB6, 'a-storozh.test.mjs')],
+  { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
+check(': run by hand the file ends itself — it does not wait for a parent that is not there',
+  byHand.status === 1 && byHand.signal === null,
+  `status=${byHand.status} signal=${byHand.signal}`);
+// Both readings must be in the text, not just one. The watchdog cannot tell unfinished
+// work from a leaked handle, so a message that named only the second would accuse a file
+// that is merely slow — which is the defect review finding 1 was about.
+check(': and says why, on stderr, past the console a suite file may have swapped',
+  /✖ watchdog: still alive 1\.5 s after start/.test(byHand.stderr ?? '')
+  && /Either the work is not done/.test(byHand.stderr ?? '')
+  && /something holds the loop\s+open/.test(byHand.stderr ?? ''),
+  (byHand.stderr ?? '').slice(-400));
+// Negative control, and the one that guards the single word the whole design rests
+// on. Without `unref` the timer holds the loop open by itself, so EVERY suite file
+// would sit out the deadline and then exit 1 — all 55 of them, since all 55 import
+// this helper. That is not a tuning regression, it is the suite going unusable, and
+// this file is where it has to be caught.
+const sound = spawnSync(process.execPath, [path.join(SB6, 'b-zhivoy.test.mjs')],
+  { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
+check(': a sound file pays nothing for the watchdog — it exits 0, at once, and says nothing',
+  sound.status === 0 && !/watchdog/.test(`${sound.stdout ?? ''}${sound.stderr ?? ''}`),
+  `status=${sound.status} ${(sound.stderr ?? '').slice(-200)}`);

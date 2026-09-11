@@ -110,13 +110,22 @@ the participant home's `config.toml` — and not merely the text of the record.
   when any of those stops holding** — the mechanism writing anything else into a
   reviewer's directory, a participant gaining the task store as a writable root, or the
   store moving somewhere shared. The check is what will say so first.
-- **Unverified:** whether Codex reads a project's `.codex/skills` from a directory that is
-  not a git repository. The sandbox is not one — unlike the Cursor sandbox, which is
-  `git init`-ed because `.cursor/mcp.json` is read only inside a repository, while Codex
-  takes its MCP set from the participant home's `config.toml` and needs no repository for
-  that. Nothing measured says Codex needs one for skills either, and inventing the
-  precondition was refused for the same reason the rest of this file is measured rather
-  than assumed. PB-161.3 names the measurement that would settle it.
+- **Measured (2026-09-12, PB-161.3):** Codex reads a project's `.codex/skills` from a
+  directory that is not a git repository, so the sandbox stays without a `git init` — unlike
+  the Cursor sandbox, which is `git init`-ed because `.cursor/mcp.json` is read only inside a
+  repository, while Codex takes its MCP set from the participant home's `config.toml` and
+  needs no repository for that. The stand was a standalone-host workspace inside no repository
+  at all, one stub skill carrying a marker, and one live reviewer turn: Codex put the sandbox
+  first in its own skill-roots table, listed the stub, and the model read `SKILL.md` at that
+  path and returned the marker. The refusal to invent the precondition before measuring it
+  held — the precondition does not exist.
+- **Open, found by that same turn (PB-161.4):** the reviewer could not deliver its report.
+  Every bus call of the turn died on a declined `mcpServer/elicitation/request`, so the marker
+  had to be read from the session rollout rather than from the `result` message. The bus
+  server is not the source — driven directly it issues no elicitation and its `promptobus_send`
+  succeeds. Until that is settled a Codex reviewer has its workspace skills and no channel to
+  report through, and the two facts are recorded together on purpose: the first without the
+  second reads as a working reviewer.
 - Future changes to what a reviewer's directory holds must move together: the driver's
   `reviewSandbox` and `prepare`, the trust record in its `spawn`, `03-cli` § Review, and
   this file.
