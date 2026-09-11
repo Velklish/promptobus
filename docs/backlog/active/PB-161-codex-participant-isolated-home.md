@@ -1,9 +1,9 @@
 # PB-161 · Codex participant runs in an isolated CODEX_HOME: owner auth copied, mechanism-only MCP, worktree trusted, workspace skills copied into the worktree
 
-- **Order:** 5
 - **Scope:** `lib/driver-codex.js` (`SESSION_ENV_DROP`, `mcpConfig`, `capabilities.skillsDir`, lift and done), `lib/codex-session.js` (the `thread/start` config the holder passes), `docs/adr/` (a new ADR), [03-cli](../../reference/03-cli.md) § Codex participant, `test/promptobus-driver-codex.test.mjs`, `test/harness-codex.mjs`
 - **Created:** 2026-09-11
 - **Dependencies:** none
+- **Taken:** 2026-09-11
 
 ## Context
 

@@ -1,9 +1,9 @@
 # PB-165 · A participant lifted with bypassPermissions holds the warden's postcard as a Held peer message and reads as stalled on a permission prompt
 
-- **Order:** 33
 - **Scope:** `lib/driver-claude.js` (the participant settings file passed with `--settings`, `stallOf`/`waitingFor` classification), `src/supervisor.ts` (the postcard delivery), [03-cli](../../reference/03-cli.md) § Spawn, `test/promptobus-driver-claude.test.mjs`
 - **Created:** 2026-09-11
 - **Dependencies:** none
+- **Taken:** 2026-09-11
 
 ## Context
 
