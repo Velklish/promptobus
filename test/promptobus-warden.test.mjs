@@ -2001,6 +2001,12 @@ const PROG_STATES = [
   // there" is.
   ['worker:legacy', { channel: 'self-wake', knockError: 'ENOENT' },
     { socket: sockPath('prog-legacy'), token: 't', session: 'sess-own' }],
+  // No health mark and no contact point: the warden has not run a round for this address
+  // yet. This is the card's bare `alarm: self-wake` with no parenthesis at all, and it is
+  // the ONLY row that reaches the wake-record fallback — every row above carries
+  // `selfWake`, so without this one that branch would be unmeasured while the file looked
+  // covered.
+  ['worker:fresh', {}, null],
 ];
 const progHealth = {};
 for (const [addr, mark, wake] of PROG_STATES) {
@@ -2015,7 +2021,7 @@ const progLine = (addr) => progOut.split('\n').find((l) => l.includes(addr)) ?? 
 // comparison is between the alarms and not between the participant names.
 const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].trim();
 const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
-check('PB-168: all four self-wake lines are printed at all',
+check('PB-168: every one of the five rows prints a self-wake line at all',
   progAlarms.every((a) => a.startsWith('alarm: self-wake')), JSON.stringify(progAlarms));
 check('PB-168: the three known states do not read alike — no two of their alarms are equal',
   new Set(progAlarms.slice(0, 3)).size === 3, JSON.stringify(progAlarms.slice(0, 3)));
@@ -2033,6 +2039,13 @@ check('PB-168: the refusing state names the channel the journal names',
 check('PB-168: a health record written before the field still prints its line, reason and all',
   alarmOf('worker:legacy').includes('alarm: self-wake') && alarmOf('worker:legacy').includes('ENOENT'),
   alarmOf('worker:legacy') || progOut);
+// The wake record carries the one state it can show on its own. Compared against the row
+// whose state came from the field, because the two must arrive at the same reading — the
+// fallback exists so that an address the warden has not reached yet does not read as a
+// break.
+check('PB-168: no health mark and no contact point reads as start-up, off the wake record alone',
+  alarmOf('worker:fresh') === alarmOf('worker:starting').replace(/ \(reason:[^)]*\)/, ''),
+  `${alarmOf('worker:fresh')}  ||  ${alarmOf('worker:starting')}`);
 // A previous release's record carries no full id at all — the rule there stays the prefix,
 // or a participant raised before this task would be left with no contact point forever.
 check(': with no full id in the record the rule stays the prefix',
