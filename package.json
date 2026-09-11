@@ -23,6 +23,7 @@
     "pretest": "npm run build",
     "test": "node test/run.mjs",
     "audit": "node scripts/audit-public.mjs",
+    "pins": "node scripts/check-pins.mjs",
     "lint:backslop": "npx --yes github:Velklish/backslop#v0.6.0 lint"
   },
   "engines": {

@@ -5,7 +5,8 @@
   "gates": [
     "npm test",
     "npx github:Velklish/backslop#v0.6.0 lint",
-    "npm run audit"
+    "npm run audit",
+    "npm run pins"
   ],
   "version": "0.6.0",
   "lang": "en",
