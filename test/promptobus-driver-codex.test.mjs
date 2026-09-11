@@ -928,12 +928,15 @@ const ctx = {
   settingsPath: path.join(SB, 'plan', 'reviewer-cdx.settings.json'),
 };
 const workerPlan = codexDriver.prepare(ctx);
-check(': argv is app-server --stdio, prompt separate; no files on disk',
+check(': argv is app-server --stdio, prompt separate; the plan writes only .codex',
   workerPlan.argv.length === 2 && workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
-  && workerPlan.prompt === 'PROMPT' && workerPlan.files.length === 0
+  && workerPlan.prompt === 'PROMPT'
+  // No canon and no guard command in this context, so `.codex/.gitignore` alone.
+  && workerPlan.files.length === 1
+  && workerPlan.files[0].path === path.join(ctx.cwd, '.codex', '.gitignore')
   && workerPlan.settings.sandbox === 'workspace-write'
   && workerPlan.settings.approvalPolicy === 'on-request',
-  JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files.length, settings: workerPlan.settings }));
+  JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files, settings: workerPlan.settings }));
 
 const reviewerPlan = codexDriver.prepare({ ...ctx, denyTools: REVIEWER_DENY, role: 'reviewer' });
 check('PB-161.2: reviewer — read-only, a working directory of its own, the reviewed tree attached as a read',
@@ -942,14 +945,53 @@ check('PB-161.2: reviewer — read-only, a working directory of its own, the rev
   && reviewerPlan.cwd !== ctx.cwd
   && reviewerPlan.settings.addDirs.includes(ctx.cwd)
   && reviewerPlan.settings.addDirs.includes('/tmp/rules')
-  // No canon at this root, and still one file: the `.gitignore` is what creates the
-  // reviewer's directory before the lift, and app-server is handed that path as the
-  // thread cwd. A worker with no canon writes nothing — its worktree already exists.
+  // No canon and no guard command here, so one file: the `.gitignore` that creates the
+  // reviewer's directory before the lift, which app-server is handed as the thread cwd.
   && reviewerPlan.files.length === 1
   && reviewerPlan.files[0].path === path.join(reviewSandbox(ctx.settingsPath), '.codex', '.gitignore')
-  && reviewerPlan.files[0].text === '*\n'
-  && workerPlan.files.length === 0,
+  && reviewerPlan.files[0].text === '*\n',
   JSON.stringify({ cwd: reviewerPlan.cwd, files: reviewerPlan.files, settings: reviewerPlan.settings }));
+
+// --- PB-180: the participant's hooks land where the participant looks ----------------
+
+// `install` writes `.codex/hooks.json` at the WORKSPACE ROOT, and a participant's cwd is
+// its worktree or its reviewer sandbox — neither is that root, and neither would see it.
+// The working directory is also the one project this participant trusts, so the hooks go
+// there. Measured on the plan, which is where the decision lives; whether the harness
+// then runs them is the holder journal's answer and costs a paid turn.
+const GUARD_CMD = '"/abs/node" "/abs/promptobus.js" guard --role worker:api --task T --home /abs/home';
+const hookedWorker = codexDriver.prepare({ ...ctx, guardCommand: GUARD_CMD });
+const hookedReviewer = codexDriver.prepare({
+  ...ctx, guardCommand: GUARD_CMD, denyTools: REVIEWER_DENY, role: 'reviewer',
+});
+const hooksOf = (plan, dir) => {
+  const file = plan.files.find((f) => f.path === path.join(dir, '.codex', 'hooks.json'));
+  return file ? JSON.parse(file.text) : null;
+};
+const workerHooks = hooksOf(hookedWorker, ctx.cwd);
+const reviewerHooks = hooksOf(hookedReviewer, reviewSandbox(ctx.settingsPath));
+check('PB-180: both roles get a hooks file in their own working directory, not at the workspace root',
+  // A reviewer's directory is not the worker's: a fix that only reached the worker would
+  // leave half the contract, and that half is the one the live measurement was made on.
+  workerHooks !== null && reviewerHooks !== null
+  && !hookedWorker.files.some((f) => f.path.includes(`${path.sep}.codex${path.sep}hooks.json`)
+    && !f.path.startsWith(ctx.cwd + path.sep)),
+  JSON.stringify({ worker: hookedWorker.files.map((f) => f.path), reviewer: hookedReviewer.files.map((f) => f.path) }));
+check('PB-180: the hooks file carries the guard for both events, with THIS participant identity',
+  [workerHooks, reviewerHooks].every((doc) =>
+    doc.hooks.Stop[0].hooks[0].command === GUARD_CMD
+    && doc.hooks.SessionStart[0].hooks[0].command === GUARD_CMD),
+  JSON.stringify({ worker: workerHooks, reviewer: reviewerHooks }));
+// Negative control: without a guard command the plan writes no hooks file at all, so the
+// two checks above are measuring the command and not the shape of `files`.
+check('PB-180: no guard command, no hooks file',
+  hooksOf(workerPlan, ctx.cwd) === null && hooksOf(reviewerPlan, reviewSandbox(ctx.settingsPath)) === null,
+  JSON.stringify(workerPlan.files.map((f) => f.path)));
+// The copy stays out of a worker's diff: `.codex` now always holds a file, so the
+// self-ignoring `.gitignore` is no longer conditional on there being a canon.
+check('PB-180: the .gitignore that hides .codex is written whether or not a canon travels',
+  hookedWorker.files.some((f) => f.path === path.join(ctx.cwd, '.codex', '.gitignore') && f.text === '*\n'),
+  JSON.stringify(hookedWorker.files.map((f) => f.path)));
 
 // --- PB-161: the plan names a home, and the skills canon travels as files ------------
 
@@ -1731,7 +1773,7 @@ check('PB-161.2: the trusted directory holds exactly what the lift put there',
   // session, and a file dropped beside `.codex` is as much «something else wrote here»
   // as one inside it. The lift writes only `.codex/…`, so both assertions are exact.
   readdirSync(reviewerSandboxDir).sort().join(',') === '.codex'
-    && readdirSync(path.join(reviewerSandboxDir, '.codex')).sort().join(',') === '.gitignore,skills',
+    && readdirSync(path.join(reviewerSandboxDir, '.codex')).sort().join(',') === '.gitignore,hooks.json,skills',
   `${readdirSync(reviewerSandboxDir).sort().join(',')} · ${readdirSync(path.join(reviewerSandboxDir, '.codex')).sort().join(',')}`);
 
 const reviewDry = cli(['review', wt, '--task', TASK, '--harness', 'codex', '--dry-run'], { cwd: ws, env });

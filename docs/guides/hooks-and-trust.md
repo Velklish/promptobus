@@ -1,6 +1,6 @@
 # Hooks, trust, and troubleshooting
 
-Project hooks are one thing: a Stop guard that refuses to end a turn with unread mail. Participant worktrees get their own Stop hook from the driver. This guide is for Claude Code, Cursor, and Codex.
+Project hooks are one thing: a Stop guard that refuses to end a turn with unread mail. Participants get their own, written by the driver into the directory they work in — see [A participant's hooks are not the workspace's](#a-participants-hooks-are-not-the-workspaces). This guide is for Claude Code, Cursor, and Codex.
 
 There used to be a second one — a `PostToolUse` line echoing each bus call back into the session. It is gone, and an install removes it where an earlier one wrote it. Nothing of the working machinery ran through it: the turn is returned by the Stop guard, unread counts ride in the MCP reply itself, and delivery to a participant is the warden's over its own channel.
 
@@ -19,6 +19,14 @@ Only project files next to `promptobus.json`:
 `src/hooks.ts` plans the Claude-shaped settings; the installer maps that plan onto each harness file. Nothing generates a runner script any more. `.promptobus/hooks/bus.mjs` is the path an install still knows, because it is how it recognises and deletes a feed hook an earlier version wrote — and it deletes the script with it.
 
 Owned records are identified by exact install ids first, not by file position. Guard records without a manifest id use the portable command signature described in [install.md](install.md); a leftover feed hook is recognised by the runner path its command still names. A later install with a shorter `--harnesses` list deletes owned records of the harnesses you dropped. Foreign groups stay, except guard-shaped commands described in [install.md](install.md).
+
+## A participant's hooks are not the workspace's
+
+`promptobus install` writes hook files at the **workspace root**. A participant never works there: a worker's directory is its worktree and a Codex reviewer's is a sandbox of its own, so a hook file at the root is not a project file for either of them. The driver therefore writes the participant's own, into the directory that participant works in, carrying that participant's identity (`--role`, `--task`, `--home`) where the workspace's own guard carries none.
+
+For Codex that directory is also the only project the participant trusts: the lift records `[projects."<realpath of the working directory>"]` in the participant's home, and nothing else. So the hooks file goes beside the skills copy, in `.codex/` of the working directory, under the same self-ignoring `.gitignore` that keeps a worker's diff clean.
+
+**Unmeasured, and the reason this is written down rather than asserted:** that Codex loads `.codex/hooks.json` from a trusted project's directory is an inference from the neighbouring facts, not a measurement. What was measured is that a trust record opens the project's `.codex/config.toml` and `.codex/agents`, and that `.codex/skills` is read whether or not the project is trusted. The check that settles it is the holder journal — a participant that runs hooks writes `hook/started`, and a check that passes without one is measuring nothing.
 
 ## What is never touched
 
