@@ -1,6 +1,5 @@
 # PB-164 · Codex holder on Windows: the app-server holder is unmeasured there
 
-- **Order:** 48
 - **Scope:** `lib/codex-session.js` (the holder process, registry, wake channel, paths), `lib/driver-codex.js`, [03-cli](../../reference/03-cli.md) § The Codex holder, `test/promptobus-driver-codex.test.mjs`
 - **Created:** 2026-09-11
 - **Dependencies:** PB-161
@@ -24,3 +23,9 @@ Owner decision of 2026-09-11 (harness-parity run): Windows is in scope for Codex
 
 - Tests above green with the faked platform; the live Windows run reported by the owner (command, exit code, output) before the card closes.
 - `npm test`, `npx github:Velklish/backslop#v0.4.0 lint`, `npm run audit` green.
+
+## Deferred
+
+- **Deferred:** 2026-09-12
+- **Reason:** the owner deferred the whole Windows line on 2026-09-12. The app-server holder has never been observed on Windows, and the question is about process lifetime and signals, which reading the code cannot answer.
+- **Return condition:** same as PB-163 — a Windows stand, or an explicit decision that Windows is out of scope, recorded as a boundary.

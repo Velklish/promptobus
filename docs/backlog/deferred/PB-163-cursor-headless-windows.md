@@ -1,6 +1,5 @@
 # PB-163 · Cursor participant on Windows: headless turns without tmux, OS-aware dependency install
 
-- **Order:** 38
 - **Scope:** `lib/driver-cursor.js`, `lib/cursor-persist.js`, [03-cli](../../reference/03-cli.md) § Cursor participant, `test/promptobus-driver-cursor.test.mjs`
 - **Created:** 2026-09-11
 - **Dependencies:** none
@@ -24,3 +23,9 @@ Owner decision of 2026-09-11 (harness-parity run): Windows is in scope for both 
 
 - Tests above green on macOS with the faked platform; the live Windows run reported by the owner (command, exit code, output) before the card closes.
 - `npm test`, `npx github:Velklish/backslop#v0.4.0 lint`, `npm run audit` green.
+
+## Deferred
+
+- **Deferred:** 2026-09-12
+- **Reason:** the owner deferred the whole Windows line on 2026-09-12. The measurement needs a live Windows stand, and the only one belongs to the owner; nothing here is reachable from a macOS machine, and guessing the behaviour of tmux-less persistence from code is precisely what this card refuses to do.
+- **Return condition:** a Windows stand is available to run against — or the owner decides Windows is out of scope for the participant contract, in which case this card is closed with that boundary written into the reference rather than returned.
