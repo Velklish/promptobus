@@ -943,7 +943,33 @@ check('each failure is numbered in the warden log',
 const {
   stallTail, justSpawned,
   SPAWN_GRACE_SEC, pendingStalls, commitStalls, stallStands, sessionBusy,
+  contactSocketPath, contactSocketGone,
 } = await import(path.join(here, '..', 'lib', 'status.js'));
+
+// PB-175: a contact point outlives its session, and the two obvious readings of the file
+// are both wrong. Measured on a live store of nine points, 2026-09-12.
+{
+  const live = path.join(HOME, 'pb175-live.sock');
+  writeFileSync(live, '');
+  // The `pid` in the file is `process.pid` of whoever wrote it — for Claude the exiting
+  // Stop hook — so eight of nine points named a dead pid while five sessions were alive.
+  check(': the socket path is what is before a `#<n>` thread suffix, not the whole address',
+    contactSocketPath(`${live}#1`) === live && contactSocketPath(live) === live
+    && contactSocketPath(null) === null && contactSocketPath('') === null,
+    String(contactSocketPath(`${live}#1`)));
+  check(': a contact point whose socket is on disk is not stale, suffix or not',
+    contactSocketGone({ socket: live }) === false
+    && contactSocketGone({ socket: `${live}#1` }) === false,
+    'live socket read as gone');
+  // The negative control the raw check fails: existsSync on the whole address is false for
+  // a live Codex point, which would report every one of them dead.
+  check(': and one whose socket is absent is stale, while the raw address would lie',
+    contactSocketGone({ socket: path.join(HOME, 'pb175-absent.sock#0') }) === true
+    && existsSync(`${live}#1`) === false,
+    'stale/raw control');
+  check(': a point with no socket at all is not called stale — there is nothing to check',
+    contactSocketGone({}) === false && contactSocketGone(null) === false);
+}
 
 const DIAG = 'sup-diag-t20260829-170000';
 store.createTask(HOME, { id: DIAG, title: 'диагностика состояния участника' });
