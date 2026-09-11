@@ -101,6 +101,43 @@ function lastActivation(home: string, task: string, participant: ParticipantV1 |
   return at.length ? Math.max(...at) : null;
 }
 
+/**
+ * Whether a dialog mark is a permission prompt the participant is standing at,
+ * or the bus's own postcard held behind the same field (PB-165).
+ *
+ * **Two marks have to agree, and neither alone lifts the stall.** A participant
+ * whose dialog is the held postcard never saw the message: it carried on with
+ * the turn it was in, reached the end of it, and reported — so after its last
+ * activation the bus has BOTH its end-of-turn mark and a message from it. A
+ * participant standing at a prompt of its own work has neither: the prompt is
+ * what suspends the turn, so the Stop hook has not run and nothing was sent.
+ *
+ * The conjunction is deliberately narrower than either half. The end-of-turn
+ * mark alone would read the stand's play of a dialog — which runs the guard —
+ * as a held message; a sent message alone would silence a real prompt hit later
+ * in a turn that had already spoken. What is left open is a turn begun without
+ * an activation: the bus does not start one, and a person who does is at the
+ * session already.
+ *
+ * Missing marks keep the stall, each for its own reason: no end-of-turn mark
+ * means the participant has never yielded a turn, and reading that absence as
+ * "carried on" would silence the very first prompt of a run; a participant
+ * record too broken to read messages from has no right to lift its own report.
+ */
+function promptStands(home: string, task: string, participant: ParticipantV1 | null | undefined): boolean {
+  const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
+  if (turn === null) return true;
+  const since = lastActivation(home, task, participant);
+  if (since === null) return true;
+  if (turn <= since) return true;
+  try {
+    const sent = lastSentAt(home, task, String(participant?.id ?? ''));
+    return sent === null || sent <= since;
+  } catch {
+    return true;
+  }
+}
+
 /** What the snapshot knows about the participant's session. No ref — there is no session for the address at all. */
 function viewOf(participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): SessionView | null {
   if (sessions === null) return null;
@@ -135,8 +172,24 @@ export function liveParticipant(participant: ParticipantV1 | null | undefined, s
  *
  * What remains a stall is a SILENT end of turn: the participant finished the
  * turn without sending anything on the bus after their last activation.
- * `permission` and `limit` are not subject to this check at all — a human
- * or time lifts them, not a message on the bus.
+ * `limit` is not subject to this check at all — time lifts it, not a message
+ * on the bus.
+ *
+ * `permission` has a check of its own, and PB-165 is why. A harness reports a
+ * dialog through ONE field, and it puts two different dialogs behind it: a
+ * permission prompt of the session's own work, and a peer message the session
+ * HELD rather than delivered — which is what the bus's own postcard becomes
+ * when a participant is lifted in a mode that bypasses prompts. A driver's
+ * measurement of that is in its own file, where the tool's name is allowed to
+ * be; what belongs here is the shape it leaves: the record is identical to a
+ * real prompt while the session runs its turn to the end and answers.
+ *
+ * Nothing in the record tells the two apart; the bus's own marks do — **a
+ * prompt is what SUSPENDS a turn**, so a participant that both ended its turn
+ * and spoke after its last activation was not stopped by the dialog standing on
+ * it (`promptStands` below). It is still deaf to that message, and the bus has
+ * its own words for a deaf channel; what it must not do is call a person to a
+ * session that is working.
  *
  * One predicate for three callers: the warden report, the `promptobus status`
  * print, and the stalled lines in the `mailbox` reply. If they drifted, they
@@ -149,6 +202,7 @@ export function liveParticipant(participant: ParticipantV1 | null | undefined, s
 export function stallStands(home: string, task: string, participant: ParticipantV1 | null | undefined, stall: SessionStall | null | undefined): boolean {
   if (!home || !task) throw new Error('stallStands: home and task are required — the predicate reads the task store');
   if (!stall) return false;
+  if (stall.kind === 'permission') return promptStands(home, task, participant);
   if (stall.kind !== 'unknown') return true;
   const since = lastActivation(home, task, participant);
   if (since === null) return true;

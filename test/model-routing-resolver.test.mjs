@@ -1094,6 +1094,230 @@ test('no harness can be paced — the pick is the best score, with balance-fallb
   validDecision(decision, 'a decision carrying the balance fallback');
 });
 
+// --- PB-162: the per-harness live-participant cap -----------------------------
+
+/** Live workers on one harness, as `liveTuples` hands them over. */
+const liveOn = (harness, model, n) => Array.from({ length: n }, () => ({ harness, model, role: 'worker' }));
+
+/** An overlay that caps one harness. */
+const capping = (caps) => overlay({ caps: { liveParticipants: caps } });
+
+test('the live-participant penalty alone does not reach the harness choice under balance', () => {
+  // The consumer's pinned verdict, and the reason PB-162 exists. Two workers are
+  // already on Codex and each costs it five points of score — and `balance`
+  // picks Codex for the third anyway, because the harness is chosen by
+  // `pace.effective` inside the band and the penalty only orders candidates
+  // inside a harness. Measured 2026-09-06: three workers in a row went to one
+  // Codex account and spent its five-hour window in forty minutes.
+  const decision = paced({ strategy: 'balance', liveParticipants: liveOn('codex', 'codex-sol', 2) });
+  assert.deepEqual(byId(decision, 'codex-sol').score.adjustments, [{ code: 'live-participant', points: -10 }],
+    'the penalty is applied — it is simply not what chooses the harness');
+  assert.equal(decision.chosen.tupleId, 'codex-sol', 'and the third worker still lands on Codex');
+  assert.equal(decision.warnings.some((w) => w.code === 'live-participant-cap'), false,
+    'no layer set a cap, so nothing bounded the choice');
+});
+
+test('a cap on live participants sends the third worker to another harness', () => {
+  // The same inputs with `caps.liveParticipants.codex: 2`. Codex leads on pace
+  // at +12.61 against Claude's −0.30 and is still the leader in the document —
+  // it is simply out of the comparison, and the next harness takes the worker.
+  const decision = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 2),
+    workspace: capping({ codex: 2 }),
+  });
+  assert.equal(decision.chosen.tupleId, 'claude-fable');
+  assert.equal(decision.chosen.harness, 'claude');
+  assert.equal(paceOf(decision, 'codex-sol').atCap, true, 'the cap is marked on the candidate, not re-derived');
+  assert.equal(paceOf(decision, 'codex-sol').representative, true,
+    'a capped harness keeps its representative: the pace table still says what that account has room for');
+  assert.equal(paceOf(decision, 'codex-sol').effective > paceOf(decision, 'claude-fable').effective, true,
+    'Codex must still lead on pace for this reproducer to mean anything');
+  // A choice rule, not a filter: the row keeps its score and its place. The
+  // comparison is against the same run WITHOUT the cap, so what is pinned is
+  // that the cap moved nothing but the pick.
+  const uncapped = paced({ strategy: 'balance', liveParticipants: liveOn('codex', 'codex-sol', 2) });
+  assert.equal(byId(decision, 'codex-sol').excluded, null);
+  assert.deepEqual(scoredIds(decision), scoredIds(uncapped));
+  assert.equal(byId(decision, 'codex-sol').score.total, byId(uncapped, 'codex-sol').score.total,
+    'the cap is not a penalty and touches no score');
+  validDecision(decision, 'a balance decision bounded by a live-participant cap');
+});
+
+test('spawn and review name the cap, and only when it bounded the choice', () => {
+  // `routingLine` prints the warning codes of a decision on the lift line, so a
+  // warning here is what makes `spawn` and `review` name the ceiling.
+  const bounded = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 2),
+    workspace: capping({ codex: 2 }),
+  });
+  const warning = bounded.warnings.find((w) => w.code === 'live-participant-cap');
+  assert.ok(warning, bounded.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /codex is at its live-participant cap of 2 \(2 already up\)/);
+  assert.match(warning.message, /"codex-sol" was held out.*"claude-fable" on claude was taken instead/);
+  assert.match(warning.message, /caps\.liveParticipants\.codex/);
+
+  // One worker under a cap of two: the ceiling is set and bounds nothing.
+  const room = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 1),
+    workspace: capping({ codex: 2 }),
+  });
+  assert.equal(room.chosen.tupleId, 'codex-sol');
+  assert.equal(room.warnings.some((w) => w.code === 'live-participant-cap'), false);
+  assert.equal(paceOf(room, 'codex-sol').atCap, undefined, 'a harness below its cap carries no mark');
+
+  // A cap on a harness the comparison would not have taken anyway is silent too:
+  // Cursor is last on pace, and holding it out changes no pick.
+  const elsewhere = paced({ strategy: 'balance', workspace: capping({ cursor: 0 }) });
+  assert.equal(elsewhere.chosen.tupleId, 'codex-sol');
+  assert.equal(elsewhere.warnings.some((w) => w.code === 'live-participant-cap'), false,
+    'a cap that held out a harness the pick would not have taken changed nothing, and saying so is noise');
+  assert.equal(paceOf(elsewhere, 'cursor-composer').atCap, true, 'the mark is still on the document');
+});
+
+test('the cap names the harness it HELD OUT, not the pick the comparison would have made', () => {
+  // The band is measured from the LEADER's number, so removing a capped
+  // representative lowers the leader and widens the tied set: a row that was
+  // outside the band before is pulled into it, and the pick moves to a harness
+  // no cap ever touched. Reading the name off that pick printed "claude is at
+  // its live-participant cap of null" on a run where codex was the capped one.
+  //
+  // The reproducer, on the balance fixture with Cursor's auto tuple rated up so
+  // it outscores Claude's: codex leads on pace at +12.61 and is capped; claude
+  // is at −0.30 and cursor-composer at −14.08. At a band of 20 the uncapped
+  // comparison ties {codex, claude} and the better-scoring claude-fable wins;
+  // with codex held out the leader drops to −0.30, cursor-composer comes inside
+  // the band, and its higher score takes the pick. The pick is right either way
+  // — only the line naming the cap was wrong.
+  const catalog = clone(BALANCE_CATALOG);
+  catalog.tuples.find((tuple) => tuple.id === 'cursor-composer').ratings = {
+    quality: 10, speed: 10, quotaCost: 1,
+  };
+  const wide = { balance: { band: 20 } };
+  const uncapped = paced({ strategy: 'balance', catalog, workspace: overlay(wide) });
+  assert.equal(uncapped.chosen.tupleId, 'claude-fable', 'the uncapped pick must sit on a harness no cap touches');
+  assert.equal(paceOf(uncapped, 'codex-sol').effective > paceOf(uncapped, 'claude-fable').effective, true,
+    'codex must lead on pace for the removal to lower the leader');
+
+  const decision = paced({
+    strategy: 'balance',
+    catalog,
+    workspace: overlay({ ...wide, caps: { liveParticipants: { codex: 0 } } }),
+  });
+  assert.equal(decision.chosen.tupleId, 'cursor-composer', 'the widened band takes a row that was outside it');
+  assert.notEqual(decision.chosen.tupleId, uncapped.chosen.tupleId, 'the cap moved the pick — the warning is due');
+  const warning = decision.warnings.find((w) => w.code === 'live-participant-cap');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /^codex is at its live-participant cap of 0 \(0 already up\)/,
+    'the harness named must be the one actually held out, with its real ceiling');
+  assert.match(warning.message, /caps\.liveParticipants\.codex in an overlay/,
+    'and the key a person is sent to edit must be the one that is set');
+  assert.equal(/claude is at its/.test(warning.message), false, 'the uncapped pick is not the capped harness');
+  assert.equal(/cap of null/.test(warning.message), false, 'a harness with no cap has no ceiling to print');
+  validDecision(decision, 'a balance decision whose cap widened the band');
+});
+
+test('several harnesses at the ceiling are all named, led by the best-paced one', () => {
+  const catalog = clone(BALANCE_CATALOG);
+  catalog.tuples.find((tuple) => tuple.id === 'cursor-composer').ratings = {
+    quality: 10, speed: 10, quotaCost: 1,
+  };
+  const decision = paced({
+    strategy: 'balance',
+    catalog,
+    workspace: overlay({ balance: { band: 20 }, caps: { liveParticipants: { codex: 0, claude: 0 } } }),
+  });
+  const warning = decision.warnings.find((w) => w.code === 'live-participant-cap');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  // codex leads the held-out set on pace, so it leads the line; claude follows
+  // it, and a person reading the line learns every key it is about.
+  assert.match(warning.message, /^codex is at its live-participant cap of 0/);
+  assert.match(warning.message, /also at the ceiling: claude 0\/0/);
+  validDecision(decision, 'a balance decision with two harnesses at the ceiling');
+});
+
+test('a cap of zero never chooses the harness, with nothing live on it at all', () => {
+  const decision = paced({ strategy: 'balance', workspace: capping({ codex: 0 }) });
+  assert.equal(decision.chosen.harness, 'claude', 'zero live participants still reaches a cap of zero');
+  assert.equal(paceOf(decision, 'codex-sol').atCap, true);
+  assert.match(decision.warnings.find((w) => w.code === 'live-participant-cap').message,
+    /codex is at its live-participant cap of 0 \(0 already up\)/);
+});
+
+test('a missing cap keeps today behaviour, and a cap binds only the harness it names', () => {
+  const today = paced({ strategy: 'balance', liveParticipants: liveOn('codex', 'codex-sol', 4) });
+  assert.equal(today.chosen.tupleId, 'codex-sol');
+  assert.equal(today.candidates.every((c) => c.pace?.atCap === undefined), true,
+    'with no cap anywhere the document carries no mark at all');
+
+  // A cap on a neighbouring harness leaves Codex alone: the ceiling is per
+  // harness because the three subscriptions have different capacities.
+  const other = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 4),
+    workspace: capping({ claude: 0 }),
+  });
+  assert.equal(other.chosen.tupleId, 'codex-sol');
+  assert.equal(paceOf(other, 'codex-sol').atCap, undefined);
+});
+
+test('every paced harness at its cap is a soft fallback, not a refusal', () => {
+  // The same shape the quality floor and `balance-fallback` have: a person asked
+  // for work to start. The cap is still named, and the line says what it did.
+  const decision = paced({
+    strategy: 'balance',
+    workspace: capping({ claude: 0, codex: 0, cursor: 0 }),
+  });
+  assert.equal(decision.chosen.tupleId, 'codex-sol', 'the pick is the one made as if no cap were set');
+  const warning = decision.warnings.find((w) => w.code === 'live-participant-cap');
+  assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
+  assert.match(warning.message, /every paced harness is at its live-participant cap — claude 0\/0, codex 0\/0, cursor 0\/0/);
+  assert.match(warning.message, /it does not leave the run without a participant/);
+  validDecision(decision, 'a balance decision where every harness is capped');
+});
+
+test('the cap is read from the merged policy and is not a literal of the resolver', () => {
+  // The user layer is under the workspace layer, and the highest layer naming a
+  // harness wins for that harness alone.
+  const decision = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 2),
+    user: capping({ codex: 2, cursor: 0 }),
+    workspace: capping({ codex: 9 }),
+  });
+  assert.equal(decision.chosen.tupleId, 'codex-sol', 'the workspace layer lifted the Codex ceiling to nine');
+  assert.equal(paceOf(decision, 'codex-sol').atCap, undefined);
+  assert.equal(paceOf(decision, 'cursor-composer').atCap, true, 'and the user layer\'s Cursor ceiling survived it');
+});
+
+test('the cap belongs to balance and the other four strategies do not read it', () => {
+  // The count of live participants answers "which account to spend from", which
+  // is the question `balance` puts and the only one. Under the other four the
+  // pick is the score, the cap does not enter it, and no pace block is published
+  // for the mark to sit on.
+  for (const strategy of ['quality', 'balanced', 'speed', 'economy']) {
+    const capped = paced({ strategy, liveParticipants: liveOn('codex', 'codex-sol', 2), workspace: capping({ codex: 0 }) });
+    const plain = paced({ strategy, liveParticipants: liveOn('codex', 'codex-sol', 2) });
+    assert.deepEqual(capped.chosen, plain.chosen, `${strategy}: the cap moved the pick`);
+    assert.equal(capped.warnings.some((w) => w.code === 'live-participant-cap'), false, strategy);
+  }
+});
+
+test('the pace table marks the harness the cap held out', () => {
+  const decision = paced({
+    strategy: 'balance',
+    liveParticipants: liveOn('codex', 'codex-sol', 2),
+    workspace: capping({ codex: 2 }),
+  });
+  const text = render(decision);
+  const row = text.split('\n').find((line) => /\bcodex\b/.test(line) && /effective/.test(line));
+  assert.match(row, /effective \+12\.61 · at its live-participant cap/,
+    'the number stays on the row: a row without one reads as an unpaceable window, which is a different fact');
+  assert.match(text, /! live-participant-cap: codex is at its live-participant cap/);
+});
+
 test('remaining is per tuple for every strategy, not per harness', () => {
   // ADR-004 refines ADR-003's own word: the applicable windows are the
   // account-wide ones PLUS the scope covering this tuple. Two Cursor tuples on

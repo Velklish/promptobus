@@ -1009,6 +1009,11 @@ test('validate refuses an overlay whose shape is wrong', () => {
     ['unknown selector', { schemaVersion: 1, deny: { providers: ['x'] } }],
     ['payg not a boolean', { schemaVersion: 1, payg: { allow: 'yes' } }],
     ['empty rating override', { schemaVersion: 2, ratings: { 'codex-sol-high': {} } }],
+    ['empty caps block', { schemaVersion: 1, caps: {} }],
+    ['caps names no harness', { schemaVersion: 1, caps: { liveParticipants: {} } }],
+    ['unknown cap kind', { schemaVersion: 1, caps: { liveSessions: { claude: 2 } } }],
+    ['a cap below zero', { schemaVersion: 1, caps: { liveParticipants: { claude: -1 } } }],
+    ['a fractional cap', { schemaVersion: 1, caps: { liveParticipants: { claude: 1.5 } } }],
   ];
   for (const [name, doc] of cases) {
     const verdict = validateLayers({ canonical: canonicalLayer(), overlays: [overlayLayer('user', doc)] });
@@ -1048,6 +1053,41 @@ test('validate refuses an account answer for an unknown harness', () => {
   assert.equal(finding.code, 'overlay-invalid');
   assert.equal(finding.layer, 'user');
   assert.match(finding.message, /unknown harness "aider"/);
+});
+
+test('validate refuses a live-participant cap on an unknown harness', () => {
+  // The same class as a misspelt `account` key, and an error for the same
+  // reason: a ceiling on a name nothing drives bounds nothing, and the person
+  // who wrote it believes their run is held to two participants when it is not.
+  const verdict = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('workspace', {
+      schemaVersion: 1,
+      caps: { liveParticipants: { aider: 2 } },
+    })],
+  });
+  assert.equal(verdict.ok, false);
+  const finding = verdict.errors.find((e) => e.at === 'caps.liveParticipants.aider');
+  assert.ok(finding, verdict.errors.map((e) => `${e.at}: ${e.message}`).join(' | '));
+  assert.equal(finding.code, 'overlay-invalid');
+  assert.equal(finding.layer, 'workspace');
+  assert.match(finding.message, /unknown harness "aider"/);
+});
+
+test('a cap merges harness by harness, and the highest layer naming one wins for it alone', () => {
+  const merged = mergeRouting({
+    canonical: CATALOG,
+    overlays: [
+      overlayLayer('user', { schemaVersion: 1, caps: { liveParticipants: { codex: 2, cursor: 1 } } }),
+      overlayLayer('workspace', { schemaVersion: 1, caps: { liveParticipants: { codex: 4 } } }),
+    ],
+  });
+  assert.deepEqual(merged.policy.caps.liveParticipants, { codex: 4, cursor: 1 });
+
+  // No layer names one — the defaults, and an empty block is what "unbounded"
+  // looks like in the merged policy.
+  const bare = mergeRouting({ canonical: CATALOG, overlays: [] });
+  assert.deepEqual(bare.policy.caps, { liveParticipants: {} });
 });
 
 test('validate refuses weights that do not sum to 100, and rules that both allow and deny a name', () => {
@@ -1541,6 +1581,16 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, defaults: { strategy: 'auto' } },
     { schemaVersion: 1, account: { cursor: { plan: 'example-ultra' } } },
     { schemaVersion: 1, account: { cursor: { plan: '' } } },
+    // PB-162's ceiling belongs to the same corpus. Zero is LAWFUL — it is a
+    // person saying "never this harness" — and both shapes have to accept it,
+    // which a corpus of refusals alone would not prove.
+    { schemaVersion: 1, caps: { liveParticipants: { codex: 2 } } },
+    { schemaVersion: 1, caps: { liveParticipants: { codex: 0 } } },
+    { schemaVersion: 1, caps: { liveParticipants: { codex: -1 } } },
+    { schemaVersion: 1, caps: { liveParticipants: { codex: 1.5 } } },
+    { schemaVersion: 1, caps: { liveParticipants: { 'Codex Plus': 2 } } },
+    { schemaVersion: 1, caps: { liveParticipants: {} } },
+    { schemaVersion: 1, caps: { liveSessions: { codex: 2 } } },
     { schemaVersion: 1, payg: { allow: true } },
     { schemaVersion: 3 },
     { schemaVersion: 1, weight: {} },

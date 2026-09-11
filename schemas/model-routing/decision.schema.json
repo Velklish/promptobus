@@ -269,6 +269,10 @@
           "description": "Present and true on the one candidate that represents its harness in the comparison — its best eligible tuple by the role's ordering that meets the role's quality floor, which is the tuple that would actually be picked there. Absent on every other candidate, and on all of them when no harness could be paced.",
           "const": true
         },
+        "atCap": {
+          "description": "Present and true when this candidate's harness already carries as many live participants OF THIS TASK as `caps.liveParticipants.<harness>` of the merged policy allows, and is therefore out of the pace comparison. Absent on every other candidate, including every one of a harness no layer capped. A candidate keeps its score, its place and its pace row while marked: the cap is a choice rule like the quality floor, not a filter.",
+          "const": true
+        },
         "note": {
           "description": "Why it does not, when it does not. `no-pace` — the harness reports no applicable window, or the binding one has no future reset or no length. `window-spent` — the binding window is at or past 100 %.",
           "oneOf": [
@@ -349,7 +353,8 @@
         "flag-not-in-inventory",
         "worker-floor-not-met",
         "balance-fallback",
-        "near-limit"
+        "near-limit",
+        "live-participant-cap"
       ]
     }
   }

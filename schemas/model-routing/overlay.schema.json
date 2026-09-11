@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion"],
   "properties": {
-    "schemaVersion": { "enum": [1, 2], "description": "Version 2 is required whenever a key on the rating scale is present: `ratings`, `qualityFloor` or `reviewerQualityFloor` (ADR-005). Version 1 remains readable for policy-only overlays — deny, allow, defaults, account, weights, penalties, bonuses, priority and payg did not change meaning." },
+    "schemaVersion": { "enum": [1, 2], "description": "Version 2 is required whenever a key on the rating scale is present: `ratings`, `qualityFloor` or `reviewerQualityFloor` (ADR-005). Version 1 remains readable for policy-only overlays — deny, allow, defaults, account, caps, weights, penalties, bonuses, priority and payg carry no value on that scale." },
     "note": {
       "description": "Free text for whoever opens the file next. The mechanism never reads it.",
       "type": "string"
@@ -52,6 +52,27 @@
           "description": "Points added to a reviewer candidate whose harness or model differs from the worker's.",
           "type": "number",
           "minimum": 0
+        }
+      }
+    },
+    "caps": {
+      "description": "Hard ceilings, per harness, counted in PARTICIPANTS. Not to be confused with `penalties.liveParticipantCap`, which is a ceiling on the live-participant PENALTY and is counted in score points: that one bounds how expensive a busy harness gets, this one bounds how many participants it carries. A ceiling is not a penalty at all — `penalties.liveParticipantPerHarness` only ORDERS candidates, and under `balance` the harness is chosen by pace inside the band, so a harness ahead of the others attracts the next worker however expensive the penalty made it.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "liveParticipants": {
+          "description": "How many participants of ONE TASK may be live on a harness at once, keyed by harness. The count is the task's own participant list — a record that is not dismissed and carries a model — so two tasks running side by side each count their own, and this is a ceiling on a run rather than on the account. Under `balance` a harness whose live count has reached its cap leaves the pace comparison; 0 means the harness is never chosen there. A harness with no cap is unbounded, which is the behaviour of a layer that names none.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "patternProperties": {
+            "^[a-z][a-z0-9-]{0,31}$": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
         }
       }
     },
@@ -248,9 +269,10 @@
     },
     {
       "schemaVersion": 1,
-      "note": "schema example: the strategy a person agreed to, and the one answer no method returns",
+      "note": "schema example: the strategy a person agreed to, the ceiling on how many workers one account carries at once, and the one answer no method returns",
       "defaults": { "strategy": "balance" },
       "nearLimit": { "usedPercent": 85 },
+      "caps": { "liveParticipants": { "example": 2 } },
       "account": { "example": { "plan": "example-plan" } }
     },
     {
