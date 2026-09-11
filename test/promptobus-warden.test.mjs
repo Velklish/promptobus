@@ -995,8 +995,12 @@ check(': on a dialog state.json is not read — no extra file read on every hear
 const rPerm = stallRoute({ kind: 'permission' }, 'abc123', 'Worker: X');
 const rLimit = stallRoute({ kind: 'limit' }, 'abc123', 'Worker: X');
 const rUnknown = stallRoute({ kind: 'unknown' }, 'abc123', 'Worker: X');
-check(': permission calls a human to the session',
-  /claude attach abc123/.test(rPerm) && /only a person/.test(rPerm), rPerm);
+// PB-176: it names the session routes without asserting a person is wanted — the same
+// field is also set where nothing is standing and nobody can answer anything.
+check(': permission names the session routes and claims none of the three readings',
+  /claude attach abc123/.test(rPerm)
+  && /refusal that has already returned/i.test(rPerm)
+  && !/only a person/i.test(rPerm), rPerm);
 check(': a limit does not call a human — it resets on its own, wake it with a message',
   /no person needed/.test(rLimit) && /wake the session with a message/.test(rLimit) && !/claude attach/.test(rLimit), rLimit);
 check(': an unrecognized reason does not invent a route, it points to the logs',

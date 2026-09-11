@@ -947,14 +947,18 @@ export async function runScenario({
 
       const t9 = Date.now();
       const perm = await stallStep(MARK.perm, 'stop on the permission dialog', {
-        kind: 'permission', route: /only a person can answer: claude attach/,
+        kind: 'permission', route: /claude attach/,
       });
       check('step 9: a participant stall on the permission dialog is parsed as permission — the dialog label is the reason',
         perm.view?.stall?.kind === 'permission' && perm.view.stall.reason === 'permission prompt',
         `${JSON.stringify(perm.view)} · ${wh.diagnose()}`);
-      check('step 9: the report route leads to a person — only they can answer, claude attach',
+      // PB-176: the route names the session command and all three readings of the field,
+      // and asserts none of them — the same mark appears where nobody can answer anything.
+      check('step 9: the report route names claude attach and claims none of the three readings',
         typeof perm.said === 'string' && perm.said.includes(WORKER)
-        && /only a person can answer: claude attach/.test(perm.said),
+        && /claude attach/.test(perm.said)
+        && /refusal that has already returned/i.test(perm.said)
+        && !/only a person can answer/i.test(perm.said),
         `${tail(String(perm.said))} · ${wh.diagnose()}`);
       at(STEPS[8], Date.now() - t9);
 

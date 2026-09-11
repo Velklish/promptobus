@@ -177,9 +177,17 @@ check(': and on those same marks the dialog is not',
 // --- the route a person reads ------------------------------------------------
 
 const route = stallRoute({ kind: 'permission' }, 'abc123', 'Worker: X');
-check(': the permission route still calls a person to the session',
-  /claude attach abc123/.test(route) && /only a person/.test(route), route);
+check(': the permission route still names the session route for a prompt of its own work',
+  /claude attach abc123/.test(route) && /claude stop abc123/.test(route), route);
 check(': and it names the other dialog behind the same field, with the key that ends it',
   /held message from another session/i.test(route)
   && /crossSessionInbound/.test(route)
   && /bypassPermissions/.test(route), route);
+// PB-176: the same field is also set where nothing is standing, and the route said a
+// person was needed anyway. It must name the third reading and claim none of them.
+check(': and the third reading — a refusal that has already returned, where nobody is wanted',
+  /refusal that has already returned/i.test(route)
+  && /nothing is standing/i.test(route)
+  && /permission rule decided outside it/i.test(route), route);
+check(': and it no longer asserts that only a person can answer',
+  !/only a person/i.test(route), route);
