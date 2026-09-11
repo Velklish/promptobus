@@ -40,6 +40,15 @@ Adding a harness to that list is a hand edit of this file. There is no `tools` s
 
 `promptobus install` writes a second field, `harnesses`: the last installed hook list. Do not invent that field by hand on the first install. Pass `--harnesses` instead.
 
+**The two fields are two, and `install` writes only one of them.** They are easy to confuse because both hold harness names and one command is named after the other:
+
+| Field | Written by | Means |
+|---|---|---|
+| `tools` | you, by hand | this workspace may spawn or review with these harnesses |
+| `harnesses` | `promptobus install` | hooks were last written for these harnesses |
+
+So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched, and the very next `promptobus review … --harness codex` refuses with `declared: none` until you add `"codex"` to `tools` yourself. `install` says so when it finishes, and the refusal says it again. They stay two fields on purpose: writing a hook file into a project must not by itself grant that project permission to spawn participants.
+
 ### A repository that generates its process skills
 
 A worker repository may have its own `promptobus.json` — separate from the workspace one — with an optional `generate` field: the argv of a command that restores the process skills the repository does not keep in git.
@@ -120,7 +129,7 @@ The CLI prints `configured` and then:
 
 ```text
 Review: Codex requires /hooks; project hooks also depend on workspace trust.
-Cursor: stop guard only. Bus feedback is driver injection, not a project hook.
+Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor participant by driver injection.
 ```
 
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).

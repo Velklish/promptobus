@@ -11,8 +11,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { BUS_HOOK_EVENT } from '../dist/hooks.js';
+import { capture } from './console.mjs';
 import { GUARD_BLOCK_LIMIT } from '../lib/guard.js';
 import { CURSOR_HOOK_EVENTS, HOME_HOOK_DIRS, install } from '../lib/install.js';
+import { liftHarness } from '../lib/spawn.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -119,6 +121,47 @@ test('PB-173: a feed hook an older install wrote is taken out, and a foreign hoo
   // The runner script goes with the entry: leaving it is the same file with nothing
   // left to regenerate it.
   assert.equal(existsSync(runner), false);
+});
+
+test('PB-177: a successful install says that tools is still undeclared, and the refusal says why', () => {
+  const { dir, home } = sandbox();
+  // The documented order from install.md: promptobus.json first, then install. `tools`
+  // is absent here exactly as it is on a workspace someone just created.
+  writeFileSync(path.join(dir, 'promptobus.json'), `${JSON.stringify({ commandName: 'promptobus' })}\n`);
+  const said = capture(() => {
+    assert.equal(install(hostOf(dir), { harnesses: 'codex', cwd: dir, env: envOf(home) }), 0);
+  });
+  const cfg = JSON.parse(readFileSync(path.join(dir, 'promptobus.json'), 'utf8'));
+  // install wrote one key and not the other — the gap the note is about is real.
+  assert.deepEqual(cfg.harnesses, ['codex']);
+  assert.equal(Object.hasOwn(cfg, 'tools'), false);
+  // …and it said so, naming the key, the harness, and that install does not write it.
+  assert.match(said, /"tools"/);
+  assert.match(said, /codex/);
+  assert.match(said, /install does not write it/);
+
+  // The refusal a person meets next names the same two keys against each other.
+  let refusal = '';
+  try {
+    liftHarness(hostOf(dir), 'codex');
+  } catch (e) {
+    refusal = e.message;
+  }
+  assert.match(refusal, /declared: none/);
+  assert.match(refusal, /"harnesses"/);
+  assert.match(refusal, /never "tools"/);
+});
+
+test('PB-177: with tools declared, install is silent about it and the harness lifts', () => {
+  const { dir, home } = sandbox();
+  writeFileSync(path.join(dir, 'promptobus.json'), `${JSON.stringify({ tools: ['codex'] })}\n`);
+  const said = capture(() => {
+    assert.equal(install(hostOf(dir), { harnesses: 'codex', cwd: dir, env: envOf(home) }), 0);
+  });
+  // Negative control: the note is conditional. Without this, a note printed
+  // unconditionally would satisfy the check above and say nothing.
+  assert.doesNotMatch(said, /install does not write it/);
+  assert.equal(liftHarness(hostOf(dir), 'codex').id, 'codex');
 });
 
 test('Stop guard command is promptobus guard and a clean mailbox does not loop', () => {
