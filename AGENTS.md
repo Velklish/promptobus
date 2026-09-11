@@ -18,4 +18,10 @@ The task tracker and decision log live in `docs/` and are managed with `npx gith
 Worker boundaries: change only the assigned branch or worktree; do not touch status directories or `docs/archive/`; closure and triage belong to the approver.
 <!-- backslop:end -->
 
+## Comments
+
+**Code is self-documenting, and an inline comment longer than two lines is forbidden** (owner's decision, 2026-09-12). A nuance that does not fit in two lines is either not written at all or moved into the documentation — `docs/reference/`, the affected README, or an ADR — leaving a short pointer beside the code only where one is needed to find it. Provenance never lives in a comment: a task number, a date, "review remark", a retelling of the lines below it belong to git and to the tracker.
+
+The reason is measurable rather than stylistic: this code is read by agents, and a paragraph above a function is paid for in tokens on every read of the file. There is no gate for this — it rests on the author of the change.
+
 **A fresh clone or worktree carries no generated adapter output** — `.claude/skills/backslop-*/SKILL.md` and `CLAUDE.md` are written by `npx github:Velklish/backslop#v0.6.0 init` and are not tracked. Run `init` first in a fresh checkout: without it `backslop lint` is red on "no generated output" and the skill files the lift prompt names do not exist; `git status` does not change from it.
