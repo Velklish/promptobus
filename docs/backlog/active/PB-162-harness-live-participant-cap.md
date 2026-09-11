@@ -1,9 +1,9 @@
 # PB-162 · Under balance the count of live participants per harness bounds the harness choice: a per-harness cap in the overlay
 
-- **Order:** 28
 - **Scope:** `lib/model-routing/resolver.js`, `lib/model-routing/validate.js`, `schemas/model-routing/overlay.schema.json`, the model-routing reference page, `test/model-routing-*.test.mjs`
 - **Created:** 2026-09-11
 - **Dependencies:** none
+- **Taken:** 2026-09-11
 
 ## Context
 
