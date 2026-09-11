@@ -1,9 +1,9 @@
 # PB-166 · A suite file that finished its work keeps the process alive, and a dead session leaves it orphaned forever
 
-- **Order:** 68
 - **Scope:** `test/run.mjs`, `test/sandbox.mjs`, the suite files themselves, [contributing](../../guides/contributing.md)
 - **Created:** 2026-09-11
 - **Dependencies:** none
+- **Taken:** 2026-09-12
 
 ## Context
 
