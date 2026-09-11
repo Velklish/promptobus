@@ -923,9 +923,8 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
   const plan = script.turns?.[turn] ?? null;
   if (!plan) return 'idle';
   if (plan.hang) return 'hang';
-  // A turn spent on a question: in the participant session a question gets a skip, not
-  // an answer (REPORT §4.15). The turn still ends successfully — only the content
-  // distinguishes the outcomes.
+  // A turn spent on a question. It does NOT get a skip — PB-181 measured a real hold, 278.497 s,
+  // ended by a keypress. The turn still ends successfully; only the content tells the outcomes apart.
   if (plan.askQuestion) return 'question';
   if (!cfg) {
     note(home, address, { kind: 'no-bus', workspace });
