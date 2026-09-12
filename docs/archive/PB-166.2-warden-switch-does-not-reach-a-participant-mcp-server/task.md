@@ -21,8 +21,8 @@ $ ps -eo pid,ppid,args | grep 'promptobus.js mcp'
 7656  7580  node …/bin/promptobus.js mcp
 
 $ ps eww -o command= -p 7662 | tr ' ' '\n' | grep '^PROMPTOBUS_'
-PROMPTOBUS_CODEX_SESSION=/Users/kim.p/.promptobus/codex/sessions/review-…json
-PROMPTOBUS_HOME=/Users/kim.p/.claude/jobs/…/ws/.promptobus
+PROMPTOBUS_CODEX_SESSION=<home>/.promptobus/codex/sessions/review-…json
+PROMPTOBUS_HOME=<home>/.claude/jobs/…/ws/.promptobus
 ```
 
 So the warden's parent is the participant's **MCP server** (7656), and the warden's own
