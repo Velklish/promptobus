@@ -1,8 +1,8 @@
 # PB-187 · The catalog names a Codex model the binary does not have, and nothing compares the two lists
 
-- **Order:** 100
+- **Order:** 200
 - **Scope:** `models/catalog.json` (`codex-mini-*`), `lib/model-routing/validate.js` (`models validate`),
-  [reference/07-models](../../reference/07-models.md)
+  [reference/03-cli](../../reference/03-cli.md) § models, [guides/model-routing](../../guides/model-routing.md)
 - **Created:** 2026-09-12, release run
 - **Dependencies:** none
 
@@ -42,7 +42,7 @@ was refused; the other was stopped in time.
   - **The refusal teaches instead.** Keep validate offline, but make the lift's refusal say what the
     binary *does* know and which catalog tuples are affected, so the next person is not left with a
     bare name.
-- Whichever is taken, say in `07-models` that catalog membership is not a promise that the binary
+- Whichever is taken, say in the model-routing guide that catalog membership is not a promise that the binary
   can run the model, and where that is checked.
 - Rate the affected tuples honestly in the meantime: a tuple that cannot lift should not be the
   cheapest option the resolver offers.
