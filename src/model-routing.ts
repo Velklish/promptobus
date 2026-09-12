@@ -16,7 +16,7 @@ export type AvailabilityState = (typeof AVAILABILITY_STATES)[number];
 
 /**
  * Stable reason codes. The list is fixed and is written once in prose, in
- * `[guides/model-routing.md#the-routing-contract-types](../docs/guides/model-routing.md#the-routing-contract-types)`; the same eight are the `reason` enum of the snapshot
+ * `docs/reference/03-cli.md`; the same eight are the `reason` enum of the snapshot
  * schema, and the suite compares the two lists rather than trusting them.
  *
  * `snake_case` — the snapshot vocabulary keeps the spelling the decision fixed,
