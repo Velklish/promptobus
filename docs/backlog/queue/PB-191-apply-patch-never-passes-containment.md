@@ -87,6 +87,38 @@ That makes the refusal's wording load-bearing. "patch rejected by user" sends th
 a human and a permission policy; it names neither the real gate nor the working route. A refusal that
 said which gate closed and what to use instead would have cost this run nothing.
 
+## The shell route is not universally open either, and the difference is unexplained
+
+The card says shell writes are the working route. On one participant of the 0912c run they were
+**not**: an ordinary `exec_command` running a `python3` heredoc that wrote a file **inside its own
+worktree** was refused with
+
+```
+PermissionError: [Errno 1] Operation not permitted
+```
+
+and the edit only went through on the escalated route. A sibling participant of the same run wrote
+its own worktree files through the ordinary route for two hours without escalation.
+
+**What was compared and found identical** (orchestrator's measurement, 2026-09-12):
+
+- sandbox mode in both session records: `workspace-write`;
+- both worktrees sit at `<repo>/.claude/worktrees/<name>` — same shape, different zone
+  (one under the consumer's clone area, one under the personal-projects area);
+- file permissions on both targets: `-rw-r--r--`, no macOS file flags (`ls -lO` flag column `-`);
+- the refused file was not immutable: the escalated write succeeded on it minutes later.
+
+**What is not established:** why one refusal happened. Zone, path depth, an extended attribute
+(`com.apple.provenance` is present on the refused file) and a transient condition all remain
+possible, and none was tested. The orchestrator is not sandboxed and cannot reproduce the refusal
+from outside, so the discriminating measurement has to be made from inside a participant.
+
+**Why it matters to this card.** The card's remedy is "write through shell". If shell is itself
+refused for some participants, that remedy is not a remedy but a second thing to discover by
+failure. Whoever answers this card must say which route is guaranteed, for which participants, and
+what a participant should do when the guaranteed one is refused — the answer today is "escalate",
+and nothing tells a participant that.
+
 ## Work to do
 
 - Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
