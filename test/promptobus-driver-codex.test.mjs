@@ -36,6 +36,24 @@ const diagnosisTrace = [
 ];
 writeFileSync(traceFile(HARNESS, DIAGNOSE_ADDRESS), diagnosisTrace.map((e) => JSON.stringify(e)).join('\n') + '\n');
 const diagnosis = diagnoseTrace(HARNESS, DIAGNOSE_ADDRESS);
+
+// A thread file is written by the stand's holder, a separate process, so reading it once races
+// the writer: under load the reader wins and the check reports the product wrong (PB-184).
+// Nine reads: 135 s if every one expires, under the 240 s watchdog and the 300 s runner
+// deadline. Arithmetic, not a measurement — a slower stand needs the budget re-checked.
+const THREAD_WAIT_MS = 15000;
+async function awaitThread(id, { timeoutMs = THREAD_WAIT_MS } = {}) {
+  const file = path.join(HARNESS, 'threads', `${id ?? ''}.json`);
+  const got = await waitFor(() => {
+    try {
+      return JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      return null;
+    }
+  }, { timeoutMs });
+  return got ?? { __timedOut: `TIMEOUT after ${timeoutMs} ms waiting for ${file} — the stand had not written the thread; this says nothing about the product` };
+}
+
 check(': Codex diagnosis surfaces scenario errors before the later red verdict',
   diagnosis.startsWith(`scenario errors for ${DIAGNOSE_ADDRESS} (the cause is usually here):`)
     && diagnosis.includes('action-failed') && diagnosis.includes('later-red-verdict'),
@@ -1426,13 +1444,7 @@ check('step 1: the thread landed in the mechanism registry — thread id and hol
 check(': the session record does not persist the caller environment',
   !!record && !('childEnv' in record), Object.keys(record ?? {}).sort().join(','));
 
-const appThread = (() => {
-  try {
-    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${record?.threadId ?? ''}.json`), 'utf8'));
-  } catch {
-    return null;
-  }
-})();
+const appThread = await awaitThread(record?.threadId);
 check('PB-161: the holder app-server runs in the participant home, not the caller CODEX_HOME',
   appThread?.appServerEnv?.CODEX_HOME === participantHome
     && appThread?.appServerEnv?.CODEX_HOME !== callerCodexHome
@@ -1506,13 +1518,10 @@ writeSession({
 }, env);
 startHolder(legacyRef, env);
 const legacyReady = await waitReady(legacyRef, env, 20000);
-let legacyThread = null;
-try {
-  legacyThread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${legacyReady.record?.threadId ?? ''}.json`), 'utf8'));
-} catch { /* no thread */ }
+const legacyThread = await awaitThread(legacyReady.record?.threadId);
 check(': an old Codex record without a name uses the machine-name fallback',
   legacyReady.ok && legacyThread?.name === `promptobus:${TASK}:worker:legacy-name`,
-  JSON.stringify({ ready: legacyReady, name: legacyThread?.name }));
+  JSON.stringify({ ready: legacyReady, name: legacyThread?.name, timedOut: legacyThread?.__timedOut }));
 await reapHolder(legacyRef, env);
 dropSession(legacyRef, env);
 
@@ -1523,10 +1532,7 @@ const secondSpawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task',
 const secondWp = store.participantOf(store.readTask(home, TASK), SECOND_WORKER);
 const secondRef = secondWp?.sessionRef ?? '';
 const secondRecord = readSession(secondRef, env);
-let secondThread = null;
-try {
-  secondThread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${secondRecord?.threadId ?? ''}.json`), 'utf8'));
-} catch { /* no thread */ }
+const secondThread = await awaitThread(secondRecord?.threadId);
 check(': two Codex workers on one task keep distinct title-based names',
   secondSpawned.status === 0
     && wp?.metadata?.name !== secondWp?.metadata?.name
@@ -1717,20 +1723,13 @@ check(': a reviewer elicitation is declined and the report still arrives',
 // directory — never the tree under review, which would let the repository being judged
 // hand MCP servers to the session judging it — and the record lands in the participant's
 // disposable home, not in the owner's `~/.codex/config.toml`.
-const revThread = (() => {
-  try {
-    const rec = readSession(revPart?.sessionRef ?? '', env);
-    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${rec?.threadId ?? ''}.json`), 'utf8'));
-  } catch {
-    return null;
-  }
-})();
+const revThread = await awaitThread(readSession(revPart?.sessionRef ?? '', env)?.threadId);
 check('PB-161: the reviewer lifts in a home of its own, carrying the mechanism MCP set',
   revThread?.appServerEnv?.CODEX_HOME === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
     && revThread.appServerEnv.CODEX_HOME !== participantHome
     && typeof revThread.codexHome?.config === 'string'
     && revThread.codexHome.config.includes(`[mcp_servers.${codexMcpName('promptobus', PREFIX)}]`),
-  JSON.stringify({ home: revThread?.appServerEnv?.CODEX_HOME, config: revThread?.codexHome?.config }));
+  JSON.stringify({ home: revThread?.appServerEnv?.CODEX_HOME, config: revThread?.codexHome?.config, timedOut: revThread?.__timedOut }));
 
 const revSession = readSession(revPart?.sessionRef ?? '', env);
 check('PB-161.2: the reviewer thread runs in a directory of its own, with the reviewed tree attached as a read',
@@ -1739,7 +1738,7 @@ check('PB-161.2: the reviewer thread runs in a directory of its own, with the re
     && (revSession?.addDirs ?? []).includes(wt)
     // Containment roots are the record's cwd and addDirs — they moved with the directory.
     && revSession?.cwd === reviewerSandboxDir,
-  JSON.stringify({ cwd: revThread?.cwd, sandbox: reviewerSandboxDir, addDirs: revSession?.addDirs }));
+  JSON.stringify({ cwd: revThread?.cwd, sandbox: reviewerSandboxDir, addDirs: revSession?.addDirs, timedOut: revThread?.__timedOut }));
 
 check('PB-161.2: the trust record names the reviewer directory, never the tree under review, and lands in the participant home',
   revThread?.codexHome?.dir === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
@@ -1747,7 +1746,7 @@ check('PB-161.2: the trust record names the reviewer directory, never the tree u
     && revThread.codexHome.config.includes(`[projects."${realpathSync(reviewerSandboxDir)}"]`)
     && !revThread.codexHome.config.includes(realpathSync(wt))
     && /trust_level = "trusted"/.test(revThread.codexHome.config),
-  JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300) }));
+  JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300), timedOut: revThread?.__timedOut }));
 
 check('PB-161.2: the workspace canon reached the reviewer directory, and the reviewed tree kept its own',
   existsSync(path.join(reviewerSandboxDir, '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'))
@@ -1838,7 +1837,7 @@ const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
 // participant's own status is the first event that is provably after all of them.
 const aprSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes('CODEX-APR')) ?? null, { timeoutMs: 20000 });
-const aprThread = harnessThread(apr, env);
+const aprThread = await harnessThread(apr, env);
 let aprLog = '';
 try { aprLog = readFileSync(holderLogFile(apr?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
 check('PB-88.3: the live network escalation is declined and the same command without it is accepted',
@@ -1866,10 +1865,7 @@ const elicitWdone = await waitFor(() => {
 }, { timeoutMs: 20000 });
 let elicitWlog = '';
 try { elicitWlog = readFileSync(holderLogFile(elicitWp?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
-let elicitWthread = null;
-try {
-  elicitWthread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${elicitWdone?.threadId}.json`), 'utf8'));
-} catch { /* none */ }
+const elicitWthread = await awaitThread(elicitWdone?.threadId);
 check(': a worker elicitation is declined and the turn still completes',
   elicitW.status === 0 && !!elicitWdone
     && elicitWsent?.sender === store.addrDir('worker:elicit') && elicitWsent?.type === 'status'
@@ -2200,14 +2196,7 @@ check(': a participant with a url-server in the set is lifted — the Codex conf
   mcpUp.status === 0 && /worker worker:mcp lifted/.test(mcpUp.out), mcpUp.out.slice(-600));
 
 const mcpPart = store.participantOf(store.readTask(home, TASK), 'worker:mcp');
-const mcpThread = (() => {
-  const id = readSession(mcpPart?.sessionRef ?? '', env)?.threadId;
-  try {
-    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${id}.json`), 'utf8'));
-  } catch {
-    return null;
-  }
-})();
+const mcpThread = await awaitThread(readSession(mcpPart?.sessionRef ?? '', env)?.threadId);
 const started = (() => {
   try {
     return parseHomeToml(mcpThread?.codexHome?.config).mcp_servers ?? {};
@@ -2232,12 +2221,7 @@ check(': without --effort thread/start does not invent a model_reasoning_effort'
 if (mcpPart?.sessionRef) await codexDriver.stop(mcpPart.sessionRef);
 
 function harnessThread(part, sessionEnv = env) {
-  const id = readSession(part?.sessionRef ?? '', sessionEnv)?.threadId;
-  try {
-    return JSON.parse(readFileSync(path.join(HARNESS, 'threads', `${id}.json`), 'utf8'));
-  } catch {
-    return null;
-  }
+  return awaitThread(readSession(part?.sessionRef ?? '', sessionEnv)?.threadId);
 }
 
 planParticipant(HARNESS, 'worker:effw', {
@@ -2255,7 +2239,7 @@ const effortUp = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK
 check(': worker --effort xhigh lifts',
   effortUp.status === 0 && /worker worker:effw lifted/.test(effortUp.out), effortUp.out.slice(-600));
 const effortWorker = store.participantOf(store.readTask(home, TASK), 'worker:effw');
-const effortWorkerThread = harnessThread(effortWorker);
+const effortWorkerThread = await harnessThread(effortWorker);
 check(': worker thread/start carries config.model_reasoning_effort and turn/start still carries effort',
   effortWorkerThread?.config?.model_reasoning_effort === 'xhigh'
     && effortWorkerThread?.firstRpc?.method === 'turn/start'
@@ -2276,7 +2260,7 @@ check(': reviewer --effort xhigh lifts a fresh Codex reviewer',
   effortReviewed.status === 0 && /reviewer reviewer:effw started/.test(effortReviewed.out),
   effortReviewed.out.slice(-600));
 const effortReviewer = store.participantOf(store.readTask(home, TASK), 'reviewer:effw');
-const effortReviewerThread = harnessThread(effortReviewer);
+const effortReviewerThread = await harnessThread(effortReviewer);
 check(': reviewer thread/start carries the same model_reasoning_effort; first RPC is turn/start with effort',
   effortReviewerThread?.config?.model_reasoning_effort === 'xhigh'
     && effortReviewerThread?.firstRpc?.method === 'turn/start'

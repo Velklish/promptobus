@@ -53,6 +53,11 @@ jobs:
       - name: Publicity audit
         run: npm run audit
 
+      # Ahead of init: that step runs backslop at the pin THIS file names and rewrites
+      # AGENTS.md to it, so after it the gate would blame AGENTS.md instead of ci.yml.
+      - name: Pin gate
+        run: npm run pins
+
       # Adapter outputs and the Claude stub are generated, not stored in git, so a
       # fresh checkout has none of them and the gate would fail on their absence.
       # Regenerating first is what the tool expects: templates are the only source.

@@ -951,7 +951,33 @@ check('each failure is numbered in the warden log',
 const {
   stallTail, justSpawned,
   SPAWN_GRACE_SEC, pendingStalls, commitStalls, stallStands, sessionBusy,
+  contactSocketPath, contactSocketGone,
 } = await import(path.join(here, '..', 'lib', 'status.js'));
+
+// PB-175: a contact point outlives its session, and the two obvious readings of the file
+// are both wrong. Measured on a live store of nine points, 2026-09-12.
+{
+  const live = path.join(HOME, 'pb175-live.sock');
+  writeFileSync(live, '');
+  // The `pid` in the file is `process.pid` of whoever wrote it — for Claude the exiting
+  // Stop hook — so eight of nine points named a dead pid while five sessions were alive.
+  check(': the socket path is what is before a `#<n>` thread suffix, not the whole address',
+    contactSocketPath(`${live}#1`) === live && contactSocketPath(live) === live
+    && contactSocketPath(null) === null && contactSocketPath('') === null,
+    String(contactSocketPath(`${live}#1`)));
+  check(': a contact point whose socket is on disk is not stale, suffix or not',
+    contactSocketGone({ socket: live }) === false
+    && contactSocketGone({ socket: `${live}#1` }) === false,
+    'live socket read as gone');
+  // The negative control the raw check fails: existsSync on the whole address is false for
+  // a live Codex point, which would report every one of them dead.
+  check(': and one whose socket is absent is stale, while the raw address would lie',
+    contactSocketGone({ socket: path.join(HOME, 'pb175-absent.sock#0') }) === true
+    && existsSync(`${live}#1`) === false,
+    'stale/raw control');
+  check(': a point with no socket at all is not called stale — there is nothing to check',
+    contactSocketGone({}) === false && contactSocketGone(null) === false);
+}
 
 const DIAG = 'sup-diag-t20260829-170000';
 store.createTask(HOME, { id: DIAG, title: 'диагностика состояния участника' });
@@ -1003,8 +1029,12 @@ check(': on a dialog state.json is not read — no extra file read on every hear
 const rPerm = stallRoute({ kind: 'permission' }, 'abc123', 'Worker: X');
 const rLimit = stallRoute({ kind: 'limit' }, 'abc123', 'Worker: X');
 const rUnknown = stallRoute({ kind: 'unknown' }, 'abc123', 'Worker: X');
-check(': permission calls a human to the session',
-  /claude attach abc123/.test(rPerm) && /only a person/.test(rPerm), rPerm);
+// PB-176: it names the session routes without asserting a person is wanted — the same
+// field is also set where nothing is standing and nobody can answer anything.
+check(': permission names the session routes and claims none of the three readings',
+  /claude attach abc123/.test(rPerm)
+  && /refusal that has already returned/i.test(rPerm)
+  && !/only a person/i.test(rPerm), rPerm);
 check(': a limit does not call a human — it resets on its own, wake it with a message',
   /no person needed/.test(rLimit) && /wake the session with a message/.test(rLimit) && !/claude attach/.test(rLimit), rLimit);
 check(': an unrecognized reason does not invent a route, it points to the logs',
