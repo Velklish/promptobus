@@ -21,6 +21,9 @@
 // This file is written against `node:test` rather than the shared `check` helper because two
 // of the three drivers are not fixed yet and a pending contract is marked `todo`, which `check`
 // has no axis for (the rule is in the header of test/run.mjs).
+// First, before anything that could read the real one: this file is written against
+// `node:test` rather than `check.mjs`, which is where the other files get the diversion.
+import './home.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
