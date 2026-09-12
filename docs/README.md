@@ -24,7 +24,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-007-codex-participant-isolated-home.md](adr/adr-007-codex-participant-isolated-home.md) | A Codex participant runs in an isolated `CODEX_HOME`: the owner's auth copied in, mechanism-only MCP in its `config.toml`, the worker worktree trusted by realpath, workspace skills copied into that worktree | Accepted |
 | [adr/adr-008-codex-reviewer-working-directory.md](adr/adr-008-codex-reviewer-working-directory.md) | A Codex reviewer works in a directory of its own beside the participant files, trusted by realpath like a worker's worktree; the tree under review is attached as a read and never trusted | Accepted |
 | [adr/adr-010-session-identity-is-a-driver-member.md](adr/adr-010-session-identity-is-a-driver-member.md) | Session identity is a driver member (`identityVar`) answering for the session's own commands, injected into the core rather than imported by it; two claimants are refused instead of picked | Accepted |
-| [adr/adr-011-a-session-address-is-per-task.md](adr/adr-011-a-session-address-is-per-task.md) | A session's bus address becomes per-task; until then `promptobus send` writes only from the address the process already has, and there is no `--from` because the barrier for one does not exist | Accepted |
+| [adr/adr-011-a-session-address-is-per-task.md](adr/adr-011-a-session-address-is-per-task.md) | A session's bus address becomes per-task. The `promptobus send` door built for it was withdrawn before release — four review rounds, four major findings of one class — and the missing piece is named: the store keeps no positive binding of a participant address to a session | Accepted |
 
 ## Cross-cutting principles
 

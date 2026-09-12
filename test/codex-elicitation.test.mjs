@@ -154,15 +154,40 @@ for (const [name, requestedSchema] of [
 //   let is_message_only_schema = requested_schema.is_null() || is_empty_object_schema;
 // Only these two accept.
 for (const [name, requestedSchema] of [
-  ['no schema at all', undefined],
+  ['an explicit null schema', null],
   ['an empty object schema', { type: 'object', properties: {} }],
 ]) {
-  const p = { ...approval };
-  if (requestedSchema === undefined) delete p.requestedSchema;
-  else p.requestedSchema = requestedSchema;
+  const p = { ...approval, requestedSchema };
   const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
   check(`: the marker with ${name} is accepted — nothing to fill is the approval's shape`,
     d.allow === true, JSON.stringify({ requestedSchema, d }));
+}
+
+// The guard is a WHITELIST: everything it does not prove is refused, including shapes
+// nobody has catalogued. These are the ones that leaked through a filter chain one at a
+// time — a different elicitation VARIANT, and a required field that is absent rather than
+// explicitly null. Upstream applies the schema test inside the Form arm only.
+{
+  const url = { ...approval, mode: 'url', elicitationId: 'e-1', url: 'https://example.invalid/approve' };
+  delete url.requestedSchema;
+  const d = decideApproval('mcpServer/elicitation/request', url, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(': a URL elicitation carrying the marker is DECLINED — it is a different variant',
+    d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
+}
+
+for (const [name, mutate] of [
+  ['requestedSchema absent rather than null', (p) => { delete p.requestedSchema; }],
+  ['mode absent', (p) => { delete p.mode; }],
+  ['mode openai/form', (p) => { p.mode = 'openai/form'; }],
+  ['mode url with a form schema', (p) => { p.mode = 'url'; }],
+]) {
+  const p = { ...approval };
+  mutate(p);
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is DECLINED — the whitelist proves every field it needs`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ p, d, r }));
 }
 
 // And the three shapes an earlier revision of this file accepted by reading the upstream

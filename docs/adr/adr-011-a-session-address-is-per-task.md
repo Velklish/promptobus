@@ -1,4 +1,4 @@
-# ADR-011: A session's bus address becomes per-task; the CLI door writes only from the address it already has
+# ADR-011: A session's bus address becomes per-task; the CLI door built for it was withdrawn before release
 
 **Status:** Accepted
 **Date:** 2026-09-12
@@ -42,19 +42,10 @@ address stops being a property of the process and becomes a property of the pair
 participants correspond only through the orchestrator is unchanged; it is a rule about a PAIR
 of addresses and stays exactly as strict.
 
-**2. The implementation does not ship in this release.** What ships is the door and nothing
-else: `promptobus send <address> --body <text>` writes one message **from the address the
-process can prove it has** — `PROMPTOBUS_ROLE` when the caller declares one. It creates no new
-contract and removes the hand-driven multiplexer that produced the card.
-
-**And it REFUSES rather than falling back when it cannot prove one.** A participant's session
-environment carries no bus identity on purpose (`lib/spawn.js`, `sessionEnv`: identity travels
-as hook-command arguments, because a value put in the environment is inherited by neighbours
-and hands out a foreign identity). So an undeclared role is not "orchestrator", it is
-"unknown" — and answering it with the orchestrator's address would have been exactly the
-borrowing this decision refuses `--from` to prevent, only invisible, with no flag on the
-command line to see it by. The orchestrator address is taken only when the process can name
-its own session AND that session owns the task; otherwise the command fails with the reason.
+**2. Nothing of it ships in this release.** A CLI door was built for it — `promptobus send`,
+writing from the address the process can prove it has, refusing rather than guessing — and was
+**withdrawn before release** after four review rounds. The section below records why and what
+is missing. `promptobus send` is not a command: the dispatch answers `unknown command`.
 
 **3. There is no `--from`, and there will not be one before the barrier exists.** It was the
 cheap way to close the same case, and it was refused: a sender that can be chosen is a sender
@@ -98,14 +89,13 @@ as a command. The next attempt begins from them.
 
 ## Consequences
 
-- The case that produced the card is unblocked now: a session that raised its own task can
-  drive that task's participants with a command instead of keypresses.
-- **A session speaks as an address it can PROVE, and ownership is such a proof.** A worker that
-  opens a task of its own is recorded as that task's owner, so `send` lets it write there as the
-  orchestrator — which is the case that produced the card. What stays out of reach is speaking as
-  an address it cannot prove: a participant of a task it does not belong to, an address another
-  session holds, or the orchestrator of a task owned by someone else or by nobody at all. Each of
-  those is a refusal naming the session that does own it.
-- When the per-task address lands, `send` gains the ability to choose among the addresses the
+- **The case that produced the card is NOT unblocked.** A session that raised its own task
+  still has no command for its participants, and the hand-driven terminal multiplexer stays
+  the only way until the next attempt lands. That is the cost of withdrawing, and it is the
+  cost the owner accepted rather than shipping a surface that grants more than it promises.
+- **The rule the next attempt inherits: a session speaks as an address it can PROVE.** Ownership
+  of a task is such a proof and is recorded. Membership of a participant address is NOT — and
+  that gap is the whole of what stopped this one.
+- When the per-task address lands, the door gains the ability to choose among the addresses the
   session legitimately holds — which is a different thing from choosing any address, and is
   the distinction this decision exists to keep.

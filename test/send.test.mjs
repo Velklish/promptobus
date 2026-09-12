@@ -20,6 +20,8 @@ const TASK = 'sendtest-t20260912-000000';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { send } = await import(path.join(here, '..', 'lib', 'send.js'));
+const { helpText } = await import(path.join(here, '..', 'lib', 'cli.js'));
+const runPromptobusHelp = () => { console.log(helpText(host)); };
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { sessionEnv } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { driverByHarness } = await import(path.join(here, '..', 'lib', 'drivers.js'));
@@ -77,9 +79,14 @@ const last = (addr) => {
 }
 
 {
+  // NOT a success — this is the hole the command was withdrawn for (ADR-011 § The first
+  // implementation, round 4). `worker:one` carries no session binding, and the store keeps
+  // no POSITIVE one, so a declared role for it is accepted on the strength of "nobody else
+  // is known to hold it". The case is kept, and named for what it is, so that a future
+  // re-registration has to change this line before it can call itself fixed.
   await run(['send', 'orchestrator', '--body', 'from a worker', '--task', TASK],
     { PROMPTOBUS_ROLE: 'worker:one' });
-  check(': PROMPTOBUS_ROLE makes the sender that participant, not the orchestrator',
+  check(': KNOWN HOLE of the dormant implementation — an unbound participant address is claimable',
     last('orchestrator')?.sender === addrDir('worker:one'), JSON.stringify(last('orchestrator')?.sender));
 }
 
@@ -245,4 +252,25 @@ for (const [name, argv] of [
   });
   check(': a refused send starts no warden',
     !existsSync(trace), existsSync(trace) ? readFileSync(trace, 'utf8') : 'absent');
+}
+
+// The withdrawal itself, at the level a person reaches it. A one-line restoration of
+// `case 'send'` would pass every check above, because they drive the module: this is the
+// only one that fails if the command is published again without a fresh review.
+{
+  const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
+  const before = inbox('orchestrator').length;
+  const r = await expectFail(() => runPromptobus(['send', 'orchestrator', '--body', 'republished'], {
+    host, cwd: ROOT, env: baseEnv,
+  }));
+  check(': `send` is not a command — the withdrawal holds at the CLI, and nothing is written',
+    r.failed === true && /unknown command "send"/.test(r.out)
+      && inbox('orchestrator').length === before,
+    `${r.failed} · ${inbox('orchestrator').length - before} written · ${r.out}`);
+}
+
+{
+  const help = await capture(() => runPromptobusHelp());
+  check(': `send` is named nowhere a person would find it — help and the subcommand list',
+    !/\bsend <address>/.test(help) && !/status, send,/.test(help), help.slice(0, 200));
 }
