@@ -348,3 +348,45 @@ reads", and a two-pass-edit probe paints nothing — so there is no check
 for this property, not a green one. What is actually checked: the record
 digest matches the blob payload, and a read refuses `artifact-integrity`
 on a mismatch.
+
+### Same-session identity, and the prefix fallback
+
+Source: `src/protocol.ts`.
+
+Whether these are the same session identifier — a FALLBACK rule, for records
+without a full id. The check there is prefix-based: the harness names one
+session two ways — the full identifier is a uuid, and the short `id` that
+lift parsed from `--bg` output is the first eight hex of the same uuid
+(measured: `id: "e8c5be23"` against
+`sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"`).
+
+**That premise is not our contract, and a gate must not be built on it**
+(review remark). If the spellings drifted on the next build, the check would
+call every session foreign, in silence. So the primary rule became equality
+of full ids (`foreignSessionOf` below), and the prefix stayed where there is
+no full id to take: previous-release records and lifts where `agents --json`
+did not parse and the id came from free-text output.
+
+Case is folded: harness hex is lower, but that rule is not ours. Empty on
+both sides is not a match, it is unknown: the caller decides.
+
+### Reading a mailbox: what a read marks and what it does not
+
+Source: `src/v1/messages.ts`.
+
+Threshold after which an unclosed intent is treated as abandoned regardless
+of the lease.
+
+It is also the upper bound of the lease: a pid the OS reused for a foreign
+process would otherwise lock a foreign intent forever, and the undelivered
+would sit forever. The slack is taken from the cost of one send: measured
+2026-09-02, 500 sends in a row — 1.4 ms CPU per send at a median of 1.3 ms;
+under load (load average 38–44) the median is the same, and the tail is
+stretched by the scheduler: p99 35–67 ms, the longest of one and a half
+thousand — 141 ms. The threshold is two hundred times that, and a live
+intent never lives longer than a send at all: from `wx` creation to drop
+it is a synchronous block.
+
+Exported for a contract quote: the reference names the threshold in
+seconds, and `lint` checks that number against this constant through
+`dist`; there are no other consumers outside.

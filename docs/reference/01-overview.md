@@ -279,3 +279,26 @@ The store path arrives as the `home` argument. Where it lives, the
 package does not know at all: the workspace root is found by the adapter,
 which also supplies diagnostics and session identity
 ([host.ts](../../src/host.ts)).
+
+### Entering a task: once per connection
+
+Source: `src/mcp/server.ts`.
+
+Entering a task: hand over the contact point and lift a listener. Per
+connection this is done ONCE per task — `joined` is that mark. A repeat
+is not an error, but it is not work either: `onJoin` writes to the store
+and lifts a process, and a session enters a task once per connection. The
+key is the task id, not the address: an explicit `task` tool argument may
+name another, and entering that one is lawful.
+
+**The mark is set AFTER a successful enter and only for whoever handed
+over a contact point.** The order is not cosmetic: `ownership` is the
+first real read of the task journal (`resolveTaskId` only checks that it
+exists), and on a wiped or unreadable journal it refuses. Marking enter
+early, the server would remember as entered a session that did not enter
+— and the next `tools/call` would skip enter, so the contact point would
+never be handed over in the life of the session (review remark). The
+ownership gate is the other half of the same: a foreign session does not
+get a socket written (`joinBus`), but it may become the owner on the same
+connection — `mailbox {claim: true}` — and the mark would keep
+`wake/<address>.json` on the previous owner's socket until the end of the turn.

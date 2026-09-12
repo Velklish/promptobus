@@ -1219,3 +1219,47 @@ true one, and the harness rows carry `stale_cache` beside it.
 
 `source` is how the entries themselves came back, and it stays the resolver's
 to compute; this only chooses which stamp the age is measured from.
+
+### Cursor: why the aggregation is asked before the windows
+
+Source: `lib/model-routing/adapter-cursor.js`.
+
+The pool a model is billed to is a fact the harness states, and the bucket
+list is not the only place it states it — measured 2026-09-06, that list lags
+Cursor's own billing by a model family. The aggregation states it per model
+for every model with an event this cycle, so it is asked BEFORE the windows
+are built: the ids it names join the `auto` scope. It is optional in the way
+the policy call is — a refusal, a non-200, an unparsable body or an empty
+budget costs the second route and leaves the bucket list as the whole answer,
+which is the behaviour this adapter had before.
+
+A TIMEOUT here costs more than the route, and the shared budget is why: the
+call is aborted at `left()`, so an endpoint that hangs drains what remains of
+the preflight and the policy call below is never made — the tier route and the
+near-limit note go together. The windows are unaffected: they are built from
+the usage answer already in hand. Nothing caps this call below `left()`,
+because a cap invented here would be a budget nobody measured.
+The body is the same empty object every method here
+is asked with: measured 2026-09-06, `{}` answers 200 and the `aggregations`
+it returns cover the current billing cycle, so no date range is sent.
+
+### Cursor: the auto bucket and what it lags
+
+Source: `lib/model-routing/adapter-cursor.js`.
+
+The ids Cursor BILLED to the auto pool this cycle, off
+`GetAggregatedUsageEvents`.
+
+The bucket list is a list Cursor maintains and it lags Cursor's own billing:
+measured on the owner's account on 2026-09-06, one turn on
+`cursor-grok-4.6-medium` moved `autoPercentUsed` (86.1025 → 86.105) and left
+`apiPercentUsed` untouched, while `autoBucketModels` named no `grok-4.6` before
+or after. The aggregation is where the same answer is stated per model:
+`tier: 2` is the Auto bucket and `tier: 1` is the api pool, and a row is a fact
+the harness published about a turn that was really billed.
+
+A row names a WHOLE id (`cursor-grok-4.6-medium`), which is the id the
+inventory prints, so this route matches exactly and infers no family — the rule
+ADR-004 fixed for the resolver. **A model with no row is not in the pool**: no
+events this cycle and no bucket entry leaves it in `api`, which is the
+conservative reading, the api pool being the fuller one.

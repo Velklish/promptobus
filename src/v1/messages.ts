@@ -102,24 +102,8 @@ function delivered(home: string, task: string, participant: string, message: str
     || existsSync(historyRef(home, task, participant, message));
 }
 
-/**
- * Threshold after which an unclosed intent is treated as abandoned regardless
- * of the lease.
- *
- * It is also the upper bound of the lease: a pid the OS reused for a foreign
- * process would otherwise lock a foreign intent forever, and the undelivered
- * would sit forever. The slack is taken from the cost of one send: measured
- * 2026-09-02, 500 sends in a row — 1.4 ms CPU per send at a median of 1.3 ms;
- * under load (load average 38–44) the median is the same, and the tail is
- * stretched by the scheduler: p99 35–67 ms, the longest of one and a half
- * thousand — 141 ms. The threshold is two hundred times that, and a live
- * intent never lives longer than a send at all: from `wx` creation to drop
- * it is a synchronous block.
- *
- * Exported for a contract quote: the reference names the threshold in
- * seconds, and `lint` checks that number against this constant through
- * `dist`; there are no other consumers outside.
- */
+/** Reading a mailbox.
+ * What a read marks, and what it deliberately leaves: reference/04-protocol.md. */
 export const INTENT_STALE_MS = 30_000;
 
 /** Writing a message into a mailbox.

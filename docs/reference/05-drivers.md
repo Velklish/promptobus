@@ -161,3 +161,68 @@ file — it takes the driver from the registry map.
 A registry-home refusal propagates from `readSession` through activation, inspect and
 stop. The `gone` outcome therefore means a named registry was read and contained no
 record; it is never an alias for missing configuration.
+
+### Codex: why a reviewer sits in a directory of its own
+
+Source: `lib/driver-codex.js`.
+
+Reviewer working directory: the mechanism's own, not the tree under review.
+
+A Codex reviewer used to sit in the reviewed clone, and two things followed. It got no
+workspace skills — the review procedure arrives as a module skill, and copying a canon
+into a foreign tree would dirty the branch a worker is still committing to. And it got
+no project trust — trusting the reviewed tree would let the repository being judged put
+MCP servers into the session judging it ([ADR-008](../adr/adr-008-codex-reviewer-working-directory.md)).
+Seated in a directory of its own, the reviewer gets both, and the reviewed tree gains
+no file from the lift: it is attached as a read through `addDirs`, the way the rule
+files already are.
+
+The directory is DETERMINISTIC, not `mkdtemp`, for the same reason the Cursor sandbox
+and the participant home are: `prepare` writes and launches nothing, and `--dry-run`
+must print the path a real lift will use. It sits beside the other participant files in
+the task store, so `done` sweeps it with them — by the address stem, without asking a
+driver.
+
+### Codex: sweeping participant homes nothing names
+
+Source: `lib/driver-codex.js`.
+
+Remove every home under the root that no session record names.
+
+A home holds a copy of the owner's credentials and the `http_headers` of the
+canonical MCP set in the clear, and the paths that remove one all need something to
+hold: `stop` needs a record, `done` needs a participant whose session is still
+alive. Three ways to lose that hold are real — a holder killed outright, a lift that
+died between building the home and writing the record, and a task closed while its
+app-server was already dead — and in each the home is the only thing left. So the
+lift and the stop of ANY Codex participant also collect what earlier ones left: a
+home whose record is gone is a home whose session is over.
+
+Deliberately not keyed on age. A home is legitimate exactly while a record names it,
+and a grace period would only be a window for a secret to sit in.
+
+`dropSession` removes the home with the record it belongs to, and it asks this
+function to do it: the guard above is the only place that decides what may be
+removed, and the registry must not grow a second opinion.
+
+### Codex: the phrases a participant is addressed by
+
+Source: `lib/driver-codex.js`.
+
+--- the participant's isolated Codex home -----------------------------------------
+
+One `CODEX_HOME` per participant, built before the lift and removed with the session.
+It is what makes a Codex participant's environment the mechanism's rather than the
+owner's: an empty home lifts no personal MCP server, and the `[projects]` records and
+the marketplace snapshot a run writes land in it instead of in `~/.codex` (measured on
+codex-cli 0.146.0 by the consumer, with no paid turn).
+
+Three things go in, and nothing else. A copy of the owner's `auth.json` at mode 0600 —
+the account is the owner's, and an isolated home holding that copy answers
+`codex login status` with `Logged in using ChatGPT` without a turn. The mechanism's own
+MCP entries under `[mcp_servers]`. And, for a worker, the trust record for its worktree.
+
+One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical skill
+roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the
+participant anyway. The owner accepted that as the boundary — those are the skills the
+participant is meant to have.
