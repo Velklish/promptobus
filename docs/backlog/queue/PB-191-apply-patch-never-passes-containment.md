@@ -119,6 +119,29 @@ failure. Whoever answers this card must say which route is guaranteed, for which
 what a participant should do when the guaranteed one is refused — the answer today is "escalate",
 and nothing tells a participant that.
 
+## The fallback changes the shape of the failure, measured 2026-09-12
+
+A third participant of run 0912c hit the full sequence in one edit, and reported each step:
+
+1. `apply_patch` — refused by containment, as this card already records.
+2. Fallback to the documented remedy, a shell run of `/usr/bin/patch`.
+3. That patch was mis-assembled, so `patch` applied the hunks it could and **rejected the rest**,
+   leaving `.rej` files beside a half-edited source.
+
+The participant caught it, deleted the artefacts and re-read the diff hunk by hunk. But the third
+step is the one this card has to record, because it is not the same kind of failure as the first:
+
+- `apply_patch` refused **loudly and completely**. Nothing changed on disk, and the participant could
+  not mistake it for success.
+- Shell `patch` failed **partially**. The file was left syntactically valid and semantically half
+  finished — a call present with no implementation behind it is exactly the shape this produces —
+  and `node --check` on such a file returns 0.
+
+So the remedy this card hands a participant trades a refusal it cannot miss for a failure it can.
+Anyone writing the fix must say what the participant runs **after** the fallback to know the edit
+landed whole: a reject-file sweep, a rejected-hunk exit code read rather than ignored, or a diff
+re-read. "Write through shell" alone is not a complete instruction.
+
 ## Work to do
 
 - Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
