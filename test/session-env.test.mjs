@@ -18,11 +18,11 @@
 // after, so the caller won. With a one-name list that was cosmetic; with this list it is not,
 // and the contract is Codex's order for everyone.
 //
-// This file is written against `node:test` rather than the shared `check` helper because two
-// of the three drivers are not fixed yet and a pending contract is marked `todo`, which `check`
-// has no axis for (the rule is in the header of test/run.mjs).
-// First, before anything that could read the real one: this file is written against
-// `node:test` rather than `check.mjs`, which is where the other files get the diversion.
+// Written against `node:test` rather than the shared `check` helper because two of the three
+// drivers are not fixed yet and a pending contract is marked `todo`, which `check` has no axis
+// for (the rule is in the header of test/run.mjs). That choice is also why `home.mjs` is
+// imported by hand and first, before anything that could read the real home: `check.mjs` is
+// where every other file picks the diversion up.
 import './home.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

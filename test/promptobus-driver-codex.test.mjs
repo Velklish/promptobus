@@ -39,6 +39,8 @@ const diagnosis = diagnoseTrace(HARNESS, DIAGNOSE_ADDRESS);
 
 // A thread file is written by the stand's holder, a separate process, so reading it once races
 // the writer: under load the reader wins and the check reports the product wrong (PB-184).
+// Nine reads: 135 s if every one expires, under the 240 s watchdog and the 300 s runner
+// deadline. Arithmetic, not a measurement — a slower stand needs the budget re-checked.
 const THREAD_WAIT_MS = 15000;
 async function awaitThread(id, { timeoutMs = THREAD_WAIT_MS } = {}) {
   const file = path.join(HARNESS, 'threads', `${id ?? ''}.json`);
