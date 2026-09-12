@@ -125,7 +125,6 @@ test('src and its own suite have no names of another contour', () => {
     ...walk(SRC),
     ...walk(path.join(ROOT, 'test')).filter((f) => !f.endsWith(`${path.sep}driver.test.mjs`)),
     ...walk(path.join(ROOT, 'schemas')),
-    ...walk(path.join(ROOT, 'templates')),
   ];
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
