@@ -2041,20 +2041,20 @@ const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].tri
 // existed: comparing whole alarms measures the reasons and passes on the old code.
 const alarmCore = (addr) => alarmOf(addr).replace(/ \(reason:[^)]*\)/, '');
 const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
-// PB-186: a pull participant is not on self-wake and never will be. Before this row the
+// PB-168: a pull participant is not on self-wake and never will be. Before this row the
 // fallback read its absent socket as a fresh start and promised a knock that never comes.
 store.upsertParticipant(HOME, PROG, store.participantRecord('worker:pull', { name: 'pull' }));
 store.writeHealth(HOME, PROG, { ...progHealth, 'worker:pull': { channel: 'pull', wake: null } });
 const pullOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) }));
 const pullLine = pullOut.split('\n').find((l) => l.includes('worker:pull')) ?? '';
-check('PB-186: a pull participant gets its own alarm, not a self-wake prognosis',
+check('PB-168: a pull participant gets its own alarm, not a self-wake prognosis',
   /alarm: pull/.test(pullLine)
   && !/self-wake/.test(pullLine)
   // …and specifically not the start-up promise, which is the wrong half of the fallback.
   && !/clears on the first knock/.test(pullLine),
   pullLine || pullOut);
 // A stale self-wake verdict must not outlive the move to pull.
-check('PB-186: self-wake fields left by an earlier channel do not print under pull',
+check('PB-168: self-wake fields left by an earlier channel do not print under pull',
   !/starting up|stays until the channel accepts/.test(
     (capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) })))
       .split('\n').find((l) => l.includes('worker:pull')) ?? ''),
