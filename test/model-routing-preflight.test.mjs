@@ -742,18 +742,67 @@ await preflight({ host, harnesses: [harness], adapterFor: () => ({ probe }), bud
   const names = ['alpha', 'beta', 'gamma', 'delta'];
   // Far enough ahead that every child is up and spinning before any of them writes.
   const startAt = Date.now() + 1500;
+  const said = [];
   const runs = names.map((name) => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script, host.cacheFile, name, String(startAt)], { stdio: 'ignore' });
+    const child = spawn(process.execPath, [script, host.cacheFile, name, String(startAt)], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    child.stderr.on('data', (chunk) => said.push(String(chunk)));
     child.on('error', reject);
     child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${name} exited ${code}`))));
   }));
   await Promise.all(runs);
 
   const stored = readSnapshot(host);
-  assert.deepEqual(Object.keys(stored.harnesses).sort(), names.slice().sort(),
-    'a writer lost its entry to a neighbour that renamed second');
   assert.equal(validates(stored), true);
   assert.equal(existsSync(`${host.cacheFile}${LOCK_SUFFIX}`), false, 'the last writer left its lock behind');
+
+  // The guarantee the product actually gives is conditional: no entry is lost WHILE every
+  // writer takes the lock, and a writer that waits past LOCK_WAIT_MS writes without it on
+  // purpose. Asserting the unconditional form made this file's verdict depend on the machine
+  // (PB-186), so the precondition is read off the run rather than assumed.
+  const fellThrough = said.filter((line) => /WITHOUT the lock/.test(line));
+  if (!fellThrough.length) {
+    assert.deepEqual(Object.keys(stored.harnesses).sort(), names.slice().sort(),
+      'every writer took the lock and one still lost its entry to a neighbour that renamed second');
+  } else {
+    // Under contention the loss is allowed and must be SAID. Silence is the defect, not the race.
+    assert.ok(fellThrough.every((line) => line.includes(host.cacheFile)),
+      `the fallthrough warning does not name the cache file: ${fellThrough.join(' | ')}`);
+    assert.ok(Object.keys(stored.harnesses).length >= 1,
+      'a contended write still leaves a readable document');
+  }
+});
+
+test('a writer that cannot take the lock says so, and the loss stops being silent', async () => {
+  // Deterministic counterpart to the four-writer race: the lock is held here, by this test,
+  // for longer than a writer will wait, so the fallthrough happens by construction.
+  const host = sandboxHost();
+  mkdirSync(path.dirname(host.cacheFile), { recursive: true });
+  writeFileSync(`${host.cacheFile}${LOCK_SUFFIX}`, '');
+  const previousWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message));
+  const started = Date.now();
+  try {
+    const snapshot = await preflight({
+      host,
+      harnesses: ['held'],
+      adapterFor: adapterMap({ held: availableStub() }),
+      budgetMs: 5000,
+    });
+    assert.equal(snapshot.harnesses.held.state, 'available', 'the probe still answered');
+  } finally {
+    console.warn = previousWarn;
+  }
+  assert.ok(Date.now() - started >= LOCK_WAIT_MS,
+    'the writer did not actually wait for the lock, so nothing was proven about the fallthrough');
+  const told = warnings.filter((line) => /WITHOUT the lock/.test(line));
+  assert.equal(told.length, 1, `the fallthrough was not reported: ${JSON.stringify(warnings)}`);
+  assert.match(told[0], new RegExp(`after ${LOCK_WAIT_MS} ms of contention`));
+  assert.ok(told[0].includes(host.cacheFile), 'the warning does not name the cache file');
+  // The write itself went in: a cache that refused to write would be the worse failure.
+  assert.equal(readSnapshot(host).harnesses.held.state, 'available');
 });
 
 // --- the TTLs ----------------------------------------------------------------
