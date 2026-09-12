@@ -1248,7 +1248,7 @@ The body is the same empty object every method here
 is asked with: measured 2026-09-06, `{}` answers 200 and the `aggregations`
 it returns cover the current billing cycle, so no date range is sent.
 
-### `autoTierModels` — the ids Cursor BILLED to the auto pool this cycle, off
+### `autoTierModels` — the ids Cursor BILLED to the auto pool this cycle, off `GetAggregatedUsageEvents`
 
 Source: `lib/model-routing/adapter-cursor.js`, `autoTierModels`.
 
