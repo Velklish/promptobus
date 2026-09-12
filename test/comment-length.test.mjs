@@ -84,6 +84,10 @@ test('the scanner sees the shapes a per-line regexp could not', () => {
   // could stop seeing comments altogether and still pass.
   const one = (src) => runsOf(src).map((r) => [r.line, r.length]);
   assert.deepEqual(one('/*\n a\n b\n */\nconst x = 1;'), [[1, 4]], 'a block with bare continuation lines');
+  // Boundaries are not enough: the bare lines must be IN the run, or its identity is the
+  // identity of a different comment and the ratchet compares the wrong text. Measured —
+  // a mutation that dropped them left the length at 4 and this file green.
+  assert.deepEqual(runsOf('/*\n a\n b\n */\n')[0].lines.map((l) => l.trim()), ['/*', 'a', 'b', '*/']);
   assert.deepEqual(one('const x = 1; // one\n// two\n// three\n'), [[1, 3]], 'a comment opened after code');
   assert.deepEqual(one('/**\n * a\n * b\n */\nfn();'), [[1, 4]], 'a jsdoc block');
   assert.deepEqual(one('// a\n// b\n// c\nconst x = 1;'), [[1, 3]], 'three line comments');
