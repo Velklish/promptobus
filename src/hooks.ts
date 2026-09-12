@@ -4,7 +4,7 @@
 import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
 import type { PromptobusHost } from './host.js';
 
-// What the installer knows and never writes.
+// Not written any more; kept to find and delete an entry an older install wrote.
 // [guides/install.md](../docs/guides/install.md#what-the-installer-writes)
 export const BUS_HOOK_EVENT = 'PostToolUse';
 export { BUS_SERVER };

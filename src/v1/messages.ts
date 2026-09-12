@@ -102,7 +102,7 @@ function delivered(home: string, task: string, participant: string, message: str
     || existsSync(historyRef(home, task, participant, message));
 }
 
-/** Reading a mailbox.
+/** Threshold after which an unclosed intent is treated as abandoned.
  * [reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless](../../docs/reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless) */
 export const INTENT_STALE_MS = 30_000;
 

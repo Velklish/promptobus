@@ -62,7 +62,7 @@ a participant with nothing to wake it by.
 Constraint invisible from this file: no harness name is here and none can be —
 the package set gate watches for that.
 
-### `worktreeTouchedMs` — how long ago the participant last WROTE anything in its own working tree, in
+### `worktreeTouchedMs` — the third liveness signal, and what the first two miss
 
 Source: `lib/cursor-persist.js`, `worktreeTouchedMs`.
 
@@ -209,7 +209,7 @@ removed, and the registry must not grow a second opinion.
 
 Source: `lib/driver-codex.js`.
 
---- the participant's isolated Codex home -----------------------------------------
+The participant's isolated Codex home.
 
 One `CODEX_HOME` per participant, built before the lift and removed with the session.
 It is what makes a Codex participant's environment the mechanism's rather than the

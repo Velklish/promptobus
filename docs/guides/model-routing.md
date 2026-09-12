@@ -583,7 +583,7 @@ is no mark for a consumer to act on, and the person gets the same diagnosis
 either way. The CLI catch prints a `PromptobusError` as one line and exits 1,
 exactly as `fail` does; what the code adds is on the way past a consumer.
 
-### `mergeWeights` — --- the merge itself --------------------------------------------------------
+### `mergeWeights` — the four merge rules, and why provenance is a list
 
 Source: `lib/model-routing/catalog.js`, `mergeWeights`.
 
@@ -841,7 +841,7 @@ the pure function and composes the same block from the same snapshot. A second
 copy of this projection in a test would be the second description of one
 contract that the schemas and this package's grammars already work to avoid.
 
-### `markExhausted` — late-start hook: a driver whose session failed to start on a limit reports it
+### `markExhausted` — marking a harness exhausted when a lift fails on a spent limit
 
 Source: `lib/model-routing/cache.js`, `markExhausted`.
 
@@ -900,7 +900,7 @@ Exported for the same reason `modelList` is: the telemetry record carries a
 window's scope into a second file, and a second projection of one schema shape
 is a second set of rules about it.
 
-### `citationChecks` — ADR-004 § Catalog ratings from published results: "validate refuses a rated
+### `citationChecks` — what a rated row must carry before validate accepts it
 
 Source: `lib/model-routing/validate.js`, `citationChecks`.
 
@@ -990,7 +990,7 @@ flat form has always been the primary window written without its name. Losing
 it would turn an exhaustion the harness DID time into a sticky one that only
 `--clear-exhausted` lifts.
 
-### `spentWindow` — the account-wide row that is spent, or null when none is
+### `spentWindow` — the account-wide row that is spent, or none
 
 Source: `lib/model-routing/adapter-claude.js`, `spentWindow`.
 
@@ -1115,7 +1115,7 @@ implementations, so the driver declares the adapter exactly as it did; the suite
 passes its own, which is what lets every branch above be checked without a
 network or a person's keychain.
 
-### `scopeModels` — the model ids a scope's display name resolves to, or null when it resolves to
+### `scopeModels` — resolving a scope display name to model ids
 
 Source: `lib/model-routing/adapter-claude.js`, `scopeModels`.
 
@@ -1159,7 +1159,7 @@ the one value that would make an unreadable stamp look freshly measured and
 hold it live for a whole TTL; the epoch makes the same entry read as expired,
 which sends the next run back to the adapter.
 
-### `paceLines` — the pace table: one row per eligible harness/pool representative, under the
+### `paceLines` — the pace table, and which lines it must always print
 
 Source: `lib/model-routing/render.js`, `paceLines`.
 
@@ -1225,7 +1225,7 @@ true one, and the harness rows carry `stale_cache` beside it.
 `source` is how the entries themselves came back, and it stays the resolver's
 to compute; this only chooses which stamp the age is measured from.
 
-### `events` — the pool a model is billed to is a fact the harness states, and the bucket
+### `events` — which pool a model is billed to, and why the bucket list is not the only source
 
 Source: `lib/model-routing/adapter-cursor.js`, `events`.
 

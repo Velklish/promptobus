@@ -285,7 +285,7 @@ value a layer above it overrides; the writer PB-32 adds will warn when that
 happens rather than leave the person to wonder why their default did not
 take.
 
-### `harnessStateHome` — where the package keeps its own session registry for one harness — the
+### `harnessStateHome` — the harness session registry, and the refusal when nobody says
 
 Source: `src/host.ts`, `harnessStateHome`.
 

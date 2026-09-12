@@ -312,7 +312,7 @@ export interface DriverOptions {
    */
   skillsDir?: boolean;
   /** Directories inside the participant's working directory this driver's launch files claim.
-   * [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract) */
+   * [reference/05-drivers.md#launch-directories-a-driver-claims](../docs/reference/05-drivers.md#launch-directories-a-driver-claims) */
   launchDirs?: string[];
   /** Tools taken from a read-only participant (`denyTools` capability). */
   denyTools: string[];

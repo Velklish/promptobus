@@ -89,7 +89,7 @@ export interface HostToolBin {
    */
   bin?: string;
   /** The binary's own version string as the host read it, raw.
-   * [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
+   * [reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means](../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means) */
   version?: string;
   note?: string;
   warn?: string;
@@ -123,7 +123,7 @@ export interface HostRoutingOverlay {
   id: string;
   path: string;
   /** Whether this is the layer the TOOL writes (ADR-004, decision 6).
-   * [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
+   * [reference/02-host.md#the-layer-the-tool-writes](../docs/reference/02-host.md#the-layer-the-tool-writes) */
   writable?: boolean;
 }
 
@@ -150,8 +150,8 @@ export interface PromptobusHost {
    * `promptobusHome()` is not used for routing.
    */
   routingPaths(): HostRoutingPaths;
-  /** What a host answers about its routing layers.
-   * [reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the](../docs/reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the) */
+  /** The environment variable one harness's registry is named by, and the refusal.
+   * [reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says](../docs/reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says) */
   harnessStateHome(harness: string): string | null;
 
   nodePath(): string;

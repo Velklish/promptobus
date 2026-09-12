@@ -37,7 +37,7 @@ export const ERROR_CODES = [
   // the CLI surface ADR-003 fixed, and they live here because the consumer
   // branches on a code from one list — a second list beside this one would be
   // a second vocabulary for the same kind of refusal. Their prose half is the
-  // error-code table of `[reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)`, and the suite reads the two
+  // error-code table of [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)`, and the suite reads the two
   // as one list.
   'strategy-unknown',
   'role-unknown',

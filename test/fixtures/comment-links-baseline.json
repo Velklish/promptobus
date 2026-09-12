@@ -1,7 +1,7 @@
 {
-  "bound": 49,
-  "fileLevel": 47,
-  "citation": 3,
+  "bound": 48,
+  "fileLevel": 48,
+  "citation": 2,
   "byFile": {
     "lib/cli.js": [
       "harness-home.js"
@@ -20,7 +20,7 @@
     "lib/cursor-persist.js": [
       "../docs/reference/05-drivers.md#cursor-the-persist-session",
       "../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session",
-      "../docs/reference/05-drivers.md#worktreetouchedms--how-long-ago-the-participant-last-wrote-anything-in-its-own-working-tree-in",
+      "../docs/reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss",
       "driver-cursor.js",
       "harness-home.js"
     ],
@@ -43,6 +43,7 @@
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../docs/reference/05-drivers.md#bindparticipanthomeremoval--remove-every-home-under-the-root-that-no-session-record-names",
       "../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver",
+      "../docs/reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by",
       "../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review",
       "model-routing/adapter-codex.js"
     ],
@@ -72,7 +73,8 @@
       "harness-home.js"
     ],
     "lib/install.js": [
-      "../docs/guides/install.md#2-workspace-file"
+      "../docs/guides/install.md#2-workspace-file",
+      "../docs/guides/install.md#what-the-installer-knows-and-never-writes"
     ],
     "lib/liftoff.js": [
       "../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight",
@@ -82,8 +84,8 @@
     "lib/model-routing/adapter-claude.js": [
       "../../docs/guides/model-routing.md#claude-code-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability",
-      "../../docs/guides/model-routing.md#scopemodels--the-model-ids-a-scopes-display-name-resolves-to-or-null-when-it-resolves-to",
-      "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-null-when-none-is",
+      "../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids",
+      "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none",
       "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-004-windows",
       "../driver-claude.js",
       "cache.js"
@@ -97,13 +99,13 @@
       "../../docs/guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers",
       "../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off",
       "../../docs/guides/model-routing.md#cursor-adapter-what-the-probe-reads",
-      "../../docs/guides/model-routing.md#events--the-pool-a-model-is-billed-to-is-a-fact-the-harness-states-and-the-bucket",
+      "../../docs/guides/model-routing.md#events--which-pool-a-model-is-billed-to-and-why-the-bucket-list-is-not-the-only-source",
       "../exec.js",
       "adapter-claude.js",
       "cache.js"
     ],
     "lib/model-routing/cache.js": [
-      "../../docs/guides/model-routing.md#markexhausted--late-start-hook-a-driver-whose-session-failed-to-start-on-a-limit-reports-it",
+      "../../docs/guides/model-routing.md#markexhausted--marking-a-harness-exhausted-when-a-lift-fails-on-a-spent-limit",
       "../../docs/guides/model-routing.md#scopeof--what-a-window-binds-projected-onto-the-closed-scope-shapes-or-undefined",
       "../../docs/guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape",
       "../../docs/guides/model-routing.md#the-availability-cache-the-first-disk-boundary-of-routing",
@@ -115,7 +117,7 @@
       "../../docs/guides/model-routing.md#calibrate-reading-the-telemetry-back"
     ],
     "lib/model-routing/catalog.js": [
-      "../../docs/guides/model-routing.md#mergeweights------the-merge-itself---------------------------------------------------------",
+      "../../docs/guides/model-routing.md#mergeweights--the-four-merge-rules-and-why-provenance-is-a-list",
       "cache.js"
     ],
     "lib/model-routing/preflight.js": [
@@ -124,7 +126,7 @@
       "../drivers.js"
     ],
     "lib/model-routing/render.js": [
-      "../../docs/guides/model-routing.md#pacelines--the-pace-table-one-row-per-eligible-harnesspool-representative-under-the",
+      "../../docs/guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print",
       "../../docs/guides/model-routing.md#rendering-a-decision-for-a-person",
       "cache.js"
     ],
@@ -140,7 +142,7 @@
     ],
     "lib/model-routing/validate.js": [
       "../../docs/guides/model-routing.md",
-      "../../docs/guides/model-routing.md#citationchecks--adr-004--catalog-ratings-from-published-results-validate-refuses-a-rated",
+      "../../docs/guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it",
       "../../docs/guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for"
     ],
     "lib/models.js": [
@@ -185,6 +187,7 @@
       "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit"
     ],
     "src/driver.ts": [
+      "../docs/reference/05-drivers.md#launch-directories-a-driver-claims",
       "../docs/reference/05-drivers.md#the-driver-contract",
       "migrate.ts",
       "model-routing.ts",
@@ -203,9 +206,11 @@
       "../docs/guides/install.md#what-the-installer-writes"
     ],
     "src/host.ts": [
-      "../docs/reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the",
+      "../docs/reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says",
       "../docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files",
-      "../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member"
+      "../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means",
+      "../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member",
+      "../docs/reference/02-host.md#the-layer-the-tool-writes"
     ],
     "src/index.ts": [
       "../docs/reference/01-overview.md#the-package-entry-point",
