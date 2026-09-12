@@ -130,7 +130,8 @@ promptobus done
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | Active tasks: participants, unread mail, session state, routing and review-round counts |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
-| `promptobus dismiss <address>` | Stop watching a finished participant |
+| `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
+| `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
 | `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
 | `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread |
