@@ -923,9 +923,11 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
   const plan = script.turns?.[turn] ?? null;
   if (!plan) return 'idle';
   if (plan.hang) return 'hang';
-  // A turn spent on a question. It does NOT get a skip — PB-181 measured a real hold, 278.497 s,
-  // ended by a keypress. The turn still ends successfully; only the content tells the outcomes apart.
-  if (plan.askQuestion) return 'question';
+  // A question HOLDS the turn: unanswered and unskipped, 278.497 s measured and ended by a
+  // keypress (PB-181). By every observable the mechanism has that is a hang, so the fixture
+  // takes the production path — three silent signals, the `watchdog` verdict — and not a
+  // shortcut of its own. The old `'question'` outcome named a kind `stallRoute` no longer has.
+  if (plan.askQuestion) return 'hang';
   if (!cfg) {
     note(home, address, { kind: 'no-bus', workspace });
     return 'error';
