@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
+import { GATE_RECORD_SCHEMA, GATE_RECORD_STEM, RESULT_BODY_MAX } from '../lib/handoff.js';
 
 // realpath: the planner canonicalizes the root (macOS: /var → /private/var), and the
 // test expectations must be compared to canonical paths.
@@ -1531,6 +1532,30 @@ check(': a generator that leaves untracked files is reported, and the lift still
 check(': a repository with no declaration says so in the preamble, and nothing is run',
   plan.repoSkills?.kind === 'none' && /declares no generator/.test(plan.prompt),
   JSON.stringify(plan.repoSkills));
+
+// PB-201: the worker is told where the record's shape is published, and the path is
+// checked against the file rather than against another copy of the string.
+const handoff = plan.prompt.slice(plan.prompt.indexOf('## Hand-off form'));
+check('PB-204: the worker preamble carries the four header lines in order',
+  plan.prompt.includes('## Hand-off form')
+  && ['Done', 'Gate', 'Open', 'Decide']
+    .every((word, i, all) => handoff.indexOf(`**${word}**`) > (i ? handoff.indexOf(`**${all[i - 1]}**`) : -1)),
+  handoff.slice(0, 400));
+check('PB-204: the body bound is the shared constant, and an unrun gate still gets its line',
+  handoff.includes(`at most ${RESULT_BODY_MAX} characters`)
+  && /not run, because/.test(handoff) && /an omitted line reads as a green one/.test(handoff),
+  handoff.slice(0, 800));
+check('PB-201: the worker preamble names the gate record and the schema that exists',
+  handoff.includes(GATE_RECORD_SCHEMA)
+  && existsSync(path.join(here, '..', GATE_RECORD_SCHEMA))
+  && /type=artifact/.test(handoff) && /git rev-parse HEAD/.test(handoff),
+  handoff.slice(-900));
+// The reviewer resolves the record by name, so the name is not the author's choice: a
+// file called anything else is a record nobody finds (review note).
+check('PB-201: the worker is given the file name the reviewer resolves, not a free choice',
+  handoff.includes(`\`${GATE_RECORD_STEM}-<your worker slug>.json\``)
+  && /a file named anything else is never found/.test(handoff),
+  handoff.slice(-700));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

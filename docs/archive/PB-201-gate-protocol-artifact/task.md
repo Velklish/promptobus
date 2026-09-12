@@ -34,7 +34,7 @@ What is missing is the record itself: there is no schema for a gate result, and 
 
 - Giving the reviewer a way to run gates: refused by [ADR-009](../../adr/adr-009-reviewer-resolves-no-discrepancy.md), and this card exists because that refusal stands.
 - The header of the result body — PB-204.
-- The `faults` seam of `listArtifacts` — [PB-146.3](../deferred/PB-146.3-list-artifacts-without-faults-seam.md), which returns when this card touches `src/v1/artifacts.ts`.
+- The `faults` seam of `listArtifacts` — [PB-146.3](../../backlog/deferred/PB-146.3-list-artifacts-without-faults-seam.md), which returns when this card touches `src/v1/artifacts.ts`.
 
 ## Checks
 

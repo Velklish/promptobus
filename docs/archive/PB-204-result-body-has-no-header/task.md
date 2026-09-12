@@ -29,7 +29,7 @@ Two consequences worth naming. The orchestrator re-reads: 43 % of its `Read` cal
 ## Out of scope
 
 - The machine record of the gate itself — PB-201; this card only reserves the line that points at it.
-- Adding fields to the message schema: the type list is frozen deliberately ([PB-131](../../archive/PB-131-message-types-mutable-array/task.md)), and the header is a convention inside `body`, not a new field.
+- Adding fields to the message schema: the type list is frozen deliberately ([PB-131](../PB-131-message-types-mutable-array/task.md)), and the header is a convention inside `body`, not a new field.
 - The orchestrator's own reading habits — a consumer-side concern.
 
 ## Checks

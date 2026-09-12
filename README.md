@@ -17,8 +17,8 @@ English is canonical. The Russian README is the only other language in this repo
 ## Features
 
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
-- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
-- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
+- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched. What comes back is a fixed four-line header — what was done, the gate command with its exit code, what is left open, what needs a decision — with the report itself attached as an artifact.
+- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot. A reviewer runs nothing, so the author's gate run reaches it as a machine record whose sha it compares against the tree it is reviewing.
 - **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
 - **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread, or while an answer the participant owes has not been sent — and a warden wakes the addressee when mail arrives. Which types ask for an answer is a published table, and `status` prints `UNANSWERED` for a turn that ended owing one.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
@@ -189,7 +189,7 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/hooks` | Hook planner: the bus feedback and guard hooks a harness file needs |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
 | `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
-| `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact and the model-routing documents |
+| `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record and the model-routing documents |
 
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](docs/reference/01-overview.md), [reference/02-host.md](docs/reference/02-host.md), [reference/04-protocol.md](docs/reference/04-protocol.md).
 

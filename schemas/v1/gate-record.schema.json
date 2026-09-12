@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:gate-record",
+  "title": "Gate record",
+  "description": "A worker's gate run in machine form, attached to a result as an artifact. NOT an engine record: the four models `validate` knows are task, participant, message and artifact, and an artifact payload is opaque bytes to the engine. One entry per gate command, not per session.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "records"],
+  "properties": {
+    "schemaVersion": {
+      "description": "The document's schema version. A newer one is not readable by an older reader and says so instead of being guessed at.",
+      "const": 1
+    },
+    "records": {
+      "description": "One entry per gate command that RAN. A command that was not run has no entry — its absence is carried by the result header's `not run, because …` line, never by a silent gap here.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "exit", "tree", "dirty", "at", "by"],
+      "properties": {
+        "command": {
+          "description": "The command exactly as executed, including flags. Not a description of it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "exit": {
+          "description": "The exit code of the command itself, read from the command and not from a pipe.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "counts": {
+          "description": "The counts the runner printed, under the runner's own names: gates, green, files, tests. Open on purpose — a closed list would refuse the next runner.",
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "tree": {
+          "description": "The sha the run was made on: the HEAD commit sha, `git rev-parse HEAD`. Not a git tree-object sha — the reviewer is handed `worktree HEAD <sha>` from the same call, and a tree-object sha would never compare equal to it. Full length only: the comparison is exact, so an abbreviation is a record that can never match.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "dirty": {
+          "description": "Whether tracked files were modified when the command ran. A green run on a dirty tree is not evidence about the committed tree, and without this the sha lies by omission.",
+          "type": "boolean"
+        },
+        "at": {
+          "description": "Exactly what Date#toISOString prints: the date-time format alone allows offsets.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        },
+        "by": {
+          "description": "The bus address that ran the command, in address spelling rather than participant id.",
+          "type": "string",
+          "pattern": "^(orchestrator|(?:worker|reviewer):[a-z0-9][a-z0-9-]*)$"
+        },
+        "tail": {
+          "description": "The tail of the combined output — the summary line, and for a non-zero exit the failing assertion in full. Bounded so the record stays readable; the whole log belongs in the log.",
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

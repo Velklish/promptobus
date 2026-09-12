@@ -18,6 +18,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
+import { GATE_RECORD_SCHEMA, RESULT_BODY_MAX } from '../lib/handoff.js';
 
 function rulesBlock(text, role, expectedFiles) {
   const lines = String(text).split('\n');
@@ -315,6 +316,46 @@ check('prompt: mechanical checks are declared unavailable; standalone procedure 
   && !plan.prompt.includes('report only'));
 check('prompt: rules — repository (standalone: without a workspace module)',
   plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes(['.', 'agents/base/rules'].join('')));
+// PB-201: the reviewer runs nothing, so a gate claim reaches it as a record it can read
+// and compare. All four not-evidence cases are named, or the verdict has a silent branch.
+check('PB-201: the reviewer is told to read the gate record and compare its sha with the reviewed tree',
+  plan.prompt.includes(GATE_RECORD_SCHEMA)
+  && /Compare a record's `tree` with the worktree HEAD/.test(plan.prompt)
+  && /Another sha, a dirty tree, a non-zero exit, or no record at all/.test(plan.prompt)
+  && /do not refuse over it/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => l.includes(GATE_RECORD_SCHEMA)) ?? plan.prompt);
+// The claim a matching sha supports is about the COMMIT. Uncommitted and untracked
+// content of the subject is outside it, and HEAD does not move when either appears.
+check('PB-201: a matching sha is evidence about the commit, not about whatever else the subject holds',
+  /evidence about the COMMIT at that sha, and about nothing else/.test(plan.prompt)
+  && /uncommitted changes and untracked files of the subject are outside it/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => /COMMIT at that sha/.test(l)) ?? plan.prompt);
+check('PB-201: with no record attached the reviewer is told the claim has nothing behind it',
+  plan.gateRecords.length === 0
+  && /No gate record is attached to this task/.test(plan.prompt)
+  && /that is not a refusal and not a green/.test(plan.prompt),
+  JSON.stringify(plan.gateRecords));
+check('PB-201: the limit of the record is stated where the claim is read, not only in the reference',
+  /cannot do is prove the run happened/.test(plan.prompt)
+  && /only a re-run on that sha by someone allowed to run/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => /prove the run happened/.test(l)) ?? plan.prompt);
+// PB-204: the reviewer's own hand-off carries the same four lines and the same bound,
+// and its Gate line is the permanent instance of "not run, because …".
+const reviewHandoff = plan.prompt.slice(plan.prompt.indexOf('## Hand-off form'));
+check('PB-204: the reviewer preamble carries the same header and the same bound as the worker',
+  plan.prompt.includes('## Hand-off form')
+  && ['Done', 'Gate', 'Open', 'Decide']
+    .every((word, i, all) => reviewHandoff.indexOf(`**${word}**`) > (i ? reviewHandoff.indexOf(`**${all[i - 1]}**`) : -1))
+  && reviewHandoff.includes(`at most ${RESULT_BODY_MAX} characters`)
+  && /not run, because a reviewer runs nothing/.test(reviewHandoff),
+  reviewHandoff.slice(0, 800));
+// The overflow path a worker has does not exist here: file writes are denied to this
+// session, so a rule that sent findings into an attached file could never be obeyed.
+check('PB-204: the reviewer is never told to attach an artifact it is forbidden to create',
+  /You have no artifact to move them into/.test(reviewHandoff)
+  && !/attached with artifactPath/.test(reviewHandoff)
+  && plan.settings.permissions.deny.includes('Write'),
+  reviewHandoff.slice(0, 900));
 check('read-only: deny overrides writing and executing',
   ['Edit', 'Write', 'NotebookEdit', 'Bash'].every((t) => plan.settings.permissions.deny.includes(t))
   && plan.settings.permissions.deny === REVIEWER_DENY);
@@ -2070,6 +2111,37 @@ try {
 check(': a git spawn error in detectBase is a refusal, not a stdout TypeError',
   detectBaseError === null && detectBaseResult === null,
   detectBaseError?.message ?? String(detectBaseResult));
+
+// PB-201: the record is RESOLVED for the reviewer, not described to it. The files folder
+// holds every worker's attachments and every review round's — "a JSON file in the diff's
+// directory" is not an address, and the result that names the right one goes to the
+// orchestrator alone (review note).
+const gateTask = store.createTask(home, { id: 'gates-t20260912-210000', title: 'записи о гейтах' });
+const gateDir = store.filesDir(home, gateTask.id);
+mkdirSync(gateDir, { recursive: true });
+writeFileSync(path.join(gateDir, 'gates-pb-prompts.json'), '{"schemaVersion":1,"records":[]}\n');
+writeFileSync(path.join(gateDir, 'gates-pb-guard.json'), '{"schemaVersion":1,"records":[]}\n');
+writeFileSync(path.join(gateDir, 'gates-pb-prompts-2.json'), '{"schemaVersion":1,"records":[]}\n');
+writeFileSync(path.join(gateDir, 'brief-pb-prompts.md'), 'not a gate record\n');
+claudeStub('process.exit(1);');
+const gatePlan = planReview(WS, { target: REPO, task: gateTask.id });
+check('PB-201: every attached record is resolved to an absolute path, and nothing else in the folder is',
+  gatePlan.gateRecords.length === 3
+  && gatePlan.gateRecords.every((f) => path.isAbsolute(f) && path.dirname(f) === gateDir)
+  && gatePlan.gateRecords.some((f) => path.basename(f) === 'gates-pb-guard.json')
+  && gatePlan.gateRecords.some((f) => path.basename(f) === 'gates-pb-prompts-2.json')
+  && !gatePlan.gateRecords.some((f) => /brief/.test(f)),
+  JSON.stringify(gatePlan.gateRecords.map((f) => path.basename(f))));
+check('PB-201: the paths reach BOTH prompts — the first one and the re-review',
+  gatePlan.gateRecords.every((f) => gatePlan.prompt.includes(f))
+  && gatePlan.gateRecords.every((f) => gatePlan.reReview.includes(f)),
+  `prompt=${gatePlan.gateRecords.filter((f) => gatePlan.prompt.includes(f)).length} reReview=${gatePlan.gateRecords.filter((f) => gatePlan.reReview.includes(f)).length}`);
+// Three records and one tree: what tells them apart is the sha, which is why several
+// being present is a normal state rather than an error the mechanism has to resolve.
+check('PB-201: with several records the reviewer is told the sha is what selects one',
+  /Use the one whose `tree` equals the worktree HEAD named above/.test(gatePlan.prompt)
+  && /None matching that sha means no record covers this tree/.test(gatePlan.prompt),
+  gatePlan.prompt.split('\n').find((l) => /Use the one whose/.test(l)) ?? gatePlan.prompt);
 
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.
