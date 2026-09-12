@@ -20,7 +20,7 @@ English is canonical. The Russian README is the only other language in this repo
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
 - **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
 - **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
-- **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread — and a warden wakes the addressee when mail arrives.
+- **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread, or while an answer the participant owes has not been sent — and a warden wakes the addressee when mail arrives. Which types ask for an answer is a published table, and `status` prints `UNANSWERED` for a turn that ended owing one.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
 - **A library, not only a CLI.** Engine, host contract, driver contract and hook planner are exported with TypeScript types; the bundled runtime also reuses the package's canonical atomic, quoting and process helpers through built implementation modules, and the package has no runtime dependencies.
 - **Process skills included.** `skills/orchestrate` and `skills/solo-review` tell an agent how to run a split and how to ask for a review.
@@ -105,7 +105,7 @@ promptobus spawn --repo ./my-repo --brief ./brief.md --task-title "Rename the bi
 promptobus status
 ```
 
-`--repo` is a path on disk and `--brief` is required. The worker gets a worktree, the brief and the bus; its first message is a `status`. Read mail from the orchestrator session with the `promptobus_mailbox` tool — the warden knocks when something arrives, and the Stop guard does not let a turn end while mail is unread. Answer a `question` with `promptobus_send`, accept a `result`, or send `review` findings back.
+`--repo` is a path on disk and `--brief` is required. The worker gets a worktree, the brief and the bus; its first message is a `status`. Read mail from the orchestrator session with the `promptobus_mailbox` tool — the warden knocks when something arrives, and the Stop guard does not let a worker's turn end while mail is unread or while it owes an answer it has not sent. Answer a `question` with `promptobus_send`, accept a `result`, or send `review` findings back.
 
 Ask for an independent reading of the diff:
 
@@ -134,7 +134,7 @@ promptobus done
 | `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
 | `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
-| `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread |
+| `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread, or while an owed answer has not been sent |
 | `promptobus warden` | Task listener. Any bus command starts it; `PROMPTOBUS_WARDEN=off` disables auto-start |
 | `promptobus mcp` | MCP server over stdio |
 | `promptobus install` / `uninstall` | Write or remove the project-level hooks |

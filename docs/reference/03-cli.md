@@ -820,7 +820,19 @@ The decision the command was built for stands and is unchanged: a session's bus 
 
 ## Guard and warden
 
-`guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
+`guard` is the Stop-hook helper. Clean mailbox and nothing owed: exit 0, no output. Unread mail: exit 2, return the turn. A turn ending while an answer is owed: exit 2 as well. Same state twice, then it warns and lets the turn end.
+
+**Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not READ — the warden escalates it after `SILENCE_SEC`, and it applies to every address, the orchestrator included. `UNANSWERED` is an answer that was not SENT: the mailbox is empty, a turn ENDED, and nothing has gone out since the debt began. `promptobus status` prints each under its own word. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
+
+That is also how a clean-and-silent turn is told from a session that died mid-turn, and the two need telling apart because the first wants a nudge and the second a respawn. The signal is the end-of-turn mark `waits/<address>.turn.json`, written by the guard on a clean end and by nothing else. No mark after the debt began means no turn ended: `status` then stays quiet rather than guessing, and a harness that does not run the guard has no `UNANSWERED` at all.
+
+The debt is anchored on the later of two hand-overs: the last message that asks for an answer ([04-protocol.md](04-protocol.md) § Message types), and the participant's spawn. The spawn is in the list because an assignment arrives as the session's opening prompt, not as a bus message — three of the nine participants of the PB-203 post-mortem have no inbound bus message in their whole life, and without that anchor the state would not cover them. Nothing is stored for this: it is computed from the canon and the journal on each call, and `health.json` keeps the shape it had.
+
+**Who owes: every participant address except the orchestrator.** The door is that one address, not a list of roles — a role list would have to learn each role the bus gains, and the one it had not learned would drop out of the state in silence rather than into it. So a role added later is covered the day it exists, with no edit here.
+
+One list does have to learn every role, and it is not this one: the guard's `PARTICIPANT_PREFIXES` in `lib/guard.js`, which answers "is this session already a participant" for the root's successor detector. A role missing from it is not merely unguarded — its session is taken for a stranger in the workspace root and offered a mailbox that is not its own. It currently carries `worker:`, `reviewer:` and `approver:`.
+
+**The orchestrator owes nothing by this table, and that edge is deliberate.** A `status` needs no answer, so mechanising the orchestrator's debts would return its turn for behaving correctly, and every one of the nine recorded cases is a worker. The edge it leaves: an orchestrator that ends a turn without answering a blocking `question` is invisible to `UNANSWERED`. A person still sees the question in `promptobus status` as unread on the worker's side, and the worker's own guard holds its turn — but no gate names it.
 
 `GUARD_HOOK_EVENT` and `GUARD_START_EVENT` in `src/hooks.ts` declare the Claude `Stop` and `SessionStart` events, and `install` generates settings from those two alone. `BUS_HOOK_EVENT` declares `PostToolUse` and is generated from by nothing: it is only how `install` finds and removes a feed hook an earlier version wrote, and a pass that deletes it as unused removes the cleanup with it. `lib/driver-claude.js` imports the compiled guard declaration and `lib/install.js` imports all three, so those doors cannot rename the events independently. Cursor's own `stop` event vocabulary remains separate.
 

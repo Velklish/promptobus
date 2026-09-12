@@ -16,6 +16,20 @@ reviewer:<slug>
 
 `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` (`MESSAGE_TYPES`). The exported `MESSAGE_TYPES` and `MESSAGE_TYPES_V1` names are the same frozen readonly list: consumers can enumerate or copy it, but cannot add, remove, or replace a type and thereby change validation for the process.
 
+**Whether a type asks its recipient for an answer is part of the protocol, not a habit.** The table is `ANSWER_EXPECTED` in `lib/answers.js`, and it is one list with two readers: the loop guard holds a turn that ends owing an answer, and `promptobus status` prints `UNANSWERED`.
+
+| type | answer expected | what the answer is |
+|---|---|---|
+| `task` | yes | the hand-over of work: a `status` on taking it, a `result` when it is done |
+| `question` | yes | an `answer` |
+| `review` | yes | a `result` with the notes closed |
+| `result` | yes | the hand-over that asks for acceptance: a `review` with notes, or silence once accepted |
+| `status` | **no** | nothing. A status is one-way — the sender must not end its turn waiting for an acknowledgement |
+| `answer` | **no** | nothing; it is itself the answer to a `question` |
+| `artifact` | **no** | nothing; the file is named in the message that carries it |
+
+Two limits on reading that table. It says what a TYPE asks for, not what any particular participant owes: the orchestrator is outside it by decision, and the edge that leaves is named in [03-cli.md](03-cli.md) § Guard and warden. And "no answer expected" never means "no need to read": the warden escalates an unread mailbox to `SILENT` for every address including the orchestrator, and that is unchanged.
+
 Stored v1 messages carry `sender` and `recipients` as normalized participant IDs, the same values used for mailbox directories; they do not carry the caller's bus address spelling. For example, `worker:demo` is stored as `worker-demo`. Match a stored message by converting the address with the same normalization before comparing it.
 
 `glanceInbox` only lists unread records; it does not consume them. A wait for a participant's verdict must therefore match both the normalized `sender` and `type`, rather than treating any `result` in the mailbox as that participant's message.

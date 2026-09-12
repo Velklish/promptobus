@@ -35,13 +35,15 @@ const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const guardModule = await import(path.join(here, '..', 'lib', 'guard.js'));
 const {
   guardVerdict, guardMarkFile, GUARD_MARK, GUARD_BLOCK_LIMIT,
-  successorLine, successorHint, readEvent, probeContactPoint,
+  successorLine, successorHint, readEvent, probeContactPoint, declaredParticipant,
 } = guardModule;
 const { readThroughputSidecar, throughputSidecarFile } = await import(
   path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
 const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
+const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
+const { UNANSWERED_MARK } = await import(path.join(here, '..', 'lib', 'answers.js'));
 writeHostConfig(ROOT);
 
 const hangingStdin = new Readable({ read() {} });
@@ -366,12 +368,74 @@ check(': the participant session has no on-disk binding — identity came from t
 // it either, but the return cap below would, and the verdict would be green because of it.
 const workerTurnWas = store.markTurn(HOME, TASK, 'worker:api', '2020-01-01T00:00:00.000Z');
 store.readInbox(HOME, TASK, 'worker:api');
+// Reading the notes is not answering them: until the participant sends, it owes an answer to
+// that `review` and its pass is not clean (PB-203). The orchestrator's own mailbox is left
+// alone here — the checks below read its unread count as they find it.
+send('status', 'замечание закрыл');
 const workerClean = asWorker();
 check(': a participant\'s clean pass sets the turn-end mark — previously only the orchestrator got it',
   workerClean.status === 0 && workerClean.stderr === ''
   && store.lastTurnAt(HOME, TASK, 'worker:api') > Date.parse(workerTurnWas),
   `status=${workerClean.status} ${workerClean.stderr}`
   + ` · ${store.lastTurnAt(HOME, TASK, 'worker:api')} vs ${Date.parse(workerTurnWas)}`);
+// --- PB-203: a turn that ends with nothing sent -----------------------------------
+//
+// The mirror of the branch above. The unread guard watches mail that was not READ; this one
+// watches an answer that was not SENT.
+//
+// Both directions are checked on the same participant, because a gate that also fires on one
+// which DID speak in the same turn proves nothing about the one that did not.
+const OWING = 'dolg-t20260912-190000';
+store.createTask(HOME, { id: OWING, title: 'долг по ответу', owner: SESSION });
+store.upsertParticipant(HOME, OWING, store.participantRecord('worker:mute', {
+  name: `a2a-${OWING}-mute`, started: '2026-09-12T19:00:00.000Z',
+}));
+// Direction one, and the case the whole card stands on: the assignment came as the session's
+// opening prompt, so there is no inbound bus message to anchor "since" on — three of the nine
+// recorded participants have none at all. The spawn is the anchor.
+const mute = guardVerdict(HOME, OWING, 'worker:mute');
+check('PB-203: spawned and never spoke — the turn is held, and the key names the debt, not the mailbox',
+  mute?.key === 'unanswered:2026-09-12T19:00:00.000Z' && /nothing has gone out on the bus/.test(mute.reason),
+  JSON.stringify(mute));
+// Direction two: the same participant, same turn, one message sent. Nothing else changed.
+store.sendMessage(HOME, OWING, { from: 'worker:mute', to: 'orchestrator', type: 'status', body: 'взял' });
+check('PB-203: it spoke in this turn — the gate lets it through untouched',
+  guardVerdict(HOME, OWING, 'worker:mute') === null,
+  JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
+// A type that asks for an answer starts the debt again; one that does not, does not. That is
+// the same table the protocol reference publishes, read by one door.
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'status', body: 'к сведению' });
+store.readInbox(HOME, OWING, 'worker:mute');
+check('PB-207: a read status owes nothing — the turn is not held for it',
+  guardVerdict(HOME, OWING, 'worker:mute') === null,
+  JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'question', body: 'а так?' });
+const asked = store.readInbox(HOME, OWING, 'worker:mute');
+const askedAt = asked.messages[asked.messages.length - 1].ts;
+check('PB-207: a read question does owe — the turn is held until the answer goes out',
+  guardVerdict(HOME, OWING, 'worker:mute')?.key === `unanswered:${askedAt}`,
+  JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
+// The orchestrator is outside the table by decision: it may read a status and answer nothing,
+// which is exactly what PB-207 asks of it. The edge this leaves is named in 03-cli.
+store.upsertParticipant(HOME, OWING, store.participantRecord('worker:other', { name: `a2a-${OWING}-other` }));
+store.sendMessage(HOME, OWING, { from: 'worker:other', to: 'orchestrator', type: 'result', body: 'итог' });
+store.readInbox(HOME, OWING, 'orchestrator');
+check('PB-207: the orchestrator owes nothing by this table — it read a result and its turn ends clean',
+  guardVerdict(HOME, OWING, 'orchestrator') === null,
+  JSON.stringify(guardVerdict(HOME, OWING, 'orchestrator')));
+// `status` prints the state with its own word, and only once a turn has actually ENDED in it:
+// without the end-of-turn mark this is a session still composing its reply, or one that died
+// mid-turn — the two states the card exists to separate.
+const quietHost = createStandaloneHost({ cwd: SB, binPath: BIN });
+const beforeTurn = await captureSplit(() => status(quietHost, { task: OWING, sessions: null }));
+check('PB-203: no end-of-turn mark — status does not call it UNANSWERED yet',
+  !beforeTurn.out.includes(UNANSWERED_MARK), beforeTurn.out);
+store.markTurn(HOME, OWING, 'worker:mute');
+const afterTurn = await captureSplit(() => status(quietHost, { task: OWING, sessions: null }));
+check('PB-203: the turn ended owing an answer — status names UNANSWERED, distinct from SILENT',
+  afterTurn.out.includes(`${UNANSWERED_MARK} since ${askedAt}`)
+  && !afterTurn.out.includes(`SILENT since ${askedAt}`), afterTurn.out);
+
 // The environment remains a FALLBACK path and hasn't stopped working: that's how the guard is
 // called by hand, and that's also how the workspace hook lives, which has no arguments at
 // all. Take this away too — and the role resolves to `orchestrator`, i.e. exactly the state
@@ -840,6 +904,28 @@ const directText = direct?.payload?.systemMessage ?? '';
 check('successor: successorHint sees SUCC\'s dead socket and stays silent about the live TASK',
   typeof directText === 'string' && directText.includes(SUCC) && !directText.includes(TASK),
   directText || JSON.stringify(direct));
+// A role the guard does not recognise is not merely unguarded — it is mistaken for a
+// stranger in the root and offered a mailbox that is not its own. The list is closed on
+// purpose and has to learn every role the bus gains; `approver` is the third.
+check('roles: every participant prefix is recognised, and a word that is not one is not',
+  declaredParticipant({ role: 'worker:a' }) && declaredParticipant({ role: 'reviewer:a' })
+  && declaredParticipant({ role: 'approver:a' })
+  && !declaredParticipant({ role: 'orchestrator' }) && !declaredParticipant({ role: 'somebody:a' })
+  && !declaredParticipant({ role: 'approver' }) && !declaredParticipant({}),
+  [['worker:a', 'reviewer:a', 'approver:a', 'orchestrator', 'somebody:a', 'approver']
+    .map((role) => `${role}=${declaredParticipant({ role })}`).join(' · ')]);
+// The same fact from the door a session actually meets it at: a declared participant is
+// already on the bus, so the root's successor detector has nothing to offer it.
+// A session id no earlier check has used: a hint is remembered per session, and a
+// repeated id would have come back null on staleness rather than on the role — which is
+// what the mutation probe caught this check doing.
+const asApprover = await successorHint({ home: HOME, role: 'approver:zzz' }, SB, 'sess-approver-hhhh');
+check('roles: an approver session is a participant — the successor detector stays silent for it',
+  asApprover === null, JSON.stringify(asApprover));
+const asStranger = await successorHint({ home: HOME, role: 'somebody:zzz' }, SB, 'sess-direct-gggg');
+check('roles: a session whose role is no participant prefix still gets the successor hint',
+  (asStranger?.payload?.systemMessage ?? '').includes(SUCC),
+  JSON.stringify(asStranger));
 check('successor: the mailbox after a hint is untouched — the guard is not a reader and not a claim',
   store.countInbox(HOME, SUCC, 'orchestrator') === 2
   && store.taskOwner(HOME, SUCC) === OLD_ORCH,
