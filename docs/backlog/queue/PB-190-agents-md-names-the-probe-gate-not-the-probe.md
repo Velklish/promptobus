@@ -68,10 +68,11 @@ obligations whose executor was only in documentation, not a count of commands in
 
 ## Verification
 
-The repository-local rule is now visible without opening the guide. The existing guide remains the
-canonical source for the four probe outcomes and `--mutate`/`--stdin-patch` forms. The successful
-mutation probes for this run are recorded in the worker report; the no-op probe was refused rather
-than counted as evidence.
+The repository-local rule is now visible without opening the guide. The one-verdict guard in
+`test/process-rules.test.mjs` reads only the text after `backslop:end` and fails when that local
+section loses the `npm run probe` name. The existing guide remains the canonical source for the
+four probe outcomes and `--mutate`/`--stdin-patch` forms. The successful mutation probes for this
+run are recorded in the worker report; the no-op probe was refused rather than counted as evidence.
 
 ## What remains open
 
