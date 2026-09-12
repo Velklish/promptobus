@@ -142,6 +142,26 @@ Anyone writing the fix must say what the participant runs **after** the fallback
 landed whole: a reject-file sweep, a rejected-hunk exit code read rather than ignored, or a diff
 re-read. "Write through shell" alone is not a complete instruction.
 
+## The refusal blames the user, measured 2026-09-12
+
+Three participants of run 0912c reported the refusal, and one of them quoted its text:
+
+```
+patch rejected by user
+```
+
+No user rejected anything. The containment gate refused, for the reason this card is about: the
+approval carries no path to contain. The wording hands the participant a false attribution, and the
+two readings lead to opposite actions — "a human said no" means stop and ask, while "the gate closed
+because it cannot see a path" means take the other route.
+
+This compounds the cost the card already records. A participant that believes a person refused its
+edit has no reason to look for a workaround at all, and the ones that found the shell route today
+found it by trying, not by being told.
+
+Whoever closes this card must say what the participant is shown when containment closes. If the text
+stays as it is, the remedy it points at is the wrong one.
+
 ## Work to do
 
 - Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
