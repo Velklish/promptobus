@@ -1,6 +1,6 @@
 # PB-193 · peekInbox skips a message it cannot read, and its comment names only the one refusal that is harmless
 
-- **Order:** 175
+- **Order:** 80
 - **Scope:** `src/v1/messages.ts` (`peekInbox`), the `BrokenNote` channel it already carries
 - **Created:** 2026-09-12, acceptance of run 0912c
 - **Dependencies:** none

@@ -1,6 +1,6 @@
 # PB-120 · `DriverOptions.effortMinVersion` is populated with one entry that `optionRefusal` never reads, and `driver-cursor.js`'s `resolveTmux` call passes a `fresh` option the function does not accept
 
-- **Order:** 260
+- **Order:** 130
 - **Scope:** `lib/driver-claude.js`, `lib/driver-cursor.js`, `src/driver.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** none

@@ -1,6 +1,6 @@
 # PB-139 · tsc runs with `include: ["src"]` and no unused-code flags: lib/'s 20,430 lines (30 imports from ../dist across 19 files) are unchecked, and engine.ts:242 already shows the cost (dead `meta` parameter)
 
-- **Order:** 320
+- **Order:** 150
 - **Scope:** [reference/01](../../reference/01-overview.md) § Entry points, `tsconfig.json`, `src/v1/engine.ts`, `src/migrate.ts`, the 19 `lib/*.js` files listed in Context
 - **Created:** 2026-09-06
 - **Dependencies:** none

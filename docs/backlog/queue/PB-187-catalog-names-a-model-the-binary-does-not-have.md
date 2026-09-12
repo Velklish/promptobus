@@ -1,6 +1,6 @@
 # PB-187 · The catalog names a Codex model the binary does not have, and nothing compares the two lists
 
-- **Order:** 200
+- **Order:** 90
 - **Scope:** `models/catalog.json` (`codex-mini-*`), `lib/model-routing/validate.js` (`models validate`),
   [reference/03-cli](../../reference/03-cli.md) § models, [guides/model-routing](../../guides/model-routing.md)
 - **Created:** 2026-09-12, release run
