@@ -46,7 +46,7 @@ every escalated write. Twelve such refusals are in the run's journal.
 
 ## A hypothesis the consumer's tracker raised the same evening
 
-`BL-665` in the consumer repository holds a class of refusals with the same shape: `listen EPERM` and
+The consumer repository's own tracker holds a class of refusals with the same shape: `listen EPERM` and
 `EPERM mkdtemp` inside a participant, on a tree where the orchestrator has neither refusal in the same
 minute. With this card that is three `EPERM`s of the same kind. If they are one phenomenon, the subject
 is not "`mkdtemp` and `listen` are special" but "the participant's sandbox narrows during the session",
