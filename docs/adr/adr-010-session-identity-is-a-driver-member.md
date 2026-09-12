@@ -1,4 +1,4 @@
-# ADR-009: Session identity is a driver member, injected into the core, and a contested answer is refused
+# ADR-010: Session identity is a driver member, injected into the core, and a contested answer is refused
 
 **Status:** Accepted
 **Date:** 2026-09-12

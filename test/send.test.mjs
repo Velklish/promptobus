@@ -72,7 +72,7 @@ const last = (addr) => {
 }
 
 {
-  // There is no `--from`, and its absence is the decision (ADR-010), not a parsing gap:
+  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap:
   // an unknown option must be refused rather than ignored.
   const r = await refuse(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK]);
   check(': --from is not an option — a sender that can be chosen can be borrowed',

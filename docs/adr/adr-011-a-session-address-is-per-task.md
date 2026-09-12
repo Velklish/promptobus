@@ -1,4 +1,4 @@
-# ADR-010: A session's bus address becomes per-task; the CLI door writes only from the address it already has
+# ADR-011: A session's bus address becomes per-task; the CLI door writes only from the address it already has
 
 **Status:** Accepted
 **Date:** 2026-09-12
@@ -30,7 +30,7 @@ prune, guard, warden, mcp` — so the worker drove a terminal multiplexer by han
 own participants. The channel was the documented one; what was missing was a door into it.
 
 This is the same break as an orchestrator outside one harness, seen from the other end.
-There a session cannot be an orchestrator because it has no identity ([ADR-009](adr-009-session-identity-is-a-driver-member.md));
+There a session cannot be an orchestrator because it has no identity ([ADR-010](adr-010-session-identity-is-a-driver-member.md));
 here it cannot be an orchestrator of a SECOND task because its address was fixed by whoever
 wrote its MCP record. Both reduce to: who a session is, is decided once, by someone else.
 
@@ -52,7 +52,7 @@ needs is task ownership and ownership needs a session to be identifiable first.
 **3. There is no `--from`, and there will not be one before the barrier exists.** It was the
 cheap way to close the same case, and it was refused: a sender that can be chosen is a sender
 that can be borrowed, and the only barrier that could stop borrowing is ownership of the task,
-which is ADR-009's subject and is not in place. Shipping `--from` would have been a hole
+which is ADR-010's subject and is not in place. Shipping `--from` would have been a hole
 described as a feature.
 
 ## Alternatives considered
