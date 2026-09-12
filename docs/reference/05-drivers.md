@@ -226,3 +226,78 @@ One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical
 roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the
 participant anyway. The owner accepted that as the boundary — those are the skills the
 participant is meant to have.
+
+## Claude Code: how a session's stall is classified
+
+Source: `lib/driver-claude.js`.
+
+
+`sessionStall` answers `null` for no stall, otherwise `{ kind, reason }`. `kind` is `permission`
+— a dialog mark stands on the record — `limit`, which clears itself, or `unknown`, for which no
+route is derived.
+
+**The reason arrives in two halves.** The session list carries one: `waitingFor` exists only on a
+session standing at a dialog, and a limit has nothing there. The other half is on the
+background-session daemon, in `<claude config>/jobs/<id>/state.json`, field `detail`. That format
+is not a contract — unreadable means there is no reason, and inventing one is forbidden.
+
+**The parse entry is the TURN END, not the `blocked` state.** It used to sit on
+`state === 'blocked'`, and on claude 2.1.251 no session that had finished a turn ever entered it:
+six `claude agents --json` snapshots 20 s apart, 2026-09-02, gave both sessions `status: idle`,
+`state: done`, `waitingFor: null`, and across all nine machine records the background sessions
+showed exactly two pairs — `busy/working` and `idle/done`. A silent participant was therefore
+invisible and its report never left; a live E2E run caught it, the verdict going red on a healthy
+stand. So `unknown` opens on `status: idle` in ANY state, and `busy`/`working` without a dialog
+mark is not a stall at all — a turn is running. The dialog mark does not ask for state and sits
+above that gate deliberately: a session stopped at a prompt mid-turn waits for a person whatever
+it is busy with. `blocked` stays an entry beside `idle`, because records from older builds arrive
+with it and dropping it would change behaviour where it already worked. The only filter on
+`unknown` is the silence gate `stallStands` in the state machine, which separates a normal turn
+end from a real stall.
+
+**One field carries more than one dialog, and the record does not say which.** One is a
+permission prompt of the session's own work. Another is a peer message the session HELD, because
+it was lifted in a mode that bypasses prompts and the sender did not attest its own — which is
+what the warden's postcard becomes there. Measured 2026-09-11 on 2.1.263: the moment the postcard
+was knocked into the socket of a session lifted with `--permission-mode bypassPermissions`, its
+record read `status: waiting`, `state: done`, `waitingFor: "permission prompt"`, while the session
+finished its shell command, answered, and reached its Stop hook. A third is a refusal that has
+already returned — the auto-mode classifier declines a call and the session carries on working;
+observed 2026-09-12, where `status` called a person to a session that went on to make eight
+commits and run the gates. So the classification stays `permission` and is honest about it: one
+field, one answer. Which of them it was is decided a layer up, on the bus's own marks, by
+`stallStands`; the lift closes the second case at the source with `crossSessionInbound` in the
+participant settings file; and the route printed for a person names all three and asserts none.
+
+## Claude Code: a lift that fails on a spent limit
+
+Source: `lib/driver-claude.js`.
+
+
+A lift refused because the limit was spent marks the harness exhausted in the availability cache
+and returns the line the refusal appends — empty when there was nothing to mark.
+
+**That line exists because the mark is invisible otherwise.** A person whose participant refused
+to start would be left with a file they never open, holding a state that neither time nor a later
+probe lifts. So the refusal names the file and the way out of it.
+
+**Which code is written is decided by the reset phrase, not by the limit phrase.** The limit
+phrase is the gate — a limit refusal reads the same whether the session wrote it after a turn or
+the binary wrote it instead of starting. When the refusal says the limit RESETS, the exhaustion
+belongs to the subscription and is `subscription_exhausted`; otherwise nothing explains it and it
+is `manual_exhaustion`. The reset phrase is checked even when a limit phrase also appears
+elsewhere in the refusal.
+
+**`resetAt` stays `null` on both, so both are the sticky kind.** The harness names its reset in a
+person's words and a person's timezone — "resets 3pm" — and a timestamp parsed out of that would
+be invented rather than measured. An exhaustion that expires at a made-up moment is worse than
+one that waits for a person: it lifts itself, and nobody learns the account was out.
+
+The entry goes through `markExhausted` with its reason stated rather than derived. That helper's
+own derivation reads `resetAt` alone, and this branch has to be able to say "the subscription
+named a reset this driver refuses to parse" — `subscription_exhausted` with no reset. One fact,
+one door into the cache.
+
+**A cache failure does not replace the lift's own refusal.** The person is about to be told why
+their participant did not start, and a write error on the way there would take that diagnosis
+with it.
