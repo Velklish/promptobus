@@ -58,3 +58,31 @@ This is not hypothetical. In one night the same gap produced both outcomes:
 values (`'dangerously-bypass-approvals'`, `'dangerously-bypass-approvals-and-sandbox'`), not the
 hook-trust flag. A substring probe answers the wrong question here; match `PARTICIPANT_ARGV` or the
 full `dangerously-bypass-hook-trust`.
+
+## Follow-up observation from the live Codex run, 2026-09-12
+
+The installed copy was later measured at version `0.7.0`, and three live holders carried
+`/opt/homebrew/bin/codex --dangerously-bypass-hook-trust app-server --stdio`. Each participant
+took two turns; all three journals had `turn/started=2` and `hook/started=0`. The installed
+`lib/codex-hold.js` still returned `grep -c PARTICIPANT_ARGV` = 0, so the marker proposed above
+cannot identify the route by which the flag reached argv. The result is therefore attributable
+only after the new header is present, while the cause of the silent hook remains open.
+
+The fixture verdicts close the writing half of this card: provenance is emitted at both points, and
+five verdicts cover the lift and holder paths. They do **not** demonstrate that the reported CLI path
+is the executable copy on a live lift. Live attribution remains unresolved until the installed copy is
+re-pinned/synchronized and a fresh lift records that executing copy; the card stays open.
+
+A version alone is not enough to distinguish the copies. The tree copy and the installed copy
+were both measured at `0.7.0`; only the `package.json` path taken from the executing `import.meta.url`
+separates them. The incident this card records was exactly that ambiguity: the flag lived in the
+tree while `node_modules/promptobus` raised the participants.
+
+Exact code identity is a separate unresolved point. A path and reported version do not distinguish
+two revisions at that same location, including an in-place replacement; closing that gap would
+require a commit and dirty-tree marker for the tree and an equivalent identity for the installed
+package. The new fields deliberately do not claim that stronger fact.
+
+The new provenance fields do not reuse the protocol's `mechanismVersion`: that older field keeps
+the host's writer-version numbering, which journal readers use for mixed-version detection. The
+package path/version and host version therefore remain separate facts.

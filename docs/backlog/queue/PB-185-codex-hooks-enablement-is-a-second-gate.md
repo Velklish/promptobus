@@ -75,18 +75,25 @@ participant's `CODEX_HOME/config.toml`. Adding that entry clears the refusal and
 original `hook/started` = 0 was never about the project gate. Missing either gate produces the same
 `hook/started` = 0, which is why a plan built on one door could not decide anything.
 
-**What cannot be measured yet, and why.** Whether a hook actually fires once both gates are open
-needs a turn: `hook/started` exists in this binary (it sits beside `turn/started` in the
-notification set, and the holder logs every notification method), but it does not arrive on
-`thread/start` even with the project trusted — the binary defers `SessionStart` hooks
-(`run_pending_session_start_hooks`) until a turn, and there is no `thread/close`. So there is no
-free observation of firing, and the paid one is blocked by something outside this card: **the bus
-is run by the installed copy, not by this tree.** The live holders are
-`node_modules/promptobus/lib/codex-hold.js` at version 0.6.0, which carries neither
-`PARTICIPANT_ARGV` nor the bypass flag; `ps -eo args | grep -c dangerously-bypass-hook-trust` is
-`0` across the live `app-server` processes. The firing measurement is therefore possible no earlier
-than the installed copy becomes the merged one; until then a spent turn would repeat the earlier
-inconclusive one.
+**Follow-up live measurement, 2026-09-12.** The installed Promptobus copy was 0.7.0 and three
+independent Codex holders ran two turns each. Every holder journal had `turn/started=2` and
+`hook/started=0`. The live processes carried `/opt/homebrew/bin/codex --dangerously-bypass-hook-trust
+app-server --stdio`, so the installed-copy precondition is now satisfied. The installed
+`lib/codex-hold.js` nevertheless gave `grep -c PARTICIPANT_ARGV` = 0: the flag arrived through a
+different route, and the proposed marker cannot attribute that route.
+
+The readable enablement state was positive. On the participant home, `codex features list` exited
+0 with `hooks stable true`, `plugins stable true`, and `plugin_hooks removed false`; both
+`codex --enable hooks features list` and `codex -c features.hooks=true features list` returned the
+same feature state. `codex plugin list --json` returned empty `installed` and `available` lists,
+and the home's `plugins/` held only staging and cache directories, not an installed plugin. The
+worktree had 59 `.codex/skills` entries and `.codex/hooks.json`, so the skills channel exists too.
+No enablement write or hook relocation was made because the feature readout was already enabled.
+
+What remains open is deliberately narrower: the six-turn run produced no hook event, and the
+feature readout describes home configuration rather than the session's effective state. The
+reason for silent hooks is not established; no human-only boundary was measured, and this card
+stays open for that cause rather than being archived.
 
 ## PB-180 merged into this card, 2026-09-12
 

@@ -40,6 +40,8 @@ import { capture, quiet } from './console.mjs';
 // with a space.
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus spawn-')));
 const here = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_PATH = path.join(here, '..', 'package.json');
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
 const {
   liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
@@ -214,7 +216,26 @@ const lifted = await capture(() => spawnWorker(WS, opts));
 const record = store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api');
 const written = record?.metadata;
 check(': spawn wrote the participant into the task journal', !!written, JSON.stringify(written));
-// Nine fields by name. Checking them as one string is not allowed: a drift on one
+const liftProvenance = 'promptobus copy: cli=' + plan.host.binPath()
+  + ' package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=' + plan.host.version
+  + ' participant=' + stubClaude() + ' version=unknown';
+check(': launch provenance is recorded without changing the host writer version',
+  lifted.includes(liftProvenance)
+  && written?.mechanismPath === plan.host.binPath()
+  && written?.mechanismVersion === plan.host.version
+  && written?.packagePath === PACKAGE_PATH
+  && written?.packageVersion === PACKAGE_VERSION
+  && written?.hostVersion === plan.host.version
+  && written?.binaryVersion === null,
+  liftProvenance + ' :: ' + JSON.stringify({
+    mechanismPath: written?.mechanismPath,
+    mechanismVersion: written?.mechanismVersion,
+    packagePath: written?.packagePath,
+    packageVersion: written?.packageVersion,
+    hostVersion: written?.hostVersion,
+    binaryVersion: written?.binaryVersion,
+  }));
+// Mechanism fields are checked by name. Checking them as one string is not allowed: a drift on one
 // field must name itself, not hide behind a shared "objects are not equal".
 check(': name — what went into --name, participants are looked up by it in claude agents',
   written?.name === plan.name && plan.argv[plan.argv.indexOf('--name') + 1] === plan.name, written?.name);

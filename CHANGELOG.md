@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Lift and holder records now carry copy provenance.** Spawn/review lines and Codex/Cursor session journals record the resolved CLI entry, the executing package path/version, the host version, the participant binary, and its known version; live measurements without that header are not attributable. The fields identify location and reported release, not exact code identity, and repeat holder lifts and Cursor updater symlinks use the current normalized copy. The optional Driver.normalizeTool contract keeps that normalization explicit. (PB-189)
+- **Codex hook enablement was read and the installed-copy firing run was recorded.** `features list` reports hooks enabled, plugin inventory is empty, and the six-turn live check still leaves the silent-hook cause open. (PB-185)
+
 ## [0.7.0] - 2026-09-12
 
 ### Added

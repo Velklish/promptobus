@@ -1,7 +1,7 @@
 // The driver contract.
 // [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract)
 import { addressOf, GateError } from './protocol.js';
-import type { HostMcpTool, PromptobusHost } from './host.js';
+import type { HostMcpTool, HostToolBin, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
@@ -439,6 +439,8 @@ export interface Driver {
   readonly options: DriverOptions;
   /** Harness strings for the adapter's human routes. Required for the same reason. */
   readonly phrases: DriverPhrases;
+  /** Optional pre-launch binary normalization; absence keeps the host result unchanged. */
+  normalizeTool?(tool: HostToolBin, context?: { env?: Record<string, string | undefined> }): HostToolBin;
   /**
    * Translate the harness-neutral context into its launch plan. Writes nothing and
    * starts nothing: `--dry-run` prints exactly what `spawn` will execute.

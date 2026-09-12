@@ -62,6 +62,12 @@ a participant with nothing to wake it by.
 Constraint invisible from this file: no harness name is here and none can be —
 the package set gate watches for that.
 
+`normalizeTool?(tool, context)` is an optional pre-launch hook. Core calls it after
+`resolveToolBin` and before refusal, launch and provenance recording; a driver may use it to
+pin a mutable updater path and probe the version of that same concrete binary. If it is absent,
+the host's `HostToolBin` passes through unchanged. It is not a capability and is not required
+of drivers whose binaries do not need this normalization.
+
 ### `worktreeTouchedMs` — the third liveness signal, and what the first two miss
 
 Source: `lib/cursor-persist.js`, `worktreeTouchedMs`.
@@ -155,6 +161,16 @@ instructions go as `thread/start` params; the MCP set goes into that home's
 longer the blocker — the participant's argv carries the bypass flag (`PARTICIPANT_ARGV`,
 PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
 channel is `turn/completed` only. `exec --json` is a smoke check.
+
+A real lift prints a provenance line with the resolved CLI entry path, the executing Promptobus
+package path and version from `import.meta.url`, the host version, the participant binary path, and
+its version when known. The Codex session record keeps the same line as its first JSON field, and
+the holder log starts with it; Cursor's persistent session record does too. The protocol's
+existing `mechanismVersion` field remains the host writer version for mixed-version readers;
+provenance uses separate package and host fields. An unresolved CLI path names its reason, so a
+live measurement without an attributable header is not attributable. These fields identify the
+executing location and reported release, not exact code identity: different revisions at the
+same path and version remain indistinguishable.
 
 Same boundary as the neighbours: the rest of the mechanism does not import this
 file — it takes the driver from the registry map.

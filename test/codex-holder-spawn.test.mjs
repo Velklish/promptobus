@@ -14,7 +14,8 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const HOLD_JS = path.join(here, '..', 'lib', 'codex-hold.js');
-const PACKAGE_VERSION = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8')).version;
+const PACKAGE_PATH = path.join(here, '..', 'package.json');
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-codex-'));
 process.on('exit', () => { try { rmSync(HOME, { recursive: true, force: true }); } catch { /* gone */ } });
 const env = {
@@ -31,6 +32,12 @@ function recordOf(ref, bin) {
     ref,
     cwd: HOME,
     bin,
+    mechanismPath: '/stand/promptobus.js',
+    mechanismVersion: '0.0.0',
+    packagePath: PACKAGE_PATH,
+    packageVersion: PACKAGE_VERSION,
+    hostVersion: null,
+    binaryVersion: 'codex-cli 0.146.0',
     role: 'worker',
     startedAt: new Date().toISOString(),
     threadId: null,
@@ -76,6 +83,25 @@ function runHold(file) {
   check(': the missing-binary holder does not die on an unhandled spawn error',
     !/Unhandled ['"]error['"] event/i.test(stderr),
     stderr.slice(0, 400));
+  await new Promise((r) => { child.once('exit', r); setTimeout(r, 500); });
+  dropSession(ref, env);
+}
+
+{
+  const ref = 'holder-restart-provenance';
+  const bin = '/nonexistent/restarted-codex-binary';
+  writeSession(recordOf(ref, bin), env);
+  const logFile = holderLogFile(ref, env);
+  writeFileSync(logFile, 'old holder provenance OLD-RESTART\nstale event\n');
+  const child = runHold(sessionFile(ref, env));
+  const lifted = await waitReady(ref, env, 4_000);
+  const log = readFileSync(logFile, 'utf8');
+  const firstLine = log.split('\n')[0];
+  check(': a replacement holder truncates the old journal before writing provenance',
+    lifted.ok === false
+      && firstLine.includes('participant=' + bin + ' version=codex-cli 0.146.0')
+      && !log.includes('OLD-RESTART'),
+    firstLine + ' · ' + log.slice(0, 300));
   await new Promise((r) => { child.once('exit', r); setTimeout(r, 500); });
   dropSession(ref, env);
 }
@@ -135,6 +161,12 @@ function runHold(file) {
   ]);
   let log = '';
   try { log = readFileSync(logFile, 'utf8'); } catch { /* none */ }
+  const firstLine = log.split('\n')[0];
+  check(': holder journal starts with the lift provenance',
+    firstLine.includes('promptobus copy: cli=/stand/promptobus.js package='
+      + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=unknown'
+      + ' participant=' + dying + ' version=codex-cli 0.146.0'),
+    firstLine);
   let initRequest = null;
   try { initRequest = JSON.parse(readFileSync(initCapture, 'utf8')); } catch { /* none */ }
   check(': holder initialize carries the package version',

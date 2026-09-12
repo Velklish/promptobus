@@ -110,6 +110,16 @@ The seal is watched, not assumed. Every command the package launches through `ru
 
 ## What the stands prove, and what they cannot
 
+**A live measurement without its executing copy recorded is not attributable.** The lift line
+and holder journal header record the resolved CLI entry path, the executing Promptobus package
+path and version from `import.meta.url`, and the host version separately; the participant binary
+version is recorded when the host already read it. A precheck for this class has three parts: the
+state under test, the participant home state, and the version and path of the copy that raised the
+process. A stand shape or a changed output line cannot substitute for that provenance. A version
+without the package path is insufficient when tree and installed copies share a version. These
+fields identify a location and reported release, not exact code identity: different revisions at
+the same path and version remain indistinguishable.
+
 A harness stand is a stub binary, not the tool. It answers the protocol the driver speaks
 and does nothing else, so a check written against one proves the mechanism's half of an
 exchange and never the harness's. Where the two are confused, a probe comes back green on

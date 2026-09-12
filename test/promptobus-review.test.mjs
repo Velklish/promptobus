@@ -33,6 +33,8 @@ function rulesBlock(text, role, expectedFiles) {
 // test's expectations must be compared against canonical paths.
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus-review-')));
 const here = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_PATH = path.join(here, '..', 'package.json');
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const reviewUrl = new URL('../lib/review.js', import.meta.url).href;
 const { planReview, review, denyToolsRefusal, writeDiff } = await import(reviewUrl);
 // The harness's vocabulary comes from the driver's home: effort levels, the variables
@@ -1941,6 +1943,13 @@ check(`: the reviewer was raised by the binary from the resolve, not the same-na
   existsSync(ALT_ARGV) && readFileSync(ALT_ARGV, 'utf8').includes('--bg'), String(existsSync(ALT_ARGV)));
 check(`: the reviewer's binary found outside PATH is named in the output`,
   altOut.includes(ALT), altOut.split('\n').filter((l) => /claude/.test(l)).join(' | '));
+
+const reviewHost = hostOf(WS);
+check(': reviewer lift line records launch provenance',
+  altOut.includes('promptobus copy: cli=' + reviewHost.binPath()
+    + ' package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=' + reviewHost.version
+    + ' participant=' + ALT_BIN + ' version=2.1.237'),
+  altOut.split('\n').filter((l) => /promptobus copy:/.test(l)).join(' | '));
 
 // A version refusal carries the process away through fail() — a separate process, the
 // same trick as the required-path gate below.

@@ -24,6 +24,8 @@ import { waitFor } from './harness.mjs';
 import { capture } from './console.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_PATH = path.join(here, '..', 'package.json');
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const SB = makeSandbox('promptobus-codex-');
 const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 
@@ -1437,9 +1439,27 @@ check('step 1: the record carries harness codex and a capabilities snapshot',
 
 const ref = wp?.sessionRef ?? '';
 const record = readSession(ref, env);
+let holderJournal = '';
+try { holderJournal = readFileSync(holderLogFile(ref, env), 'utf8'); } catch { /* not yet */ }
+const holderFirstLine = holderJournal.split('\n')[0];
 check('step 1: the thread landed in the mechanism registry — thread id and holder are alive',
   !!record?.threadId && record.state === 'alive' && typeof record.holderPid === 'number',
   JSON.stringify({ threadId: record?.threadId, state: record?.state, holder: record?.holderPid }));
+
+check(': the Codex holder journal starts with launch provenance',
+  typeof record?.provenance === 'string'
+  && record.provenance.startsWith('promptobus copy: cli=')
+  && record.provenance.includes('package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION)
+  && record.provenance.includes('host=' + PACKAGE_VERSION)
+  && record.provenance.includes('participant=' + record.bin)
+  && record.provenance.includes('version=')
+  && record.packagePath === PACKAGE_PATH
+  && record.packageVersion === PACKAGE_VERSION
+  && record.mechanismVersion === record.hostVersion
+  && record.hostVersion === PACKAGE_VERSION
+  && typeof record?.mechanismPath === 'string'
+  && holderFirstLine.includes(record.provenance),
+  JSON.stringify({ provenance: record?.provenance, holderFirstLine }));
 
 check(': the session record does not persist the caller environment',
   !!record && !('childEnv' in record), Object.keys(record ?? {}).sort().join(','));

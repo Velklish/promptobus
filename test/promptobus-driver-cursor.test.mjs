@@ -31,6 +31,8 @@ import {
 import { waitFor } from './harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_PATH = path.join(here, '..', 'package.json');
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const SB = makeSandbox('promptobus-cursor-');
 const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 
@@ -50,7 +52,7 @@ check(': Cursor diagnosis surfaces scenario errors before the later red verdict'
 
 const cursorModule = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
-  cursorDriver, reviewSandbox, PROVEN_CURSOR_VERSION, PHRASES, KNOWN_HOOK_EVENTS,
+  cursorDriver, normalizeTool, reviewSandbox, PROVEN_CURSOR_VERSION, PHRASES, KNOWN_HOOK_EVENTS,
   skillsNoteOf,
 } = cursorModule;
 const {
@@ -88,6 +90,26 @@ function thrown(fn) {
 const unknown = thrown(() => liftDriver('no-such'));
 check(': an unknown harness is refused at the registry door, with the list of known ones',
   unknown.threw && /no-such/.test(unknown.msg) && /cursor/.test(unknown.msg), unknown.msg);
+
+const retargetDir = path.join(SB, 'retarget-bin');
+mkdirSync(retargetDir, { recursive: true });
+const oldCursor = path.join(retargetDir, 'cursor-old');
+const newCursor = path.join(retargetDir, 'cursor-new');
+const cursorLink = path.join(retargetDir, 'cursor-agent');
+writeFileSync(oldCursor, '#!/bin/sh\nprintf old-cursor-version\n');
+writeFileSync(newCursor, '#!/bin/sh\nprintf new-cursor-version\n');
+chmodSync(oldCursor, 0o755);
+chmodSync(newCursor, 0o755);
+symlinkSync(oldCursor, cursorLink);
+const rawCursorTool = { ok: true, bin: cursorLink, version: 'old-cursor-version' };
+rmSync(cursorLink);
+symlinkSync(newCursor, cursorLink);
+const pinnedCursorTool = normalizeTool(rawCursorTool, { env: process.env });
+check(': Cursor provenance pins a retargeted symlink and probes that exact binary',
+  pinnedCursorTool?.bin === realpathSync(newCursor)
+  && pinnedCursorTool?.version === 'new-cursor-version'
+  && rawCursorTool.version === 'old-cursor-version',
+  JSON.stringify({ rawCursorTool, pinnedCursorTool }));
 
 // --- capabilities and vocabulary ----------------------------------------------------
 
@@ -901,6 +923,7 @@ check('step 1: the participant record carries harness cursor and a snapshot of i
 
 const ref = wp?.sessionRef ?? '';
 const record = readSession(ref, env);
+const rawRecord = JSON.parse(readFileSync(sessionFile(ref, env), 'utf8'));
 check('step 1: the session landed in the mechanism registry — persist-session name, chat and tmux server',
   !!record && typeof record.sessionName === 'string' && record.sessionName.startsWith('cursor-')
   && typeof record.chatId === 'string' && record.chatId.length > 10
@@ -913,6 +936,22 @@ check('step 1: the session landed in the mechanism registry — persist-session 
 check('step 1: the human session handle is its name, the full id is the chat',
   wp?.metadata?.session === record?.sessionName && wp?.metadata?.sessionId === record?.chatId,
   `${wp?.metadata?.session} · ${wp?.metadata?.sessionId} · ${record?.sessionName} · ${record?.chatId}`);
+
+check(': the Cursor holder journal starts with launch provenance',
+  typeof record?.provenance === 'string'
+  && record.provenance.startsWith('promptobus copy: cli=')
+  && record.provenance.includes('package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION)
+  && record.provenance.includes('host=' + PACKAGE_VERSION)
+  && record.provenance.includes('participant=' + record.bin)
+  && record.provenance.includes('version=')
+  && record.packagePath === PACKAGE_PATH
+  && record.packageVersion === PACKAGE_VERSION
+  && record.mechanismVersion === record.hostVersion
+  && record.hostVersion === PACKAGE_VERSION
+  && typeof record?.mechanismPath === 'string'
+  && Object.keys(rawRecord)[0] === 'provenance'
+  && rawRecord.provenance === record.provenance,
+  JSON.stringify({ keys: Object.keys(rawRecord).slice(0, 2), provenance: record?.provenance }));
 
 const listed = listSessions({ env });
 const mine = listed.find((s) => s.name === record?.sessionName) ?? null;
