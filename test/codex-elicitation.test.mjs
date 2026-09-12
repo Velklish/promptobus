@@ -144,15 +144,39 @@ for (const [name, requestedSchema] of [
     d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
 }
 
+// Shapes that are message-only in upstream, quoted from `mcp_server_elicitation.rs` at
+// tag `rust-v0.146.0`:
+//   let is_empty_object_schema = requested_schema.as_object().is_some_and(|schema| {
+//       schema.get("type").and_then(Value::as_str) == Some("object")
+//           && schema.get("properties").and_then(Value::as_object)
+//               .is_some_and(serde_json::Map::is_empty)
+//   });
+//   let is_message_only_schema = requested_schema.is_null() || is_empty_object_schema;
+// Only these two accept.
 for (const [name, requestedSchema] of [
   ['no schema at all', undefined],
   ['an empty object schema', { type: 'object', properties: {} }],
-  ['a schema with no properties key', { type: 'object' }],
 ]) {
   const p = { ...approval };
   if (requestedSchema === undefined) delete p.requestedSchema;
   else p.requestedSchema = requestedSchema;
   const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
-  check(`: the marker with ${name} is still accepted — nothing to fill is the approval's shape`,
+  check(`: the marker with ${name} is accepted — nothing to fill is the approval's shape`,
     d.allow === true, JSON.stringify({ requestedSchema, d }));
+}
+
+// And the three shapes an earlier revision of this file accepted by reading the upstream
+// condition as "no fields to fill" instead of quoting it. `properties` must be PRESENT
+// and empty, and `type` must be `object`; neither is inferable from the other.
+for (const [name, requestedSchema] of [
+  ['a schema with no properties key', { type: 'object' }],
+  ['a bare empty object', {}],
+  ['empty properties under a non-object type', { type: 'string', properties: {} }],
+  ['properties that are null', { type: 'object', properties: null }],
+]) {
+  const p = { ...approval, requestedSchema };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is DECLINED — upstream does not call that message-only`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
 }

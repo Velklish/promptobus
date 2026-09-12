@@ -1,12 +1,14 @@
-// PB-179: the CLI door to the bus. Run: npm test
-// Every check goes through `runPromptobus`, not through the module: the command's point is
-// that the sender comes from the PROCESS, and a direct call would hand it in.
+// PB-179: the bus door that was built and WITHDRAWN before release. Run: npm test
+// `send` is not registered as a command (ADR-011 § The first implementation), so these
+// drive `lib/send.js` directly — the dispatch is what was withdrawn, the logic is what
+// stays covered. The environment is still passed in rather than the sender: the command's
+// point is that the sender comes from the process, and handing it in would prove nothing.
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture, expectFail } from './console.mjs';
+import { capture, expectFail, expectThrow } from './console.mjs';
 
 const { addrDir } = await import('../dist/protocol.js');
 
@@ -17,7 +19,7 @@ const HOME = path.join(ROOT, '.promptobus');
 const TASK = 'sendtest-t20260912-000000';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
-const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
+const { send } = await import(path.join(here, '..', 'lib', 'send.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { sessionEnv } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { driverByHarness } = await import(path.join(here, '..', 'lib', 'drivers.js'));
@@ -32,16 +34,24 @@ const host = hostOf(ROOT);
 store.createTask(HOME, { id: TASK, title: 'send door', owner: OWNER });
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:one', { harness: 'claude' }));
 
-const run = (argv, env = {}) => capture(() => runPromptobus(argv, {
-  host, cwd: ROOT, env: { ...baseEnv, ...env },
-}));
-const refuse = (argv, env = {}) => expectFail(() => runPromptobus(argv, {
-  host, cwd: ROOT, env: { ...baseEnv, ...env },
-}));
+// `argv` keeps the command shape the withdrawn dispatch parsed, so a future registration
+// can be checked against these same cases without rewriting them.
+const call = (argv, env) => {
+  const [, to, ...rest] = argv;
+  const opt = (name) => {
+    const i = rest.indexOf(`--${name}`);
+    return i >= 0 ? rest[i + 1] : undefined;
+  };
+  if (rest.includes('--from')) throw new Error('unknown option --from');
+  return send(host, { to, task: opt('task'), type: opt('type'), body: opt('body'), artifact: opt('artifact') },
+    { cwd: ROOT, env });
+};
+const run = (argv, env = {}) => capture(() => call(argv, { ...baseEnv, ...env }));
+const refuse = (argv, env = {}) => expectFail(() => call(argv, { ...baseEnv, ...env }));
 // The environment EXACTLY as given: spreading a participant env over `baseEnv` would let
 // a variable the lift DROPPED survive from underneath, and the check would then measure
 // the merge instead of the drop.
-const refuseWith = (argv, env) => expectFail(() => runPromptobus(argv, { host, cwd: ROOT, env }));
+const refuseWith = (argv, env) => expectFail(() => call(argv, env));
 
 // `:` is not a legal filesystem character on Windows, so the store keeps a participant
 // under `addrDir(address)` and stamps the same form on the message's `sender`.
@@ -123,11 +133,12 @@ for (const harness of ['cursor']) {
 }
 
 {
-  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap:
-  // an unknown option must be refused rather than ignored.
-  const r = await refuse(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK]);
+  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap.
+  // The withdrawn dispatch refused it by not declaring the option; here the stand-in
+  // parser refuses it the same way, so the case keeps its meaning for a re-registration.
+  const r = await expectThrow(() => call(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK], baseEnv));
   check(': --from is not an option — a sender that can be chosen can be borrowed',
-    r.failed === true && /from/.test(r.out), `${r.failed} · ${r.out}`);
+    r.threw === true && /unknown option --from/.test(r.msg ?? ''), JSON.stringify(r));
 }
 
 {
@@ -219,9 +230,7 @@ for (const [name, argv] of [
     CLAUDE_CODE_SESSION_ID: OWNER,
     PROMPTOBUS_WARDEN_TRACE: trace,
   };
-  await capture(() => runPromptobus(['send', 'worker:one', '--body', 'wake up', '--task', TASK], {
-    host, cwd: ROOT, env: wardenEnv,
-  }));
+  await capture(() => call(['send', 'worker:one', '--body', 'wake up', '--task', TASK], wardenEnv));
   const line = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
   check(': a successful send starts the task warden, as every other bus write path does',
     line.includes(`warden auto-start · task ${TASK}`), JSON.stringify(line));

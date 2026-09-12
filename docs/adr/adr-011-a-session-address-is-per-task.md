@@ -71,6 +71,31 @@ address in it.
 **Leave the asymmetry and document it.** Rejected because the documented workaround is a
 person hand-driving tmux, which is what the card measured actually happening.
 
+## The first implementation did not reach release
+
+**The decision above stands. Its first implementation was withdrawn before release**, on
+2026-09-12, after four review rounds produced four major findings of one class — the command
+granting more rights than it promised:
+
+1. a silent fallback to the orchestrator address, which covered every participant, because a
+   participant's session environment carries no bus identity on purpose;
+2. a declared `PROMPTOBUS_ROLE` taken on trust, which borrowed a foreign task's orchestrator
+   and let an invented worker address register itself into one;
+3. the same fallback on a task with no owner, where ownership cannot be proved by construction;
+4. an ownership check that was NEGATIVE rather than positive: `foreignSession` answers `null`
+   both when the session matches and when the participant record carries no session at all, so
+   a declared role for an unbound participant passed.
+
+**What stays unproven is the fourth one's subject, and it is the reason to stop rather than
+patch again:** the store records no POSITIVE binding of a participant address to a session, so
+"this process is that participant" cannot be answered affirmatively today — only "no one else
+is known to hold it", which is not the same claim. Every round fixed exactly what was named and
+the defect turned out to be one layer below; four such rounds on one surface are evidence about
+the surface, not about the reviews.
+
+The code, its tests and this analysis stay in the tree, and `promptobus send` is not registered
+as a command. The next attempt begins from them.
+
 ## Consequences
 
 - The case that produced the card is unblocked now: a session that raised its own task can
