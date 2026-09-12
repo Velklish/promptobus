@@ -1,6 +1,6 @@
 # PB-185 · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured
 
-- **Order:** 30
+- **Order:** 80
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12

@@ -1,6 +1,6 @@
 # PB-81 · Consolidate duplicated availability adapter helpers after focused correctness fixes
 
-- **Order:** 110
+- **Order:** 160
 - **Scope:** `lib/model-routing/adapter-cursor.js`, `lib/model-routing/adapter-claude.js`, `lib/model-routing/adapter-codex.js`, `lib/model-routing/preflight.js`, `lib/drivers.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none

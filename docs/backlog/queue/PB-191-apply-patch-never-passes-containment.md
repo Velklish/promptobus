@@ -1,6 +1,6 @@
 # PB-191 · A Codex participant can never use apply_patch: fileChange approval carries no path, so containment fails closed on every write
 
-- **Order:** 20
+- **Order:** 70
 - **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none

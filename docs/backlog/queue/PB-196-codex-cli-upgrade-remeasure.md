@@ -1,6 +1,6 @@
 # PB-196 · Eight minor versions behind: the upgrade is a measurable event, not a background chore
 
-- **Order:** 17
+- **Order:** 30
 - **Scope:** [drivers](../../reference/05-drivers.md), [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none

@@ -1,6 +1,6 @@
 # PB-192 · 147 live rate-limit notifications carry neither shape the holder reads, and the payload is recorded nowhere
 
-- **Order:** 40
+- **Order:** 90
 - **Scope:** `lib/codex-session.js` (:1128, :291, :296, the `account/rateLimits/updated` branches at :1127 and :1146), `lib/model-routing/adapter-codex.js` (the notification fallback), [03-cli](../../reference/03-cli.md) § Codex availability
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** `PB-24.1` is the neighbouring card and is **not** unblocked by this one — see below

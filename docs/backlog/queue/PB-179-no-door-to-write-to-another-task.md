@@ -1,6 +1,6 @@
 # PB-179 · A session cannot write to a participant of another task: its own address is nailed by its MCP config, and there is no `send` command
 
-- **Order:** 70
+- **Order:** 120
 - **Scope:** `lib/spawn.js` (`participantMcp`, the `env` of the bus record), the MCP server's
   address resolution, `bin/` (a command), [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12

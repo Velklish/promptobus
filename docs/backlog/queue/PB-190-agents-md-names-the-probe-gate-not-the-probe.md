@@ -1,6 +1,6 @@
 # PB-190 · AGENTS.md requires a mutation probe but never names the tool that runs one, so a participant hand-rolls it
 
-- **Order:** 50
+- **Order:** 100
 - **Scope:** `AGENTS.md` (the backslop block, gate 4), [guides/contributing](../../guides/contributing.md) § the probe
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none

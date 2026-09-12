@@ -1,6 +1,6 @@
 # PB-178 · `sessionIdentity` reads one harness's environment variable directly, while every other harness fact is a driver member
 
-- **Order:** 60
+- **Order:** 110
 - **Scope:** `lib/store.js` (`sessionIdentity`), `lib/drivers.js` (the driver contract),
   the three drivers, [02-host](../../reference/02-host.md), ADR-034
 - **Created:** 2026-09-12

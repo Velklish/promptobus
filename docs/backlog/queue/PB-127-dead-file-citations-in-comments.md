@@ -1,6 +1,6 @@
 # PB-127 · Comments across lib/, src/ and test/ still cite files and gates that live only in consumer-cli' CLI, so a promptobus-only reader who follows them finds nothing
 
-- **Order:** 140
+- **Order:** 190
 - **Scope:** [reference/01-overview](../../reference/01-overview.md) (already cites the correct home for one of these pairs), `lib/worktree.js`, `lib/spawn.js`, `lib/driver-claude.js`, `lib/drivers.js`, `lib/status.js`, `lib/contract.js`, `src/protocol.ts`, `src/mcp/tools.ts`, `src/fs/proc.ts`, `src/v1/messages.ts`, `test/hygiene.mjs`, `test/sandbox.mjs`, `test/run.mjs`, `scripts/audit-public.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** none

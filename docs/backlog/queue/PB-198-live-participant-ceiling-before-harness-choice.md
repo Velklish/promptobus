@@ -1,6 +1,6 @@
 # PB-198 · The live-participant ceiling is a penalty inside a chosen lane, not a gate before the harness is chosen
 
-- **Order:** 19
+- **Order:** 50
 - **Scope:** [drivers](../../reference/05-drivers.md), [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none
