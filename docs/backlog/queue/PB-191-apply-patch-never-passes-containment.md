@@ -67,6 +67,26 @@ the model happened to knock on.
   rather than the harness's own patch tool appears in no reference, no guide and no participant
   prompt. Both participants found it by accident or by being told.
 
+## The workaround does not stick, measured 2026-09-12
+
+A participant told the working route in plain words — with the refusal explained, the code quoted and
+the shell alternative spelled out — **went back to `apply_patch` an hour and a half later**, on the
+next piece of work, and reported the same refusal again as if it were new. It had not tried a shell
+write at all: "bash heredoc, python3 и sed не запускал".
+
+This is not inattention. `apply_patch` is the harness's own tool for editing a file, and a
+participant reaches for it by default; a sentence in a message competes with that default once and
+loses on the next turn. Two consequences follow, and the second is the reason this section exists:
+
+- an orchestrator has to repeat the instruction per piece of work, not per participant;
+- **any fix that lives only in a prompt will decay the same way.** If the answer to this card is
+  "tell participants to use shell", it must be carried by something the participant re-reads each
+  turn — its own rules bundle or the refusal text itself — and not by a message.
+
+That makes the refusal's wording load-bearing. "patch rejected by user" sends the reader to look for
+a human and a permission policy; it names neither the real gate nor the working route. A refusal that
+said which gate closed and what to use instead would have cost this run nothing.
+
 ## Work to do
 
 - Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
