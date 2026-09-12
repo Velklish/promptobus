@@ -15,6 +15,9 @@ test('the repository-local mutation rule names npm run probe outside the generat
   const local = RULES.slice(end + END.length);
   const heading = local.indexOf('## Mutation probes');
   assert.notEqual(heading, -1, 'the repository-local mutation section is missing');
-  assert.match(local.slice(heading), /\bnpm run probe\b/,
+  const next = local.indexOf('\n## ', heading + 1);
+  const sectionEnd = next === -1 ? local.length : next;
+  const section = local.slice(heading, sectionEnd);
+  assert.match(section, /\bnpm run probe\b/,
     'the local mutation section must name npm run probe');
 });

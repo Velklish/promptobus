@@ -16,8 +16,9 @@ grep -h 'account/rateLimits/updated' worker-*0912-09*.log | sed 's/.*updated //'
 
 **One hundred and forty-seven notifications, and not one parsed value.** The old holder line
 reduced the payload to the primary/top-level `usedPercent` lookup and printed `?`. The same two
-shapes are what the exhaustion check reads — :291 `windows.some((w) => Number(w.usedPercent) >= 100)`
-and :296 `snap.primary?.usedPercent ?? snap.usedPercent`. On that binary both read undefined.
+shapes are what the exhaustion check reads — `rateLimitReached` checks
+`windows.some((w) => Number(w.usedPercent) >= 100)`, and `rateLimitNote` reads
+`snap.primary?.usedPercent ?? snap.usedPercent`. On that binary both read undefined.
 
 The initial card also said the payload was kept nowhere. The current code already writes the latest
 notification params as `rateLimits` in the session record (`lib/codex-session.js`, the

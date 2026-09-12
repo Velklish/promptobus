@@ -69,10 +69,15 @@ obligations whose executor was only in documentation, not a count of commands in
 ## Verification
 
 The repository-local rule is now visible without opening the guide. The one-verdict guard in
-`test/process-rules.test.mjs` reads only the text after `backslop:end` and fails when that local
-section loses the `npm run probe` name. The existing guide remains the canonical source for the
+`test/process-rules.test.mjs` extracts only the text between `backslop:end` and the next H2,
+so a later occurrence cannot satisfy the rule. It fails when that local section loses the
+`npm run probe` name. The existing guide remains the canonical source for the
 four probe outcomes and `--mutate`/`--stdin-patch` forms. The successful mutation probes for this
 run are recorded in the worker report; the no-op probe was refused rather than counted as evidence.
+
+The guard mutation targets only the command phrase in the local section while the later
+comment-placement sentence still mentions `npm run probe`; the bounded guard therefore turns
+red where the old to-end-of-file slice stayed green.
 
 The full-suite boundary also requires every new `*.test.mjs` file to divert the participant
 home through `home.mjs` or `check.mjs`. The full suite caught this guard file before its import was
