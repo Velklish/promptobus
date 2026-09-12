@@ -65,10 +65,12 @@ function mutate() {
     if ((r.status ?? 1) !== 0) die(`git apply refused the patch: ${(r.stderr ?? '').trim()}`);
     return;
   }
-  // sed -i is BSD/GNU-incompatible on the flag, so the edit goes through a read of stdout.
-  const r = spawnSync('sed', [opts.sed, rel], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  if ((r.status ?? 1) !== 0) die(`sed ${opts.sed}: ${(r.stderr ?? '').trim()}`);
-  writeFileSync(abs, r.stdout);
+  // The substitution is done here, not by the `sed` binary: `sed -i` differs between BSD and
+  // GNU, and a PATH without it fails as ENOENT. Anything richer goes through --stdin-patch.
+  const m = opts.sed.match(/^s(.)(.*)\1(.*)\1([gi]*)$/s);
+  if (!m) die(`--mutate takes s<sep><regexp><sep><replacement><sep>[gi], not ${JSON.stringify(opts.sed)} — use --stdin-patch for anything else`);
+  const [, , re, repl, flags] = m;
+  writeFileSync(abs, before.replace(new RegExp(re, flags), repl));
 }
 
 mutate();
