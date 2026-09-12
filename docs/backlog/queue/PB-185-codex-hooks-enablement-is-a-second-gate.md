@@ -58,3 +58,32 @@ all** — `auth.json`, `config.toml`, `plugins/`, `skills/` and caches, nothing 
 - A statement about why a participant's hooks do not run that rests on a measurement rather than
   on the absence of an alternative.
 - If they can run: `hook/started` in the holder's journal, with the participant's own `--role`.
+
+## Measured 2026-09-12, and what the measurement moved
+
+**Measured on codex-cli 0.146.0, no paid turn spent.** The place is right, and the binary said so
+itself: with a `hooks.json` under `<cwd>/.codex` it refuses in stderr — `Project-local config,
+hooks, and exec policies are disabled in the following folders until the project is trusted, but
+skills still load. 1. <cwd>/.codex — To load project-local config, hooks, and exec policies, add
+<cwd> as a trusted project in <CODEX_HOME>/config.toml.` It names the very directory this card
+writes to. What the measurement also shows is that the enablement is **two independent gates, not
+one**: `--dangerously-bypass-hook-trust` lifts trust in the HOOK, and what was refusing here is
+trust in the PROJECT, recorded as `[projects."<realpath>"] trust_level = "trusted"` in the
+participant's `CODEX_HOME/config.toml`. Adding that entry clears the refusal and the project-local
+`.codex` loads. The mechanism already writes it — `lib/driver-codex.js`,
+`trusted: [trustPath(workdir)]`, keyed by realpath — and wrote it before the merge too, so the
+original `hook/started` = 0 was never about the project gate. Missing either gate produces the same
+`hook/started` = 0, which is why a plan built on one door could not decide anything.
+
+**What cannot be measured yet, and why.** Whether a hook actually fires once both gates are open
+needs a turn: `hook/started` exists in this binary (it sits beside `turn/started` in the
+notification set, and the holder logs every notification method), but it does not arrive on
+`thread/start` even with the project trusted — the binary defers `SessionStart` hooks
+(`run_pending_session_start_hooks`) until a turn, and there is no `thread/close`. So there is no
+free observation of firing, and the paid one is blocked by something outside this card: **the bus
+is run by the installed copy, not by this tree.** The live holders are
+`node_modules/promptobus/lib/codex-hold.js` at version 0.6.0, which carries neither
+`PARTICIPANT_ARGV` nor the bypass flag; `ps -eo args | grep -c dangerously-bypass-hook-trust` is
+`0` across the live `app-server` processes. The firing measurement is therefore possible no earlier
+than the installed copy becomes the merged one; until then a spent turn would repeat the earlier
+inconclusive one.
