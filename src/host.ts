@@ -1,10 +1,5 @@
-// Host contract: knowledge of the workspace the consumer passes into the bus
-// explicitly on every call. There is no process-wide singleton: two hosts in
-// one process are lawful and independent.
-//
-// Field names are about a workspace in general, not about one consumer's
-// layout. Concrete paths (rules directory, tools manifest) are named by the
-// implementation.
+// The host contract, in one sentence per member.
+// [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
 
@@ -93,24 +88,8 @@ export interface HostToolBin {
    * first suite run.
    */
   bin?: string;
-  /**
-   * The binary's own version string as the host read it — the raw `--version`
-   * line, not something normalised. Optional, and its absence means UNREAD: a
-   * host that does not probe versions returns none, and a consumer may never
-   * read that as "old".
-   *
-   * The shipped standalone host is such a host. It hands the name back without
-   * searching (`src/standalone.ts`), so under it the `ultracode` refusal never
-   * refuses, the two proven-version warnings never warn, and an availability
-   * verdict carries no version at all — that is the DEFAULT, not a rare case.
-   *
-   * Declared here because four readers already exist and none of them could
-   * name the field they read: the three drivers' `optionRefusal` and the three
-   * availability adapters, which report it to a person as the verdict's
-   * `version`. It is the drift `bin` above carries its comment about, one field
-   * over — and load-bearing for a diagnosis rather than for a launch, which is
-   * why it survived longer.
-   */
+  /** The binary's own version string as the host read it, raw.
+   * [reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means](../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means) */
   version?: string;
   note?: string;
   warn?: string;
@@ -143,52 +122,13 @@ export interface HostLegacyLayout {
 export interface HostRoutingOverlay {
   id: string;
   path: string;
-  /**
-   * Whether this is the layer the TOOL writes (ADR-004, decision 6). PB-32 adds
-   * the writer, `models strategy --set`; until then the flag is a declaration
-   * with no caller, which is the order this package takes everywhere — the
-   * contract first, then what runs on it.
-   *
-   * Exactly one layer carries it whenever any layer is declared; `readLayers`
-   * refuses zero and refuses two, naming the layers it found. The refusal is at
-   * the declaration rather than at the write for the reason `harnessStateHome`
-   * refuses instead of guessing: a host that names layers and no writable one has
-   * an incomplete declaration, and finding that out at the write costs a person
-   * the edit they just made.
-   *
-   * A writable layer is STATE, not configuration, so it must not be a file
-   * anybody commits. Under the standalone host it is `workspace`, and it lives at
-   * `<promptobusHome>/model-routing.json` for exactly that reason — a consumer
-   * keeps it wherever its own state lives, under the same one condition.
-   *
-   * A host should mark the HIGHEST-precedence layer, or the tool would write a
-   * value a layer above it overrides; the writer PB-32 adds will warn when that
-   * happens rather than leave the person to wonder why their default did not
-   * take.
-   */
+  /** Whether this is the layer the TOOL writes (ADR-004, decision 6).
+   * [reference/02-host.md#the-layer-the-tool-writes](../docs/reference/02-host.md#the-layer-the-tool-writes) */
   writable?: boolean;
 }
 
-/**
- * Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
- * scoped, and that is why they do not come from `promptobusHome()`: that home is
- * the task store of one workspace, while auth, model inventory and the remaining
- * subscription limit belong to the account the harness binary is logged into. A
- * per-store cache would re-probe three harnesses for every checkout of the same
- * account.
- *
- * `overlays` is ordered LOWEST precedence first, and the order is the host's to
- * choose. One method with a list rather than a getter per layer, because a
- * consumer will want a layer of its own — its shipped deny lists and defaults —
- * between the person's user-wide and workspace-local files: with a list that is
- * a host-side choice, with getters it is another change to this interface and a
- * repin for every consumer. `id` is what the decision output and `models
- * validate` name a layer by, so a refusal reads `denied by overlay "workspace"`
- * and not a path the reader has to place themselves.
- *
- * A missing overlay file is normal. The host names paths; it does not promise
- * they exist.
- */
+/** Where model routing keeps its files.
+ * [reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files](../docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files) */
 export interface HostRoutingPaths {
   cacheFile: string;
   overlays: HostRoutingOverlay[];
@@ -210,26 +150,8 @@ export interface PromptobusHost {
    * `promptobusHome()` is not used for routing.
    */
   routingPaths(): HostRoutingPaths;
-  /**
-   * Where the package keeps its own session registry for one harness — the
-   * records `inspect`, `stop` and the wake path read and write. Account-scoped
-   * like `routingPaths()`, and for the same reason: a session a harness keeps
-   * alive belongs to the account its binary is logged into, not to one
-   * workspace. `null` means the host names none, and then a run refuses.
-   *
-   * It refuses instead of guessing because the guess was measured. The package
-   * used to fall back to `~/.promptobus/<harness>` when the per-harness
-   * environment variable was unset. A consumer that had named its own
-   * variables instead therefore had two harness registries writing into the
-   * operator's REAL home while `inspect` read the sandbox — two halves of one
-   * test looking at different directories, with no error anywhere and nothing
-   * in either log to say so (PB-2). A named refusal costs one message; a
-   * silent guess cost a day.
-   *
-   * Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
-   * environment, then this method, then the refusal — which names both, so
-   * the reader is not left to find out which of the two to set.
-   */
+  /** The environment variable one harness's registry is named by, and the refusal.
+   * [reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says](../docs/reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says) */
   harnessStateHome(harness: string): string | null;
 
   nodePath(): string;
@@ -242,6 +164,7 @@ export interface PromptobusHost {
   skillsDir(): string | null;
   pluginDir(): string | null;
   pluginManifestRel(): string;
+  /** No longer written: the path `install` recognises an older feed hook by (PB-173). */
   busHookRel(): string;
   installManifestRel(): string;
   pluginSkillsRel(): string;

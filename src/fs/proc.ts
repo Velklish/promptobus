@@ -1,6 +1,5 @@
-// Process liveness and a synchronous pause. An internal package module: these
-// primitives are not exported — `pidAlive` goes out from `store.ts`, because it
-// has been part of that surface since earlier times.
+// Reading about a process.
+// [reference/01-overview.md#reading-about-a-process](../../docs/reference/01-overview.md#reading-about-a-process)
 import process from 'node:process';
 
 /**

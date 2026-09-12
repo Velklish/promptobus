@@ -1,33 +1,5 @@
-// Migration of the former store → `.promptobus`.
-//
-// One-way and one-shot: there is no backup and no reverse migration, the old
-// CLI does not read the new store. From that follows the single requirement
-// that governs the whole step order — **a partially written new store never
-// exists**: it is assembled in a neighbouring temporary directory and takes
-// its place in one `rename`, and the legacy directory is removed only after.
-//
-// Where to migrate from is declared by the host (`legacyLayout`). No layout —
-// nothing to move.
-//
-// Order:
-//
-// 1. preflight — both roots at once, active tasks, a damaged root: a refusal
-//    BEFORE any mutation;
-// 2. assemble in `<root>/.promptobus.migrating` — next to the target, so the
-//    `rename` is atomic;
-// 3. `migrating.json` mark inside the assembled directory — before the switch;
-// 4. `rename` the temporary directory to `.promptobus`;
-// 5. remove the former directory, then the mark.
-//
-// **The mark closes the window between 4 and 5.** A process death exactly
-// there would leave both roots, and "both roots at once" is a refusal; a
-// person would hit a wall on a clear path. The mark names the legacy
-// directory the new one was built from: while it is there, the migration
-// succeeded and a repeat just finishes cleanup. It is missing when this move
-// never happened or when cleanup completed; either case carries no cleanup
-// authority, so a side-by-side former root is refused. Releases before this
-// rule left a distinct completed-move record, so that old name is deliberately
-// not a resume token.
+// Migration: reading an older store.
+// [reference/01-overview.md#migration-reading-an-older-store](../docs/reference/01-overview.md#migration-reading-an-older-store)
 import {
   copyFileSync, cpSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync,
   rmSync, statSync, writeFileSync,

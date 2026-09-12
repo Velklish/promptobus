@@ -8,5 +8,6 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [02-host.md](02-host.md) | `PromptobusHost`, standalone host, `legacyLayout()` |
 | [03-cli.md](03-cli.md) | Commands, harness flags, warden and guard |
 | [04-protocol.md](04-protocol.md) | Addresses, message types, engine, artifacts |
+| [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |
 
 The [contributing guide](../guides/contributing.md) describes the verification gates; `npm run audit` also enforces the English runtime-output claim in the [roadmap](../ROADMAP.md).

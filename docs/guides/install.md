@@ -40,6 +40,15 @@ Adding a harness to that list is a hand edit of this file. There is no `tools` s
 
 `promptobus install` writes a second field, `harnesses`: the last installed hook list. Do not invent that field by hand on the first install. Pass `--harnesses` instead.
 
+**The two fields are two, and `install` writes only one of them.** They are easy to confuse because both hold harness names and one command is named after the other:
+
+| Field | Written by | Means |
+|---|---|---|
+| `tools` | you, by hand | this workspace may spawn or review with these harnesses |
+| `harnesses` | `promptobus install` | hooks were last written for these harnesses |
+
+So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched, and the very next `promptobus review … --harness codex` refuses with `declared: none` until you add `"codex"` to `tools` yourself. `install` says so when it finishes, and the refusal says it again. They stay two fields on purpose: writing a hook file into a project must not by itself grant that project permission to spawn participants.
+
 ### A repository that generates its process skills
 
 A worker repository may have its own `promptobus.json` — separate from the workspace one — with an optional `generate` field: the argv of a command that restores the process skills the repository does not keep in git.
@@ -93,17 +102,19 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 
 ### What the installer writes
 
-| Harness | Project file | Bus feedback | Loop guard |
-|---|---|---|---|
-| Claude Code | `.claude/settings.json` | `PostToolUse` matcher on `promptobus_send` / `promptobus_mailbox`; runner field `systemMessage` | `Stop` and `SessionStart` |
-| Cursor | `.cursor/hooks.json` (`version` 1) | driver injection; no project hook | `stop` |
-| Codex | `.codex/hooks.json` | `PostToolUse`; runner field `systemMessage` | `Stop` and `SessionStart` |
+| Harness | Project file | Loop guard |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | `Stop` and `SessionStart` |
+| Cursor | `.cursor/hooks.json` (`version` 1) | `stop` |
+| Codex | `.codex/hooks.json` | `Stop` and `SessionStart` |
 
-The runner script is generated under `.promptobus/hooks/` (`busHookRel()`). The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
+The loop guard is the only hook installed. A `PostToolUse` hook that echoed each bus call into the session was installed until the 0.6.x line; an install now removes it where an earlier one wrote it, together with the runner script it ran. Nothing is generated under `.promptobus/hooks/` any more — `busHookRel()` survives as the path that recognises such a leftover, and removing it would remove the ability to clean one up.
+
+The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
 
 The installer leaves an existing unselected harness file byte-for-byte untouched. If it finds an owned hook group left by an earlier install, it rewrites that file only to remove the group; `install --check` reports drift for that cleanup when needed.
 
-When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. Cleanup of a run must keep `.promptobus/hooks/`.
+When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. Cleanup of a run must keep `.promptobus/`.
 
 A malformed or shared config file fails the command. The installer does not write a partial file.
 
@@ -118,9 +129,20 @@ The CLI prints `configured` and then:
 
 ```text
 Review: Codex requires /hooks; project hooks also depend on workspace trust.
-Cursor: stop guard only. Bus feedback is driver injection, not a project hook.
+Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor participant by driver injection.
 ```
 
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).
 
 `promptobus help` lists `install` and `uninstall` with the flags above; it is the same list this guide describes.
+
+## What the installer knows and never writes
+
+Source: `lib/install.js`, `install`. The feed-hook names `src/hooks.ts` still
+declares for removal are described here too.
+
+Source: `lib/install.js`.
+
+Project-level hook install for a consumer repository.
+Layout knowledge comes from the host. User-level directories
+(~/.claude, ~/.cursor, ~/.codex) are never written.

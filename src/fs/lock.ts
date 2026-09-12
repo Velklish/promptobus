@@ -1,14 +1,5 @@
-// Directory lock: task-journal read-modify-write sits under it, for both the
-// legacy store and protocol v1.
-//
-// The lock is a directory, not a file: `mkdir` is atomic on every FS and does
-// not need a descriptor cleaned up; a second process gets `EEXIST` instead of
-// a quiet overwrite. A foreign lock is dropped only on a dead pid, never on a
-// guess about age.
-//
-// Refusal wording did not move here and will not: the legacy store has its own
-// (`GateError` with a path for a person), v1 has its own (a typed code). The
-// module takes them as callbacks.
+// The lock: what it guards and what it cannot.
+// [reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot](../../docs/reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot)
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

@@ -1,17 +1,5 @@
-// The warden state machine: rounds, knock-retry thresholds, unread health,
-// silence escalation, and the decision of whom to activate.
-//
-// What is here and what is not. Here — DECISIONS: who still has unread, whether
-// it is time to knock, which messages to show, who stalled, and who has already
-// been reported. There is no delivery channel here, and no text: the channel
-// comes from the driver via `activate`, and the same driver renders the text —
-// the frame and the words belong to the harness channel, not the bus. There is
-// also no process here: the detached launcher, the `fs.watch` observers, and the
-// loop live at the consumer, because a process death costs nothing by
-// construction — the entire state sits in the task store.
-//
-// The intervals below are measured, not chosen. Changing them changes the
-// behaviour of a live run: each is named together with what it was measured by.
+// The warden state machine: what is here and what is not.
+// [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
 import {
   beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readWake, writeHealth, writeStalls,
 } from './sidecar.js';
@@ -57,6 +45,9 @@ export const SPAWN_GRACE_SEC = 30;
 
 const NO_FAULT: FaultHook = () => {};
 
+/** Which fallback put `channel` at `self-wake`; prognosis per state in [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
+export type SelfWakeState = 'starting' | 'taken' | 'refused';
+
 /** Health mark of one address. Fields are appended by the round, and read by it and by `promptobus status`. */
 interface HealthMark {
   unread?: number;
@@ -69,6 +60,10 @@ interface HealthMark {
   escalatedAt?: string | null;
   channel?: string | null;
   knockError?: string | null;
+  // Only the round knows which branch it took. Absent on a record written before the
+  // field: that is "not said", never one of the three.
+  selfWake?: SelfWakeState | null;
+  selfWakeChannel?: string | null;
   wake?: string | null;
   wakeSession?: string | null;
   unreadableRefs?: string[];
@@ -101,29 +96,8 @@ function lastActivation(home: string, task: string, participant: ParticipantV1 |
   return at.length ? Math.max(...at) : null;
 }
 
-/**
- * Whether a dialog mark is a permission prompt the participant is standing at,
- * or the bus's own postcard held behind the same field (PB-165).
- *
- * **Two marks have to agree, and neither alone lifts the stall.** A participant
- * whose dialog is the held postcard never saw the message: it carried on with
- * the turn it was in, reached the end of it, and reported — so after its last
- * activation the bus has BOTH its end-of-turn mark and a message from it. A
- * participant standing at a prompt of its own work has neither: the prompt is
- * what suspends the turn, so the Stop hook has not run and nothing was sent.
- *
- * The conjunction is deliberately narrower than either half. The end-of-turn
- * mark alone would read the stand's play of a dialog — which runs the guard —
- * as a held message; a sent message alone would silence a real prompt hit later
- * in a turn that had already spoken. What is left open is a turn begun without
- * an activation: the bus does not start one, and a person who does is at the
- * session already.
- *
- * Missing marks keep the stall, each for its own reason: no end-of-turn mark
- * means the participant has never yielded a turn, and reading that absence as
- * "carried on" would silence the very first prompt of a run; a participant
- * record too broken to read messages from has no right to lift its own report.
- */
+/** Whether a dialog mark is a real prompt or the bus's own postcard held behind it.
+ * [guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at](../docs/guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at) */
 function promptStands(home: string, task: string, participant: ParticipantV1 | null | undefined): boolean {
   const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
   if (turn === null) return true;
@@ -162,43 +136,8 @@ export function liveParticipant(participant: ParticipantV1 | null | undefined, s
   return view.state === 'alive' ? 'alive' : 'dead';
 }
 
-/**
- * Whether this is a stall for real. While the bus still had awaiting, the
- * participant sat inside a tool call between messages and was busy to the
- * harness; once awaiting was removed, they finish the turn after sending a
- * message, and the harness marks their session as standing with a line like
- * "result sent; awaiting next cycle". For stall inspection that is an
- * `unknown` outcome, and a report went out on every ordinary end of turn.
- *
- * What remains a stall is a SILENT end of turn: the participant finished the
- * turn without sending anything on the bus after their last activation.
- * `limit` is not subject to this check at all — time lifts it, not a message
- * on the bus.
- *
- * `permission` has a check of its own, and PB-165 is why. A harness reports a
- * dialog through ONE field, and it puts two different dialogs behind it: a
- * permission prompt of the session's own work, and a peer message the session
- * HELD rather than delivered — which is what the bus's own postcard becomes
- * when a participant is lifted in a mode that bypasses prompts. A driver's
- * measurement of that is in its own file, where the tool's name is allowed to
- * be; what belongs here is the shape it leaves: the record is identical to a
- * real prompt while the session runs its turn to the end and answers.
- *
- * Nothing in the record tells the two apart; the bus's own marks do — **a
- * prompt is what SUSPENDS a turn**, so a participant that both ended its turn
- * and spoke after its last activation was not stopped by the dialog standing on
- * it (`promptStands` below). It is still deaf to that message, and the bus has
- * its own words for a deaf channel; what it must not do is call a person to a
- * session that is working.
- *
- * One predicate for three callers: the warden report, the `promptobus status`
- * print, and the stalled lines in the `mailbox` reply. If they drifted, they
- * would become different answers about the same state.
- *
- * The task and its store are required arguments, and they have no silent
- * default on purpose: "no home — treat as a stall" is exactly the divergence
- * mechanism the predicate was collapsed into one function to close.
- */
+/** Whether this is a stall for real: a SILENT end of turn, and `permission` has a check
+ * [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
 export function stallStands(home: string, task: string, participant: ParticipantV1 | null | undefined, stall: SessionStall | null | undefined): boolean {
   if (!home || !task) throw new Error('stallStands: home and task are required — the predicate reads the task store');
   if (!stall) return false;
@@ -213,54 +152,14 @@ export function stallStands(home: string, task: string, participant: Participant
     // A bad participant record has no right to lift the report of their stall.
     return true;
   }
-  // The participant has NEVER yet spoken on the bus, and their session already
-  // shows a finished turn — that is an unfinished start, not a stall. The
-  // window opened together with the new entry into the inspection: while
-  // `blocked` served as that entry, a fresh session never landed in it at all,
-  // and it shows `idle` between `--bg` and its first turn — a report would
-  // have gone out with the reason literally `idle`, because `state.json` has
-  // not been written yet by then.
-  //
-  // **The window sits inside the predicate, not in `blockedParticipants`
-  // next to the neighbouring `justSpawned`, because the `promptobus status`
-  // print calls the predicate directly, bypassing participant inspection**
-  // (`lib/status.js`) — put there, it would have left that print unprotected
-  // and split the channels, exactly against what the predicate was collapsed
-  // for.
-  //
-  // **And only this branch: a participant who has spoken at least once has a
-  // real timeline, and silence after activation is a stall regardless of the
-  // record's age**; a window over the whole `unknown` branch would have given
-  // half a minute of deafness to everyone at once.
+/** A participant that has never spoken gets a grace window from `justSpawned`.
+ * [guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken](../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken) */
   if (sent === null) return !justSpawned(participant);
   return sent < since;
 }
 
-/**
- * The address's contact point is held by a FOREIGN session — or `null` if
- * it is held by its own, or there is nothing to compare.
- *
- * This is not malice: the Stop hook takes identity from its command
- * arguments, and when they are missing — from the session environment, and
- * the harness background-session environment is not the one the session was
- * spawned with. Measurement 2026-09-03: harness background sessions are
- * pre-allocated daemon spares, and the `PROMPTOBUS_*` trio comes to them
- * from the process that raised the daemon, that is from the FIRST spawn of
- * the run. The second participant of the task then hands over a contact
- * point for the first address, and the warden, checking nothing, wakes a
- * foreign session through it: in ten minutes of that run eleven
- * notifications went to the wrong place.
- *
- * Hence the rule: do not knock on such a contact point. It is not dead —
- * it leads to another session, and a knock on it starts a FOREIGN turn,
- * while the addressee stays deaf. This repairs itself on the first end of
- * turn of the real owner: their hook rewrites the record with their own.
- *
- * Both sides must be named: a participant record without a session id
- * (spawn did not parse it from `--bg` output) and a contact point of the
- * former CLI without a `session` field — that is unknown, not a foreign
- * session, and it cannot be blamed.
- */
+/** The address's contact point is held by a FOREIGN session, or null.
+ * [guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if](../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if) */
 export function wakeTakenBy(home: string, task: string, p: ParticipantV1 | null | undefined, endpoint?: Wake | null): string | null {
   const addr = addressOf(p);
   if (!addr) return null;
@@ -283,26 +182,8 @@ function heldBy(p: ParticipantV1 | null | undefined): string {
   return sessionIdOf(p) ?? sessionOf(p) ?? 'nobody';
 }
 
-/**
- * Whether the participant's session is busy with a turn. There are two
- * branches, because there are two kinds of participant, and one branch
- * is not enough for both.
- *
- * **There is a session reference** — take busyness from the snapshot: the
- * driver declared it.
- *
- * **There is no reference** — that is how the task owner lives: their
- * session was not raised by the driver, and the harness has no record of
- * it at all. Busyness is then taken from the cycle watchman: it is called
- * on EVERY end of turn and lays a mark (`markTurn`). An activation newer
- * than the mark means that since then the session started a turn and has
- * not yet given it back. The signal is cumulative, not instantaneous:
- * "has it been free since the last activation", not "is it free this second".
- *
- * Neither source is a contract: no snapshot, no record, the watchman mark
- * has never been laid — that is UNKNOWN, not busy, and the caller does
- * what they would have done without the predicate.
- */
+/** Whether the participant's session is busy with a turn.
+ * [guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn](../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn) */
 export function sessionBusy(home: string, task: string, participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): boolean {
   // The branch is chosen by the KIND of participant, not by whether their
   // session was found in the snapshot: the snapshot yields emptiness for an
@@ -728,6 +609,10 @@ export async function supervisorRound(home: string, task: string, {
       if (h.channel !== 'pull') {
         h.channel = 'pull';
         h.wake = null;
+        // A self-wake verdict from an earlier channel must not survive the move to pull:
+        // `status` would print a prognosis for knocks that no longer happen.
+        h.selfWake = null;
+        h.selfWakeChannel = null;
       }
     } else if (!endpoint?.socket) {
       // There is no contact point — nothing to knock with, and this is not
@@ -739,6 +624,8 @@ export async function supervisorRound(home: string, task: string, {
       }
       h.channel = 'self-wake';
       h.knockError = why;
+      h.selfWake = 'starting';
+      h.selfWakeChannel = null;
       h.wake = null;
     } else if (taken) {
       // Another session holds the contact point (`wakeTakenBy` above). Do
@@ -754,6 +641,8 @@ export async function supervisorRound(home: string, task: string, {
       }
       h.channel = 'self-wake';
       h.knockError = why;
+      h.selfWake = 'taken';
+      h.selfWakeChannel = null;
       h.wake = null;
     } else if (!Number.isFinite(triedAt) || grew || moved || (stale && !busy)) {
       h.triedAt = new Date(now).toISOString();
@@ -791,6 +680,8 @@ export async function supervisorRound(home: string, task: string, {
         // The `socket` literal named the wrong transport to a human.
         h.channel = driver.options?.knockChannel ?? 'socket';
         h.knockError = null;
+        h.selfWake = null;
+        h.selfWakeChannel = null;
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
         h.wakeSession = wakeSession;
@@ -816,6 +707,9 @@ export async function supervisorRound(home: string, task: string, {
         }
         h.channel = 'self-wake';
         h.knockError = why;
+        h.selfWake = 'refused';
+        // The label the journal line above uses; `status` had only the raw error.
+        h.selfWakeChannel = label;
       }
       // There is no write here: the state comparison below decides that.
     }

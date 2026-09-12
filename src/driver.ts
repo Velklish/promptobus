@@ -1,15 +1,5 @@
-// Driver contract and driver registry, entry point "./driver".
-//
-// Driver — adapter of one harness: it launches a participant session, recognises its
-// state, wakes it, and can stop it. Which harness it is — the package does not know
-// and has no right to know: only the contract is declared here, and the drivers
-// themselves live at the consumer. The registry is passed into core EXPLICITLY, as a
-// `harness → driver` map, and an unknown harness refuses BEFORE anything changes in
-// the store: a refusal after writing the participant would leave in the task journal
-// a participant with nothing to wake it by.
-//
-// Constraint invisible from this file: no harness name is here and none can be —
-// the package set gate watches for that.
+// The driver contract.
+// [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract)
 import { addressOf, GateError } from './protocol.js';
 import type { HostMcpTool, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
@@ -321,27 +311,8 @@ export interface DriverOptions {
    * instead of promising the participant skills it never received.
    */
   skillsDir?: boolean;
-  /**
-   * Directories inside the participant's working directory that this driver's launch
-   * files claim.
-   *
-   * Before the first write the caller asks Git what the lift is about to overwrite, and
-   * it asks about **the paths the lift writes** — never about the claimed directory as a
-   * whole. A declared directory is not a claim on everything under it: a repository may
-   * lawfully keep files of its own there, and a lift that does not write them must not
-   * announce them. What this field supplies is the boundary — where a launch file's
-   * absolute path stops being the working directory and becomes the pathspec Git is
-   * asked about.
-   *
-   * A launch file that copies a whole directory is the one that matters most: its
-   * destination is erased before the copy, so everything tracked under that one path is
-   * lost rather than merely rewritten. It needs no separate declaration — the
-   * destination is itself a written path, and a directory in a pathspec covers its
-   * subtree.
-   *
-   * Optional: a driver whose launch files land outside the repository claims none and is
-   * asked nothing.
-   */
+  /** Directories inside the participant's working directory this driver's launch files claim.
+   * [reference/05-drivers.md#launch-directories-a-driver-claims](../docs/reference/05-drivers.md#launch-directories-a-driver-claims) */
   launchDirs?: string[];
   /** Tools taken from a read-only participant (`denyTools` capability). */
   denyTools: string[];

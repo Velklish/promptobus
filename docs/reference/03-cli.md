@@ -758,7 +758,7 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
 
-`BUS_HOOK_EVENT`, `GUARD_HOOK_EVENT`, and `GUARD_START_EVENT` in `src/hooks.ts` declare the Claude `PostToolUse`, `Stop`, and `SessionStart` events. `lib/driver-claude.js` imports the compiled guard declaration, and `lib/install.js` imports all three for generated settings, so those doors cannot rename the events independently. Cursor's own `stop` event vocabulary remains separate.
+`GUARD_HOOK_EVENT` and `GUARD_START_EVENT` in `src/hooks.ts` declare the Claude `Stop` and `SessionStart` events, and `install` generates settings from those two alone. `BUS_HOOK_EVENT` declares `PostToolUse` and is generated from by nothing: it is only how `install` finds and removes a feed hook an earlier version wrote, and a pass that deletes it as unused removes the cleanup with it. `lib/driver-claude.js` imports the compiled guard declaration and `lib/install.js` imports all three, so those doors cannot rename the events independently. Cursor's own `stop` event vocabulary remains separate.
 
 `warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries at most `KNOCK_TEXT_MAX` (2000) characters of body text (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
 
@@ -813,3 +813,135 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 ## MCP
 
 `promptobus mcp` serves stdio JSON-RPC. It must not write logs to stdout. The bus server name is `promptobus`: `src/contract.ts` owns that literal, `src/hooks.ts` exposes it as `BUS_SERVER` for the hook matcher, and `lib/contract.js` re-exports its compiled value as `PROMPTOBUS_SERVER` for adapter consumers.
+
+### Stall parsing
+
+Source: `lib/stalls.js`.
+
+Words about a stalled participant — the ones shared by every harness. "Stalled",
+"LISTED", "GONE", and "DEAF" describe a state, not a tool, and therefore live here;
+the ROUTE after a stall — a command of a specific harness — arrives here as a ready
+string from that harness's driver.
+
+The module is a leaf on purpose: adapter builds the string when it prints
+`promptobus status` or answers `promptobus_mailbox`, and the warden journal uses the
+same words. If it lived on a driver, adapter would import the driver directly; if it
+lived on adapter, a driver would import adapter. A shared leaf removes both
+dependencies, and the channels cannot drift: there is one function.
+
+### `squashedInto` — was the branch's work taken into the base as ONE commit?
+
+Source: `lib/worktree.js`, `squashedInto`.
+
+Was the branch's work taken into the base as ONE commit?
+
+`branchAdds` asks "would merging change the base", and that question has an answer
+only while nothing else has touched the same lines. After a squash merge the base
+already holds the branch's content, and the very next commit over the same file makes
+the re-merge conflict: git stops being able to say whether the work is in, and the
+directory of a branch that WAS accepted stays behind (PB-6). Live shape, and the one
+the fixture reproduces: the orchestrator squashes worker A, worker B lands on the same
+file, `done` runs.
+
+Patch identity answers it without merging anything. A squash merge writes one commit
+whose diff is exactly the branch's own diff from the fork point, and `git patch-id
+--stable` reduces a diff to an id that line numbers and blob hashes do not move. So:
+the id of `git diff <fork> <branch>`, looked for among the ids of the commits the base
+gained since that fork. Found — the work is in.
+
+`true` — found; `false` — the base has no commit carrying this branch's patch;
+`null` — git did not answer at all.
+
+What it deliberately does not recognise: a squash whose content was edited while it
+was merged, and work taken as a series of cherry-picks. Both keep the directory, and
+that is the safe direction — a directory is cheap to delete and impossible to return.
+
+### `recordTelemetry` — one telemetry record per participant that lifted a session
+
+Source: `lib/done.js`, `recordTelemetry`.
+
+One telemetry record per participant that lifted a session
+([model-routing/telemetry.js](../../lib/model-routing/telemetry.js)).
+
+It runs right after the close and BEFORE the sweeps, for two reasons. The run
+is over at the close, so that is the moment `endedAt` names; and everything
+below this line may leave through a warning — a live session, a busy lock, a
+directory nobody may remove — while the record is the one thing this command
+cannot write later.
+
+**Only when THIS call closed the task.** `closeTask` is idempotent and a second
+`promptobus done` on the same task is not a mistake — the reference asks for
+one, after the sessions holding a worktree have been closed by hand — so the
+caller reads the status before closing and passes it here. Without that, every
+repeat would append the whole set again, and the file PB-37 reads as one row
+per participant run would carry a run twice for no reason a reader could see.
+
+A failure here is a warning and never a refusal, the same rule the journal
+sweep below keeps: `done` has already closed the task and has no undo, and a
+read-only routing directory is not a reason to leave the run half-closed.
+
+### `dismiss` — stop watching a finished participant
+
+Source: `lib/dismiss.js`, `dismiss`.
+
+Stop watching a finished participant.
+
+The subject is its own, not a branch of `done` or `status`: closing a task sweeps the
+whole run, and printing state only reads — dismiss changes one participant's journal
+and is done mid-run, on every slice acceptance.
+
+What dismiss does and does not do:
+
+- **stops future warden reports** about this address — one filter, in
+  `blockedParticipants` ([status.js](../../lib/status.js)), and all three channels go through it:
+  the warden postcard and the line in tool replies. Postcards already sent are not
+  recalled;
+- **does not touch the mailbox.** Writing to a dismissed address is legal: the address
+  stays a participant, and the message waits for either a live session `mailbox` or a
+  participant raised again. Refusing a `result` would be a lost message where the
+  mechanism promises delivery;
+- **does not stop the session or close the task** — both commands stay with the person
+  and `promptobus done`.
+
+### `stopManaged` — stop managed sessions of a closed task
+
+Source: `lib/done.js`, `stopManaged`.
+
+Stop managed sessions of a closed task. A session the mechanism started, it
+also closes: before this task a person stopped it by hand (`claude stop <id>`
+on acceptance), and the cost of delay was double — live sessions piled up on
+the machine, and worktree cleanup after a live session does not run at all,
+because the directory would leave from under its `cwd`.
+
+Only `managed` with a live session are stopped: the task owner has no session
+behind them at all, and `attached` the driver did not start and has no right
+to dispose of. A refusal of one participant does not break the walk — named
+out loud and we go on: this is the same walk after the task is closed, and
+you cannot throw from it.
+
+`registry` is a set seam: a stand-in driver counts calls without touching
+live `claude`. `snapshot` is a second seam, a function over participants:
+`done` supplies it so the whole command is hermetic in one argument; without
+it the snapshot is built with the same `registry`.
+
+### `bgSessionsCache` — live background sessions by the names we set at spawn
+
+Source: `lib/liftoff.js`, `bgSessionsCache`.
+
+Live background sessions by the names we set at spawn. The `claude agents --json`
+format is not a contract: if we did not parse it — we say so, we do not invent state.
+
+A successful parse is remembered until reset: `promptobus status` and the warden
+heartbeat read the list per participant, and without memory each would cost a
+separate launch. A parse refusal is not cached — one failure does not declare every
+later call `unknown`. That costs today's readers nothing, and both halves were
+measured (2026-09-02): the snapshot dies on the FIRST `null`, so an unparsed reply
+costs one launch at any participant count, and the warden resets the cache itself
+before the heartbeat snapshot — it has no inter-beat memory at all. The cost would
+appear for a reader that takes state more often than the heartbeat and without a
+reset: 60 snapshots in a row — 1 launch on a parsed reply versus 60 on an unparsed
+one. There is no such reader, and one must not be added (see [warden.js](../../lib/warden.js)).
+The suite after spawn/stop calls `resetBgSessionsCache` (sandbox.mjs); `awaitSession`
+and the warden reset themselves, otherwise they would see the list from before the
+change. This read measures 0.34–0.41 s (driver-claude.js); the shared minute is a
+wedge ceiling, not a latency budget, and a crossing becomes `unknown` below.

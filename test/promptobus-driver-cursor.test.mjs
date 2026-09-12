@@ -412,6 +412,34 @@ mkdirSync(path.join(skillsRoot, '.cursor', 'rules'), { recursive: true });
 writeFileSync(path.join(skillsRoot, '.cursor', 'rules', 'x.mdc'), 'правило\n');
 
 const skillsWt = path.join(SB, 'skills-wt');
+// PB-171. Cursor REPLACES the environment of the participant's MCP child — measured live:
+// a sentinel on the lift command reached the harness process and not that child. So the
+// warden switch and the run's trace travel only if the entry names them, exactly as for
+// Codex. Sentinel values, not the run's own: under the runner both names are already set,
+// and asserting the run's values would pass on a driver that hardcoded them.
+const cursorWarden0 = {
+  PROMPTOBUS_WARDEN: process.env.PROMPTOBUS_WARDEN,
+  PROMPTOBUS_WARDEN_TRACE: process.env.PROMPTOBUS_WARDEN_TRACE,
+};
+const CURSOR_TRACE_SENTINEL = path.join(SB, 'cursor-warden-probe.log');
+process.env.PROMPTOBUS_WARDEN = 'off';
+process.env.PROMPTOBUS_WARDEN_TRACE = CURSOR_TRACE_SENTINEL;
+const cursorWardenOn = cursorDriver.prepare(ctx).mcpConfig.mcpServers.promptobus?.env ?? {};
+// Negative control: with neither set the entry must invent neither. An unconditional
+// forward writes `undefined`, which only an `in` test rejects.
+delete process.env.PROMPTOBUS_WARDEN;
+delete process.env.PROMPTOBUS_WARDEN_TRACE;
+const cursorWardenOff = cursorDriver.prepare(ctx).mcpConfig.mcpServers.promptobus?.env ?? {};
+for (const [name, was] of Object.entries(cursorWarden0)) {
+  if (was === undefined) delete process.env[name];
+  else process.env[name] = was;
+}
+check('PB-171: the warden switch and its trace reach the Cursor MCP entry, and only when set',
+  cursorWardenOn.PROMPTOBUS_WARDEN === 'off'
+  && cursorWardenOn.PROMPTOBUS_WARDEN_TRACE === CURSOR_TRACE_SENTINEL
+  && !('PROMPTOBUS_WARDEN' in cursorWardenOff) && !('PROMPTOBUS_WARDEN_TRACE' in cursorWardenOff),
+  JSON.stringify({ set: cursorWardenOn, unset: cursorWardenOff }));
+
 const skillsPlan = cursorDriver.prepare({ ...ctx, root: skillsRoot, cwd: skillsWt });
 check(': the plan copies .cursor/skills from the root — not mcp, not agents, not rules',
   skillsPlan.files.some((f) => f.copyFrom === path.join(skillsRoot, '.cursor', 'skills')

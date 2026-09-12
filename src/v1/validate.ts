@@ -1,16 +1,5 @@
-// Own protocol v1 validators: production does not read JSON Schemas at all.
-//
-// The schemas live in `schemas/v1` and ship in the tarball for consumers; here
-// the same grammar is written by hand — so the package has no runtime
-// dependency. Drift between two descriptions of one contract is caught by a
-// parity test on a shared fixture set
-// ([v1-validate.test.mjs](../../test/v1-validate.test.mjs)); edit one — edit
-// the other, or the red will come from there.
-//
-// Check order inside a model is not accidental: the schema version comes
-// FIRST. A newer-version record is blocked by its own code without touching
-// the store, and there is no point parsing the rest of its fields — we do not
-// know the fields of that version.
+// Validation of a v1 record.
+// [reference/04-protocol.md#validation-of-a-v1-record](../../docs/reference/04-protocol.md#validation-of-a-v1-record)
 import { ERROR_CODES, PromptobusError } from './errors.js';
 import type { ErrorCode } from './errors.js';
 import {

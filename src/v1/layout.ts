@@ -1,8 +1,5 @@
-// On-disk layout of store v1.
-//
-// The caller supplies the root: the package does not search the workspace and
-// does not read the environment — that is the adapter's business. Path joining
-// only, no disk access.
+// Where a v1 store puts things on disk.
+// [reference/04-protocol.md#where-a-v1-store-puts-things-on-disk](../../docs/reference/04-protocol.md#where-a-v1-store-puts-things-on-disk)
 import path from 'node:path';
 import { fail } from './errors.js';
 import { PARTICIPANT_ID_RE, RECORD_ID_RE, TASK_ID_RE } from './model.js';

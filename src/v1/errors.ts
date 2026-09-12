@@ -1,10 +1,5 @@
-// Protocol v1 refusals: a typed code plus context.
-//
-// Human wording is the adapter's job, and that is not style: the package must
-// compile and be tested without the CLI, and user output stays in the CLI
-// entirely. So what goes out is a `code` from the list below and `context`
-// with the facts of the refusal; `message` inside the exception is left for
-// debugging — a consumer has no need to read it, and must branch on the code.
+// Typed protocol errors.
+// [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)
 
 /**
  * Refusal-code list. A constant, not in-place strings: the consumer branches
@@ -42,7 +37,7 @@ export const ERROR_CODES = [
   // the CLI surface ADR-003 fixed, and they live here because the consumer
   // branches on a code from one list — a second list beside this one would be
   // a second vocabulary for the same kind of refusal. Their prose half is the
-  // error-code table of `docs/reference/03-cli.md`, and the suite reads the two
+  // error-code table of [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors), and the suite reads the two
   // as one list.
   'strategy-unknown',
   'role-unknown',

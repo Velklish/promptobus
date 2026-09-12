@@ -29,7 +29,8 @@
 //   measure 2026-08-29: one run left six such processes, and they
 //   started waking the developer's session at addresses from fixtures.
 //   Cleanup in the test does not fix this: the process is detached by
-//   construction;
+//   construction. The switch travels as far as the environment does:
+//   a child composing its own is outside this list unless named there;
 // - **contact point of this session** (`CLAUDE_CODE_MESSAGING_SOCKET`/
 //   `_TOKEN`). A bus command hands the task store the socket address
 //   of its session, and under a test its session is the session of the

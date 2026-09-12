@@ -89,3 +89,304 @@ An artifact is attached to a send. There is no separate upload command. Blobs ar
 ## Claim
 
 The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. `promptobus_mailbox` with `claim: true` takes ownership when the previous session is gone. `src/protocol.ts` names the header constants.
+
+### Messages: names, order and what a read marks
+
+Source: `src/v1/messages.ts`.
+
+Recoverable fan-out, mailbox, and history protocol v1.
+
+**The fan-out design rests on a single inode.** The canonical message, the
+fan-out intent, and every inbox reference are hard links to the same file,
+and this is not a space saving — it is how atomicity is obtained where the
+file system does not give it: two files cannot be created with one `rename`,
+and "create the intent" is exactly one atomic `open(O_EXCL)`.
+
+The order is:
+
+1. Validate recipients and the routing policy — before the first side effect.
+2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
+   point**: from here the message exists, and everything else is recoverable,
+   because the intent IS the canonical message whole — the recipients sit
+   in it too.
+3. Link the canon: `link(intent → messages/<id>.json)`. Idempotent.
+4. Link a reference into each recipient's inbox. Idempotent: `EEXIST` means
+   "already there".
+5. Drop the intent once every recipient has a reference.
+
+After a crash, `recoverTask` writes what is missing — at engine open and on
+demand. TWO places are checked THEN, inbox and history: a reference that is
+not in inbox may already have been read, and recovery that looked only at
+inbox would return the already-read message a second time. Activation runs
+independently and AFTER the fan-out is on disk.
+
+The FS requirement is inherited whole: hard links inside one volume. Their
+absence is a lawful environment condition, and the answer is the typed
+code `link-refused`, not a half-written record.
+
+### The v1 store: what is written and in what order
+
+Source: `src/v1/store.ts`.
+
+Task journal v1: the task, participants, the owner, and an explicit claim.
+
+Differences from the legacy store are not cosmetic, and both were named by a decision:
+
+1. **The owner is a participant like any other.** It has `harness`, `mode`,
+   `sessionRef`, and `capabilities`, and it is written when the task is
+   created. v1 has no harness fallback at all: it was added to the registry
+   exactly for the owner record that legacy `createTask` wrote without that field.
+2. **Updating a participant is a field patch, not a whole-record replace.**
+   In legacy `upsertParticipant` a second call that adds one field must put
+   back THE SAME record — otherwise the first call's fields vanish in
+   silence. There is no such invariant here: the patch touches the named
+   fields and checks the schema after the merge.
+
+### Validation of a v1 record
+
+Source: `src/v1/validate.ts`.
+
+Own protocol v1 validators: production does not read JSON Schemas at all.
+
+The schemas live in `schemas/v1` and ship in the tarball for consumers; here
+the same grammar is written by hand — so the package has no runtime
+dependency. Drift between two descriptions of one contract is caught by a
+parity test on a shared fixture set
+([v1-validate.test.mjs](../../test/v1-validate.test.mjs)); edit one — edit
+the other, or the red will come from there.
+
+Check order inside a model is not accidental: the schema version comes
+FIRST. A newer-version record is blocked by its own code without touching
+the store, and there is no point parsing the rest of its fields — we do not
+know the fields of that version.
+
+### Artifacts: how a file becomes a message attachment
+
+Source: `src/v1/artifacts.ts`.
+
+Content-addressed v1 artifacts.
+
+The payload is addressed by SHA-256 and deduplicated inside the task; the
+file name lives separately, in metadata. The same payload under two names
+yields two metadata records and one blob. The blob is immutable and is
+deleted only with the task — `prune`.
+
+The digest is computed as a STREAM, on the write pass: reading the file
+twice would hash something other than what landed on disk — the source may
+change between the two reads.
+
+### The engine: the door every protocol write goes through
+
+Source: `src/v1/engine.ts`.
+
+Engine protocol v1: the only door into store v1.
+
+The caller supplies the root, and the routing policy too, and both are
+required at OPEN. The policy is here, not on the first send: an engine
+without a "who may write to whom" rule is a bus whose rule will appear
+someday, and until then everything goes through.
+
+The engine is wired to the CLI through the mechanism door (the consumer
+adapter): that opens it with the workspace root and the consumer routing
+policy, and hands the models to consumers as they are.
+
+### The v1 entry point
+
+Source: `src/v1/index.ts`.
+
+Protocol and store v1 — the production store since cutover
+and its only surface: there is no longer a layer of former names over the
+engine, and consumers call these models directly.
+
+Names go out FLAT, from `../index.ts` (`export * from './v1/index.js'`): the
+v1 surface is still from the main entry point; `./driver`, `./host`, and
+`./hooks` go out separately. Raw store paths do not go out — the outside
+sees protocol, not disk; the exception is declared by the engine itself
+(`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) and named there.
+
+### Typed protocol errors
+
+Source: `src/v1/errors.ts`.
+
+Protocol v1 refusals: a typed code plus context.
+
+Human wording is the adapter's job, and that is not style: the package must
+compile and be tested without the CLI, and user output stays in the CLI
+entirely. So what goes out is a `code` from the published list and `context`
+with the facts of the refusal; `message` inside the exception is left for
+debugging — a consumer has no need to read it, and must branch on the code.
+
+### The v1 record shapes
+
+Source: `src/v1/model.ts`.
+
+Protocol v1 models and the grammar of their fields.
+
+Forms and regular expressions only — no disk, no policy. `TASK_ID_RE` lives in
+[protocol.ts](../../src/protocol.ts), so the CLI gate and store read one object;
+`schemas/v1/{task,message}.schema.json` carry the same `{0,127}`, pinned by the
+exact-bound fixtures in [v1-validate.test.mjs](../../test/v1-validate.test.mjs).
+
+### Where a v1 store puts things on disk
+
+Source: `src/v1/layout.ts`.
+
+On-disk layout of store v1.
+
+The caller supplies the root: the package does not search the workspace and
+does not read the environment — that is the adapter's business. Path joining
+only, no disk access.
+
+### Addresses: the spelling, the transliteration and the refusals
+
+Source: `src/protocol.ts`.
+
+Bus vocabulary: message types, addresses, task identity, and the foreign-mailbox
+gate wording. No disk, no store — only the grammar and the strings everyone prints.
+
+The home is here, not in either store, because the package has two: production v1
+(`store.ts`) and legacy, kept so migration can still read
+([legacy-store.ts](../../src/legacy-store.ts)). A value that lived in one of them would be
+imported by the other across a version boundary — and they would drift in silence.
+
+### The bus contract constants
+
+Source: `lib/contract.js`.
+
+Bus-contract values cited in prose: CLI help, the reference, the guide, and the
+orchestration skill. The server-name literal lives in the compiled package contract
+and is re-exported here; the remaining adapter constants have their only home here.
+
+**Only harness-neutral lives here**. Effort levels, permission modes, binary versions,
+and the list of tools to deny moved to the driver ([driver-claude.js](../../lib/driver-claude.js)):
+that is ONE harness's dictionary, and the second driver has its own — a shared home
+would mean the bus knows Claude Code values by heart. Contract citations in the docs
+still stand on them: `lint` takes the value from the new home, and the
+`<!-- contract:… -->` keys did not change.
+
+Its one dependency is the compiled, dependency-free contract source — the same
+lib→dist boundary used by the host adapters. Command help reads this module before
+any work, so it still pulls no repository resolver. Message types were removed from
+here at the same price: their home is the package, and importing them here would drag
+the store along.
+
+`lint` takes them from here too, checking prose against code: a documentation block
+marked with a contract key must list exactly these values.
+
+### `abandonedIntent` — whether an unclosed intent is abandoned — that is, whether recovery may
+
+Source: `src/v1/messages.ts`, `abandonedIntent`.
+
+Whether an unclosed intent is abandoned — that is, whether recovery may
+touch it.
+
+A neighbour's live fan-out must not be picked up: recovery materializes the
+canon and drops the intent, and the owner at that moment is walking to its
+own `link` — and gets `ENOENT` on a delivered message, a refusal on success.
+
+Branches, in this order:
+1. age is at least `INTENT_STALE_MS` — abandoned regardless of the lease
+   (the upper bound). Age is computed from local clocks by `mtime`, and on
+   a shared mount `mtime` is set by the owner's machine: the branch admits
+   that the home has one clock. Drifted clocks move the threshold itself,
+   but not the decision about a live owner — that is guarded by branch 2
+   by comparing the host;
+2. there is no lease, or it is from a foreign machine — owner liveness is
+   unknown, wait for the threshold;
+3. the pid is ours — abandoned. The life of an intent inside a process is
+   ONE synchronous block: `commitIntent` and `completeFanout` are
+   synchronous whole, and every `await` of `send` stands before the commit
+   point, so our own pid on an intent means "a previous process with the
+   same number", not "it is being written right now". If an await appears
+   between creating the intent and dropping it, the branch becomes wrong,
+   and the crash checks in `v1-engine.test.mjs` go red on that: they crash
+   the send at the seam and recover in THE SAME process;
+4. otherwise owner pid liveness decides.
+
+### `leaseIntent` — lease: who is writing this fan-out right now
+
+Source: `src/v1/messages.ts`, `leaseIntent`.
+
+Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
+as a separate file, not as a field on the record: the intent and the canon
+are one inode, and the field would travel into every recipient's inbox and
+into history, and a reader of the former version would reject such a
+message by schema (`additionalProperties: false`) and take it to `broken`.
+A separate file is invisible to former readers by construction — they walk
+the intents directory by the `.json` mask.
+
+A write refusal does not cancel the send: the commit point is the intent,
+and the lease only speeds up recovery; without it the intent is treated as
+abandoned by age.
+
+The `w` flag, not `wx`: exclusivity is already won by the `wx` creation of
+the intent itself, and `wx` here would mean "an orphaned `<id>.owner` under
+the same name stays foreign" — a fresh intent would carry foreign pid and
+host and would either be declared abandoned at once or wait the threshold
+in vain. That names may repeat is something the code already counts on:
+`commitIntent` reassembles the id on `EEXIST` up to 16 times.
+
+### `stashBlobSync` — the same, synchronously, from a file
+
+Source: `src/v1/artifacts.ts`, `stashBlobSync`.
+
+The same, synchronously, from a file. Made for an adapter whose send path
+is synchronous whole (`sendSync` below): the bus MCP server answers
+`tools/call` in one synchronous pass, and a promise in the middle of it
+would rewrite the tool dispatcher for one artifact.
+
+The streaming-branch invariant is held, not loosened: the file is read
+ONCE, and the digest is computed over the very bytes that will land in the
+blob. The cost is the file size in memory; bus artifacts are a diff and a
+contract, not a disk image.
+
+**The "one pass" property is structural, and no gate covers it.** It holds
+because there is no window between read and write in the code at all:
+one `readFileSync`, the digest is computed over that same buffer, and that
+same buffer is written. There is nowhere to swap the payload "between two
+reads", and a two-pass-edit probe paints nothing — so there is no check
+for this property, not a green one. What is actually checked: the record
+digest matches the blob payload, and a read refuses `artifact-integrity`
+on a mismatch.
+
+### `sameSession` — whether these are the same session identifier — a FALLBACK rule, for records
+
+Source: `src/protocol.ts`, `sameSession`.
+
+Whether these are the same session identifier — a FALLBACK rule, for records
+without a full id. The check there is prefix-based: the harness names one
+session two ways — the full identifier is a uuid, and the short `id` that
+lift parsed from `--bg` output is the first eight hex of the same uuid
+(measured: `id: "e8c5be23"` against
+`sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"`).
+
+**That premise is not our contract, and a gate must not be built on it**
+(review remark). If the spellings drifted on the next build, the check would
+call every session foreign, in silence. So the primary rule became equality
+of full ids (`foreignSessionOf` below), and the prefix stayed where there is
+no full id to take: previous-release records and lifts where `agents --json`
+did not parse and the id came from free-text output.
+
+Case is folded: harness hex is lower, but that rule is not ours. Empty on
+both sides is not a match, it is unknown: the caller decides.
+
+### `INTENT_STALE_MS` — threshold after which an unclosed intent is treated as abandoned regardless
+
+Source: `src/v1/messages.ts`, `INTENT_STALE_MS`.
+
+Threshold after which an unclosed intent is treated as abandoned regardless
+of the lease.
+
+It is also the upper bound of the lease: a pid the OS reused for a foreign
+process would otherwise lock a foreign intent forever, and the undelivered
+would sit forever. The slack is taken from the cost of one send: measured
+2026-09-02, 500 sends in a row — 1.4 ms CPU per send at a median of 1.3 ms;
+under load (load average 38–44) the median is the same, and the tail is
+stretched by the scheduler: p99 35–67 ms, the longest of one and a half
+thousand — 141 ms. The threshold is two hundred times that, and a live
+intent never lives longer than a send at all: from `wx` creation to drop
+it is a synchronous block.
+
+Exported for a contract quote: the reference names the threshold in
+seconds, and `lint` checks that number against this constant through
+`dist`; there are no other consumers outside.

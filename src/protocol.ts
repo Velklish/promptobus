@@ -1,10 +1,5 @@
-// Bus vocabulary: message types, addresses, task identity, and the foreign-mailbox
-// gate wording. No disk, no store — only the grammar and the strings everyone prints.
-//
-// The home is here, not in either store, because the package has two: production v1
-// (`store.ts`) and legacy, kept so migration can still read
-// ([legacy-store.ts](legacy-store.ts)). A value that lived in one of them would be
-// imported by the other across a version boundary — and they would drift in silence.
+// Addresses: the spelling, the transliteration and the refusals.
+// [reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals](../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals)
 import path from 'node:path';
 
 // Protocol v1 message types. **The value lives here**, and that is not a convenience:
@@ -316,24 +311,8 @@ function norm(v: string | null | undefined): string {
   return typeof v === 'string' ? v.trim().toLowerCase() : '';
 }
 
-/**
- * Whether these are the same session identifier — a FALLBACK rule, for records
- * without a full id. The check there is prefix-based: the harness names one
- * session two ways — the full identifier is a uuid, and the short `id` that
- * lift parsed from `--bg` output is the first eight hex of the same uuid
- * (measured: `id: "e8c5be23"` against
- * `sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"`).
- *
- * **That premise is not our contract, and a gate must not be built on it**
- * (review remark). If the spellings drifted on the next build, the check would
- * call every session foreign, in silence. So the primary rule became equality
- * of full ids (`foreignSessionOf` below), and the prefix stayed where there is
- * no full id to take: previous-release records and lifts where `agents --json`
- * did not parse and the id came from free-text output.
- *
- * Case is folded: harness hex is lower, but that rule is not ours. Empty on
- * both sides is not a match, it is unknown: the caller decides.
- */
+/** Whether these are the same session identifier — a FALLBACK for records with no full id.
+ * [reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records](../docs/reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records) */
 export function sameSession(a: string | null | undefined, b: string | null | undefined): boolean {
   const x = norm(a);
   const y = norm(b);

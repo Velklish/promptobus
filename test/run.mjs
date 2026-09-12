@@ -565,6 +565,8 @@ if (interrupted) {
   // The gate has one boundary, named in [warden.js](../lib/warden.js):
   // a warden started by hand leaves no trace. The rule forbids
   // auto-lift, and the suite does not start one by hand.
+  // The other boundary is the ENVIRONMENT: a child composing its own is
+  // outside the gate unless named there (contributing.md § Suite isolation).
   let raised = [];
   try {
     raised = readFileSync(path.join(RUN_TMP, RAISED_LOG), 'utf8').split('\n').filter(Boolean);

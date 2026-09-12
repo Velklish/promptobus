@@ -1,9 +1,5 @@
-// Protocol v1 models and the grammar of their fields.
-//
-// Forms and regular expressions only — no disk, no policy. `TASK_ID_RE` lives in
-// [protocol.ts](../protocol.ts), so the CLI gate and store read one object;
-// `schemas/v1/{task,message}.schema.json` carry the same `{0,127}`, pinned by the
-// exact-bound fixtures in [v1-validate.test.mjs](../../test/v1-validate.test.mjs).
+// The v1 record shapes.
+// [reference/04-protocol.md#the-v1-record-shapes](../../docs/reference/04-protocol.md#the-v1-record-shapes)
 import { MESSAGE_TYPES, TASK_ID_RE } from '../protocol.js';
 
 /** v1 record schema version: `task.json` and artifact metadata. */

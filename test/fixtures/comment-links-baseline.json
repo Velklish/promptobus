@@ -1,0 +1,296 @@
+{
+  "bound": 48,
+  "fileLevel": 48,
+  "citation": 2,
+  "byFile": {
+    "lib/cli.js": [
+      "harness-home.js"
+    ],
+    "lib/codex-hold.js": [
+      "codex-session.js"
+    ],
+    "lib/codex-session.js": [
+      "driver-codex.js",
+      "harness-home.js",
+      "warden.js"
+    ],
+    "lib/contract.js": [
+      "../docs/reference/04-protocol.md#the-bus-contract-constants"
+    ],
+    "lib/cursor-persist.js": [
+      "../docs/reference/05-drivers.md#cursor-the-persist-session",
+      "../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session",
+      "../docs/reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss",
+      "driver-cursor.js",
+      "harness-home.js"
+    ],
+    "lib/dismiss.js": [
+      "../docs/reference/03-cli.md#dismiss--stop-watching-a-finished-participant"
+    ],
+    "lib/done.js": [
+      "../docs/reference/03-cli.md#recordtelemetry--one-telemetry-record-per-participant-that-lifted-a-session",
+      "../docs/reference/03-cli.md#stopmanaged--stop-managed-sessions-of-a-closed-task"
+    ],
+    "lib/driver-claude.js": [
+      "../test/promptobus-adapter.test.mjs",
+      "../test/promptobus-package.test.mjs",
+      "drivers.js",
+      "liftoff.js",
+      "model-routing/adapter-claude.js",
+      "notification.js"
+    ],
+    "lib/driver-codex.js": [
+      "../docs/adr/adr-008-codex-reviewer-working-directory.md",
+      "../docs/reference/05-drivers.md#bindparticipanthomeremoval--remove-every-home-under-the-root-that-no-session-record-names",
+      "../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver",
+      "../docs/reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by",
+      "../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review",
+      "model-routing/adapter-codex.js"
+    ],
+    "lib/driver-cursor.js": [
+      "../scripts/live-cursor.mjs",
+      "../src/supervisor.ts",
+      "../test/promptobus-adapter.test.mjs",
+      "cursor-persist.js",
+      "driver-claude.js",
+      "drivers.js",
+      "model-routing/adapter-cursor.js",
+      "notification.js",
+      "stalls.js"
+    ],
+    "lib/drivers.js": [
+      "stalls.js"
+    ],
+    "lib/exec.js": [
+      "../test/hygiene.mjs",
+      "../test/run.mjs",
+      "warden.js"
+    ],
+    "lib/harness-home.js": [
+      "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says"
+    ],
+    "lib/host.js": [
+      "harness-home.js"
+    ],
+    "lib/install.js": [
+      "../docs/guides/install.md#2-workspace-file",
+      "../docs/guides/install.md#what-the-installer-knows-and-never-writes"
+    ],
+    "lib/liftoff.js": [
+      "../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight",
+      "../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn",
+      "../src/protocol.ts"
+    ],
+    "lib/model-routing/adapter-claude.js": [
+      "../../docs/guides/model-routing.md#claude-code-adapter-what-the-probe-reads",
+      "../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability",
+      "../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids",
+      "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none",
+      "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-004-windows",
+      "../driver-claude.js",
+      "cache.js"
+    ],
+    "lib/model-routing/adapter-codex.js": [
+      "../../docs/guides/model-routing.md#codex-adapter-what-the-probe-reads",
+      "../../docs/guides/model-routing.md#window_kind_by_id--the-subscription-windows-of-a-snapshot-normalised",
+      "cache.js"
+    ],
+    "lib/model-routing/adapter-cursor.js": [
+      "../../docs/guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers",
+      "../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off",
+      "../../docs/guides/model-routing.md#cursor-adapter-what-the-probe-reads",
+      "../../docs/guides/model-routing.md#events--which-pool-a-model-is-billed-to-and-why-the-bucket-list-is-not-the-only-source",
+      "../exec.js",
+      "adapter-claude.js",
+      "cache.js"
+    ],
+    "lib/model-routing/cache.js": [
+      "../../docs/guides/model-routing.md#markexhausted--marking-a-harness-exhausted-when-a-lift-fails-on-a-spent-limit",
+      "../../docs/guides/model-routing.md#scopeof--what-a-window-binds-projected-onto-the-closed-scope-shapes-or-undefined",
+      "../../docs/guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape",
+      "../../docs/guides/model-routing.md#the-availability-cache-the-first-disk-boundary-of-routing",
+      "../../src/v1/store.ts",
+      "telemetry.js"
+    ],
+    "lib/model-routing/calibrate.js": [
+      "../../docs/guides/model-routing.md",
+      "../../docs/guides/model-routing.md#calibrate-reading-the-telemetry-back"
+    ],
+    "lib/model-routing/catalog.js": [
+      "../../docs/guides/model-routing.md#mergeweights--the-four-merge-rules-and-why-provenance-is-a-list",
+      "cache.js"
+    ],
+    "lib/model-routing/preflight.js": [
+      "../../docs/guides/model-routing.md#preflight-running-the-adapters-together-under-one-budget",
+      "../../docs/guides/model-routing.md#resolvebins--resolve-the-binary-of-every-harness-about-to-be-probed-before-any-adapter",
+      "../drivers.js"
+    ],
+    "lib/model-routing/render.js": [
+      "../../docs/guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print",
+      "../../docs/guides/model-routing.md#rendering-a-decision-for-a-person",
+      "cache.js"
+    ],
+    "lib/model-routing/resolver.js": [
+      "../../docs/guides/model-routing.md",
+      "../../docs/guides/model-routing.md#paceof--the-pace-block-of-one-candidate-how-much-of-its-binding-window-is-spent",
+      "../../docs/guides/model-routing.md#the-resolver-one-decision-and-the-three-rules-that-shape-it"
+    ],
+    "lib/model-routing/telemetry.js": [
+      "../../docs/guides/model-routing.md#participant-telemetry-the-collecting-half",
+      "../util.js",
+      "calibrate.js"
+    ],
+    "lib/model-routing/validate.js": [
+      "../../docs/guides/model-routing.md",
+      "../../docs/guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it",
+      "../../docs/guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for"
+    ],
+    "lib/models.js": [
+      "../docs/guides/model-routing.md#agedsnapshot--where-the-decision-takes-the-moment-its-snapshot-was-assembled",
+      "../docs/guides/model-routing.md#availabilityof--the-decision-with-the-availability-facts-it-was-made-on-attached",
+      "../docs/guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant",
+      "../docs/guides/model-routing.md#the-models-command-what-each-subcommand-reads-and-writes",
+      "model-routing/calibrate.js"
+    ],
+    "lib/notification.js": [
+      "stalls.js"
+    ],
+    "lib/review.js": [
+      "models.js"
+    ],
+    "lib/server.js": [
+      "../src/mcp/server.ts"
+    ],
+    "lib/spawn.js": [
+      "../docs/adr/adr-007-codex-participant-isolated-home.md",
+      "../src/hooks.ts",
+      "drivers.js",
+      "review.js"
+    ],
+    "lib/stalls.js": [
+      "../docs/reference/03-cli.md#stall-parsing"
+    ],
+    "lib/status.js": [
+      "../docs/guides/hooks-and-trust.md#the-three-self-wake-states",
+      "../src/supervisor.ts",
+      "stalls.js",
+      "warden.js"
+    ],
+    "lib/store.js": [
+      "../src/mcp/service.ts"
+    ],
+    "lib/warden.js": [
+      "../docs/guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine",
+      "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round"
+    ],
+    "lib/worktree.js": [
+      "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit"
+    ],
+    "src/driver.ts": [
+      "../docs/reference/05-drivers.md#launch-directories-a-driver-claims",
+      "../docs/reference/05-drivers.md#the-driver-contract",
+      "migrate.ts",
+      "model-routing.ts",
+      "protocol.ts"
+    ],
+    "src/fs/atomic.ts": [
+      "../../docs/reference/01-overview.md#atomic-writes"
+    ],
+    "src/fs/lock.ts": [
+      "../../docs/reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot"
+    ],
+    "src/fs/proc.ts": [
+      "../../docs/reference/01-overview.md#reading-about-a-process"
+    ],
+    "src/hooks.ts": [
+      "../docs/guides/install.md#what-the-installer-writes"
+    ],
+    "src/host.ts": [
+      "../docs/reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says",
+      "../docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files",
+      "../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means",
+      "../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member",
+      "../docs/reference/02-host.md#the-layer-the-tool-writes"
+    ],
+    "src/index.ts": [
+      "../docs/reference/01-overview.md#the-package-entry-point",
+      "mcp/server.ts",
+      "model-routing.ts"
+    ],
+    "src/legacy-store.ts": [
+      "../docs/reference/01-overview.md#seq--bus-store-v0610--a-maildir-store-of-a-task",
+      "sidecar.ts"
+    ],
+    "src/mcp/render.ts": [
+      "../../docs/reference/01-overview.md#rendering-a-reply-for-a-participant"
+    ],
+    "src/mcp/server.ts": [
+      "../../docs/reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener",
+      "../../docs/reference/01-overview.md#the-stdio-server-transport-rules"
+    ],
+    "src/mcp/service.ts": [
+      "../../docs/reference/01-overview.md#the-mcp-service-what-the-three-tools-do"
+    ],
+    "src/mcp/tools.ts": [
+      "../../docs/reference/01-overview.md#the-tool-declarations"
+    ],
+    "src/migrate.ts": [
+      "../docs/reference/01-overview.md#migration-reading-an-older-store",
+      "fs/lock.ts"
+    ],
+    "src/model-routing.ts": [
+      "../docs/guides/model-routing.md#the-routing-contract-types"
+    ],
+    "src/protocol.ts": [
+      "../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals",
+      "../docs/reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records",
+      "v1/store.ts"
+    ],
+    "src/sidecar.ts": [
+      "../docs/reference/01-overview.md#the-sidecar-state-beside-the-journal",
+      "fs/lock.ts"
+    ],
+    "src/standalone.ts": [
+      "../docs/reference/02-host.md#the-standalone-host"
+    ],
+    "src/supervisor.ts": [
+      "../docs/guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already",
+      "../docs/guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at",
+      "../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn",
+      "../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not",
+      "../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if"
+    ],
+    "src/v1/artifacts.ts": [
+      "../../docs/reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment",
+      "../../docs/reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file",
+      "messages.ts"
+    ],
+    "src/v1/engine.ts": [
+      "../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through"
+    ],
+    "src/v1/errors.ts": [
+      "../../docs/reference/04-protocol.md#typed-protocol-errors"
+    ],
+    "src/v1/index.ts": [
+      "../../docs/reference/04-protocol.md#the-v1-entry-point"
+    ],
+    "src/v1/layout.ts": [
+      "../../docs/reference/04-protocol.md#where-a-v1-store-puts-things-on-disk"
+    ],
+    "src/v1/messages.ts": [
+      "../../docs/reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may",
+      "../../docs/reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless",
+      "../../docs/reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now",
+      "../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks"
+    ],
+    "src/v1/model.ts": [
+      "../../docs/reference/04-protocol.md#the-v1-record-shapes"
+    ],
+    "src/v1/store.ts": [
+      "../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order"
+    ],
+    "src/v1/validate.ts": [
+      "../../docs/reference/04-protocol.md#validation-of-a-v1-record"
+    ]
+  }
+}

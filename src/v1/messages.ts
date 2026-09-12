@@ -1,32 +1,5 @@
-// Recoverable fan-out, mailbox, and history protocol v1.
-//
-// **The fan-out design rests on a single inode.** The canonical message, the
-// fan-out intent, and every inbox reference are hard links to the same file,
-// and this is not a space saving — it is how atomicity is obtained where the
-// file system does not give it: two files cannot be created with one `rename`,
-// and "create the intent" is exactly one atomic `open(O_EXCL)`.
-//
-// The order is:
-//
-// 1. Validate recipients and the routing policy — before the first side effect.
-// 2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
-//    point**: from here the message exists, and everything else is recoverable,
-//    because the intent IS the canonical message whole — the recipients sit
-//    in it too.
-// 3. Link the canon: `link(intent → messages/<id>.json)`. Idempotent.
-// 4. Link a reference into each recipient's inbox. Idempotent: `EEXIST` means
-//    "already there".
-// 5. Drop the intent once every recipient has a reference.
-//
-// After a crash, `recoverTask` writes what is missing — at engine open and on
-// demand. TWO places are checked THEN, inbox and history: a reference that is
-// not in inbox may already have been read, and recovery that looked only at
-// inbox would return the already-read message a second time. Activation runs
-// independently and AFTER the fan-out is on disk.
-//
-// The FS requirement is inherited whole: hard links inside one volume. Their
-// absence is a lawful environment condition, and the answer is the typed
-// code `link-refused`, not a half-written record.
+// Messages: names, order and what a read marks.
+// [reference/04-protocol.md#messages-names-order-and-what-a-read-marks](../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks)
 import {
   existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
@@ -129,46 +102,12 @@ function delivered(home: string, task: string, participant: string, message: str
     || existsSync(historyRef(home, task, participant, message));
 }
 
-/**
- * Threshold after which an unclosed intent is treated as abandoned regardless
- * of the lease.
- *
- * It is also the upper bound of the lease: a pid the OS reused for a foreign
- * process would otherwise lock a foreign intent forever, and the undelivered
- * would sit forever. The slack is taken from the cost of one send: measured
- * 2026-09-02, 500 sends in a row — 1.4 ms CPU per send at a median of 1.3 ms;
- * under load (load average 38–44) the median is the same, and the tail is
- * stretched by the scheduler: p99 35–67 ms, the longest of one and a half
- * thousand — 141 ms. The threshold is two hundred times that, and a live
- * intent never lives longer than a send at all: from `wx` creation to drop
- * it is a synchronous block.
- *
- * Exported for a contract quote: the reference names the threshold in
- * seconds, and `lint` checks that number against this constant through
- * `dist`; there are no other consumers outside.
- */
+/** Threshold after which an unclosed intent is treated as abandoned.
+ * [reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless](../../docs/reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless) */
 export const INTENT_STALE_MS = 30_000;
 
-/**
- * Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
- * as a separate file, not as a field on the record: the intent and the canon
- * are one inode, and the field would travel into every recipient's inbox and
- * into history, and a reader of the former version would reject such a
- * message by schema (`additionalProperties: false`) and take it to `broken`.
- * A separate file is invisible to former readers by construction — they walk
- * the intents directory by the `.json` mask.
- *
- * A write refusal does not cancel the send: the commit point is the intent,
- * and the lease only speeds up recovery; without it the intent is treated as
- * abandoned by age.
- *
- * The `w` flag, not `wx`: exclusivity is already won by the `wx` creation of
- * the intent itself, and `wx` here would mean "an orphaned `<id>.owner` under
- * the same name stays foreign" — a fresh intent would carry foreign pid and
- * host and would either be declared abandoned at once or wait the threshold
- * in vain. That names may repeat is something the code already counts on:
- * `commitIntent` reassembles the id on `EEXIST` up to 16 times.
- */
+/** Writing a message into a mailbox.
+ * [reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now](../../docs/reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now) */
 function leaseIntent(intent: string): void {
   try {
     writeFileSync(ownerOfIntent(intent),
@@ -190,33 +129,8 @@ function readLease(file: string): { pid: number; host: string } | null {
   }
 }
 
-/**
- * Whether an unclosed intent is abandoned — that is, whether recovery may
- * touch it.
- *
- * A neighbour's live fan-out must not be picked up: recovery materializes the
- * canon and drops the intent, and the owner at that moment is walking to its
- * own `link` — and gets `ENOENT` on a delivered message, a refusal on success.
- *
- * Branches, in this order:
- * 1. age is at least `INTENT_STALE_MS` — abandoned regardless of the lease
- *    (the upper bound). Age is computed from local clocks by `mtime`, and on
- *    a shared mount `mtime` is set by the owner's machine: the branch admits
- *    that the home has one clock. Drifted clocks move the threshold itself,
- *    but not the decision about a live owner — that is guarded by branch 2
- *    by comparing the host;
- * 2. there is no lease, or it is from a foreign machine — owner liveness is
- *    unknown, wait for the threshold;
- * 3. the pid is ours — abandoned. The life of an intent inside a process is
- *    ONE synchronous block: `commitIntent` and `completeFanout` are
- *    synchronous whole, and every `await` of `send` stands before the commit
- *    point, so our own pid on an intent means "a previous process with the
- *    same number", not "it is being written right now". If an await appears
- *    between creating the intent and dropping it, the branch becomes wrong,
- *    and the crash checks in `v1-engine.test.mjs` go red on that: they crash
- *    the send at the seam and recover in THE SAME process;
- * 4. otherwise owner pid liveness decides.
- */
+/** Whether an unclosed intent is abandoned — that is, whether recovery may touch it.
+ * [reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may](../../docs/reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may) */
 function abandonedIntent(intent: string): boolean {
   let age: number;
   try {

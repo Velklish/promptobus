@@ -121,7 +121,7 @@ test('install each harness alone and all three together; HOME stays empty', () =
     assert.deepEqual(readJson(dir, 'promptobus.json').harnesses, [name]);
     if (name === 'claude') {
       const hooks = readJson(dir, path.join('.claude', 'settings.json')).hooks;
-      assert.ok(hooks.PostToolUse[0].matcher.includes('promptobus_send'));
+      assert.equal(Object.hasOwn(hooks, 'PostToolUse'), false);
       assert.ok(hooks.Stop[0].hooks[0].command.includes('promptobus guard'));
     }
     if (name === 'cursor') {
@@ -134,7 +134,7 @@ test('install each harness alone and all three together; HOME stays empty', () =
     }
     if (name === 'codex') {
       const hooks = readJson(dir, path.join('.codex', 'hooks.json')).hooks;
-      assert.match(hooks.PostToolUse[0].matcher, /promptobus_send/);
+      assert.equal(Object.hasOwn(hooks, 'PostToolUse'), false);
       assert.ok(hooks.Stop);
     }
   }
@@ -144,7 +144,8 @@ test('install each harness alone and all three together; HOME stays empty', () =
   assert.ok(existsSync(path.join(dir, '.claude', 'settings.json')));
   assert.ok(existsSync(path.join(dir, '.cursor', 'hooks.json')));
   assert.ok(existsSync(path.join(dir, '.codex', 'hooks.json')));
-  assert.ok(existsSync(path.join(dir, '.promptobus', 'hooks', 'bus.mjs')));
+  // Nothing generates a runner script any more; the feed hook it ran is gone.
+  assert.equal(existsSync(path.join(dir, '.promptobus', 'hooks', 'bus.mjs')), false);
   assert.deepEqual(homeHits(home), []);
 });
 
@@ -190,7 +191,10 @@ test('merge keeps foreign settings, hook groups and unknown fields', () => {
   assert.deepEqual(claude.permissions, { allow: ['Bash'] });
   assert.equal(claude.hooks.PostToolUse.some((g) => g.matcher === 'Bash'), true);
   assert.equal(claude.hooks.Notification[0].hooks[0].command, 'echo foreign-note');
-  assert.equal(claude.hooks.PostToolUse.some((g) => g.matcher.includes('promptobus_send')), true);
+  // Nothing of ours joins PostToolUse any more, and the stranger's group is untouched:
+  // the event is now theirs alone rather than shared.
+  assert.deepEqual(claude.hooks.PostToolUse.map((g) => g.matcher), ['Bash']);
+  assert.ok(claude.hooks.Stop[0].hooks[0].command.includes('promptobus guard'));
   const cursor = readJson(dir, path.join('.cursor', 'hooks.json'));
   assert.equal(cursor.extra, 'keep-me');
   assert.equal(cursor.hooks.sessionStart[0].command, 'echo foreign-start');
@@ -209,7 +213,7 @@ test('a new harness list replaces the previous one and removes only owned record
   doInstall(dir, home, { harnesses: 'claude,cursor,codex' });
   doInstall(dir, home, { harnesses: 'claude' });
   assert.deepEqual(readJson(dir, 'promptobus.json').harnesses, ['claude']);
-  assert.ok(readJson(dir, path.join('.claude', 'settings.json')).hooks.PostToolUse);
+  assert.ok(readJson(dir, path.join('.claude', 'settings.json')).hooks.Stop);
   const cursor = readJson(dir, path.join('.cursor', 'hooks.json'));
   assert.equal(cursor.extra, 'keep-me');
   assert.equal(cursor.hooks.sessionStart[0].command, 'echo foreign-start');
@@ -232,6 +236,7 @@ test('uninstall removes only owned records and leaves foreign settings', () => {
   assert.deepEqual(claude.permissions, { allow: ['Bash'] });
   assert.equal(claude.hooks.PostToolUse.length, 1);
   assert.equal(claude.hooks.PostToolUse[0].matcher, 'Bash');
+  assert.equal(Object.hasOwn(claude.hooks, 'Stop'), false);
   assert.equal(claude.hooks.Notification[0].hooks[0].command, 'echo foreign-note');
   assert.equal(Object.hasOwn(readJson(dir, 'promptobus.json'), 'harnesses'), false);
   assert.deepEqual(homeHits(home), []);
@@ -290,7 +295,10 @@ test('--dry-run writes nothing; --check reports drift and returns non-zero', asy
   assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
 
   const settings = path.join(dir, '.claude', 'settings.json');
-  writeFileSync(settings, fileText(dir, path.join('.claude', 'settings.json')).replace('PostToolUse', 'XPostToolUse'));
+  // Rename an owned event so the file no longer matches the plan. `Stop`, not
+  // `PostToolUse`: nothing of ours is written under that event any more, so renaming it
+  // would be a no-op and `--check` would report no drift while claiming to.
+  writeFileSync(settings, fileText(dir, path.join('.claude', 'settings.json')).replace('"Stop"', '"XStop"'));
   assert.equal(doInstall(dir, home, { check: true }), 1);
   const h = hostOf(dir);
   const code = await runPromptobus(['install', '--check'], {
@@ -383,7 +391,7 @@ test('guard ownership leaves guard-like foreign commands untouched', () => {
   assert.deepEqual(homeHits(home), []);
 });
 
-test('install from a subdirectory writes the project root; prune keeps the runner directory', () => {
+test('install from a subdirectory writes the project root; prune keeps what install left there', () => {
   const { dir, home } = sandbox();
   const sub = path.join(dir, 'nested', 'deeper');
   mkdirSync(sub, { recursive: true });
@@ -392,11 +400,14 @@ test('install from a subdirectory writes the project root; prune keeps the runne
   assert.ok(existsSync(path.join(dir, '.claude', 'settings.json')));
   assert.equal(existsSync(path.join(sub, '.claude')), false);
   assert.deepEqual(readJson(dir, 'promptobus.json').tools, ['alpha']);
-  const hooksDir = path.join(dir, '.promptobus', 'hooks');
-  assert.equal(statSync(hooksDir).isDirectory(), true);
+  // `prune` removes task journals and nothing else. The runner script used to be what
+  // stood in `.promptobus/` for this to be measured against; the install manifest does
+  // now, and a prune that walked the store wholesale would take it.
+  const manifest = path.join(dir, '.promptobus', 'manifest.json');
+  assert.equal(statSync(manifest).isFile(), true);
   prune(hostOf(dir), { yes: true });
-  assert.equal(statSync(hooksDir).isDirectory(), true);
-  assert.ok(existsSync(path.join(hooksDir, 'bus.mjs')));
+  assert.equal(statSync(manifest).isFile(), true);
+  assert.equal(statSync(path.join(dir, '.promptobus')).isDirectory(), true);
   assert.deepEqual(homeHits(home), []);
 });
 

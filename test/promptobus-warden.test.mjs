@@ -267,6 +267,10 @@ const r3 = await wdn.wardenRound(HOME, TASK, { knock: noWake });
 check(`no contact point — no knock, and the channel is self-wake`,
   noWake.calls.length === 0 && health().orchestrator.channel === 'self-wake',
   JSON.stringify(health().orchestrator));
+// PB-168: `channel` is `self-wake` for all three; this field is what separates them.
+check('PB-168: the start-up fallback records its own state, and no channel refused anything',
+  health().orchestrator.selfWake === 'starting' && health().orchestrator.selfWakeChannel === null,
+  JSON.stringify(health().orchestrator));
 check('the fallback is named in the warden log',
   r3.events.some((e) => /fell back to self-wake orchestrator/.test(e)), JSON.stringify(r3.events));
 
@@ -291,6 +295,10 @@ const r4 = await wdn.wardenRound(HOME, TASK, { knock: refused, now: T1 });
 // (`driver.test.mjs`): a failure writes `inject` / `rpc`, not the literal "socket".
 check('the socket did not accept the notification — the channel falls back to self-wake with a reason',
   health().orchestrator.channel === 'self-wake' && health().orchestrator.knockError === 'ENOENT',
+  JSON.stringify(health().orchestrator));
+// PB-168: a different state at the same address, and the channel the journal names.
+check('PB-168: a refusing channel records the refusing state and the channel that refused',
+  health().orchestrator.selfWake === 'refused' && health().orchestrator.selfWakeChannel === 'socket',
   JSON.stringify(health().orchestrator));
 check('the failure reason is named in the log',
   r4.events.some((e) => /did not accept the notification \(ENOENT\)/.test(e)), JSON.stringify(r4.events));
@@ -1959,6 +1967,88 @@ const takenLine = takenOut.split('\n').find((l) => l.includes('worker:api')) ?? 
 check(': promptobus status prints the fallback reason in the alarm line',
   /alarm: self-wake \(reason: contact point is held by session /.test(takenLine)
   && takenLine.includes(ALIEN), takenLine || takenOut);
+// PB-168: the third of the three states, recorded by the round the same way as the other two.
+check('PB-168: a hijacked contact point records the taken state, and names no channel',
+  (store.readHealth(HOME, TAKEN)['worker:api'] ?? {}).selfWake === 'taken'
+  && (store.readHealth(HOME, TAKEN)['worker:api'] ?? {}).selfWakeChannel === null,
+  JSON.stringify(store.readHealth(HOME, TAKEN)['worker:api'] ?? {}));
+
+// --- PB-168: the three self-wake states as a human sees them ----------------------------
+
+// Written against the CONFLATION, not the wording: sentences would go red on a reword
+// that fixed nothing and green on three that still said the same thing.
+const PROG = 'prognosis-t20260912-000000';
+store.createTask(HOME, { id: PROG, title: 'три состояния self-wake', owner: SESSION });
+const PROG_STATES = [
+  // address, health mark, wake record
+  ['worker:starting', { channel: 'self-wake', selfWake: 'starting', selfWakeChannel: null,
+    knockError: 'no contact point — the participant did not hand over a socket' }, null],
+  ['worker:taken', { channel: 'self-wake', selfWake: 'taken', selfWakeChannel: null,
+    knockError: 'contact point is held by session sess-alien, while the address is bound to sess-own' },
+  { socket: sockPath('prog-taken'), token: 't', session: 'sess-own' }],
+  ['worker:refused', { channel: 'self-wake', selfWake: 'refused', selfWakeChannel: 'rpc',
+    knockError: 'ENOENT' }, { socket: sockPath('prog-refused'), token: 't', session: 'sess-own' }],
+  // Written before the field. `wakePart` throws are swallowed by the caller, so the
+  // property is "the line is there", not "it did not crash".
+  ['worker:legacy', { channel: 'self-wake', knockError: 'ENOENT' },
+    { socket: sockPath('prog-legacy'), token: 't', session: 'sess-own' }],
+  // The only row reaching the wake-record fallback: every row above carries `selfWake`,
+  // so without this one that branch is unmeasured while the file looks covered.
+  ['worker:fresh', {}, null],
+];
+const progHealth = {};
+for (const [addr, mark, wake] of PROG_STATES) {
+  store.upsertParticipant(HOME, PROG, store.participantRecord(addr, { name: addr.split(':')[1] }));
+  progHealth[addr] = mark;
+  if (wake) store.writeWake(HOME, PROG, addr, wake);
+}
+store.writeHealth(HOME, PROG, progHealth);
+const progOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) }));
+const progLine = (addr) => progOut.split('\n').find((l) => l.includes(addr)) ?? '';
+// The alarm alone, so the comparison is between alarms and not participant names.
+const alarmOf = (addr) => (progLine(addr).match(/alarm: [^·]*/) ?? [''])[0].trim();
+// …and without the reason, which differed between all three before the prognosis
+// existed: comparing whole alarms measures the reasons and passes on the old code.
+const alarmCore = (addr) => alarmOf(addr).replace(/ \(reason:[^)]*\)/, '');
+const progAlarms = PROG_STATES.map(([addr]) => alarmOf(addr));
+// PB-186: a pull participant is not on self-wake and never will be. Before this row the
+// fallback read its absent socket as a fresh start and promised a knock that never comes.
+store.upsertParticipant(HOME, PROG, store.participantRecord('worker:pull', { name: 'pull' }));
+store.writeHealth(HOME, PROG, { ...progHealth, 'worker:pull': { channel: 'pull', wake: null } });
+const pullOut = capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) }));
+const pullLine = pullOut.split('\n').find((l) => l.includes('worker:pull')) ?? '';
+check('PB-186: a pull participant gets its own alarm, not a self-wake prognosis',
+  /alarm: pull/.test(pullLine)
+  && !/self-wake/.test(pullLine)
+  // …and specifically not the start-up promise, which is the wrong half of the fallback.
+  && !/clears on the first knock/.test(pullLine),
+  pullLine || pullOut);
+// A stale self-wake verdict must not outlive the move to pull.
+check('PB-186: self-wake fields left by an earlier channel do not print under pull',
+  !/starting up|stays until the channel accepts/.test(
+    (capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) })))
+      .split('\n').find((l) => l.includes('worker:pull')) ?? ''),
+  pullLine);
+
+check('PB-168: every one of the five rows prints a self-wake line at all',
+  progAlarms.every((a) => a.startsWith('alarm: self-wake')), JSON.stringify(progAlarms));
+const progCores = PROG_STATES.slice(0, 3).map(([addr]) => alarmCore(addr));
+check('PB-168: the three known states do not read alike once the reason is taken out',
+  new Set(progCores).size === 3, JSON.stringify(progCores));
+check('PB-168: start-up is distinguishable from a refusing channel without reading the journal',
+  alarmCore('worker:starting') !== alarmCore('worker:refused'),
+  `${alarmCore('worker:starting')}  ||  ${alarmCore('worker:refused')}`);
+check('PB-168: the refusing state names the channel the journal names',
+  /\brpc\b/.test(alarmOf('worker:refused')) && !/\brpc\b/.test(alarmOf('worker:taken')),
+  `${alarmOf('worker:refused')}  ||  ${alarmOf('worker:taken')}`);
+check('PB-168: a health record written before the field still prints its line, reason and all',
+  alarmOf('worker:legacy').includes('alarm: self-wake') && alarmOf('worker:legacy').includes('ENOENT'),
+  alarmOf('worker:legacy') || progOut);
+// Compared against the row whose state came from the field: an address the warden has
+// not reached yet must not read as a break.
+check('PB-168: no health mark and no contact point reads as start-up, off the wake record alone',
+  alarmCore('worker:fresh') === alarmCore('worker:starting'),
+  `${alarmCore('worker:fresh')}  ||  ${alarmCore('worker:starting')}`);
 // A previous release's record carries no full id at all — the rule there stays the prefix,
 // or a participant raised before this task would be left with no contact point forever.
 check(': with no full id in the record the rule stays the prefix',

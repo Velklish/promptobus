@@ -29,7 +29,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `skillsDir` | `skillsDir(): string \| null` | `null` means the workspace has no configured process-skills directory. |
 | `pluginDir` | `pluginDir(): string \| null` | `null` means no plugin directory is available for the workspace. |
 | `pluginManifestRel` | `pluginManifestRel(): string` | Never absent; it is the workspace-relative plugin manifest path. |
-| `busHookRel` | `busHookRel(): string` | Never absent; it is the workspace-relative bus-hook path. |
+| `busHookRel` | `busHookRel(): string` | Never absent. Nothing is written there any more; it is the path by which `install` recognises and removes a feed hook an earlier version left. |
 | `installManifestRel` | `installManifestRel(): string` | Never absent; it is the workspace-relative install manifest path. |
 | `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
 | `declaredTools` | `declaredTools(): string[]` | Never `null`; an empty array means the workspace declares no harnesses. |
@@ -194,3 +194,160 @@ The spawn path chooses a readable participant session name from the work-slice t
 ## Passing the host
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.
+
+## The harness session registry, and the refusal when nobody says
+
+Source: `lib/harness-home.js`, `harnessStateHome`.
+
+Where the package keeps its own session registry for one harness, and the refusal
+when nobody says.
+
+The registry holds the records `inspect`, `stop` and the wake path read and write.
+It used to be `PROMPTOBUS_<HARNESS>_HOME` or, failing that, `~/.promptobus/<harness>`
+— and that fallback was the bug. A consumer that had named its own variables instead
+left the package seeing neither, so the Cursor and Codex registries wrote into the
+operator's REAL home while `inspect` read the sandbox: two halves of one test looking
+at different directories, with no error anywhere and nothing in either log to say so.
+Found because a test behaved oddly, not by a gate (PB-2).
+
+So the answer now comes from one of two places that were ASKED, and otherwise it is a
+refusal that names both of them:
+
+  1. `PROMPTOBUS_<HARNESS>_HOME` in the environment — how the suite and a person
+     point the package at a sandbox, and it wins, because it is the most local thing
+     anyone said;
+  2. `host.harnessStateHome(<harness>)` — the workspace's answer. The standalone host
+     answers `~/.promptobus/<harness>`, the old fallback, so a single-user checkout
+     needs no variable and notices nothing;
+  3. neither — `GateError`, naming the variable and the method.
+
+That refusal is not an empty registry result: registry readers and direct driver
+`inspect`, `stop` and `activate` calls rethrow it. The aggregate `snapshotSessions`
+path deliberately degrades driver errors to `unknown`; wake-side `registerWake` and
+`sessionPrefix` deliberately keep their safety catches. Only a registry directory
+that was actually resolved and read can produce `null`, `[]`, or a “no session
+record” stall.
+
+**The host is bound once per process rather than threaded.** The registry helpers are
+called from `inspect`, `stop`, holder start and the wake path — thirty-odd call sites,
+most of them with no host in reach (`cursorDriver.inspect(ref)` takes a ref and
+nothing else). Threading a host through all of them to reach two functions would be a
+larger change than the one it protects, and a half-threaded version — a host on the
+write path, none on the read path — would rebuild the very split this fixes. The
+binding is set by whoever builds the host: `hostOf` in [host.js](../../lib/host.js) does it for
+the package's own helper, and `runPromptobus` in [cli.js](../../lib/cli.js) does it for a
+consumer that passes its own. Two hosts in one process share this one binding and the
+FIRST one wins — the cost of not threading, written down where it is paid.
+
+### The host contract, in one sentence per member
+
+Source: `src/host.ts`.
+
+Host contract: knowledge of the workspace the consumer passes into the bus
+explicitly on every call. There is no process-wide singleton: two hosts in
+one process are lawful and independent.
+
+Field names are about a workspace in general, not about one consumer's
+layout. Concrete paths (rules directory, tools manifest) are named by the
+implementation.
+
+### The standalone host
+
+Source: `src/standalone.ts`.
+
+Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
+foreign-mechanism layout, no remote namespaces, and no memory servers here —
+that is a consumer implementation's business.
+
+### The layer the tool writes
+
+Source: `src/host.ts`.
+
+Whether this is the layer the TOOL writes (ADR-004, decision 6). PB-32 adds
+the writer, `models strategy --set`; until then the flag is a declaration
+with no caller, which is the order this package takes everywhere — the
+contract first, then what runs on it.
+
+Exactly one layer carries it whenever any layer is declared; `readLayers`
+refuses zero and refuses two, naming the layers it found. The refusal is at
+the declaration rather than at the write for the reason `harnessStateHome`
+refuses instead of guessing: a host that names layers and no writable one has
+an incomplete declaration, and finding that out at the write costs a person
+the edit they just made.
+
+A writable layer is STATE, not configuration, so it must not be a file
+anybody commits. Under the standalone host it is `workspace`, and it lives at
+`<promptobusHome>/model-routing.json` for exactly that reason — a consumer
+keeps it wherever its own state lives, under the same one condition.
+
+A host should mark the HIGHEST-precedence layer, or the tool would write a
+value a layer above it overrides; the writer PB-32 adds will warn when that
+happens rather than leave the person to wonder why their default did not
+take.
+
+### `harnessStateHome` — the harness session registry, and the refusal when nobody says
+
+Source: `src/host.ts`, `harnessStateHome`.
+
+Where the package keeps its own session registry for one harness — the
+records `inspect`, `stop` and the wake path read and write. Account-scoped
+like `routingPaths()`, and for the same reason: a session a harness keeps
+alive belongs to the account its binary is logged into, not to one
+workspace. `null` means the host names none, and then a run refuses.
+
+It refuses instead of guessing because the guess was measured. The package
+used to fall back to `~/.promptobus/<harness>` when the per-harness
+environment variable was unset. A consumer that had named its own
+variables instead therefore had two harness registries writing into the
+operator's REAL home while `inspect` read the sandbox — two halves of one
+test looking at different directories, with no error anywhere and nothing
+in either log to say so (PB-2). A named refusal costs one message; a
+silent guess cost a day.
+
+Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
+environment, then this method, then the refusal — which names both, so
+the reader is not left to find out which of the two to set.
+
+### `HostRoutingPaths` — where model routing keeps its files
+
+Source: `src/host.ts`, `HostRoutingPaths`.
+
+Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
+scoped, and that is why they do not come from `promptobusHome()`: that home is
+the task store of one workspace, while auth, model inventory and the remaining
+subscription limit belong to the account the harness binary is logged into. A
+per-store cache would re-probe three harnesses for every checkout of the same
+account.
+
+`overlays` is ordered LOWEST precedence first, and the order is the host's to
+choose. One method with a list rather than a getter per layer, because a
+consumer will want a layer of its own — its shipped deny lists and defaults —
+between the person's user-wide and workspace-local files: with a list that is
+a host-side choice, with getters it is another change to this interface and a
+repin for every consumer. `id` is what the decision output and `models
+validate` name a layer by, so a refusal reads `denied by overlay "workspace"`
+and not a path the reader has to place themselves.
+
+A missing overlay file is normal. The host names paths; it does not promise
+they exist.
+
+### The binary version a host read, and what its absence means
+
+Source: `src/host.ts`.
+
+The binary's own version string as the host read it — the raw `--version`
+line, not something normalised. Optional, and its absence means UNREAD: a
+host that does not probe versions returns none, and a consumer may never
+read that as "old".
+
+The shipped standalone host is such a host. It hands the name back without
+searching (`src/standalone.ts`), so under it the `ultracode` refusal never
+refuses, the two proven-version warnings never warn, and an availability
+verdict carries no version at all — that is the DEFAULT, not a rare case.
+
+Declared here because four readers already exist and none of them could
+name the field they read: the three drivers' `optionRefusal` and the three
+availability adapters, which report it to a person as the verdict's
+`version`. It is the drift `bin` above carries its comment about, one field
+over — and load-bearing for a diagnosis rather than for a launch, which is
+why it survived longer.

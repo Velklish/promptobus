@@ -1,18 +1,5 @@
-// Bus MCP server: stdio transport, JSON-RPC 2.0 one message per line,
-// negotiation (`initialize` → `notifications/initialized` → `ping`),
-// `tools/list` and `tools/call`. The implementation is hand-rolled — the
-// package has no dependencies at all.
-//
-// Protocol and dispatcher only. Everything that knows about the workspace,
-// harness, and consumer version arrives as callbacks: process identity, server
-// name and version, contact-point handoff, participant lines about Git and
-// the background session, stall diagnosis, and human error text. Callbacks
-// RETURN data and do not print: the stdout channel is taken by the protocol,
-// and one stray line in it breaks the client.
-//
-// The package declares an error as a typed event; the consumer supplies the
-// text: JSON-RPC codes are part of the protocol and live here; the words are
-// part of the output and live at the adapter.
+// The stdio server: transport rules.
+// [reference/01-overview.md#the-stdio-server-transport-rules](../../docs/reference/01-overview.md#the-stdio-server-transport-rules)
 import {
   GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
 } from '../protocol.js';
@@ -213,24 +200,8 @@ export function createMcpServer(options: McpOptions): {
     }
   }
 
-  // Entering a task: hand over the contact point and lift a listener. Per
-  // connection this is done ONCE per task — `joined` is that mark. A repeat
-  // is not an error, but it is not work either: `onJoin` writes to the store
-  // and lifts a process, and a session enters a task once per connection. The
-  // key is the task id, not the address: an explicit `task` tool argument may
-  // name another, and entering that one is lawful.
-  //
-  // **The mark is set AFTER a successful enter and only for whoever handed
-  // over a contact point.** The order is not cosmetic: `ownership` is the
-  // first real read of the task journal (`resolveTaskId` only checks that it
-  // exists), and on a wiped or unreadable journal it refuses. Marking enter
-  // early, the server would remember as entered a session that did not enter
-  // — and the next `tools/call` would skip enter, so the contact point would
-  // never be handed over in the life of the session (review remark). The
-  // ownership gate is the other half of the same: a foreign session does not
-  // get a socket written (`joinBus`), but it may become the owner on the same
-  // connection — `mailbox {claim: true}` — and the mark would keep
-  // `wake/<address>.json` on the previous owner's socket until the end of the turn.
+  // Entering a task: hand over the contact point and lift a listener.
+  // [reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener](../../docs/reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener)
   function join(identity: McpIdentity, task: string, joined: Set<string>): void {
     if (joined.has(task)) return;
     const { home, role, session } = identity;

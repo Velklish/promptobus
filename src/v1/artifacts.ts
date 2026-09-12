@@ -1,13 +1,5 @@
-// Content-addressed v1 artifacts.
-//
-// The payload is addressed by SHA-256 and deduplicated inside the task; the
-// file name lives separately, in metadata. The same payload under two names
-// yields two metadata records and one blob. The blob is immutable and is
-// deleted only with the task — `prune`.
-//
-// The digest is computed as a STREAM, on the write pass: reading the file
-// twice would hash something other than what landed on disk — the source may
-// change between the two reads.
+// Artifacts: how a file becomes a message attachment.
+// [reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment](../../docs/reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment)
 import { createHash } from 'node:crypto';
 import {
   createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, readFileSync, readdirSync,
@@ -107,26 +99,8 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
   }
 }
 
-/**
- * The same, synchronously, from a file. Made for an adapter whose send path
- * is synchronous whole (`sendSync` below): the bus MCP server answers
- * `tools/call` in one synchronous pass, and a promise in the middle of it
- * would rewrite the tool dispatcher for one artifact.
- *
- * The streaming-branch invariant is held, not loosened: the file is read
- * ONCE, and the digest is computed over the very bytes that will land in the
- * blob. The cost is the file size in memory; bus artifacts are a diff and a
- * contract, not a disk image.
- *
- * **The "one pass" property is structural, and no gate covers it.** It holds
- * because there is no window between read and write in the code at all:
- * one `readFileSync`, the digest is computed over that same buffer, and that
- * same buffer is written. There is nowhere to swap the payload "between two
- * reads", and a two-pass-edit probe paints nothing — so there is no check
- * for this property, not a green one. What is actually checked: the record
- * digest matches the blob payload, and a read refuses `artifact-integrity`
- * on a mismatch.
- */
+/** Putting a file into the task store as an artifact.
+ * [reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file](../../docs/reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file) */
 export function stashBlobSync(home: string, task: string, file: string): { sha256: string; size: number } {
   if (typeof file !== 'string' || !file) fail('artifact-source', 'artifact path is not named');
   let content: Buffer;

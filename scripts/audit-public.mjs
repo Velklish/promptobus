@@ -54,7 +54,6 @@ const FORBIDDEN = [
 const CYRILLIC = /[\u0400-\u04FF]/u;
 const CYRILLIC_ALLOWLIST = [
   ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u], // transliteration table
-  ['templates/bus-hook.mjs', /воркер\|ревьюер/u], // bilingual address-prefix regex
 ];
 const GENERATED_FROM = new Map([
   ['dist/protocol.js', 'src/protocol.ts'],

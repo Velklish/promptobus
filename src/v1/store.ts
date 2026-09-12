@@ -1,16 +1,5 @@
-// Task journal v1: the task, participants, the owner, and an explicit claim.
-//
-// Differences from the legacy store are not cosmetic, and both were named by a decision:
-//
-// 1. **The owner is a participant like any other.** It has `harness`, `mode`,
-//    `sessionRef`, and `capabilities`, and it is written when the task is
-//    created. v1 has no harness fallback at all: it was added to the registry
-//    exactly for the owner record that legacy `createTask` wrote without that field.
-// 2. **Updating a participant is a field patch, not a whole-record replace.**
-//    In legacy `upsertParticipant` a second call that adds one field must put
-//    back THE SAME record — otherwise the first call's fields vanish in
-//    silence. There is no such invariant here: the patch touches the named
-//    fields and checks the schema after the merge.
+// The v1 store: what is written and in what order.
+// [reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order](../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order)
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { writeJsonAtomic } from '../fs/atomic.js';
 import { addressOf, mechanismVersionOf } from '../protocol.js';
