@@ -13,18 +13,6 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
 
-function exportedString(src, name) {
-  const m = src.match(new RegExp(`export const ${name} = '([^']*)'`));
-  assert.ok(m, `core constant ${name} is missing`);
-  return m[1];
-}
-
-function templateConst(src, name) {
-  const m = src.match(new RegExp(`^const ${name} = '([^']*)'`, 'm'));
-  assert.ok(m, `template constant ${name} is missing`);
-  return m[1];
-}
-
 test('createStandaloneHost lifts two independent hosts in one process', async () => {
   const { createStandaloneHost, isPromptobusHost, HOST_KIND } = await import('../dist/host-index.js');
   const dirA = mkdtempSync(path.join(tmpdir(), 'promptobus-host-a-'));

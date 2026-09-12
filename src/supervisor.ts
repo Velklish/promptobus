@@ -152,8 +152,8 @@ export function stallStands(home: string, task: string, participant: Participant
     // A bad participant record has no right to lift the report of their stall.
     return true;
   }
-/** A participant that has never spoken gets a grace window from `justSpawned`.
- * [guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken](../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken) */
+  // A participant that has never spoken gets a grace window from `justSpawned`:
+  // [guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken](../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken)
   if (sent === null) return !justSpawned(participant);
   return sent < since;
 }
