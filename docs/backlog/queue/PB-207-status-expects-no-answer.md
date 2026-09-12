@@ -23,6 +23,10 @@ One trap must not be broken while fixing this. The supervisor escalates a partic
 - Make the two preambles say the same thing, so a participant does not wait for an acknowledgement that is not coming.
 - Fix the guard's text or its verdict so they agree; the fix belongs to whichever is cheaper, and the card says which was chosen.
 
+**Widened during the work, 2026-09-12, deliberately and not by reading.** This card names two kinds that expect an answer — a `question` and the hand-over that asks for acceptance. The table as built names four: `task`, `question`, `review`, `result`; `status`, `answer` and `artifact` expect none.
+
+The two extra kinds are not tidiness. Of the nine participants that PB-203 is built on, the ones that ended a turn cleanly and sent nothing had exactly one inbound message in their whole life, and it was a `task` or a `review`. With the table at two kinds the gate of PB-203 is dead on six of those nine — that is, on the very evidence it grew from. The widening is recorded here so that a later reader narrowing the table back knows it would be undoing a decision rather than fixing an oversight.
+
 ## Out of scope
 
 - A mechanical "awaiting an answer" counter: that changes the shape of `health.json` and the supervisor's contract, and the opposite gap — a turn ending with nothing sent — is PB-203.
