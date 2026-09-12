@@ -58,3 +58,33 @@ Both reduce to: who a session is, is decided once, by whoever wrote its MCP reco
 - A session that raised its own task can drive that task's participants without hand-driving a
   terminal multiplexer.
 - The rule that workers do not write to each other still refuses when it should.
+
+## The first implementation was built and withdrawn from the release, 2026-09-12
+
+`promptobus send` was written in the release run, reviewed four times, and taken out of the
+release by a stopping rule the orchestrator had stated before the third round: another finding
+of the same class in the fourth round withdraws the command. Four majors landed on it, all of
+one class — **the command grants more rights than it promises**:
+
+1. a silent fallback to the orchestrator address for any participant;
+2. the declared role taken on faith — borrowing another task's orchestrator, self-registering an
+   invented address;
+3. the fallback on an ownerless task, where ownership cannot be proved by construction;
+4. **the ownership check is negative, not positive.** `foreignSession` returns `null` both when
+   the session matches and when the participant record carries no session binding at all, after
+   which the write is allowed. Reproduced by the branch's own test: an unbound `worker:one` is
+   created without a session, the owner session exports `PROMPTOBUS_ROLE=worker:one` and writes
+   in its name.
+
+**What is withdrawn and what is kept.** The subcommand is not registered — dispatcher, help,
+`SUBCOMMANDS` and the reference § Send all say so (`promptobus send …` answers
+`unknown command "send"`). The code, its 21 checks and the reasoning stay in the branch, and the
+tests keep the argv shape the removed dispatcher parsed, so a re-registration measures the same
+cases without rewriting them. **ADR-011 remains the decision** — a session's address is per task
+— with a section naming why its first implementation did not ship.
+
+**The missing link, named so the next pass does not rediscover it:** the store keeps no
+POSITIVE binding of a participant address to a session, so "this process is that participant"
+cannot be answered affirmatively today. `foreignSession` answers only "nobody else holds it",
+which is a different statement. Start there: `lib/send.js`, `test/send.test.mjs` and
+ADR-011 § The first implementation, in the branch of this run.
