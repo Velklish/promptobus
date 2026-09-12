@@ -109,3 +109,44 @@ Postcard text is a copy, not a read. Only `promptobus_mailbox` marks mail read. 
 - Command form: [install.md](install.md)
 - Host boundary: [../adr/adr-002-standalone-host-contract.md](../adr/adr-002-standalone-host-contract.md)
 - Orchestrator skill: [../../skills/orchestrate/SKILL.md](../../skills/orchestrate/SKILL.md)
+
+## When a stall is a stall
+
+Source: `stallStands` in `src/supervisor.ts`, the one predicate behind the warden report, the `promptobus status` print and the stalled lines in a `mailbox` reply.
+
+Whether this is a stall for real. While the bus still had awaiting, the
+participant sat inside a tool call between messages and was busy to the
+harness; once awaiting was removed, they finish the turn after sending a
+message, and the harness marks their session as standing with a line like
+"result sent; awaiting next cycle". For stall inspection that is an
+`unknown` outcome, and a report went out on every ordinary end of turn.
+
+What remains a stall is a SILENT end of turn: the participant finished the
+turn without sending anything on the bus after their last activation.
+`limit` is not subject to this check at all — time lifts it, not a message
+on the bus.
+
+`permission` has a check of its own, and PB-165 is why. A harness reports a
+dialog through ONE field, and it puts two different dialogs behind it: a
+permission prompt of the session's own work, and a peer message the session
+HELD rather than delivered — which is what the bus's own postcard becomes
+when a participant is lifted in a mode that bypasses prompts. A driver's
+measurement of that is in its own file, where the tool's name is allowed to
+be; what belongs here is the shape it leaves: the record is identical to a
+real prompt while the session runs its turn to the end and answers.
+
+Nothing in the record tells the two apart; the bus's own marks do —*a
+prompt is what SUSPENDS a turn**, so a participant that both ended its turn
+and spoke after its last activation was not stopped by the dialog standing on
+it (`promptStands` below). It is still deaf to that message, and the bus has
+its own words for a deaf channel; what it must not do is call a person to a
+session that is working.
+
+One predicate for three callers: the warden report, the `promptobus status`
+print, and the stalled lines in the `mailbox` reply. If they drifted, they
+would become different answers about the same state.
+
+The task and its store are required arguments, and they have no silent
+default on purpose: "no home — treat as a stall" is exactly the divergence
+mechanism the predicate was collapsed into one function to close.
+/

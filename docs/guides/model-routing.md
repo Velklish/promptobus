@@ -499,3 +499,122 @@ zero, never a guess: a proposed band is a line a person is about to paste into
 their own overlay, and one derived from a missing denominator would be
 indistinguishable from one derived from five runs.
 
+### The resolver: one decision, and the three rules that shape it
+
+The resolver: one decision from the merged catalog, the availability snapshot
+and a strategy. A pure function — no clock of its own, no disk, no harness —
+because determinism is the contract ADR-003 fixed: the same inputs give the
+same tuple whatever order they arrive in, and every number that moved the
+pick is published.
+
+The shape it produces is `schemas/model-routing/decision.schema.json`, and the
+shape it consumes is what the two modules next door already answer:
+`loadCatalog` ([catalog.js](../../lib/model-routing/catalog.js)) for the tuples, the merged policy and
+its layers, `preflight` ([preflight.js](../../lib/model-routing/preflight.js)) for the snapshot. It
+wires nothing: PB-21 gives it a command line.
+
+Three rules shape the file.
+
+**Every number comes from the merged policy.** A weight, a penalty, a bonus,
+both quality floors and the two numbers of the pace layer are read from
+`policy.policy`, never from a literal —
+that is what makes an overlay able to change them at all. The two constants
+below are formula constants of ADR-005, not policy: the 1–10 normalisation and
+the neutral 50 % an unknown remaining limit counts as. The overlay schema has
+no key for either, so an overlay cannot move them and neither can this file.
+
+**The filter steps are in the ADR's order, and the first one that matches is
+the exclusion reported.** ADR-003 gave nine and ADR-004 added the `flags`
+selector after the inventory step, because that is where the snapshot row it
+reads arrives. Order is what makes an explanation stable: a tuple the account
+cannot run AND that is rated for the other role must always give the same
+answer, or two runs would disagree about why.
+
+**A harness the snapshot does not carry is filtered, not excluded.** The
+snapshot covers the harnesses the workspace declared (`host.declaredTools()`,
+the preflight's `harnesses`), and ADR-003 says the catalog is filtered by that
+declaration. A tuple for a harness this workspace never declared was not
+considered and does not belong in `candidates`; the exclusion enum has no code
+for it either.
+
+### `limit-hit-at-start`: when a lift fails on a limit spent since the preflight
+
+Source: `lib/liftoff.js`, the `persist` / `sayLimit` contract.
+
+`persist(session, state, sessionId)` — write the participant into the journal. Called
+on ANY check outcome, including a dead spawn: a repeat lift at the same address is a
+normal restart, and without a write it would hit "directory taken, and the participant
+is not in the journal". The check outcome goes as the second argument:
+`applyParticipant` replaces the record whole, and without the outcome a "no session"
+refusal would clear the reviewer's `pending` mark. Third — the FULL session identifier
+(review note): the address-ownership gate checks equality against it, while the short
+id is parsed from free-text output and is only good as a prefix. `launchFailNote` and
+`deadNote` are refusal routes, different per role; `awaitOptions` is a test seam.
+`sayLimit(output)` — the late-start hook. A lift can fail because the account's
+limit was spent between the availability preflight and this launch, and the only
+evidence of that is the harness's own words in `output`. The hook is called on
+the two branches that HAVE those words — a non-zero exit and a session that never
+came up — and on no other: a lift that worked said nothing about a limit.
+
+It RETURNS the line to append to the refusal, or `''` when it marked nothing. The
+mark it writes lands in a file nothing reads yet and no flag clears yet, so a
+refusal that did not name it would leave a person with a state they never saw;
+the words are the driver's, because the file and the command are its own.
+
+It has to be called from HERE rather than by a caller catching a refusal, because
+`fail` ends the process: past that line there is no caller left to classify
+anything. The classification itself is not here — this file knows the lift, and
+what counts as a limit refusal is the driver's own pattern.
+
+**A refusal the hook classified leaves as a typed error, not through `fail`.**
+`limit-hit-at-start` is a published routing code ([03-cli](../reference/03-cli.md)),
+and a code nothing raises is a vocabulary a consumer cannot branch on (PB-21.1).
+So the two branches that HAVE the harness's words throw a `PromptobusError` with
+that code — and they throw it on exactly the condition the hook reports: a
+non-empty line, which the hook returns only after the cache mark was WRITTEN.
+
+That is what the code means, both halves at once: the limit was hit AND the
+harness is now marked exhausted. A limit refusal whose mark could not be written
+— an unreadable routing path, a directory that refuses — returns `''` from the
+hook and leaves through `fail` with no code, which is the honest reading: there
+is no mark for a consumer to act on, and the person gets the same diagnosis
+either way. The CLI catch prints a `PromptobusError` as one line and exits 1,
+exactly as `fail` does; what the code adds is on the way past a consumer.
+
+### The merge: four rules, and why provenance is a list
+
+Source: `lib/model-routing/catalog.js`.
+
+--- the merge itself --------------------------------------------------------
+
+Four different rules live here, and they differ on purpose:
+
+  * a weight SET is replaced whole. Half-replacing one would silently stop it
+    summing to 100, and the resolver would divide a component back by a weight
+    nobody chose;
+  * a DENY list ACCUMULATES across layers, per selector kind. A ban written in
+    any layer stands, and no layer above it lifts one: lifting a ban means
+    changing the layer that wrote it. ADR-003's "Clarification, 2026-09-05" —
+    replacement per selector kind — is superseded whole by ADR-004 decision 5,
+    which measured the cost of the old rule: a product policy could only make
+    its bans hold by sitting above a person's file and erasing that person's
+    own `deny.tuples` with it;
+  * an ALLOW list INTERSECTS across layers, per selector kind. A tuple must be
+    named by every allow list of that kind that any layer states, so one
+    sentence covers both lists — a layer's rule survives every layer above it
+    (ADR-004, option B1). The cost is real and is checked rather than
+    discovered: two layers can intersect to nothing, and `validate` reports
+    `allow-intersection-empty` when they do. An intersection that came out
+    empty is `[]` and NOT an absent key, because the two mean opposite things
+    to the resolver — absent is "no allow list of this kind", empty is "an
+    allow list that admits nothing";
+  * everything else merges field by field: a penalty, a bonus, one rating of
+    one tuple. Naming a field is how an overlay changes it, and not naming it
+    is how it leaves the layer below alone.
+
+Provenance is a LIST OF RULES rather than one layer id per key, and it has to
+be: under union and intersection a merged list is written by several layers at
+once, and "denied by overlay \"workspace\"" is only half an answer when the
+user layer denied it too. `sources.rules` records every allow and deny list
+any layer wrote, in layer order, with the role it was scoped to — and every
+diagnostic in the resolver and in `validate` is a filter over that list.
