@@ -4,9 +4,8 @@
 import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
 import type { PromptobusHost } from './host.js';
 
-// The feed hook is gone (PB-173). This name survives it because `install` still
-// has to find and delete an entry an older version wrote. See
-// [guides/install.md](../docs/guides/install.md#what-the-installer-knows-and-never-writes).
+// Gone as a hook; the name survives to find and delete one an older install wrote.
+// [guides/install.md](../docs/guides/install.md#what-the-installer-knows-and-never-writes)
 export const BUS_HOOK_EVENT = 'PostToolUse';
 export { BUS_SERVER };
 
