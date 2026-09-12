@@ -44,6 +44,18 @@ Escalation is not an answer here and must not be proposed as one: see [PB-191](P
 `item/fileChange/requestApproval` of this generation carries no path, so containment fails closed on
 every escalated write. Twelve such refusals are in the run's journal.
 
+## A hypothesis the consumer's tracker raised the same evening
+
+`BL-665` in the consumer repository holds a class of refusals with the same shape: `listen EPERM` and
+`EPERM mkdtemp` inside a participant, on a tree where the orchestrator has neither refusal in the same
+minute. With this card that is three `EPERM`s of the same kind. If they are one phenomenon, the subject
+is not "`mkdtemp` and `listen` are special" but "the participant's sandbox narrows during the session",
+and the class closes by finding what narrows it rather than by reading those two calls.
+
+This is a hypothesis, and the cheap way to break it comes first: run `mkdtemp` and `listen` inside a
+participant **twice** — at the start of the session and after the first write refusal. If `mkdtemp`
+already refused while writes still worked, the two are independent and this paragraph goes.
+
 ## Work to do
 
 - Establish what removes the worktree from the writable roots of a live thread. The candidates are
