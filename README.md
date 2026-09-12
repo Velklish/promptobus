@@ -207,13 +207,13 @@ npm run lint:backslop
 
 `src/` is TypeScript compiled to `dist/`; `lib/` is the JavaScript runtime and the three drivers; `skills/`, `templates/`, `schemas/` and `models/` ship in the tarball.
 
-The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. Live harness runs are never started in CI. `lint:backslop` needs the generated adapter output, which a fresh checkout does not have — run `npx --yes github:Velklish/backslop#v0.6.0 init --prefix PB --lang en --tools claude,cursor,codex` first.
+The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. Live harness runs are never started in CI. `lint:backslop` needs the generated adapter output, which a fresh checkout does not have — run `npx --yes github:Velklish/backslop#v0.7.0 init --prefix PB --lang en --tools claude,cursor,codex` first.
 
 CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](.github/workflows/ci.yml)). The gates a change must pass are listed under `gates` in [backslop.json](backslop.json): `npm test`, `backslop lint`, `npm run audit`.
 
 ## Contributing
 
-Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx github:Velklish/backslop#v0.6.0 status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. New strings, comments and checks in `bin/`, `lib/`, `src/`, `schemas/` and `templates/` are English, and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](docs/guides/contributing.md).
+Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx github:Velklish/backslop#v0.7.0 status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. New strings, comments and checks in `bin/`, `lib/`, `src/`, `schemas/` and `templates/` are English, and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](docs/guides/contributing.md).
 
 ## Documentation
 
