@@ -89,3 +89,162 @@ An artifact is attached to a send. There is no separate upload command. Blobs ar
 ## Claim
 
 The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. `promptobus_mailbox` with `claim: true` takes ownership when the previous session is gone. `src/protocol.ts` names the header constants.
+
+### Messages: names, order and what a read marks
+
+Source: `src/v1/messages.ts`.
+
+Recoverable fan-out, mailbox, and history protocol v1.
+
+**The fan-out design rests on a single inode.** The canonical message, the
+fan-out intent, and every inbox reference are hard links to the same file,
+and this is not a space saving — it is how atomicity is obtained where the
+file system does not give it: two files cannot be created with one `rename`,
+and "create the intent" is exactly one atomic `open(O_EXCL)`.
+
+The order is:
+
+1. Validate recipients and the routing policy — before the first side effect.
+2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
+   point**: from here the message exists, and everything else is recoverable,
+   because the intent IS the canonical message whole — the recipients sit
+   in it too.
+3. Link the canon: `link(intent → messages/<id>.json)`. Idempotent.
+4. Link a reference into each recipient's inbox. Idempotent: `EEXIST` means
+   "already there".
+5. Drop the intent once every recipient has a reference.
+
+After a crash, `recoverTask` writes what is missing — at engine open and on
+demand. TWO places are checked THEN, inbox and history: a reference that is
+not in inbox may already have been read, and recovery that looked only at
+inbox would return the already-read message a second time. Activation runs
+independently and AFTER the fan-out is on disk.
+
+The FS requirement is inherited whole: hard links inside one volume. Their
+absence is a lawful environment condition, and the answer is the typed
+code `link-refused`, not a half-written record.
+
+### The v1 store: what is written and in what order
+
+Source: `src/v1/store.ts`.
+
+Task journal v1: the task, participants, the owner, and an explicit claim.
+
+Differences from the legacy store are not cosmetic, and both were named by a decision:
+
+1. **The owner is a participant like any other.** It has `harness`, `mode`,
+   `sessionRef`, and `capabilities`, and it is written when the task is
+   created. v1 has no harness fallback at all: it was added to the registry
+   exactly for the owner record that legacy `createTask` wrote without that field.
+2. **Updating a participant is a field patch, not a whole-record replace.**
+   In legacy `upsertParticipant` a second call that adds one field must put
+   back THE SAME record — otherwise the first call's fields vanish in
+   silence. There is no such invariant here: the patch touches the named
+   fields and checks the schema after the merge.
+
+### Validation of a v1 record
+
+Source: `src/v1/validate.ts`.
+
+Own protocol v1 validators: production does not read JSON Schemas at all.
+
+The schemas live in `schemas/v1` and ship in the tarball for consumers; here
+the same grammar is written by hand — so the package has no runtime
+dependency. Drift between two descriptions of one contract is caught by a
+parity test on a shared fixture set
+([v1-validate.test.mjs](../../test/v1-validate.test.mjs)); edit one — edit
+the other, or the red will come from there.
+
+Check order inside a model is not accidental: the schema version comes
+FIRST. A newer-version record is blocked by its own code without touching
+the store, and there is no point parsing the rest of its fields — we do not
+know the fields of that version.
+
+### Artifacts: how a file becomes a message attachment
+
+Source: `src/v1/artifacts.ts`.
+
+Content-addressed v1 artifacts.
+
+The payload is addressed by SHA-256 and deduplicated inside the task; the
+file name lives separately, in metadata. The same payload under two names
+yields two metadata records and one blob. The blob is immutable and is
+deleted only with the task — `prune`.
+
+The digest is computed as a STREAM, on the write pass: reading the file
+twice would hash something other than what landed on disk — the source may
+change between the two reads.
+
+### The engine: the door every protocol write goes through
+
+Source: `src/v1/engine.ts`.
+
+Engine protocol v1: the only door into store v1.
+
+The caller supplies the root, and the routing policy too, and both are
+required at OPEN. The policy is here, not on the first send: an engine
+without a "who may write to whom" rule is a bus whose rule will appear
+someday, and until then everything goes through.
+
+The engine is wired to the CLI through the mechanism door (the consumer
+adapter): that opens it with the workspace root and the consumer routing
+policy, and hands the models to consumers as they are.
+
+### The v1 entry point
+
+Source: `src/v1/index.ts`.
+
+Protocol and store v1 — the production store since cutover
+and its only surface: there is no longer a layer of former names over the
+engine, and consumers call these models directly.
+
+Names go out FLAT, from `../index.ts` (`export * from './v1/index.js'`): the
+v1 surface is still from the main entry point; `./driver`, `./host`, and
+`./hooks` go out separately. Raw store paths do not go out — the outside
+sees protocol, not disk; the exception is declared by the engine itself
+(`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) and named there.
+
+### Typed protocol errors
+
+Source: `src/v1/errors.ts`.
+
+Protocol v1 refusals: a typed code plus context.
+
+Human wording is the adapter's job, and that is not style: the package must
+compile and be tested without the CLI, and user output stays in the CLI
+entirely. So what goes out is a `code` from the list below and `context`
+with the facts of the refusal; `message` inside the exception is left for
+debugging — a consumer has no need to read it, and must branch on the code.
+
+### The v1 record shapes
+
+Source: `src/v1/model.ts`.
+
+Protocol v1 models and the grammar of their fields.
+
+Forms and regular expressions only — no disk, no policy. `TASK_ID_RE` lives in
+[protocol.ts](../../src/protocol.ts), so the CLI gate and store read one object;
+`schemas/v1/{task,message}.schema.json` carry the same `{0,127}`, pinned by the
+exact-bound fixtures in [v1-validate.test.mjs](../../test/v1-validate.test.mjs).
+
+### Where a v1 store puts things on disk
+
+Source: `src/v1/layout.ts`.
+
+On-disk layout of store v1.
+
+The caller supplies the root: the package does not search the workspace and
+does not read the environment — that is the adapter's business. Path joining
+only, no disk access.
+
+### Addresses: the spelling, the transliteration and the refusals
+
+Source: `src/protocol.ts`.
+
+Bus vocabulary: message types, addresses, task identity, and the foreign-mailbox
+gate wording. No disk, no store — only the grammar and the strings everyone prints.
+
+The home is here, not in either store, because the package has two: production v1
+(`store.ts`) and legacy, kept so migration can still read
+([legacy-store.ts](../../src/legacy-store.ts)). A value that lived in one of them would be
+imported by the other across a version boundary — and they would drift in silence.

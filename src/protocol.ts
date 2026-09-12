@@ -1,10 +1,5 @@
-// Bus vocabulary: message types, addresses, task identity, and the foreign-mailbox
-// gate wording. No disk, no store — only the grammar and the strings everyone prints.
-//
-// The home is here, not in either store, because the package has two: production v1
-// (`store.ts`) and legacy, kept so migration can still read
-// ([legacy-store.ts](legacy-store.ts)). A value that lived in one of them would be
-// imported by the other across a version boundary — and they would drift in silence.
+// Addresses: spelling, transliteration and the refusals.
+// The rules and why a table rather than a library: reference/04-protocol.md.
 import path from 'node:path';
 
 // Protocol v1 message types. **The value lives here**, and that is not a convenience:

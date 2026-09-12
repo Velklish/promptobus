@@ -1,13 +1,5 @@
-// Engine protocol v1: the only door into store v1.
-//
-// The caller supplies the root, and the routing policy too, and both are
-// required at OPEN. The policy is here, not on the first send: an engine
-// without a "who may write to whom" rule is a bus whose rule will appear
-// someday, and until then everything goes through.
-//
-// The engine is wired to the CLI through the mechanism door (the consumer
-// adapter): that opens it with the workspace root and the consumer routing
-// policy, and hands the models to consumers as they are.
+// The engine — the one door every protocol write goes through.
+// What it owns and what it refuses to own: reference/04-protocol.md.
 import { linkSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {

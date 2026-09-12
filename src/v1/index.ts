@@ -1,12 +1,5 @@
-// Protocol and store v1 — the production store since cutover
-// and its only surface: there is no longer a layer of former names over the
-// engine, and consumers call these models directly.
-//
-// Names go out FLAT, from `../index.ts` (`export * from './v1/index.js'`): the
-// v1 surface is still from the main entry point; `./driver`, `./host`, and
-// `./hooks` go out separately. Raw store paths do not go out — the outside
-// sees protocol, not disk; the exception is declared by the engine itself
-// (`taskFile`, `inboxPath`, `historyPath`, `brokenPath`) and named there.
+// Protocol v1 entry point: what the package exports of it and what stays inside.
+// The surface and its boundary: reference/04-protocol.md.
 export { ERROR_CODES, PromptobusError } from './errors.js';
 export type { ErrorCode, ErrorContext } from './errors.js';
 export {

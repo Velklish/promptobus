@@ -1,32 +1,5 @@
-// Recoverable fan-out, mailbox, and history protocol v1.
-//
-// **The fan-out design rests on a single inode.** The canonical message, the
-// fan-out intent, and every inbox reference are hard links to the same file,
-// and this is not a space saving — it is how atomicity is obtained where the
-// file system does not give it: two files cannot be created with one `rename`,
-// and "create the intent" is exactly one atomic `open(O_EXCL)`.
-//
-// The order is:
-//
-// 1. Validate recipients and the routing policy — before the first side effect.
-// 2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
-//    point**: from here the message exists, and everything else is recoverable,
-//    because the intent IS the canonical message whole — the recipients sit
-//    in it too.
-// 3. Link the canon: `link(intent → messages/<id>.json)`. Idempotent.
-// 4. Link a reference into each recipient's inbox. Idempotent: `EEXIST` means
-//    "already there".
-// 5. Drop the intent once every recipient has a reference.
-//
-// After a crash, `recoverTask` writes what is missing — at engine open and on
-// demand. TWO places are checked THEN, inbox and history: a reference that is
-// not in inbox may already have been read, and recovery that looked only at
-// inbox would return the already-read message a second time. Activation runs
-// independently and AFTER the fan-out is on disk.
-//
-// The FS requirement is inherited whole: hard links inside one volume. Their
-// absence is a lawful environment condition, and the answer is the typed
-// code `link-refused`, not a half-written record.
+// Messages of protocol v1: file names, send order, and what a read marks.
+// The naming rule and why order is by id: reference/04-protocol.md.
 import {
   existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';

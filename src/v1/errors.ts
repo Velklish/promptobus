@@ -1,10 +1,5 @@
-// Protocol v1 refusals: a typed code plus context.
-//
-// Human wording is the adapter's job, and that is not style: the package must
-// compile and be tested without the CLI, and user output stays in the CLI
-// entirely. So what goes out is a `code` from the list below and `context`
-// with the facts of the refusal; `message` inside the exception is left for
-// debugging — a consumer has no need to read it, and must branch on the code.
+// Typed protocol errors: a published vocabulary a consumer can branch on.
+// Which codes exist and what each means: reference/04-protocol.md.
 
 /**
  * Refusal-code list. A constant, not in-place strings: the consumer branches

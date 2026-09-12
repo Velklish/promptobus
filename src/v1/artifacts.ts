@@ -1,13 +1,5 @@
-// Content-addressed v1 artifacts.
-//
-// The payload is addressed by SHA-256 and deduplicated inside the task; the
-// file name lives separately, in metadata. The same payload under two names
-// yields two metadata records and one blob. The blob is immutable and is
-// deleted only with the task — `prune`.
-//
-// The digest is computed as a STREAM, on the write pass: reading the file
-// twice would hash something other than what landed on disk — the source may
-// change between the two reads.
+// Artifacts: a file copied into the task store and named by a message.
+// The naming and collision rules: reference/04-protocol.md.
 import { createHash } from 'node:crypto';
 import {
   createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, readFileSync, readdirSync,
