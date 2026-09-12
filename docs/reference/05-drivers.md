@@ -162,6 +162,14 @@ longer the blocker — the participant's argv carries the bypass flag (`PARTICIP
 PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
 channel is `turn/completed` only. `exec --json` is a smoke check.
 
+**The participant shell and the holder approval are separate boundaries.** Measured inside a live
+Codex participant on 2026-09-12, `test -w .` returned 1 from the first minute; `$TMPDIR` and
+`/tmp` accepted temporary writes, while `listen` on 127.0.0.1 was refused separately. A
+`item/fileChange/requestApproval` request with no path was then refused by the holder, while
+shell requests arrived as `item/commandExecution/requestApproval`. The route that successfully
+edits a participant worktree must therefore be attributed by approval method; PB-191 and PB-194
+leave the legacy method and writable-root cause open.
+
 A real lift prints a provenance line with the resolved CLI entry path, the executing Promptobus
 package path and version from `import.meta.url`, the host version, the participant binary path, and
 its version when known. The Codex session record keeps the same line as its first JSON field, and
