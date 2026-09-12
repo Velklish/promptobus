@@ -162,13 +162,13 @@ longer the blocker — the participant's argv carries the bypass flag (`PARTICIP
 PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
 channel is `turn/completed` only. `exec --json` is a smoke check.
 
-**The participant shell and the holder approval are separate boundaries.** Measured inside a fresh
-Codex participant on 2026-09-12, `test -w .` returned 1 at the 2026-09-12T16:11:43Z probe;
-`$TMPDIR` and `/tmp` accepted temporary writes, while `listen` on 127.0.0.1 was refused separately. A
-`item/fileChange/requestApproval` request with no path was then refused by the holder, while
-shell requests arrived as `item/commandExecution/requestApproval`. The successful edit route is
-not identified by these observations; PB-191 and PB-194 leave the approval method and
-writable-root cause open.
+**The participant shell and the holder approval are separate boundaries.** Two independent
+Codex participants on codex-cli 0.146.0 had no successful `apply_patch` call, and direct
+un-escalated shell writes to each worktree were refused. `$TMPDIR` and `/tmp` accepted temporary
+writes; `listen` on 127.0.0.1 was refused separately. Successful worktree edits used
+`exec_command` with `sandbox_permissions=require_escalated`, including an independent generated
+`git apply` that exited 0. Git metadata also remained writable through the linked worktree
+metadata. The result is measured for those participants and version, not universal (PB-191, PB-194).
 
 A real lift prints a provenance line with the resolved CLI entry path, the executing Promptobus
 package path and version from `import.meta.url`, the host version, the participant binary path, and

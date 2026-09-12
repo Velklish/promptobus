@@ -1,82 +1,77 @@
-# PB-191 · `apply_patch` is method-dependent: the current file-change approval is pathless, while the legacy shape carries paths
+# PB-191 · `apply_patch` never passes the measured Codex participant boundary
 
 - **Order:** 20
 - **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
 
-## The old title was too broad
+## Scope of the title
 
-The earlier title said that a Codex participant can never use `apply_patch`. That is not supported by
-the day's successful participant edits. The measured fact is narrower: the approval method that a
-current Codex turn sent to this holder was pathless and failed closed. The result depends on the
-method and its request shape, not on the tool name alone.
+The title is bounded to the measured participant boundary, not every Codex release or every historical
+approval schema. Two independent Codex participants, both running codex-cli 0.146.0, produced no
+successful `apply_patch` call: the current pathless file-change request was refused for one, and the
+other participant's wrapper returned `patch rejected by user` without applying a file. Successful
+worktree edits used the separate escalated command route. That route distinction is the reason the
+title does not generalize beyond the two participants and this binary version.
 
 The containment check is right and stays. A mutation whose bounds cannot be established is a
 mutation the holder must not approve. The holder's first branch is:
 
-```js
-const raws = pathsOfApproval(params);
-if (!raws.length) {
-  const why = method === 'item/fileChange/requestApproval'
-    ? 'item/fileChange/requestApproval carries no path to contain'
-    : 'action target is unreadable';
-  return { allow: false, why };
-}
-```
+    const raws = pathsOfApproval(params);
+    if (!raws.length) {
+      const why = method === 'item/fileChange/requestApproval'
+        ? 'item/fileChange/requestApproval carries no path to contain'
+        : 'action target is unreadable';
+      return { allow: false, why };
+    }
 
 ## Live measurement
 
-Measured from this Codex participant on 2026-09-12, with the holder journal in
-`~/.agents/codex/sessions/`:
+Two independent Codex participants were measured on 2026-09-12 with codex-cli 0.146.0:
 
-```
-own apply_patch call:
-2026-09-12T16:14:27.787Z approval deny item/fileChange/requestApproval
-  item/fileChange/requestApproval carries no path to contain
-2026-09-12T16:14:27.788253Z codex_core::tools::router
-  error=patch rejected by user
-```
+    participant A, current file-change request:
+    2026-09-12T16:14:27.787Z approval deny item/fileChange/requestApproval
+      item/fileChange/requestApproval carries no path to contain
+    2026-09-12T16:14:27.788253Z codex_core::tools::router
+      error=patch rejected by user
+      harness result: Script error: patch rejected by user
+      no file applied
 
-The harness returned exactly:
+    participant B, apply_patch wrapper:
+      Script error: patch rejected by user
+      no file applied
 
-```
-Script failed
-Script error:
-patch rejected by user
-```
+No person rejected either edit. Participant A reached the holder's current
+`item/fileChange/requestApproval` method, which carries no path, and the holder refused before
+the patch could change the tree. Participant B independently received the same outcome at the
+harness boundary. Within this two-participant measurement, `apply_patch` never passed.
 
-No person rejected the edit. This is one measured request generation: the holder received
-`item/fileChange/requestApproval`, which carries no path, and refused before the patch could
-change the tree.
+The same two participant measurements separated the successful route from the refused one:
+ordinary shell worktree checks were refused, while worktree edits passed through
+`exec_command` with `sandbox_permissions=require_escalated` and an explicit justification. The
+holder journal names that route as allowed `item/commandExecution/requestApproval`; an independent
+generated `git apply` through that route exited 0. This is a measured route for these participants,
+not proof that an un-escalated shell can write.
 
-The same live journal also contains allowed shell approvals through the other method, including:
-
-```
-2026-09-12T16:11:46.044Z approval allow item/commandExecution/requestApproval
-2026-09-12T16:11:52.628Z approval allow item/commandExecution/requestApproval
-```
-
-That proves the holder sees a distinct shell approval method; it does not prove that the operating
-system lets that shell write this participant's worktree. The inside-participant write boundary is
-measured separately in PB-194.
-
-`applyPatchApproval` is the older measured schema shape: its `fileChanges` map supplies path keys
-that `pathsOfApproval` can inspect. The live measurement above did not receive that method, so
-whether a current participant still receives it and whether an in-root request is accepted remains
-open. Calling the legacy route "the working route" is a hypothesis until a holder journal captures
-that method.
-
-The wider 0912c run has repeated current-method denials and successful participant edits, so
-"Codex participants can never use `apply_patch`" is not a valid conclusion. Each successful edit
-needs its approval method recorded before it can be attributed to the legacy path.
+`applyPatchApproval` is the older schema shape: its `fileChanges` map supplies path keys that
+`pathsOfApproval` can inspect. Neither live participant measurement received that method, so
+whether a current binary emits it and whether an in-root request is accepted remains open. The
+measured title therefore covers the current participant boundary and observed `apply_patch` calls,
+not an unseen legacy route.
 
 ## What is established and what is not
 
-- Current `item/fileChange/requestApproval` without a path is refused fail-closed with a reason that
-  names the method and the missing containment input.
-- `item/commandExecution/requestApproval` is a separate approval route; an allow there does not
+- Two independent codex-cli 0.146.0 participants had no successful `apply_patch` call; one was
+  refused by the holder's pathless current method and one was rejected by the wrapper without a
+  file being applied.
+- The current `item/fileChange/requestApproval` request without a path is refused fail-closed with
+  a reason that names the method and missing containment input.
+- Ordinary, un-escalated shell writes did not pass the participant worktree boundary in either
+  measurement. `item/commandExecution/requestApproval` is a separate route; its allow does not
   override an OS-level worktree refusal.
+- Worktree edits did pass through explicitly escalated `exec_command`, including an independent
+  generated `git apply` with exit 0. This is the passing route measured here, not a universal
+  participant guarantee.
 - The holder's containment logic and `pathsOfApproval` stay unchanged.
 - The legacy `applyPatchApproval` path and the exact condition under which a live participant
   reaches it are not established by this turn.
@@ -87,17 +82,16 @@ needs its approval method recorded before it can be attributed to the legacy pat
 
 The refusal text that reaches a participant names neither the method nor the missing path. A
 participant therefore cannot distinguish a fail-closed file-change request from a human refusal.
-A fresh participant's shell was not writable in its worktree from the first minute, while its
-temporary directories were writable (PB-194). That does not establish the boundary for the
-participant that issued this approval or identify the route used by successful edits.
+The measured fallback is not an ordinary shell command: that route was refused in both participants.
+The only successful worktree route observed here required explicit command escalation. Guidance that
+omits that boundary closes the route that actually worked.
 
 ## Work to do
 
 - Capture a live holder request using the legacy `applyPatchApproval` shape and an in-root
   `fileChanges` path, then record whether containment allows it. Do not infer that result from the
   current `item/fileChange/requestApproval` refusal.
-- Decide whether the holder should derive a path for the current method or keep failing closed with
-  a refusal that names the method and missing path.
+- Decide whether the holder should derive a path for the current method or keep failing closed with a refusal that names the method and missing path.
 - Document a participant fallback only after its shell boundary is known; if shell is refused, the
   participant needs a loud route to escalation or a relift rather than an instruction that simply
   fails.

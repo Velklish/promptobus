@@ -1,4 +1,4 @@
-# PB-194 · A participant's worktree write boundary is measured at one instant; Git metadata is separate
+# PB-194 · The participant shell worktree is closed; escalated commands and Git metadata are open
 
 - **Order:** 10
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
@@ -11,16 +11,21 @@ The earlier claim said that a participant lost write access to its own worktree 
 session. That is not established. It came from a participant report and an MTIME difference, not
 from a probe run inside that participant at the time of refusal.
 
-A fresh participant measured later gives a narrower result: its shell cannot write its worktree
-from the first minute. That measurement does not describe the first participant's earlier state,
-and it does not prove or disprove a transition in that session.
+The measured contract is different and narrower: for two independent participants on
+codex-cli 0.146.0, the participant's ordinary shell worktree is closed at every measured attempt;
+`$TMPDIR` and `/tmp` remain writable, Git metadata is writable through the linked worktree
+metadata, and worktree file edits pass only through an explicitly escalated command. This is a
+two-participant, one-binary measurement, not a claim about every Codex version or every sandbox.
 
-For the participant tied to the earlier mid-session report, the session started at 09:15, an active turn ran at 15:59, and the probe was taken at 16:11. No writable-root probe was taken at either the session start or the active turn, so the inside measurement supports only the state at the probe instant.
+For the participant tied to the earlier mid-session report, the session started at 09:15, an active
+turn ran at 15:59, and the probe was taken at 16:11. No writable-root probe was taken at either the
+session start or the active turn, so the inside measurement supports only the state at the probe
+instant. The old mid-session-drop story remains a rejected starting hypothesis, not an observed
+transition.
 
-## Measurement from inside a fresh participant
+## Direct shell and neighboring paths
 
-Measured on codex-cli 0.146.0, from a freshly lifted participant, at
-2026-09-12T16:11:43Z:
+The first participant's inside probe ran on codex-cli 0.146.0 at 2026-09-12T16:11:43Z:
 
     test -w .                                      -> rc=1
     node mkdtemp with a relative prefix             -> EPERM: operation not permitted
@@ -30,47 +35,68 @@ Measured on codex-cli 0.146.0, from a freshly lifted participant, at
     node listen 127.0.0.1                            -> listen EPERM, rc=1
 
 The relative mkdtemp attempt resolves its prefix under the worktree, so its refusal is the same
-worktree write boundary, not an independent refusal of mkdtemp. Both $TMPDIR (via
-os.tmpdir()) and /tmp remained writable. The listen refusal is a separate network
+worktree write boundary, not an independent refusal of mkdtemp. Both `$TMPDIR` (via
+`os.tmpdir()`) and `/tmp` remained writable. The listen refusal is a separate network
 boundary and is not evidence about file writes.
 
-A second participant was later observed with the same shell state, while files in its worktree
-had been modified minutes earlier. That observation identifies neither the author of those
-writes nor whether the participant changed from writable to non-writable. The transition
-question remains open.
+The independent second participant showed the same direct-shell boundary: `test -w .` returned
+rc=1, and an un-escalated `git apply` reported Operation not permitted while unlinking and
+writing files. No direct-shell worktree write succeeded in either participant measurement. The
+successful edits in both were made only through the escalated command route described below.
 
-## What successful edits establish
+## Passing route and Git metadata
 
-This worker did successfully edit and commit worktree files during the same run, using the
-exec_command route with an explicit sandbox escalation. No successful apply_patch call was
-captured: the measured current file-change call was denied as pathless. The holder journal
-records allowed item/commandExecution/requestApproval events for shell commands.
+The passing worktree route was confirmed independently for both participants as
+`exec_command` with `sandbox_permissions=require_escalated` and an explicit justification. The
+holder approval for that route is `item/commandExecution/requestApproval`; an independent generated
+`git apply` through it exited 0. The route is therefore measured twice, while the ordinary shell
+route is measured as closed twice. This does not establish that every participant or binary version
+has the same route.
 
-This proves that the escalated command route can write for this worker. It does not prove that an
-ordinary participant shell can write, that the legacy applyPatchApproval route is accepted, or
-that every participant has the same effective roots.
+`apply_patch` was not a passing route in either participant: the first holder refused
+`item/fileChange/requestApproval` because it carried no path, and the second harness returned
+`patch rejected by user` without applying a file. The older `applyPatchApproval` shape, whose
+`fileChanges` map has paths, was not captured live and remains open under PB-191.
 
-## File-change approval remains separate
+Git metadata is a separate narrow exception. The reversible probe was:
 
-One apply_patch call from inside a participant received a holder refusal for
-item/fileChange/requestApproval because it carried no path. The older
-applyPatchApproval shape carries fileChanges paths, but no live allow of that method was
-captured. PB-191 records the method distinction without declaring either route the general
-successful path.
+    git commit --allow-empty -m "probe: git metadata write" ; echo rc=$?
+    git log --oneline -1
+    git reset --hard HEAD~1 ; echo rc=$?
+    git status --porcelain
+    git log --oneline -1
 
-## Cost and boundary
+It returned:
 
-A participant that cannot write cannot commit either: Git writes to the same worktree. Another
-process or an escalated command may insert and commit text on its behalf, but that is an
-operational workaround, not a measured participant route. The Git metadata probe is the narrow
-exception measured in this run: an empty commit succeeded, then reset returned HEAD to 9e29fb2 with
-a clean status. The worktree's Git indirection therefore remained writable even while ordinary
-file creation was refused.
+    [branch 7a5e2ff] probe: git metadata write
+    rc=0
+    7a5e2ff probe: git metadata write
+    HEAD is now at 9e29fb2 PB-191: record method-dependent participant write boundaries
+    rc=0
+    9e29fb2 PB-191: record method-dependent participant write boundaries
 
-The old hypothesis that the worktree narrows during a session is therefore not confirmed or
-refuted. A future measurement must inspect the effective writable roots at lift and after a
-refused write, then decide whether the mechanism detects and relifts the participant or refuses
-it loudly.
+The final status was empty. A linked worktree can therefore write Git metadata even while ordinary
+file creation in its worktree is refused; that exception must not be generalized into file access.
+
+## Cost of the wrong explanation
+
+The participant report plus mtime difference made the old mid-session-drop story plausible, but neither
+identified a transition nor the author of the changed files. The more expensive operational mistake
+was treating one refused method as proof that no participant route could work. Guidance not to request
+escalation closed the only route measured as successful for another participant; the orchestrator
+then had to commit that participant's branch by hand and return the task to the queue. The contract
+must name the method and escalation boundary instead of generalizing from one refusal.
+
+## What remains open
+
+- Whether the first participant was ever writable at lift or during its active turn, and whether any
+  participant can transition from writable to closed.
+- The source of the effective writable roots and a diagnostic that names the declared worktree as
+  outside them.
+- Whether the legacy `applyPatchApproval` shape is still emitted and accepted, and whether other
+  binary versions share this boundary.
+- Why the holder receives a pathless current file-change request; PB-191 records the method
+  distinction without weakening containment.
 
 ## Work to do
 
@@ -78,21 +104,24 @@ it loudly.
   change before claiming a transition.
 - Name the source of the participant's effective writable roots and distinguish it from the
   separate network restriction shown by listen.
-- Give the participant a diagnostic that says the declared worktree is outside its writable
-  roots, rather than only operation not permitted.
+- Give the participant a diagnostic that says the declared worktree is outside its writable roots,
+  rather than only operation not permitted.
 - Capture the current and legacy file-change approval methods separately, including the route used
   by a successful edit.
 
 ## Verification
 
-- The fresh-participant probe above: worktree writing fails from the first minute, $TMPDIR and
-  /tmp writes succeed, and listen is separately refused.
-- A later participant showed the same shell boundary after worktree mtimes had changed; the writer
-  and any transition were not identified.
-- This worker's successful changes used escalated exec_command, while the current
-  item/fileChange/requestApproval call was refused; neither observation proves a general route.
-- The Git metadata probe returned commit rc=0 and reset rc=0; status was empty and HEAD returned to
-  9e29fb2. This proves metadata-write capability, not ordinary worktree-file capability.
-- The rejected mid-session narrative remains in the card as a false starting point with its source
-  named. The unresolved transition, writable-root cause and approval route remain open; the card
-  is not archived.
+- Two independent codex-cli 0.146.0 participants: direct shell worktree probes were refused;
+  `$TMPDIR` and `/tmp` writes succeeded, and the first participant's network listen was refused
+  separately.
+- The first participant's exact probe was taken at 2026-09-12T16:11:43Z; the earlier participant
+  session had no root probes at 09:15 or 15:59, so no transition is claimed.
+- The current `item/fileChange/requestApproval` route was refused without a path in one participant,
+  and the other participant's `apply_patch` wrapper rejected with no file applied.
+- Explicitly escalated `exec_command` worktree edits succeeded for both participants, including an
+  independent generated `git apply` with exit 0.
+- The Git metadata probe commit returned rc=0, reset returned rc=0, status was empty, and HEAD
+  returned to 9e29fb2.
+- The rejected mid-session narrative remains as a false starting point with its source named. The
+  transition, writable-root cause, legacy approval behavior and broader-version behavior remain open;
+  the card is not archived.
