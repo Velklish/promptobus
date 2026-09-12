@@ -482,6 +482,10 @@ function racers(n, body) {
   // `a` — the adapter CLI (the one that fits the package's seam), `m` — the package itself.
   const code = (i) => `const path = await import('node:path');\n`
     + `const a = await import(${JSON.stringify(path.join(process.cwd(), 'lib', 'store.js'))});\n`
+    // The child stands for the adapter CLI, and an adapter CLI loads the driver registry.
+    // Loading it is also what gives the core a session identity (PB-178): the move report
+    // names WHO moved, and without the registry there is nobody to name.
+    + `await import(${JSON.stringify(path.join(process.cwd(), 'lib', 'drivers.js'))});\n`
     + `const m = await import(${JSON.stringify(path.join(process.cwd(), 'dist', 'index.js'))});\n`
     + `const layout = ${JSON.stringify(LAYOUT)};\n`
     + `const i = ${i};\n`
