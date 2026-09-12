@@ -74,6 +74,13 @@ section loses the `npm run probe` name. The existing guide remains the canonical
 four probe outcomes and `--mutate`/`--stdin-patch` forms. The successful mutation probes for this
 run are recorded in the worker report; the no-op probe was refused rather than counted as evidence.
 
+The full-suite boundary also requires every new `*.test.mjs` file to divert the participant
+home through `home.mjs` or `check.mjs`. The full suite caught this guard file before its import was
+added; the same boundary has now caught three files across two repositories (the other two are
+`context-store-memory.test.mjs` and `git-helper.test.mjs`). This is the third measured case in
+`BL-659`, not a reason to adjust a counter: workers cannot run the reserved full suite, so the
+local single-file check does not expose this boundary.
+
 ## What remains open
 
 The upstream generated backslop template still does not name `npm run probe`, and this task does
