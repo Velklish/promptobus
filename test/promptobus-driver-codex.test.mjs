@@ -148,6 +148,13 @@ check(': the Codex driver sits in the registry map and is taken by name',
 check(': without a name the previous driver is taken — Claude Code argv does not move',
   liftDriver().id === 'claude');
 
+const approverRoute = codexDriver.stallRoute({
+  kind: 'gone', address: 'approver:cdx', doneCommand: 'promptobus done',
+}, null);
+check(': an approver without a session is returned to the consumer lift, never worker spawn',
+  /task orchestrator/.test(approverRoute)
+  && !/lift the worker/.test(approverRoute), approverRoute);
+
 check(': Codex capabilities are declared, all ten',
   ['spawn', 'attach', 'activation', 'inspect', 'stop', 'denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter']
     .every((k) => codexDriver.capabilities[k] !== undefined)
@@ -990,6 +997,24 @@ check('PB-161.2: reviewer — read-only, a working directory of its own, the rev
   && reviewerPlan.files[0].path === path.join(reviewSandbox(ctx.settingsPath), '.codex', '.gitignore')
   && reviewerPlan.files[0].text === '*\n',
   JSON.stringify({ cwd: reviewerPlan.cwd, files: reviewerPlan.files, settings: reviewerPlan.settings }));
+
+const approverMcpPlan = codexDriver.prepare({
+  ...ctx,
+  role: 'approver',
+  mcp: {
+    servers: {
+      promptobus: { command: 'node', args: ['x'], env: {} },
+      catalog: { type: 'http', url: 'http://catalog.invalid/mcp' },
+    },
+  },
+  denyTools: [{ server: 'catalog', tool: 'create_entry' }],
+});
+check('PB-206 review: an approver MCP deny leaves repository writes enabled',
+  approverMcpPlan.settings.sandbox === 'workspace-write'
+  && approverMcpPlan.cwd === ctx.cwd
+  && approverMcpPlan.settings.addDirs.join(',') === '/tmp/rules'
+  && approverMcpPlan.mcpConfig.mcpServers.catalog?.disabled_tools?.join(',') === 'create_entry',
+  JSON.stringify({ cwd: approverMcpPlan.cwd, settings: approverMcpPlan.settings, mcp: approverMcpPlan.mcpConfig }));
 
 // --- PB-180: the participant's hooks land where the participant looks ----------------
 

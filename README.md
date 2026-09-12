@@ -8,7 +8,7 @@ Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and particip
 
 [Russian](README.ru.md)
 
-Promptobus lets one agent session — the orchestrator — hand work to other sessions and get it back. Workers edit isolated git worktrees, a reviewer reads a diff with fresh eyes, and all of them exchange typed messages, artifacts and status through a task kept on disk under `.promptobus/`. No session shares another's chat transcript, and a session that dies is replaced by one that claims the same mailbox and continues.
+Promptobus lets one agent session — the orchestrator — hand work to other sessions and get it back. Workers edit isolated git worktrees, a reviewer reads a diff with fresh eyes, an approver accepts one green piece, and all of them exchange typed messages, artifacts and status through a task kept on disk under `.promptobus/`. No session shares another's chat transcript, and a session that dies is replaced by one that claims the same mailbox and continues.
 
 The bus does not know your workspace. Every call receives a **host** that answers for the current directory, Git and `promptobus.json`; the CLI builds a standalone one, and a consumer tool can pass its own. The package was extracted from a private workspace tool so that the bus can run on its own, and it drives Claude Code, Cursor and Codex sessions through one driver contract.
 
@@ -17,8 +17,9 @@ English is canonical. The Russian README is the only other language in this repo
 ## Features
 
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
-- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched. What comes back is a fixed four-line header — what was done, the gate command with its exit code, what is left open, what needs a decision — with the report itself attached as an artifact.
-- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot. A reviewer runs nothing, so the author's gate run reaches it as a machine record whose sha it compares against the tree it is reviewing.
+- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
+- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
+- **Addressed acceptance.** `approver:<slug>` is a fourth participant, lifted by the task orchestrator after a piece's green review; its registered address can talk directly to workers in that task only while the calling session holds it, and the canonical exchange stays in the task journal.
 - **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
 - **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread, or while an answer the participant owes has not been sent — and a warden wakes the addressee when mail arrives. Which types ask for an answer is a published table, and `status` prints `UNANSWERED` for a turn that ended owing one.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
@@ -64,7 +65,7 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 
 ### 2. Give the orchestrator the MCP server
 
-Spawn writes an MCP entry for every worker and reviewer. The orchestrator session needs the same stdio server in the harness's project MCP file:
+Participant lifts write an MCP entry for workers, reviewers and approvers. The orchestrator session needs the same stdio server in the harness's project MCP file:
 
 ```json
 {
@@ -145,7 +146,7 @@ promptobus done
 
 | Tool | Input | Does |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>` or `reviewer:<slug>` |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>` or `approver:<slug>` |
 | `promptobus_mailbox` | `{ claim?, task? }` | Read unread mail and mark it read; `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 
@@ -160,7 +161,7 @@ promptobus models strategy --set balance                    # record a default f
 promptobus models calibrate                                 # propose overlay ratings from local telemetry
 ```
 
-The strategies are `quality`, `balanced`, `speed`, `economy` and `balance`. The first four weigh the qualities of a `harness + model + effort` tuple; `balance` answers which of your subscriptions to spend, preferring the harness furthest behind the pace of its own limit window. Precedence is the flag, then the recorded overlay default, then nothing — a call without a strategy takes the unrouted path. `--harness`, `--model` and `--effort` are constraints on the resolver's choice and are never replaced.
+The routed roles are worker, reviewer and approver, with soft quality floors 5, 9 and 7. The strategies are `quality`, `balanced`, `speed`, `economy` and `balance`. The first four weigh the qualities of a `harness + model + effort` tuple; `balance` answers which of your subscriptions to spend, preferring the harness furthest behind the pace of its own limit window. Precedence is the flag, then the recorded overlay default, then nothing — a call without a strategy takes the unrouted path. `--harness`, `--model` and `--effort` are constraints on the resolver's choice and are never replaced.
 
 `models` reads the availability cache and asks no harness anything; `--refresh` is the only flag that probes. When an account runs short it prints a `near-limit` line with the strategy to switch to, and nothing switches on its own. The cache and the telemetry file live under your home directory with mode `0600`, hold no prompt or token contents, and are never sent anywhere. Commands, reason codes and error codes: [reference/03-cli.md § Model routing](docs/reference/03-cli.md#model-routing); the catalog and the overlay file to copy: [guides/model-routing.md](docs/guides/model-routing.md).
 

@@ -1,13 +1,13 @@
 [
   {
     "name": "promptobus_send",
-    "description": "Send a message to a task participant. Address: orchestrator, worker:<slug> or reviewer:<slug>. Workers do not write to each other — context and artifacts go through the orchestrator. The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, and if your mailbox has unread mail — its count.",
+    "description": "Send a message to a task participant. Address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>. Workers and approvers in the same task may write directly; other participant traffic goes through the orchestrator. The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, and if your mailbox has unread mail — its count.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "to": {
           "type": "string",
-          "description": "recipient address: orchestrator, worker:<slug> or reviewer:<slug>"
+          "description": "recipient address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>"
         },
         "type": {
           "type": "string",

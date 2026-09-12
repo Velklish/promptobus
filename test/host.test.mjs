@@ -31,6 +31,7 @@ test('createStandaloneHost lifts two independent hosts in one process', async ()
   assert.equal(a.extraEnv().MARK, 'a');
   assert.equal(b.extraEnv().MARK, 'b');
   assert.equal(a.memorySection(() => 'x'), null);
+  assert.deepEqual(a.participantDenyTools('approver'), { tools: [], complete: true });
   assert.equal(a.legacyLayout(), null);
   assert.equal(b.legacyLayout(), null);
   assert.equal(b.toolsManifestRel(), 'promptobus.json');

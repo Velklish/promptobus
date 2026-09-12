@@ -19,7 +19,7 @@
       "type": "string",
       "pattern": "^[0-9a-f]{16}$"
     },
-    "role": { "enum": ["worker", "reviewer"] },
+    "role": { "enum": ["worker", "reviewer", "approver"] },
     "harness": { "type": "string", "minLength": 1 },
     "model": { "type": "string", "minLength": 1 },
     "effort": { "type": ["string", "null"], "minLength": 1 },

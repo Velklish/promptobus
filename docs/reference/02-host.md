@@ -38,7 +38,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
-| `participantDenyTools` | `participantDenyTools?(role: string): HostMcpToolClassification` | Optional member; `{ tools, complete: true }` is a complete classification (including an empty `tools` array), while `complete: false` is an incomplete answer for a mechanical reviewer. |
+| `participantDenyTools` | `participantDenyTools?(role: 'reviewer' \| 'approver'): HostMcpToolClassification` | Optional member; `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
 | `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
@@ -108,18 +108,25 @@ implementations must provide this member before calling `install`, `spawn`, or
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.
 
-`participantDenyTools(role)` is an optional member. For `reviewer`, it returns
-`{ tools, complete }`, where `tools` contains the exact `{ server, tool }` pairs
-that the host knows are write tools of its canonical external MCP servers; it must
-not infer them from names and must not return the Promptobus bus. `complete: true`
-means the host has finished classifying its canonical external servers, even when
-there are no write tools. A mechanical reviewer refuses before launch when the
-answer is incomplete, or when a host that hands the participant any server but the
-bus has no member — the classification must cover every server the host hands the
-participant, not only the third-party ones; the refusal names the host and servers
-left unclassified. A host with a
-complete answer lets the driver translate the pairs into its own deny syntax. The
-standalone host returns `{ tools: [], complete: true }` because its `mcp` map is
+`participantDenyTools(role)` is an optional member for `reviewer` and `approver`.
+It returns `{ tools, complete }`, where `tools` contains the exact `{ server, tool }`
+pairs that the host knows are write tools of its canonical external MCP servers; it
+must not infer them from names and must not return the Promptobus bus. The answer is
+role-specific: a host may constrain acceptance without changing the review boundary.
+
+`complete: true` means the host has finished classifying its canonical external
+servers, even when there are no write tools. A mechanical reviewer refuses before
+launch when the answer is incomplete, or when a host that hands it any server but
+the bus has no member. A consumer lifting an approver applies the same completeness
+rule to that role; an incomplete answer is not an empty deny list. The classification
+covers every server the host hands the participant, not only third-party ones, and a
+complete answer lets the driver translate the pairs into its own deny syntax. That
+translation disables only the named MCP tools; it does not choose the participant's
+repository sandbox. In particular, a Codex approver remains `workspace-write`.
+
+The approver's package deny list is empty because it needs repository writes and shell
+commands for merged-tree gates, squash and archive. The reviewer lists are unchanged.
+The standalone host returns `{ tools: [], complete: true }` because its `mcp` map is
 opaque and has no external write policy.
 
 This is a breaking shape migration: a legacy array answer is incomplete, so the host

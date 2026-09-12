@@ -8,9 +8,20 @@ Protocol version: `1` (`src/index.ts` `PROTOCOL_VERSION`). Schemas: `schemas/v1/
 orchestrator
 worker:<slug>
 reviewer:<slug>
+approver:<slug>
 ```
 
-`slug` is `[a-z0-9][a-z0-9-]*`. See `src/protocol.ts` `isAddress`. Workers do not send to workers. The CLI and MCP surface pass one recipient. The engine can fan out to many; that path is not exposed on `promptobus_send`.
+`slug` is `[a-z0-9][a-z0-9-]*`. See `src/protocol.ts` `isAddress`. The
+default routing rule keeps participant traffic with the orchestrator. One deliberate
+exception opens direct worker↔approver traffic for a piece after its green review;
+worker↔worker and every reviewer↔participant route remain refused. A direct sender must
+already be registered in that task and its recorded session must match the calling
+harness session. An explicit foreign-task argument never auto-registers a direct sender;
+foreign registration remains available only for mail to `orchestrator`. Direct messages
+bypass the orchestrator's unread mailbox but remain canonical in the task's
+`messages/` journal and the addressed histories. The CLI and MCP surface pass one
+recipient. The engine can fan out to many; that path is not exposed on
+`promptobus_send`.
 
 ## Message types
 
@@ -45,6 +56,11 @@ During a consuming mailbox read, a filesystem refusal while reading or moving on
 ## Store layout
 
 The engine receives either a workspace `root`, which resolves to `<root>/.promptobus`, or the store `home` itself. It never searches for a root or reads an environment variable. Under `tasks/<task-id>/`, `task.json` is the journal; `messages/` holds canonical messages; `intents/` holds open fan-outs; `inbox/<participant>/` is unread mail; `history/<participant>/` is mail that was read; `blobs/` holds immutable SHA-256 payloads; and `artifacts/` holds their metadata. A task journal lock is `.lock/`. An open intent has a neighbouring `<id>.owner` lease. `broken/inbox/<participant>/`, `broken/artifacts/`, and `broken/messages/` isolate malformed records without taking the rest of the task down. The adapter's `files/` directory is a human-facing sidecar, not an engine v1 path.
+
+Participant settings and launch sidecars use `participantFileStem`: a worker keeps
+`<slug>`, while reviewer and approver use `reviewer-<slug>` and
+`approver-<slug>`. Worker names beginning with either reserved prefix are refused,
+so two addresses cannot name the same sidecar.
 
 Canonical messages, intent records and inbox or history references are hard links to one inode. The blob is also immutable: multiple artifact metadata records may name one content-addressed payload, and `prune` removes the task and its blobs together. The full task tree and the safe deletion boundary for these paths are listed in [01-overview](01-overview.md) § Store home.
 

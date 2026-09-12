@@ -79,6 +79,7 @@ test('helpText takes the command name from the host, not a literal', () => {
   assert.match(text, /Usage: gamma /);
   assert.match(text, /gamma spawn /);
   const banned = ['ati', 'agents'].join('-');
+  assert.match(text, /--role <worker\|reviewer\|approver>/);
   assert.equal(text.includes(banned), false);
 });
 

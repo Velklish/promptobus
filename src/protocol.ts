@@ -27,7 +27,7 @@ export const UNDECLARED_HARNESS = 'undeclared';
 /** Role of a record whose address does not parse: a hand edit, a journal after a crash. */
 export const UNDECLARED_ROLE = 'undeclared';
 
-const ADDRESS_RE = /^(orchestrator|(?:worker|reviewer):[a-z0-9][a-z0-9-]*)$/;
+const ADDRESS_RE = /^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$/;
 export const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 // A gate refusal is addressed to a person, not to a crash dump: printing it with a
@@ -61,7 +61,7 @@ export function isAddress(addr: unknown): boolean {
 // cleanup in `promptobus done`, all three warden walks), and the refusal never
 // reaches the top-level catch on any command path.
 export function addrDir(addr: unknown): string {
-  if (!isAddress(addr)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug> or reviewer:<slug>`);
+  if (!isAddress(addr)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
   return (addr as string).replace(':', '-');
 }
 
@@ -72,7 +72,7 @@ export function addrDir(addr: unknown): string {
  */
 export function roleOf(addr: unknown): string {
   const address = addr as string;
-  if (!isAddress(address)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug> or reviewer:<slug>`);
+  if (!isAddress(address)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
   return address === ORCHESTRATOR ? ORCHESTRATOR : address.slice(0, address.indexOf(':'));
 }
 
@@ -82,6 +82,9 @@ export function workerAddress(slug: string): string {
 
 export function reviewerAddress(slug: string): string {
   return `reviewer:${slug}`;
+}
+export function approverAddress(slug: string): string {
+  return `approver:${slug}`;
 }
 
 export function requireTaskId(id: unknown): string {
@@ -111,7 +114,7 @@ export function participantFileStem(address: string): string {
   // not a refusal to a person, and printing it as a gate would promise a path
   // that does not exist.
   if (!slug) throw new Error(`address «${address}» does not yield a participant file name — it has no slug`);
-  return kind === 'reviewer' ? `reviewer-${slug}` : slug;
+  return kind === 'worker' ? slug : `${kind}-${slug}`;
 }
 
 // The slug goes into the task id, the worktree directory, and the branch name —
@@ -215,7 +218,7 @@ function field(p: WithMetadata | null | undefined, name: string): string | null 
 }
 
 /**
- * Participant address — `orchestrator`, `worker:<slug>`, `reviewer:<slug>`. The
+ * Participant address — `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, `approver:<slug>`. The
  * adapter writes it; health, stall marks, contact points, and end-of-turn marks
  * are keyed by it, and the notification a person reads carries it too. The
  * address is not assembled from the id: `addrDir` is injective, but a record

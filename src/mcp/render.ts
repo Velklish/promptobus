@@ -71,7 +71,7 @@ export function readableName(meta: TaskV1 | null | undefined, addr: string, of =
   if (addr === ORCHESTRATOR) return of ? 'the orchestrator' : 'orchestrator';
   const rec = (meta?.participants ?? []).find((p) => addressOf(p) === addr);
   const name = String(nameOf(rec) ?? '').replace(NAME_STAMP, '').trim();
-  return name || String(addr ?? '').replace(/^(?:worker|reviewer):/, '');
+  return name || String(addr ?? '').replace(/^(?:worker|reviewer|approver):/, '');
 }
 
 /**

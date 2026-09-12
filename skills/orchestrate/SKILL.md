@@ -29,7 +29,7 @@ promptobus_mailbox { claim?, task? }
 promptobus_task { task? }
 ```
 
-`to` is `orchestrator`, `worker:<slug>`, or `reviewer:<slug>`. The address must already be a participant.
+`to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, or `approver:<slug>`. The address must already be a participant.
 
 Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
@@ -47,7 +47,7 @@ promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
 promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
-promptobus models [--strategy <s>] [--role <worker|reviewer>] [--refresh] [--json]
+promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
 ```
 
 `--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
@@ -127,7 +127,7 @@ Agree the envelope with the user before the first spawn, in the same approval as
 
 A fallback **inside** the envelope needs no second approval: a preflight that excludes the first candidate moves to the next one on an allowed harness, and the user already approved that. **Leaving** the envelope does need one — another harness, pay-as-you-go they did not allow, a strategy other than the one agreed for that track. Ask; do not widen it yourself.
 
-`promptobus models [--strategy <s>] [--role <worker|reviewer>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
+`promptobus models [--strategy <s>] [--role <worker|reviewer|approver>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
 
 `promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start. A lift routed by the recorded default rather than by a flag says so, so a run made under a switch the person agreed to is auditable as one.
 
@@ -178,7 +178,7 @@ You do not merge the worker branch until you accept the result. The worker does 
 
 `promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read.
 
-A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`. Spawn cannot create a reviewer address.
+A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`. Spawn cannot create a reviewer address. This package has no standalone approver-lift command; the consumer lifts that role after a green review.
 
 A participant who sent you mail and then ended the turn is waiting, not stopped.
 

@@ -9,7 +9,8 @@
       "effort": "high",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -37,7 +38,8 @@
       "effort": "high",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -65,7 +67,8 @@
       "effort": "high",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -93,7 +96,8 @@
       "effort": "xhigh",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -145,7 +149,8 @@
       "effort": "xhigh",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -204,7 +209,8 @@
       "effort": "xhigh",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -262,7 +268,8 @@
       "effort": "max",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -290,7 +297,8 @@
       "effort": "max",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -318,7 +326,8 @@
       "effort": "max",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -345,7 +354,8 @@
       "model": "claude-opus-5",
       "effort": "medium",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -399,7 +409,8 @@
       "model": "claude-sonnet-5",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -595,7 +606,8 @@
       "model": "gemini-3.8-flash-high",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -649,7 +661,8 @@
       "model": "gemini-3.8-flash-medium",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -676,7 +689,8 @@
       "model": "cursor-grok-4.6-medium",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -703,7 +717,8 @@
       "model": "cursor-grok-4.6-high",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -734,7 +749,8 @@
       "model": "kimi-k3-high",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -761,7 +777,8 @@
       "model": "cursor-grok-4.6-xhigh",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -789,7 +806,8 @@
       "effort": null,
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -847,7 +865,8 @@
       "model": "gemini-3.7-flash-high",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1013,7 +1032,8 @@
       "model": "kimi-k3-low",
       "effort": null,
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1204,7 +1224,8 @@
       "effort": "xhigh",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -1232,7 +1253,8 @@
       "effort": "max",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -1284,7 +1306,8 @@
       "effort": "ultra",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -1311,7 +1334,8 @@
       "model": "gpt-5.5",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -1338,7 +1362,8 @@
       "model": "gpt-5.6-sol",
       "effort": "high",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -1365,7 +1390,8 @@
       "model": "gpt-5.6-sol",
       "effort": "medium",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1392,7 +1418,8 @@
       "model": "gpt-5.5",
       "effort": "medium",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -1434,7 +1461,8 @@
       "model": "gpt-5.5",
       "effort": "high",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -1461,7 +1489,8 @@
       "model": "gpt-5.6-luna",
       "effort": "max",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1539,7 +1568,8 @@
       "model": "gpt-5.6-terra",
       "effort": "max",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1590,7 +1620,8 @@
       "model": "gpt-5.6-terra",
       "effort": "ultra",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,

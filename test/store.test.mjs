@@ -70,8 +70,9 @@ function thrown(fn) {
 
 // --- bus dictionary: addresses and task identity ------------------------------
 
-test('address: orchestrator and worker:<slug> are valid', () => {
-  assert.ok(store.isAddress('orchestrator') && store.isAddress('worker:cargos-api'));
+test('address: orchestrator and all three participant roles are valid', () => {
+  assert.ok(['orchestrator', 'worker:cargos-api', 'reviewer:cargos-api', 'approver:cargos-api']
+    .every((address) => store.isAddress(address)));
 });
 
 test('address: a stranger is rejected', () => {
@@ -89,13 +90,16 @@ test('address → role: counted from the address and laid as a record field', ()
   assert.equal(store.roleOf('worker:cargos-api'), 'worker');
   assert.equal(store.roleOf('reviewer:cargos-api'), 'reviewer');
   assert.equal(store.roleOf('orchestrator'), 'orchestrator');
+  assert.equal(store.roleOf('approver:cargos-api'), 'approver');
+  assert.equal(store.approverAddress('cargos-api'), 'approver:cargos-api');
 });
 
 // Participant file name in `workers/`: spawn lays files by it, and cleanup
 // sweeps them by it.
-test('address → participant file name: reviewer differs from a worker', () => {
+test('address → participant file name: reviewer and approver differ from a worker', () => {
   assert.equal(store.participantFileStem('worker:cargos-api'), 'cargos-api');
   assert.equal(store.participantFileStem('reviewer:cargos-api'), 'reviewer-cargos-api');
+  assert.equal(store.participantFileStem('approver:cargos-api'), 'approver-cargos-api');
 });
 
 // An address with no slug yields no file name at all, and that used to be

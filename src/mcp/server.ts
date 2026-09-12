@@ -183,6 +183,7 @@ export function createMcpServer(options: McpOptions): {
           type: args?.type as string,
           body: args?.body as string,
           artifactPath: args?.artifactPath as string,
+          session,
         });
         // The sender may also have attached to a foreign task. Send is a turn
         // people make without having taken their own mail: the last place

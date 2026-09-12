@@ -12,10 +12,11 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | standalone host | standalone host | Host built from the current directory, Git, and `promptobus.json`. It does not know another product's layout. | `src/standalone.ts` (`createStandaloneHost`) |
 | task | task | On-disk unit of work: title, status, participants, mail, and artifacts. | `schemas/v1/task.schema.json`, `src/v1/model.ts` |
 | mailbox | mailbox | Unread messages for one participant. Reading moves them to history. | `src/mcp/tools.ts` (`promptobus_mailbox`) |
-| participant | participant | Address on a task: `orchestrator`, `worker:<slug>`, or `reviewer:<slug>`. | `src/protocol.ts` (`isAddress`) |
+| participant | participant | Address on a task: `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, or `approver:<slug>`. | `src/protocol.ts` (`isAddress`) |
 | orchestrator | orchestrator | Session that owns the task mailbox and routes work. | `src/protocol.ts` (`ORCHESTRATOR`) |
 | worker | worker | Session that edits one git worktree and reports on the bus. | `src/protocol.ts` (`workerAddress`) |
 | reviewer | reviewer | Read-only session that inspects a diff. | `src/protocol.ts` (`reviewerAddress`) |
+| approver | approver | Session lifted after one piece has a green review to carry out that piece's acceptance. | `src/protocol.ts` (`approverAddress`), [ADR-013](adr/adr-013-approver-is-a-fourth-addressed-participant.md) |
 | harness | harness | Agent runtime a driver talks to. This CLI ships `claude`, `cursor`, and `codex`. | `lib/drivers.js`, `lib/driver-claude.js` |
 | driver | driver | Adapter that starts, inspects, wakes, and stops one harness. | `src/driver.ts` |
 | holder | holder | Detached process that keeps one Codex `app-server --stdio` stream open after `promptobus spawn` returns. It owns the JSON-RPC stream, answers approvals, listens for driver turns, and watches the participant's session record. | `lib/codex-session.js` (“Why the holder is a separate process”), `lib/codex-hold.js` (`holdMain`) |

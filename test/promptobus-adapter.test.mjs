@@ -180,8 +180,15 @@ check(': the refusal happened before the write — the task participants did not
 // The addressees in the checks below are on record as task participants: since  a message
 // goes only to whoever is in the journal, and it is spawn that enrolls them there — there is
 // no live spawn here.
-for (const address of ['worker:a', 'worker:b']) {
-  store.upsertParticipant(home, task.id, store.participantRecord(address, { repo: 'ns/repo' }));
+const PARTICIPANT_SESSIONS = {
+  'worker:a': 'session-worker-a',
+  'worker:b': 'session-worker-b',
+  'approver:a': 'session-approver-a',
+};
+for (const address of ['worker:a', 'worker:b', 'approver:a']) {
+  store.upsertParticipant(home, task.id, store.participantRecord(address, {
+    repo: 'ns/repo', sessionId: PARTICIPANT_SESSIONS[address],
+  }));
 }
 
 check('participant record: the address lives in metadata, role and id are v1\'s own fields', (() => {
@@ -201,8 +208,10 @@ check('participant record: the address lives in metadata, role and id are v1\'s 
 check(': the participant\'s mcp-config path is assembled from its address',
   /workers[\\/]cargos-api\.mcp\.json$/.test(store.participantMcpPath(home, task.id, 'worker:cargos-api'))
   && /workers[\\/]reviewer-cargos-api\.settings\.json$/.test(
-    store.participantSettingsPath(home, task.id, 'reviewer:cargos-api')),
-  `${store.participantMcpPath(home, task.id, 'worker:cargos-api')} · ${store.participantSettingsPath(home, task.id, 'reviewer:cargos-api')}`);
+    store.participantSettingsPath(home, task.id, 'reviewer:cargos-api'))
+  && /workers[\\/]approver-cargos-api\.mcp\.json$/.test(
+    store.participantMcpPath(home, task.id, 'approver:cargos-api')),
+  `${store.participantMcpPath(home, task.id, 'worker:cargos-api')} · ${store.participantSettingsPath(home, task.id, 'reviewer:cargos-api')} · ${store.participantMcpPath(home, task.id, 'approver:cargos-api')}`);
 
 const noSlug = thrown(() => store.participantMcpPath(home, task.id, store.ORCHESTRATOR));
 const noSlugSettings = thrown(() => store.participantSettingsPath(home, task.id, store.ORCHESTRATOR));
@@ -268,6 +277,42 @@ const workerToReviewer = thrown(() => store.sendMessage(home, task.id, {
 check('policy ATI: worker and reviewer do not correspond with each other either',
   workerToReviewer.threw && /do not write to each other/.test(workerToReviewer.msg),
   workerToReviewer.msg);
+
+const unknownDirect = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:ghost', to: 'approver:a', type: 'question', body: 'foreign address',
+  session: 'session-worker-ghost',
+}));
+check('policy ATI: a direct sender absent from this task is refused without auto-registration',
+  unknownDirect.threw && /no sender participant/.test(unknownDirect.msg)
+  && store.participantOf(store.readTask(home, task.id), 'worker:ghost') === null,
+  unknownDirect.msg);
+
+const borrowedDirect = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: 'approver:a', type: 'question', body: 'borrowed address',
+  session: 'session-worker-stranger',
+}));
+check('policy ATI: a direct sender address held by another session is refused',
+  borrowedDirect.threw && /held by session session-worker-a/.test(borrowedDirect.msg)
+  && /cannot borrow an address/.test(borrowedDirect.msg),
+  borrowedDirect.msg);
+
+const approverToOrchestrator = thrown(() => store.sendMessage(home, task.id, {
+  from: 'approver:a', to: store.ORCHESTRATOR, type: 'status', body: 'approver to orchestrator',
+}));
+const approverToWorker = thrown(() => store.sendMessage(home, task.id, {
+  from: 'approver:a', to: 'worker:b', type: 'question', body: 'approver to worker',
+  session: PARTICIPANT_SESSIONS['approver:a'],
+}));
+const workerToApprover = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:b', to: 'approver:a', type: 'answer', body: 'worker to approver',
+  session: PARTICIPANT_SESSIONS['worker:b'],
+}));
+check('policy ATI: approver corresponds with the orchestrator and worker in both directions',
+  !approverToOrchestrator.threw && !approverToWorker.threw && !workerToApprover.threw
+  && store.countInbox(home, task.id, store.ORCHESTRATOR) === 2
+  && store.countInbox(home, task.id, 'worker:b') === 2
+  && store.countInbox(home, task.id, 'approver:a') === 1,
+  `${approverToOrchestrator.msg} · ${approverToWorker.msg} · ${workerToApprover.msg}`);
 
 // --- delivery by address --------------------------------------------------------
 

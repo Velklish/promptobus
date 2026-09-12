@@ -78,6 +78,13 @@ check(': the Cursor driver sits in the registry map and is taken by name',
 check(': without a name the previous driver is taken — Claude Code argv does not move',
   liftDriver().id === 'claude' && liftDriver(null).id === 'claude' && liftDriver('').id === 'claude');
 
+const approverRoute = cursorDriver.stallRoute({
+  kind: 'gone', address: 'approver:cur', doneCommand: 'promptobus done',
+}, null);
+check(': an approver without a session is returned to the consumer lift, never worker spawn',
+  /task orchestrator/.test(approverRoute)
+  && !/lift the worker/.test(approverRoute), approverRoute);
+
 function thrown(fn) {
   try {
     fn();

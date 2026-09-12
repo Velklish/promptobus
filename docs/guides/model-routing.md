@@ -1,6 +1,6 @@
 # Model routing: the catalog and overlays
 
-The catalog is the maintainers' rating of tuples and ships inside the package. An overlay is a JSON file a person or a consumer writes to change what the catalog says — weights, ratings, allow and deny rules, the reviewer floor, the pay-as-you-go policy — without forking anything.
+The catalog is the maintainers' rating of tuples and ships inside the package. An overlay is a JSON file a person or a consumer writes to change what the catalog says — weights, ratings, allow and deny rules, the role floors, the pay-as-you-go policy — without forking anything.
 
 The decision behind all of it is [ADR-003](../adr/adr-003-model-routing.md); the command surface is [reference/03-cli.md](../reference/03-cli.md) § Model routing. This guide is the operational half: what is in the catalog file, how the layers combine, and the file to copy.
 
@@ -53,7 +53,7 @@ For a consumer policy layer that is the intended behaviour: its bans hold whatev
 **Two more selectors**, and they work in `allow` and `deny` alike:
 
 - `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. **A harness that lists no models has no flag to match**, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
-- `byRole` scopes a rule to one role: `deny: { byRole: { reviewer: { harnesses: ["cursor"] } } }` is "the reviewer never runs there", and leaves the worker alone. Routing a role, its block is unioned into the deny and intersected into the allow.
+- `byRole` scopes a rule to one role: `deny: { byRole: { reviewer: { harnesses: ["cursor"] } } }` is "the reviewer never runs there", and leaves the other roles alone. Routing a role, its block is unioned into the deny and intersected into the allow.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
@@ -96,7 +96,12 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 
 **All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and thirteen rows reach it: Claude Code's Fable and Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-5.6-sol` at `xhigh`, `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-003's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
 
-**Upward interpolation never makes a rung a reviewer.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross the reviewer floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` only when its own rating AND its **base row's** assessed rating are at the floor. `codex-gpt55-xhigh` is the live case: it interpolates to quality 10 from a base row assessed at 8, and it is a worker row. `models validate` refuses a catalog that says otherwise.
+**All three harnesses also offer an approver.** Its floor is 7, and exactly 31
+shipped tuples reach it with an assessed base row at the same floor. Acceptance follows
+a recipe after green review but makes costly state changes; [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)
+records why that work rejects 6 without buying the independent defect discovery of 8.
+
+**Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
 
 **Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–10 band of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": since PB-29 the vendors' published **list** prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2`, banded against the dated $2.50 → 1 / $30 → 10 anchor pair and cited in the row's `evidence`. A promotional price never moves the anchor — it applies to the model's own figure while the cited promotion is in force, and the row's `evidence` names the list price, the promotion and the band the list price would give, so the row is re-banded the day the promotion ends — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent.
 
@@ -150,7 +155,7 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
     "byRole": { "reviewer": { "harnesses": ["cursor"] } }
   },
   "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-  "qualityFloor": { "worker": 5, "reviewer": 9 },
+  "qualityFloor": { "worker": 5, "reviewer": 9, "approver": 7 },
   "balance": { "band": 5, "spendUnit": 5 },
   "nearLimit": { "usedPercent": 80, "underspend": -15 },
   "caps": { "liveParticipants": { "codex": 2 } },
@@ -164,9 +169,9 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
 Line by line:
 
 - `deny.models` takes one model out of automatic selection everywhere it appears. A denied candidate is still reported, with `denied-by-policy` and the rule and every layer that wrote it, so the pick stays explainable;
-- `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.reviewer` applies its block only when the reviewer is being routed;
+- `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.<role>` applies its block only when that worker, reviewer or approver is being routed;
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
-- `qualityFloor` raises or lowers the bar per role — the defaults are worker 5 and reviewer 9 on the 1–10 scale. Both are soft floors and both are choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
+- `qualityFloor` raises or lowers the bar per role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. All three are soft floors and choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line;
 - `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it;
@@ -522,7 +527,7 @@ wires nothing: PB-21 gives it a command line.
 Three rules shape the file.
 
 **Every number comes from the merged policy.** A weight, a penalty, a bonus,
-both quality floors and the two numbers of the pace layer are read from
+all three quality floors and the two numbers of the pace layer are read from
 `policy.policy`, never from a literal —
 that is what makes an overlay able to change them at all. The two constants
 below are formula constants of ADR-005, not policy: the 1–10 normalisation and

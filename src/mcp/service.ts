@@ -10,6 +10,8 @@ export interface OutgoingMessage {
   type: string;
   body: string;
   artifactPath?: string | null;
+  /** Calling harness session; direct participant traffic must prove the sender holds its task address. */
+  session?: string | null;
 }
 
 /** Send outcome: the canon and the artifact metadata, if there was one. */

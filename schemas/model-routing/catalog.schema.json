@@ -75,11 +75,11 @@
           "minLength": 1
         },
         "roles": {
-          "description": "Roles this tuple may be picked for. A reviewer-only or worker-only tuple is normal.",
+          "description": "Roles this tuple may be picked for. A tuple may name any subset of worker, reviewer and approver.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["worker", "reviewer"] }
+          "items": { "enum": ["worker", "reviewer", "approver"] }
         },
         "ratings": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/ratings" },
         "roleRatings": {
@@ -88,7 +88,8 @@
           "additionalProperties": false,
           "properties": {
             "worker": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
-            "reviewer": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" }
+            "reviewer": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
+            "approver": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" }
           }
         },
         "prices": {
@@ -248,9 +249,9 @@
           "harness": "example",
           "model": "example-deep",
           "effort": "high",
-          "roles": ["worker", "reviewer"],
+          "roles": ["worker", "reviewer", "approver"],
           "ratings": { "quality": 10, "speed": 3, "quotaCost": 10 },
-          "roleRatings": { "reviewer": { "quality": 10 } },
+          "roleRatings": { "reviewer": { "quality": 10 }, "approver": { "quality": 8 } },
           "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
           "billing": "subscription",
           "priority": 10,

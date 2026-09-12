@@ -177,8 +177,8 @@ export interface PromptobusHost {
   reviewSkillDir(name: string): string;
 
   participantServers(): HostServers;
-  /** Optional write-tool classification for the reviewer; never include the Promptobus bus. */
-  participantDenyTools?(role: string): HostMcpToolClassification;
+  /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
+  participantDenyTools?(role: 'reviewer' | 'approver'): HostMcpToolClassification;
   memorySection(toolName: (server: string, name: string) => string): string | null;
 
   resolveRepo(query: string): Promise<HostRepo>;

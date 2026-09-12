@@ -609,8 +609,9 @@ test('the participant is not in the journal — the same fallback', () => {
   assert.equal(readableName(null, 'worker:gates'), 'gates');
 });
 
-test('the reviewer prefix is stripped the same as the worker prefix', () => {
+test('reviewer and approver prefixes are stripped the same as the worker prefix', () => {
   assert.equal(readableName({ participants: [] }, 'reviewer:bus'), 'bus');
+  assert.equal(readableName({ participants: [] }, 'approver:bus'), 'bus');
 });
 
 test('orchestrator is named by the word; the of-flag yields "the orchestrator"', () => {

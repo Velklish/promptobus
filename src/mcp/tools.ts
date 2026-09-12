@@ -28,14 +28,14 @@ const TASK_ARG = {
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'promptobus_send',
-    description: 'Send a message to a task participant. Address: orchestrator, worker:<slug> or reviewer:<slug>. '
-      + 'Workers do not write to each other — context and artifacts go through the orchestrator. '
+    description: 'Send a message to a task participant. Address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>. '
+      + 'Workers and approvers in the same task may write directly; other participant traffic goes through the orchestrator. '
       + 'The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, '
       + 'and if your mailbox has unread mail — its count.',
     inputSchema: {
       type: 'object',
       properties: {
-        to: { type: 'string', description: 'recipient address: orchestrator, worker:<slug> or reviewer:<slug>' },
+        to: { type: 'string', description: 'recipient address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>' },
         type: { type: 'string', enum: MESSAGE_TYPES, description: 'v1 protocol message type' },
         body: { type: 'string', description: 'text: assignment, status, question, answer, result, or review remarks' },
         artifactPath: { type: 'string', description: 'absolute file path; copied into the task artifacts/, the message gets the name' },

@@ -167,6 +167,14 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
   },
 }));
 store.dismissParticipant(HOME, TASK, 'reviewer:api', T2);
+store.upsertParticipant(HOME, TASK, store.participantRecord('approver:api', {
+  harness: 'codex',
+  mode: 'managed',
+  sessionRef: 'sess-approver',
+  model: 'gpt-accept',
+  started: T2,
+  routing: { strategy: 'quality', role: 'approver', tupleId: 'codex.gpt-accept', windows: [] },
+}));
 // Explicit `--model`, no routing at all. It gets a record too, so a hand-picked
 // tuple is measured beside a routed one.
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:hand', {
@@ -197,23 +205,24 @@ const rows = lines.map((l) => JSON.parse(l));
 const by = (role, model) => rows.find((r) => r.role === role && r.model === model);
 const worker = by('worker', 'claude-opus');
 const reviewer = by('reviewer', 'gpt-x');
+const approver = by('approver', 'gpt-accept');
 const hand = by('worker', 'claude-sonnet');
 
-check(': one record per participant that lifted a session — three of them',
-  rows.length === 3, `${rows.length}: ${rows.map((r) => `${r.role}/${r.model}`).join(', ')}`);
-// The filter is "lifted a session" — role worker/reviewer with a model on the
+check(': one record per participant that lifted a session — four of them',
+  rows.length === 4, `${rows.length}: ${rows.map((r) => `${r.role}/${r.model}`).join(', ')}`);
+// The filter is "lifted a session" — a participant role with a model on the
 // record — and the two it excludes here share a harness with one it keeps, so a
 // check by harness alone would pass on a writer that dropped the wrong one. The
 // assertion is a BIJECTION: every lifted participant has exactly one row, and
 // every row names a lifted participant's own role, harness and model.
 const meta = store.readTask(HOME, TASK);
-const liftedOf = (p) => (p.role === 'worker' || p.role === 'reviewer')
+const liftedOf = (p) => ['worker', 'reviewer', 'approver'].includes(p.role)
   && typeof p.metadata?.model === 'string' && Boolean(p.metadata.model);
 const lifted = meta.participants.filter(liftedOf);
 const unlifted = meta.participants.filter((p) => !liftedOf(p));
 const same = (r, p) => r.role === p.role && r.harness === p.harness && r.model === p.metadata.model;
-check(': five participants, three lifted a session — and the rows are exactly those three',
-  meta.participants.length === 5 && lifted.length === 3 && rows.length === 3
+check(': six participants, four lifted a session — and the rows are exactly those four',
+  meta.participants.length === 6 && lifted.length === 4 && rows.length === 4
   && lifted.every((p) => rows.filter((r) => same(r, p)).length === 1)
   && rows.every((r) => lifted.some((p) => same(r, p))),
   `${meta.participants.length} participants, ${lifted.length} lifted, ${rows.length} rows`);
@@ -222,13 +231,17 @@ check(': the two without a row are the task owner and an address that only ever 
   && unlifted.every((p) => !p.metadata?.model),
   unlifted.map((p) => `${p.metadata?.address}/${p.harness}`).join(', '));
 check(': done says how many records it appended and where',
-  new RegExp(`telemetry: 3 record\\(s\\) appended to ${FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(out),
+  new RegExp(`telemetry: 4 record\\(s\\) appended to ${FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(out),
   out.trim());
 
 for (const [i, row] of rows.entries()) {
   check(`: record ${i} validates against telemetry.schema.json`,
     validate(row) === true, ajv.errorsText(validate.errors));
 }
+
+check(': the approver record carries the addressed role and its routing tuple',
+  approver.role === 'approver' && approver.tuple === 'codex.gpt-accept',
+  JSON.stringify(approver));
 
 check(': the routed worker carries its strategy, its source and its tuple',
   worker.strategy === 'balance' && worker.strategySource === 'overlay:workspace'
@@ -378,7 +391,7 @@ await capture(async () => close(SB2, {
 const all = readFileSync(FILE, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
 const stale = all[all.length - 1];
 check(': the file is the account\'s, not one workspace\'s — a second workspace appends to the same one',
-  all.length === 4, String(all.length));
+  all.length === 5, String(all.length));
 check(': a stale cache gives no end reading at all — null, never a number',
   stale.windows.length === 2 && stale.windows.every((w) => w.usedPercentAtEnd === null),
   JSON.stringify(stale.windows));
@@ -464,7 +477,7 @@ const said = await capture(async () => models(hostOf(SB3), {
   output: textOut,
 }));
 check(': `models` prints the record count and the file size, and nothing read out of the records',
-  /telemetry: 6 record\(s\), \d+ B \(/.test(said) && !/strategy|tuple|score/.test(said.split('\n').find((l) => l.includes('telemetry:')) ?? ''),
+  /telemetry: 7 record\(s\), \d+ B \(/.test(said) && !/strategy|tuple|score/.test(said.split('\n').find((l) => l.includes('telemetry:')) ?? ''),
   said.trim());
 check(': the line does not enter the decision the text form prints — the golden cannot move under it',
   !textOut.text.includes('telemetry:'), textOut.text.slice(-200));

@@ -478,6 +478,17 @@ check(': spawn --worker with an invalid name is printed without a stack',
   noStack(badWorker) && /--worker "!!!" does not yield a worker name/.test(badWorker.text),
   `status=${badWorker.status} ${badWorker.text}`);
 
+for (const role of ['reviewer', 'approver']) {
+  const reservedWorker = cliRun([
+    'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, '--task', TASK,
+    '--worker', `${role}-cargos-api`, '--dry-run',
+  ]);
+  check(`: spawn reserves the ${role}- sidecar prefix from worker names`,
+    noStack(reservedWorker) && reservedWorker.status !== 0
+    && reservedWorker.text.includes(`prefix is taken by the ${role}`),
+    `status=${reservedWorker.status} ${reservedWorker.text}`);
+}
+
 // --- : explicit --task with no journal — by the real command, no stack ----------
 //
 // The planner checks `taskExists` itself and used to throw a bare `Error`: a typo

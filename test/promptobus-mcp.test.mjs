@@ -363,6 +363,9 @@ check(': inbox does not print the counter — it just fetched the messages',
 // task from an already-running session; without it, resolution behaves as before.
 const SECOND = 'revyu-t20260813-100000';
 store.createTask(HOME, { id: SECOND, title: 'ревью loads_search/cargos-api', slug: 'revyu', stamp: 't20260813-100000' });
+store.upsertParticipant(HOME, SECOND, store.participantRecord('approver:cargos-api', {
+  sessionId: 'approver-second-session',
+}));
 
 const declared = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(`backward compatibility: without an argument, the session's declared task is used`,
@@ -380,6 +383,25 @@ check('several active tasks with no argument — a refusal with a list, not a ra
 const picked = await loose.call('tools/call', { name: 'promptobus_task', arguments: { task: SECOND } });
 check('task: the task argument picks a task when several are active',
   text(picked).includes(`task ${SECOND}`) && text(picked).includes('ревью loads_search/cargos-api'), text(picked));
+
+const directCrossTask = startServer('worker:cargos-api', {
+  env: {
+    CLAUDE_CODE_SESSION_ID: 'direct-worker-session',
+    CODEX_THREAD_ID: '',
+    CURSOR_CONVERSATION_ID: '',
+  },
+});
+await directCrossTask.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+directCrossTask.notify('notifications/initialized');
+const unknownDirectCrossTask = await directCrossTask.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'foreign direct', task: SECOND },
+});
+check('send: an explicit foreign task cannot auto-register a sender for direct worker↔approver traffic',
+  unknownDirectCrossTask.result?.isError === true
+  && /no sender participant/.test(text(unknownDirectCrossTask))
+  && store.participantOf(store.readTask(HOME, SECOND), 'worker:cargos-api') === null,
+  text(unknownDirectCrossTask));
 
 const sentSecond = await worker.call('tools/call', {
   name: 'promptobus_send',
@@ -400,6 +422,33 @@ check(': a sender in a foreign task is recorded as a participant and immediately
 check(': a guest dismissed from monitoring does not appear in the stall report',
   (blockedParticipants(HOME, SECOND, store.readTask(HOME, SECOND).participants,
     { 'worker:cargos-api': { state: 'gone', busy: false, stall: null, id: null } }) ?? []).length === 0);
+
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+  sessionId: 'other-worker-session',
+}));
+const borrowedDirectCrossTask = await directCrossTask.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'borrowed direct', task: SECOND },
+});
+check('send: a matching foreign-task address held by another session cannot be borrowed',
+  borrowedDirectCrossTask.result?.isError === true
+  && /held by session other-worker-session/.test(text(borrowedDirectCrossTask))
+  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 0,
+  text(borrowedDirectCrossTask));
+
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+  sessionId: 'direct-worker-session',
+}));
+const heldDirectCrossTask = await directCrossTask.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'held direct', task: SECOND },
+});
+check('send: the explicit foreign task permits direct traffic only after this session holds its participant address',
+  heldDirectCrossTask.result?.isError !== true
+  && /sent question/.test(text(heldDirectCrossTask))
+  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 1,
+  text(heldDirectCrossTask));
+directCrossTask.stop();
 
 const inboxSecond = await loose.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } });
 check('inbox: the task argument fetches the mailbox of the named task',

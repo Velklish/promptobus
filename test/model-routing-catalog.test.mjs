@@ -113,10 +113,10 @@ test('ROADMAP catalog figures match shipped routing defaults', () => {
   assert.equal(Number(tupleCount[1]), CATALOG.tuples.length,
     'docs/ROADMAP.md rated tuple count must match models/catalog.json');
 
-  const floors = roadmap.match(/quality floors are `qualityFloor: \{ worker: (\d+), reviewer: (\d+) \}`/);
+  const floors = roadmap.match(/quality floors are `qualityFloor: \{ worker: (\d+), reviewer: (\d+), approver: (\d+) \}`/);
   assert.ok(floors, 'docs/ROADMAP.md qualityFloor statement not found');
   assert.deepEqual(
-    { worker: Number(floors[1]), reviewer: Number(floors[2]) },
+    { worker: Number(floors[1]), reviewer: Number(floors[2]), approver: Number(floors[3]) },
     DEFAULT_POLICY.qualityFloor,
     'docs/ROADMAP.md quality floors must match DEFAULT_POLICY',
   );
@@ -432,6 +432,23 @@ test('reviewer requires both the rung and its assessed base row at the ADR-005 f
     'the reviewer harness set changed — say so in CHANGELOG and the guide, the diversity bonus depends on it');
 });
 
+test('approver is offered only at its assessed floor, on exactly 31 shipped tuples', () => {
+  const offered = CATALOG.tuples.filter((tuple) => tuple.roles.includes('approver'));
+  assert.equal(offered.length, 31);
+  for (const tuple of offered) {
+    assert.ok(tuple.ratings.quality >= 7,
+      `${tuple.id}: offered as an approver at quality ${tuple.ratings.quality}, below the floor of 7`);
+    const base = tuple.evidence.interpolatedFrom
+      ? CATALOG.tuples.find((candidate) => candidate.id === tuple.evidence.interpolatedFrom)
+      : tuple;
+    assert.ok(base.ratings.quality >= 7,
+      `${tuple.id}: upward interpolation from ${base.id} conferred approver`);
+  }
+
+  const harnesses = new Set(offered.map((tuple) => tuple.harness));
+  assert.deepEqual([...harnesses].sort(), ['claude', 'codex', 'cursor']);
+});
+
 test('the shipped catalog passes validate with no overlay present', () => {
   const verdict = validate({ host: hostWith([{ id: 'user', path: '/nowhere/user.json' }]) });
   assert.deepEqual(verdict.errors, []);
@@ -582,22 +599,30 @@ test('allow lists INTERSECT across layers, and an intersection may come out empt
   assert.equal(mergeRouting({ canonical: canonical.data, overlays: [] }).policy.allow.harnesses, undefined);
 });
 
-test('a byRole block merges into its own role and leaves the other alone', () => {
+test('DEFAULT_POLICY.byRole accepts approver rules and keeps other roles separate', () => {
   const canonical = canonicalLayer();
   const merged = mergeRouting({
     canonical: canonical.data,
     overlays: [overlayLayer('workspace', {
       schemaVersion: 1,
-      deny: { harnesses: ['cursor'], byRole: { reviewer: { harnesses: ['codex'] } } },
+      deny: {
+        harnesses: ['cursor'],
+        byRole: {
+          reviewer: { harnesses: ['codex'] },
+          approver: { models: ['claude-opus-5'] },
+        },
+      },
     })],
   });
-  assert.deepEqual(merged.policy.deny.harnesses, ['cursor'], 'the unscoped list holds for both roles');
+  assert.deepEqual(merged.policy.deny.harnesses, ['cursor'], 'the unscoped list holds for every role');
   assert.deepEqual(merged.policy.byRole.reviewer.deny.harnesses, ['codex']);
+  assert.deepEqual(merged.policy.byRole.approver.deny.models, ['claude-opus-5']);
   assert.deepEqual(merged.policy.byRole.worker.deny, {}, 'a rule scoped to one role does not reach the other');
 
   // And the effective lists the resolver asks for: the unscoped list unioned
   // with the role's own.
   assert.deepEqual([...rulesForRole(merged.policy, 'reviewer').deny.harnesses].sort(), ['codex', 'cursor']);
+  assert.deepEqual(rulesForRole(merged.policy, 'approver').deny.models, ['claude-opus-5']);
   assert.deepEqual(rulesForRole(merged.policy, 'worker').deny.harnesses, ['cursor']);
 });
 
@@ -753,6 +778,7 @@ test('the constant, the overlay schema and the snapshot schema are ONE closed fl
 });
 
 test('routing vocabularies and their schema enums stay one closed list', () => {
+  const catalogSchema = readJson(path.join(SCHEMAS, 'catalog.schema.json'));
   const overlaySchema = readJson(path.join(SCHEMAS, 'overlay.schema.json'));
   const snapshotSchema = readJson(path.join(SCHEMAS, 'snapshot.schema.json'));
   const decisionSchema = readJson(path.join(SCHEMAS, 'decision.schema.json'));
@@ -773,6 +799,17 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
 
   assert.deepEqual(overlaySchema.properties.defaults.properties.strategy.enum, catalogRouting.STRATEGIES);
   assert.deepEqual(decisionSchema.properties.strategy.enum, catalogRouting.STRATEGIES);
+
+  const roles = [...catalogRouting.RULE_ROLES].sort();
+  assert.deepEqual([...resolverRouting.ROLES].sort(), roles, "resolver.js ROLES");
+  assert.deepEqual(Object.keys(catalogRouting.DEFAULT_POLICY.qualityFloor).sort(), roles, "DEFAULT_POLICY.qualityFloor");
+  assert.deepEqual(Object.keys(catalogRouting.DEFAULT_POLICY.byRole).sort(), roles, "DEFAULT_POLICY.byRole");
+  assert.deepEqual([...catalogSchema.$defs.tuple.properties.roles.items.enum].sort(), roles, "catalog.schema.json roles enum");
+  assert.deepEqual(Object.keys(catalogSchema.$defs.tuple.properties.roleRatings.properties).sort(), roles, "catalog.schema.json roleRatings properties");
+  assert.deepEqual(Object.keys(overlaySchema.properties.qualityFloor.properties).sort(), roles, "overlay.schema.json qualityFloor properties");
+  assert.deepEqual(Object.keys(overlaySchema.$defs.selectors.properties.byRole.properties).sort(), roles, "overlay.schema.json selectors.byRole properties");
+  assert.deepEqual([...decisionSchema.properties.role.enum].sort(), roles, "decision.schema.json role enum");
+  assert.deepEqual([...telemetrySchema.properties.role.enum].sort(), roles, "telemetry.schema.json role enum");
 
   const selectorKinds = [...catalogRouting.SELECTOR_KINDS].sort();
   assert.deepEqual(
@@ -936,6 +973,61 @@ test('validate refuses a catalog where interpolation conferred the reviewer role
   // the floor is refused however high the rung interpolates.
   const ok = clone(CATALOG);
   assert.equal(validateLayers({ canonical: canonicalLayer(ok) }).ok, true);
+});
+
+test('validate refuses upward interpolation that confers approver', () => {
+  const doc = clone(CATALOG);
+  const rung = doc.tuples.find((tuple) => tuple.evidence?.interpolatedFrom
+    && !tuple.roles.includes('approver')
+    && tuple.ratings.quality >= 7
+    && doc.tuples.find((base) => base.id === tuple.evidence.interpolatedFrom).ratings.quality < 7);
+  assert.ok(rung, 'the catalog has no interpolated approver refusal case');
+  rung.roles = [...rung.roles, 'approver'];
+  const verdict = validateLayers({ canonical: canonicalLayer(doc) });
+  assert.equal(verdict.ok, false);
+  const error = verdict.errors.find((entry) => entry.at === `tuples.${rung.id}.roles`);
+  assert.ok(error, verdict.errors.map((entry) => entry.at).join(' | '));
+  assert.match(error.message, /upward interpolation never confers the approver role/);
+  assert.equal(error.code, 'catalog-invalid');
+});
+
+test('validate applies roleRatings to assessed tuple and base-row quality in both directions', () => {
+  const loweredTuple = clone(CATALOG);
+  const lowered = loweredTuple.tuples.find((tuple) => tuple.id === 'claude-sonnet-xhigh');
+  lowered.roleRatings = { approver: { quality: 6 } };
+  const loweredTupleVerdict = validateLayers({ canonical: canonicalLayer(loweredTuple) });
+  assert.equal(loweredTupleVerdict.ok, false);
+  assert.match(
+    loweredTupleVerdict.errors.find((entry) => entry.at === `tuples.${lowered.id}.roles`)?.message ?? '',
+    /effective quality 6/,
+  );
+
+  const raisedTuple = clone(CATALOG);
+  const raised = raisedTuple.tuples.find((tuple) => tuple.id === 'cursor-composer-2.5');
+  raised.roles = [...raised.roles, 'approver'];
+  raised.roleRatings = { approver: { quality: 7 } };
+  assert.equal(validateLayers({ canonical: canonicalLayer(raisedTuple) }).ok, true,
+    'an effective tuple rating at the floor is valid even when its general quality is lower');
+
+  const loweredBase = clone(CATALOG);
+  const rungWithLoweredBase = loweredBase.tuples.find((tuple) => tuple.id === 'claude-opus-medium');
+  const baseBelow = loweredBase.tuples.find((tuple) => tuple.id === rungWithLoweredBase.evidence.interpolatedFrom);
+  baseBelow.roleRatings = { approver: { quality: 6 } };
+  const loweredBaseVerdict = validateLayers({ canonical: canonicalLayer(loweredBase) });
+  assert.equal(loweredBaseVerdict.ok, false);
+  assert.match(
+    loweredBaseVerdict.errors.find((entry) => entry.at === `tuples.${rungWithLoweredBase.id}.roles`)?.message ?? '',
+    /base row .*effective quality 6/,
+  );
+
+  const raisedBase = clone(CATALOG);
+  const rungWithRaisedBase = raisedBase.tuples.find((tuple) => tuple.id === 'cursor-glm-max');
+  const baseAtFloor = raisedBase.tuples.find((tuple) => tuple.id === rungWithRaisedBase.evidence.interpolatedFrom);
+  rungWithRaisedBase.roles = [...rungWithRaisedBase.roles, 'approver'];
+  baseAtFloor.roleRatings = { approver: { quality: 7 } };
+  assert.equal(validateLayers({ canonical: canonicalLayer(raisedBase) }).ok, true,
+    'an effective base-row rating at the floor permits the assessed interpolation');
+
 });
 
 test('indistinguishable ladder rungs remain and produce ladder-indistinguishable', () => {
@@ -1570,6 +1662,11 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, reviewerQualityFloor: 5 },
     { schemaVersion: 1, qualityFloor: { reviewer: 5 } },
     { schemaVersion: 1, qualityFloor: { worker: 3, reviewer: 5 }, deny: { harnesses: ['cursor'] } },
+    {
+      schemaVersion: 2,
+      qualityFloor: { approver: 7 },
+      deny: { byRole: { approver: { harnesses: ['codex'] } } },
+    },
     // ADR-004's pace, default and account blocks belong to the same parity
     // corpus: each has one lawful document and one document the two shapes must
     // reject together.

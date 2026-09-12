@@ -30,6 +30,7 @@ const approval = {
 
 const worker = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
 const reviewer = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer' };
+const approver = { cwd: '/tmp/wt', addDirs: [], role: 'approver' };
 
 const reply = (p, record) => {
   const d = decideApproval('mcpServer/elicitation/request', p, record);
@@ -57,9 +58,9 @@ const reply = (p, record) => {
 // Where the defect lives: a decline here is what killed every bus call of a live reviewer.
 // `content: {}` under `action: "accept"` is Accept by design for this request — the schema
 // has no fields to answer, so there is nothing to fill and nothing to get wrong.
-for (const [role, record] of [['worker', worker], ['reviewer', reviewer]]) {
+for (const [role, record] of [['worker', worker], ['reviewer', reviewer], ['approver', approver]]) {
   const r = reply(approval, record);
-  check(`: codex-cli's own tool approval is accepted for a ${role} — the bus call survives`,
+  check(`: codex-cli's own tool approval is accepted for role ${role} — the bus call survives`,
     r.action === 'accept' && JSON.stringify(r.content) === '{}', JSON.stringify(r));
 }
 

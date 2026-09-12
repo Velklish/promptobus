@@ -83,13 +83,14 @@
       "maximum": 10
     },
     "qualityFloor": {
-      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 5, reviewer 9 on the ADR-005 1–10 scale. A soft floor and a CHOICE RULE, not a filter.",
+      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 5, reviewer 9, approver 7 on the ADR-005 1–10 scale. A soft floor and a CHOICE RULE, not a filter.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
         "worker": { "type": "integer", "minimum": 1, "maximum": 10 },
-        "reviewer": { "type": "integer", "minimum": 1, "maximum": 10 }
+        "reviewer": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "approver": { "type": "integer", "minimum": 1, "maximum": 10 }
       }
     },
     "balance": {
@@ -225,7 +226,8 @@
           "minProperties": 1,
           "properties": {
             "worker": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
-            "reviewer": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" }
+            "reviewer": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
+            "approver": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" }
           }
         }
       }
@@ -262,7 +264,7 @@
       "schemaVersion": 2,
       "note": "schema example: a deny rule, a weight change, and a PAYG opt-in",
       "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
-      "qualityFloor": { "worker": 5, "reviewer": 9 },
+      "qualityFloor": { "worker": 5, "reviewer": 9, "approver": 7 },
       "deny": { "models": ["example-quick"] },
       "ratings": { "example-deep": { "speed": 3 } },
       "payg": { "allow": true }

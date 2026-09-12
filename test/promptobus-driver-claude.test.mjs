@@ -191,3 +191,8 @@ check(': and the third reading — a refusal that has already returned, where no
   && /permission rule decided outside it/i.test(route), route);
 check(': and it no longer asserts that only a person can answer',
   !/only a person/i.test(route), route);
+
+const approverRoute = stallRoute({ kind: 'gone', address: 'approver:api' }, null, null);
+check(': an approver without a session is returned to the consumer lift, never worker spawn',
+  /task orchestrator/.test(approverRoute)
+  && !/lift the worker/.test(approverRoute), approverRoute);

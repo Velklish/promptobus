@@ -520,6 +520,29 @@ test('the worker has a floor too, and its own warning code', () => {
   validDecision(fallback, 'a decision carrying the worker floor fallback');
 });
 
+test('the approver uses the quality floor of 7 and its own fallback warning', () => {
+  const catalog = catalogOf([
+    { id: 'alpha-fast', harness: 'alpha', model: 'fast', ratings: { quality: 6, speed: 10, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-sound', harness: 'alpha', model: 'sound', ratings: { quality: 7, speed: 3, quotaCost: 8 }, priority: 20 },
+  ]);
+  const moved = decide({ role: 'approver', catalog, snapshot: TIE_SNAPSHOT });
+  assert.equal(scoredIds(moved)[0], 'alpha-fast');
+  assert.equal(moved.chosen.tupleId, 'alpha-sound');
+  assert.equal(byId(moved, 'alpha-fast').excluded, null);
+  assert.equal(moved.warnings.some((warning) => warning.code === 'approver-floor-not-met'), false);
+
+  const floorless = catalogOf([
+    { id: 'alpha-fast', harness: 'alpha', model: 'fast', ratings: { quality: 6, speed: 10, quotaCost: 1 }, priority: 10 },
+    { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 1, speed: 3, quotaCost: 8 }, priority: 20 },
+  ]);
+  const fallback = decide({ role: 'approver', catalog: floorless, snapshot: TIE_SNAPSHOT });
+  assert.equal(fallback.chosen.tupleId, 'alpha-fast');
+  const warning = fallback.warnings.find((entry) => entry.code === 'approver-floor-not-met');
+  assert.ok(warning, fallback.warnings.map((entry) => entry.code).join(' | '));
+  assert.match(warning.message, /quality floor of 7 of 10/);
+  validDecision(fallback, 'a decision carrying the approver floor fallback');
+});
+
 test('reviewerQualityFloor is still read, as an alias for qualityFloor.reviewer', () => {
   // An overlay written for v1 keeps its meaning (ADR-004).
   const aliased = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 8 }) });
@@ -644,7 +667,7 @@ const catalogOf = (tuples) => ({
   schemaVersion: 2,
   updated: '2026-09-05T00:00:00.000Z',
   tuples: tuples.map((t) => ({
-    roles: ['worker', 'reviewer'],
+    roles: ['worker', 'reviewer', 'approver'],
     prices: { inputPerMTok: null, cachedInputPerMTok: null, outputPerMTok: null },
     billing: 'subscription',
     assessedAt: '2026-09-05T00:00:00.000Z',

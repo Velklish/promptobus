@@ -10,7 +10,7 @@ export const PACKAGE_NAME = 'promptobus';
 // Bus vocabulary: message types, address grammar, task identity, foreign-mailbox
 // gate wording, and accessors for adapter fields on the participant record.
 export {
-  addressOf, addrDir, brokenNote, claimRoute, dismissedOf, foreignTaskLine, FOREIGN_MARK,
+  addressOf, addrDir, approverAddress, brokenNote, claimRoute, dismissedOf, foreignTaskLine, FOREIGN_MARK,
   FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MECHANISM_VERSION_FIELD,
   mechanismVersionOf, MESSAGE_TYPES, nameOf,
   newTaskIdentity, ORCHESTRATOR, ownerOf, participantFileStem, repoAbsOf, requireTaskId,

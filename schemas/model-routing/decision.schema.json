@@ -12,7 +12,7 @@
       "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here. `balance` is ADR-004's fifth: it answers which account to spend from rather than how to weigh a tuple, and it has no weight set of its own.",
       "enum": ["quality", "balanced", "speed", "economy", "balance"]
     },
-    "role": { "enum": ["worker", "reviewer"] },
+    "role": { "enum": ["worker", "reviewer", "approver"] },
     "weights": {
       "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating. Under `balance` these are the merged `balanced` weights, which is what that strategy orders tuples inside one harness by.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet"
@@ -348,6 +348,7 @@
         "stale-rating",
         "unknown-remaining",
         "reviewer-floor-not-met",
+        "approver-floor-not-met",
         "snapshot-stale",
         "probe-incomplete",
         "flag-not-in-inventory",

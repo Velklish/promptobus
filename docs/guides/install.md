@@ -61,7 +61,7 @@ A worker repository may have its own `promptobus.json` — separate from the wor
 
 ## 3. MCP server for the orchestrator
 
-Spawn writes an MCP entry for each worker and reviewer. The orchestrator session needs the same stdio server.
+Each participant lift writes its MCP entry; this includes workers, reviewers and approvers. The orchestrator session needs the same stdio server.
 
 ```json
 {

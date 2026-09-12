@@ -112,8 +112,8 @@ export function taskOwner(home: string, id: string): string | null {
 
 // Own mailbox or a foreign one — the only condition on the whole bus. Nothing
 // to compare (no identity or no owner) — the mechanism stays silent entirely:
-// backward compatibility outranks the guard. Worker and reviewer addresses are
-// not gated: the address is declared in their mcp-config.
+// backward compatibility outranks the guard. Participant addresses are not gated:
+// the address is declared in their mcp-config.
 export function ownership(home: string, id: string, addr: string, session: string | null): Ownership {
   if (addr !== ORCHESTRATOR) return { gated: false, owner: null, session };
   const owner = taskOwner(home, id);
@@ -364,7 +364,7 @@ export function identityLabel(home: string, task: string, addr: string, session:
 function applyParticipant(meta: TaskMeta, participant: Participant): TaskMeta {
   if (!isAddress(participant?.address)) {
     throw new GateError(`invalid participant address «${participant?.address}» — `
-      + 'expected orchestrator, worker:<slug> or reviewer:<slug>');
+      + 'expected orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>');
   }
   const rest = (meta.participants ?? []).filter((p) => p.address !== participant.address);
   meta.participants = [...rest, participant];
@@ -513,7 +513,7 @@ export interface Outgoing {
 
 export function sendMessage(home: string, id: string, { from, to, type, body, artifactPath }: Outgoing): Message {
   if (!isAddress(from)) throw new Error(`unknown sender address «${from}»`);
-  if (!isAddress(to)) throw new Error(`unknown recipient address «${to}» — orchestrator, worker:<slug> or reviewer:<slug>`);
+  if (!isAddress(to)) throw new Error(`unknown recipient address «${to}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
   if (!MESSAGE_TYPES.includes(type)) {
     throw new Error(`type «${type}» is not a v1 protocol type: ${MESSAGE_TYPES.join(', ')}`);
   }
@@ -737,7 +737,7 @@ export function lastSentAt(home: string, id: string, address: string): number | 
 export {
   addrDir, brokenNote, claimRoute, FOREIGN_MARK, FOREIGN_ROUTE, GateError, isAddress,
   MAILBOX_CLAIMED_MARK, MESSAGE_TYPES, newTaskIdentity, ORCHESTRATOR, participantFileStem,
-  reviewerAddress, SLUG_MAX, slugify, stampOfId, TASK_TITLE_SEP, taskDir, tasksDir,
+  approverAddress, reviewerAddress, SLUG_MAX, slugify, stampOfId, TASK_TITLE_SEP, taskDir, tasksDir,
   workerAddress, foreignTaskLine,
 } from './protocol.js';
 export type { Clock, Ownership } from './protocol.js';
