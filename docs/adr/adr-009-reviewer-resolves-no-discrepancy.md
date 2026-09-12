@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-12
-**Deciders:** Павел Ким (owner), decision of 2026-09-12 on PB-169 of the package release run
+**Deciders:** the run's orchestrator, under the owner's standing mandate of 2026-09-12 — "decide the forks yourself and record them as ADRs with the rejected options". **Not reviewed by the owner**: this line says so because an ADR outlives the night it was written in, and a decision recorded under someone's name is read later as theirs.
 
 ## Context
 

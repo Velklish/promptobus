@@ -26,6 +26,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-009-reviewer-resolves-no-discrepancy.md](adr/adr-009-reviewer-resolves-no-discrepancy.md) | A reviewer is given no second immovable artefact: a snapshot-versus-tree discrepancy is handed to the orchestrator unresolved, with the verification command already in the report | Accepted |
 | [adr/adr-010-session-identity-is-a-driver-member.md](adr/adr-010-session-identity-is-a-driver-member.md) | Session identity is a driver member (`identityVar`) answering for the session's own commands, injected into the core rather than imported by it; two claimants are refused instead of picked | Accepted |
 | [adr/adr-011-a-session-address-is-per-task.md](adr/adr-011-a-session-address-is-per-task.md) | A session's bus address becomes per-task. The `promptobus send` door built for it was withdrawn before release — four review rounds, four major findings of one class — and the missing piece is named: the store keeps no positive binding of a participant address to a session | Accepted |
+| [adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md](adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) | Stopping one participant is a verb of its own — `promptobus stop <address>` — and not a flag on `done` or `dismiss`; an artefact written at birth is erased by nothing but the mechanism that wrote it | Accepted |
 
 ## Cross-cutting principles
 
