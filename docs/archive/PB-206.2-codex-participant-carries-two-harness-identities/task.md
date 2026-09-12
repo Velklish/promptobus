@@ -31,7 +31,7 @@ Actual: the command **succeeds** — `✔ worker:api dismissed from watch …` �
 
 > Source: 2026-09-12, run opt0912, worker `pb-role` in a Codex sandbox; fourteen runs, seven files twice each, `node --test test/<file> > log; echo $?`. Full logs in the task artifacts of that run.
 
-**This is not the load class.** [PB-159.1](PB-159.1-pooled-load-reds-beyond-preflight.md) recorded its wall-clock reds at load averages 115…198; here the load stayed between 7 and 23, and the same reds repeat at the low end. The orchestrator measured the same suite green outside a participant sandbox on the same machine and the same tree content the same hour: `gates` exit 0, `gates 4, green 4`, `npm test` exit 0, 165 115 ms.
+**This is not the load class.** [PB-159.1](../../backlog/queue/PB-159.1-pooled-load-reds-beyond-preflight.md) recorded its wall-clock reds at load averages 115…198; here the load stayed between 7 and 23, and the same reds repeat at the low end. The orchestrator measured the same suite green outside a participant sandbox on the same machine and the same tree content the same hour: `gates` exit 0, `gates 4, green 4`, `npm test` exit 0, 165 115 ms.
 
 **Control 2026-09-12, a participant sandbox of another harness.** A Claude participant lifted by `spawn` into a worktree of this same repository, within the same hour and on the same machine, ran the full suite: `npm test` exit 0, **64 of 64 files**, and the four files of this card among them. So the contamination is a property of the **Codex** participant environment, not of participant sandboxes in general, and not of the machine. That narrows the fix to the Codex driver rather than to the tests.
 
