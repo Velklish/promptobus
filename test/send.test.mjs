@@ -49,6 +49,10 @@ const inbox = (addr) => {
   const dir = path.join(HOME, 'tasks', TASK, 'inbox', addrDir(addr));
   return existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith('.json')).sort() : [];
 };
+const inbox2 = (task, addr) => {
+  const dir = path.join(HOME, 'tasks', task, 'inbox', addrDir(addr));
+  return existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith('.json')) : [];
+};
 const last = (addr) => {
   const files = inbox(addr);
   if (!files.length) return null;
@@ -86,7 +90,7 @@ for (const harness of ['cursor']) {
     ...participant, PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off',
   });
   check(`: a ${harness} participant is REFUSED, not silently turned into the orchestrator`,
-    r.failed === true && /PROMPTOBUS_ROLE/.test(r.out) && inbox('orchestrator').length === before,
+    r.failed === true && /cannot name its own session/.test(r.out) && inbox('orchestrator').length === before,
     `${r.failed} · ${inbox('orchestrator').length - before} written · ${r.out}`);
 }
 
@@ -154,4 +158,82 @@ for (const harness of ['cursor']) {
   check(': an artifact is named in the output and lands in the task files directory',
     /artifact note\.txt/.test(r) && saved.includes('note.txt'),
     `${JSON.stringify(saved)} · ${r}`);
+}
+
+// A declared role is a CLAIM. These are the ways of claiming one that must not work, and
+// each is checked by what it would have WRITTEN, not only by the exit code.
+{
+  const FOREIGN = 'sendtest-forged-t20260912-000000';
+  store.createTask(HOME, { id: FOREIGN, title: 'someone else', owner: 'another-session' });
+  store.upsertParticipant(HOME, FOREIGN, store.participantRecord('worker:theirs', { harness: 'claude' }));
+
+  const asOrch = await refuse(['send', 'worker:theirs', '--body', 'borrowed', '--task', FOREIGN],
+    { PROMPTOBUS_ROLE: 'orchestrator' });
+  check(': declaring PROMPTOBUS_ROLE=orchestrator does not borrow a foreign task',
+    asOrch.failed === true && /belongs to session another-session/.test(asOrch.out)
+      && inbox2(FOREIGN, 'worker:theirs').length === 0,
+    `${asOrch.failed} · ${asOrch.out}`);
+
+  const asStranger = await refuse(['send', 'worker:theirs', '--body', 'invented', '--task', FOREIGN],
+    { PROMPTOBUS_ROLE: 'worker:invented' });
+  check(': a role that is not a participant of the target task is refused, not auto-registered',
+    asStranger.failed === true && /not a participant/.test(asStranger.out)
+      && !store.addressesOf(store.readTask(HOME, FOREIGN)).includes('worker:invented'),
+    `${asStranger.failed} · ${JSON.stringify(store.addressesOf(store.readTask(HOME, FOREIGN)))} · ${asStranger.out}`);
+}
+
+{
+  // A task with no owner: ownership cannot be proved there BY CONSTRUCTION, so the
+  // orchestrator address is refused rather than defaulted to.
+  const OWNERLESS = 'sendtest-ownerless-t20260912-000000';
+  store.createTask(HOME, { id: OWNERLESS, title: 'no owner', owner: null });
+  store.upsertParticipant(HOME, OWNERLESS, store.participantRecord('worker:two', { harness: 'claude' }));
+  const r = await refuse(['send', 'worker:two', '--body', 'unowned', '--task', OWNERLESS]);
+  check(': a task with no owner refuses the orchestrator address instead of defaulting to it',
+    r.failed === true && /records no owner/.test(r.out) && inbox2(OWNERLESS, 'worker:two').length === 0,
+    `${r.failed} · ${r.out}`);
+}
+
+// No refusal on a typed argument may print a stack: the store's own refusals for these
+// are bare `Error`s, and the top-level catch prints one before the single-line refusal.
+for (const [name, argv] of [
+  ['a body of only spaces', ['send', 'orchestrator', '--body', '   ', '--task', TASK]],
+  ['an unknown --type', ['send', 'orchestrator', '--body', 'x', '--type', 'nonsense', '--task', TASK]],
+  ['a well-formed address nobody registered', ['send', 'worker:ghost', '--body', 'x', '--task', TASK]],
+  ['a malformed address', ['send', 'not-an-address', '--body', 'x', '--task', TASK]],
+]) {
+  const r = await refuse(argv);
+  check(`: ${name} is refused with no stack in the output`,
+    r.failed === true && !/\bat \S+:\d+:\d+/.test(r.out), `${r.failed} · ${r.out}`);
+}
+
+// The listener. `send` prints `sent` — and a message nobody watches for waits until its
+// addressee happens to take a turn, which is the hand-driven multiplexer this command
+// replaced. The fixture does NOT set PROMPTOBUS_WARDEN=off here: switching the warden off
+// and then asserting it started would measure the switch. The trace file is the warden's
+// own record of an auto-start, written by `ensureWarden` itself.
+{
+  const trace = path.join(ROOT, 'warden-trace.log');
+  const wardenEnv = {
+    PROMPTOBUS_HOME: HOME,
+    CLAUDE_CODE_SESSION_ID: OWNER,
+    PROMPTOBUS_WARDEN_TRACE: trace,
+  };
+  await capture(() => runPromptobus(['send', 'worker:one', '--body', 'wake up', '--task', TASK], {
+    host, cwd: ROOT, env: wardenEnv,
+  }));
+  const line = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
+  check(': a successful send starts the task warden, as every other bus write path does',
+    line.includes(`warden auto-start · task ${TASK}`), JSON.stringify(line));
+}
+
+{
+  // Negative control: a REFUSED send must not start one — nothing was written, so there
+  // is nothing to watch for, and the check above would pass on any call otherwise.
+  const trace = path.join(ROOT, 'warden-trace-refused.log');
+  await refuseWith(['send', 'worker:one', '--body', 'never sent', '--task', TASK], {
+    PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN_TRACE: trace,
+  });
+  check(': a refused send starts no warden',
+    !existsSync(trace), existsSync(trace) ? readFileSync(trace, 'utf8') : 'absent');
 }

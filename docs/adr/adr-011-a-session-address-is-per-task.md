@@ -75,9 +75,12 @@ person hand-driving tmux, which is what the card measured actually happening.
 
 - The case that produced the card is unblocked now: a session that raised its own task can
   drive that task's participants with a command instead of keypresses.
-- A session still cannot speak as a second address, so a worker that opens a task of its own
-  still cannot act as its orchestrator. That is a named gap with a named condition, not a
-  silence.
+- **A session speaks as an address it can PROVE, and ownership is such a proof.** A worker that
+  opens a task of its own is recorded as that task's owner, so `send` lets it write there as the
+  orchestrator — which is the case that produced the card. What stays out of reach is speaking as
+  an address it cannot prove: a participant of a task it does not belong to, an address another
+  session holds, or the orchestrator of a task owned by someone else or by nobody at all. Each of
+  those is a refusal naming the session that does own it.
 - When the per-task address lands, `send` gains the ability to choose among the addresses the
   session legitimately holds — which is a different thing from choosing any address, and is
   the distinction this decision exists to keep.

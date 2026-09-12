@@ -127,3 +127,32 @@ for (const [name, kind] of [
   check(': the summary names WHICH question codex-cli asked, and still no message',
     s.kind === 'mcp_tool_call' && s.schema === true && !blob.includes(SECRET), blob);
 }
+
+// The second half of the condition. Codex-cli classifies its own tool approval as the
+// marker AND a message-only schema (`mcp_server_elicitation.rs`), and a marked request
+// carrying a form to fill is a question to a person wearing the approval's label.
+for (const [name, requestedSchema] of [
+  ['a form with one field', { type: 'object', properties: { token: { type: 'string' } } }],
+  ['a form with a required field', { type: 'object', required: ['token'], properties: { token: { type: 'string' } } }],
+  ['properties that are not an object', { type: 'object', properties: ['token'] }],
+  ['a schema that is not an object', 'string'],
+]) {
+  const p = { ...approval, requestedSchema };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is declined — an approval has nothing to fill`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
+}
+
+for (const [name, requestedSchema] of [
+  ['no schema at all', undefined],
+  ['an empty object schema', { type: 'object', properties: {} }],
+  ['a schema with no properties key', { type: 'object' }],
+]) {
+  const p = { ...approval };
+  if (requestedSchema === undefined) delete p.requestedSchema;
+  else p.requestedSchema = requestedSchema;
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  check(`: the marker with ${name} is still accepted — nothing to fill is the approval's shape`,
+    d.allow === true, JSON.stringify({ requestedSchema, d }));
+}
