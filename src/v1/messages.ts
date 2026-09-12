@@ -1,5 +1,5 @@
-// Messages of protocol v1: file names, send order, and what a read marks.
-// The naming rule and why order is by id: [reference/04-protocol.md#messages-names-order-and-what-a-read-marks](../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks)
+// Messages: names, order and what a read marks.
+// [reference/04-protocol.md#messages-names-order-and-what-a-read-marks](../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks)
 import {
   existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
@@ -103,11 +103,11 @@ function delivered(home: string, task: string, participant: string, message: str
 }
 
 /** Reading a mailbox.
- * What a read marks, and what it deliberately leaves: [reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless](../../docs/reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless) */
+ * [reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless](../../docs/reference/04-protocol.md#intent_stale_ms--threshold-after-which-an-unclosed-intent-is-treated-as-abandoned-regardless) */
 export const INTENT_STALE_MS = 30_000;
 
 /** Writing a message into a mailbox.
- * The order names are taken in and what a collision means: [reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now](../../docs/reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now) */
+ * [reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now](../../docs/reference/04-protocol.md#leaseintent--lease-who-is-writing-this-fan-out-right-now) */
 function leaseIntent(intent: string): void {
   try {
     writeFileSync(ownerOfIntent(intent),
@@ -130,7 +130,7 @@ function readLease(file: string): { pid: number; host: string } | null {
 }
 
 /** Whether an unclosed intent is abandoned — that is, whether recovery may touch it.
- * Why a neighbour's live fan-out must not be picked up: [reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may](../../docs/reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may) */
+ * [reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may](../../docs/reference/04-protocol.md#abandonedintent--whether-an-unclosed-intent-is-abandoned--that-is-whether-recovery-may) */
 function abandonedIntent(intent: string): boolean {
   let age: number;
   try {

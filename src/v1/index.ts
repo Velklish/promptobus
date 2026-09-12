@@ -1,5 +1,5 @@
-// Protocol v1 entry point: what the package exports of it and what stays inside.
-// The surface and its boundary: [reference/04-protocol.md#the-v1-entry-point](../../docs/reference/04-protocol.md#the-v1-entry-point)
+// The v1 entry point.
+// [reference/04-protocol.md#the-v1-entry-point](../../docs/reference/04-protocol.md#the-v1-entry-point)
 export { ERROR_CODES, PromptobusError } from './errors.js';
 export type { ErrorCode, ErrorContext } from './errors.js';
 export {

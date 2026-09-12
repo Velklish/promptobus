@@ -1,5 +1,5 @@
-// State kept beside the task journal — health, wake, stalls.
-// What each file holds and who writes it: [reference/01-overview.md#the-sidecar-state-beside-the-journal](../docs/reference/01-overview.md#the-sidecar-state-beside-the-journal)
+// The sidecar: state beside the journal.
+// [reference/01-overview.md#the-sidecar-state-beside-the-journal](../docs/reference/01-overview.md#the-sidecar-state-beside-the-journal)
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

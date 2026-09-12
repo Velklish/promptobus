@@ -1,5 +1,5 @@
-// The store lock: what a holder may assume and what it must not.
-// The guarantees and their limits: [reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot](../../docs/reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot)
+// The lock: what it guards and what it cannot.
+// [reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot](../../docs/reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot)
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

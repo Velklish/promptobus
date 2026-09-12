@@ -803,9 +803,9 @@ CLOSED, which is the mechanism that keeps a token off disk: the writer projects
 a verdict onto the declared fields, and anything an adapter added beside them
 never reaches the file.
 
-### `availabilityOf` — promptobus models — what the resolver would pick right now
+### `promptobus models` — what the resolver would pick right now
 
-Source: `lib/models.js`, `availabilityOf`.
+Source: `lib/models.js`, the `models` command.
 
 `promptobus models` — what the resolver would pick right now.
 
@@ -814,6 +814,9 @@ question a person types, and a question that starts three harness binaries
 and waits out the preflight budget is not one. `--refresh` is therefore also
 the only thing that writes a cache entry here.
 
+### `availabilityOf` — the decision with the availability facts it was made on attached
+
+Source: `lib/models.js`, `availabilityOf`.
 
 The decision with the availability facts it was made on attached (ADR-004).
 

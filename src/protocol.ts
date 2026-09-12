@@ -1,5 +1,5 @@
-// Addresses: spelling, transliteration and the refusals.
-// The rules and why a table rather than a library: [reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals](../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals)
+// Addresses: the spelling, the transliteration and the refusals.
+// [reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals](../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals)
 import path from 'node:path';
 
 // Protocol v1 message types. **The value lives here**, and that is not a convenience:
@@ -312,7 +312,7 @@ function norm(v: string | null | undefined): string {
 }
 
 /** Whether these are the same session identifier — a FALLBACK for records with no full id.
- * Why prefix, and what it must not be used for: [reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records](../docs/reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records) */
+ * [reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records](../docs/reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records) */
 export function sameSession(a: string | null | undefined, b: string | null | undefined): boolean {
   const x = norm(a);
   const y = norm(b);

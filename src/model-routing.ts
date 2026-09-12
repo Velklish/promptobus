@@ -1,5 +1,5 @@
-// The routing contract: verdicts, snapshots, decisions — the shapes both halves agree on.
-// What each field means: [guides/model-routing.md#the-routing-contract-types](../docs/guides/model-routing.md#the-routing-contract-types)
+// The routing contract types.
+// [guides/model-routing.md#the-routing-contract-types](../docs/guides/model-routing.md#the-routing-contract-types)
 import type { HostToolBin, PromptobusHost } from './host.js';
 
 /**
@@ -15,7 +15,7 @@ export const AVAILABILITY_STATES = ['available', 'exhausted', 'unavailable', 'un
 export type AvailabilityState = (typeof AVAILABILITY_STATES)[number];
 
 /**
- * Stable reason codes. The list is fixed and is written once in prose, in
+ * The routing contract types.
  * `[guides/model-routing.md#the-routing-contract-types](../docs/guides/model-routing.md#the-routing-contract-types)`; the same eight are the `reason` enum of the snapshot
  * schema, and the suite compares the two lists rather than trusting them.
  *

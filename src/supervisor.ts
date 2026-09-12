@@ -1,5 +1,5 @@
-// The warden state machine: rounds, knock-retry thresholds, unread health, escalation.
-// What is a decision here and what belongs to a driver: [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
+// The warden state machine: what is here and what is not.
+// [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
 import {
   beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readWake, writeHealth, writeStalls,
 } from './sidecar.js';
@@ -97,7 +97,7 @@ function lastActivation(home: string, task: string, participant: ParticipantV1 |
 }
 
 /** Whether a dialog mark is a real prompt or the bus's own postcard held behind it.
- * Which two marks have to agree, and why neither alone lifts the stall: [guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at](../docs/guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at) */
+ * [guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at](../docs/guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at) */
 function promptStands(home: string, task: string, participant: ParticipantV1 | null | undefined): boolean {
   const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
   if (turn === null) return true;
@@ -137,7 +137,7 @@ export function liveParticipant(participant: ParticipantV1 | null | undefined, s
 }
 
 /** Whether this is a stall for real: a SILENT end of turn, and `permission` has a check
- * of its own. What the three callers share and why: [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
+ * [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
 export function stallStands(home: string, task: string, participant: ParticipantV1 | null | undefined, stall: SessionStall | null | undefined): boolean {
   if (!home || !task) throw new Error('stallStands: home and task are required — the predicate reads the task store');
   if (!stall) return false;
@@ -153,13 +153,13 @@ export function stallStands(home: string, task: string, participant: Participant
     return true;
   }
 /** When a participant was last activated, and which marks count as activation.
- * Why an attempt does not: [guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already](../docs/guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already) */
+ * [guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already](../docs/guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already) */
   if (sent === null) return !justSpawned(participant);
   return sent < since;
 }
 
 /** The address's contact point is held by a FOREIGN session, or null.
- * Why this is not malice and what the knock does instead: [guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if](../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if) */
+ * [guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if](../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if) */
 export function wakeTakenBy(home: string, task: string, p: ParticipantV1 | null | undefined, endpoint?: Wake | null): string | null {
   const addr = addressOf(p);
   if (!addr) return null;
@@ -183,7 +183,7 @@ function heldBy(p: ParticipantV1 | null | undefined): string {
 }
 
 /** Whether the participant's session is busy with a turn.
- * Why there are two branches and not one: [guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn](../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn) */
+ * [guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn](../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn) */
 export function sessionBusy(home: string, task: string, participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): boolean {
   // The branch is chosen by the KIND of participant, not by whether their
   // session was found in the snapshot: the snapshot yields emptiness for an

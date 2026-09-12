@@ -26,8 +26,8 @@ export type Warn = (msg: string) => void;
 
 const SILENT: Warn = () => {};
 
-// Bus store v0.61.0 — a maildir store, no longer the production one.
-// Who still reads it and why it is kept: [reference/01-overview.md#seq--bus-store-v0610--a-maildir-store-of-a-task](../docs/reference/01-overview.md#seq--bus-store-v0610--a-maildir-store-of-a-task)
+// Bus store v0.61.0 — a maildir store of a task.
+// [reference/01-overview.md#seq--bus-store-v0610--a-maildir-store-of-a-task](../docs/reference/01-overview.md#seq--bus-store-v0610--a-maildir-store-of-a-task)
 
 let seq = 0;
 // Temporary-name counter of its own: the `seq` number goes into the file name and keeps send order.

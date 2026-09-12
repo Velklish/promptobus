@@ -1,5 +1,5 @@
-// Where a v1 store puts things on disk, as pure path arithmetic.
-// The layout: [reference/04-protocol.md#where-a-v1-store-puts-things-on-disk](../../docs/reference/04-protocol.md#where-a-v1-store-puts-things-on-disk)
+// Where a v1 store puts things on disk.
+// [reference/04-protocol.md#where-a-v1-store-puts-things-on-disk](../../docs/reference/04-protocol.md#where-a-v1-store-puts-things-on-disk)
 import path from 'node:path';
 import { fail } from './errors.js';
 import { PARTICIPANT_ID_RE, RECORD_ID_RE, TASK_ID_RE } from './model.js';

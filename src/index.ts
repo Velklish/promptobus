@@ -1,5 +1,5 @@
-// Package entry point: what `promptobus` exports and what stays inside.
-// The surface: [reference/01-overview.md#the-package-entry-point](../docs/reference/01-overview.md#the-package-entry-point)
+// The package entry point.
+// [reference/01-overview.md#the-package-entry-point](../docs/reference/01-overview.md#the-package-entry-point)
 
 /** Protocol and store version this build understands. */
 export const PROTOCOL_VERSION = 1;

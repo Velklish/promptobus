@@ -1,5 +1,5 @@
-// Typed protocol errors: a published vocabulary a consumer can branch on.
-// Which codes exist and what each means: [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)
+// Typed protocol errors.
+// [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)
 
 /**
  * Refusal-code list. A constant, not in-place strings: the consumer branches
@@ -36,7 +36,7 @@ export const ERROR_CODES = [
   // model routing. The adapter raises these, not the core: the codes belong to
   // the CLI surface ADR-003 fixed, and they live here because the consumer
   // branches on a code from one list — a second list beside this one would be
-  // a second vocabulary for the same kind of refusal. Their prose half is the
+  // Typed protocol errors.
   // error-code table of `[reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)`, and the suite reads the two
   // as one list.
   'strategy-unknown',

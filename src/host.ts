@@ -1,5 +1,5 @@
-// The `PromptobusHost` contract: what a consumer must answer for the package to work.
-// Member by member: [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
+// The host contract, in one sentence per member.
+// [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
 
@@ -89,7 +89,7 @@ export interface HostToolBin {
    */
   bin?: string;
   /** The binary's own version string as the host read it, raw.
-   * Why absence means UNREAD rather than none: [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
+   * [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
   version?: string;
   note?: string;
   warn?: string;
@@ -123,12 +123,12 @@ export interface HostRoutingOverlay {
   id: string;
   path: string;
   /** Whether this is the layer the TOOL writes (ADR-004, decision 6).
-   * Who carries it and what reading it promises: [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
+   * [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member) */
   writable?: boolean;
 }
 
-  /** Which layer the tool may write, and what reading it promises.
-   * [reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files](../docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files) */
+/** Where model routing keeps its files.
+ * [reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files](../docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files) */
 export interface HostRoutingPaths {
   cacheFile: string;
   overlays: HostRoutingOverlay[];
@@ -151,7 +151,7 @@ export interface PromptobusHost {
    */
   routingPaths(): HostRoutingPaths;
   /** What a host answers about its routing layers.
-   * The contract and its order: [reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the](../docs/reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the) */
+   * [reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the](../docs/reference/02-host.md#harnessstatehome--where-the-package-keeps-its-own-session-registry-for-one-harness--the) */
   harnessStateHome(harness: string): string | null;
 
   nodePath(): string;

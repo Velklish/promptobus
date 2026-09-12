@@ -1,5 +1,5 @@
-// The MCP service behind the three bus tools: what each call reads, writes and answers.
-// The contract and its refusals: [reference/01-overview.md#the-mcp-service-what-the-three-tools-do](../../docs/reference/01-overview.md#the-mcp-service-what-the-three-tools-do)
+// The MCP service: what the three tools do.
+// [reference/01-overview.md#the-mcp-service-what-the-three-tools-do](../../docs/reference/01-overview.md#the-mcp-service-what-the-three-tools-do)
 import type { Ownership } from '../protocol.js';
 import type { ArtifactV1, MessageV1, TaskV1 } from '../v1/model.js';
 
