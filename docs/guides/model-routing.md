@@ -195,3 +195,307 @@ The same checks are a library call in `lib/model-routing/validate.js`, so a cons
 | `validateLayers({ canonical, overlays, constraints, now })` | documents already in memory: `canonical` is `{ data }`, each overlay `{ id, path, present, data }`. Pure — no filesystem, no clock beyond `now` |
 
 Production reads no JSON Schema — the grammar is written out in that file, and a parity check against the schemas keeps the two descriptions one grammar.
+
+## Adapters, telemetry and calibrate: what each file does and what was measured
+
+Moved here from the file headers in `lib/model-routing/`. Each subsection is the whole of what stood above the code; the files now carry a two-line pointer to it.
+
+### Claude Code adapter: what the probe reads
+
+Source: `lib/model-routing/adapter-claude.js`.
+
+Claude Code availability adapter: what the account can do with the `claude`
+binary on this machine, right now. The verdict shape and the rules it answers
+under are the contract ([model-routing.ts](../../src/model-routing.ts)); this
+file is only the harness half of it.
+
+The whole probe is TWO reads and no turn. Binary and version come from the host
+(`resolveToolBin`) — ADR-003 says an adapter reports `binary_missing` from its
+verdict rather than searching `PATH` itself — and auth comes from `claude auth
+status --json`, the one non-interactive check the binary offers today.
+Measured 2026-09-05 on `claude` 2.1.251: three runs, 0.86 / 1.17 / 1.36 s wall,
+exit 0, a JSON object whose `loggedIn` boolean is what is read below.
+
+**The auth check is spawned asynchronously, and that is not a style choice.**
+The preflight runs the adapters together and holds ONE budget beside them, as a
+timer racing their promises. A `spawnSync` here would block the event loop for
+its whole run, so that timer could not fire while this adapter worked and each
+blocking adapter would get the full budget again after its neighbours — the
+ceiling of the run would become their sum, which is the opposite of what
+`timeoutMs` promises. So: `spawn`, a deadline taken as the first line of the
+probe, and a kill of our own when it passes. The suite watches this with a
+check that a timer scheduled beside the probe still fires while it runs.
+
+**Nothing here runs `claude` with a bare word.** An unrecognised word after the
+binary name is not an unknown subcommand — it is taken as a PROMPT, and a probe
+that guessed at one would start a paid turn on the person's plan. So the argv is
+a subcommand `claude --help` lists with flags `claude auth status --help` lists,
+and a probe that wants a new fact reads those helps first.
+
+**The inventory is not a listing.** The binary publishes no model list at all:
+no `models` subcommand and no `--list-models` (measured 2026-09-05 by the
+catalog track on the same build). The only names it publishes are the `--model`
+aliases in its help text, so the inventory reported here is the driver's own
+alias set, handed in by the driver — which owns it next to the default model it
+lifts participants on. That is why the models arrive as an argument instead of
+being imported: the driver is private to the registry, and a module of the
+mechanism reaching into it is exactly the crossing the boundary gate refuses
+([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)).
+
+**Where the tier and the windows come from, measured 2026-09-06 on 2.1.251.**
+ADR-003 recorded an assumption — this harness exposes no remaining limit — and
+[ADR-004](../adr/adr-004-subscription-balance.md) supersedes it: the
+source Claude Code's own `/usage` command reads is reachable with the
+credentials the CLI already holds, and costs no turn.
+
+  • **the tier is offline.** The credential record — a keychain generic
+    password on macOS, `~/.claude/.credentials.json` elsewhere — carries
+    `rateLimitTier` beside the token, so `{ name, source: 'credentials' }` needs
+    no request at all. `/api/oauth/profile` is asked for it ONLY when the record
+    names none, and then the source is `probe`;
+  • **the windows are one GET.** `/api/oauth/usage` answers `limits[]`, whose
+    rows are `session`, `weekly_all` and `weekly_scoped` — the last one a
+    per-model weekly row that names its model by DISPLAY name. The lengths are
+    the kinds' own (five hours, seven days) and `percent` is the used share.
+
+So `available` is reachable now, and the word keeps its meaning: auth, model AND
+limit confirmed. A logged-in account whose limit could not be read is still
+`unknown` / `quota_unknown`, which the resolver penalises by ten points instead
+of dropping the harness.
+
+**The token is read, used once as a header, and never written or refreshed.**
+`refreshToken` is not even parsed out of the record — `credentialRecord` below
+picks three fields and no more — and a token past its `expiresAt` answers
+`quota_unknown` with the tier still
+reported — never a refresh, because refreshing rotates the person's credentials
+under Claude Code's feet. Nothing token-shaped reaches a verdict, a message or
+the cache.
+
+**The keychain read and the HTTP call arrive as parameters**, the way the Codex
+adapter takes its launch context: `claudeAvailability` defaults them to the live
+implementations, and the suite hands in its own — so no test touches the network
+or the person's keychain, and the seam is the same one the binaries already use.
+
+What of the auth answer reaches the verdict is ONE boolean. The same JSON also
+carries an email address, an organisation id and its name, and none of them may
+travel: `message` is the only free-text field that reaches disk, and the cache
+promises to hold no email and no open account id.
+
+### Cursor adapter: what the probe reads
+
+Source: `lib/model-routing/adapter-cursor.js`.
+
+Cursor availability adapter: what the locally logged-in Cursor account can do
+right now. The driver ([driver-cursor.js](../../lib/driver-cursor.js)) declares it as
+`availability`, the preflight ([preflight.js](../../lib/model-routing/preflight.js)) runs it, and the
+verdict it answers is one harness entry of the availability snapshot.
+
+Two binary calls and nothing else: `status` for auth, `models` for the
+inventory. Neither starts a session, neither writes, and neither touches the
+availability cache — the cache is read and written around this module.
+Everything about a RUNNING Cursor participant — the tmux pane, `persist`, the
+transcript — lives one floor below in [cursor-persist.js](../../lib/cursor-persist.js)
+and is none of this file's business: an adapter answers about the ACCOUNT,
+before any session exists.
+
+**The quota source is not the binary — it is the dashboard's own call.** The
+binary names no limit, and ADR-003 recorded that as "Cursor exposes none".
+[ADR-004](../adr/adr-004-subscription-balance.md) supersedes the
+assumption on a spike of 2026-09-06: `POST <backendUrl>/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
+answers the account's billing cycle with the CLI's own token, and costs no turn.
+So a successful probe is `available` now — auth, model AND limit confirmed — and
+every path where the limit could not be read is still `unknown` /
+`quota_unknown`, which the resolver penalises rather than blocks.
+
+**One cycle, two pools, and that is the shape the harness has.** The answer
+carries ONE window — `billingCycleStart` to `billingCycleEnd` — and two
+percentages inside it: `autoPercentUsed` for Cursor's own models, which the
+answer lists in `autoBucketModels`, and `apiPercentUsed` for named third-party
+models. ADR-004 writes that as two windows of the same length with a pool
+scope each: the `auto` pool names the ids it covers, and the `api` pool names
+none because it is the complement and a list of everything else is not a fact
+any harness stated.
+
+**`autoBucketModels` is not the only place Cursor says which pool a model is
+billed to, and it is not the current one.** Measured on the owner's account on
+2026-09-06: one turn on `cursor-grok-4.6-medium` moved `autoPercentUsed` and
+not `apiPercentUsed`, while the bucket list named `grok-4.5` and no `grok-4.6`
+before or after. `POST <backendUrl>/aiserver.v1.DashboardService/GetAggregatedUsageEvents`
+states the same thing per model — `tier: 2` is the Auto bucket, `tier: 1` the
+api pool — for every model with an event this cycle, so the `auto` scope is the
+UNION of the two, and a model with neither a row nor a bucket entry stays in
+`api`. That third call is optional in the way the policy call is: without it
+the bucket list is the whole answer, which is what this adapter did before —
+though a live hang on it drains the shared budget and costs the policy call's
+note as well.
+
+**The token is read and never written.** `cursor-access-token` in the keychain
+FIRST — that is the credential the spike measured this call answering — and
+`CURSOR_API_KEY` in the environment only as a fallback, because nothing
+measured says DashboardService accepts an API key at all. Which of the two was
+used travels with the token, and it decides what a refusal means.
+`cursor-refresh-token` is never asked for. `~/.cursor/cli-config.json` is read for ONE field, the backend URL — the
+same file carries the account's address and ids, and nothing here parses them.
+The token reaches one `Authorization` header and no verdict, message or cache
+file.
+
+**The keychain read and the POSTs arrive as parameters**, the way the Codex
+adapter takes its launch context: `cursorAvailability` defaults them to the live
+implementations, and the suite hands in its own, so no test touches the network
+or the person's keychain.
+
+Both commands print ANSI colour even when stdout is not a terminal (measured
+2026-09-05 on `cursor-agent` 2026.09.02-c22c1a3), so everything is stripped
+before it is looked at.
+
+**Nothing read here reaches `message`.** `status` prints the account address
+on success; the adapter counts and classifies, and writes its own diagnosis.
+The verdict `message` is the only free-text field that reaches the cache file.
+
+### Codex adapter: what the probe reads
+
+Source: `lib/model-routing/adapter-codex.js`.
+
+Codex availability adapter: what the account can do with `codex` right now,
+answered from a fresh `codex app-server --stdio` that is closed again without a
+thread and without a turn.
+
+**Why a second gate at all.** The start path in [codex-session.js](../../lib/codex-session.js)
+already refuses a lift on a spent limit, but it refuses INSIDE the lift, after
+the holder process, the socket and the thread are being set up. The resolver
+needs the same fact BEFORE it picks a harness, and it must be able to ask about
+three harnesses at once for less than the price of one lift. So the two gates
+stay two, and what they share is the reading of the protocol
+(`rateLimitReached`, `listedModels`), not a copy of it.
+
+**Where the limit comes from, measured on codex-cli 0.146.0.** The
+`account/rateLimits/updated` notification the start path waits for does NOT
+arrive after `initialize` alone — waits of 10 s and 30 s on a live account saw
+only `remoteControl/status/changed`. It is a request that answers:
+`account/rateLimits/read` is in the binary's own method list and replies at once
+with the same snapshot. So the request is the source, and the bounded wait for
+the notification stays as the path for a binary that does not have the method —
+the shape the brief for this task described, kept where it still applies.
+
+**Two neighbouring methods this file must never call.** `getAuthStatus` answers
+`{ authMethod, authToken, requiresOpenaiAuth }` — it would be a crisper auth
+signal and it hands back a TOKEN, and this module's `message` is the one free
+text that reaches disk. `account/read` answers the account E-MAIL beside the
+plan. The verdict is built from limits and model names, and neither of those
+two is asked.
+
+**That rule survived PB-28, and it is why the tier is read where it is.** The
+task's text names `account/read` as the source of `planType` — but the same
+field is already inside the answer to `account/rateLimits/read`, which this
+probe makes anyway (measured on codex-cli 0.146.0, and the spike document has
+the shape). So the tier is taken from the call already being made, and the call
+that would hand over an address is still not made at all: one fewer request,
+one fewer thing that could put an identity in front of a module whose whole job
+is to keep one off the disk. A snapshot that names no `planType` reports no
+tier, which is what "the harness names no plan" means.
+
+**Stderr is not a channel here.** app-server writes
+`ERROR codex_models_manager::cache: failed to load models cache: missing field
+'base_instructions'` on a perfectly good run, so a probe that read stderr as a
+verdict would call a working account broken. The child gets no stderr pipe at
+all: what is not connected cannot be misread.
+
+### Participant telemetry: the collecting half
+
+Source: `lib/model-routing/telemetry.js`.
+
+Participant telemetry: one JSON Lines record per routed participant, appended
+when `promptobus done` closes the task.
+
+**What it is for.** The catalog's ratings come from published benchmarks, and
+two frontier models a point apart on one leaderboard share a band; nothing in
+the tool learns from what actually happens on this machine. This file is the
+collecting half — a record that ties together what the bus already knows about
+one participant when its run is over: the tuple it was routed to, the strategy
+that chose it, how long it lived, any harness-reported output throughput, how
+many review rounds it took, and how much of the account's own limit windows
+moved while it worked. The READING half — a finer scale, absolute bands,
+`models calibrate` — is not here: nothing in this file scores, compares or
+proposes anything.
+
+**This file is the second disk boundary of routing, and it obeys the first
+one's rules** ([cache.js](../../lib/model-routing/cache.js)). It writes into the same account-scoped
+directory, mode `0600`, and it PROJECTS field by field onto a closed shape
+(`schemas/model-routing/telemetry.schema.json`) rather than spreading anything
+it was handed. That matters more here than in the cache: the source is not an
+adapter's verdict but a participant record and a task journal, and those hold
+a repository path, a worktree, a session ref, a branch name and every message
+body of the run. None of them is a field below, and a record carrying one
+stops validating.
+
+The only identifier is `task`: an opaque local key, not the id. It exists so
+PB-37 can tell records of one run from records of another, and the slug a
+person typed does not travel. It is a truncated SHA-256 with no salt — stable
+across installs of one account, which is what makes the grouping work, and
+therefore NOT a claim that the id cannot be guessed back: a task id is short
+and low-entropy, and anyone holding both the file and the workspace could
+match one against the other. The claim is the narrow one — the id is not IN
+the file — and the file is the account's, mode 0600, exactly as the cache is.
+
+**Written at `done`, and not at `dismiss`.** A dismissal is not the end of a
+participant: `dismiss` says out loud that a new assignment to the same address
+puts it back under watch, so a record per dismissal would put several rows on
+one participant's run with nothing to merge them by — and the file is
+append-only, read by PB-37 as one row per participant run. `done` is the one
+moment a run is over for good, and `dismissedBeforeDone` carries the dismissal
+into that single row.
+
+**No lock, unlike the cache.** The cache write is a read-merge-write and loses
+a neighbour's entries without one; this is an append of whole lines, which is
+what JSON Lines is for. Two `done` calls at once interleave records and lose
+nothing.
+
+### Calibrate: reading the telemetry back
+
+Source: `lib/model-routing/calibrate.js`.
+
+Reading the telemetry back: local runs against the shipped catalog, as a
+PROPOSAL for the user overlay and never as a write of its own.
+
+[telemetry.js](../../lib/model-routing/telemetry.js) is the collecting half and says so in its own
+header — "the READING half … is PB-37 and is not here". This is that half, and
+it is the same shape of file: pure, no disk, no clock, no host. Records in, a
+report out. `lib/models.js` reads the file, hands the rows over, prints what
+comes back and — only after a person agrees — merges the `ratings` block.
+
+Three rules shape it, all of them ADR-005's.
+
+**The key is `(harness, model, effort)`, never `tuple`.** A lift with an
+explicit `--model` carries no routing decision, so its record has
+`tuple: null` — 18 of the 21 records the owner's own file held. Grouping by
+tuple would silently drop the majority of a person's evidence and then report
+a confident median over the rest. The catalog row is found FROM the key
+afterwards, which is also where a Claude alias is resolved: `opus` and
+`claude-opus-5` are one key, because the driver's dictionary says they are.
+
+**The catalog is the anchor, not the local extremes.** ADR-005 decision 6
+rejected mapping the local minimum and maximum onto 1 and 10 (option 6A): with
+two eligible models they become opposite extremes however close their
+measurements, which is the relative-field defect the catalog itself just shed.
+Instead the most-observed model is the speed PIVOT and keeps its catalog band;
+every other model moves from the catalog band by a step, and the same proposal
+is applied to every effort rung. Quota cost keeps its per-rung pivot.
+
+**"Catalog" here means the SHIPPED catalog, never the merged stack**, and the
+difference is the whole reason `tuples` and `overlayTuples` are two arguments.
+Comparing against the merged bands would make a person's own override the
+base of the next comparison: run `--write`, run `calibrate` again on the same
+records, and the rating walks another step — up to two bands a run, drifting
+until it reaches whatever the measured ratio implies, with nothing new
+measured in between. It would also make the printed "catalog N" and the
+"only what moved" filter both read the override rather than the catalog,
+which is not what the ADR, the reference or the glossary say the command
+does. So the proposal is always a step away from the shipped band, running it
+twice on one file proposes the same thing twice, and an existing override is
+PRINTED beside the catalog band rather than standing in for it.
+
+**A measurement that is not there omits its rating and says why.** Never a
+zero, never a guess: a proposed band is a line a person is about to paste into
+their own overlay, and one derived from a missing denominator would be
+indistinguishable from one derived from five runs.
+
