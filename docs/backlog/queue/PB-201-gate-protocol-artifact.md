@@ -40,5 +40,7 @@ What is missing is the record itself: there is no schema for a gate result, and 
 
 - A worker that ran gates attaches the record; a reviewer session, with its usual deny list, reads it and quotes the exit code back. Live run, not a fixture.
 - Mutation probe on the comparison: a record whose tree sha does not match the reviewed tree is reported by the reviewer as not-evidence; with matching sha the same record passes. Both directions, or the check proves nothing.
-- A record claiming exit code 0 for a tree whose tests actually fail is caught by the sha comparison, not by trust — demonstrate on a stand.
+- A record whose sha does not match the reviewed tree is reported as not-evidence about that tree — demonstrate on a stand, both directions.
+
+**Correction 2026-09-12, during the work.** This section first claimed that "a record claiming exit code 0 for a tree whose tests actually fail is caught by the sha comparison, not by trust". It is not, and the card must not promise it: an author can write `exit: 0` beside the correct sha having run nothing at all. What the record does is carry the claim into machine form and bind it to one tree; what catches a forged claim is a re-run on the same sha by someone allowed to run, and neither the record nor the reviewer is that someone. The limit is stated in the protocol reference, in the reviewer preamble — so it is read where the claim is read — and a test asserts the preamble still carries it.
 - The reviewer's permissions are unchanged: the deny list in its settings file is byte-identical before and after.
