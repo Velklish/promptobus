@@ -74,6 +74,60 @@ test('an anchor written in a code comment names a heading that exists', () => {
   assert.deepEqual(broken, [], 'anchors in code comments that name no heading');
 });
 
+/** The symbol a pointer stands above: the first declaration after the comment block. */
+export function symbolUnder(lines, from) {
+  let j = from;
+  while (j < lines.length && COMMENT.test(lines[j])) j++;
+  while (j < lines.length && !lines[j].trim()) j++;
+  const m = (lines[j] ?? '').match(
+    /^\s*(?:export\s+)?(?:async\s+)?(?:function|const|class|type|interface|let)\s+([A-Za-z0-9_]+)|^\s*([A-Za-z0-9_]+)\s*[(:]/,
+  );
+  return m ? (m[1] ?? m[2]) : null;
+}
+
+/** Sections keyed by anchor, each carrying the file and symbol its `Source:` line names. */
+export function sectionsOf(markdown) {
+  const lines = markdown.split('\n');
+  const out = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(/^#{2,3}\s+(.*)$/);
+    if (!h) continue;
+    const s = (lines[i + 2] ?? '').match(/^Source: `([^`]+)`(?:, `([^`]+)`)?\./);
+    if (s) out.set(slugOf(h[1]), { file: s[1], symbol: s[2] ?? null });
+  }
+  return out;
+}
+
+test('a pointer stands above the symbol its section names', () => {
+  // The guard finding 2 was missing. The relocation kept every block where it belonged;
+  // what drifted was the claim about WHICH symbol it documents, and nothing checked that.
+  const wrong = [];
+  let checked = 0;
+  const docs = new Map();
+  for (const rel of tracked) {
+    const lines = readFileSync(path.join(ROOT, rel), 'utf8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/\]\(([^)]+\.md)#([a-z0-9_-]+)\)/);
+      if (!m || !COMMENT.test(lines[i])) continue;
+      const abs = path.resolve(ROOT, path.dirname(rel), m[1]);
+      if (!existsSync(abs)) continue;
+      if (!docs.has(abs)) docs.set(abs, sectionsOf(readFileSync(abs, 'utf8')));
+      const section = docs.get(abs).get(m[2]);
+      if (!section?.symbol) continue;
+      checked++;
+      let top = i;
+      while (top > 0 && COMMENT.test(lines[top - 1])) top--;
+      const under = symbolUnder(lines, top);
+      // A file-level pointer stands above an import, not a symbol: it claims nothing.
+      if (under && under !== section.symbol) {
+        wrong.push(`${rel}:${i + 1} points at \`${section.symbol}\` but stands above \`${under}\``);
+      }
+    }
+  }
+  assert.ok(checked > 30, `only ${checked} symbol-bearing pointers were checked — the walk is not reaching them`);
+  assert.deepEqual(wrong, [], 'pointers whose section names a different symbol than they stand above');
+});
+
 test('the walk sees a link and an anchor, and ignores prose that is not a comment', () => {
   // The positive half: without it, a walk that matched nothing would satisfy the checks.
   const sample = '// see [a](../docs/x.md#b)\nconst s = "[c](../docs/y.md#d)";\n/* [e](z.md) */\n';

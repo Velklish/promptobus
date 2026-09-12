@@ -57,7 +57,7 @@ interface HostFile {
    * keep in git, never a shell line. Read by `spawn` from the SPAWNED
    * REPOSITORY's own `promptobus.json` by path — the standalone host does not
    * answer it for the workspace, and no host method exists for it, because a
-   * The standalone host.
+   * generator belongs to the repository and a host describes a workspace
    * (`GENERATOR_FIELD` in `lib/spawn.js`; [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) § Spawn).
    */
   generate?: string[];
@@ -294,7 +294,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     // timer that caps the whole probe. Paying that on every resolve to fill a
     // field nothing refuses on is the wrong trade for the host that ships with
     // the package.
-    // The standalone host.
+    //
     // The consequence is named in [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) and in
     // `HostToolBin.version`: under this host the `ultracode` refusal never
     // refuses, the two proven-version warnings never warn, and an availability

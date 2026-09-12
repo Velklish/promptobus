@@ -36,7 +36,7 @@ export const ERROR_CODES = [
   // model routing. The adapter raises these, not the core: the codes belong to
   // the CLI surface ADR-003 fixed, and they live here because the consumer
   // branches on a code from one list — a second list beside this one would be
-  // Typed protocol errors.
+  // a second vocabulary for the same kind of refusal. Their prose half is the
   // error-code table of `[reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)`, and the suite reads the two
   // as one list.
   'strategy-unknown',
