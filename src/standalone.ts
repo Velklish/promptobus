@@ -58,7 +58,7 @@ interface HostFile {
    * REPOSITORY's own `promptobus.json` by path — the standalone host does not
    * answer it for the workspace, and no host method exists for it, because a
    * generator belongs to the repository and a host describes a workspace
-   * (`GENERATOR_FIELD` in `lib/spawn.js`; [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) § Spawn).
+   * (`GENERATOR_FIELD` in `lib/spawn.js`; [reference/03-cli.md#spawn](../docs/reference/03-cli.md#spawn)).
    */
   generate?: string[];
 }

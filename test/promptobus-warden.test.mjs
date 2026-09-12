@@ -2060,6 +2060,17 @@ check('PB-168: self-wake fields left by an earlier channel do not print under pu
       .split('\n').find((l) => l.includes('worker:pull')) ?? ''),
   pullLine);
 
+// A value nobody validates reaching a line an operator reads — PB-176's shape in another
+// field. `selfWake` comes from the warden's own closed set, so this is a corrupted or
+// hand-edited health record; a PROTOTYPE key is the one that answers truthy from nowhere.
+store.upsertParticipant(HOME, PROG, store.participantRecord('worker:proto', { name: 'proto' }));
+store.writeHealth(HOME, PROG, { ...progHealth, 'worker:proto': { channel: 'self-wake', selfWake: 'toString' } });
+const protoLine = (capture(() => status(SB, { task: PROG, sessions: snap(PROG, []) })))
+  .split('\n').find((l) => l.includes('worker:proto')) ?? '';
+check('a selfWake naming a prototype key prints no function body, and falls back like an unset one',
+  !/native code|=>|\[object /.test(protoLine) && /starting up; clears on the first knock/.test(protoLine),
+  protoLine);
+
 check('PB-168: every one of the five rows prints a self-wake line at all',
   progAlarms.every((a) => a.startsWith('alarm: self-wake')), JSON.stringify(progAlarms));
 const progCores = PROG_STATES.slice(0, 3).map(([addr]) => alarmCore(addr));

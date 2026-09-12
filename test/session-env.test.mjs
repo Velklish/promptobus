@@ -31,7 +31,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const lib = (name) => import(path.join(here, '..', 'lib', name));
 
 const { PARENT_SESSION_ENV } = await lib('session-env.js');
-const { sessionIdentity } = await lib('store.js');
+const { bindSessionIdentity, sessionIdentity } = await lib('store.js');
+// Without this the core is UNBOUND and answers `null` for every environment, so the
+// identity assertion below would hold with the drop reverted. See the positive control.
+bindSessionIdentity((await lib('drivers.js')).resolveSessionIdentity);
 const drivers = {
   claude: (await lib('driver-claude.js')).claudeDriver,
   codex: (await lib('driver-codex.js')).codexDriver,
@@ -45,9 +48,11 @@ const PARENT = Object.fromEntries([
   ['PATH', '/usr/bin'], ['HOME', '/home/parent'], ['PROMPTOBUS_HOME', '/home/parent/.promptobus'],
 ]);
 
+// A name still PRESENT counts as survived whatever its value: comparing to the parent's
+// value would let a mutation that overwrites instead of deleting pass both checks here.
 const survivors = (driver) => {
   const out = driver.sessionEnv(PARENT, {});
-  return PARENT_SESSION_ENV.filter((name) => out[name] === PARENT[name]);
+  return PARENT_SESSION_ENV.filter((name) => out[name] !== undefined);
 };
 
 function pinsDropAndOrder(name) {
@@ -87,4 +92,12 @@ test('the shared list still names the parent identity and messaging variables', 
   assert.ok(PARENT_SESSION_ENV.length >= 12, `the shared list shrank to ${PARENT_SESSION_ENV.length}`);
   assert.ok(survivors(drivers.claude).length === 0 && Object.keys(PARENT).length > PARENT_SESSION_ENV.length,
     'the parent fixture must carry more than the list, or "nothing survived" proves nothing');
+});
+
+// Positive control for the identity assertion above. An unbound core answers `null` for
+// everything, so without this the three checks would hold with the drop lists emptied.
+test('the identity reader used above can answer, so its null means the drop and not an unbound core', () => {
+  assert.equal(sessionIdentity({ CLAUDE_CODE_SESSION_ID: 'x' }), 'x',
+    'sessionIdentity() answered null for an environment that names a session — the registry is not bound, '
+    + 'and every `null` asserted in this file proves nothing');
 });

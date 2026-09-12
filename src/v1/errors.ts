@@ -1,5 +1,5 @@
 // Typed protocol errors.
-// [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors)
+// [reference/03-cli.md#error-codes](../../docs/reference/03-cli.md#error-codes)
 
 /**
  * Refusal-code list. A constant, not in-place strings: the consumer branches
