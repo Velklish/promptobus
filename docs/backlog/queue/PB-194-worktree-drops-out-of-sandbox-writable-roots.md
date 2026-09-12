@@ -1,4 +1,4 @@
-# PB-194 · The participant shell worktree is closed; escalated commands and Git metadata are open
+# PB-194 · The participant shell worktree is closed; escalated exec_command is the measured write route
 
 - **Order:** 10
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
@@ -13,9 +13,10 @@ from a probe run inside that participant at the time of refusal.
 
 The measured contract is different and narrower: for two independent participants on
 codex-cli 0.146.0, the participant's ordinary shell worktree is closed at every measured attempt;
-`$TMPDIR` and `/tmp` remain writable, Git metadata is writable through the linked worktree
-metadata, and worktree file edits pass only through an explicitly escalated command. This is a
-two-participant, one-binary measurement, not a claim about every Codex version or every sandbox.
+the ordinary Git metadata probe below also failed at the linked worktree's `index.lock`.
+`$TMPDIR` and `/tmp` remain writable, and both worktree and metadata writes pass only through an
+explicitly escalated command. This is a two-participant, one-binary measurement, not a claim about
+every Codex version or every sandbox.
 
 For the participant tied to the earlier mid-session report, the session started at 09:15, an active
 turn ran at 15:59, and the probe was taken at 16:11. No writable-root probe was taken at either the
@@ -44,39 +45,27 @@ rc=1, and an un-escalated `git apply` reported Operation not permitted while unl
 writing files. No direct-shell worktree write succeeded in either participant measurement. The
 successful edits in both were made only through the escalated command route described below.
 
-## Passing route and Git metadata
+## Measured routes and Git metadata
 
-The passing worktree route was confirmed independently for both participants as
-`exec_command` with `sandbox_permissions=require_escalated` and an explicit justification. The
-holder approval for that route is `item/commandExecution/requestApproval`; an independent generated
-`git apply` through it exited 0. The route is therefore measured twice, while the ordinary shell
-route is measured as closed twice. This does not establish that every participant or binary version
-has the same route.
+The three relevant routes are method-specific:
 
-`apply_patch` was not a passing route in either participant: the first holder refused
-`item/fileChange/requestApproval` because it carried no path, and the second harness returned
-`patch rejected by user` without applying a file. The older `applyPatchApproval` shape, whose
-`fileChanges` map has paths, was not captured live and remains open under PB-191.
+- **Ordinary shell:** test -w . returned rc=1; an un-escalated git apply reported
+  Operation not permitted while writing the worktree; and
+  git commit --allow-empty -m "probe: git metadata write, ordinary shell" returned rc=128
+  with Operation not permitted while creating the linked worktree's index.lock. No commit
+  was created.
+- **Escalated exec_command:** with sandbox_permissions=require_escalated and an explicit
+  justification, an independent generated git apply returned rc=0, and the reversible
+  empty-commit/reset probe returned rc=0 for both operations. This route wrote both worktree
+  files and Git metadata for two independent participants.
+- **apply_patch:** one holder refused item/fileChange/requestApproval because it carried no
+  path, and the other wrapper returned patch rejected by user without applying a file. It did
+  not pass in either participant. The older applyPatchApproval shape, whose fileChanges map
+  has paths, was not captured live and remains open under PB-191.
 
-Git metadata is a separate narrow exception. The reversible probe was:
-
-    git commit --allow-empty -m "probe: git metadata write" ; echo rc=$?
-    git log --oneline -1
-    git reset --hard HEAD~1 ; echo rc=$?
-    git status --porcelain
-    git log --oneline -1
-
-It returned:
-
-    [branch 7a5e2ff] probe: git metadata write
-    rc=0
-    7a5e2ff probe: git metadata write
-    HEAD is now at 9e29fb2 PB-191: record method-dependent participant write boundaries
-    rc=0
-    9e29fb2 PB-191: record method-dependent participant write boundaries
-
-The final status was empty. A linked worktree can therefore write Git metadata even while ordinary
-file creation in its worktree is refused; that exception must not be generalized into file access.
+The prior empty-commit/reset result was launched through the escalated route; it does not establish
+an ordinary metadata exception. The ordinary probe above is the contrary measurement for this
+participant.
 
 ## Cost of the wrong explanation
 
@@ -120,8 +109,10 @@ must name the method and escalation boundary instead of generalizing from one re
   and the other participant's `apply_patch` wrapper rejected with no file applied.
 - Explicitly escalated `exec_command` worktree edits succeeded for both participants, including an
   independent generated `git apply` with exit 0.
-- The Git metadata probe commit returned rc=0, reset returned rc=0, status was empty, and HEAD
-  returned to 9e29fb2.
+- The ordinary git commit --allow-empty -m "probe: git metadata write, ordinary shell"
+  returned rc=128 at index.lock and created no commit. The escalated generated git apply
+  returned rc=0, and the prior escalated empty-commit/reset probe returned rc=0 for both
+  operations before restoring HEAD to 9e29fb2.
 - The rejected mid-session narrative remains as a false starting point with its source named. The
   transition, writable-root cause, legacy approval behavior and broader-version behavior remain open;
   the card is not archived.

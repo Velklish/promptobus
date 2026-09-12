@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const IS_MAIN = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 const say = (s) => process.stdout.write(`${s}\n`);
 function checkRun(cmd, args, result) {
   if (!result.error && result.status === 0) return result;
@@ -32,13 +34,26 @@ const BRAND_FRAGMENT = ['A', 'TI'].join('');
 const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
 const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
 const BRAND_ID = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}-workspace-[0-9a-f]+\\b`, 'iu');
-const HOME_ROOT = ['/', '(?:Users|home)', '/'].join('');
+const HOME_ROOT = ['(?:^|[^\\w])/', '(?:Users|home)', '/'].join('');
+const HOME_USER = `[^/\\s"'<>]*[A-Za-z0-9][^/\\s"'<>]*`;
 const ABSOLUTE_HOME_PATH = new RegExp(
-  `${HOME_ROOT}[^/\\s"'<>]+/[^\\s"'<>]+`,
+  `${HOME_ROOT}${HOME_USER}(?:/[^\\s"'<>]+)?`,
   'u',
 );
 
 const normalizedName = (name) => name.replace(/^(?:tarball:)?package\//, '');
+const ABSOLUTE_HOME_PATH_EXEMPTIONS = new Map([
+  ['test/model-routing-adapter-claude.test.mjs', 'synthetic home passed to credentialFile'],
+  ['test/model-routing-preflight.test.mjs', 'synthetic path in a driver error fixture'],
+  ['test/runner.test.mjs', 'synthetic executable path in the trace fixture'],
+  ['test/session-env.test.mjs', 'synthetic parent HOME values for environment filtering'],
+]);
+const absoluteOwnerHomePath = (name, text) => {
+  const normalized = normalizedName(name);
+  if (ABSOLUTE_HOME_PATH_EXEMPTIONS.has(normalized)) return false;
+  return ABSOLUTE_HOME_PATH.test(text);
+};
+export { absoluteOwnerHomePath };
 
 const FORBIDDEN = [
   ['host of the origin forge', ['gitlab', '.ati', '.st'].join('')],
@@ -48,12 +63,7 @@ const FORBIDDEN = [
   ['origin environment prefix', ['ATI', '_'].join('')],
   ['origin memory service', ['context', '-store'].join('')],
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
-  ['absolute owner home path', (name, text) => {
-    const normalized = normalizedName(name);
-    // Every documentation record is public evidence, including the archive.
-    if (!normalized.startsWith('docs/')) return false;
-    return ABSOLUTE_HOME_PATH.test(text);
-  }],
+  ['absolute owner home path', absoluteOwnerHomePath],
   ['origin brand', (name, text) => {
     const normalized = normalizedName(name);
     const runtime = RUNTIME_PATH.test(normalized);
@@ -87,75 +97,78 @@ function scanCyrillic(name, text) {
   if (CYRILLIC.test(remaining)) failures.push(`Cyrillic runtime text: ${name}`);
 }
 
+if (IS_MAIN) {
 // --- surface 1: what git tracks -------------------------------------------
-const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
-  .split('\n').filter(Boolean);
+  const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
 
-for (const rel of tracked) {
-  if (!TEXT.test(rel)) continue;
-  const text = readFileSync(path.join(ROOT, rel), 'utf8');
-  for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
-  scanCyrillic(rel, text);
-}
-
-// Links that point outside this repository are the quieter half of the same
-// problem: they read as documentation and resolve to nothing.
-//
-// Only prose is examined. In a markdown file every line is prose; in code only
-// comment lines are, because `](` also occurs inside regular expressions and
-// string literals, and a gate that reported those would be answered by muting it.
-const LINK = /\[[^\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-// In markdown a fenced block or an inline code span is not prose either: a sentence
-// that QUOTES the link pattern would otherwise be read as a link to its example.
-const mdProse = (text) => text
-  .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, '')
-  .replace(/`[^`\n]*`/g, '');
-const proseOf = (rel, text) => (rel.endsWith('.md')
-  ? mdProse(text)
-  : text.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n'));
-for (const rel of tracked) {
-  if (!/\.(md|m?js|ts)$/.test(rel)) continue;
-  const text = proseOf(rel, readFileSync(path.join(ROOT, rel), 'utf8'));
-  for (const m of text.matchAll(LINK)) {
-    const target = m[1].trim();
-    const file = target.split('#')[0];
-    if (!file || /^[a-z]+:/i.test(file)) continue;
-    const abs = path.resolve(path.dirname(path.join(ROOT, rel)), file);
-    if (!abs.startsWith(ROOT + path.sep)) failures.push(`link leaves the repository: ${rel} → ${target}`);
-    else if (!existsSync(abs)) failures.push(`link resolves to nothing: ${rel} → ${target}`);
+  for (const rel of tracked) {
+    if (!TEXT.test(rel)) continue;
+    const text = readFileSync(path.join(ROOT, rel), 'utf8');
+    for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
+    scanCyrillic(rel, text);
   }
-}
 
-// --- surface 2: what npm would ship ---------------------------------------
-const tmp = mkdtempSync(path.join(os.tmpdir(), 'promptobus-audit-'));
-try {
-  const buildArgs = ['run', 'build'];
-  checkRun('npm', buildArgs, run('npm', buildArgs, { cwd: ROOT, stdio: 'ignore' }));
-  const packArgs = ['pack', '--pack-destination', tmp];
-  const packedResult = checkRun('npm', packArgs, run('npm', packArgs, { cwd: ROOT, encoding: 'utf8' }));
-  const packed = packedResult.stdout.trim().split('\n').pop();
-  const tarball = path.join(tmp, packed);
-  const extractArgs = ['-xzf', tarball, '-C', tmp];
-  checkRun('tar', extractArgs, run('tar', extractArgs));
-  const listArgs = ['-tzf', tarball];
-  const listed = checkRun('tar', listArgs, run('tar', listArgs, { encoding: 'utf8' })).stdout.split('\n').filter(Boolean);
-  say(`tarball: ${packed} · ${listed.length} entries`);
-  for (const entry of listed) {
-    if (entry.endsWith('/') || !TEXT.test(entry)) continue;
-    const abs = path.join(tmp, entry);
-    if (!existsSync(abs)) continue;
-    const text = readFileSync(abs, 'utf8');
-    for (const [label, needle] of FORBIDDEN) scan(label, `tarball:${entry}`, text, needle);
-    scanCyrillic(entry, text);
+  // Links that point outside this repository are the quieter half of the same
+  // problem: they read as documentation and resolve to nothing.
+  //
+  // Only prose is examined. In a markdown file every line is prose; in code only
+  // comment lines are, because `](` also occurs inside regular expressions and
+  // string literals, and a gate that reported those would be answered by muting it.
+  const LINK = /\[[^\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  // In markdown a fenced block or an inline code span is not prose either: a sentence
+  // that QUOTES the link pattern would otherwise be read as a link to its example.
+  const mdProse = (text) => text
+    .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, '')
+    .replace(/`[^`\n]*`/g, '');
+  const proseOf = (rel, text) => (rel.endsWith('.md')
+    ? mdProse(text)
+    : text.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n'));
+  for (const rel of tracked) {
+    if (!/\.(md|m?js|ts)$/.test(rel)) continue;
+    const text = proseOf(rel, readFileSync(path.join(ROOT, rel), 'utf8'));
+    for (const m of text.matchAll(LINK)) {
+      const target = m[1].trim();
+      const file = target.split('#')[0];
+      if (!file || /^[a-z]+:/i.test(file)) continue;
+      const abs = path.resolve(path.dirname(path.join(ROOT, rel)), file);
+      if (!abs.startsWith(ROOT + path.sep)) failures.push(`link leaves the repository: ${rel} → ${target}`);
+      else if (!existsSync(abs)) failures.push(`link resolves to nothing: ${rel} → ${target}`);
+    }
   }
-} finally {
-  rmSync(tmp, { recursive: true, force: true });
-}
 
-// --- verdict ---------------------------------------------------------------
-if (failures.length) {
-  for (const f of [...new Set(failures)].sort()) say(`✖ ${f}`);
-  say(`✖ publicity audit: ${new Set(failures).size} finding(s)`);
-  process.exit(1);
+  // --- surface 2: what npm would ship ---------------------------------------
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'promptobus-audit-'));
+  try {
+    const buildArgs = ['run', 'build'];
+    checkRun('npm', buildArgs, run('npm', buildArgs, { cwd: ROOT, stdio: 'ignore' }));
+    const packArgs = ['pack', '--pack-destination', tmp];
+    const packedResult = checkRun('npm', packArgs, run('npm', packArgs, { cwd: ROOT, encoding: 'utf8' }));
+    const packed = packedResult.stdout.trim().split('\n').pop();
+    const tarball = path.join(tmp, packed);
+    const extractArgs = ['-xzf', tarball, '-C', tmp];
+    checkRun('tar', extractArgs, run('tar', extractArgs));
+    const listArgs = ['-tzf', tarball];
+    const listed = checkRun('tar', listArgs, run('tar', listArgs, { encoding: 'utf8' })).stdout.split('\n').filter(Boolean);
+    say(`tarball: ${packed} · ${listed.length} entries`);
+    for (const entry of listed) {
+      if (entry.endsWith('/') || !TEXT.test(entry)) continue;
+      const abs = path.join(tmp, entry);
+      if (!existsSync(abs)) continue;
+      const text = readFileSync(abs, 'utf8');
+      for (const [label, needle] of FORBIDDEN) scan(label, `tarball:${entry}`, text, needle);
+      scanCyrillic(entry, text);
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // --- verdict ---------------------------------------------------------------
+  if (failures.length) {
+    for (const f of [...new Set(failures)].sort()) say(`✖ ${f}`);
+    say(`✖ publicity audit: ${new Set(failures).size} finding(s)`);
+    process.exit(1);
+  }
+  say(`✔ publicity audit: clean · ${tracked.length} tracked files and the packed tarball`);
+
 }
-say(`✔ publicity audit: clean · ${tracked.length} tracked files and the packed tarball`);
