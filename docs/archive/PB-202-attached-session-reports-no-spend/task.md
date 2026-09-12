@@ -1,13 +1,13 @@
 # PB-202 · Codex rollouts carry token usage on disk; attached sessions report none
 
 - **Order:** 20
-- **Scope:** `lib/model-routing/telemetry.js` (`throughputObservationOf`, sidecar reader), `lib/driver-codex.js`, `lib/driver-claude.js`, [PB-57.1](../deferred/PB-57.1-harness-throughput-producers-absent.md), `docs/reference/03-cli.md` § Participant telemetry
+- **Scope:** `lib/model-routing/telemetry.js` (`throughputObservationOf`, sidecar reader), `lib/driver-codex.js`, `lib/driver-claude.js`, [PB-57.1](../../backlog/deferred/PB-57.1-harness-throughput-producers-absent.md), `docs/reference/03-cli.md` § Participant telemetry
 - **Created:** 2026-09-12, from a measurement of 268 participant sessions
 - **Dependencies:** PB-57.1
 
 ## Context
 
-[PB-57.1](../deferred/PB-57.1-harness-throughput-producers-absent.md) states that no harness reports a usable throughput observation, and about one of them it says: Codex's `turn/completed` exposes only id, status and error, and "the session paths carry no usage fields". **That premise is disproved for the rollout on disk**, and the card was deferred on it. The correct distinction is that Codex and Claude have usage fields without model-active generation time; neither has a complete throughput observation.
+[PB-57.1](../../backlog/deferred/PB-57.1-harness-throughput-producers-absent.md) states that no harness reports a usable throughput observation, and about one of them it says: Codex's `turn/completed` exposes only id, status and error, and "the session paths carry no usage fields". **That premise is disproved for the rollout on disk**, and the card was deferred on it. The correct distinction is that Codex and Claude have usage fields without model-active generation time; neither has a complete throughput observation.
 
 Measured 2026-09-12 over 35 Codex sessions (26 worker, 9 reviewer) that took part in bus runs:
 
