@@ -138,7 +138,7 @@ const listing = (dir) => {
   }
 };
 const stateBefore = { cursor: listing(CURSOR_STATE), codex: listing(CODEX_STATE) };
-const panesBefore = new Set(cursorPersist.listSessions().map((s) => s.name));
+const panesBefore = new Set(cursorPersist.tmuxSessions().map((s) => s.name));
 
 // The sandbox prefix is not a PREFIX of the logs prefix, and that is a
 // condition, not style: the `$TMPDIR` leftover verdict looks up run
@@ -480,9 +480,9 @@ if (foreign.length) {
 // Cursor persist sessions are judged by SUBTRACTION: person sessions and other
 // runs legally live nearby, and an "empty list" would be a wrong verdict on a
 // working machine.
-const panesLeft = cursorPersist.listSessions().filter((s) => !panesBefore.has(s.name));
+const panesLeft = cursorPersist.tmuxSessions().filter((s) => !panesBefore.has(s.name));
 check('no persist sessions of the run on the tmux server after the loop, foreign ones intact',
-  panesLeft.length === 0 && [...panesBefore].every((n) => cursorPersist.listSessions().some((s) => s.name === n)),
+  panesLeft.length === 0 && [...panesBefore].every((n) => cursorPersist.tmuxSessions().some((s) => s.name === n)),
   `left: ${JSON.stringify(panesLeft.map((s) => s.name))} · was: ${[...panesBefore].join(', ') || 'none'}`);
 
 const stateLeft = {

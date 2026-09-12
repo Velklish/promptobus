@@ -44,7 +44,7 @@ import { addrKey } from '../test/harness-cursor.mjs';
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const {
-  cursorStateHome, listSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
+  cursorStateHome, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 
 // The model is named by a flag, not taken from the driver default: the live
@@ -123,7 +123,7 @@ const stateBefore = snapshotState();
 // live nearby, and they must be subtracted — an "empty list" after the loop
 // would be a wrong verdict on a machine where the person works in their own
 // session.
-const sessionsBefore = new Set(listSessions().map((s) => s.name));
+const sessionsBefore = new Set(tmuxSessions().map((s) => s.name));
 
 const SB = makeSandbox('promptobus-live-cursor-');
 // Turn logs outlive the run: the sandbox is swept, and the stream is needed to
@@ -253,10 +253,10 @@ try {
     && wp?.metadata?.session === record.sessionName && wp?.metadata?.sessionId === record.chatId,
     `${JSON.stringify(record)} · ${wp?.metadata?.session} · ${wp?.metadata?.sessionId}`);
 
-  const mine = listSessions().find((s) => s.name === record?.sessionName) ?? null;
+  const mine = tmuxSessions().find((s) => s.name === record?.sessionName) ?? null;
   check('step 2: the session is visible in the tmux list, marked with the task and address, and its chat is the same',
     !!mine && mine.managed && mine.task === TASK && mine.address === WORKER && mine.chatId === record?.chatId,
-    JSON.stringify(listSessions()));
+    JSON.stringify(tmuxSessions()));
 
   const listOut = spawnSync(tool.path, ['persist', 'list'], { encoding: 'utf8' });
   check('step 2: the mechanism session is visible to a human agent persist list — it is on the shared server',
@@ -264,8 +264,8 @@ try {
     String(listOut.stdout ?? '').slice(-500));
 
   check('step 2: the one-shot pty-provider pane is down — the launch server is empty',
-    listSessions({ server: 'promptobus-launch' }).length === 0,
-    JSON.stringify(listSessions({ server: 'promptobus-launch' })));
+    tmuxSessions({ server: 'promptobus-launch' }).length === 0,
+    JSON.stringify(tmuxSessions({ server: 'promptobus-launch' })));
 
   const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
   check('step 2: promptobus status shows the Cursor session is alive',
@@ -335,8 +335,8 @@ try {
   // the gain the driver was moved to persist for.
   check('step 4: the wake went WITHOUT a new process — the session pane is the same',
     !!paneWas && readSession(ref)?.panePid === paneWas
-    && listSessions().some((s) => s.name === record?.sessionName && s.panePid === paneWas),
-    `${paneWas} → ${readSession(ref)?.panePid} · ${JSON.stringify(listSessions())}`);
+    && tmuxSessions().some((s) => s.name === record?.sessionName && s.panePid === paneWas),
+    `${paneWas} → ${readSession(ref)?.panePid} · ${JSON.stringify(tmuxSessions())}`);
   check('step 4: the participant fetched the mailbox itself — it confirms delivery',
     store.countInbox(home, TASK, WORKER) === 0, String(store.countInbox(home, TASK, WORKER)));
   at_('wake and second turn', Date.now() - t4);
@@ -352,18 +352,18 @@ try {
   tmux(['new-session', '-d', '-s', seat, '-x', '200', '-y', '50',
     `${tool.path} persist attach ${record?.sessionName}`], { server: 'promptobus-launch' });
   const attached = await waitFor(() => {
-    const s = listSessions().find((x) => x.name === record?.sessionName);
+    const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached > 0 ? s : null;
   }, { timeoutMs: 30000 });
   check('step 4b: a human attaches to the live session — attach gives a second client',
-    !!attached, `${JSON.stringify(listSessions())} · attach pane: ${JSON.stringify(listSessions({ server: 'promptobus-launch' }))}`);
+    !!attached, `${JSON.stringify(tmuxSessions())} · attach pane: ${JSON.stringify(tmuxSessions({ server: 'promptobus-launch' }))}`);
   tmux(['kill-session', '-t', seat], { server: 'promptobus-launch' });
   const leftSeat = await waitFor(() => {
-    const s = listSessions().find((x) => x.name === record?.sessionName);
+    const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached === 0 ? s : null;
   }, { timeoutMs: 30000 });
   check('step 4b: the human left, and the session stayed alive — it outlives its clients',
-    !!leftSeat, JSON.stringify(listSessions()));
+    !!leftSeat, JSON.stringify(tmuxSessions()));
   at_('human attach and leave', Date.now() - t4b);
 
   // --- step 4c: delivery DURING a turn --------------------------------------------------
@@ -480,9 +480,9 @@ try {
   // No mechanism sessions left on the shared server — and person sessions, if
   // they were there, are intact: teardown goes by the participant record, not
   // by "everything that was found".
-  const leftSessions = listSessions().filter((s) => !sessionsBefore.has(s.name));
+  const leftSessions = tmuxSessions().filter((s) => !sessionsBefore.has(s.name));
   check('step 6: no persist sessions of the run left on the tmux server, foreign ones untouched',
-    leftSessions.length === 0 && [...sessionsBefore].every((n) => listSessions().some((s) => s.name === n)),
+    leftSessions.length === 0 && [...sessionsBefore].every((n) => tmuxSessions().some((s) => s.name === n)),
     `left: ${JSON.stringify(leftSessions)} · was: ${[...sessionsBefore].join(', ') || 'none'}`);
   const persistOut = spawnSync(tool.path, ['persist', 'list'], { encoding: 'utf8' });
   check('step 6: agent persist list does not show the run — the list is clean for the person',

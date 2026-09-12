@@ -9,6 +9,7 @@ import process from 'node:process';
 import {
   HOST_KIND, HostResolveError, homeOfRoot,
 } from './host.js';
+import { ROOT_DIR } from './v1/layout.js';
 import type {
   HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
   HostMcpToolClassification, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
@@ -23,7 +24,8 @@ const DEFAULT_COMMAND = 'promptobus';
 // the workspace's own store home for what the TOOL writes. One name serves both
 // overlays because a layer is told apart by its id and its home, not by its
 // basename.
-const ROUTING_HOME = '.promptobus';
+const ROUTING_HOME = ROOT_DIR;
+const PROJECT_HOME = ROOT_DIR;
 const ROUTING_DIR = 'model-routing';
 const ROUTING_CACHE = 'cache.json';
 const ROUTING_OVERLAY = 'model-routing.json';
@@ -190,10 +192,10 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     toolsManifestRel: () => HOST_CONFIG,
     skillsDir: () => (skills ? path.join(root, skills) : null),
     pluginDir: () => null,
-    pluginManifestRel: () => path.join('.promptobus', 'plugin.json'),
-    busHookRel: () => path.join('.promptobus', 'hooks', 'bus.mjs'),
-    installManifestRel: () => path.join('.promptobus', 'manifest.json'),
-    pluginSkillsRel: () => path.join('.promptobus', 'skills'),
+    pluginManifestRel: () => path.join(PROJECT_HOME, 'plugin.json'),
+    busHookRel: () => path.join(PROJECT_HOME, 'hooks', 'bus.mjs'),
+    installManifestRel: () => path.join(PROJECT_HOME, 'manifest.json'),
+    pluginSkillsRel: () => path.join(PROJECT_HOME, 'skills'),
 
     declaredTools: () => [...tools],
     collectRules: (repoDir) => {
@@ -211,7 +213,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       text: 'workspace module does not apply — standalone host',
     }),
     resolveRepoModule: (): HostRepoModule | null => null,
-    reviewSkillDir: (name) => path.join(root, '.promptobus', 'skills', name),
+    reviewSkillDir: (name) => path.join(root, PROJECT_HOME, 'skills', name),
 
     participantServers: (): HostServers => ({
       servers: { ...mcp },

@@ -26,6 +26,12 @@
 - `npm test` stays green, in particular `test/promptobus-spawn.test.mjs` around lines 1146 and 1268 (the ENOENT and generic-failure paths for both `installWorktreeDeps` and `runRepoGenerator`).
 - `grep -n "const started = Date.now" lib/worktree.js lib/spawn.js` shows one occurrence total (in `lib/util.js`) instead of one per caller.
 
+
+## Implementation notes — 2026-09-12
+
+- `runLogged` in `lib/util.js` now owns the elapsed-time measurement, sidecar log write, and ENOENT/timeout/exit-code classification used by both callers. The chosen ENOENT wording is `was not found in PATH (<argv[0]>)`, because it preserves the missing command in the operator's diagnostic.
+- `installWorktreeDeps` keeps its `env` seam and `ignored`/`command` fields; `runRepoGenerator` keeps its `exec` seam and `argv`/`dirt` fields.
+
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.

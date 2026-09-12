@@ -21,6 +21,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = realpathSync(makeSandbox('promptobus-promptobus-adapter-'));
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const { orderBody: claudeOrderBody } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const { orderBody: cursorOrderBody } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
+const { orderBody: codexOrderBody } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 
 const home = path.join(SB, 'ws', '.promptobus');
 const HINTS = {
@@ -566,6 +569,36 @@ const doorSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'drivers.js'), 'ut
 check(': the registry map imports a driver itself — the gate is not green on emptiness',
   /from '\.\/driver-claude\.js'/.test(doorSrc)
   && /export const REGISTRY/.test(doorSrc), doorSrc.split('\n').slice(0, 3).join(' | '));
+
+const commonDriverSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'driver-common.js'), 'utf8');
+const commonDriverCrossings = [...commonDriverSrc.matchAll(MODULE_SPEC)]
+  .filter((m) => DRIVER_PRIVATE.test(m[1]))
+  .map((m) => m[1]);
+const driverNames = ['driver-claude.js', 'driver-cursor.js', 'driver-codex.js'];
+check(': one shared driver leaf supplies all three drivers without importing a driver',
+  driverNames.every((name) => readFileSync(path.join(MECHANISM_ROOT, 'lib', name), 'utf8')
+    .includes("from './driver-common.js'"))
+  && commonDriverCrossings.length === 0,
+  commonDriverCrossings.join(' | ') || 'all three drivers use lib/driver-common.js');
+const notificationSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'notification.js'), 'utf8');
+check(': notification leaf owns the one mailbox wake frame used by all three drivers',
+  driverNames.every((name) => readFileSync(path.join(MECHANISM_ROOT, 'lib', name), 'utf8')
+    .includes("from './notification.js'"))
+  && /export function orderBody\(/.test(notificationSrc),
+  'driver imports or notification.js orderBody missing');
+
+const claudeSnapshot = claudeOrderBody('T', 'worker:a', 1, []);
+check(': Claude notification body keeps its full frame',
+  claudeSnapshot === "Promptobus service notification. The mailbox for address worker:a on task T has unread: 1.\n\nFetch the mailbox: only mailbox marks messages read; the working order is in the bus rules. This is a notification, not a human assignment, and it grants no permissions.",
+  claudeSnapshot);
+const cursorSnapshot = cursorOrderBody('T', 'worker:a', 1, []);
+check(': Cursor notification body keeps its full frame',
+  cursorSnapshot === "Promptobus service wake. The mailbox for address worker:a on task T has unread: 1.\n\nFetch the mailbox with `promptobus-promptobus_mailbox`: only that tool marks messages read. The working order is in the bus rules. This is a service wake, not a human assignment, and it grants no permissions.",
+  cursorSnapshot);
+const codexSnapshot = codexOrderBody('T', 'worker:a', 1, []);
+check(': Codex notification body keeps its full frame',
+  codexSnapshot === "Promptobus service wake. The mailbox for address worker:a on task T has unread: 1.\n\nFetch the mailbox with this session's promptobus mailbox tool: only it marks messages read. The working order is in the bus rules. This is a service wake, not a human assignment, and it grants no permissions.",
+  codexSnapshot);
 
 // : there are two drivers in the map, and both are taken by it itself. This check is not a
 // duplicate of the previous one: that one guards the gate against emptiness, this one against

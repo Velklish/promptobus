@@ -30,6 +30,7 @@ import process from 'node:process';
 import test from 'node:test';
 
 const store = await import('../dist/index.js');
+const coreStore = await import('../dist/v1/store.js');
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-store-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
@@ -162,6 +163,21 @@ test('accessors read adapter fields and stay silent on empty', () => {
 
 // --- task journal lock ------------------------------------
 
+// Both callers guard the same task journal; a different path would allow two writers.
+test('task locks: engine and sidecar callers use the same directory', () => {
+  const home = path.join(SB, 'lock-parity', '.promptobus');
+  const engine = engineAt(home);
+  const task = engine.createTask({
+    id: 'lock-parity-t20260912-000000', title: 'lock parity', owner: participant('orchestrator'),
+  });
+  const lock = path.join(store.taskDir(home, task.id), '.lock');
+  const seen = () => readdirSync(store.taskDir(home, task.id))
+    .filter((name) => name === '.lock')
+    .map((name) => path.join(store.taskDir(home, task.id), name));
+  assert.deepEqual(coreStore.withTaskLock(home, task.id, seen), [lock]);
+  assert.deepEqual(store.withTaskLock(home, task.id, seen), [lock]);
+});
+
 test('task journal lock', async (t) => {
   const home = path.join(SB, 'lock', '.promptobus');
   const engine = engineAt(home);
@@ -187,6 +203,11 @@ test('task journal lock', async (t) => {
     const ghost = thrown(() => store.withTaskLock(home, 'net-takoy', () => 'will not reach'));
     assert.equal(ghost.name, 'GateError');
     assert.match(ghost.msg, /task net-takoy is not in/);
+  });
+  await t.test('an invalid task id is a GateError before the v1 lock path sees it', () => {
+    const invalid = thrown(() => store.withTaskLock(home, 'not a task', () => 'will not reach'));
+    assert.equal(invalid.name, 'GateError');
+    assert.match(invalid.msg, /invalid task id/);
   });
 
   holdLock({ pid: process.pid, session: 'sess-derzhatel', since: '2026-08-28T10:00:00.000Z' });

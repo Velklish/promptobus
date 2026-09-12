@@ -100,7 +100,7 @@ export function writeSession(home, record) {
 }
 
 /** The registry as a whole — the same thing `agents --json` prints. */
-export function listSessions(home) {
+export function harnessSessions(home) {
   let names;
   try {
     names = readdirSync(sessionsDir(home)).filter((n) => n.endsWith('.json'));
@@ -113,7 +113,7 @@ export function listSessions(home) {
 
 /** Participant records by session name — the same field `findSession` searches by. */
 export function sessionByName(home, name) {
-  return listSessions(home).find((s) => s.name === name) ?? null;
+  return harnessSessions(home).find((s) => s.name === name) ?? null;
 }
 
 /** Participant trace: one line per action. Empty — the participant did nothing. */
@@ -372,7 +372,7 @@ export async function claudeMain(argv, env = process.env) {
     return;
   }
   if (argv[0] === 'agents') {
-    process.stdout.write(`${JSON.stringify(listSessions(home))}\n`);
+    process.stdout.write(`${JSON.stringify(harnessSessions(home))}\n`);
     return;
   }
   if (argv[0] === 'stop') {
@@ -476,7 +476,7 @@ function armCleanup(home) {
   hooked = true;
   const clean = () => {
     for (const dir of armed) {
-      for (const record of listSessions(dir)) killSession(record);
+      for (const record of harnessSessions(dir)) killSession(record);
       // The home is removed wholesale: registry, scripts, traces and logs live only for
       // the life of the file, and the directory was created outside the sandbox — it
       // has no cleanup of its own from anywhere else.
@@ -492,7 +492,7 @@ function armCleanup(home) {
 /** Kill everything that is left: a test safety net in `finally`, not part of the scenario. */
 export async function stopAll(home) {
   const left = [];
-  for (const record of listSessions(home)) {
+  for (const record of harnessSessions(home)) {
     killSession(record);
     if (!await awaitDeath(record.pid, { tries: 20 })) left.push(record.id);
     rmSync(sessionFile(home, record.id), { force: true });

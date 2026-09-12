@@ -25,6 +25,11 @@ export const HARNESS_RE = /^[a-z][a-z0-9-]{0,31}$/;
 // Timestamp, sender counter, and a random tail: string sort is send order, and
 // history does not need a second clock.
 export const RECORD_ID_RE = /^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$/;
+
+/** Compact UTC stamp used in sortable record ids. */
+export function compactStamp(at: Date): string {
+  return at.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+}
 // Exactly what `Date#toISOString` prints. The `date-time` format is not enough:
 // it allows an offset, and an offset breaks the string sort history rests on.
 export const TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;

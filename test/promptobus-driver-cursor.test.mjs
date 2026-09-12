@@ -56,7 +56,7 @@ const {
   skillsNoteOf,
 } = cursorModule;
 const {
-  dropSession, injectText, launchScript, listSessions, readSession, readTranscript, sessionFile,
+  dropSession, injectText, launchScript, tmuxSessions, readSession, readTranscript, sessionFile,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
   turnState,
   workspaceHash, writeSession,
@@ -262,6 +262,15 @@ check(': a binary older than the proven version — refuse before lift, with the
   && cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION }) === null
   && cursorDriver.optionRefusal({}, { version: null }) === null,
   String(cursorDriver.optionRefusal({}, { version: '2026.08.11' })).slice(0, 90));
+check(': a v-prefixed Cursor version at the proven release passes',
+  cursorDriver.optionRefusal({}, { version: `v${PROVEN_CURSOR_VERSION}` }, { util: () => ({ ok: true }) }) === null,
+  String(cursorDriver.optionRefusal({}, { version: `v${PROVEN_CURSOR_VERSION}` }, { util: () => ({ ok: true }) })));
+check(': a v-prefixed Cursor version below the proven release refuses',
+  /2026\.08\.11/.test(String(cursorDriver.optionRefusal({}, { version: 'v2026.08.11' }))),
+  String(cursorDriver.optionRefusal({}, { version: 'v2026.08.11' })));
+check(': an unparsed nonempty Cursor version refuses explicitly',
+  /could not be parsed: agent unknown/.test(String(cursorDriver.optionRefusal({}, { version: 'agent unknown' }))),
+  String(cursorDriver.optionRefusal({}, { version: 'agent unknown' })));
 
 // The adapter resolves the utility by the name the driver named — and asks the binary
 // itself for the version, it does not take it from the declaration: `doctor` and the
@@ -953,7 +962,7 @@ check(': the Cursor holder journal starts with launch provenance',
   && rawRecord.provenance === record.provenance,
   JSON.stringify({ keys: Object.keys(rawRecord).slice(0, 2), provenance: record?.provenance }));
 
-const listed = listSessions({ env });
+const listed = tmuxSessions({ env });
 const mine = listed.find((s) => s.name === record?.sessionName) ?? null;
 check('step 1: the persist session lives on the shared server and is marked with the mechanism task and address',
   !!mine && mine.managed === true && mine.chatId === record?.chatId
@@ -963,8 +972,8 @@ check('step 1: the persist session lives on the shared server and is marked with
 // The pty-provider pane is killed right after confirmation: it is lift machinery, not
 // the participant session, and it has no place in the human list.
 check('step 1: the one-shot pty-provider pane is gone — its server is empty',
-  listSessions({ server: 'promptobus-launch', env }).length === 0,
-  JSON.stringify(listSessions({ server: 'promptobus-launch', env })));
+  tmuxSessions({ server: 'promptobus-launch', env }).length === 0,
+  JSON.stringify(tmuxSessions({ server: 'promptobus-launch', env })));
 
 // The bus's own server is approved POINTWISE, from the participant directory:
 // `--approve-mcps` would have approved every workspace server into a foreign project
@@ -1173,7 +1182,7 @@ check('step 5: promptobus done closed the task and stopped the Cursor participan
   done.status === 0, done.out.slice(-600));
 
 check('step 5: no mechanism persist sessions left on the tmux server',
-  listSessions({ env }).length === 0, JSON.stringify(listSessions({ env })));
+  tmuxSessions({ env }).length === 0, JSON.stringify(tmuxSessions({ env })));
 
 check('step 5: no session record left in the registry — the directory does not pile up',
   !existsSync(sessionFile(ref, env)) && cursorDriver.inspect(ref)?.state === 'gone',

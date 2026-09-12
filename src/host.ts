@@ -2,6 +2,7 @@
 // [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
+import { ROOT_DIR } from './v1/layout.js';
 
 /** Host object marker: the suite uses it to tell a host from a root string. */
 export const HOST_KIND = 'promptobus-host';
@@ -258,6 +259,6 @@ export function isPromptobusHost(value: unknown): value is PromptobusHost {
     && typeof rec.commandName === 'string';
 }
 
-export function homeOfRoot(root: string, rel = '.promptobus'): string {
+export function homeOfRoot(root: string, rel = ROOT_DIR): string {
   return path.join(root, rel);
 }

@@ -21,7 +21,7 @@ import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox, makeSockPath } from './sandbox.mjs';
 import {
-  diagnoseTrace, installHarness, listSessions, pidAlive, planParticipant, readLog, stopAll,
+  diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant, readLog, stopAll,
 } from './harness.mjs';
 import { runScenario } from './scenario.mjs';
 
@@ -49,17 +49,17 @@ const harness = {
   spawnFlags: [],
   reviewFlags: [],
   plan: (address, script) => planParticipant(HARNESS, address, script),
-  sessions: () => listSessions(HARNESS),
-  liveSessions: (refs) => listSessions(HARNESS)
+  sessions: () => harnessSessions(HARNESS),
+  liveSessions: (refs) => harnessSessions(HARNESS)
     .filter((s) => refs.includes(s.name) && pidAlive(s.pid)),
   // Session pids are taken BEFORE teardown: the registry is empty after `stop`, and a
   // "no processes left" verdict from it would be green by construction (review note).
-  pidsOf: (refs) => listSessions(HARNESS).filter((s) => refs.includes(s.name)).map((s) => s.pid),
+  pidsOf: (refs) => harnessSessions(HARNESS).filter((s) => refs.includes(s.name)).map((s) => s.pid),
   pidAlive,
   // A red verdict with no participant trail is a riddle, not a diagnosis: this is where
   // its action journal goes — scenario errors first — and the process log tail.
   diagnose: (address) => `${diagnoseTrace(HARNESS, address)}`
-    + ` · logs: ${listSessions(HARNESS).map((s) => readLog(HARNESS, s.id, 6)).join(' | ')}`,
+    + ` · logs: ${harnessSessions(HARNESS).map((s) => readLog(HARNESS, s.id, 6)).join(' | ')}`,
   cleanup: () => {},
 };
 
@@ -75,7 +75,7 @@ process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 100
 // The insurance must check BOTH halves: that there was nothing to kill (registry empty)
 // and that nothing survived kill. `stopAll` returns only the latter, and a verdict from
 // that answer alone would go green even on a full registry of live sessions (review note).
-const before = listSessions(HARNESS);
+const before = harnessSessions(HARNESS);
 const left = await stopAll(HARNESS);
 check('no participant processes left after the run — there was nothing to kill',
   before.length === 0 && left.length === 0,

@@ -38,3 +38,9 @@ readInbox (src/v1/messages.ts:385-431) and peekInbox (:672-711) share a byte-ide
 ## Returned to the queue, 2026-09-12
 
 **The return condition has fired:** blockers `PB-66` and `PB-146` are archived, so the resulting readers can be compared and genuinely identical behaviour extracted.
+
+## Implementation notes — 2026-09-12
+
+- `readRecord(file, name, attic)` owns the file read at `src/v1/messages.ts:306`, then the shared parse → validate → isolate block through `:330`. The callers retain only their policy catches: `readInbox` calls it at `:357` and skips `ENOENT` while recording other errno values at `:358-366`; `history` calls it at `:486` and turns a read failure into a `schema-invalid` broken note at `:487-490`; `peekInbox` calls it at `:659` and swallows every read error at `:660-663`. The `peek` catch-all is inherited from the previous implementation and remains outside this card's scope; its separate correctness question is tracked by PB-193.
+- `glanceInbox` is not one of these three readers: it still performs its diagnostic raw read and JSON parse at `:686-702`, with its own `broken` policy.
+- The malformed-record parity test writes the same bytes to inbox and history copies and compares the `BrokenNote.note` byte-for-byte across all three readers.

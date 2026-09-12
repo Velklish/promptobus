@@ -37,6 +37,14 @@ Grepped `docs/backlog/{queue,active,deferred,triage}` and `docs/archive` for `RO
 - `grep -rn "'\.promptobus'" src/` returns one occurrence (the `ROOT_DIR` declaration) instead of eight.
 - `grep -rn "replace(/\[-:.\]/g" src/` returns one occurrence (the new helper) instead of four.
 
+
+## Implementation notes — 2026-09-12
+
+- `ROOT_DIR` is the one store-root spelling; `homeOfRoot` imports it, while standalone names its account-routing and project-prefix roles as `ROUTING_HOME` and `PROJECT_HOME`.
+- `historyRoot`, `filesDir`, `lockDir`, and `compactStamp` are canonical helpers. Sidecar now calls `lockDir`; migration and the bundled adapter call `filesDir`; live, migration, and legacy record-id writers call `compactStamp`.
+- Four of the five former rebuild sites are now in `layout.ts`; the fifth, the record-id stamp, has one definition and one manual transform in `model.ts`, called by four sites, because it is identifier form rather than a store path.
+- The store test compares the engine and sidecar lock callers on the same task directory.
+
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.

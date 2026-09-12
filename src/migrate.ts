@@ -16,10 +16,10 @@ import {
 } from './protocol.js';
 import * as legacy from './legacy-store.js';
 import {
-  artifactsDir, blobFile, blobRef, blobsDir, brokenInboxDir, historyDir, inboxDir, messagesDir,
+  artifactsDir, blobFile, blobRef, blobsDir, brokenInboxDir, filesDir, historyDir, inboxDir, messagesDir,
   ROOT_DIR, taskDir,
 } from './v1/layout.js';
-import { MESSAGE_PROTOCOL_VERSION, SCHEMA_VERSION } from './v1/model.js';
+import { compactStamp, MESSAGE_PROTOCOL_VERSION, SCHEMA_VERSION } from './v1/model.js';
 import type {
   ArtifactV1, CapabilitiesSnapshot, MessageV1, ParticipantV1, TaskV1,
 } from './v1/model.js';
@@ -481,8 +481,7 @@ function recordIdOf(legacyId: string, at: string, box: string): string {
   if (m) return `${m[1]}-${m[2]}-${tail(seed)}`;
   // A name not in the former-store shape (edited by hand, a foreign file) —
   // the stamp is taken from the write time, and the order stays chronological.
-  const stamp = new Date(Number.isFinite(Date.parse(at)) ? at : Date.now())
-    .toISOString().replace(/[-:.]/g, '').replace('Z', '');
+  const stamp = compactStamp(new Date(Number.isFinite(Date.parse(at)) ? at : Date.now()));
   return `${stamp}-0000-${tail(seed)}`;
 }
 
@@ -663,8 +662,7 @@ function migrateArtifacts(legacyHome: string, temp: string, id: string, meta: le
   } catch {
     return named;
   }
-  const stamp = new Date(isoOf(meta.created, new Date().toISOString()))
-    .toISOString().replace(/[-:.]/g, '').replace('Z', '');
+  const stamp = compactStamp(new Date(isoOf(meta.created, new Date().toISOString())));
   let seq = 0;
   for (const name of names) {
     const src = path.join(from, name);
@@ -700,7 +698,7 @@ function migrateArtifacts(legacyHome: string, temp: string, id: string, meta: le
     if (!existsSync(blob)) writeFileSync(blob, content);
     mkdirSync(artifactsDir(temp, id), { recursive: true });
     writeJsonAtomic(path.join(artifactsDir(temp, id), `${record.id}.json`), record);
-    const files = path.join(taskDir(temp, id), 'files');
+    const files = filesDir(temp, id);
     mkdirSync(files, { recursive: true });
     try {
       linkSync(blob, path.join(files, name));

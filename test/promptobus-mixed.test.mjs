@@ -123,7 +123,7 @@ const worker = {
   // A red verdict with no participant trail is a riddle, not a diagnosis: this is where
   // its action journal goes, and the list of live stand panes.
   diagnose: (address) => `${cursorStub.diagnoseTrace(cursorHarness.home, address)}`
-    + ` · tmux panes: ${JSON.stringify(cursorSession.listSessions().map((s) => [s.name, s.panePid]))}`,
+    + ` · tmux panes: ${JSON.stringify(cursorSession.tmuxSessions().map((s) => [s.name, s.panePid]))}`,
 };
 
 const reviewer = {
@@ -143,7 +143,7 @@ const reviewer = {
   idle: (ref) => handedOver(codexDriver, ref),
   inspect: (ref) => codexDriver.inspect(ref),
   diagnose: (address) => `${codexStub.diagnoseTrace(codexHarness.home, address)}`
-    + ` · threads: ${JSON.stringify(codexSession.listSessions().map((r) => [r.threadId, r.holderPid, r.state]))}`,
+    + ` · threads: ${JSON.stringify(codexSession.registrySessions().map((r) => [r.threadId, r.holderPid, r.state]))}`,
 };
 
 // Lineup: the participants have different harnesses, and the CALLER declares them. Role
@@ -216,8 +216,8 @@ check('both harness homes were diverted into the stand sandboxes — the run did
 // scenario; this is cleanup after a fallen run. BOTH halves of each stand are checked:
 // that there was nothing to kill (registry empty) and that no live process was left
 // behind a record.
-const panes = cursorSession.listSessions();
-const threads = codexSession.listSessions();
+const panes = cursorSession.tmuxSessions();
+const threads = codexSession.registrySessions();
 const heldThreads = threads.filter((r) => codexSession.pidAlive(r.holderPid));
 check('no Cursor pane and no Codex thread left after the run — there was nothing to kill',
   panes.length === 0 && threads.length === 0 && heldThreads.length === 0,

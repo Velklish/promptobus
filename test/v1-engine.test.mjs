@@ -1017,6 +1017,32 @@ test('a broken message in the mailbox leaves for broken, and the rest arrive', a
     '20260902T100900000-0009-ffffff.json')));
 });
 
+test('a malformed record has the same note in read, peek and history', () => {
+  const engine = open(sandbox());
+  const id = taskWith(engine, 'broken-note-t20260902-110000');
+  const name = '20260902T100900000-0009-ffffff.json';
+  const malformed = '{}';
+  const taskRoot = path.join(engine.home, 'tasks', id);
+  const readBox = path.join(taskRoot, 'inbox', 'w-api');
+  const peekBox = path.join(taskRoot, 'inbox', 'w-docs');
+  const historyBox = path.join(taskRoot, 'history', 'w-docs');
+  for (const box of [readBox, peekBox, historyBox]) mkdirSync(box, { recursive: true });
+  writeFileSync(path.join(readBox, name), malformed);
+  writeFileSync(path.join(peekBox, name), malformed);
+  writeFileSync(path.join(historyBox, name), malformed);
+
+  const readBroken = engine.read(id, 'w-api').broken;
+  const peekBroken = engine.peek(id, 'w-docs').broken;
+  const historyBroken = engine.history({ task: id, participant: 'w-docs', all: true }).broken;
+
+  assert.equal(readBroken.length, 1);
+  assert.equal(peekBroken.length, 1);
+  assert.equal(historyBroken.length, 1);
+  assert.equal(readBroken[0].note, peekBroken[0].note);
+  assert.equal(peekBroken[0].note, historyBroken[0].note);
+  assert.match(readBroken[0].note, /^does not match the schema: /);
+});
+
 test('a message of a newer version is not isolated, it is named by its own code', async () => {
   // Spoilage and "nothing to read with" are different outcomes: a record
   // from the future is fixed by updating the mechanism, not by isolation,

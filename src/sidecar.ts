@@ -7,7 +7,8 @@ import { writeFileAtomic, writeJsonAtomic } from './fs/atomic.js';
 import { LOCK_WAIT_MS, withDirLock } from './fs/lock.js';
 import type { LockHolder } from './fs/lock.js';
 import { pidAlive } from './fs/proc.js';
-import { addrDir, GateError, TASK_ID_RE, taskDir, tasksDir } from './protocol.js';
+import { lockDir } from './v1/layout.js';
+import { addrDir, GateError, requireTaskId, TASK_ID_RE, taskDir, tasksDir } from './protocol.js';
 
 // --- directories -------------------------------------------------------------
 
@@ -352,7 +353,8 @@ export function lockBusyError(id: string, lock: string, held: LockHolder | null,
 export function withTaskLock<T>(home: string, id: string, fn: () => T, {
   waitMs = LOCK_WAIT_MS, session = null,
 }: { waitMs?: number; session?: string | null } = {}): T {
-  const lock = path.join(taskDir(home, id), '.lock');
+  const task = requireTaskId(id);
+  const lock = lockDir(home, task);
   const guarded = suspenders.reduce<() => T>((inner, suspend) => () => suspend(inner), fn);
   return withDirLock(lock, guarded, {
     waitMs,

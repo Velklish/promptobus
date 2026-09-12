@@ -864,6 +864,21 @@ check(': a binary older than the proven version — refuse before lift',
   && codexDriver.optionRefusal({}, { version: PROVEN_CODEX_VERSION }) === null
   && codexDriver.optionRefusal({}, { version: null }) === null,
   String(codexDriver.optionRefusal({}, { version: '0.140.0' })).slice(0, 90));
+check(': a raw Codex version with the product prefix at the proven release passes',
+  codexDriver.optionRefusal({}, { version: 'codex-cli 0.146.0' }) === null,
+  String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.146.0' })));
+check(': a raw Codex version with the product prefix below the proven release refuses',
+  /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' }))),
+  String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' })));
+check(': a v-prefixed Codex version at the proven release passes',
+  codexDriver.optionRefusal({}, { version: 'v0.146.0' }) === null,
+  String(codexDriver.optionRefusal({}, { version: 'v0.146.0' })));
+check(': a v-prefixed Codex version below the proven release refuses',
+  /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'v0.9.0' }))),
+  String(codexDriver.optionRefusal({}, { version: 'v0.9.0' })));
+check(': an unparsed nonempty Codex version refuses explicitly',
+  /could not be parsed: codex-cli unknown/.test(String(codexDriver.optionRefusal({}, { version: 'codex-cli unknown' }))),
+  String(codexDriver.optionRefusal({}, { version: 'codex-cli unknown' })));
 
 check(': shadowedUserServers is empty — the personal set is not isolated, config/read is forbidden',
   JSON.stringify(codexDriver.shadowedUserServers(['promptobus'])) === '[]');

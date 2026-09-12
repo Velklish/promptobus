@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, makeSockPath } from './sandbox.mjs';
 import {
-  authorErrors, claudeConfigDir, diagnoseTrace, installHarness, listSessions, pidAlive, planParticipant,
+  authorErrors, claudeConfigDir, diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant,
   readLog, readTrace, sessionByName, stopAll, traceFile, waitFor,
 } from './harness.mjs';
 
@@ -180,8 +180,8 @@ check('the driver stopped the session through claude stop and said so',
 // process to die, but the system does not free it in the same millisecond.
 const dead = await waitFor(() => !pidAlive(record.pid), { timeoutMs: 5000 });
 check('after stop the participant process is gone, and the record left the registry',
-  dead === true && listSessions(HARNESS).length === 0,
-  `pid ${record?.pid} alive: ${pidAlive(record?.pid)} · ${JSON.stringify(listSessions(HARNESS))}`);
+  dead === true && harnessSessions(HARNESS).length === 0,
+  `pid ${record?.pid} alive: ${pidAlive(record?.pid)} · ${JSON.stringify(harnessSessions(HARNESS))}`);
 const idempotent = await claudeDriver.stop(NAME);
 check('a second stop is an outcome with its own words, not a refusal',
   idempotent.ok === true && idempotent.stopped === false, JSON.stringify(idempotent));

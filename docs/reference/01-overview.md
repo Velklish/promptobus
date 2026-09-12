@@ -26,7 +26,7 @@ The `.` entry point exports `Engine` and its public input and result types, incl
 
 ## Store home
 
-Default store directory name: `.promptobus` (`src/v1/layout.ts` `ROOT_DIR`). The standalone host places it under the workspace root (`src/host.ts` `homeOfRoot`). `PROMPTOBUS_HOME` overrides the path for a process that already knows the home (`lib/store.js`).
+Default store directory name: `.promptobus`, the `ROOT_DIR` constant in `src/v1/layout.ts`. The standalone host's `homeOfRoot` uses that same constant; `PROMPTOBUS_HOME` overrides the path for a process that already knows the home (`lib/store.js`).
 
 Layout of one task:
 
@@ -53,6 +53,8 @@ Layout of one task:
 - `broken/inbox/<participant-id>/` is written by mailbox readers when they isolate malformed refs; it is safe to delete after retaining its diagnostic and any record needed for repair.
 - `broken/artifacts/` is written by artifact readers when they isolate malformed metadata; it is safe to delete after retaining its diagnostic and any record needed for repair.
 - `broken/messages/` is written by recovery for malformed intents; it is safe to delete after retaining its diagnostic and any record needed for repair.
+
+Mailbox readers share one `readRecord(file, name, attic)` for parse, validation and isolation. `read` keeps its ENOENT skip and other-read-error report, `peek` keeps its inherited catch-all read-error skip, and `history` passes `attic = null` so it never moves a delivered record; all three now use the same malformed-schema note.
 
 `files/` is the folder a person opens, and it holds two kinds of file: artifacts that arrived through the bus — hard links to their blobs under the names they came with — and what the mechanism puts there itself, the `review` diff (`review-<worker>.diff`) and the `spawn` brief (`brief-<worker>.md`). A taken name is never overwritten: the next file of that stem takes the following number (`brief-<worker>-2.md`).
 
@@ -150,10 +152,14 @@ Alongside it go out the bus vocabulary, task-directory files the store does not
 hold, former-root migration, the MCP factory, the driver contract, and the
 warden state machine.
 
-Raw filesystem helpers (atomic file and JSON writes) do not go out — they are
-internal: a helper exported once becomes a contract, and the point of the
-boundary is that the outside sees protocol, not disk. For the same reason the
-store v1 paths are not visible outside: every operation goes through `openEngine`.
+Package-owned low-level helpers have one implementation in `src/`, and the
+bundled `lib/` runtime imports their built implementation modules directly
+(`dist/fs/atomic.js` for atomic writes and `dist/fs/shell.js` for shell quoting).
+`pidAlive` remains on the package entry point as an existing primitive; atomic
+write and shell-quoting helpers stay behind the package boundary. External
+consumers should use protocol and store APIs, not disk paths. For the same
+reason the store v1 paths are not visible outside: every operation goes through
+`openEngine`.
 
 A constraint invisible from this file: package sources import only Node
 built-ins and their own files. No consumer modules, no Git, no workspace
@@ -238,19 +244,19 @@ module takes them as callbacks.
 
 Source: `src/fs/atomic.ts`.
 
-Atomic file write — a raw primitive shared by the legacy store and protocol v1.
-
-Not exported: a helper exported once becomes a contract, and the point of the
-boundary is that the outside sees protocol, not disk. There is no second copy
-— v1 takes this same module.
+Atomic file and JSON writes — raw primitives shared by the legacy store, protocol
+v1, and the bundled `lib/` runtime through `dist/fs/atomic.js`. `writeFileAtomic`
+keeps the optional `preserveMode` behavior in this one implementation; callers that
+need a private new file may pass an explicit mode. External consumers should use the
+protocol and store APIs rather than these disk-level helpers.
 
 ### Reading about a process
 
 Source: `src/fs/proc.ts`.
 
-Process liveness and a synchronous pause. An internal package module: these
-primitives are not exported — `pidAlive` goes out from `store.ts`, because it
-has been part of that surface since earlier times.
+Process liveness and a synchronous pause. `pidAlive` is exported from the package
+entry point so the bundled `lib/` registries use the same implementation; raw process
+helpers remain lower-level than the protocol and store APIs.
 
 ### The legacy store, and the one reader it still lives for
 

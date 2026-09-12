@@ -14,7 +14,7 @@ Registry pair (`lib/cursor-persist.js` vs `lib/codex-session.js`):
 - `pidAlive` — identical (cursor-persist.js:292-300 = codex-session.js:138-146).
 - `STOP_TIMEOUT_MS = 10_000` / `STOP_STEP_MS = 100` declared separately in both files (cursor-persist.js:133-134, codex-session.js:198-199).
 - `writeJson` is a third copy of the tmp-write-and-rename primitive `store.js:1014` already exports as `writeJsonAtomic` — differing in that Cursor's takes an optional `{ secret }` flag (cursor-persist.js:249) while Codex's applies mode `0o600` unconditionally with no comment explaining the difference (codex-session.js:106).
-- `listSessions` names two different things: tmux sessions in `cursor-persist.js:339`, registry records read off disk in `codex-session.js:148`.
+- The old session-list name covered two different things: tmux sessions in `cursor-persist.js:339`, registry records read off disk in `codex-session.js:148`.
 - `readSession`/`writeSession`/`patchSession`/`dropSession` are structurally identical apart from the per-harness sidecar list.
 
 Driver trio (`driver-cursor.js` / `driver-codex.js` / `driver-claude.js`), diffed pairwise at the cited ranges — all empty:
@@ -28,7 +28,7 @@ The adapter-boundary gate (`test/promptobus-adapter.test.mjs:399` `DRIVER_OWN`, 
 
 ## Work to do
 
-- Extract a `harness-registry.js` (or similar) built on `store.js`'s `writeJsonAtomic` with a `secret`/mode option, parameterised by harness name and the per-harness sidecar-path list, exposing `sessionsDir`, `sessionFile`, `sessionKey`, `readSession`, `writeSession`, `patchSession`, `dropSession`; keep `pidAlive` there too. Rename the two `listSessions` functions to say what they list (`tmuxSessions` / `registrySessions`).
+- Extract a `harness-registry.js` (or similar) built on `store.js`'s `writeJsonAtomic` with a `secret`/mode option, parameterised by harness name and the per-harness sidecar-path list, exposing `sessionsDir`, `sessionFile`, `sessionKey`, `readSession`, `writeSession`, `patchSession`, `dropSession`; keep `pidAlive` there too. Rename the two session-list functions to say what they list (`tmuxSessions` / `registrySessions`).
 - Move `versionLess`, `sayForeignWrite`, `sessionEnv(dropList, base, extra)` and `readRecordAt` into a shared leaf (`util.js` or a new `driver-common.js`), each driver passing its own drop list; give `orderBody` a single implementation in `notification.js` (taking the mailbox tool name each driver renders), fixing the drifted `driver-claude.js` wording as part of the merge.
 - Extend the adapter-boundary gate so the new shared leaf can be imported by any driver but imports no driver itself.
 
@@ -72,8 +72,8 @@ answer rebuilds the same problem one level down.
   `lib/store.js:1013-1016` — the same primitive PB-117's registry pair copies a third time as
   `writeJson` (`cursor-persist.js:249` with `{ secret }`, `codex-session.js:106` with mode `0o600`
   unconditionally and no comment explaining the difference).
-- `shellQuote` is character-for-character identical between `src/hooks.ts:23-25` and
-  `lib/util.js:90-94`, `SHELL_SAFE` regex included.
+- The original `shellQuote` body was character-for-character identical between
+  `src/hooks.ts:23-25` and `lib/util.js:90-94`, `SHELL_SAFE` regex included.
 - `src/index.ts:7-10` states a rule ("Raw filesystem helpers … do not go out — they are internal")
   and `src/fs/atomic.ts:3-5` asserts "There is no second copy". Both are false today. Whichever way
   the decision goes, rewrite that comment to say what it actually protects — external consumers of
@@ -88,3 +88,82 @@ de-duplication.
 ## Returned to the queue, 2026-09-12
 
 **The return condition has fired:** blocker `PB-45` and the Codex and Cursor lifecycle fixes are archived, so the registries this card compares are the stabilized ones.
+
+## Implementation notes — 2026-09-12
+
+The canonical primitives are package-owned implementations in `src/`, consumed by `lib/`
+through built `dist` modules rather than copied into a new `lib/` leaf: `writeFileAtomic`,
+`writeJsonAtomic`, `shellQuote`, and `pidAlive` now have one source. A new `lib/` copy would
+keep the same source-versus-installed split this card is removing. `writeFileAtomic` and
+`writeJsonAtomic` use `dist/fs/atomic.js`, `shellQuote` uses `dist/fs/shell.js`, and `pidAlive`
+keeps its pre-existing public route. These are three separate decisions: the primitive's
+**body** lives once in `src/`; its internal **route** may import a built implementation module
+rather than the public barrel; and the public **boundary** is the deliberate entry-point export
+list, not every helper `lib/` needs. `compactStamp`, `filesDir`, and `historyRoot` therefore
+remain implementation-module helpers and are not re-exported accidentally through `v1/index.ts`.
+`writeFileAtomic` carries
+`preserveMode`; `writeJsonAtomic` accepts only an explicit `mode`, because both registry
+writers already write private `0600` files and Cursor's old `secret: false` branch had no
+caller. The registry itself is the one parameterized `lib/harness-registry.js` leaf, with
+Cursor's tmux listing and Codex's record listing named separately. The shared preview arithmetic lives in `lib/notification.js`; each driver keeps its prior
+full header and tail, and the common tail derives its noun from that header. Full-body snapshots
+in the adapter gate protect Claude, Cursor and Codex; the remaining duplicated driver helpers
+live in `lib/driver-common.js`. The old ambiguous session-list exports are not aliases: Cursor
+exports `tmuxSessions` and Codex exports `registrySessions`, and all in-tree callers use the
+new names.
+
+The adapter gate now verifies that all three drivers import both shared leaves and that the
+leaves import no private driver module. `node test/promptobus-adapter.test.mjs` passes
+73/73 before the mutation probe, including literal full-frame snapshots for Claude, Cursor
+and Codex. The common tail derives its noun from the header: Claude keeps `notification`,
+while Cursor and Codex keep `service wake`; changing either frame is exposed by the snapshot
+rather than by an independent tail literal, and registry modes are kept.
+
+The byte-for-byte channel check for future driver-frame changes is run against built copies
+with `MAIN_ROOT` and `BRANCH_ROOT` set to their roots:
+```sh
+node --input-type=module - "$MAIN_ROOT" "$BRANCH_ROOT" <<'NODE'
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [mainRoot, branchRoot] = process.argv.slice(2);
+const channels = [
+  ['claude', 'lib/driver-claude.js'],
+  ['cursor', 'lib/driver-cursor.js'],
+  ['codex', 'lib/driver-codex.js'],
+];
+for (const [name, rel] of channels) {
+  const input = ['T', 'worker:a', 1, []];
+  const load = async (root) => {
+    const { orderBody } = await import(pathToFileURL(path.join(root, rel)).href);
+    return orderBody(...input);
+  };
+  const before = await load(mainRoot);
+  const after = await load(branchRoot);
+  if (before !== after) throw new Error(name + ': orderBody differs');
+  console.log(name + ': ' + Buffer.byteLength(before) + ' bytes');
+}
+NODE
+```
+The first review pass also caught a false-green oracle: `TAIL_GOLD` in the warden
+test had been changed to match the new common default instead of preserving Claude's old
+expected value. During a copy consolidation, expected values and snapshots are not edited:
+a red oracle means behavior changed and must be fixed or explicitly recorded. The main-versus-
+branch byte comparison above is the check for preserving established driver output.
+
+The live run remains a separate acceptance fact: this change proves provenance is written and
+its fields distinguish the branch copy from the installed copy, but it does not prove that a
+real participant lift executed the branch copy. That attribution stays open until the package
+is repinned; the installed copy measured before this change was `0.7.0` and had no
+`PARTICIPANT_ARGV` marker in `node_modules/promptobus/lib/codex-hold.js`.
+
+The HostToolBin reader census is six by inspection, not a quota: if the number changes, a new
+reader must be read before the assertion is updated. The Codex version regression also keeps the
+raw `codex-cli 0.146.0` and `codex-cli 0.9.0` forms, plus `v`-prefixed forms, because the 63/63
+fixture used bare numeric versions while the live `--version` output carries the product prefix.
+A nonempty version that contains no parseable release is refused explicitly rather than being
+misreported as an older binary.
+
+## Follow-up notes — 2026-09-12
+
+The export rename had 17 callers in `scripts/live-cursor.mjs` and `scripts/live-mixed.mjs` that the package suite never imports because they spend live account limits. The stale callers were found only by a whole-tree `grep` excluding `.git`, `node_modules`, and `archive`; mechanical package gates did not see them. They now use `tmuxSessions`, and the historical `docs/archive` references remain untouched.

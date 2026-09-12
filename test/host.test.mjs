@@ -100,14 +100,20 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
   const declared = interfaceFields(readFileSync(path.join(ROOT, 'src', 'host.ts'), 'utf8'), 'HostToolBin');
   const readers = [
     ...readdirSync(path.join(ROOT, 'lib'))
-      .filter((n) => /^driver-.+\.js$/.test(n)).map((n) => path.join('lib', n)),
+      .filter((n) => /^driver-.+\.js$/.test(n))
+      .map((n) => path.join('lib', n)),
     ...readdirSync(path.join(ROOT, 'lib', 'model-routing'))
       .filter((n) => /^adapter-.+\.js$/.test(n)).map((n) => path.join('lib', 'model-routing', n)),
   ].sort();
 
   const seen = new Map();
+  let toolBinReaders = 0;
   for (const rel of readers) {
     const src = readFileSync(path.join(ROOT, rel), 'utf8');
+    const readsToolBin = /\bresolveToolBin\b|\btoolBin\b/.test(src)
+      || /\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src);
+    if (!readsToolBin) continue;
+    toolBinReaders += 1;
     const holders = new Set();
     for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\bresolveToolBin\b/g)) holders.add(m[1]);
     if (/\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src)) holders.add('tool');
@@ -130,11 +136,10 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
     }
   }
 
-  // The scan must have FOUND the readers, not merely failed to find a violation:
-  // a regex that stopped matching would leave every assert above unreached and the
-  // check green on an empty set. Six reader files, and `version` — the field this
-  // check exists for — read in every one of them.
-  assert.equal(readers.length, 6, readers.join(' '));
+  // This is a reader inventory, not a quota: a changed count needs inspection.
+  // The shared driver leaf is not a HostToolBin reader.
+  const expectedToolBinReaders = 6;
+  assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${readers.join(' ')}`);
   assert.equal(seen.get('version')?.size, 6, [...seen.get('version') ?? []].join(' '));
   assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,
     [...seen].map(([f, files]) => `${f}:${files.size}`).join(' '));
@@ -284,7 +289,7 @@ test('registry reads distinguish an undeclared home from a named empty registry'
     readSession: readCursorSession, sessionsDir: cursorSessionsDir,
   } = await import('../lib/cursor-persist.js');
   const {
-    listSessions: listCodexSessions, readSession: readCodexSession,
+    registrySessions: listCodexSessions, readSession: readCodexSession,
     sessionsDir: codexSessionsDir,
   } = await import('../lib/codex-session.js');
   const { cursorDriver } = await import('../lib/driver-cursor.js');

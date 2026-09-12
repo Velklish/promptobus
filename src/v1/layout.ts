@@ -89,9 +89,14 @@ export function inboxRef(home: string, task: string, participant: string, messag
   return path.join(inboxDir(home, task, participant), `${safeRecord(message)}.json`);
 }
 
+/** Root of all per-participant history boxes. */
+export function historyRoot(home: string, task: string): string {
+  return path.join(taskDir(home, task), 'history');
+}
+
 /** Read mail. The file name is the same — recovery uses it to tell delivered from missing. */
 export function historyDir(home: string, task: string, participant: string): string {
-  return path.join(taskDir(home, task), 'history', safeParticipant(participant));
+  return path.join(historyRoot(home, task), safeParticipant(participant));
 }
 
 export function historyRef(home: string, task: string, participant: string, message: string): string {
@@ -128,6 +133,11 @@ export function blobFile(home: string, task: string, sha256: string): string {
 /** Artifact metadata: the file name lives here, the payload in the blob. */
 export function artifactsDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'artifacts');
+}
+
+/** Human-facing task files: artifacts and mechanism-produced briefs or diffs. */
+export function filesDir(home: string, task: string): string {
+  return path.join(taskDir(home, task), 'files');
 }
 
 export function artifactFile(home: string, task: string, artifact: string): string {

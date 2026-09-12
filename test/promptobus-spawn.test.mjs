@@ -1280,11 +1280,11 @@ const emptyPath = path.join(SB, 'empty-path');
 mkdirSync(emptyPath, { recursive: true });
 const miss = installWorktreeDeps(planLock.worktreePath, { env: { ...process.env, PATH: emptyPath } });
 check(': no npm on PATH — why names PATH, not the ENOENT code',
-  miss.ran === true && miss.ok === false && miss.why === 'npm not found in PATH',
+  miss.ran === true && miss.ok === false && miss.why === 'was not found in PATH (npm)',
   JSON.stringify(miss));
 const missSay = await capture(() => sayWorktreeDeps(miss));
-check(': the warning names "npm not found in PATH" and the command',
-  missSay.includes('npm not found in PATH') && missSay.includes(`the worker will do it: ${npmCiCommand()}`),
+check(': the warning names the unified ENOENT reason and the command',
+  missSay.includes('was not found in PATH (npm)') && missSay.includes(`the worker will do it: ${npmCiCommand()}`),
   missSay);
 
 clearNpm();

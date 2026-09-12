@@ -37,6 +37,8 @@ export {
   writeHealth, writeStalls, writeWake,
 } from './sidecar.js';
 export type { Binding, Health, LockHolder, Stalls, Suspend, Wake, WardenMark } from './sidecar.js';
+// The adapter's bundled lib/ runtime imports package-owned helpers from their built
+// implementation modules; higher-level consumers should prefer protocol and store APIs.
 export { pidAlive } from './fs/proc.js';
 
 // Store `v0.61.0` — as a namespace, not a scatter: its names and v1's are the

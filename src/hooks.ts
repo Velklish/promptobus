@@ -2,6 +2,7 @@
 // contract; the command is the host: absolute node and bin.
 
 import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
+import { shellQuote } from './fs/shell.js';
 import type { PromptobusHost } from './host.js';
 
 // Not written any more; kept to find and delete an entry an older install wrote.
@@ -11,13 +12,6 @@ export { BUS_SERVER };
 
 export const GUARD_HOOK_EVENT = 'Stop';
 export const GUARD_START_EVENT = 'SessionStart';
-
-const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
-function shellQuote(arg: string): string {
-  const s = String(arg);
-  return SHELL_SAFE.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
 
 function quoteFlag(value: string, platform: string): string {
   return platform === 'win32'

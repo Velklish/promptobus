@@ -36,7 +36,7 @@ const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 
 
 const { cursorDriver } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
-  listSessions, readSession, CURSOR_TMUX_SERVER,
+  tmuxSessions, readSession, CURSOR_TMUX_SERVER,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 
 // --- the run talks to ITS tmux, not to the machine's --------------------------------
@@ -170,9 +170,9 @@ check('step 4: the warden woke the idle session — the text arrived by injectio
   `${JSON.stringify(woken)} · warden journal: ${store.tailWardenLog(home, TASK).slice(-6).join(' | ')}`);
 
 check('step 4: the wake happened WITHOUT a new process — the session pane is the same',
-  readSession(ref, env)?.panePid === panePid && listSessions({ env })
+  readSession(ref, env)?.panePid === panePid && tmuxSessions({ env })
     .some((s) => s.name === record?.sessionName),
-  `${panePid} → ${readSession(ref, env)?.panePid} · ${JSON.stringify(listSessions({ env }))}`);
+  `${panePid} → ${readSession(ref, env)?.panePid} · ${JSON.stringify(tmuxSessions({ env }))}`);
 
 // --- message DURING a turn: it gets through, but runs on the next one ---------------
 //
@@ -194,8 +194,8 @@ check('step 5: the turn in progress did not see it — the message is still unre
 
 check('step 5: delivery did not start a second process — panePid is the same, one session',
   readSession(ref, env)?.panePid === panePid
-  && listSessions({ env }).filter((s) => s.name === record?.sessionName).length === 1,
-  `${panePid} → ${readSession(ref, env)?.panePid} · ${JSON.stringify(listSessions({ env }))}`);
+  && tmuxSessions({ env }).filter((s) => s.name === record?.sessionName).length === 1,
+  `${panePid} → ${readSession(ref, env)?.panePid} · ${JSON.stringify(tmuxSessions({ env }))}`);
 
 // --- the queue runs on the next turn ------------------------------------------------
 
@@ -219,8 +219,8 @@ check('step 6: each end of turn rewrites the fingerprint — the turn counter gr
 
 const done = cli([ 'done', '--task', TASK], { cwd: ws, env });
 check('step 6: promptobus done closed the task, stopped the participant and removed the persist session',
-  done.status === 0 && cursorDriver.inspect(ref)?.state === 'gone' && listSessions({ env }).length === 0,
-  `${done.out.slice(-300)} · ${JSON.stringify(cursorDriver.inspect(ref))} · ${JSON.stringify(listSessions({ env }))}`);
+  done.status === 0 && cursorDriver.inspect(ref)?.state === 'gone' && tmuxSessions({ env }).length === 0,
+  `${done.out.slice(-300)} · ${JSON.stringify(cursorDriver.inspect(ref))} · ${JSON.stringify(tmuxSessions({ env }))}`);
 
 const gone = await waitFor(() => (store.liveWarden(home, TASK) ? null : true), { timeoutMs: 30000 });
 check('step 6: the warden of the closed task exited on its own',

@@ -12,10 +12,10 @@ import { pidAlive } from '../fs/proc.js';
 import { linkFailure } from './artifacts.js';
 import { fail, PromptobusError } from './errors.js';
 import {
-  brokenInboxDir, brokenMessagesDir, historyDir, historyRef, inboxDir, inboxRef, intentFile,
+  brokenInboxDir, brokenMessagesDir, historyDir, historyRef, historyRoot, inboxDir, inboxRef, intentFile,
   intentsDir, messageFile, messagesDir, ownerOfIntent, taskDir,
 } from './layout.js';
-import { MESSAGE_PROTOCOL_VERSION } from './model.js';
+import { compactStamp, MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import { validate } from './validate.js';
 
@@ -72,7 +72,7 @@ let seq = 0;
  */
 export function newRecordId(now: Date): string {
   seq = (seq + 1) % 10000;
-  const stamp = now.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+  const stamp = compactStamp(now);
   return `${stamp}-${String(seq).padStart(4, '0')}-${randomBytes(3).toString('hex')}`;
 }
 
@@ -300,6 +300,36 @@ function isolate(from: string, atticDir: string, name: string): { attic: string 
   }
 }
 
+type ReadRecord = { message: MessageV1 } | { broken: BrokenNote };
+
+function readRecord(file: string, name: string, attic: string | null): ReadRecord {
+  const raw = readFileSync(file, 'utf8');
+  let parsed: unknown = null;
+  let code = '';
+  let note = '';
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    code = 'schema-invalid';
+    note = 'did not parse (' + (e as Error).message + ')';
+  }
+  if (!code) {
+    const verdict = validate('message', parsed);
+    if (!verdict.ok) {
+      code = verdict.code as string;
+      note = 'does not match the schema: ' + verdict.at + ' ' + verdict.note;
+    }
+  }
+  if (code) {
+    // A future schema stays in place: it is unsupported, not corrupt.
+    const where = code === 'schema-version-unsupported' || attic === null
+      ? { attic: null, failure: null }
+      : isolate(file, attic, name);
+    return { broken: { name, code, note, ...where } };
+  }
+  return { message: parsed as MessageV1 };
+}
+
 /**
  * Take incoming and move the refs to history. There is no processing ack and
  * no exactly-once: the mailbox guarantees the message is kept until read,
@@ -321,10 +351,10 @@ export function readInbox(home: string, task: string, participant: string, fault
   if (names.length) ensureHistoryDir(home, task, participant);
   for (const name of names) {
     const file = path.join(dir, name);
-    let raw;
+    let record: ReadRecord;
     try {
       fault('inbox-read', { task, participant, name, mode: 'read' });
-      raw = readFileSync(file, 'utf8');
+      record = readRecord(file, name, brokenInboxDir(home, task, participant));
     } catch (e) {
       // A neighbour took it between the listing and the read — a skip, not a
       // refusal: the second reader took the message, and that reader will
@@ -335,33 +365,13 @@ export function readInbox(home: string, task: string, participant: string, fault
       broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
       continue;
     }
-    let parsed: unknown = null;
-    let code = '';
-    let note = '';
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      code = 'schema-invalid';
-      note = `did not parse (${(e as Error).message})`;
-    }
-    if (!code) {
-      const verdict = validate('message', parsed);
-      if (!verdict.ok) {
-        code = verdict.code as string;
-        note = `does not match the schema: ${verdict.at} ${verdict.note}`;
-      }
-    }
-    if (code) {
-      // A record from the future does not go to `broken`: it is not corrupt, there is just nothing to read it with.
-      const where = code === 'schema-version-unsupported'
-        ? { attic: null, failure: null }
-        : isolate(file, brokenInboxDir(home, task, participant), name);
-      broken.push({ name, code, note, ...where });
+    if ('broken' in record) {
+      broken.push(record.broken);
       continue;
     }
     try {
       fault('history-ref', { task, participant, name });
-      renameSync(file, historyRef(home, task, participant, (parsed as MessageV1).id));
+      renameSync(file, historyRef(home, task, participant, record.message.id));
     } catch (e) {
       // ENOENT here is the same neighbour who took it. A refusal from here
       // comes from the MIDDLE of the walk, when some refs have already gone
@@ -373,7 +383,7 @@ export function readInbox(home: string, task: string, participant: string, fault
       broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
       continue;
     }
-    messages.push(parsed as MessageV1);
+    messages.push(record.message);
   }
   fault('read', { task, participant, taken: messages.length });
   return { messages, broken };
@@ -447,7 +457,7 @@ function byKey(a: string, b: string): number {
 export function history(home: string, tasks: string[], { participant, limit = 50, before, all = false }: HistoryQuery): HistoryPage {
   const refs: { key: string; task: string; participant: string; file: string }[] = [];
   for (const task of tasks) {
-    const root = path.join(taskDir(home, task), 'history');
+    const root = historyRoot(home, task);
     let boxes: string[];
     try {
       boxes = readdirSync(root);
@@ -471,19 +481,18 @@ export function history(home: string, tasks: string[], { participant, limit = 50
   const entries: HistoryEntry[] = [];
   const broken: BrokenNote[] = [];
   for (const ref of page) {
-    let message: unknown;
+    let record: ReadRecord;
     try {
-      message = JSON.parse(readFileSync(ref.file, 'utf8'));
+      record = readRecord(ref.file, path.basename(ref.file), null);
     } catch (e) {
       broken.push({ name: path.basename(ref.file), code: 'schema-invalid', note: (e as Error).message, attic: null, failure: null });
       continue;
     }
-    const verdict = validate('message', message);
-    if (!verdict.ok) {
-      broken.push({ name: path.basename(ref.file), code: verdict.code as string, note: `${verdict.at} ${verdict.note}`, attic: null, failure: null });
+    if ('broken' in record) {
+      broken.push(record.broken);
       continue;
     }
-    entries.push({ task: ref.task, participant: ref.participant, message: message as MessageV1 });
+    entries.push({ task: ref.task, participant: ref.participant, message: record.message });
   }
   const first = page[0];
   const hasOlder = Boolean(first) && older.length > page.length;
@@ -645,38 +654,18 @@ export function peekInbox(home: string, task: string, participant: string): {
   const broken: BrokenNote[] = [];
   for (const name of inboxNames(dir)) {
     const file = path.join(dir, name);
-    let raw;
+    let record: ReadRecord;
     try {
-      raw = readFileSync(file, 'utf8');
+      record = readRecord(file, name, brokenInboxDir(home, task, participant));
     } catch {
       // The owner took it between the listing and the read: they will deliver the message.
       continue;
     }
-    let parsed: unknown = null;
-    let code = '';
-    let note = '';
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      code = 'schema-invalid';
-      note = `did not parse (${(e as Error).message})`;
-    }
-    if (!code) {
-      const verdict = validate('message', parsed);
-      if (!verdict.ok) {
-        code = verdict.code as string;
-        note = `does not match the schema: ${verdict.at} ${verdict.note}`;
-      }
-    }
-    if (code) {
-      // A record from the future does not go to `broken`: it is not corrupt, there is just nothing to read it with.
-      const where = code === 'schema-version-unsupported'
-        ? { attic: null, failure: null }
-        : isolate(file, brokenInboxDir(home, task, participant), name);
-      broken.push({ name, code, note, ...where });
+    if ('broken' in record) {
+      broken.push(record.broken);
       continue;
     }
-    messages.push(parsed as MessageV1);
+    messages.push(record.message);
   }
   return { messages, broken };
 }

@@ -5,6 +5,7 @@ import {
 import path from 'node:path';
 import process from 'node:process';
 import { writeJsonAtomic } from './fs/atomic.js';
+import { compactStamp } from './v1/model.js';
 import {
   addrDir, FOREIGN_MARK, FOREIGN_ROUTE, GateError, isAddress, MESSAGE_TYPES, newTaskIdentity, ORCHESTRATOR,
   participantFileStem, requireTaskId, stampOfId, TASK_ID_RE, TASK_TITLE_SEP, taskDir, tasksDir,
@@ -479,10 +480,6 @@ export function closeTask(home: string, id: string): TaskMeta {
 
 // --- messages ---------------------------------------------------------------
 
-function stamp(now: Date = new Date()): string {
-  return now.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-}
-
 // The artifact is laid in the shared task folder under its own name; a taken name is not overwritten.
 function storeArtifact(home: string, id: string, srcAbs: string): string {
   const src = path.resolve(srcAbs);
@@ -542,7 +539,7 @@ export function sendMessage(home: string, id: string, { from, to, type, body, ar
   // on a taken name instead of a quiet overwrite.
   tmpSeq += 1;
   const tmp = path.join(dir, `.tmp-msg-${process.pid}-${tmpSeq}`);
-  const ts = stamp(now);
+  const ts = compactStamp(now);
   let msg: Message;
   try {
     for (;;) {
