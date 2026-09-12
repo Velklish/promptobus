@@ -50,8 +50,8 @@ const FORBIDDEN = [
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
   ['absolute owner home path', (name, text) => {
     const normalized = normalizedName(name);
-    // Historical archive paths are immutable evidence; live queue cards are not.
-    if (!normalized.startsWith('docs/') || normalized.startsWith('docs/archive/')) return false;
+    // Every documentation record is public evidence, including the archive.
+    if (!normalized.startsWith('docs/')) return false;
     return ABSOLUTE_HOME_PATH.test(text);
   }],
   ['origin brand', (name, text) => {

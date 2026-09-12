@@ -8,46 +8,47 @@
 ## Context
 
 A source review found eight tracked documentation files carrying an absolute owner-home path:
-six historical records under docs/archive/ and two live records under docs/backlog/queue/.
+six historical records under `docs/archive/` and two live records under `docs/backlog/queue/`.
 The six historical files are PB-144, PB-166.2, PB-119, PB-63, PB-112 and PB-56. PB-89
 contains only an ellipsis placeholder and is not one of the eight path-shaped records.
 
-The baseline publicity audit was green before this task: npm run audit exited 0 on the tree with
+The baseline publicity audit was green before this task: `npm run audit` exited 0 on the tree with
 853 tracked files and a 126-entry tarball. The audit had no rule for this path form. The brand
 rule's evidence-card exception was not a decision about owner paths.
 
 ## Scope decision and measurements
 
-The new rule detects the POSIX owner-home path shape by fragments, not one login. It applies to
-documentation under docs/ and includes live queue records. It explicitly excludes docs/archive/
-because the repository rules make the archive immutable; those six historical files are scanned
-and named here but are not rewritten. This is a narrower, explicit archive exception, not reuse
-of the broader brand exception.
+The rule detects the POSIX owner-home path shape by fragments, not one login. It applies to every
+documentation record under `docs/`, including `docs/archive/`. The separate brand-word exemption
+for historical evidence is unchanged; it is not an exemption for owner-home paths.
 
-Before the live queue sweep, npm run audit exited 1 and printed exactly these two findings:
+The repository rule assigns the work across roles: the participant owns the rule and its
+documentation, while the approver owns archived records and card movement. The approver cleaned the
+six historical archive records in commit 53f227b. The participant took that approver commit into
+this branch as 6509463 for the full-tree audit; no archive file was edited by the participant.
+
+Before the live queue sweep, `npm run audit` exited 1 and printed exactly these two findings:
 
     absolute owner home path: docs/backlog/queue/PB-118-done-triple-listtasks-walk.md
     absolute owner home path: docs/backlog/queue/PB-127-dead-file-citations-in-comments.md
 
-A first all-text version also found four synthetic paths in test fixtures. That was a false
-positive for this subject, so the rule was scoped to docs/ before the red queue measurement was
-accepted. The two live task files were then normalized to workspace-relative wording; no archive
-file was changed.
+After the approver's archive cleanup and the live-card normalization, `npm run audit` is expected
+to exit 0 with the rule active across `docs/`. A first all-text version also found four synthetic
+paths in test fixtures. That was a false positive for this subject, so the rule remains scoped to
+`docs/` rather than all tracked text.
 
 ## Work to do
 
-- Keep the absolute owner-home rule in scripts/audit-public.mjs assembled from fragments so the
+- Keep the absolute owner-home rule in `scripts/audit-public.mjs` assembled from fragments so the
   rule does not exempt itself.
-- Keep the scope decision explicit: docs/archive/ is immutable historical evidence and is
-  excluded; live docs/backlog/queue/ cards are included.
-- Normalize the two live cards to a filename-relative or workspace-relative path, preserving the
-  measured meaning without the owner's login or private repository root.
+- Keep the rule active for all `docs/`, including the archive; the approver's cleanup supplies the
+  clean historical evidence.
+- Keep the two live cards and the six archive records workspace-relative, preserving measured
+  meaning without the owner's login or private repository root.
 - Keep the reference README and CHANGELOG in the same pass.
-- Prove the rule with a red queue measurement before the sweep, then run the green audit after
-  the sweep.
-- Run the mutation probe against the rule itself, not against a sanitized card. Mutating the
-  archive guard to scan historical paths must produce the named absolute-owner-home verdict and
-  the snapshot restore must return the green audit.
+- Prove the rule with the recorded red queue measurement and a green full-docs audit after cleanup.
+- Run a new mutation probe against a cleaned `docs/archive/` file: temporarily restore an absolute
+  path there, and require the audit to name that archive file before the snapshot restores it.
 
 ## Out of scope
 
@@ -56,11 +57,13 @@ file was changed.
 
 ## Verification
 
-- Before the sweep, npm run audit exited 1 with exactly two findings, one for each live queue
+- Before the live sweep, `npm run audit` exited 1 with exactly two findings, one for each live queue
   card named above.
-- After the sweep, npm run audit must exit 0 and report the tracked-file and tarball counts.
-- The mutation probe must target scripts/audit-public.mjs, exit 0 overall with a red mutated audit
-  and a green restored audit, and name the absolute-owner-home verdict from docs/archive/.
-- A final diff scan must find no absolute owner-home path in changed files and no foreign tracker or
-  memory-service identifiers. Historical archive mentions remain unchanged by design.
+- The approver measured `docs/archive/` clean after six files were normalized; the participant's
+  full-docs audit must exit 0 with the rule active on the archive.
+- The new mutation probe targets one cleaned `docs/archive/` file, exits 0 overall with a red mutated
+  audit naming that archive file and a green restored audit, proving the exception is gone.
+- A final diff scan must find no absolute owner-home path in changed participant-owned files and no
+  foreign tracker or memory-service identifiers. The approver-owned archive diff is recorded
+  separately by commit 53f227b.
 - This card remains in the queue for approver acceptance; it is not archived here.

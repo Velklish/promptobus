@@ -11,4 +11,4 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |
 
 The [contributing guide](../guides/contributing.md) describes the verification gates; `npm run audit` also enforces the English runtime-output claim in the [roadmap](../ROADMAP.md).
-The publicity audit also checks documentation for absolute owner-home paths. Live queue evidence is included; immutable historical archive evidence is explicitly outside that check, and live cards use workspace-relative wording.
+The publicity audit also checks every documentation record for absolute owner-home paths, including immutable historical archive evidence; live cards and cleaned archive records use workspace-relative wording.
