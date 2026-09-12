@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const say = (s) => process.stdout.write(`${s}\n`);
 const die = (s) => { say(`✖ ${s}`); process.exit(2); };
 
-const USAGE = 'usage: npm run probe -- <file> (--mutate <sed-expr> | --stdin-patch) [--run <command>]';
+const USAGE = 'usage: npm run probe -- <file> (--mutate s/<js-regexp>/<replacement>/[gi] | --stdin-patch) [--run <command>]';
 
 function parse(argv) {
   const out = { file: null, sed: null, patch: false, run: null };
@@ -70,7 +70,14 @@ function mutate() {
   const m = opts.sed.match(/^s(.)(.*)\1(.*)\1([gi]*)$/s);
   if (!m) die(`--mutate takes s<sep><regexp><sep><replacement><sep>[gi], not ${JSON.stringify(opts.sed)} — use --stdin-patch for anything else`);
   const [, , re, repl, flags] = m;
-  writeFileSync(abs, before.replace(new RegExp(re, flags), repl));
+  // A JS regexp, not sed's BRE: `(`, `|` and `{` are operators here and need escaping.
+  let pattern;
+  try {
+    pattern = new RegExp(re, flags);
+  } catch (e) {
+    die(`--mutate: ${e.message} — the pattern is a JavaScript regexp, so ( ) | { } are operators; escape them or use --stdin-patch`);
+  }
+  writeFileSync(abs, before.replace(pattern, repl));
 }
 
 mutate();
