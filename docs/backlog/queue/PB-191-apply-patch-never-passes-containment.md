@@ -162,6 +162,51 @@ found it by trying, not by being told.
 Whoever closes this card must say what the participant is shown when containment closes. If the text
 stays as it is, the remedy it points at is the wrong one.
 
+## The boundary is the worktree itself, not the write method — measured 2026-09-12
+
+A participant of run 0912c took four plain-shell writes, no escalation, in its own worktree, and a
+fifth and sixth outside it. The orchestrator asked for them to test whether the refusal depends on
+depth — the repository root against a subdirectory. It does not.
+
+```
+printf 'x\n' >> AGENTS.md        → 1   operation not permitted   (root)
+printf 'x\n' >> docs/README.md   → 1   operation not permitted   (subdirectory)
+touch ./probe-root-check.tmp      → 1   operation not permitted   (root)
+touch docs/probe-sub-check.tmp    → 1   operation not permitted   (subdirectory)
+
+mkdir -p /tmp/pb-orch-probe       → 0   created, then removed
+mkdir -p "$PWD/.probe-here"       → 1   operation not permitted
+
+git checkout -- AGENTS.md docs/README.md
+                                  → 128 EPERM creating .git/worktrees/…/index.lock
+```
+
+**The participant's plain shell cannot write anywhere inside its own worktree, and can write to
+`/tmp`.** Depth makes no difference; the boundary is the worktree. Even `git checkout` fails, because
+git needs its own lock file inside `.git`.
+
+This inverts the picture the card carried until now. The card's remedy — "write through shell" — was
+inferred from participants that did write successfully, and the natural reading was that the plain
+route works and `apply_patch` alone is blocked. The measurement says the plain route does **not**
+work at all here: every successful edit in this run went through the escalated route, and the
+escalation is what made it look like shell worked.
+
+**Two things follow, and neither is guesswork.**
+
+1. **The remedy in this card is wrong as written.** Telling a participant to "write through shell"
+   describes a route its plain shell does not have. What it actually needs is the escalated route,
+   by name, with the note that ordinary writes will be refused with `operation not permitted` and
+   that the refusal is not about the file.
+2. **`/tmp` is writable while the worktree is not**, which is the opposite of what the recorded
+   sandbox mode `workspace-write` suggests by its name. Either the mode is not what the name says, or
+   the participant is not running under the mode the session record claims. Both are checkable, and
+   neither has been checked.
+
+**Still not established.** Whether this was true from the first minute of the session or changed
+partway — the same participant committed repeatedly earlier in the run, and whether those commits
+went through escalation was not recorded at the time. The next measurement worth taking is the
+cheapest one: the same four commands at the start of a participant's life, before any work.
+
 ## Work to do
 
 - Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
