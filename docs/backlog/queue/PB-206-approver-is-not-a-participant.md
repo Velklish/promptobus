@@ -1,7 +1,7 @@
 # PB-206 · Acceptance is a role the glossary names and the bus cannot address
 
 - **Order:** 5
-- **Scope:** `src/protocol.ts` (`ADDRESS_RE`, refusal texts, `participantFileStem`), `src/mcp/render.ts`, `lib/store.js` (`routingPolicy`, `participantRecord`), `lib/liftoff.js`, `lib/model-routing/*` (four role lists, `qualityFloor`), `schemas/model-routing/*`, `src/host.ts` (`participantDenyTools`), `docs/reference/04-protocol.md`, `docs/reference/16-spawn.md`
+- **Scope:** `src/protocol.ts` (`ADDRESS_RE`, refusal texts, `participantFileStem`), `src/mcp/render.ts`, `lib/store.js` (`routingPolicy`, `participantRecord`), `lib/liftoff.js`, `lib/model-routing/*` (four role lists, `qualityFloor`), `schemas/model-routing/*`, `src/host.ts` (`participantDenyTools`), `src/mcp/tools.ts` (a further contract copy of the addresses, found 2026-09-12 while verifying the map), `docs/reference/04-protocol.md`, `docs/reference/05-drivers.md`
 - **Created:** 2026-09-12, from a measurement of what the orchestrator actually does
 - **Dependencies:** none
 
@@ -21,6 +21,8 @@ Two decisions are already on the record and constrain this one.
 - [ADR-012](../../adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) decided the shape of this exact question once: an action over one participant became a verb of its own, and the option of a flag on `done` was rejected there with reasons. This card must say why it is not repeating the rejected option.
 
 What a fourth role costs, measured by reading the code rather than guessing: the address regexp and two refusal texts, the participant file stem (a `reviewer-` branch exists, a third would collide with a worker slug), the MCP render, three refusals in `lib/store.js`, the lift map in `lib/liftoff.js`, **four independent copies of the role list** in model routing, `qualityFloor` (`worker: 5`, `reviewer: 9` — the new role needs its own), three model-routing schemas, the CLI help, and the role table in the consumer's skill. Two further points deserve their own line: `routingPolicy` permits a message only when one end is the orchestrator, so approver ↔ worker traffic is refused today; and `participantDenyTools(role)` is a **public host contract member**, called so far only with the literal `'reviewer'`.
+
+**Correction 2026-09-12.** The scope line above first named `docs/reference/16-spawn.md`. That page does not exist in this repository and never did — `docs/reference/` here holds 01 through 05, and git records no deletion of such a file. The page with that name belongs to the consumer, `agent-workspace/ati-agents`, whose reference numbering runs to 17; editing it is part of the consumer's own card, BL-671. `lint` did not catch the bad name because the card cites it as inline code rather than as a markdown link. The driver page of this repository, `docs/reference/05-drivers.md`, is where the lift of the new role is documented.
 
 ## Work to do
 
