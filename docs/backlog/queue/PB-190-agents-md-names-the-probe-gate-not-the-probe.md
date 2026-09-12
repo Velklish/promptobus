@@ -81,10 +81,9 @@ red where the old to-end-of-file slice stayed green.
 
 The full-suite boundary also requires every new `*.test.mjs` file to divert the participant
 home through `home.mjs` or `check.mjs`. The full suite caught this guard file before its import was
-added; the same boundary has now caught three files across two repositories (the other two are
-`context-store-memory.test.mjs` and `git-helper.test.mjs`). This is the third measured case in
-`BL-659`, not a reason to adjust a counter: workers cannot run the reserved full suite, so the
-local single-file check does not expose this boundary.
+added; the same boundary has now caught three new test files in two repositories. The
+consumer's own tracker has a card on this; it is not a reason to adjust a counter: workers cannot
+run the reserved full suite, so the local single-file check does not expose this boundary.
 
 ## What remains open
 
