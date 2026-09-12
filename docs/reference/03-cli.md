@@ -756,6 +756,16 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `prune` previews deletions. `--yes` deletes. `--older-than <days>` changes the age.
 
+## Send
+
+`promptobus send <address> --body <text> [--type <type>] [--task <id>] [--artifact <file>]` writes one bus message. It is the CLI door to the channel the MCP tool already had, and it exists because there was none: a session that opened a task of its own could not reach that task's participants at all and drove tmux by hand — `load-buffer`, `paste-buffer`, a pause, `send-keys Enter`, `capture-pane` — to wake them (PB-179).
+
+**The sender is the process's own address and cannot be chosen.** It is `PROMPTOBUS_ROLE` when the process carries one, `orchestrator` otherwise — resolved by the same `resolveIdentity` the MCP server uses, so the command can do nothing the tool could not. **There is no `--from`**, and the reason is a decision rather than an omission: a sender that can be chosen is a sender that can be borrowed, and the only barrier against borrowing is ownership of the task, which needs a session to be identifiable first ([ADR-010](../adr/adr-010-a-session-address-is-per-task.md), [ADR-009](../adr/adr-009-session-identity-is-a-driver-member.md)).
+
+The task is resolved as everywhere else — `--task`, else the session's binding, else the single active one. `--type` defaults to `status`. `--artifact <file>` puts a file in the task's files directory and names it in the message, the same way the tool's `artifactPath` does. The routing policy is untouched: participants correspond through the orchestrator, and a refusal still names that reason.
+
+**The asymmetry the command does not remove.** `--task` moves the task; nothing moves the sender. A worker that opened a second task writes into it as the worker it is, so it still cannot act as that task's orchestrator. That gap is named with its condition in ADR-010 rather than papered over.
+
 ## Guard and warden
 
 `guard` is the Stop-hook helper. Clean mailbox: exit 0, no output. Unread mail: exit 2, return the turn. Same state twice, then it warns and lets the turn end.
