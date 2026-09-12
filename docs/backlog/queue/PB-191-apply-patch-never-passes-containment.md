@@ -140,7 +140,9 @@ step is the one this card has to record, because it is not the same kind of fail
 So the remedy this card hands a participant trades a refusal it cannot miss for a failure it can.
 Anyone writing the fix must say what the participant runs **after** the fallback to know the edit
 landed whole: a reject-file sweep, a rejected-hunk exit code read rather than ignored, or a diff
-re-read. "Write through shell" alone is not a complete instruction.
+re-read. "Write through shell" alone is not a complete instruction. A hand-assembled unified patch
+also failed to apply reliably in this Codex run; generating it with Python `difflib` did apply, so
+the shell recipe must generate rather than hand-assemble the patch.
 
 ## The refusal blames the user, measured 2026-09-12
 
