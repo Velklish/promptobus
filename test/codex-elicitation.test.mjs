@@ -167,6 +167,12 @@ for (const [name, requestedSchema] of [
 // nobody has catalogued. These are the ones that leaked through a filter chain one at a
 // time — a different elicitation VARIANT, and a required field that is absent rather than
 // explicitly null. Upstream applies the schema test inside the Form arm only.
+// The plain URL case below does NOT prove the `mode` check: it carries no schema, so the
+// fail-closed-on-absence rule refuses it too, and it stays green with `mode` removed.
+// What proves `mode` is `mode: 'url'` with a VALID form schema, in the loop after it —
+// everything lawful except the variant. Deleting that case as a duplicate deletes the
+// only evidence for `mode` and leaves the probe green (measured: removing the `mode`
+// check reddens three cases, and this one is not among them).
 {
   const url = { ...approval, mode: 'url', elicitationId: 'e-1', url: 'https://example.invalid/approve' };
   delete url.requestedSchema;
