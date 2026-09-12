@@ -2,25 +2,25 @@
 // Why, the sweep order and where displaced facts go: guides/contributing.md.
 import './home.mjs';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { longRuns } from './comment-scan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIMIT = 2;
 const TREES = ['lib', 'src', 'bin', 'templates'];
 const CODE = /\.(js|ts|mjs)$/;
-const COMMENT = /^\s*(\/\/|\*|\/\*)/;
 
 /**
- * Files the sweep has not reached yet, with the run count each still carries.
+ * Files the sweep has not reached, each with the IDENTITY of every long run it still has.
  *
- * A ratchet, not an exemption list, and the COUNT is what makes it one: the gate is red
- * on a long run in any file not named here, red when a named file's count goes UP, and
- * red when it goes down without the number following. Reading the name alone was an
- * allowlist — a new long run in a pending file stayed green while any old run remained.
+ * Identities and not a count, because a count let a pending file swap its debt: delete one
+ * long block, add another, and `runs.length` was unchanged and the gate silent. A run is
+ * identified by the hash of its own text, so the only lawful move is disappearance.
  *
  * No other exception exists. There are no licence headers in these trees and nothing
  * generated is tracked, so an exception would be a hole shaped like the thing the gate
@@ -28,20 +28,15 @@ const COMMENT = /^\s*(\/\/|\*|\/\*)/;
  */
 const PENDING = new Map(Object.entries(JSON.parse(
   readFileSync(path.join(ROOT, 'test', 'fixtures', 'comment-sweep-pending.json'), 'utf8'),
-)));
+)).map(([file, ids]) => [file, new Set(ids)]));
+
+/** A run's identity: its own prose, so that rewriting it is a change and moving it is not. */
+export function runId(run) {
+  return createHash('sha256').update(run.lines.map((l) => l.trim()).join('\n')).digest('hex').slice(0, 12);
+}
 
 export function runsOf(text) {
-  const lines = text.split('\n');
-  const runs = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (!COMMENT.test(lines[i])) { i++; continue; }
-    let j = i;
-    while (j < lines.length && COMMENT.test(lines[j])) j++;
-    if (j - i > LIMIT) runs.push({ line: i + 1, length: j - i });
-    i = j;
-  }
-  return runs;
+  return longRuns(text, LIMIT);
 }
 
 const tracked = execFileSync('git', ['ls-files', ...TREES], { cwd: ROOT, encoding: 'utf8' })
@@ -50,48 +45,56 @@ const tracked = execFileSync('git', ['ls-files', ...TREES], { cwd: ROOT, encodin
 test('an inline comment is at most two lines, outside the files the sweep has not reached', () => {
   assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
   const offenders = [];
-  const grew = [];
-  const shrank = [];
+  const appeared = [];
+  const swept = [];
   for (const rel of tracked) {
     const runs = runsOf(readFileSync(path.join(ROOT, rel), 'utf8'));
-    if (PENDING.has(rel)) {
-      // The count is the ratchet's tooth. Without reading it a pending file was an
-      // allowlist: a new long run stayed green while one old run remained.
-      const was = PENDING.get(rel);
-      if (runs.length > was) grew.push(`${rel}: ${was} -> ${runs.length}`);
-      if (runs.length < was) shrank.push(`${rel}: ${was} -> ${runs.length}`);
+    if (!PENDING.has(rel)) {
+      for (const run of runs) offenders.push(`${rel}:${run.line} — ${run.length} lines`);
       continue;
     }
-    for (const run of runs) offenders.push(`${rel}:${run.line} — ${run.length} lines`);
+    const owed = PENDING.get(rel);
+    for (const run of runs) {
+      if (!owed.has(runId(run))) appeared.push(`${rel}:${run.line} — a long run the list does not name`);
+    }
+    if (!runs.length) swept.push(rel);
   }
   assert.deepEqual(offenders, [], `comment runs longer than ${LIMIT} lines`);
-  assert.deepEqual(grew, [], 'a pending file gained a long comment run — the ratchet only turns one way');
-  assert.deepEqual(shrank, [],
-    'a pending file lost runs: bring its number down, or take it off the list at zero');
+  assert.deepEqual(appeared, [],
+    'a pending file carries a long run the list does not name — swapping debt is not sweeping');
+  assert.deepEqual(swept, [], 'swept files still listed as pending — take them off the list');
 });
 
-test('the ratchet reads the count, not only the name', () => {
-  // The half five probes missed: a long run ADDED to a file already on the list. The
-  // name alone stayed green while any old run remained, which is an allowlist.
-  const [rel, was] = [...PENDING.entries()][0];
-  const text = readFileSync(path.join(ROOT, rel), 'utf8');
-  assert.equal(runsOf(text).length, was, `${rel} is this check's fixture and must match its count`);
-  assert.equal(runsOf(`${text}\n// one\n// two\n// three\n`).length, was + 1,
-    'adding a three-line run must raise the count the gate compares');
-  const stripped = text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
-  assert.equal(runsOf(stripped).length, 0, 'a file with no comment lines has no runs');
+test('every pending entry names a tracked file, and every listed run still exists', () => {
+  const missingFiles = [...PENDING.keys()].filter((rel) => !tracked.includes(rel));
+  assert.deepEqual(missingFiles, [], 'pending list names files the walk does not see');
+  // A listed id no run answers is debt already paid: the entry has to go, or the list
+  // drifts into an allowlist of names nobody checks.
+  const stale = [];
+  for (const [rel, owed] of PENDING) {
+    if (!tracked.includes(rel)) continue;
+    const have = new Set(runsOf(readFileSync(path.join(ROOT, rel), 'utf8')).map(runId));
+    for (const id of owed) if (!have.has(id)) stale.push(`${rel}: ${id} is listed and gone — drop it`);
+  }
+  assert.deepEqual(stale, [], 'pending entries for runs that no longer exist');
 });
 
-test('every pending entry names a tracked file', () => {
-  const missing = [...PENDING.keys()].filter((rel) => !tracked.includes(rel));
-  assert.deepEqual(missing, [], 'pending list names files the walk does not see');
+test('the scanner sees the shapes a per-line regexp could not', () => {
+  // Each was a hole the review named, and each is a positive case: without them the gate
+  // could stop seeing comments altogether and still pass.
+  const one = (src) => runsOf(src).map((r) => [r.line, r.length]);
+  assert.deepEqual(one('/*\n a\n b\n */\nconst x = 1;'), [[1, 4]], 'a block with bare continuation lines');
+  assert.deepEqual(one('const x = 1; // one\n// two\n// three\n'), [[1, 3]], 'a comment opened after code');
+  assert.deepEqual(one('/**\n * a\n * b\n */\nfn();'), [[1, 4]], 'a jsdoc block');
+  assert.deepEqual(one('// a\n// b\n// c\nconst x = 1;'), [[1, 3]], 'three line comments');
+  assert.deepEqual(one('// a\nconst x = 1;\n// b\n'), [], 'code between them ends the run');
+  assert.deepEqual(one("const s = '// not a comment';\nconst u = 'http://x';\n"), [], 'inside a string');
 });
 
-test('the run finder counts a run, not a comment line', () => {
-  // Three consecutive lines are one run of three; the same three split by code are none.
-  assert.deepEqual(runsOf('// a\n// b\n// c\n'), [{ line: 1, length: 3 }]);
-  assert.deepEqual(runsOf('// a\nconst x = 1;\n// b\nconst y = 2;\n// c\n'), []);
-  assert.deepEqual(runsOf('// a\n// b\nconst x = 1;\n'), []);
-  // A block comment counts by its lines, wherever it starts.
-  assert.deepEqual(runsOf('const x = 1;\n/**\n * a\n * b\n */\n'), [{ line: 2, length: 4 }]);
+test('a run is identified by its text, so replacing one is not paying it', () => {
+  const a = runsOf('// one\n// two\n// three\n')[0];
+  const b = runsOf('// four\n// five\n// six\n')[0];
+  assert.equal(a.length, b.length, 'the fixture holds the COUNT equal — that is the hole being closed');
+  assert.notEqual(runId(a), runId(b), 'equal counts must not give equal identities');
+  assert.equal(runId(a), runId(runsOf('// one\n// two\n// three\n')[0]), 'the same text gives the same id');
 });

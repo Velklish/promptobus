@@ -1,4 +1,4 @@
-// Gate: a markdown link inside a CODE comment resolves — file and anchor both.
+// Gate: a markdown link inside a CODE comment resolves — file, anchor and subject.
 // Why this is a second gate and not part of the others: guides/contributing.md.
 import './home.mjs';
 import assert from 'node:assert/strict';
@@ -7,85 +7,36 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { commentRegions } from './comment-scan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TREES = ['lib', 'src', 'bin', 'templates'];
 const CODE = /\.(js|ts|mjs)$/;
-const COMMENT = /^\s*(\/\/|\*|\/\*)/;
 const LINK = /\[[^\]]*\]\(([^)\s]+)\)/g;
+const SYMBOL = /^\s*(?:export\s+)?(?:async\s+)?(?:function|const|class|type|interface|let)\s+([A-Za-z0-9_]+)|^\s*([A-Za-z0-9_]+)\s*[(:]/;
 
-/** GitHub's heading slug, which is what an anchor in these files is written against. */
+/**
+ * The pointers this tree is known to carry, per file, and how many bind a symbol.
+ *
+ * A baseline and not a floor: a count could be held up by links nobody touched while the
+ * pointers under repair quietly vanished. Losing one is a failure; adding one is reported
+ * and allowed, since the sweep adds pointers by design.
+ */
+const BASELINE = JSON.parse(
+  readFileSync(path.join(ROOT, 'test', 'fixtures', 'comment-links-baseline.json'), 'utf8'),
+);
+
+/** GitHub's heading slug: each space becomes a hyphen, runs are not collapsed. */
 export function slugOf(heading) {
   return heading.toLowerCase().replace(/`/g, '').replace(/[^a-z0-9 _-]/g, '').trim().replace(/ /g, '-');
 }
 
 export function anchorsOf(markdown) {
   return new Set(markdown.split('\n')
-    .map((l) => l.match(/^#{1,6}\s+(.*)$/))
-    .filter(Boolean)
-    .map((m) => slugOf(m[1])));
+    .map((l) => l.match(/^#{1,6}\s+(.*)$/)).filter(Boolean).map((m) => slugOf(m[1])));
 }
 
-/** Every markdown link that appears inside a comment, with the line it was written on. */
-export function commentLinks(text) {
-  const out = [];
-  text.split('\n').forEach((line, i) => {
-    if (!COMMENT.test(line)) return;
-    for (const m of line.matchAll(LINK)) out.push({ line: i + 1, target: m[1] });
-  });
-  return out;
-}
-
-const tracked = execFileSync('git', ['ls-files', ...TREES], { cwd: ROOT, encoding: 'utf8' })
-  .split('\n').filter((f) => f && CODE.test(f));
-
-test('a link written in a code comment resolves to a file that exists', () => {
-  assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
-  const broken = [];
-  let seen = 0;
-  for (const rel of tracked) {
-    for (const { line, target } of commentLinks(readFileSync(path.join(ROOT, rel), 'utf8'))) {
-      if (/^(https?:|mailto:|#)/.test(target)) continue;
-      seen++;
-      const file = target.split('#')[0];
-      if (!file) continue;
-      if (!existsSync(path.resolve(ROOT, path.dirname(rel), file))) broken.push(`${rel}:${line} -> ${target}`);
-    }
-  }
-  // A gate that matched nothing would pass in silence; these links are the reason it exists.
-  assert.ok(seen > 50, `only ${seen} comment links were found — the walk is not reaching them`);
-  assert.deepEqual(broken, [], 'links in code comments that resolve to nothing');
-});
-
-test('an anchor written in a code comment names a heading that exists', () => {
-  const broken = [];
-  const docs = new Map();
-  for (const rel of tracked) {
-    for (const { line, target } of commentLinks(readFileSync(path.join(ROOT, rel), 'utf8'))) {
-      if (/^(https?:|mailto:)/.test(target) || !target.includes('#')) continue;
-      const [file, anchor] = target.split('#');
-      if (!file || !anchor) continue;
-      const abs = path.resolve(ROOT, path.dirname(rel), file);
-      if (!existsSync(abs)) continue;
-      if (!docs.has(abs)) docs.set(abs, anchorsOf(readFileSync(abs, 'utf8')));
-      if (!docs.get(abs).has(anchor)) broken.push(`${rel}:${line} -> ${target}`);
-    }
-  }
-  assert.deepEqual(broken, [], 'anchors in code comments that name no heading');
-});
-
-/** The symbol a pointer stands above: the first declaration after the comment block. */
-export function symbolUnder(lines, from) {
-  let j = from;
-  while (j < lines.length && COMMENT.test(lines[j])) j++;
-  while (j < lines.length && !lines[j].trim()) j++;
-  const m = (lines[j] ?? '').match(
-    /^\s*(?:export\s+)?(?:async\s+)?(?:function|const|class|type|interface|let)\s+([A-Za-z0-9_]+)|^\s*([A-Za-z0-9_]+)\s*[(:]/,
-  );
-  return m ? (m[1] ?? m[2]) : null;
-}
-
-/** Sections keyed by anchor, each carrying the file and symbol its `Source:` line names. */
+/** Sections by anchor, each carrying the file and symbol its `Source:` line names. */
 export function sectionsOf(markdown) {
   const lines = markdown.split('\n');
   const out = new Map();
@@ -98,40 +49,128 @@ export function sectionsOf(markdown) {
   return out;
 }
 
-test('a pointer stands above the symbol its section names', () => {
-  // The guard finding 2 was missing. The relocation kept every block where it belonged;
-  // what drifted was the claim about WHICH symbol it documents, and nothing checked that.
-  const wrong = [];
-  let checked = 0;
-  const docs = new Map();
+/** Links written inside a comment, found through the scanner rather than per line. */
+export function commentLinks(text) {
+  const lines = text.split('\n');
+  const out = [];
+  for (const region of commentRegions(text)) {
+    for (let n = region.start; n <= region.end; n++) {
+      for (const m of (lines[n - 1] ?? '').matchAll(LINK)) out.push({ line: n, target: m[1] });
+    }
+  }
+  return out;
+}
+
+/** The declaration a comment region stands above, or null when it stands above none. */
+export function symbolUnder(lines, endLine) {
+  let j = endLine;
+  while (j < lines.length && !lines[j].trim()) j++;
+  const m = (lines[j] ?? '').match(SYMBOL);
+  return m ? (m[1] ?? m[2]) : null;
+}
+
+const tracked = execFileSync('git', ['ls-files', ...TREES], { cwd: ROOT, encoding: 'utf8' })
+  .split('\n').filter((f) => f && CODE.test(f));
+
+const docCache = new Map();
+const docOf = (abs) => {
+  if (!docCache.has(abs)) {
+    const text = readFileSync(abs, 'utf8');
+    docCache.set(abs, { anchors: anchorsOf(text), sections: sectionsOf(text) });
+  }
+  return docCache.get(abs);
+};
+
+/** Every pointer of the tree, classified, so that nothing is skipped in silence. */
+function pointers() {
+  const rows = [];
   for (const rel of tracked) {
-    const lines = readFileSync(path.join(ROOT, rel), 'utf8').split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/\]\(([^)]+\.md)#([a-z0-9_-]+)\)/);
-      if (!m || !COMMENT.test(lines[i])) continue;
-      const abs = path.resolve(ROOT, path.dirname(rel), m[1]);
-      if (!existsSync(abs)) continue;
-      if (!docs.has(abs)) docs.set(abs, sectionsOf(readFileSync(abs, 'utf8')));
-      const section = docs.get(abs).get(m[2]);
-      if (!section?.symbol) continue;
-      checked++;
-      let top = i;
-      while (top > 0 && COMMENT.test(lines[top - 1])) top--;
-      const under = symbolUnder(lines, top);
-      // A file-level pointer stands above an import, not a symbol: it claims nothing.
-      if (under && under !== section.symbol) {
-        wrong.push(`${rel}:${i + 1} points at \`${section.symbol}\` but stands above \`${under}\``);
+    const text = readFileSync(path.join(ROOT, rel), 'utf8');
+    const lines = text.split('\n');
+    for (const region of commentRegions(text)) {
+      for (let n = region.start; n <= region.end; n++) {
+        for (const m of (lines[n - 1] ?? '').matchAll(LINK)) {
+          const target = m[1];
+          if (/^(https?:|mailto:|#)/.test(target)) continue;
+          const [file, anchor] = target.split('#');
+          const abs = file ? path.resolve(ROOT, path.dirname(rel), file) : null;
+          rows.push({
+            rel, line: n, target, file, anchor: anchor ?? null, abs,
+            exists: !!abs && existsSync(abs), under: symbolUnder(lines, region.end),
+          });
+        }
       }
     }
   }
-  assert.ok(checked > 30, `only ${checked} symbol-bearing pointers were checked — the walk is not reaching them`);
-  assert.deepEqual(wrong, [], 'pointers whose section names a different symbol than they stand above');
+  return rows;
+}
+
+const all = pointers();
+
+test('a link written in a code comment resolves to a file that exists', () => {
+  assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
+  const broken = all.filter((p) => p.file && !p.exists).map((p) => `${p.rel}:${p.line} -> ${p.target}`);
+  assert.deepEqual(broken, [], 'links in code comments that resolve to nothing');
 });
 
-test('the walk sees a link and an anchor, and ignores prose that is not a comment', () => {
-  // The positive half: without it, a walk that matched nothing would satisfy the checks.
-  const sample = '// see [a](../docs/x.md#b)\nconst s = "[c](../docs/y.md#d)";\n/* [e](z.md) */\n';
-  assert.deepEqual(commentLinks(sample).map((l) => l.target), ['../docs/x.md#b', 'z.md']);
+test('an anchor written in a code comment names a heading that exists', () => {
+  const broken = [];
+  for (const p of all) {
+    if (!p.anchor || !p.exists) continue;
+    if (!docOf(p.abs).anchors.has(p.anchor)) broken.push(`${p.rel}:${p.line} -> ${p.target}`);
+  }
+  assert.deepEqual(broken, [], 'anchors in code comments that name no heading');
+});
+
+test('a pointer stands above the symbol its section names, and none is skipped in silence', () => {
+  const wrong = [];
+  // Three classes, all counted. A pointer is BOUND when its section names a symbol and is
+  // then checked against the declaration it stands above; FILE-LEVEL when the section
+  // names a file and no symbol; a CITATION when it points at a guide section that
+  // describes no source at all. The third is lawful — `src/hooks.ts` cites where the
+  // removal is explained — but it must be counted, because a skip nobody counts is how a
+  // threshold fills with the unchecked.
+  const seen = { bound: 0, fileLevel: 0, citation: 0 };
+  for (const p of all) {
+    if (!p.anchor || !p.exists) continue;
+    const section = docOf(p.abs).sections.get(p.anchor);
+    if (!section) { seen.citation++; continue; }
+    if (!section.symbol) { seen.fileLevel++; continue; }
+    seen.bound++;
+    if (p.under && p.under !== section.symbol) {
+      wrong.push(`${p.rel}:${p.line} points at \`${section.symbol}\` but stands above \`${p.under}\``);
+    }
+  }
+  assert.deepEqual(wrong, [], 'pointers whose section names a different symbol than they stand above');
+  assert.deepEqual(seen, { bound: BASELINE.bound, fileLevel: BASELINE.fileLevel, citation: BASELINE.citation },
+    'the split between the three pointer classes moved — say so in the baseline');
+});
+
+test('no file has lost a pointer it is known to carry', () => {
+  const lost = [];
+  const added = [];
+  const now = new Map();
+  for (const p of all) {
+    if (!now.has(p.rel)) now.set(p.rel, new Set());
+    now.get(p.rel).add(p.target);
+  }
+  for (const [rel, targets] of Object.entries(BASELINE.byFile)) {
+    const have = now.get(rel) ?? new Set();
+    for (const t of targets) if (!have.has(t)) lost.push(`${rel} -> ${t}`);
+  }
+  for (const [rel, targets] of now) {
+    const known = new Set(BASELINE.byFile[rel] ?? []);
+    for (const t of targets) if (!known.has(t)) added.push(`${rel} -> ${t}`);
+  }
+  // Losing one is the failure this replaces the floor with; additions are the sweep's
+  // normal output and are reported as a count rather than refused.
+  assert.deepEqual(lost, [], 'pointers that were in the baseline and are gone');
+  if (added.length) console.log(`  pointers added since the baseline: ${added.length}`);
+});
+
+test('the walk sees a link on a continuation line and ignores prose that is not a comment', () => {
+  const sample = '/**\n * see [a](../docs/x.md#b)\n[c](../docs/y.md#d)\n */\nconst s = "[e](z.md)";\n';
+  assert.deepEqual(commentLinks(sample).map((l) => l.target), ['../docs/x.md#b', '../docs/y.md#d']);
   // Each space becomes a hyphen, runs are not collapsed — the em dash leaves two.
   assert.deepEqual([...anchorsOf('# One Two\n## `three` — four\n')], ['one-two', 'three--four']);
 });
