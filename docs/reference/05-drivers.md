@@ -88,3 +88,52 @@ session still stalls: nothing writes on its behalf, and the age only grows.
 
 `null` — the record names no working directory, the directory is gone, or git refused
 both questions. The caller reports that rather than reading it as either answer.
+
+### Cursor: delivering text into a live session
+
+Source: `lib/cursor-persist.js`.
+
+Deliver text into a live session.
+
+The protocol is the one the spike measured (REPORT §4.3), and each step pays for a
+live miss:
+
+  1. **the input field is cleared**, otherwise leftover from a previous failure
+     rides out with the new text;
+  2. **text rides in a tmux buffer**, not `send-keys -l`: a multiline message via
+     bracketed paste lands in the transcript as ONE message, and line-by-line input
+     would send it as several;
+  3. **a pause stands between paste and `Enter`** — without it Enter is lost, the
+     text stays in the field and glues onto the next message;
+  4. **paste and send are checked against `capture-pane`**: empty in the field
+     means it went.
+
+Delivery also goes into a RUNNING turn. The text queues in the TUI and runs as a
+separate turn right after the current one (REPORT §4.3): the running turn does not
+see it, the injection does not interrupt the turn, a second parallel turn does not
+appear. There is no longer a reason to refuse “a turn is running” here — the
+message is not lost, it waits.
+
+### Launch directories a driver claims
+
+Source: `src/driver.ts`.
+
+Directories inside the participant's working directory that this driver's launch
+files claim.
+
+Before the first write the caller asks Git what the lift is about to overwrite, and
+it asks about **the paths the lift writes** — never about the claimed directory as a
+whole. A declared directory is not a claim on everything under it: a repository may
+lawfully keep files of its own there, and a lift that does not write them must not
+announce them. What this field supplies is the boundary — where a launch file's
+absolute path stops being the working directory and becomes the pathspec Git is
+asked about.
+
+A launch file that copies a whole directory is the one that matters most: its
+destination is erased before the copy, so everything tracked under that one path is
+lost rather than merely rewritten. It needs no separate declaration — the
+destination is itself a written path, and a directory in a pathspec covers its
+subtree.
+
+Optional: a driver whose launch files land outside the repository claims none and is
+asked nothing.

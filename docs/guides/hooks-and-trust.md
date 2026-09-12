@@ -223,3 +223,28 @@ Missing marks keep the stall, each for its own reason: no end-of-turn mark
 means the participant has never yielded a turn, and reading that absence as
 "carried on" would silence the very first prompt of a run; a participant
 record too broken to read messages from has no right to lift its own report.
+
+### The warden is a process, not a state machine
+
+Source: `lib/warden.js`.
+
+The task warden is a PROCESS, not a state machine.
+
+Listening on the bus is held by a process, not by model discipline: the warden is
+the only listener of every task mailbox and its only activator. On unread mail it
+wakes the addressee and thereby starts their turn. The process has no state of its
+own — everything lives in the task store, so its death loses nothing, and any CLI
+command may start it again (`ensureWarden`).
+
+**This file does not make the decisions.** Rounds, knock-retry thresholds, unread
+health, silence escalation, stall resolution, and the "whom to activate" decision
+live in the package ([supervisor.ts](../../src/supervisor.ts)) and know nothing about
+the harness. What remains here is exactly what belongs to the harness and the
+workspace: a detached process, `fs.watch` watchers, a session snapshot through the
+driver registry, human diagnostics, and the loop. The delivery channel is the
+driver, and it is taken from the registry
+([drivers.js](../../lib/drivers.js)).
+
+Delivery is best-effort: the "delivered" mark is one, the mailbox is claimed. An
+activation refusal does not kill the process: the participant is marked with the
+`self-wake` channel, and delivery to the rest continues.

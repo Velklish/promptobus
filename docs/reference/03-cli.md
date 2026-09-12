@@ -855,3 +855,27 @@ gained since that fork. Found — the work is in.
 What it deliberately does not recognise: a squash whose content was edited while it
 was merged, and work taken as a series of cherry-picks. Both keep the directory, and
 that is the safe direction — a directory is cheap to delete and impossible to return.
+
+### Why the telemetry record is written before the sweeps
+
+Source: `lib/done.js`.
+
+One telemetry record per participant that lifted a session
+([model-routing/telemetry.js](../../lib/model-routing/telemetry.js)).
+
+It runs right after the close and BEFORE the sweeps, for two reasons. The run
+is over at the close, so that is the moment `endedAt` names; and everything
+below this line may leave through a warning — a live session, a busy lock, a
+directory nobody may remove — while the record is the one thing this command
+cannot write later.
+
+**Only when THIS call closed the task.** `closeTask` is idempotent and a second
+`promptobus done` on the same task is not a mistake — the reference asks for
+one, after the sessions holding a worktree have been closed by hand — so the
+caller reads the status before closing and passes it here. Without that, every
+repeat would append the whole set again, and the file PB-37 reads as one row
+per participant run would carry a run twice for no reason a reader could see.
+
+A failure here is a warning and never a refusal, the same rule the journal
+sweep below keeps: `done` has already closed the task and has no undo, and a
+read-only routing directory is not a reason to leave the run half-closed.

@@ -282,3 +282,49 @@ A host should mark the HIGHEST-precedence layer, or the tool would write a
 value a layer above it overrides; the writer PB-32 adds will warn when that
 happens rather than leave the person to wonder why their default did not
 take.
+
+### What a host answers about its layers
+
+Source: `src/host.ts`.
+
+Where the package keeps its own session registry for one harness — the
+records `inspect`, `stop` and the wake path read and write. Account-scoped
+like `routingPaths()`, and for the same reason: a session a harness keeps
+alive belongs to the account its binary is logged into, not to one
+workspace. `null` means the host names none, and then a run refuses.
+
+It refuses instead of guessing because the guess was measured. The package
+used to fall back to `~/.promptobus/<harness>` when the per-harness
+environment variable was unset. A consumer that had named its own
+variables instead therefore had two harness registries writing into the
+operator's REAL home while `inspect` read the sandbox — two halves of one
+test looking at different directories, with no error anywhere and nothing
+in either log to say so (PB-2). A named refusal costs one message; a
+silent guess cost a day.
+
+Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
+environment, then this method, then the refusal — which names both, so
+the reader is not left to find out which of the two to set.
+
+### The writable layer, continued
+
+Source: `src/host.ts`.
+
+Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
+scoped, and that is why they do not come from `promptobusHome()`: that home is
+the task store of one workspace, while auth, model inventory and the remaining
+subscription limit belong to the account the harness binary is logged into. A
+per-store cache would re-probe three harnesses for every checkout of the same
+account.
+
+`overlays` is ordered LOWEST precedence first, and the order is the host's to
+choose. One method with a list rather than a getter per layer, because a
+consumer will want a layer of its own — its shipped deny lists and defaults —
+between the person's user-wide and workspace-local files: with a list that is
+a host-side choice, with getters it is another change to this interface and a
+repin for every consumer. `id` is what the decision output and `models
+validate` name a layer by, so a refusal reads `denied by overlay "workspace"`
+and not a path the reader has to place themselves.
+
+A missing overlay file is normal. The host names paths; it does not promise
+they exist.

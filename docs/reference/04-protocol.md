@@ -302,3 +302,49 @@ Branches, in this order:
    and the crash checks in `v1-engine.test.mjs` go red on that: they crash
    the send at the seam and recover in THE SAME process;
 4. otherwise owner pid liveness decides.
+
+### Writing a message: the order the names are taken in
+
+Source: `src/v1/messages.ts`.
+
+Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
+as a separate file, not as a field on the record: the intent and the canon
+are one inode, and the field would travel into every recipient's inbox and
+into history, and a reader of the former version would reject such a
+message by schema (`additionalProperties: false`) and take it to `broken`.
+A separate file is invisible to former readers by construction — they walk
+the intents directory by the `.json` mask.
+
+A write refusal does not cancel the send: the commit point is the intent,
+and the lease only speeds up recovery; without it the intent is treated as
+abandoned by age.
+
+The `w` flag, not `wx`: exclusivity is already won by the `wx` creation of
+the intent itself, and `wx` here would mean "an orphaned `<id>.owner` under
+the same name stays foreign" — a fresh intent would carry foreign pid and
+host and would either be declared abandoned at once or wait the threshold
+in vain. That names may repeat is something the code already counts on:
+`commitIntent` reassembles the id on `EEXIST` up to 16 times.
+
+### Artifacts: collisions and what a name promises
+
+Source: `src/v1/artifacts.ts`.
+
+The same, synchronously, from a file. Made for an adapter whose send path
+is synchronous whole (`sendSync` below): the bus MCP server answers
+`tools/call` in one synchronous pass, and a promise in the middle of it
+would rewrite the tool dispatcher for one artifact.
+
+The streaming-branch invariant is held, not loosened: the file is read
+ONCE, and the digest is computed over the very bytes that will land in the
+blob. The cost is the file size in memory; bus artifacts are a diff and a
+contract, not a disk image.
+
+**The "one pass" property is structural, and no gate covers it.** It holds
+because there is no window between read and write in the code at all:
+one `readFileSync`, the digest is computed over that same buffer, and that
+same buffer is written. There is nowhere to swap the payload "between two
+reads", and a two-pass-edit probe paints nothing — so there is no check
+for this property, not a green one. What is actually checked: the record
+digest matches the blob payload, and a read refuses `artifact-integrity`
+on a mismatch.

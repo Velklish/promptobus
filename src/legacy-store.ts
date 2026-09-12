@@ -26,29 +26,8 @@ export type Warn = (msg: string) => void;
 
 const SILENT: Warn = () => {};
 
-// Bus store `v0.61.0` — a maildir store of a task. **It is no longer the
-// production store**: cutover moved the mechanism to protocol v1
-// ([v1/](v1/)), and what remains here is the one reader this code still
-// lives for — migration of the former store → `.promptobus`
-// ([migrate.ts](migrate.ts)). The second caller is the suite: a legacy
-// slice is read by its own reader, and missing adapter files are written
-// into its copy through the same store API.
-//
-// The surface goes out as the `legacy` namespace from [index.ts](index.ts).
-// It cannot be a flat export: both stores share the same names, and in a
-// common space they would collide. The home stays as long as the migration
-// input is read: the former-layout reader is its subject, and it can be
-// removed only together with the migration itself.
-//
-// There is no daemon: each session has its own MCP-server stdio process,
-// shared state is on disk. One message = one JSON file in the addressee
-// mailbox, landing in place by an atomic rename; a mailbox has exactly one
-// consumer (address = process), so "read" is moving the file into read/.
-//
-// The store path arrives as the `home` argument. Where it lives, the
-// package does not know at all: the workspace root is found by the adapter,
-// which also supplies diagnostics and session identity
-// ([host.ts](host.ts)).
+// Bus store v0.61.0 — a maildir store, no longer the production one.
+// Who still reads it and why it is kept: reference/01-overview.md.
 
 let seq = 0;
 // Temporary-name counter of its own: the `seq` number goes into the file name and keeps send order.

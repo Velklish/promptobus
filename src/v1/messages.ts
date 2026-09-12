@@ -122,26 +122,8 @@ function delivered(home: string, task: string, participant: string, message: str
  */
 export const INTENT_STALE_MS = 30_000;
 
-/**
- * Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
- * as a separate file, not as a field on the record: the intent and the canon
- * are one inode, and the field would travel into every recipient's inbox and
- * into history, and a reader of the former version would reject such a
- * message by schema (`additionalProperties: false`) and take it to `broken`.
- * A separate file is invisible to former readers by construction — they walk
- * the intents directory by the `.json` mask.
- *
- * A write refusal does not cancel the send: the commit point is the intent,
- * and the lease only speeds up recovery; without it the intent is treated as
- * abandoned by age.
- *
- * The `w` flag, not `wx`: exclusivity is already won by the `wx` creation of
- * the intent itself, and `wx` here would mean "an orphaned `<id>.owner` under
- * the same name stays foreign" — a fresh intent would carry foreign pid and
- * host and would either be declared abandoned at once or wait the threshold
- * in vain. That names may repeat is something the code already counts on:
- * `commitIntent` reassembles the id on `EEXIST` up to 16 times.
- */
+/** Writing a message into a mailbox.
+ * The order names are taken in and what a collision means: reference/04-protocol.md. */
 function leaseIntent(intent: string): void {
   try {
     writeFileSync(ownerOfIntent(intent),

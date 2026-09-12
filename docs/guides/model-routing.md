@@ -1064,3 +1064,26 @@ so the run may outlive its budget by that one resolve and by no more.
 The answer is memoised by tool NAME: two harnesses that name one binary cost one
 resolve. A host that throws is not a verdict here — `null` travels to the adapter,
 which says what a missing resolve means in its own words.
+
+### The decision as it is kept on the participant
+
+Source: `lib/models.js`.
+
+The decision as it is kept on the participant.
+
+Compact on purpose: the record travels into `task.json` and is read by a
+person through `promptobus status`, not replayed. What is kept is what the
+ADR names — the strategy, the tuple, the score, the age of the snapshot the
+pick was made on, the warnings, and whether the constraints narrowed
+anything. Warnings keep their codes and not their prose: the vocabulary is
+closed ([03-cli](../reference/03-cli.md)), and the sentences behind the
+codes belong to the run that produced them.
+
+`windows` is the exception to "compact", and it earns its place: it is the
+applicable windows of the CHOSEN tuple as the snapshot had them at this
+moment, and it is the starting value a later reader needs to say what this run
+spent — the delta of those windows between the lift and the finish. Without it
+the delta has no first term, and the moment passes: the cache entry is a
+minute old by the time anything asks. The set is the resolver's own
+`applicableWindows`, not a second definition of the word, so a run is measured
+against the windows its pick was scored on. Empty when the harness has none.

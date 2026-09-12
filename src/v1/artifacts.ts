@@ -99,26 +99,8 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
   }
 }
 
-/**
- * The same, synchronously, from a file. Made for an adapter whose send path
- * is synchronous whole (`sendSync` below): the bus MCP server answers
- * `tools/call` in one synchronous pass, and a promise in the middle of it
- * would rewrite the tool dispatcher for one artifact.
- *
- * The streaming-branch invariant is held, not loosened: the file is read
- * ONCE, and the digest is computed over the very bytes that will land in the
- * blob. The cost is the file size in memory; bus artifacts are a diff and a
- * contract, not a disk image.
- *
- * **The "one pass" property is structural, and no gate covers it.** It holds
- * because there is no window between read and write in the code at all:
- * one `readFileSync`, the digest is computed over that same buffer, and that
- * same buffer is written. There is nowhere to swap the payload "between two
- * reads", and a two-pass-edit probe paints nothing — so there is no check
- * for this property, not a green one. What is actually checked: the record
- * digest matches the blob payload, and a read refuses `artifact-integrity`
- * on a mismatch.
- */
+/** Putting a file into the task store as an artifact.
+ * The naming rule and what a collision does: reference/04-protocol.md. */
 export function stashBlobSync(home: string, task: string, file: string): { sha256: string; size: number } {
   if (typeof file !== 'string' || !file) fail('artifact-source', 'artifact path is not named');
   let content: Buffer;

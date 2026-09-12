@@ -251,3 +251,31 @@ Source: `src/fs/proc.ts`.
 Process liveness and a synchronous pause. An internal package module: these
 primitives are not exported — `pidAlive` goes out from `store.ts`, because it
 has been part of that surface since earlier times.
+
+### The legacy store, and the one reader it still lives for
+
+Source: `src/legacy-store.ts`.
+
+Bus store `v0.61.0` — a maildir store of a task. **It is no longer the
+production store**: cutover moved the mechanism to protocol v1
+([v1/](../../src/v1)), and what remains here is the one reader this code still
+lives for — migration of the former store → `.promptobus`
+([migrate.ts](../../src/migrate.ts)). The second caller is the suite: a legacy
+slice is read by its own reader, and missing adapter files are written
+into its copy through the same store API.
+
+The surface goes out as the `legacy` namespace from [index.ts](../../src/index.ts).
+It cannot be a flat export: both stores share the same names, and in a
+common space they would collide. The home stays as long as the migration
+input is read: the former-layout reader is its subject, and it can be
+removed only together with the migration itself.
+
+There is no daemon: each session has its own MCP-server stdio process,
+shared state is on disk. One message = one JSON file in the addressee
+mailbox, landing in place by an atomic rename; a mailbox has exactly one
+consumer (address = process), so "read" is moving the file into read/.
+
+The store path arrives as the `home` argument. Where it lives, the
+package does not know at all: the workspace root is found by the adapter,
+which also supplies diagnostics and session identity
+([host.ts](../../src/host.ts)).
