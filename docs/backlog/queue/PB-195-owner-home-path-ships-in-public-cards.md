@@ -59,10 +59,11 @@ paths in test fixtures. That was a false positive for this subject, so the rule 
 
 - Before the live sweep, `npm run audit` exited 1 with exactly two findings, one for each live queue
   card named above.
-- The approver measured `docs/archive/` clean after six files were normalized; the participant's
-  full-docs audit must exit 0 with the rule active on the archive.
-- The new mutation probe targets one cleaned `docs/archive/` file, exits 0 overall with a red mutated
-  audit naming that archive file and a green restored audit, proving the exception is gone.
+- `npm run audit` after the approver cleanup and rule change exited 0: the tarball had 126
+  entries and the audit read 855 tracked files with a clean verdict.
+- `npm run probe -- docs/archive/PB-112-reference-docs-lag-current-code/task.md --stdin-patch --run "npm run audit"`
+  exited 0 overall; the mutated audit exited 1 with one `absolute owner home path` verdict naming
+  that archive file, and the restored audit exited 0 with zero verdicts.
 - A final diff scan must find no absolute owner-home path in changed participant-owned files and no
   foreign tracker or memory-service identifiers. The approver-owned archive diff is recorded
   separately by commit 53f227b.
