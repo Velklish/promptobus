@@ -61,3 +61,30 @@ a participant with nothing to wake it by.
 
 Constraint invisible from this file: no harness name is here and none can be —
 the package set gate watches for that.
+
+### Cursor: the third liveness signal
+
+Source: `lib/cursor-persist.js`.
+
+How long ago the participant last WROTE anything in its own working tree, in
+milliseconds. The third liveness signal, and the one the first two are blind to.
+
+The transcript grows when the TUI finishes a call. The pane's process tree grows when
+a tool is a separate process. Editing a file is neither: the agent writes it itself,
+inside one long call, and spawns nothing. A live Cursor participant was reported
+stalled twice on 2026-09-04 and 2026-09-05 while it was doing exactly that — the owner
+opened the panel and saw sixteen files edited, and the participant named a commit from
+the same window (PB-7).
+
+Two questions to git, both about the participant's own directory: the newest mtime
+among the files git calls changed or untracked, and the commit time of HEAD. The first
+is git's own walk, so `node_modules` and every other ignored path cost nothing; the
+second covers the worker that commits as it goes and leaves a clean tree behind.
+
+The signal is POSITIVE ONLY, and that is the whole of its contract. A recent write
+proves the turn is alive. No write proves nothing — a turn can read for minutes — so
+it may lift a stall verdict and may never raise one. It is also why a genuinely dead
+session still stalls: nothing writes on its behalf, and the age only grows.
+
+`null` — the record names no working directory, the directory is gone, or git refused
+both questions. The caller reports that rather than reading it as either answer.

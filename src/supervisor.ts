@@ -96,29 +96,8 @@ function lastActivation(home: string, task: string, participant: ParticipantV1 |
   return at.length ? Math.max(...at) : null;
 }
 
-/**
- * Whether a dialog mark is a permission prompt the participant is standing at,
- * or the bus's own postcard held behind the same field (PB-165).
- *
- * **Two marks have to agree, and neither alone lifts the stall.** A participant
- * whose dialog is the held postcard never saw the message: it carried on with
- * the turn it was in, reached the end of it, and reported — so after its last
- * activation the bus has BOTH its end-of-turn mark and a message from it. A
- * participant standing at a prompt of its own work has neither: the prompt is
- * what suspends the turn, so the Stop hook has not run and nothing was sent.
- *
- * The conjunction is deliberately narrower than either half. The end-of-turn
- * mark alone would read the stand's play of a dialog — which runs the guard —
- * as a held message; a sent message alone would silence a real prompt hit later
- * in a turn that had already spoken. What is left open is a turn begun without
- * an activation: the bus does not start one, and a person who does is at the
- * session already.
- *
- * Missing marks keep the stall, each for its own reason: no end-of-turn mark
- * means the participant has never yielded a turn, and reading that absence as
- * "carried on" would silence the very first prompt of a run; a participant
- * record too broken to read messages from has no right to lift its own report.
- */
+/** Whether a dialog mark is a real prompt or the bus's own postcard held behind it.
+ * Which two marks have to agree, and why neither alone lifts the stall: guides/hooks-and-trust.md. */
 function promptStands(home: string, task: string, participant: ParticipantV1 | null | undefined): boolean {
   const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
   if (turn === null) return true;
@@ -196,31 +175,8 @@ export function stallStands(home: string, task: string, participant: Participant
   return sent < since;
 }
 
-/**
- * The address's contact point is held by a FOREIGN session — or `null` if
- * it is held by its own, or there is nothing to compare.
- *
- * This is not malice: the Stop hook takes identity from its command
- * arguments, and when they are missing — from the session environment, and
- * the harness background-session environment is not the one the session was
- * spawned with. Measurement 2026-09-03: harness background sessions are
- * pre-allocated daemon spares, and the `PROMPTOBUS_*` trio comes to them
- * from the process that raised the daemon, that is from the FIRST spawn of
- * the run. The second participant of the task then hands over a contact
- * point for the first address, and the warden, checking nothing, wakes a
- * foreign session through it: in ten minutes of that run eleven
- * notifications went to the wrong place.
- *
- * Hence the rule: do not knock on such a contact point. It is not dead —
- * it leads to another session, and a knock on it starts a FOREIGN turn,
- * while the addressee stays deaf. This repairs itself on the first end of
- * turn of the real owner: their hook rewrites the record with their own.
- *
- * Both sides must be named: a participant record without a session id
- * (spawn did not parse it from `--bg` output) and a contact point of the
- * former CLI without a `session` field — that is unknown, not a foreign
- * session, and it cannot be blamed.
- */
+/** The address's contact point is held by a FOREIGN session, or null.
+ * Why this is not malice and what the knock does instead: guides/hooks-and-trust.md. */
 export function wakeTakenBy(home: string, task: string, p: ParticipantV1 | null | undefined, endpoint?: Wake | null): string | null {
   const addr = addressOf(p);
   if (!addr) return null;

@@ -828,3 +828,30 @@ The module is a leaf on purpose: adapter builds the string when it prints
 same words. If it lived on a driver, adapter would import the driver directly; if it
 lived on adapter, a driver would import adapter. A shared leaf removes both
 dependencies, and the channels cannot drift: there is one function.
+
+### Was a branch taken into the base as one commit?
+
+Source: `lib/worktree.js`.
+
+Was the branch's work taken into the base as ONE commit?
+
+`branchAdds` asks "would merging change the base", and that question has an answer
+only while nothing else has touched the same lines. After a squash merge the base
+already holds the branch's content, and the very next commit over the same file makes
+the re-merge conflict: git stops being able to say whether the work is in, and the
+directory of a branch that WAS accepted stays behind (PB-6). Live shape, and the one
+the fixture reproduces: the orchestrator squashes worker A, worker B lands on the same
+file, `done` runs.
+
+Patch identity answers it without merging anything. A squash merge writes one commit
+whose diff is exactly the branch's own diff from the fork point, and `git patch-id
+--stable` reduces a diff to an id that line numbers and blob hashes do not move. So:
+the id of `git diff <fork> <branch>`, looked for among the ids of the commits the base
+gained since that fork. Found — the work is in.
+
+`true` — found; `false` — the base has no commit carrying this branch's patch;
+`null` — git did not answer at all.
+
+What it deliberately does not recognise: a squash whose content was edited while it
+was merged, and work taken as a series of cherry-picks. Both keep the directory, and
+that is the safe direction — a directory is cheap to delete and impossible to return.

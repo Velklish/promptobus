@@ -163,33 +163,8 @@ function readLease(file: string): { pid: number; host: string } | null {
   }
 }
 
-/**
- * Whether an unclosed intent is abandoned — that is, whether recovery may
- * touch it.
- *
- * A neighbour's live fan-out must not be picked up: recovery materializes the
- * canon and drops the intent, and the owner at that moment is walking to its
- * own `link` — and gets `ENOENT` on a delivered message, a refusal on success.
- *
- * Branches, in this order:
- * 1. age is at least `INTENT_STALE_MS` — abandoned regardless of the lease
- *    (the upper bound). Age is computed from local clocks by `mtime`, and on
- *    a shared mount `mtime` is set by the owner's machine: the branch admits
- *    that the home has one clock. Drifted clocks move the threshold itself,
- *    but not the decision about a live owner — that is guarded by branch 2
- *    by comparing the host;
- * 2. there is no lease, or it is from a foreign machine — owner liveness is
- *    unknown, wait for the threshold;
- * 3. the pid is ours — abandoned. The life of an intent inside a process is
- *    ONE synchronous block: `commitIntent` and `completeFanout` are
- *    synchronous whole, and every `await` of `send` stands before the commit
- *    point, so our own pid on an intent means "a previous process with the
- *    same number", not "it is being written right now". If an await appears
- *    between creating the intent and dropping it, the branch becomes wrong,
- *    and the crash checks in `v1-engine.test.mjs` go red on that: they crash
- *    the send at the seam and recover in THE SAME process;
- * 4. otherwise owner pid liveness decides.
- */
+/** Whether an unclosed intent is abandoned — that is, whether recovery may touch it.
+ * Why a neighbour's live fan-out must not be picked up: reference/04-protocol.md. */
 function abandonedIntent(intent: string): boolean {
   let age: number;
   try {
