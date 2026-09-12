@@ -1,6 +1,5 @@
 # PB-189 · A live measurement records what happened but not which copy produced it
 
-- **Order:** 220
 - **Scope:** `lib/spawn.js` and `lib/review.js` (the lift line), `lib/codex-session.js` /
   `lib/cursor-persist.js` (the holder's journal header),
   [contributing](../../guides/contributing.md) § what the stands prove
@@ -86,3 +85,20 @@ package. The new fields deliberately do not claim that stronger fact.
 The new provenance fields do not reuse the protocol's `mechanismVersion`: that older field keeps
 the host's writer-version numbering, which journal readers use for mixed-version detection. The
 package path/version and host version therefore remain separate facts.
+
+## Deferred
+
+- **Deferred:** 2026-09-12, backlog run 0912c.
+- **Reason:** the writing half is done and measured — `provenanceLine` is emitted at the lift
+  (`lib/spawn.js:1308`, `lib/review.js:699`) and in both holder journal headers
+  (`lib/codex-session.js:153`, `lib/cursor-persist.js:245`), the participant binary and its version
+  are in the line, and [contributing](../../guides/contributing.md) states that a measurement
+  without the executing copy is not attributable. What is **not** done is the only check that would
+  prove the field names the copy that actually ran: a live lift whose header points at the
+  installed copy. That check is unreachable today — the installed copy is the released `0.7.0`,
+  which carries no provenance, so a live lift now would measure the absence of the feature rather
+  than its correctness. Repinning the consumer to an unreleased tree mid-run would move every live
+  participant onto it, which is a mechanism decision and not this card's to take.
+- **Return condition:** the consumer is repinned to a promptobus carrying provenance. Then one live
+  lift, and the header read: it must name the installed copy's `package.json` path, not the tree's.
+  Path is the only discriminator — both copies report the same `version`.
