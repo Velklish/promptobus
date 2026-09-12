@@ -1,5 +1,5 @@
 // Artifacts: a file copied into the task store and named by a message.
-// The naming and collision rules: reference/04-protocol.md.
+// The naming and collision rules: [reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment](../../docs/reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment)
 import { createHash } from 'node:crypto';
 import {
   createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, readFileSync, readdirSync,
@@ -100,7 +100,7 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
 }
 
 /** Putting a file into the task store as an artifact.
- * The naming rule and what a collision does: reference/04-protocol.md. */
+ * The naming rule and what a collision does: [reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file](../../docs/reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file) */
 export function stashBlobSync(home: string, task: string, file: string): { sha256: string; size: number } {
   if (typeof file !== 'string' || !file) fail('artifact-source', 'artifact path is not named');
   let content: Buffer;

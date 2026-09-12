@@ -252,9 +252,9 @@ Process liveness and a synchronous pause. An internal package module: these
 primitives are not exported — `pidAlive` goes out from `store.ts`, because it
 has been part of that surface since earlier times.
 
-### The legacy store, and the one reader it still lives for
+### `seq` — bus store v0.61.0 — a maildir store of a task
 
-Source: `src/legacy-store.ts`.
+Source: `src/legacy-store.ts`, `seq`.
 
 Bus store `v0.61.0` — a maildir store of a task. **It is no longer the
 production store**: cutover moved the mechanism to protocol v1
@@ -280,9 +280,9 @@ package does not know at all: the workspace root is found by the adapter,
 which also supplies diagnostics and session identity
 ([host.ts](../../src/host.ts)).
 
-### Entering a task: once per connection
+### `join` — entering a task: hand over the contact point and lift a listener
 
-Source: `src/mcp/server.ts`.
+Source: `src/mcp/server.ts`, `join`.
 
 Entering a task: hand over the contact point and lift a listener. Per
 connection this is done ONCE per task — `joined` is that mark. A repeat

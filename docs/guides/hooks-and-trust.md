@@ -88,6 +88,8 @@ If you skip trust, spawn still works, but project hooks do not run: each harness
 
 ### The three `self-wake` states
 
+Source: `lib/status.js`, `SELF_WAKE_PROGNOSIS`.
+
 The warden falls back to `self-wake` from three branches and records which one in the health mark (`selfWake`, written by the round in `src/supervisor.ts`). They share a label and nothing else, so `promptobus status` prints the prognosis after the reason:
 
 | State | Reason it prints | Prognosis | How well it is known |
@@ -170,9 +172,9 @@ construction — the entire state sits in the task store.
 The intervals below are measured, not chosen. Changing them changes the
 behaviour of a live run: each is named together with what it was measured by.
 
-### A contact point held by a foreign session
+### `wakeTakenBy` — the address's contact point is held by a FOREIGN session — or null if
 
-Source: `src/supervisor.ts`.
+Source: `src/supervisor.ts`, `wakeTakenBy`.
 
 The address's contact point is held by a FOREIGN session — or `null` if
 it is held by its own, or there is nothing to compare.
@@ -198,9 +200,9 @@ Both sides must be named: a participant record without a session id
 former CLI without a `session` field — that is unknown, not a foreign
 session, and it cannot be blamed.
 
-### A permission prompt, or the bus's own postcard held behind the same field
+### `promptStands` — whether a dialog mark is a permission prompt the participant is standing at,
 
-Source: `src/supervisor.ts`.
+Source: `src/supervisor.ts`, `promptStands`.
 
 Whether a dialog mark is a permission prompt the participant is standing at,
 or the bus's own postcard held behind the same field (PB-165).
@@ -249,9 +251,9 @@ Delivery is best-effort: the "delivered" mark is one, the mailbox is claimed. An
 activation refusal does not kill the process: the participant is marked with the
 `self-wake` channel, and delivery to the rest continues.
 
-### Whether a participant is busy with a turn: two branches
+### `sessionBusy` — whether the participant's session is busy with a turn
 
-Source: `src/supervisor.ts`.
+Source: `src/supervisor.ts`, `sessionBusy`.
 
 Whether the participant's session is busy with a turn. There are two
 branches, because there are two kinds of participant, and one branch
@@ -272,9 +274,9 @@ Neither source is a contract: no snapshot, no record, the watchman mark
 has never been laid — that is UNKNOWN, not busy, and the caller does
 what they would have done without the predicate.
 
-### When a participant counts as last activated
+### `if` — the participant has NEVER yet spoken on the bus, and their session already
 
-Source: `src/supervisor.ts`.
+Source: `src/supervisor.ts`, `if`.
 
 The participant has NEVER yet spoken on the bus, and their session already
 shows a finished turn — that is an unfinished start, not a stall. The
@@ -296,9 +298,9 @@ real timeline, and silence after activation is a stall regardless of the
 record's age**; a window over the whole `unknown` branch would have given
 half a minute of deafness to everyone at once.
 
-### What a warden round does, and what it refuses to do
+### `wardenRound` — one watch round
 
-Source: `lib/warden.js`.
+Source: `lib/warden.js`, `wardenRound`.
 
 One watch round. A wrapper over the state machine: a session snapshot arrives here,
 the registry leaves from here. `knock` is a suite seam: a stand-in driver for one

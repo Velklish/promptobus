@@ -62,9 +62,9 @@ a participant with nothing to wake it by.
 Constraint invisible from this file: no harness name is here and none can be —
 the package set gate watches for that.
 
-### Cursor: the third liveness signal
+### `worktreeTouchedMs` — how long ago the participant last WROTE anything in its own working tree, in
 
-Source: `lib/cursor-persist.js`.
+Source: `lib/cursor-persist.js`, `worktreeTouchedMs`.
 
 How long ago the participant last WROTE anything in its own working tree, in
 milliseconds. The third liveness signal, and the one the first two are blind to.
@@ -89,9 +89,9 @@ session still stalls: nothing writes on its behalf, and the age only grows.
 `null` — the record names no working directory, the directory is gone, or git refused
 both questions. The caller reports that rather than reading it as either answer.
 
-### Cursor: delivering text into a live session
+### `injectText` — deliver text into a live session
 
-Source: `lib/cursor-persist.js`.
+Source: `lib/cursor-persist.js`, `injectText`.
 
 Deliver text into a live session.
 
@@ -138,9 +138,9 @@ subtree.
 Optional: a driver whose launch files land outside the repository claims none and is
 asked nothing.
 
-### Codex: what lives in the driver and what does not
+### `CODEX` — codex harness driver — the third production bus driver
 
-Source: `lib/driver-codex.js`.
+Source: `lib/driver-codex.js`, `CODEX`.
 
 Codex harness driver — the third production bus driver.
 Everything the mechanism knows about Codex lives here: option vocabulary, command
@@ -162,9 +162,9 @@ A registry-home refusal propagates from `readSession` through activation, inspec
 stop. The `gone` outcome therefore means a named registry was read and contained no
 record; it is never an alias for missing configuration.
 
-### Codex: why a reviewer sits in a directory of its own
+### `reviewSandbox` — reviewer working directory: the mechanism's own, not the tree under review
 
-Source: `lib/driver-codex.js`.
+Source: `lib/driver-codex.js`, `reviewSandbox`.
 
 Reviewer working directory: the mechanism's own, not the tree under review.
 
@@ -183,9 +183,9 @@ must print the path a real lift will use. It sits beside the other participant f
 the task store, so `done` sweeps it with them — by the address stem, without asking a
 driver.
 
-### Codex: sweeping participant homes nothing names
+### `bindParticipantHomeRemoval` — remove every home under the root that no session record names
 
-Source: `lib/driver-codex.js`.
+Source: `lib/driver-codex.js`, `bindParticipantHomeRemoval`.
 
 Remove every home under the root that no session record names.
 
@@ -227,9 +227,9 @@ roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them re
 participant anyway. The owner accepted that as the boundary — those are the skills the
 participant is meant to have.
 
-## Claude Code: how a session's stall is classified
+## `sessionStall` — sessionStall answers null for no stall, otherwise { kind, reason }. kind is permission
 
-Source: `lib/driver-claude.js`.
+Source: `lib/driver-claude.js`, `sessionStall`.
 
 
 `sessionStall` answers `null` for no stall, otherwise `{ kind, reason }`. `kind` is `permission`
@@ -269,9 +269,10 @@ field, one answer. Which of them it was is decided a layer up, on the bus's own 
 `stallStands`; the lift closes the second case at the source with `crossSessionInbound` in the
 participant settings file; and the route printed for a person names all three and asserts none.
 
-## Claude Code: a lift that fails on a spent limit
+## A lift that fails on a spent limit
 
-Source: `lib/driver-claude.js`.
+Source: `lib/driver-claude.js`. The symbol is not named here: the
+code edit is in another branch and this page could not read it.
 
 
 A lift refused because the limit was spent marks the harness exhausted in the availability cache

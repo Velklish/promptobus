@@ -1,5 +1,5 @@
 // The v1 store: task journal, participants, mailboxes, artifacts.
-// What each write touches and in what order: reference/04-protocol.md.
+// What each write touches and in what order: [reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order](../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order)
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { writeJsonAtomic } from '../fs/atomic.js';
 import { addressOf, mechanismVersionOf } from '../protocol.js';

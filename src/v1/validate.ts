@@ -1,5 +1,5 @@
 // Validation of a v1 record against its schema, before it reaches the engine.
-// What is refused and why it is refused early: reference/04-protocol.md.
+// What is refused and why it is refused early: [reference/04-protocol.md#validation-of-a-v1-record](../../docs/reference/04-protocol.md#validation-of-a-v1-record)
 import { ERROR_CODES, PromptobusError } from './errors.js';
 import type { ErrorCode } from './errors.js';
 import {

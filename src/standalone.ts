@@ -1,5 +1,5 @@
 // The standalone host: the answers the package gives itself with no consumer.
-// What it reads from promptobus.json: reference/02-host.md.
+// What it reads from promptobus.json: [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host)
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -58,7 +58,7 @@ interface HostFile {
    * REPOSITORY's own `promptobus.json` by path — the standalone host does not
    * answer it for the workspace, and no host method exists for it, because a
    * generator belongs to the repository and a host describes a workspace
-   * (`GENERATOR_FIELD` in `lib/spawn.js`; docs/reference/03-cli.md § Spawn).
+   * (`GENERATOR_FIELD` in `lib/spawn.js`; [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) § Spawn).
    */
   generate?: string[];
 }
@@ -295,7 +295,7 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     // field nothing refuses on is the wrong trade for the host that ships with
     // the package.
     //
-    // The consequence is named in docs/reference/02-host.md and in
+    // The consequence is named in [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) and in
     // `HostToolBin.version`: under this host the `ultracode` refusal never
     // refuses, the two proven-version warnings never warn, and an availability
     // verdict carries no version. A consumer host that probes fills the field

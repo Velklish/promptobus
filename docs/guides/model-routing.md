@@ -501,6 +501,8 @@ indistinguishable from one derived from five runs.
 
 ### The resolver: one decision, and the three rules that shape it
 
+Source: `lib/model-routing/resolver.js`, `resolve`.
+
 The resolver: one decision from the merged catalog, the availability snapshot
 and a strategy. A pure function — no clock of its own, no disk, no harness —
 because determinism is the contract ADR-003 fixed: the same inputs give the
@@ -539,7 +541,7 @@ for it either.
 
 ### `limit-hit-at-start`: when a lift fails on a limit spent since the preflight
 
-Source: `lib/liftoff.js`, the `persist` / `sayLimit` contract.
+Source: `lib/liftoff.js`, `liftoffParticipant`.
 
 `persist(session, state, sessionId)` — write the participant into the journal. Called
 on ANY check outcome, including a dead spawn: a repeat lift at the same address is a
@@ -581,9 +583,9 @@ is no mark for a consumer to act on, and the person gets the same diagnosis
 either way. The CLI catch prints a `PromptobusError` as one line and exits 1,
 exactly as `fail` does; what the code adds is on the way past a consumer.
 
-### The merge: four rules, and why provenance is a list
+### `mergeWeights` — --- the merge itself --------------------------------------------------------
 
-Source: `lib/model-routing/catalog.js`.
+Source: `lib/model-routing/catalog.js`, `mergeWeights`.
 
 --- the merge itself --------------------------------------------------------
 
@@ -801,9 +803,9 @@ CLOSED, which is the mechanism that keeps a token off disk: the writer projects
 a verdict onto the declared fields, and anything an adapter added beside them
 never reaches the file.
 
-### The `models` command and the availability block it attaches
+### `availabilityOf` — promptobus models — what the resolver would pick right now
 
-Source: `lib/models.js`.
+Source: `lib/models.js`, `availabilityOf`.
 
 `promptobus models` — what the resolver would pick right now.
 
@@ -836,9 +838,9 @@ the pure function and composes the same block from the same snapshot. A second
 copy of this projection in a test would be the second description of one
 contract that the schemas and this package's grammars already work to avoid.
 
-### Reading a cache entry back
+### `markExhausted` — late-start hook: a driver whose session failed to start on a limit reports it
 
-Source: `lib/model-routing/cache.js`.
+Source: `lib/model-routing/cache.js`, `markExhausted`.
 
 Late-start hook: a driver whose session failed to start on a limit reports it
 here, and the harness is exhausted from that moment.
@@ -868,9 +870,9 @@ The mark is per HARNESS, not per tuple: the availability snapshot has no tuple
 dimension, and a limit is an account fact rather than a model one. A tuple the
 run must avoid for another reason is the resolver's business.
 
-### What a cache entry may hold
+### `scopeOf` — what a window binds, projected onto the closed scope shapes, or undefined
 
-Source: `lib/model-routing/cache.js`.
+Source: `lib/model-routing/cache.js`, `scopeOf`.
 
 What a window binds, projected onto the closed scope shapes, or `undefined`
 when the value is present and is none of them.
@@ -895,9 +897,9 @@ Exported for the same reason `modelList` is: the telemetry record carries a
 window's scope into a second file, and a second projection of one schema shape
 is a second set of rules about it.
 
-### The overlay findings, and what each one means
+### `citationChecks` — ADR-004 § Catalog ratings from published results: "validate refuses a rated
 
-Source: `lib/model-routing/validate.js`.
+Source: `lib/model-routing/validate.js`, `citationChecks`.
 
 ADR-004 § Catalog ratings from published results: "`validate` refuses a rated
 row with no source, unless the row is marked interpolated." Applied per
@@ -927,9 +929,9 @@ not itself be interpolated. Both hold the same line — the exemption is one hop
 to a row that carries figures, and a chain of exemptions can close into a ring
 in which nothing cites a page at all.
 
-### Cursor: the pools a model is billed to
+### `autoPoolModels` — the inventory ids the auto pool covers
 
-Source: `lib/model-routing/adapter-cursor.js`.
+Source: `lib/model-routing/adapter-cursor.js`, `autoPoolModels`.
 
 The inventory ids the `auto` pool covers.
 
@@ -957,9 +959,9 @@ An empty answer means no `auto` window at all: the schema requires the list on
 that pool, the harness publishes it, and its absence is this adapter's fault
 rather than a limit to report.
 
-### Codex: what the probe reads for the limit
+### `WINDOW_KIND_BY_ID` — the subscription windows of a snapshot, normalised
 
-Source: `lib/model-routing/adapter-codex.js`.
+Source: `lib/model-routing/adapter-codex.js`, `WINDOW_KIND_BY_ID`.
 
 The subscription windows of a snapshot, normalised.
 
@@ -985,9 +987,9 @@ flat form has always been the primary window written without its name. Losing
 it would turn an exhaustion the harness DID time into a sticky one that only
 `--clear-exhausted` lifts.
 
-### Claude: the windows and what they are read from
+### `spentWindow` — the account-wide row that is spent, or null when none is
 
-Source: `lib/model-routing/adapter-claude.js`.
+Source: `lib/model-routing/adapter-claude.js`, `spentWindow`.
 
 The account-wide row that is spent, or `null` when none is.
 
@@ -1012,9 +1014,9 @@ inactive.
 endpoint saying the account may not spend that row at all, which is a state
 rather than a moment, and an inactive locked row is still locked.
 
-### Claude: the tier, offline first
+### `usageWindows` — the usage answer as ADR-004 windows
 
-Source: `lib/model-routing/adapter-claude.js`.
+Source: `lib/model-routing/adapter-claude.js`, `usageWindows`.
 
 The usage answer as ADR-004 windows.
 
@@ -1039,9 +1041,9 @@ adapter: every window is carried, ADR-003 takes `remaining` as the largest
 candidate tuple. A flag saying which row binds the account as a whole would be a
 second, coarser answer to a question two consumers already answer per tuple.
 
-### The shared budget, and what a timeout leaves behind
+### `resolveBins` — resolve the binary of every harness about to be probed, BEFORE any adapter
 
-Source: `lib/model-routing/preflight.js`.
+Source: `lib/model-routing/preflight.js`, `resolveBins`.
 
 Resolve the binary of every harness about to be probed, BEFORE any adapter
 starts, and hand each one its answer.
@@ -1065,9 +1067,9 @@ The answer is memoised by tool NAME: two harnesses that name one binary cost one
 resolve. A host that throws is not a verdict here — `null` travels to the adapter,
 which says what a missing resolve means in its own words.
 
-### The decision as it is kept on the participant
+### `routingMetadata` — the decision as it is kept on the participant
 
-Source: `lib/models.js`.
+Source: `lib/models.js`, `routingMetadata`.
 
 The decision as it is kept on the participant.
 
@@ -1088,9 +1090,9 @@ minute old by the time anything asks. The set is the resolver's own
 `applicableWindows`, not a second definition of the word, so a run is measured
 against the windows its pick was scored on. Empty when the harness has none.
 
-### Claude: the adapter a driver declares as availability
+### `claudeAvailability` — the adapter a driver declares as availability
 
-Source: `lib/model-routing/adapter-claude.js`.
+Source: `lib/model-routing/adapter-claude.js`, `claudeAvailability`.
 
 The adapter a driver declares as `availability`.
 
@@ -1110,9 +1112,9 @@ implementations, so the driver declares the adapter exactly as it did; the suite
 passes its own, which is what lets every branch above be checked without a
 network or a person's keychain.
 
-### Claude: resolving a scope display name to model ids
+### `scopeModels` — the model ids a scope's display name resolves to, or null when it resolves to
 
-Source: `lib/model-routing/adapter-claude.js`.
+Source: `lib/model-routing/adapter-claude.js`, `scopeModels`.
 
 The model ids a scope's display name resolves to, or `null` when it resolves to
 none.
@@ -1132,9 +1134,9 @@ own rule and why the table may be short without being wrong.
 The answer is a fresh array on every call: it travels into a verdict, and a
 shared one would let a caller edit the driver's table.
 
-### Cache: what a write must not carry
+### `snapshotEntry` — one harness entry, projected onto the closed snapshot shape
 
-Source: `lib/model-routing/cache.js`.
+Source: `lib/model-routing/cache.js`, `snapshotEntry`.
 
 One harness entry, projected onto the closed snapshot shape.
 
@@ -1154,9 +1156,9 @@ the one value that would make an unreadable stamp look freshly measured and
 hold it live for a whole TTL; the epoch makes the same entry read as expired,
 which sends the next run back to the adapter.
 
-### Rendering: which lines a decision must always print
+### `paceLines` — the pace table: one row per eligible harness/pool representative, under the
 
-Source: `lib/model-routing/render.js`.
+Source: `lib/model-routing/render.js`, `paceLines`.
 
 The pace table: one row per eligible harness/pool representative, under the
 candidates (ADR-004).
@@ -1176,9 +1178,9 @@ no representative and prints its note instead of six empty columns.
 Printed only when the strategy is `balance`, because that is the only strategy
 whose candidates carry a pace block at all.
 
-### The exclusion codes, in the ADR's order
+### `paceOf` — the pace block of one candidate: how much of its binding window is spent
 
-Source: `lib/model-routing/resolver.js`.
+Source: `lib/model-routing/resolver.js`, `paceOf`.
 
 The pace block of one candidate: how much of its binding window is spent
 against how much of that window has elapsed.
@@ -1198,9 +1200,9 @@ the id settles a tie so that two runs on one snapshot agree. A window whose
 expired, and the sixty-second TTL is what repairs it — a pace computed from a
 window that has already reset would be a number about a period that is over.
 
-### The models command surface
+### `agedSnapshot` — where the decision takes the moment its snapshot was assembled
 
-Source: `lib/models.js`.
+Source: `lib/models.js`, `agedSnapshot`.
 
 Where the decision takes the moment its snapshot was assembled.
 
@@ -1220,9 +1222,9 @@ true one, and the harness rows carry `stale_cache` beside it.
 `source` is how the entries themselves came back, and it stays the resolver's
 to compute; this only chooses which stamp the age is measured from.
 
-### Cursor: why the aggregation is asked before the windows
+### `events` — the pool a model is billed to is a fact the harness states, and the bucket
 
-Source: `lib/model-routing/adapter-cursor.js`.
+Source: `lib/model-routing/adapter-cursor.js`, `events`.
 
 The pool a model is billed to is a fact the harness states, and the bucket
 list is not the only place it states it — measured 2026-09-06, that list lags
@@ -1243,9 +1245,9 @@ The body is the same empty object every method here
 is asked with: measured 2026-09-06, `{}` answers 200 and the `aggregations`
 it returns cover the current billing cycle, so no date range is sent.
 
-### Cursor: the auto bucket and what it lags
+### `autoTierModels` — the ids Cursor BILLED to the auto pool this cycle, off
 
-Source: `lib/model-routing/adapter-cursor.js`.
+Source: `lib/model-routing/adapter-cursor.js`, `autoTierModels`.
 
 The ids Cursor BILLED to the auto pool this cycle, off
 `GetAggregatedUsageEvents`.

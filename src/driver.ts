@@ -1,5 +1,5 @@
 // The driver contract: what a harness adapter must declare and what it may not reach for.
-// Member by member: reference/05-drivers.md.
+// Member by member: [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract)
 import { addressOf, GateError } from './protocol.js';
 import type { HostMcpTool, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
@@ -312,7 +312,7 @@ export interface DriverOptions {
    */
   skillsDir?: boolean;
   /** Directories inside the participant's working directory this driver's launch files claim.
-   * What the Git question asks and what it does not: reference/05-drivers.md. */
+   * What the Git question asks and what it does not: [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract) */
   launchDirs?: string[];
   /** Tools taken from a read-only participant (`denyTools` capability). */
   denyTools: string[];

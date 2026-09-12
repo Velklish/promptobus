@@ -829,9 +829,9 @@ same words. If it lived on a driver, adapter would import the driver directly; i
 lived on adapter, a driver would import adapter. A shared leaf removes both
 dependencies, and the channels cannot drift: there is one function.
 
-### Was a branch taken into the base as one commit?
+### `squashedInto` — was the branch's work taken into the base as ONE commit?
 
-Source: `lib/worktree.js`.
+Source: `lib/worktree.js`, `squashedInto`.
 
 Was the branch's work taken into the base as ONE commit?
 
@@ -856,9 +856,9 @@ What it deliberately does not recognise: a squash whose content was edited while
 was merged, and work taken as a series of cherry-picks. Both keep the directory, and
 that is the safe direction — a directory is cheap to delete and impossible to return.
 
-### Why the telemetry record is written before the sweeps
+### `recordTelemetry` — one telemetry record per participant that lifted a session
 
-Source: `lib/done.js`.
+Source: `lib/done.js`, `recordTelemetry`.
 
 One telemetry record per participant that lifted a session
 ([model-routing/telemetry.js](../../lib/model-routing/telemetry.js)).
@@ -880,9 +880,9 @@ A failure here is a warning and never a refusal, the same rule the journal
 sweep below keeps: `done` has already closed the task and has no undo, and a
 read-only routing directory is not a reason to leave the run half-closed.
 
-### Dismiss: what it says and what it does not end
+### `dismiss` — stop watching a finished participant
 
-Source: `lib/dismiss.js`.
+Source: `lib/dismiss.js`, `dismiss`.
 
 Stop watching a finished participant.
 
@@ -903,9 +903,9 @@ What dismiss does and does not do:
 - **does not stop the session or close the task** — both commands stay with the person
   and `promptobus done`.
 
-### Done: the order of close, telemetry and sweeps
+### `stopManaged` — stop managed sessions of a closed task
 
-Source: `lib/done.js`.
+Source: `lib/done.js`, `stopManaged`.
 
 Stop managed sessions of a closed task. A session the mechanism started, it
 also closes: before this task a person stopped it by hand (`claude stop <id>`
@@ -924,9 +924,9 @@ live `claude`. `snapshot` is a second seam, a function over participants:
 `done` supplies it so the whole command is hermetic in one argument; without
 it the snapshot is built with the same `registry`.
 
-### What a failed lift leaves behind
+### `bgSessionsCache` — live background sessions by the names we set at spawn
 
-Source: `lib/liftoff.js`.
+Source: `lib/liftoff.js`, `bgSessionsCache`.
 
 Live background sessions by the names we set at spawn. The `claude agents --json`
 format is not a contract: if we did not parse it — we say so, we do not invent state.

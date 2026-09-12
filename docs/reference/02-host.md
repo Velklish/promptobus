@@ -197,6 +197,8 @@ The spawn path chooses a readable participant session name from the work-slice t
 
 ## The harness session registry, and the refusal when nobody says
 
+Source: `lib/harness-home.js`, `harnessStateHome`.
+
 Where the package keeps its own session registry for one harness, and the refusal
 when nobody says.
 
@@ -283,9 +285,9 @@ value a layer above it overrides; the writer PB-32 adds will warn when that
 happens rather than leave the person to wonder why their default did not
 take.
 
-### What a host answers about its layers
+### `harnessStateHome` — where the package keeps its own session registry for one harness — the
 
-Source: `src/host.ts`.
+Source: `src/host.ts`, `harnessStateHome`.
 
 Where the package keeps its own session registry for one harness — the
 records `inspect`, `stop` and the wake path read and write. Account-scoped
@@ -306,9 +308,9 @@ Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
 environment, then this method, then the refusal — which names both, so
 the reader is not left to find out which of the two to set.
 
-### The writable layer, continued
+### `HostRoutingPaths` — where model routing keeps its files
 
-Source: `src/host.ts`.
+Source: `src/host.ts`, `HostRoutingPaths`.
 
 Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
 scoped, and that is why they do not come from `promptobusHome()`: that home is

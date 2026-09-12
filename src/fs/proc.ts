@@ -1,5 +1,5 @@
 // What the package asks the system about a process, and what it refuses to ask.
-// The rule: reference/01-overview.md.
+// The rule: [reference/01-overview.md#reading-about-a-process](../../docs/reference/01-overview.md#reading-about-a-process)
 import process from 'node:process';
 
 /**

@@ -1,5 +1,5 @@
 // The v1 record shapes — task, participant, message, artifact.
-// What each field means: reference/04-protocol.md.
+// What each field means: [reference/04-protocol.md#the-v1-record-shapes](../../docs/reference/04-protocol.md#the-v1-record-shapes)
 import { MESSAGE_TYPES, TASK_ID_RE } from '../protocol.js';
 
 /** v1 record schema version: `task.json` and artifact metadata. */

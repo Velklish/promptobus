@@ -1,5 +1,5 @@
 // Rendering the text of a bus reply — the marks a participant reads it by.
-// Which marks exist and who else copies them: reference/01-overview.md.
+// Which marks exist and who else copies them: [reference/01-overview.md#rendering-a-reply-for-a-participant](../../docs/reference/01-overview.md#rendering-a-reply-for-a-participant)
 import path from 'node:path';
 import {
   addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, nameOf, ORCHESTRATOR, ownerOf,

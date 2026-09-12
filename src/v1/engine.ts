@@ -1,5 +1,5 @@
 // The engine — the one door every protocol write goes through.
-// What it owns and what it refuses to own: reference/04-protocol.md.
+// What it owns and what it refuses to own: [reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through](../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through)
 import { linkSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {

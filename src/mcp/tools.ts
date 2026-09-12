@@ -1,5 +1,5 @@
 // The three tool declarations handed to a harness, and their input shapes.
-// What each field promises: reference/01-overview.md.
+// What each field promises: [reference/01-overview.md#the-tool-declarations](../../docs/reference/01-overview.md#the-tool-declarations)
 import { MESSAGE_TYPES } from '../protocol.js';
 
 /** One tool declaration, as `tools/list` returns it. */

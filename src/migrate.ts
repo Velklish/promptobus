@@ -1,5 +1,5 @@
 // Reading a store an older version wrote, and moving it forward.
-// What is migrated, what is left, and why: reference/01-overview.md.
+// What is migrated, what is left, and why: [reference/01-overview.md#migration-reading-an-older-store](../docs/reference/01-overview.md#migration-reading-an-older-store)
 import {
   copyFileSync, cpSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync,
   rmSync, statSync, writeFileSync,

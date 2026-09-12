@@ -1,5 +1,5 @@
 // The stdio JSON-RPC server. It must not write logs to stdout.
-// Transport rules and identity resolution: reference/01-overview.md.
+// Transport rules and identity resolution: [reference/01-overview.md#the-stdio-server-transport-rules](../../docs/reference/01-overview.md#the-stdio-server-transport-rules)
 import {
   GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
 } from '../protocol.js';
@@ -201,7 +201,7 @@ export function createMcpServer(options: McpOptions): {
   }
 
   // Entering a task: hand over the contact point and lift a listener, once per
-  // connection per task. Why a repeat is not work: reference/01-overview.md.
+  // connection per task. Why a repeat is not work: [reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener](../../docs/reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener)
   function join(identity: McpIdentity, task: string, joined: Set<string>): void {
     if (joined.has(task)) return;
     const { home, role, session } = identity;

@@ -273,9 +273,9 @@ the store along.
 `lint` takes them from here too, checking prose against code: a documentation block
 marked with a contract key must list exactly these values.
 
-### When an unclosed intent counts as abandoned
+### `abandonedIntent` — whether an unclosed intent is abandoned — that is, whether recovery may
 
-Source: `src/v1/messages.ts`.
+Source: `src/v1/messages.ts`, `abandonedIntent`.
 
 Whether an unclosed intent is abandoned — that is, whether recovery may
 touch it.
@@ -303,9 +303,9 @@ Branches, in this order:
    the send at the seam and recover in THE SAME process;
 4. otherwise owner pid liveness decides.
 
-### Writing a message: the order the names are taken in
+### `leaseIntent` — lease: who is writing this fan-out right now
 
-Source: `src/v1/messages.ts`.
+Source: `src/v1/messages.ts`, `leaseIntent`.
 
 Lease: who is writing this fan-out right now. Laid down NEXT TO the intent,
 as a separate file, not as a field on the record: the intent and the canon
@@ -326,9 +326,9 @@ host and would either be declared abandoned at once or wait the threshold
 in vain. That names may repeat is something the code already counts on:
 `commitIntent` reassembles the id on `EEXIST` up to 16 times.
 
-### Artifacts: collisions and what a name promises
+### `stashBlobSync` — the same, synchronously, from a file
 
-Source: `src/v1/artifacts.ts`.
+Source: `src/v1/artifacts.ts`, `stashBlobSync`.
 
 The same, synchronously, from a file. Made for an adapter whose send path
 is synchronous whole (`sendSync` below): the bus MCP server answers
@@ -349,9 +349,9 @@ for this property, not a green one. What is actually checked: the record
 digest matches the blob payload, and a read refuses `artifact-integrity`
 on a mismatch.
 
-### Same-session identity, and the prefix fallback
+### `sameSession` — whether these are the same session identifier — a FALLBACK rule, for records
 
-Source: `src/protocol.ts`.
+Source: `src/protocol.ts`, `sameSession`.
 
 Whether these are the same session identifier — a FALLBACK rule, for records
 without a full id. The check there is prefix-based: the harness names one
@@ -370,9 +370,9 @@ did not parse and the id came from free-text output.
 Case is folded: harness hex is lower, but that rule is not ours. Empty on
 both sides is not a match, it is unknown: the caller decides.
 
-### Reading a mailbox: what a read marks and what it does not
+### `INTENT_STALE_MS` — threshold after which an unclosed intent is treated as abandoned regardless
 
-Source: `src/v1/messages.ts`.
+Source: `src/v1/messages.ts`, `INTENT_STALE_MS`.
 
 Threshold after which an unclosed intent is treated as abandoned regardless
 of the lease.

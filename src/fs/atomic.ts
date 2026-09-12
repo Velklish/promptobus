@@ -1,5 +1,5 @@
 // Atomic file writes: a temporary beside the target, then a rename.
-// Why rename and what it does not promise: reference/01-overview.md.
+// Why rename and what it does not promise: [reference/01-overview.md#atomic-writes](../../docs/reference/01-overview.md#atomic-writes)
 import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

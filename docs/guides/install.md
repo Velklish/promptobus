@@ -138,6 +138,9 @@ Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust
 
 ## What the installer knows and never writes
 
+Source: `lib/install.js`, `install`. The feed-hook names `src/hooks.ts` still
+declares for removal are described here too.
+
 Source: `lib/install.js`.
 
 Project-level hook install for a consumer repository.
