@@ -23,14 +23,16 @@ than one login. It runs on every tracked text file and every text entry in the p
 user segment may have no child path or may have one; a bare root-plus-user form is a finding, while
 a home-named segment nested below another directory is not.
 
-Four exact synthetic fixtures are exempt, each for the input it deliberately carries:
+Four named fixtures contain five synthetic home literals. The audit removes only those exact
+literals before matching, with the reason kept beside each fixture:
 
-- test/model-routing-adapter-claude.test.mjs — synthetic home passed to credentialFile;
-- test/model-routing-preflight.test.mjs — synthetic path in a driver error fixture;
-- test/runner.test.mjs — synthetic executable path in the trace fixture;
-- test/session-env.test.mjs — synthetic parent HOME values for environment filtering.
+- test/model-routing-adapter-claude.test.mjs — the synthetic home passed to credentialFile;
+- test/model-routing-preflight.test.mjs — the synthetic path in a driver error fixture;
+- test/runner.test.mjs — the synthetic executable path in the trace fixture;
+- test/session-env.test.mjs — the two synthetic parent HOME values for environment filtering.
 
-There is no directory-wide test exemption. The rule names these four files and no other fixture.
+No file is exempt. A different owner-home path in any named fixture remains a finding, and path
+boundaries prevent a longer or nested path from being mistaken for one of the literals.
 
 The repository rule assigns the work across roles: the participant owns the rule and its
 documentation, while the approver owns archived records and card movement. The approver cleaned the
@@ -44,22 +46,22 @@ Before the live queue sweep, npm run audit exited 1 and printed exactly these tw
 
 After the approver's archive cleanup and the live-card normalization, npm run audit exited 0
 with the rule active across tracked text and packed-tarball text. The first all-text pass found the
-four synthetic inputs listed above; exact file exemptions preserve those intentional fixtures without
-excluding a directory or a surface.
+five synthetic literals in four fixtures; exact literal removal preserves those intentional inputs
+without excluding a file, directory or surface.
 
 ## Work to do
 
 - Keep the absolute owner-home rule in scripts/audit-public.mjs assembled from fragments so the
   rule does not exempt itself.
-- Keep the rule active for all tracked text and packed-tarball text, with only the four named fixture
-  exemptions and their stated reasons.
+- Keep the rule active for all tracked text and packed-tarball text, removing only the five named
+  synthetic literals from the four fixtures and preserving findings for any other path.
 - Keep the two live cards and the six archive records workspace-relative, preserving measured
   meaning without the owner's login or private repository root; the approver owns the archive edits.
 - Keep the reference README and CHANGELOG in the same pass.
-- Prove the pure verdict for a bare owner-home form, the negative nested-directory case, and the
-  exact fixture exemptions.
-- Keep both mutation proofs: the archive path probe must name a restored archive file, and removing
-  the optional child-path tail must make the bare-form verdict fail before the snapshot restores it.
+- Prove the pure verdict for a bare owner-home form, the negative nested-directory case, the
+  five exact literals, a different path in each named fixture, and text detection by contents.
+- Keep the archive probe and add one mutation for a different path in a named fixture and one for
+  an owner-home path in a text surface outside the former extension allowlist.
 
 ## Out of scope
 
@@ -72,15 +74,19 @@ excluding a directory or a surface.
 - Before the live sweep, npm run audit exited 1 with exactly two findings, one for each live queue
   card named above.
 - npm run audit after the approver cleanup and rule change exited 0: the tarball had 126
-  entries and the audit read 855 tracked files with a clean verdict.
+  entries; the audit checked 855 tracked text files and 126 packed text entries with a clean verdict.
 - npm run probe -- docs/archive/PB-112-reference-docs-lag-current-code/task.md --stdin-patch --run "npm run audit"
   exited 0 overall; the mutated audit exited 1 with one absolute owner home path verdict naming
   that archive file, and the restored audit exited 0 with zero verdicts.
-- node test/promptobus-package.test.mjs exits 0 with 43/43 verdicts; it covers the bare form,
-  the four exact fixture exemptions and the nested-directory negative case.
-- A mutation probe against scripts/audit-public.mjs runs that package test: the outer probe exits
-  0, the mutated package test exits 1 on publicity audit rejects a bare owner-home fixture, and
-  the restored package test exits 0 with 43/43.
+- node test/promptobus-package.test.mjs exits 0 with 45/45 verdicts; it covers the bare form,
+  all five exact fixture literals, a different path in every named fixture, the extensionless
+  text surface and the nested-directory negative case.
+- npm run probe -- scripts/audit-public.mjs --stdin-patch --run "node test/promptobus-package.test.mjs" < /private/tmp/pb195-fixture-boundary.patch
+  exited 0 overall; the mutation exited 1 on publicity audit does not exempt a whole synthetic
+  fixture file, and snapshot restore exited 0 with 45/45.
+- The same command with /private/tmp/pb195-content-surface.patch exited 0 overall; the mutation
+  exited 1 on publicity audit recognizes extensionless text by contents, and snapshot restore
+  exited 0 with 45/45.
 - A final diff scan must find no absolute owner-home path in changed participant-owned files and no
   foreign tracker or memory-service identifiers. The approver-owned archive diff is recorded
   separately by commit 53f227b.

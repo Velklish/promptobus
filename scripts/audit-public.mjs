@@ -11,6 +11,7 @@
 // exemption is a hole shaped exactly like the thing being looked for.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { TextDecoder } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +29,8 @@ function checkRun(cmd, args, result) {
   throw new Error(`${cmd} ${args.join(' ')} failed: ${detail}`);
 }
 
-const TEXT = /\.(m?js|ts|json|md|ya?ml|txt|mjs)$/;
+const UTF8 = new TextDecoder('utf-8', { fatal: true });
+const LINK_TEXT = /\.(m?js|ts|md)$/;
 const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
 const BRAND_FRAGMENT = ['A', 'TI'].join('');
 const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
@@ -41,20 +43,54 @@ const ABSOLUTE_HOME_PATH = new RegExp(
   'u',
 );
 
+const textFromBytes = (bytes) => {
+  if (bytes.includes(0)) return null;
+  try {
+    return UTF8.decode(bytes);
+  } catch {
+    return null;
+  }
+};
+const isTextContent = (bytes) => textFromBytes(bytes) !== null;
 const normalizedName = (name) => name.replace(/^(?:tarball:)?package\//, '');
+const syntheticHome = (root, segment, suffix = '') => [root, segment, suffix].join('');
 const ABSOLUTE_HOME_PATH_EXEMPTIONS = new Map([
-  ['test/model-routing-adapter-claude.test.mjs', 'synthetic home passed to credentialFile'],
-  ['test/model-routing-preflight.test.mjs', 'synthetic path in a driver error fixture'],
-  ['test/runner.test.mjs', 'synthetic executable path in the trace fixture'],
-  ['test/session-env.test.mjs', 'synthetic parent HOME values for environment filtering'],
+  ['test/model-routing-adapter-claude.test.mjs', [
+    syntheticHome('/', 'home', '/someone'),
+  ]],
+  ['test/model-routing-preflight.test.mjs', [
+    syntheticHome('/', 'home', '/someone/promptobus.json'),
+  ]],
+  ['test/runner.test.mjs', [
+    syntheticHome('/', 'Users', '/probe/.local/bin/cursor'),
+  ]],
+  ['test/session-env.test.mjs', [
+    syntheticHome('/', 'home', '/parent/.promptobus'),
+    syntheticHome('/', 'home', '/parent'),
+  ]],
 ]);
+const isPathCharacter = (value) => value !== undefined && /[A-Za-z0-9._/-]/u.test(value);
+const stripSyntheticHomeLiteral = (text, literal) => {
+  let cursor = 0;
+  let stripped = '';
+  while (true) {
+    const index = text.indexOf(literal, cursor);
+    if (index < 0) return stripped + text.slice(cursor);
+    const before = text[index - 1];
+    const after = text[index + literal.length];
+    stripped += text.slice(cursor, index);
+    if (isPathCharacter(before) || isPathCharacter(after)) stripped += literal;
+    cursor = index + literal.length;
+  }
+};
 const absoluteOwnerHomePath = (name, text) => {
   const normalized = normalizedName(name);
-  if (ABSOLUTE_HOME_PATH_EXEMPTIONS.has(normalized)) return false;
-  return ABSOLUTE_HOME_PATH.test(text);
+  const literals = [...(ABSOLUTE_HOME_PATH_EXEMPTIONS.get(normalized) ?? [])]
+    .sort((left, right) => right.length - left.length);
+  const cleaned = literals.reduce(stripSyntheticHomeLiteral, text);
+  return ABSOLUTE_HOME_PATH.test(cleaned);
 };
-export { absoluteOwnerHomePath };
-
+export { absoluteOwnerHomePath, isTextContent };
 const FORBIDDEN = [
   ['host of the origin forge', ['gitlab', '.ati', '.st'].join('')],
   ['origin CLI name', ['ati', '-agents'].join('')],
@@ -101,10 +137,12 @@ if (IS_MAIN) {
 // --- surface 1: what git tracks -------------------------------------------
   const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter(Boolean);
+  let trackedTextCount = 0;
 
   for (const rel of tracked) {
-    if (!TEXT.test(rel)) continue;
-    const text = readFileSync(path.join(ROOT, rel), 'utf8');
+    const text = textFromBytes(readFileSync(path.join(ROOT, rel)));
+    if (text === null) continue;
+    trackedTextCount += 1;
     for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
     scanCyrillic(rel, text);
   }
@@ -125,7 +163,7 @@ if (IS_MAIN) {
     ? mdProse(text)
     : text.split('\n').filter((l) => /^\s*(\/\/|\*)/.test(l)).join('\n'));
   for (const rel of tracked) {
-    if (!/\.(md|m?js|ts)$/.test(rel)) continue;
+    if (!LINK_TEXT.test(rel)) continue;
     const text = proseOf(rel, readFileSync(path.join(ROOT, rel), 'utf8'));
     for (const m of text.matchAll(LINK)) {
       const target = m[1].trim();
@@ -139,6 +177,7 @@ if (IS_MAIN) {
 
   // --- surface 2: what npm would ship ---------------------------------------
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'promptobus-audit-'));
+  let packedTextCount = 0;
   try {
     const buildArgs = ['run', 'build'];
     checkRun('npm', buildArgs, run('npm', buildArgs, { cwd: ROOT, stdio: 'ignore' }));
@@ -152,11 +191,13 @@ if (IS_MAIN) {
     const listed = checkRun('tar', listArgs, run('tar', listArgs, { encoding: 'utf8' })).stdout.split('\n').filter(Boolean);
     say(`tarball: ${packed} · ${listed.length} entries`);
     for (const entry of listed) {
-      if (entry.endsWith('/') || !TEXT.test(entry)) continue;
+      if (entry.endsWith('/')) continue;
       const abs = path.join(tmp, entry);
       if (!existsSync(abs)) continue;
-      const text = readFileSync(abs, 'utf8');
-      for (const [label, needle] of FORBIDDEN) scan(label, `tarball:${entry}`, text, needle);
+      const text = textFromBytes(readFileSync(abs));
+      if (text === null) continue;
+      packedTextCount += 1;
+      for (const [label, needle] of FORBIDDEN) scan(label, 'tarball:' + entry, text, needle);
       scanCyrillic(entry, text);
     }
   } finally {
@@ -164,11 +205,12 @@ if (IS_MAIN) {
   }
 
   // --- verdict ---------------------------------------------------------------
+  const checked = trackedTextCount + ' tracked text files and '
+    + packedTextCount + ' packed text entries';
   if (failures.length) {
-    for (const f of [...new Set(failures)].sort()) say(`✖ ${f}`);
-    say(`✖ publicity audit: ${new Set(failures).size} finding(s)`);
+    for (const f of [...new Set(failures)].sort()) say('✖ ' + f);
+    say('✖ publicity audit: ' + new Set(failures).size + ' finding(s) · checked ' + checked);
     process.exit(1);
   }
-  say(`✔ publicity audit: clean · ${tracked.length} tracked files and the packed tarball`);
-
+  say('✔ publicity audit: clean · checked ' + checked);
 }

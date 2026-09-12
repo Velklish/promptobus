@@ -11,4 +11,4 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |
 
 The [contributing guide](../guides/contributing.md) describes the verification gates; `npm run audit` also enforces the English runtime-output claim in the [roadmap](../ROADMAP.md).
-The publicity audit checks tracked text and packed-tarball text for absolute owner-home paths. Four named synthetic test fixtures are exempt for their stated inputs; live cards and cleaned archive records use workspace-relative wording.
+The publicity audit checks tracked text and packed-tarball text for absolute owner-home paths. Five named synthetic literals in four fixtures are removed before matching; other paths in those files remain findings. Live cards and cleaned archive records use workspace-relative wording.
