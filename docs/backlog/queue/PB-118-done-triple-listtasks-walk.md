@@ -7,7 +7,7 @@
 
 ## Context
 
-Verified at commit `cc1aca8` (v0.5.0), against the live workspace home (`/Users/kim.p/AtiWorkspace/workspace/.promptobus`, 91 tasks today).
+Verified at commit `cc1aca8` (v0.5.0), against the live workspace home (`<workspace>/.promptobus`, 91 tasks today).
 
 `done()` calls three functions that each independently walk `listTasks(home)`:
 - `sweepWorktrees(home, snapshot, host)` — called at `lib/done.js:367`, walks at `:145`.

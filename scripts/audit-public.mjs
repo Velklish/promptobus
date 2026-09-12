@@ -32,6 +32,11 @@ const BRAND_FRAGMENT = ['A', 'TI'].join('');
 const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
 const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
 const BRAND_ID = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}-workspace-[0-9a-f]+\\b`, 'iu');
+const HOME_ROOT = ['/', '(?:Users|home)', '/'].join('');
+const ABSOLUTE_HOME_PATH = new RegExp(
+  `${HOME_ROOT}[^/\\s"'<>]+/[^\\s"'<>]+`,
+  'u',
+);
 
 const normalizedName = (name) => name.replace(/^(?:tarball:)?package\//, '');
 
@@ -43,6 +48,12 @@ const FORBIDDEN = [
   ['origin environment prefix', ['ATI', '_'].join('')],
   ['origin memory service', ['context', '-store'].join('')],
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
+  ['absolute owner home path', (name, text) => {
+    const normalized = normalizedName(name);
+    // Historical archive paths are immutable evidence; live queue cards are not.
+    if (!normalized.startsWith('docs/') || normalized.startsWith('docs/archive/')) return false;
+    return ABSOLUTE_HOME_PATH.test(text);
+  }],
   ['origin brand', (name, text) => {
     const normalized = normalizedName(name);
     const runtime = RUNTIME_PATH.test(normalized);

@@ -87,8 +87,9 @@ needs its approval method recorded before it can be attributed to the legacy pat
 
 The refusal text that reaches a participant names neither the method nor the missing path. A
 participant therefore cannot distinguish a fail-closed file-change request from a human refusal.
-The supported fallback is also not universal: the same participant's shell is not writable in its
-worktree from the first minute, while its temporary directories are writable (PB-194).
+A fresh participant's shell was not writable in its worktree from the first minute, while its
+temporary directories were writable (PB-194). That does not establish the boundary for the
+participant that issued this approval or identify the route used by successful edits.
 
 ## Work to do
 
