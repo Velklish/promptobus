@@ -59,6 +59,7 @@ only in a guide is a gate the participant re-implements.
 ## Out of scope
 
 - `scripts/mutation-probe.mjs` itself: it works and its refusals are correct.
-- The consumer's `AGENTS.md` (`ati-agents`): it has no `npm run probe` and its probe order is
-  `BL-204`. A participant there was asked the same question in the same run and quoted both of its
-  rules correctly, so the consumer does not show this defect today.
+- The consumer's own `AGENTS.md`: it has no `npm run probe`, and the order its probe follows is
+  stated there rather than here. A participant working in the consumer was asked the same question
+  in the same run and quoted both of its rules correctly, so the consumer does not show this defect
+  today.
