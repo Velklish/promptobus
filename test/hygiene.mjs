@@ -135,6 +135,12 @@ const CONTEXT_STORE_PREFIX = 'CONTEXT_STORE_';
 // The triple must still be dropped: the harness DAEMON puts it into
 // the session environment, from a foreign run.
 export const IDENTITY_VARS = ['PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK', 'PROMPTOBUS_HOME'];
+// Suite fixtures install their own identity; ambient harness identities would add a
+// second candidate. Live scripts keep theirs through SESSION_LEAK_VARS below.
+export const HARNESS_IDENTITY_VARS = [
+  'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_HOST_SESSION_ID',
+  'CODEX_THREAD_ID', 'CURSOR_CONVERSATION_ID',
+];
 // Claude Code config directory: diverted with home, not only dropped
 // — an explicit path is visible to a stub suite file, and the verdict
 // checks it against the run home.
@@ -246,7 +252,7 @@ export function sealPath(env, dir) {
  * Three names are not on the list, each for its own reason. Home
  * (`HOME`) and `CLAUDE_CONFIG_DIR` a live run needs real: it calls
  * a real `claude`, and that needs its home. **`CLAUDE_CODE_SESSION_ID`
- * is not dropped either** (review note): this is the identity of the
+ * is not dropped by `dropSessionLeaks` either** (review note): this is the identity of the
  * session itself, not a foreign one — the script declares its own on
  * top of it, and it is also material for the address-ownership gate
  * (`foreignSession`), so dropping it would make the run blind to what
@@ -270,6 +276,7 @@ export function dropSessionLeaks(env) {
 export function applyHygiene(env, { home, seal } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
   dropSessionLeaks(env);
+  for (const name of HARNESS_IDENTITY_VARS) delete env[name];
   for (const name of Object.keys(env)) {
     if (name.startsWith(CONTEXT_STORE_PREFIX) || name.startsWith(E2E_PREFIX)) delete env[name];
   }

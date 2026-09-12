@@ -1,6 +1,7 @@
 // PB-178: who a session is, asked of the drivers. Run: npm test
 // The environments below are fixtures of MEASURED shapes, named beside each case.
 import { check } from './check.mjs';
+import { HARNESS_IDENTITY_VARS } from './hygiene.mjs';
 import { identityCandidates, resolveSessionIdentity, REGISTRY } from '../lib/drivers.js';
 import { bindSessionIdentity, sessionIdentity } from '../lib/store.js';
 
@@ -13,6 +14,16 @@ const VARS = Object.fromEntries(
     Object.values(VARS).every((v) => typeof v === 'string' || v === null)
       && Object.keys(VARS).length === 3,
     JSON.stringify(VARS));
+}
+
+{
+  const driverVars = Object.values(VARS).filter(Boolean);
+  const additional = HARNESS_IDENTITY_VARS.filter((name) => !driverVars.includes(name));
+  check(': suite hygiene covers every driver identity plus the Claude host identity from one list',
+    driverVars.every((name) => HARNESS_IDENTITY_VARS.includes(name))
+    && new Set(HARNESS_IDENTITY_VARS).size === HARNESS_IDENTITY_VARS.length
+    && additional.length === 1 && additional[0] === 'CLAUDE_CODE_HOST_SESSION_ID',
+    JSON.stringify({ driverVars, hygiene: HARNESS_IDENTITY_VARS, additional }));
 }
 
 {

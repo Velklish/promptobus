@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
+import { HARNESS_IDENTITY_VARS } from './hygiene.mjs';
 
 const SB = makeSandbox('promptobus-runner-');
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -204,6 +205,7 @@ writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   + "${process.env.PROMPTOBUS_ROLE ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_TASK ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_HOME ?? '(dropped)'}`);\n"
+  + `console.log('HARNESS: ' + ${JSON.stringify(HARNESS_IDENTITY_VARS)}.map((name) => process.env[name] ?? '(dropped)').join(' :: '));\n`
   // The sealed PATH, asked from inside a suite file for the same reason home is:
   // this file's own PATH was sealed by the same runner, and a check against itself
   // would pass without the seal. The file reports the PATH it was handed and, for
@@ -244,6 +246,7 @@ const raised = await runCopy(SB2, {
   PROMPTOBUS_ROLE: 'worker:proba',
   PROMPTOBUS_TASK: 'proba-t20260902-000000',
   PROMPTOBUS_HOME: '/net/takogo/doma/.promptobus',
+  ...Object.fromEntries(HARNESS_IDENTITY_VARS.map((name, index) => [name, `foreign-${index}`])),
   // Claude Code config directory: the harness puts it on a worker
   // session, and from there stall parse would read the state of a
   // person's live sessions. Points at a directory that does not exist.
@@ -357,6 +360,11 @@ const [
   wdnSeen = '', sockSeen = '', tokenSeen = '', csSeen = '', e2eSeen = '',
   roleSeen = '', taskSeen = '', busHomeSeen = '',
 ] = (raised.out.match(/HYGIENE: (.+)/)?.[1] ?? '').split(' :: ');
+const harnessIdentitySeen = (raised.out.match(/HARNESS: (.+)/)?.[1] ?? '').split(' :: ');
+check(': the runner drops every ambient harness identity before a fixture installs its own',
+  harnessIdentitySeen.length === HARNESS_IDENTITY_VARS.length
+  && harnessIdentitySeen.every((value) => value === '(dropped)'),
+  JSON.stringify(Object.fromEntries(HARNESS_IDENTITY_VARS.map((name, i) => [name, harnessIdentitySeen[i] ?? '(missing)']))));
 check(': the runner kills warden auto-lift and drops the session contact point',
   wdnSeen === 'off' && sockSeen === '(dropped)' && tokenSeen === '(dropped)',
   `PROMPTOBUS_WARDEN=${wdnSeen || '(unnamed)'} · socket=${sockSeen} · token=${tokenSeen}`);
