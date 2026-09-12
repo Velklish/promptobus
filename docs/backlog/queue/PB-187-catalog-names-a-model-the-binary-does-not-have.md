@@ -17,32 +17,45 @@ rejected: the resolver emits it for an overlay's `allow`/`deny.flags`, while a m
 
 ## The source and the two homes
 
-Measured 2026-09-12 with codex-cli 0.146.0, using the executable named by each command:
+Measured 2026-09-12 with codex-cli 0.146.0. Three observations from the same
+`env -u CODEX_HOME /opt/homebrew/bin/codex debug models` series show that the
+binary output is unstable between calls:
 
-```
-CODEX_HOME=/var/folders/t8/8c_15_yx4hzdw8_wt5_15bb00000gn/T/promptobus-codex-homes/beklog-0912c-t20260912-091528-worker-codex-b18dd25c0b85
-/opt/homebrew/bin/codex debug models
-→ exit 0; 10 rows
-  visibility=list: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.2, gpt-5.3-codex-spark
-  visibility=hide: gpt-5.4, gpt-5.4-mini, codex-auto-review, gpt-reserve
+- `2026-09-12T19:01:00.142+03:00` — 8 rows were recorded: list
+  `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.2`; hide
+  `gpt-5.4`, `gpt-5.4-mini`, `codex-auto-review`. This is the observation time
+  recorded for the first result; the command timestamp was not captured.
+- `2026-09-12T19:02:26+03:00` — 7 rows: list
+  `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.3-codex-spark`; hide
+  `gpt-reserve`, `codex-auto-review`.
+- `2026-09-12T19:02:51+03:00` — 8 rows: list
+  `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.2`; hide
+  `gpt-5.4`, `gpt-5.4-mini`, `codex-auto-review`.
 
-2026-09-12T14:12:47.696Z and 2026-09-12T14:12:49.760Z, same home and command: the two lists were identical.
+Each recorded command exited 0. The response is therefore not a stable inventory:
+the three observations have two different sets. If a `--refresh` stores the shorter
+answer, tuples for models missing from it become `model-not-in-inventory` until the
+next refresh.
 
-env -u CODEX_HOME /opt/homebrew/bin/codex debug models
-→ exit 0; 7 rows
-  visibility=list: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.3-codex-spark
-  visibility=hide: gpt-reserve, codex-auto-review
-```
-
-The participant home is the operational source for a participant. `gpt-5.4-mini` is present in
-that binary response but marked `hide`. This is a home-specific binary observation, not evidence
-that the `model/list` payload has the same rows; that equivalence remains open. The owner-home
-response is a different set and must not be substituted for the participant home. The number of rows alone
-is not evidence: command, home and visibility filter are all part of the measurement.
+The resolver does not consume this binary output. It consumes the Codex entry in
+`~/.agents/model-routing/cache.json`. The measured cache snapshot has
+`takenAt=2026-09-12T16:02:19.941Z` and five rows:
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`,
+`gpt-5.3-codex-spark`. None has a `hidden` field, and `gpt-5.4-mini` is absent.
+It is therefore excluded as `model-not-in-inventory` because it is absent from the
+snapshot, not because it is hidden. The hidden set observed above belongs only to
+the separate binary output; the live hidden-row retention path has no hidden row in
+this cache to verify. `model/list` and `debug models` differ in content, not only
+format.
 
 ## Decision
 
-The `codex-mini-medium` and `codex-mini-high` catalog tuples stay. The resolver's hidden-row behavior is a separate `model/list` contract covered by the existing stand fixture and the added rendered-row assertion: it retains the raw hidden row, excludes it from selectable inventory and reports the tuple as `model-not-in-inventory`. That behavior is not inferred from the `debug models` output, whose equivalence with `model/list` remains open.
+The `codex-mini-medium` and `codex-mini-high` catalog tuples stay. The
+resolver consumes the cache, not `debug models`; in the measured cache,
+`gpt-5.4-mini` is absent, so its current exclusion is `model-not-in-inventory`
+for absence from the snapshot. The existing stand fixture covers hidden-row
+retention for a `model/list` response, but the live cache above contains no
+hidden row with which to verify that path.
 
 `model-not-in-inventory` is not swallowed. The resolver puts it on the candidate, the text renderer
 prints it beside that tuple, and `noCandidate` carries the rendered decision when no tuple survives.
@@ -55,15 +68,18 @@ this card does not add a live turn.
 
 ## What remains open
 
-The two measured commands above are the binary's debug catalog; no live turn was spent to
-capture a matching `model/list` payload from this participant home. The code path that consumes
-`model/list` and the hidden-row exclusion are covered by the existing stand tests and the new
-rendered-row assertion, but equivalence of the two binary representations remains unclaimed.
+The remaining live question is whether `model/list` differs under the owner and
+participant `CODEX_HOME` values. The closing measurement must put both payloads
+side by side, report whether either has `hidden` rows and whether their model
+sets differ, then attempt a holder lift for a model hidden in the participant
+home but visible in the owner home and record the holder's response. That
+question remains open; the cache/debug discrepancy and the instability of
+`debug models` are measured findings, not substitutes for it.
 
 ## Verification
 
 - A model row is compared with command, home and `visibility`, never with a bare count.
-- A hidden catalog tuple is retained in the decision and printed as `model-not-in-inventory`, not
-  silently replaced by another model.
+- The stand fixture asserts hidden-row retention for `model/list`; the measured live cache
+  contains no hidden row, so that retention is not live-verified.
 - The guide and reference state that catalog membership is not a promise that the participant home
   exposes the model.

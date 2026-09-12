@@ -546,7 +546,32 @@ All four are read from **whatever carried the snapshot**, and on the notificatio
 
 **Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **kept, with `hidden: true` on them** (ADR-004, PB-28) — they used to be dropped. The reasoning for dropping them is applied one floor down: the resolver's inventory is the rows *without* the mark, so a tuple naming a hidden model still comes out as `model-not-in-inventory` and needs no code of its own. This preserves snapshot fidelity — the cache records what the harness lists while the resolver filters hidden rows before candidate and runtime projections; `promptobus models` does not show the whole model inventory, and `models validate` does not inspect availability snapshots or model rows.
 
-A separate binary measurement makes the scope of that comparison explicit. On codex-cli 0.146.0, `/opt/homebrew/bin/codex debug models` under the participant's exact `CODEX_HOME` returned ten rows, including `gpt-5.4-mini` with `visibility: hide`; the hidden rows were `gpt-5.4`, `gpt-5.4-mini`, `codex-auto-review` and `gpt-reserve`. Identical runs in that same home at `2026-09-12T14:12:47.696Z` and `2026-09-12T14:12:49.760Z` produced the same rows. The same executable with `CODEX_HOME` unset returned a different seven-row set, so a bare row count or the owner's home is not evidence about a participant. The catalog tuple for `gpt-5.4-mini` stays rated, while the resolver visibly excludes it as `model-not-in-inventory` until that participant home exposes it. The debug output is not claimed equivalent to a paid `model/list` payload; that comparison remains open, and `models validate` stays offline because it has no participant home to inspect. The mark is written only where it is true: the absent case and an explicit `false` are one fact.
+A separate binary measurement is not the resolver inventory. Three observations
+from `env -u CODEX_HOME /opt/homebrew/bin/codex debug models` on codex-cli 0.146.0
+were recorded on 2026-09-12: at `2026-09-12T19:01:00.142+03:00`, 8 rows
+(list `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.2`;
+hide `gpt-5.4`, `gpt-5.4-mini`, `codex-auto-review`); at
+`2026-09-12T19:02:26+03:00`, 7 rows (list `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, `gpt-5.5`, `gpt-5.3-codex-spark`; hide `gpt-reserve`,
+`codex-auto-review`); and at `2026-09-12T19:02:51+03:00`, 8 rows (the first
+list/hide set). The first time is the recorded observation time; its exact
+command timestamp was not captured. Thus `debug models` is unstable between
+calls and cannot serve as a stable inventory.
+
+The resolver consumes the Codex entry in `~/.agents/model-routing/cache.json`,
+not that debug output. The measured snapshot has
+`takenAt=2026-09-12T16:02:19.941Z`, five model rows
+(`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`,
+`gpt-5.3-codex-spark`), no `hidden` field, and no `gpt-5.4-mini`. The latter is
+therefore excluded as `model-not-in-inventory` because it is absent from the
+snapshot, not because it is hidden. `model/list` and `debug models` differ in
+content, not only format; because this live cache has no hidden row, hidden-row
+retention is not live-verified. The open comparison remains a side-by-side
+`model/list` under owner and participant `CODEX_HOME`, followed by a holder
+attempt for a model hidden in the participant home but visible in the owner home
+and a record of the response. `models validate` stays offline because it has no
+participant home to inspect.
+
 
 No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. An adapter publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's — which is why the snapshot vocabulary has no code for it at all.
 
