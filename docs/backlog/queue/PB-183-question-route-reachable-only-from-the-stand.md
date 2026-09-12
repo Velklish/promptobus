@@ -19,6 +19,13 @@ So the check on that branch is green independently of the product: the branch is
 code path a person meets is not. This is the fourth of the four measured shapes of a green check
 aimed elsewhere — a control reachable only from the thing that controls it.
 
+**And it is worse than that: the fixture's own branch has no setter.** `git grep askQuestion`
+over the whole tree returns two lines — the branch itself and an unrelated comment in
+`lib/driver-cursor.js`. Nothing sets the flag, in production or in any check. So the outcome was
+reachable from nothing at all, and the branch it feeds was exercised by nothing. That strengthens
+the decision below rather than weakening it: what is retired is dead at both ends, not a rarely
+used path.
+
 **Removing the branch is the wrong fix**, and that is why this is a card rather than a deletion:
 it is the only place where a person is told what to do about a held dialog, and a held dialog is
 real — measured at `278.497 s`, ended by a keypress, in `PB-181`.
