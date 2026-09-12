@@ -74,13 +74,22 @@ for (const kind of ['tool_suggestion', 'something_new', 'MCP_TOOL_CALL', 'mcp_to
     d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
 }
 
-{
-  // A non-string marker must not be coerced into one. `String({})` is `[object Object]`,
-  // which is truthy and would have been accepted by a truthiness test.
-  const p = { ...approval, _meta: { codex_approval_kind: { tool: 'mcp_tool_call' } } };
+// A non-string marker must not be coerced into one, and the array is the case a strict
+// COMPARISON does not catch on its own: `String(['mcp_tool_call'])` is the allowed
+// discriminator exactly, so the coercion had to go, not the comparison.
+for (const [name, kind] of [
+  ['an object', { tool: 'mcp_tool_call' }],
+  ['an array holding the allowed value', ['mcp_tool_call']],
+  ['an array of one allowed value among others', ['mcp_tool_call', 'x']],
+  ['a number', 1],
+  ['true', true],
+  ['null', null],
+]) {
+  const p = { ...approval, _meta: { codex_approval_kind: kind } };
   const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
-  check(': an object where the kind should be is declined, not coerced',
-    d.allow === false, JSON.stringify(d));
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: ${name} where the kind should be is declined, not coerced`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ kind, d, r }));
 }
 
 {

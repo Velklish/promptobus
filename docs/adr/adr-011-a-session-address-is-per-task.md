@@ -44,10 +44,17 @@ of addresses and stays exactly as strict.
 
 **2. The implementation does not ship in this release.** What ships is the door and nothing
 else: `promptobus send <address> --body <text>` writes one message **from the address the
-process already has** — `PROMPTOBUS_ROLE`, or the orchestrator default. It creates no new
-contract, it can do nothing the MCP tool could not, and it removes the hand-driven multiplexer
-that produced the card. The per-task address lands after identity, because the barrier it
-needs is task ownership and ownership needs a session to be identifiable first.
+process can prove it has** — `PROMPTOBUS_ROLE` when the caller declares one. It creates no new
+contract and removes the hand-driven multiplexer that produced the card.
+
+**And it REFUSES rather than falling back when it cannot prove one.** A participant's session
+environment carries no bus identity on purpose (`lib/spawn.js`, `sessionEnv`: identity travels
+as hook-command arguments, because a value put in the environment is inherited by neighbours
+and hands out a foreign identity). So an undeclared role is not "orchestrator", it is
+"unknown" — and answering it with the orchestrator's address would have been exactly the
+borrowing this decision refuses `--from` to prevent, only invisible, with no flag on the
+command line to see it by. The orchestrator address is taken only when the process can name
+its own session AND that session owns the task; otherwise the command fails with the reason.
 
 **3. There is no `--from`, and there will not be one before the barrier exists.** It was the
 cheap way to close the same case, and it was refused: a sender that can be chosen is a sender
