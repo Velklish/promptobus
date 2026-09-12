@@ -27,7 +27,7 @@ The loss is not silent but is worse than silent: `lib/store.js:153-156` prints `
 
 No upstream guard exists: consumer-cli declares the layout unconditionally and neither `doctor` nor `lib/store.js` checks for a reappeared `.agents/a2a`. No test covers it either: `test/promptobus-migration.test.mjs` covers the crash-window resume and a repeat on an already-transferred workspace, but not a legacy store reappearing after a completed migration; `grep -rn "side by side" test docs` finds nothing — the refusal itself has neither test nor reference documentation.
 
-Live exposure: `/Users/kim.p/AtiWorkspace/workspace/.promptobus/migrated.json` holds `{"from":"/Users/kim.p/AtiWorkspace/workspace/.agents/a2a","at":"2026-09-02T22:09:12.305Z","tasks":72}` today, and `.agents/` is the regenerated zone — a rollback of the `modules.lock` pin to a pre-cutover consumer-cli (a routine move in this workspace) recreates exactly that path.
+Live exposure: `<workspace>/.promptobus/migrated.json` holds `{"from":"<workspace>/.agents/a2a","at":"2026-09-02T22:09:12.305Z","tasks":72}` today, and `.agents/` is the regenerated zone — a rollback of the `modules.lock` pin to a pre-cutover consumer-cli (a routine move in this workspace) recreates exactly that path.
 
 The mark's own header comment (`src/migrate.ts:18-28`) justifies it only as the closer of the window between the switch and the cleanup ("It is missing — `.promptobus` came from somewhere else, and that is the very case the refusal was introduced for") — an argument for removing it once that window closes, not for keeping it afterward.
 

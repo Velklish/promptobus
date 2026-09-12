@@ -7,7 +7,7 @@
 
 ## Context
 
-`find . -iname "*release-gate*"` in this repository (v0.5.0, no CI config of any kind present) returns nothing. The file exists only at `/Users/kim.p/AtiWorkspace/workspace/repos/agent-workspace/consumer-cli/cli/scripts/release-gates.mjs`, which imports its own copy of `SOCK_PREFIXES` from `cli/test/sock-prefixes.mjs` and runs `younger('/tmp', SOCK_PREFIXES)` at `release-gates.mjs:547` as a release verdict for the consumer-cli *package* — not for anything this repository runs, tests, or gates on its own.
+`find . -iname "*release-gate*"` in this repository (v0.5.0, no CI config of any kind present) returns nothing. The file exists only at `<workspace>/repos/agent-workspace/consumer-cli/cli/scripts/release-gates.mjs`, which imports its own copy of `SOCK_PREFIXES` from `cli/test/sock-prefixes.mjs` and runs `younger('/tmp', SOCK_PREFIXES)` at `release-gates.mjs:547` as a release verdict for the consumer-cli *package* — not for anything this repository runs, tests, or gates on its own.
 
 `test/sock-prefixes.mjs:1-18` still describes the pre-split architecture: its header says 'A cut-off run's leftover is caught by the `release-gates.mjs` verdict ... it looks at `/tmp` by this list' as if that file lived here. It does not, and never will without a change: this repository is a library with no release-gate script of its own.
 
