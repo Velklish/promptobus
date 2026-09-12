@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The PB-178 identity contract remains driver-owned while its live status/claim observables stay open.** The PB-179 root measurement records the missing positive participant-address binding instead of implying a refusal has been demonstrated. (PB-178, PB-179)
 - **Repository-local rules now name `npm run probe` for mutation verification.** A one-verdict guard keeps that name in the local section outside the generated backslop block; the rule records commit-first and snapshot restore, while the contributing guide keeps the full probe contract. (PB-190)
 - **Codex model comparisons now record the executable, participant `CODEX_HOME` and row visibility.** A model present but hidden remains rated in the catalog, is excluded visibly as `model-not-in-inventory`, and is not treated as a generic `models validate` defect; the measured binary debug list is not claimed equivalent to `model/list`. (PB-187)
 - **Codex holder journals now retain complete `account/rateLimits/updated` payloads at debug level.** The session record still carries the latest `rateLimits` object; the live notification shape and fallback exhaustion semantics remain open under PB-24.1/PB-192.

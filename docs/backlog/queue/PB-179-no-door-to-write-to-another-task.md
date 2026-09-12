@@ -38,6 +38,15 @@ There, a session cannot be an orchestrator because it has no identity; here, a s
 an orchestrator of a *second* task because its address is fixed by the config that started it.
 Both reduce to: who a session is, is decided once, by whoever wrote its MCP record.
 
+## Замер корня при разборе PB-178 (2026-09-12)
+
+Проверены `lib/store.js:773-780` (`foreignSession`), `lib/store.js:830-840`
+(`addressIn`) и сохранённый отрицательный контроль в `test/send.test.mjs:82-90`. Найдено: `foreignSession`
+сравнивает сессии только при наличии уже записанной сессии участника, а `addressIn` записывает
+адрес в binding только для владельца задачи-оркестратора. То есть store имеет только
+**отрицательную** проверку `foreignSession` и не хранит положительной привязки participant address →
+session. Это измеренный корень PB-179, а не решение карточки; реализация здесь не менялась.
+
 ## Work to do
 
 - Decide whether a session may hold more than one role — one per task — and if so where that
