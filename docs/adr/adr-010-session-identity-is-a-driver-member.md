@@ -56,11 +56,15 @@ The refusal is warned once per process, so the leak is readable from the message
 environment that names no harness is a legal state and is not warned about: its reason stays
 on the resolver's `why` for a caller that shows it.
 
-**4. The resolver is INJECTED into the core, not imported by it.** `lib/drivers.js` exports
-it; `lib/cli.js` binds it with `bindSessionIdentity`, beside the `bindHarnessHomes` binding
-that already exists there for the same reason. Unbound, the core answers `null` and says once
-that no registry is bound — it never falls back to reading a variable itself, because that
-fallback is the defect this decision removes.
+**4. The resolver is INJECTED into the core, not imported by it, and the injector is the
+registry itself.** `lib/drivers.js` binds it with `bindSessionIdentity` at import — the shape a
+driver already uses to bind participant-home removal into the session store — so whoever loads
+the registry can answer, which is the honest condition: the answer comes from the drivers, and
+without them there are no drivers to ask. `lib/cli.js` binds it explicitly as well, beside the
+`bindHarnessHomes` binding that is there for the same reason, because its command modules are
+imported dynamically and not all of them load the registry (`dismiss` reaches only the store).
+Unbound, the core answers `null` and says once that no registry is bound — it never falls back
+to reading a variable itself, because that fallback is the defect this decision removes.
 
 ## Alternatives considered
 
@@ -84,7 +88,9 @@ with the fallback removed, which is the part that mattered.
 - A leaked ancestor identity now produces a named refusal instead of a confident wrong answer.
   Ownership stays unestablished for such a session until the leak is removed, and that is the
   honest state rather than a regression.
-- A process that reaches `store.js` without the CLI entry point gets `null` and one warning.
-  Every production entry goes through `lib/cli.js`; a path that does not is a defect the suite
-  will show rather than one the core papers over.
+- A process that reaches `store.js` without loading the driver registry gets `null` and one
+  warning. The full suite found four such paths on the first run — three modules that reach the
+  store without the registry, and a child process standing in for an adapter CLI — which is the
+  suite doing what it is for: a path with no drivers loaded cannot name a harness, and the core
+  says so instead of papering over it.
 - A fourth harness declares one field and needs no change in the core.
