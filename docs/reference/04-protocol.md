@@ -248,3 +248,27 @@ The home is here, not in either store, because the package has two: production v
 (`store.ts`) and legacy, kept so migration can still read
 ([legacy-store.ts](../../src/legacy-store.ts)). A value that lived in one of them would be
 imported by the other across a version boundary — and they would drift in silence.
+
+### The bus contract constants
+
+Source: `lib/contract.js`.
+
+Bus-contract values cited in prose: CLI help, the reference, the guide, and the
+orchestration skill. The server-name literal lives in the compiled package contract
+and is re-exported here; the remaining adapter constants have their only home here.
+
+**Only harness-neutral lives here**. Effort levels, permission modes, binary versions,
+and the list of tools to deny moved to the driver ([driver-claude.js](../../lib/driver-claude.js)):
+that is ONE harness's dictionary, and the second driver has its own — a shared home
+would mean the bus knows Claude Code values by heart. Contract citations in the docs
+still stand on them: `lint` takes the value from the new home, and the
+`<!-- contract:… -->` keys did not change.
+
+Its one dependency is the compiled, dependency-free contract source — the same
+lib→dist boundary used by the host adapters. Command help reads this module before
+any work, so it still pulls no repository resolver. Message types were removed from
+here at the same price: their home is the package, and importing them here would drag
+the store along.
+
+`lint` takes them from here too, checking prose against code: a documentation block
+marked with a contract key must list exactly these values.

@@ -44,3 +44,20 @@ and held no readable record.
 Every number and shape below was taken from live spike runs (2026-09-03, `agent`
 2026.09.02-c22c1a3, tmux 3.6b), not inferred from documentation: Cursor has no docs
 on `persist` at all, and the subcommand itself has no flags of its own.
+
+### The driver contract
+
+Source: `src/driver.ts`.
+
+Driver contract and driver registry, entry point "./driver".
+
+Driver — adapter of one harness: it launches a participant session, recognises its
+state, wakes it, and can stop it. Which harness it is — the package does not know
+and has no right to know: only the contract is declared here, and the drivers
+themselves live at the consumer. The registry is passed into core EXPLICITLY, as a
+`harness → driver` map, and an unknown harness refuses BEFORE anything changes in
+the store: a refusal after writing the participant would leave in the task journal
+a participant with nothing to wake it by.
+
+Constraint invisible from this file: no harness name is here and none can be —
+the package set gate watches for that.

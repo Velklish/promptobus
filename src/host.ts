@@ -1,10 +1,5 @@
-// Host contract: knowledge of the workspace the consumer passes into the bus
-// explicitly on every call. There is no process-wide singleton: two hosts in
-// one process are lawful and independent.
-//
-// Field names are about a workspace in general, not about one consumer's
-// layout. Concrete paths (rules directory, tools manifest) are named by the
-// implementation.
+// The `PromptobusHost` contract: what a consumer must answer for the package to work.
+// Member by member: reference/02-host.md.
 
 import path from 'node:path';
 

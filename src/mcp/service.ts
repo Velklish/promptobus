@@ -1,20 +1,5 @@
-// Promptobus service as the MCP layer sees it: the list of operations the
-// tools use. The list is explicit, not "the whole store", and that is the
-// point of the file — the boundary is visible to the eye, not inferred by
-// reading four modules. Operations take home as an argument: it arrives with
-// the process identity, and there is no second source for it.
-//
-// The service is passed to the factory explicitly, and it has no default
-// implementation: half the list is the adapter's business, not the store.
-// Mailbox ownership, the "session → task" binding, active-task resolve, and
-// the `PROMPTOBUS_HOME=… · task=… · address=…` heading rest on session
-// identity, and only the adapter reads the environment. The consumer adapter
-// assembles the service.
-//
-// Addresses, not participant ids. Bus tools talk in addresses: the address is
-// declared to the participant by their mcp-config, health and contact points
-// are keyed by it, and a person reads it. Translating an address into a v1
-// record id is the adapter's job — where the adapter lives.
+// The MCP service behind the three bus tools: what each call reads, writes and answers.
+// The contract and its refusals: reference/01-overview.md.
 import type { Ownership } from '../protocol.js';
 import type { ArtifactV1, MessageV1, TaskV1 } from '../v1/model.js';
 

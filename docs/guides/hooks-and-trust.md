@@ -150,3 +150,22 @@ The task and its store are required arguments, and they have no silent
 default on purpose: "no home — treat as a stall" is exactly the divergence
 mechanism the predicate was collapsed into one function to close.
 /
+
+## The warden state machine: what is here and what is not
+
+Source: `src/supervisor.ts`.
+
+The warden state machine: rounds, knock-retry thresholds, unread health,
+silence escalation, and the decision of whom to activate.
+
+What is here and what is not. Here — DECISIONS: who still has unread, whether
+it is time to knock, which messages to show, who stalled, and who has already
+been reported. There is no delivery channel here, and no text: the channel
+comes from the driver via `activate`, and the same driver renders the text —
+the frame and the words belong to the harness channel, not the bus. There is
+also no process here: the detached launcher, the `fs.watch` observers, and the
+loop live at the consumer, because a process death costs nothing by
+construction — the entire state sits in the task store.
+
+The intervals below are measured, not chosen. Changing them changes the
+behaviour of a live run: each is named together with what it was measured by.

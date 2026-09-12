@@ -1,8 +1,5 @@
-// Atomic file write — a raw primitive shared by the legacy store and protocol v1.
-//
-// Not exported: a helper exported once becomes a contract, and the point of the
-// boundary is that the outside sees protocol, not disk. There is no second copy
-// — v1 takes this same module.
+// Atomic file writes: a temporary beside the target, then a rename.
+// Why rename and what it does not promise: reference/01-overview.md.
 import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

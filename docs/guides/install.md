@@ -135,3 +135,11 @@ Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor par
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).
 
 `promptobus help` lists `install` and `uninstall` with the flags above; it is the same list this guide describes.
+
+## What the installer knows and never writes
+
+Source: `lib/install.js`.
+
+Project-level hook install for a consumer repository.
+Layout knowledge comes from the host. User-level directories
+(~/.claude, ~/.cursor, ~/.codex) are never written.

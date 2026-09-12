@@ -1,9 +1,5 @@
-// Texts of bus-tool replies. The place is here, not at the consumer: these are
-// texts ABOUT CORRESPONDENCE — senders, types, participants, counts — and only
-// whoever knows the store can assemble them. Everything that knows about the
-// workspace arrives here through one `decorate` hook: participant lines about
-// the repository, worktree, and background session are assembled by the
-// adapter and handed over ready.
+// Rendering the text of a bus reply — the marks a participant reads it by.
+// Which marks exist and who else copies them: reference/01-overview.md.
 import path from 'node:path';
 import {
   addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, nameOf, ORCHESTRATOR, ownerOf,

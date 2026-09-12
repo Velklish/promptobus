@@ -1,17 +1,5 @@
-// Task-directory files no store holds: participant contact points, delivery
-// health, the warden mark and log, stall and end-of-turn marks, session-to-task
-// bindings, and the participant files directory.
-//
-// Why they live here, not in a store. The store is versioned — correspondence,
-// participants, and artifacts move with the protocol version. These files do
-// not belong to the protocol at all: the adapter names their format and is the
-// one that reads and writes them, and a migration copies them byte for byte.
-// A separate module makes that boundary visible: cutover replaced the store,
-// not these files.
-//
-// Both stores name the task-directory layout (`<home>/tasks/<id>`) the same
-// way, so the path comes from [protocol.ts](protocol.ts) — the shared bus
-// dictionary.
+// State kept beside the task journal — health, wake, stalls.
+// What each file holds and who writes it: reference/01-overview.md.
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

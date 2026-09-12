@@ -1,6 +1,5 @@
-// Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
-// foreign-mechanism layout, no remote namespaces, and no memory servers here —
-// that is a consumer implementation's business.
+// The standalone host: the answers the package gives itself with no consumer.
+// What it reads from promptobus.json: reference/02-host.md.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

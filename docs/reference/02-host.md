@@ -236,3 +236,23 @@ binding is set by whoever builds the host: `hostOf` in [host.js](../../lib/host.
 the package's own helper, and `runPromptobus` in [cli.js](../../lib/cli.js) does it for a
 consumer that passes its own. Two hosts in one process share this one binding and the
 FIRST one wins — the cost of not threading, written down where it is paid.
+
+### The host contract, in one sentence per member
+
+Source: `src/host.ts`.
+
+Host contract: knowledge of the workspace the consumer passes into the bus
+explicitly on every call. There is no process-wide singleton: two hosts in
+one process are lawful and independent.
+
+Field names are about a workspace in general, not about one consumer's
+layout. Concrete paths (rules directory, tools manifest) are named by the
+implementation.
+
+### The standalone host
+
+Source: `src/standalone.ts`.
+
+Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
+foreign-mechanism layout, no remote namespaces, and no memory servers here —
+that is a consumer implementation's business.

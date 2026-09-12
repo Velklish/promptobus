@@ -813,3 +813,18 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 ## MCP
 
 `promptobus mcp` serves stdio JSON-RPC. It must not write logs to stdout. The bus server name is `promptobus`: `src/contract.ts` owns that literal, `src/hooks.ts` exposes it as `BUS_SERVER` for the hook matcher, and `lib/contract.js` re-exports its compiled value as `PROMPTOBUS_SERVER` for adapter consumers.
+
+### Stall parsing
+
+Source: `lib/stalls.js`.
+
+Words about a stalled participant — the ones shared by every harness. "Stalled",
+"LISTED", "GONE", and "DEAF" describe a state, not a tool, and therefore live here;
+the ROUTE after a stall — a command of a specific harness — arrives here as a ready
+string from that harness's driver.
+
+The module is a leaf on purpose: adapter builds the string when it prints
+`promptobus status` or answers `promptobus_mailbox`, and the warden journal uses the
+same words. If it lived on a driver, adapter would import the driver directly; if it
+lived on adapter, a driver would import adapter. A shared leaf removes both
+dependencies, and the channels cannot drift: there is one function.

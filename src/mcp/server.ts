@@ -1,18 +1,5 @@
-// Bus MCP server: stdio transport, JSON-RPC 2.0 one message per line,
-// negotiation (`initialize` → `notifications/initialized` → `ping`),
-// `tools/list` and `tools/call`. The implementation is hand-rolled — the
-// package has no dependencies at all.
-//
-// Protocol and dispatcher only. Everything that knows about the workspace,
-// harness, and consumer version arrives as callbacks: process identity, server
-// name and version, contact-point handoff, participant lines about Git and
-// the background session, stall diagnosis, and human error text. Callbacks
-// RETURN data and do not print: the stdout channel is taken by the protocol,
-// and one stray line in it breaks the client.
-//
-// The package declares an error as a typed event; the consumer supplies the
-// text: JSON-RPC codes are part of the protocol and live here; the words are
-// part of the output and live at the adapter.
+// The stdio JSON-RPC server. It must not write logs to stdout.
+// Transport rules and identity resolution: reference/01-overview.md.
 import {
   GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
 } from '../protocol.js';

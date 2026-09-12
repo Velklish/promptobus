@@ -1,22 +1,5 @@
-// Public Promptobus surface, the "." entry point. It is **one** — protocol and store v1:
-// tasks, participants, messages, artifacts, recoverable fan-out, and history.
-// Alongside it go out the bus vocabulary, task-directory files the store does not
-// hold, former-root migration, the MCP factory, the driver contract, and the
-// warden state machine.
-//
-// Raw filesystem helpers (atomic file and JSON writes) do not go out — they are
-// internal: a helper exported once becomes a contract, and the point of the
-// boundary is that the outside sees protocol, not disk. For the same reason the
-// store v1 paths are not visible outside: every operation goes through `openEngine`.
-//
-// A constraint invisible from this file: package sources import only Node
-// built-ins and their own files. No consumer modules, no Git, no workspace
-// layout, no harness land here — standalone builds rest on that, and the
-// import-boundary gate watches it. It also watches the other direction:
-// `process.env`, `process.stdout`, `process.stderr`, and `console.` are forbidden
-// in package sources. **Diagnostics, session identity, and the harness name
-// arrive as ARGUMENTS** — the same way `home` and `policy` do for `openEngine`:
-// the environment and the output stay the adapter's business.
+// Package entry point: what `promptobus` exports and what stays inside.
+// The surface: reference/01-overview.md.
 
 /** Protocol and store version this build understands. */
 export const PROTOCOL_VERSION = 1;

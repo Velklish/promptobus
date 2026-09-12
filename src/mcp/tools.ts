@@ -1,13 +1,5 @@
-// Bus MCP-server tool declarations: names, descriptions, and input schemas.
-// The home is here, not at the consumer: a tool description is part of the
-// protocol, and it must travel with the code that runs it. The set itself is
-// also declared on the CLI side (`PROMPTOBUS_TOOLS` at the consumer) — `lint`
-// takes it from there, checking the quote in the documentation; a live
-// `tools/list` check holds the two declarations together.
-//
-// **The name prefix is double on purpose**: the full name a session sees is
-// `mcp__promptobus__promptobus_send`. The client namespaces names itself, and
-// short `send` and `task` collide with foreign ones in a shared session set.
+// The three tool declarations handed to a harness, and their input shapes.
+// What each field promises: reference/01-overview.md.
 import { MESSAGE_TYPES } from '../protocol.js';
 
 /** One tool declaration, as `tools/list` returns it. */

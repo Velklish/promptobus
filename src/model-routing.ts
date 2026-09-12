@@ -1,21 +1,5 @@
-// Availability adapter contract: how ONE harness answers "can this account run
-// right now". The preflight ([preflight.js](../lib/model-routing/preflight.js)) runs every adapter
-// in parallel under one budget and turns their verdicts into the availability
-// snapshot the resolver reads; the cache keeps that snapshot between commands.
-//
-// The contract is declared here rather than inside the driver contract because it
-// is a different question with a different lifetime: `Driver` is about a session —
-// start it, look at it, wake it, stop it — while an adapter answers about the
-// ACCOUNT, before any session exists. A driver carries its adapter (`availability`
-// in [driver.ts](driver.ts)) and both go out of the same entry point, so an author
-// implementing a harness still reads one import.
-//
-// What is not here, on purpose: the shape on disk. The snapshot is pinned by
-// `schemas/model-routing/snapshot.schema.json`, and that schema — not this file —
-// is what a written cache is validated against. Every object it declares is
-// CLOSED, which is the mechanism that keeps a token off disk: the writer projects
-// a verdict onto the declared fields, and anything an adapter added beside them
-// never reaches the file.
+// The routing contract: verdicts, snapshots, decisions — the shapes both halves agree on.
+// What each field means: guides/model-routing.md.
 import type { HostToolBin, PromptobusHost } from './host.js';
 
 /**
