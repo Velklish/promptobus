@@ -35,17 +35,14 @@ env -u CODEX_HOME /opt/homebrew/bin/codex debug models
 ```
 
 The participant home is the operational source for a participant. `gpt-5.4-mini` is present in
-that binary response but marked `hide`; it is therefore not in the resolver's selectable inventory.
-The owner-home response is a different set and must not be substituted for the participant home.
-The number of rows alone is not evidence: command, home and visibility filter are all part of the
-measurement.
+that binary response but marked `hide`. This is a home-specific binary observation, not evidence
+that the `model/list` payload has the same rows; that equivalence remains open. The owner-home
+response is a different set and must not be substituted for the participant home. The number of rows alone
+is not evidence: command, home and visibility filter are all part of the measurement.
 
 ## Decision
 
-The `codex-mini-medium` and `codex-mini-high` catalog tuples stay. Keeping a rated tuple while the
-binary marks its row hidden preserves the catalog rating and the raw availability fact; the resolver
-already excludes the tuple as `model-not-in-inventory` until a participant home exposes it. This is
-not a promise that every Codex home can run the model.
+The `codex-mini-medium` and `codex-mini-high` catalog tuples stay. The resolver's hidden-row behavior is a separate `model/list` contract covered by the existing stand fixture and the added rendered-row assertion: it retains the raw hidden row, excludes it from selectable inventory and reports the tuple as `model-not-in-inventory`. That behavior is not inferred from the `debug models` output, whose equivalence with `model/list` remains open.
 
 `model-not-in-inventory` is not swallowed. The resolver puts it on the candidate, the text renderer
 prints it beside that tuple, and `noCandidate` carries the rendered decision when no tuple survives.
@@ -54,11 +51,11 @@ The added resolver test checks the human-visible row, not only the in-memory cod
 `models validate` remains offline. It has no participant task/address from which to derive the
 participant home, and a home-specific hidden row would make a generic catalog gate report a false
 catalog defect. Availability is checked in the preflight snapshot and the holder's model/list gate;
-this card does not add a paid turn.
+this card does not add a live turn.
 
 ## What remains open
 
-The two measured commands above are the binary's debug catalog; no paid live turn was spent to
+The two measured commands above are the binary's debug catalog; no live turn was spent to
 capture a matching `model/list` payload from this participant home. The code path that consumes
 `model/list` and the hidden-row exclusion are covered by the existing stand tests and the new
 rendered-row assertion, but equivalence of the two binary representations remains unclaimed.
