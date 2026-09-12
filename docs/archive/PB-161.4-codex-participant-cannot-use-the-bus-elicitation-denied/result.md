@@ -28,6 +28,16 @@ removing the split 7/16; an empty `content` 12/16; truthiness instead of the str
 `String()` before the comparison 19/20; the marker without the schema check 23/27; removing `mode`
 32/35. `codex-elicitation` 35/35 on the merged tree; `npm test` 62/62 files, exit 0.
 
+**Which copy produced that live turn, established after the fact rather than assumed.** The run
+went on a separate stand in `$TMPDIR` — its own `promptobus.json`, its own `.promptobus`,
+`PROMPTOBUS_CODEX_HOME` inside the sandbox — raised by `bin/promptobus.js` of the working branch.
+That the change itself ran, and not the installed copy, is proved by the **shape of the journal
+line**: `approval allow … kind=mcp_tool_call schema=true`. The installed 0.6.0 cannot print it —
+its elicitation branch refuses unconditionally (`allow: false, why: 'the participant has no person
+to answer an elicitation'`) and carries neither `kind=` nor `schema=` anywhere in its output. The
+resolve chain that explains WHY the branch copy ran is reasoning, not evidence: the sandbox is
+gone and no `ps` of that moment was kept. The line's shape is the fact, and it is enough.
+
 **Documentation in the same pass.** `docs/reference/03-cli.md` § Review and the Codex driver's
 header carry the approval shape and the allow-list; `CHANGELOG` records it.
 
