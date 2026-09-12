@@ -175,6 +175,9 @@ function runHold(file) {
   // PB-160: a failed MCP call is named in the holder log with server, tool, status and
   // the reason — before this line the log said only `event item/completed`, and a bus
   // call dying in 0 ms looked exactly like a dead server.
+  check(': a rate-limit notification is logged with its complete params',
+    /debug event account\/rateLimits\/updated payload=\{"primary":\{"usedPercent":0\}\}/.test(log),
+    `log=${log.slice(0, 600)}`);
   check(': a failed MCP call reaches the holder log with server, tool, status and reason',
     /event item\/completed mcp acme_tools_promptobus\/promptobus_send failed .*stub: tool not found/.test(log),
     `log=${log.slice(0, 600)}`);

@@ -379,6 +379,8 @@ with the same snapshot. So the request is the source, and the bounded wait for
 the notification stays as the path for a binary that does not have the method —
 the shape the brief for this task described, kept where it still applies.
 
+When the fallback notification does arrive, the holder's debug journal records `debug event account/rateLimits/updated payload=<full JSON>`, while the session record keeps the latest payload as `rateLimits`. The journal is the evidence a person can inspect; neither representation makes the notification shape equivalent to `account/rateLimits/read`, so the live shape question remains open in PB-24.1/PB-192.
+
 **Two neighbouring methods this file must never call.** `getAuthStatus` answers
 `{ authMethod, authToken, requiresOpenaiAuth }` — it would be a crisper auth
 signal and it hands back a TOKEN, and this module's `message` is the one free
