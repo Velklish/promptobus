@@ -1,6 +1,6 @@
 # PB-206 · Acceptance is a role the glossary names and the bus cannot address
 
-- **Order:** 5
+- **Order:** 50
 - **Scope:** `src/protocol.ts` (`ADDRESS_RE`, refusal texts, `participantFileStem`), `src/mcp/render.ts`, `lib/store.js` (`routingPolicy`, `participantRecord`), `lib/liftoff.js`, `lib/model-routing/*` (four role lists, `qualityFloor`), `schemas/model-routing/*`, `src/host.ts` (`participantDenyTools`), `src/mcp/tools.ts` (a further contract copy of the addresses, found 2026-09-12 while verifying the map), `docs/reference/04-protocol.md`, `docs/reference/05-drivers.md`
 - **Created:** 2026-09-12, from a measurement of what the orchestrator actually does
 - **Dependencies:** none

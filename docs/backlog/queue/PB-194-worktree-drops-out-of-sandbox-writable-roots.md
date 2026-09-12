@@ -1,6 +1,6 @@
 # PB-194 · The participant shell worktree is closed; escalated exec_command is the measured write route
 
-- **Order:** 10
+- **Order:** 110
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
 - **Created:** 2026-09-12
 - **Dependencies:** PB-191 for the file-change approval method

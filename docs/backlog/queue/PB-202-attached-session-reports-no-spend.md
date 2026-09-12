@@ -1,6 +1,6 @@
 # PB-202 · Codex rollouts carry token usage on disk; attached sessions report none
 
-- **Order:** 2
+- **Order:** 20
 - **Scope:** `lib/model-routing/telemetry.js` (`throughputObservationOf`, sidecar reader), `lib/driver-codex.js`, `lib/driver-claude.js`, [PB-57.1](../deferred/PB-57.1-harness-throughput-producers-absent.md), `docs/reference/03-cli.md` § Participant telemetry
 - **Created:** 2026-09-12, from a measurement of 268 participant sessions
 - **Dependencies:** PB-57.1

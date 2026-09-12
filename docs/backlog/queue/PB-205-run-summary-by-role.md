@@ -1,6 +1,6 @@
 # PB-205 · Telemetry has the role but not the turns, the spend or the idle time
 
-- **Order:** 8
+- **Order:** 90
 - **Scope:** `lib/model-routing/telemetry.js` (record projection, `telemetryStats`), `lib/done.js` (what is computed before the journal can be pruned), `docs/reference/03-cli.md` § Participant telemetry
 - **Created:** 2026-09-12, from an attempt to price a run by role
 - **Dependencies:** PB-202

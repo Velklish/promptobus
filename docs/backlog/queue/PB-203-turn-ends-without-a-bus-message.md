@@ -1,6 +1,6 @@
 # PB-203 · A participant's turn can end without a bus message and nothing notices
 
-- **Order:** 3
+- **Order:** 30
 - **Scope:** `lib/guard.js` (the end-of-turn verdict), `src/supervisor.ts` (`supervisorRound`, escalation), `lib/status.js` (participant state), `docs/reference/03-cli.md` § Guard and warden
 - **Created:** 2026-09-12, from a post-mortem of nine participants that sent no result
 - **Dependencies:** none

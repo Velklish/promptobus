@@ -1,6 +1,6 @@
 # PB-204 · The result body is free text, so the orchestrator reads all of it to find four facts
 
-- **Order:** 4
+- **Order:** 40
 - **Scope:** `lib/spawn.js` (worker preamble), `lib/review.js` (reviewer preamble), `docs/reference/04-protocol.md` § Message types
 - **Created:** 2026-09-12, from a measurement of 5241 bus messages
 - **Dependencies:** none

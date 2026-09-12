@@ -1,6 +1,6 @@
 # PB-201 · A worker's gate claim reaches the reviewer as prose, not as a machine record
 
-- **Order:** 1
+- **Order:** 10
 - **Scope:** `lib/store.js` (`placeFile`, `numberedName`), `schemas/v1/` (new record), `lib/review.js` (reviewer preamble, `addDirs`), `lib/spawn.js` (worker preamble), `docs/reference/04-protocol.md` § Artifacts
 - **Created:** 2026-09-12, from a review of 73 bus runs
 - **Dependencies:** none

@@ -1,6 +1,6 @@
 # PB-207 · Nothing says a status needs no reply, and the guard promises one
 
-- **Order:** 7
+- **Order:** 100
 - **Scope:** `lib/guard.js` (verdict text), `lib/spawn.js` and `lib/review.js` (preambles), `docs/reference/04-protocol.md` § Message types
 - **Created:** 2026-09-12, from a measurement of bus latency
 - **Dependencies:** none
