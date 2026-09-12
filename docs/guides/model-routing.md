@@ -618,3 +618,162 @@ once, and "denied by overlay \"workspace\"" is only half an answer when the
 user layer denied it too. `sources.rules` records every allow and deny list
 any layer wrote, in layer order, with the role it was scoped to — and every
 diagnostic in the resolver and in `validate` is a filter over that list.
+
+### Preflight: running the adapters together under one budget
+
+Source: `lib/model-routing/preflight.js`.
+
+Availability preflight: ask every declared harness what the account can do
+right now, all at once, under one budget, and hand back the availability
+snapshot the resolver reads.
+
+Four decisions shape this file.
+
+**The binaries are resolved here, before the race, not inside each probe.**
+`resolveToolBin` is synchronous by contract and a host may start a process in it,
+so a probe that called it would hold the event loop and stop the very timer that
+bounds the run. One resolve per declared binary, up front, under the same
+deadline, and each adapter is handed its answer ([model-routing.ts](../../src/model-routing.ts)
+`ProbeRequest.toolBin`).
+
+**One budget for the whole run, not one per harness.** Adapters run in
+parallel, so each is given the whole budget as its own ceiling and the run ends
+when the budget does. A harness that has not answered by then is `unknown` /
+`probe_timeout` and does not hold the command: a person waiting on `spawn` pays
+once for the slowest harness, never three times in a row.
+
+**The cache is consulted before the adapters, not after.** A live entry means no
+probe at all; `--refresh` drops the live entries and probes again. What
+`--refresh` cannot drop is a sticky exhaustion ([cache.js](../../lib/model-routing/cache.js)).
+
+**`--dry-run` without `--refresh` never probes.** A dry run is how a person asks
+a question, and a question that starts three harness binaries and waits fifteen
+seconds is not one. A harness with no live entry then reports `unknown` /
+`stale_cache` — reported, never silently taken as available.
+
+Flags are the CLI's words; this module takes `refresh` and `dryRun` as options
+and knows nothing about argv.
+
+### The availability cache: the first disk boundary of routing
+
+Source: `lib/model-routing/cache.js`.
+
+Availability cache: the last availability snapshot, kept between commands so
+that a routed `spawn` does not start three harness binaries every time.
+
+**This file is the disk boundary of routing, and it is the one new file that can
+leak.** Two rules hold it, and both are gates rather than intentions:
+
+  • mode `0600` and a temp-file-plus-rename write — a parallel reader never sees
+    a truncated file, and a process that dies mid-write leaves the previous one;
+  • a verdict is PROJECTED onto the closed snapshot shape before it reaches
+    disk. `snapshotEntry` copies the declared fields and nothing else, so a
+    token, an email or an open account id an adapter put beside them does not
+    travel. The shape is not this file's invention — it is
+    `schemas/model-routing/snapshot.schema.json`, whose every object is closed
+    precisely so that a document carrying such a field stops validating.
+
+The file is named by the host (`routingPaths().cacheFile`) and is account-scoped:
+auth, model inventory and the remaining limit belong to the account the harness
+binary is logged into, and the same account is reached from every checkout on
+the machine. `promptobusHome()` — the per-workspace task store — is not used
+here at all.
+
+It carries no account key. v1 assumes ONE locally authenticated account per
+harness (ADR-003), so there is nothing to tell apart; the snapshot schema keeps
+a `fingerprint` slot for the day that changes, and the rule that comes with it
+is that the key must be opaque and one-way.
+
+### Validate: what a catalog or an overlay is refused for
+
+Source: `lib/model-routing/validate.js`.
+
+`models validate` as a library function: what is wrong with the catalog and
+the overlays, before anything tries to route on them.
+
+It is a library function and not a command on purpose. PB-21 wires the
+`promptobus models validate` subcommand to it; the resolver calls the same
+function on the same layers; and a consumer that ships a policy layer of its
+own can check that layer without a subprocess.
+
+**Production reads no JSON Schema.** The grammar below is the same grammar as
+`schemas/model-routing/*.schema.json`, written by hand for the same reason
+[src/v1/validate.ts](../../src/v1/validate.ts) gives: the package must run
+with no runtime dependency, and ajv is a devDependency. Two descriptions of
+one contract drift, so a parity check on shared documents lives in
+[test/model-routing-catalog.test.mjs](../../test/model-routing-catalog.test.mjs)
+— edit one, edit the other, or the red comes from there.
+
+Verdict shape: `{ ok, errors, warnings }`. An error carries the code the
+reference table names (`catalog-invalid`, `overlay-invalid` —
+[03-cli](../reference/03-cli.md)), the layer id it belongs to, and
+the field it is about. A warning never makes `ok` false: a stale rating is a
+warning by ADR-003, and the canonical-priority checks are warnings because
+the priority scheme is documented convention rather than schema.
+
+### Loading the catalog and the layer stack
+
+Source: `lib/model-routing/catalog.js`.
+
+Model catalog and the overlay merge.
+
+The catalog is the maintainers' rating of tuples and ships with the package
+(`models/catalog.json`, `files` in package.json). Above it sit overlays: the
+host names them and their order, lowest precedence first
+(`routingPaths().overlays` — [02-host](../reference/02-host.md)), and
+above those the constraints the caller took from the command line. The stack
+is exactly the one ADR-003 fixed:
+
+    canonical catalog → host overlays, lowest to highest → CLI constraints
+
+Nothing here resolves or scores anything. This module answers one question —
+"what is the policy and the tuple list, after everyone has had their say" —
+and PB-18 turns that answer into a pick. `validate.js` next door reads the
+same layers and reports what is wrong with them.
+
+A missing overlay file is normal and not an error: the host names paths, it
+does not promise they exist.
+
+### Rendering a decision for a person
+
+Source: `lib/model-routing/render.js`.
+
+The text half of a decision: what `promptobus models` prints when it is not
+asked for `--json`.
+
+It renders a decision document and nothing else — no catalog, no snapshot, no
+policy — so the two outputs of the command cannot drift: whatever the JSON
+says, this is that same document with column widths. The order is the
+document's own, scored candidates first by descending total and excluded ones
+after, because `candidates` in `decision.schema.json` declares that order as
+part of the contract and the renderer prints the array as it stands.
+
+Byte-for-byte pinned by `test/fixtures/model-routing/models.txt`. The columns
+below are what that fixture fixes; the rules around them exist so a longer
+name widens the grid for every row instead of pushing one row out of it.
+
+### The `models` command: what each subcommand reads and writes
+
+Source: `lib/models.js`.
+
+`promptobus models`, and the routing gate `spawn` and `review` stand on.
+
+Everything below the command exists already as a library: the catalog and its
+overlays ([model-routing/catalog.js](../../lib/model-routing/catalog.js)), the checks
+behind `models validate` ([validate.js](../../lib/model-routing/validate.js)), the
+budgeted preflight and the availability cache
+([preflight.js](../../lib/model-routing/preflight.js),
+[cache.js](../../lib/model-routing/cache.js)), and the pure resolver and renderer
+([resolver.js](../../lib/model-routing/resolver.js), [render.js](../../lib/model-routing/render.js)).
+This file is the only place they meet, and it is deliberately the ONE place:
+`spawn` and `review` route through the same gate as `models` prints, so the
+decision a person is shown is the decision a lift is made on.
+
+**The order inside the gate is not free.** Explicit constraints are validated
+against the merged catalog and `host.declaredTools()` BEFORE `resolve` is
+called, because `resolve` cannot tell them apart: a harness the workspace
+never declared is absent from the snapshot, and the resolver filters its
+tuples out rather than excluding them ([03-cli](../reference/03-cli.md)
+§ Resolver). Both cases would reach the person as `chosen: null` with an empty
+candidate list, and "you named a harness this workspace does not have" would
+be indistinguishable from "nothing survived filtering".
