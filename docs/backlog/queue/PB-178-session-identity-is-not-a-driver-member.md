@@ -54,3 +54,27 @@ are also the observable the fix is checked against.
 
 - A session of each declared harness has an identity, or its driver says it has none.
 - `claim` refuses a foreign session for every harness, not only for one.
+
+## Контракт закрыт, два наблюдаемых карточки НЕ продемонстрированы (2026-09-12)
+
+**Сделано.** `DriverOptions.identityVar` — новый обязательный член рядом с `knockChannel` и
+`envDrop`; три драйвера объявляют `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID`,
+`CODEX_THREAD_ID`. `resolveSessionIdentity` отдаёт id при ровно одном претенденте, `null` с
+причиной при нуле и **отказывается выбирать при двух**, называя обоих с их переменными — это
+форма живого участника Codex, где прежний читатель возвращал id РОДИТЕЛЯ. Ядро драйверы не
+импортирует (цикл настоящий: прямой импорт валит загрузку с
+`ReferenceError: Cannot access 'CLAUDE' before initialization`), резолвер вкалывается реестром при
+импорте. `ADR-010` записывает решение и разрез по путям: член отвечает за команду, которую
+запускает сессия, и НЕ за MCP-ребёнка.
+
+**Чем проверено.** `test/session-identity.test.mjs` 13/13 с отрицательным контролем (пустое
+окружение даёт `null` С ПРИЧИНОЙ) и с прогоном через дверь ядра. Замеры, уточнившие постановку:
+MCP-ребёнок Codex получает 11 переменных и ни одной `CODEX_*` — идентичность там невозможна, а не
+«не поддержана»; `cursor-agent` кладёт `CURSOR_CONVERSATION_ID` в окружение shell-инструмента.
+
+**Почему карточка остаётся в очереди.** Оба наблюдаемых, которые она называет мерой успеха —
+непустой `owner` в `status` и отказ `claim` чужой сессии **для каждого объявленного harness'а**,
+— **не прогонялись ни по одному**. В `test/session-identity.test.mjs` слова `claim`/`status`
+встречаются только в названиях проверок, не как команды. Механизм на месте, демонстрации нет, и
+она стоит живых сессий трёх инструментов. `CODEX_THREAD_ID` в shell-ребёнке не мерен — гипотеза.
+
