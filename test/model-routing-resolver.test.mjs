@@ -1371,6 +1371,9 @@ test('a hidden row is carried and never chosen, and is not a runtime row either'
   });
   assert.deepEqual(decision.runtime, [],
     'a hidden UNRATED row is not offered either, so it is not a runtime row a person could pick');
+  const visible = render(decision).split('\n').find((line) => line.includes('codex-preview'));
+  assert.match(visible ?? '',
+    /model-not-in-inventory: the codex account does not expose \"gpt-5\.6-preview\"/);
 });
 
 test('the pace table prints one row per harness/pool representative, with the numbers the document carries', () => {
