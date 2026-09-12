@@ -18,9 +18,7 @@
 // after, so the caller won. With a one-name list that was cosmetic; with this list it is not,
 // and the contract is Codex's order for everyone.
 //
-// Written against `node:test` rather than the shared `check` helper because two of the three
-// drivers are not fixed yet and a pending contract is marked `todo`, which `check` has no axis
-// for (the rule is in the header of test/run.mjs). That choice is also why `home.mjs` is
+// Written against `node:test` rather than the shared `check` helper. That is also why `home.mjs` is
 // imported by hand and first, before anything that could read the real home: `check.mjs` is
 // where every other file picks the diversion up.
 import './home.mjs';
@@ -72,13 +70,13 @@ test('claude: no parent identity or messaging variable reaches a lifted particip
   pinsDropAndOrder('claude');
 });
 
-test('codex: no parent identity or messaging variable reaches a lifted participant',
-  { todo: 'PB-182: lib/driver-codex.js drops only CODEX_HOME and merges extra after the delete; the file belongs to another track this run' },
-  () => { pinsDropAndOrder('codex'); });
+test('codex: no parent identity or messaging variable reaches a lifted participant', () => {
+  pinsDropAndOrder('codex');
+});
 
-test('cursor: no parent identity or messaging variable reaches a lifted participant',
-  { todo: 'PB-182: lib/driver-cursor.js drops four names of its own and none of the parent harness; the file belongs to another track this run' },
-  () => { pinsDropAndOrder('cursor'); });
+test('cursor: no parent identity or messaging variable reaches a lifted participant', () => {
+  pinsDropAndOrder('cursor');
+});
 
 // The list is the contract, and an empty or shrunken one would make every check above pass for
 // the wrong reason — the shape this run kept finding by eye.
