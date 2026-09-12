@@ -1,5 +1,6 @@
 # PB-133 · Store directory and path names are re-assembled outside src/v1/layout.ts in five places — the store root, the task lock, the history walk, the files/ folder, and the record-id timestamp — so each has a second home nothing keeps in step
 
+- **Order:** 300
 - **Scope:** [reference/01-overview](../../reference/01-overview.md), `src/v1/layout.ts`, `src/host.ts`, `src/standalone.ts`, `src/sidecar.ts`, `src/v1/store.ts`, `src/v1/messages.ts`, `src/migrate.ts`, `src/legacy-store.ts`, `lib/store.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -36,15 +37,13 @@ Grepped `docs/backlog/{queue,active,deferred,triage}` and `docs/archive` for `RO
 - `grep -rn "'\.promptobus'" src/` returns one occurrence (the `ROOT_DIR` declaration) instead of eight.
 - `grep -rn "replace(/\[-:.\]/g" src/` returns one occurrence (the new helper) instead of four.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** Most items remove duplicate spelling without a demonstrated runtime fault; the actual host-path bug is PB-101.
-- **Return condition:** PB-101 and the store contract fixes are accepted, then a bounded layout cleanup is scheduled.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `src/v1/layout.ts:11`, `src/host.ts:314`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blocker `PB-101` and the store contract fixes are archived, so the bounded layout cleanup can be scheduled.

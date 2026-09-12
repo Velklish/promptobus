@@ -1,5 +1,6 @@
 # PB-120 · `DriverOptions.effortMinVersion` is populated with one entry that `optionRefusal` never reads, and `driver-cursor.js`'s `resolveTmux` call passes a `fresh` option the function does not accept
 
+- **Order:** 260
 - **Scope:** `lib/driver-claude.js`, `lib/driver-cursor.js`, `src/driver.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -25,15 +26,13 @@ Verified against HEAD (v0.5.0). (1) `src/driver.ts:280` types `effortMinVersion?
 - `grep -n 'fresh' lib/driver-cursor.js` finds no remaining reference once the flag is dropped.
 - `npm test` stays green.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** The current single effort gate works; generic metadata and an ignored option are cleanup, not a demonstrated runtime failure.
-- **Return condition:** A second version-gated effort is added, or a scoped driver-contract cleanup is scheduled after PB-85 and PB-93.
-
 ## Triage — 2026-09-07
 
 - **Track:** D — Harness registries and Cursor / Claude drivers.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `src/driver.ts:280`, `lib/driver-claude.js:965`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blockers `PB-85` and `PB-93` are archived, so the scoped driver-contract cleanup the condition names can be scheduled.

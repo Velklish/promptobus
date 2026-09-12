@@ -1,5 +1,6 @@
 # PB-129 · installWorktreeDeps and runRepoGenerator run the same run-log-classify sequence by hand in two files, and the copy has already drifted in its ENOENT wording
 
+- **Order:** 280
 - **Scope:** `lib/worktree.js`, `lib/spawn.js`, `lib/util.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -25,15 +26,13 @@
 - `npm test` stays green, in particular `test/promptobus-spawn.test.mjs` around lines 1146 and 1268 (the ENOENT and generic-failure paths for both `installWorktreeDeps` and `runRepoGenerator`).
 - `grep -n "const started = Date.now" lib/worktree.js lib/spawn.js` shows one occurrence total (in `lib/util.js`) instead of one per caller.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** A shared process helper would overlap the process-boundary and launch fixes.
-- **Return condition:** PB-50, PB-122, PB-126 and PB-83 are accepted, and the remaining two call sites have demonstrably identical contracts.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `lib/worktree.js:371`, `lib/spawn.js:967`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blockers `PB-50`, `PB-122`, `PB-126` and `PB-83` are all archived, so the two call sites can be compared for identical contracts.

@@ -1,5 +1,6 @@
 # PB-134 · The mailbox record-reading loop (parse, validate, isolate) is duplicated three times in messages.ts and has already drifted between copies
 
+- **Order:** 310
 - **Scope:** `src/v1/messages.ts`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -27,15 +28,13 @@ readInbox (src/v1/messages.ts:385-431) and peekInbox (:672-711) share a byte-ide
 - New test: the same malformed record read through all three functions produces the same BrokenNote.note text.
 - Mutation probe: reverting the extraction back to three separate inline blocks turns the wording-parity test red.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** Reader deduplication overlaps the data-loss and error-taxonomy fixes and should follow the corrected semantics.
-- **Return condition:** PB-66 and PB-146 are accepted; compare the resulting readers and extract only genuinely identical behavior.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `src/v1/messages.ts:385`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blockers `PB-66` and `PB-146` are archived, so the resulting readers can be compared and genuinely identical behaviour extracted.

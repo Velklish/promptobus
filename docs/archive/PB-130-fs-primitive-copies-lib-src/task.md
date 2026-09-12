@@ -1,5 +1,6 @@
 # PB-130 · src/index.ts's internal-helpers boundary is not enforced against lib/, so writeFileAtomic, writeJsonAtomic, shellQuote and pidAlive each have a second body inside the same npm package, and one has already drifted
 
+- **Order:** 290
 - **Scope:** `src/index.ts`, `src/fs/atomic.ts`, `src/fs/proc.ts`, `src/hooks.ts`, `lib/util.js`, `lib/store.js`, `lib/cursor-persist.js`, `lib/codex-session.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none

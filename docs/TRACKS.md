@@ -116,7 +116,7 @@ Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md
 
 Added after this snapshot: [PB-45.1](archive/PB-45.1-snapshot-path-hides-registry-refusal/task.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
 
-Deferred assignments: [PB-120](backlog/deferred/PB-120-dead-effort-map-and-fresh-flag.md).
+Deferred assignments: [PB-120](backlog/queue/PB-120-dead-effort-map-and-fresh-flag.md).
 
 ### R — Routing policy, overlays and availability
 
@@ -167,7 +167,7 @@ Queued assignments: [PB-64](archive/PB-64-warden-fingerprint-conflates-restart/t
 Every deferred item has its own return condition. This is a future track, not part of the executable batch; PB-120 stays mapped to D and PB-38.2 to R.
 
 
-Deferred assignments: [PB-81](backlog/deferred/PB-81-cursor-stdout-guard-and-dedupe.md), [PB-95](archive/PB-95-mutation-probe-has-no-script/task.md), [PB-117](backlog/deferred/PB-117-registry-and-driver-duplication.md), [PB-118](backlog/deferred/PB-118-done-triple-listtasks-walk.md), [PB-127](backlog/deferred/PB-127-dead-file-citations-in-comments.md), [PB-129](backlog/deferred/PB-129-duplicate-worktree-spawn-failure-classification.md), [PB-130](backlog/deferred/PB-130-fs-primitive-copies-lib-src.md), [PB-133](backlog/deferred/PB-133-store-path-names-scattered.md), [PB-134](backlog/deferred/PB-134-messages-read-loop-dedup.md), [PB-139](backlog/deferred/PB-139-tsc-lib-untyped-unused-code.md), [PB-13.2](backlog/deferred/PB-13.2-catalog-has-no-payg-row.md), [PB-16.1](backlog/deferred/PB-16.1-cursor-start-path-names-no-limit.md), [PB-24.1](backlog/deferred/PB-24.1-codex-notification-window-duration.md), [PB-24.2](backlog/deferred/PB-24.2-snapshot-model-has-no-efforts-or-speed-tiers.md).
+Deferred assignments: [PB-81](backlog/queue/PB-81-cursor-stdout-guard-and-dedupe.md), [PB-95](archive/PB-95-mutation-probe-has-no-script/task.md), [PB-117](backlog/queue/PB-117-registry-and-driver-duplication.md), [PB-118](backlog/queue/PB-118-done-triple-listtasks-walk.md), [PB-127](backlog/queue/PB-127-dead-file-citations-in-comments.md), [PB-129](backlog/queue/PB-129-duplicate-worktree-spawn-failure-classification.md), [PB-130](archive/PB-130-fs-primitive-copies-lib-src/task.md), [PB-133](backlog/queue/PB-133-store-path-names-scattered.md), [PB-134](backlog/queue/PB-134-messages-read-loop-dedup.md), [PB-139](backlog/queue/PB-139-tsc-lib-untyped-unused-code.md), [PB-13.2](backlog/deferred/PB-13.2-catalog-has-no-payg-row.md), [PB-16.1](backlog/deferred/PB-16.1-cursor-start-path-names-no-limit.md), [PB-24.1](backlog/deferred/PB-24.1-codex-notification-window-duration.md), [PB-24.2](backlog/deferred/PB-24.2-snapshot-model-has-no-efforts-or-speed-tiers.md).
 
 ## Verification of this triage
 

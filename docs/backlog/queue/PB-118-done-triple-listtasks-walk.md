@@ -1,5 +1,6 @@
 # PB-118 · done() calls listTasks(home) three times per invocation (sweepWorktrees, sweepParticipantSecrets, sweepJournals/pruneCandidates), re-parsing every task journal each time and repeating any broken-task warning up to three times
 
+- **Order:** 250
 - **Scope:** `lib/done.js` (`sweepWorktrees`, `sweepParticipantSecrets`), `lib/prune.js` (`sweepJournals`, `pruneCandidates`), `lib/store.js` (`listTasks`, `withTaskCache`)
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -38,15 +39,13 @@ The neighbouring comment inside `sweepParticipantSecrets` (around `done.js:217-2
 - A test on a workspace with a handful of closed tasks and a stub `listTasks` that counts its calls: one `promptobus done` invocation calls it once, not three times.
 - With one corrupted `task.json` present, `promptobus done` prints the broken-task warning once, not up to three times.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** Repeated task walks are visible in code, but their cost has not been measured against a representative store.
-- **Return condition:** The store and telemetry changes are accepted and a bounded operation-count measurement shows the repeated walk remains material.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `lib/done.js:367`, `lib/prune.js:138`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** the store and telemetry changes are accepted (archived). The bounded operation-count measurement the condition also names **is the work of this card**, not a precondition for taking it.

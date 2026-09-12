@@ -1,5 +1,6 @@
 # PB-117 · The Cursor and Codex session registries are the same file twice, and five more driver helpers are byte-identical across all three drivers
 
+- **Order:** 240
 - **Scope:** `lib/cursor-persist.js`, `lib/codex-session.js`, `lib/driver-cursor.js`, `lib/driver-codex.js`, `lib/driver-claude.js`, `lib/store.js` (`writeJsonAtomic`), `test/promptobus-adapter.test.mjs` (the adapter-boundary gate), [02-host](../../reference/02-host.md)
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -42,15 +43,48 @@ The adapter-boundary gate (`test/promptobus-adapter.test.mjs:399` `DRIVER_OWN`, 
 - `test/promptobus-adapter.test.mjs` passes, and fails if a driver imports another driver's private module or the new shared leaf imports a driver.
 - Same-input/same-output check on the moved `versionLess`/`sayForeignWrite`/`sessionEnv` call sites in all three drivers before and after the move.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** A registry/driver extraction would touch both live driver tracks while their error and lifecycle contracts are changing.
-- **Return condition:** PB-45 and the Codex and Cursor lifecycle fixes are accepted, then compare the stabilized registries and approve a bounded extraction.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `test/promptobus-adapter.test.mjs:399`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## PB-130 merged into this card, 2026-09-12
+
+The two cards gave **contradictory instructions for the same two files**. PB-117 asks for
+`pidAlive` to live in a new `harness-registry.js`; PB-130 asks for the two local bodies in
+`lib/cursor-persist.js` and `lib/codex-session.js` to be deleted and imported from
+`../dist/index.js`, where `pidAlive` is already exported (`src/index.ts:57`) and where
+`lib/store.js:56` already imports it. Both cannot be done, and doing either leaves the other card
+wrong. One decision, one card.
+
+**The decision this card now owns:** does a de-duplicated primitive come from the published package
+(`../dist/index.js`) or from a new `lib/` leaf? Pick once and apply it to every name below; a split
+answer rebuilds the same problem one level down.
+
+**What PB-130 contributes:**
+
+- `writeFileAtomic` has two drifted bodies — `src/fs/atomic.ts:18` (mode only) and `lib/util.js:107`
+  (adds `preserveMode`, `lib/util.js:97-105`). The fix that added `preserveMode` never reached the
+  `src/` copy. Fold the option into one body.
+- `writeJsonAtomic` is a 3-line wrapper duplicated at `src/fs/atomic.ts:39-42` and
+  `lib/store.js:1013-1016` — the same primitive PB-117's registry pair copies a third time as
+  `writeJson` (`cursor-persist.js:249` with `{ secret }`, `codex-session.js:106` with mode `0o600`
+  unconditionally and no comment explaining the difference).
+- `shellQuote` is character-for-character identical between `src/hooks.ts:23-25` and
+  `lib/util.js:90-94`, `SHELL_SAFE` regex included.
+- `src/index.ts:7-10` states a rule ("Raw filesystem helpers … do not go out — they are internal")
+  and `src/fs/atomic.ts:3-5` asserts "There is no second copy". Both are false today. Whichever way
+  the decision goes, rewrite that comment to say what it actually protects — external consumers of
+  the published package — since as written it reads as forbidding intra-package reuse, which the
+  codebase does not practice: `grep -c "from '../dist/index.js'"` shows **11** `lib/` files already
+  importing from `../dist/index.js`.
+
+**Out of scope carried over from PB-130:** no new abstraction beyond what `src/fs/*` already has;
+the 11 existing `lib/*.js` importers of `../dist/index.js` are not touched beyond the `pidAlive`
+de-duplication.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blocker `PB-45` and the Codex and Cursor lifecycle fixes are archived, so the registries this card compares are the stabilized ones.

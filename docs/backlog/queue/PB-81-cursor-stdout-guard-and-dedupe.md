@@ -1,5 +1,6 @@
 # PB-81 · Consolidate duplicated availability adapter helpers after focused correctness fixes
 
+- **Order:** 230
 - **Scope:** `lib/model-routing/adapter-cursor.js`, `lib/model-routing/adapter-claude.js`, `lib/model-routing/adapter-codex.js`, `lib/model-routing/preflight.js`, `lib/drivers.js`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -33,15 +34,13 @@ The same three files also carry a triplicated set of small helpers: a `SECURITY_
 - A unit test (or an addition to an existing model-routing test file) that pipes a stream error into the Cursor adapter's spawned child during a probe and asserts the process does not crash — mirroring how the Claude/Codex adapters are already exercised, if such a test exists for them, or a new minimal one otherwise.
 - After the consolidation pass: `grep -rn "SECURITY_BIN\|function verdict(" lib/model-routing/*.js` shows the constant and factory defined once, not per-adapter.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** The pipe failure has its own focused fix in PB-149; sharing adapter lifecycle, HTTP and keychain helpers is a separate structural change.
-- **Return condition:** PB-149 and routing correctness changes are accepted, and a bounded extraction brief identifies equal contracts and regression cases.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `lib/model-routing/adapter-cursor.js:426`, `lib/model-routing/adapter-claude.js:443`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** The missing Cursor stdout guard is owned solely by PB-149. This deferred task contains only the optional shared-helper consolidation, after adapter correctness has stabilized.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** blocker `PB-149` is archived: the focused stdout-guard fix has landed, so the consolidation pass is no longer waiting on it.

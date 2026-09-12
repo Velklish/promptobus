@@ -1,5 +1,6 @@
 # PB-139 · tsc runs with `include: ["src"]` and no unused-code flags: lib/'s 20,430 lines (30 imports from ../dist across 19 files) are unchecked, and engine.ts:242 already shows the cost (dead `meta` parameter)
 
+- **Order:** 320
 - **Scope:** [reference/01](../../reference/01-overview.md) § Entry points, `tsconfig.json`, `src/v1/engine.ts`, `src/migrate.ts`, the 19 `lib/*.js` files listed in Context
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -36,15 +37,13 @@ src/migrate.ts(35,8): error TS6133: 'process' is declared but its value is never
 - `grep -c '@ts-check' lib/done.js lib/drivers.js lib/guard.js lib/harness-home.js lib/host.js lib/install.js lib/liftoff.js lib/model-routing/catalog.js lib/model-routing/preflight.js lib/model-routing/render.js lib/model-routing/resolver.js lib/model-routing/telemetry.js lib/models.js lib/review.js lib/server.js lib/spawn.js lib/status.js lib/store.js lib/warden.js` shows 1 in each.
 - `npm test` stays green (the parameter removal changes no observable behaviour).
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** The recipe does not actually include lib JavaScript in tsc: tsconfig.json includes only src and has no allowJs/checkJs. A project-wide cleanup would overlap nearly every track.
-- **Return condition:** After runtime integration, define a separate noEmit JavaScript check project and measure its diagnostics before choosing the migration scope.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `src/v1/engine.ts:242`, `src/migrate.ts:35`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Correct the implementation recipe before revival: @ts-check does not make files excluded by tsconfig.json enter tsc. A separate noEmit config with allowJs/checkJs and explicit lib inclusion is needed for a CLI gate. Do not quietly widen the build root or migrate all JavaScript.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** the runtime integration the condition names is done, so the separate noEmit JavaScript check project can be defined and its diagnostics measured.

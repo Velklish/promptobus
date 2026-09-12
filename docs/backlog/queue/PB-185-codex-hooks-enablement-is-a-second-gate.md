@@ -4,7 +4,7 @@
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12
-- **Dependencies:** `PB-180` (closed on the boundary this card names)
+- **Dependencies:** `PB-189` (a lift does not record the copy that ran, which is what blocks the firing measurement)
 
 ## Context
 
@@ -87,3 +87,23 @@ is run by the installed copy, not by this tree.** The live holders are
 `0` across the live `app-server` processes. The firing measurement is therefore possible no earlier
 than the installed copy becomes the merged one; until then a spent turn would repeat the earlier
 inconclusive one.
+
+## PB-180 merged into this card, 2026-09-12
+
+`PB-180` asked where a participant's hooks belong and answered its own question in its own
+measurement: the place is the participant's working directory, the binary names that directory in
+its refusal, and the mechanism already writes the project-trust entry
+(`lib/driver-codex.js`, `trusted: [trustPath(workdir)]`, keyed by realpath). Both cards then stood
+on one unclosed fact — `hook/started` = 0 with no `hook/*` event of any kind — and carried the same
+"Measured 2026-09-12" section word for word. One cause, one card.
+
+**What PB-180 contributes and is not lost:**
+
+- The write into the participant's working directory **stays**. It is correct if the remaining gate
+  turns out to be enablement, and removing it would undo work that measurement supports.
+- Whatever is chosen must hold for a **reviewer as well as a worker** — their working directories
+  differ, and a fix reaching only the worker leaves half the contract.
+- The verification is the **holder's journal**, not the absence of a warning: a participant that
+  runs hooks produces `hook/started`, and a check that passes without one measures nothing.
+- Hook trust itself is settled by `PB-170` and the bypass flag stays. Hooks for a person's own Codex
+  sessions are approved through `/hooks`; that boundary does not move.

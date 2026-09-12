@@ -1,5 +1,6 @@
 # PB-127 · Comments across lib/, src/ and test/ still cite files and gates that live only in consumer-cli' CLI, so a promptobus-only reader who follows them finds nothing
 
+- **Order:** 270
 - **Scope:** [reference/01-overview](../../reference/01-overview.md) (already cites the correct home for one of these pairs), `lib/worktree.js`, `lib/spawn.js`, `lib/driver-claude.js`, `lib/drivers.js`, `lib/status.js`, `lib/contract.js`, `src/protocol.ts`, `src/mcp/tools.ts`, `src/fs/proc.ts`, `src/v1/messages.ts`, `test/hygiene.mjs`, `test/sandbox.mjs`, `test/run.mjs`, `scripts/audit-public.mjs`
 - **Created:** 2026-09-06
 - **Dependencies:** none
@@ -35,15 +36,13 @@ Verified against current HEAD (v0.5.0). Two classes of dead citation:
 - `grep -rn "fresh.test.mjs\|zone.test.mjs\|promptobus.test.mjs\|setup.test.mjs\|root.test.mjs\|cli-flags.test.mjs\|exec.test.mjs\|doctor.test.mjs" lib/ src/ test/` returns nothing.
 - `grep -n "pidAlive" src/fs/proc.ts` shows the corrected file names; `grep -n "lint" src/v1/messages.ts` names the consumer-cli reference explicitly.
 
-## Deferred
-
-- **Deferred:** 2026-09-07
-- **Reason:** The proposed comment sweep spans most tracks and also includes an unrelated export deletion.
-- **Return condition:** The runtime tracks are integrated; perform a comment-only citation pass, preserving exports unless a separate compatibility check permits removal.
-
 ## Triage — 2026-09-07
 
 - **Track:** X — Deferred structural work.
 - **Priority:** P3.
 - **Evidence level:** source/definition review at `1e0401a`, including `lib/worktree.js:33`, `lib/spawn.js:56`. Historical live measurements were not repeated; a regression reproducer is still required before a runtime fix is accepted.
 - **Next step:** Keep the stated subject and acceptance cases. Implement the smallest repair; optional redesigns and unrelated cleanup are excluded.
+
+## Returned to the queue, 2026-09-12
+
+**The return condition has fired:** the runtime tracks are integrated. **Check first whether the finding is still live:** `PB-172` (the self-documenting-code sweep) is archived and removed comments across the tree, so some of the dead citations this card lists may already be gone. Re-measure before rewriting anything.
