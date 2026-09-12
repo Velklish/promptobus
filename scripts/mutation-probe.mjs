@@ -62,12 +62,13 @@ function mutate() {
   if (opts.patch) {
     const patch = readFileSync(0, 'utf8');
     // The snapshot restores ONE file, so a patch that touches another would leave it mutated —
-    // the loss this script exists to prevent. Refused rather than documented.
-    const touched = [...patch.matchAll(/^\+\+\+ (?:b\/)?(\S+)$/gm)].map((m) => m[1])
-      .filter((f) => f !== '/dev/null');
+    // the loss this script exists to prevent. BOTH sides are read: a rename or a delete names
+    // its victim on `---` and something else, or nothing, on `+++`.
+    const named = (re) => [...patch.matchAll(re)].map((m) => m[1]).filter((f) => f !== '/dev/null');
+    const touched = [...named(/^\+\+\+ (?:b\/)?(\S+)$/gm), ...named(/^--- (?:a\/)?(\S+)$/gm)];
     const foreign = touched.filter((f) => path.normalize(f) !== path.normalize(rel));
-    if (foreign.length) die(`--stdin-patch may only touch ${rel}, and this one touches ${foreign.join(', ')} — the restore puts back one file`);
-    if (!touched.length) die(`--stdin-patch: no "+++ b/<path>" line names a file to change`);
+    if (foreign.length) die(`--stdin-patch may only touch ${rel}, and this one touches ${[...new Set(foreign)].join(', ')} — the restore puts back one file`);
+    if (!touched.length) die(`--stdin-patch: no "--- a/<path>" or "+++ b/<path>" line names a file to change`);
     const r = spawnSync('git', ['apply', '-'], { cwd: ROOT, input: patch, encoding: 'utf8' });
     if ((r.status ?? 1) !== 0) die(`git apply refused the patch: ${(r.stderr ?? '').trim()}`);
     return;
