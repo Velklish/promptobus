@@ -214,7 +214,7 @@ The whole probe is TWO reads and no turn. Binary and version come from the host
 verdict rather than searching `PATH` itself — and auth comes from `claude auth
 status --json`, the one non-interactive check the binary offers today.
 Measured 2026-09-05 on `claude` 2.1.251: three runs, 0.86 / 1.17 / 1.36 s wall,
-exit 0, a JSON object whose `loggedIn` boolean is what is read below.
+exit 0, a JSON object whose `loggedIn` boolean is the one field the adapter reads.
 
 **The auth check is spawned asynchronously, and that is not a style choice.**
 The preflight runs the adapters together and holds ONE budget beside them, as a

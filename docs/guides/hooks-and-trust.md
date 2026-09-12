@@ -137,10 +137,10 @@ measurement of that is in its own file, where the tool's name is allowed to
 be; what belongs here is the shape it leaves: the record is identical to a
 real prompt while the session runs its turn to the end and answers.
 
-Nothing in the record tells the two apart; the bus's own marks do —*a
+Nothing in the record tells the two apart; the bus's own marks do — **a
 prompt is what SUSPENDS a turn**, so a participant that both ended its turn
 and spoke after its last activation was not stopped by the dialog standing on
-it (`promptStands` below). It is still deaf to that message, and the bus has
+it (`promptStands` in `src/supervisor.ts`). It is still deaf to that message, and the bus has
 its own words for a deaf channel; what it must not do is call a person to a
 session that is working.
 
@@ -151,7 +151,6 @@ would become different answers about the same state.
 The task and its store are required arguments, and they have no silent
 default on purpose: "no home — treat as a stall" is exactly the divergence
 mechanism the predicate was collapsed into one function to close.
-/
 
 ## The warden state machine: what is here and what is not
 

@@ -212,7 +212,7 @@ Protocol v1 refusals: a typed code plus context.
 
 Human wording is the adapter's job, and that is not style: the package must
 compile and be tested without the CLI, and user output stays in the CLI
-entirely. So what goes out is a `code` from the list below and `context`
+entirely. So what goes out is a `code` from the published list and `context`
 with the facts of the refusal; `message` inside the exception is left for
 debugging — a consumer has no need to read it, and must branch on the code.
 

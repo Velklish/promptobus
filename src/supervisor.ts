@@ -152,7 +152,7 @@ export function stallStands(home: string, task: string, participant: Participant
     // A bad participant record has no right to lift the report of their stall.
     return true;
   }
-/** When a participant was last activated, and which marks count as activation.
+/** A participant that has never spoken gets a grace window from `justSpawned`.
  * [guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already](../docs/guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already) */
   if (sent === null) return !justSpawned(participant);
   return sent < since;
