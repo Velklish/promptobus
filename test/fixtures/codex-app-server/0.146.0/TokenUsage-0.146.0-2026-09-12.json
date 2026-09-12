@@ -1,0 +1,32 @@
+{
+  "codexCli": "0.146.0",
+  "capturedOn": "2026-09-12",
+  "purpose": "Normalized Codex rollout token-count event used by PB-202",
+  "normalization": "Private home, thread id, timestamps, and unrelated fields are omitted; field names and nesting are retained while numeric values are normalized.",
+  "event": {
+    "type": "event_msg",
+    "payload": {
+      "type": "token_count",
+      "info": {
+        "last_token_usage": {
+          "input_tokens": 22265,
+          "cached_input_tokens": 9984,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 431,
+          "reasoning_output_tokens": 325,
+          "total_tokens": 22696
+        },
+        "total_token_usage": {
+          "input_tokens": 22265,
+          "cached_input_tokens": 9984,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 431,
+          "reasoning_output_tokens": 325,
+          "total_tokens": 22696
+        },
+        "model_context_window": 114688
+      },
+      "rate_limits": {}
+    }
+  }
+}

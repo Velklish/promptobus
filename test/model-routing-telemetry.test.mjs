@@ -59,6 +59,27 @@ const refusingTelemetryAdapter = adapterMap({
 const close = (root, opts = {}) => done(root, { adapterFor: defaultTelemetryAdapter, ...opts });
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
+const CODEX_USAGE_FIELDS = [
+  'input_tokens', 'cached_input_tokens', 'cache_write_input_tokens',
+  'output_tokens', 'reasoning_output_tokens', 'total_tokens',
+];
+const codexRolloutFixture = readJson(path.join(
+  here, 'fixtures', 'codex-app-server', '0.146.0',
+  'TokenUsage-0.146.0-2026-09-12.json',
+));
+const codexUsage = [
+  codexRolloutFixture.event?.payload?.info?.last_token_usage,
+  codexRolloutFixture.event?.payload?.info?.total_token_usage,
+];
+check(': the Codex rollout fixture keeps usage evidence outside throughput',
+  codexRolloutFixture.event?.type === 'event_msg'
+  && codexRolloutFixture.event?.payload?.type === 'token_count'
+  && codexUsage.every((usage) => usage
+    && CODEX_USAGE_FIELDS.every((field) => typeof usage[field] === 'number'))
+  && codexRolloutFixture.event?.payload?.info?.model_context_window !== undefined
+  && codexRolloutFixture.event?.payload?.rate_limits !== undefined
+  && telemetry.throughputObservationOf(codexRolloutFixture.event) === null,
+  JSON.stringify(codexRolloutFixture.event));
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 for (const name of readdirSync(SCHEMAS).filter((n) => n.endsWith('.schema.json'))) {
   ajv.addSchema(readJson(path.join(SCHEMAS, name)));

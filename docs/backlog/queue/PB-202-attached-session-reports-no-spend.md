@@ -7,7 +7,7 @@
 
 ## Context
 
-[PB-57.1](../deferred/PB-57.1-harness-throughput-producers-absent.md) states that no harness reports a usable throughput observation, and about one of them it says: Codex's `turn/completed` exposes only id, status and error, and "the session paths carry no usage fields". **That premise is disproved for the rollout on disk**, and the card was deferred on it.
+[PB-57.1](../deferred/PB-57.1-harness-throughput-producers-absent.md) states that no harness reports a usable throughput observation, and about one of them it says: Codex's `turn/completed` exposes only id, status and error, and "the session paths carry no usage fields". **That premise is disproved for the rollout on disk**, and the card was deferred on it. The correct distinction is that Codex and Claude have usage fields without model-active generation time; neither has a complete throughput observation.
 
 Measured 2026-09-12 over 35 Codex sessions (26 worker, 9 reviewer) that took part in bus runs:
 
@@ -19,6 +19,8 @@ Measured 2026-09-12 over 35 Codex sessions (26 worker, 9 reviewer) that took par
 
 The Codex record is not a fragment: `last_token_usage` and `total_token_usage` each carry `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`, `total_tokens`, next to `model_context_window` and `rate_limits`. A neighbouring `task_complete` carries `duration_ms`, `started_at`, `completed_at`, and `time_to_first_token_ms` — the last one filled in 171 of 3309 records.
 
+The Codex evidence is the normalized [`event_msg.token_count.info` rollout fixture](../../../test/fixtures/codex-app-server/0.146.0/TokenUsage-0.146.0-2026-09-12.json). The counts above come from the existing baseline parsers `codex_parse.py` and `sec12.py`; no re-parse of the 268 sessions was performed for this correction.
+
 > Source: 2026-09-12, parse of `~/.codex/sessions/**/rollout-*.jsonl` and of Claude session transcripts; scripts `codex_parse.py`, `sec12.py` in the session scratchpad. Cursor read from its per-chat store, 44 sessions, no usage field found.
 
 Two things follow, and they point in opposite directions.
@@ -26,6 +28,16 @@ Two things follow, and they point in opposite directions.
 **The observation is reachable for two harnesses of three.** Model-active generation time is still absent everywhere — no harness has a field for it. Derived from the gap between the end of one turn and the first item of the next: Codex p50 37.1 tok/s (n = 11 555), Claude p50 66.5 tok/s (n = 32 396). That interval excludes tool execution but includes client overhead, so it is an upper bound, not a measurement, and it must be labelled as one wherever it is used.
 
 **Spend of an attached session is not observable this way at all.** Claude writes `cost-state` (with `modelUsage` and `totalCostUSD`) in 198 of 247 worker sessions and 191 of 242 reviewer sessions — about 80 %, all of them lifted by the mechanism. In **0 of 36** orchestrator sessions, which a human starts, is it present. The role that spends the most per run is the one with no record of what it spent.
+
+## Decision
+
+The Codex rollout is refused as a throughput-sidecar source. It is a file written by the participant's own Codex process outside the promptobus bus, and reading it would couple the driver to a harness-specific `CODEX_HOME`/rollout layout. `lib/driver-codex.js` identifies the rollout home as disposable with the participant; the mechanism must not make the sidecar depend on that layout. The rollout also lacks model-active generation time, so importing its output count would not produce the existing `{ outputTokens, generationDurationSec, tokensPerSecond }` observation. PB-202 therefore closes the Codex throughput question as refused, rather than leaving it open.
+
+The refusal does not erase the producer finding: the reference and PB-57.1 name Codex's `event_msg.token_count.info` as usage evidence. Claude's `assistant.message.usage` is likewise spend evidence without model-active time, and Cursor still has no usage field. A gap-derived tok/s value is an upper bound, not a measurement, and is not wired into the sidecar.
+
+## Attached-session limit
+
+The run summary cannot promise spend for a task-owner/orchestrator attached session. In the baseline measurement produced by `python3 measure.py --since 2026-08-26 --until 2026-09-12 --out baseline.json`, with the attached-session split from `python3 scripts/autonomy.py`, `cost-state` was present in 0 of 36 attached sessions. That is unavailable data, not zero spend. PB-205 must leave this amount unreported rather than inventing a number.
 
 ## Work to do
 
@@ -41,7 +53,7 @@ Two things follow, and they point in opposite directions.
 
 ## Checks
 
-- The corrected statement in PB-57.1 cites a fixture, not prose: a rollout record with the six usage fields, quoted with its field names.
+- The corrected statement in PB-57.1 cites a fixture, not prose: a rollout record with the six usage fields, quoted with their exact field names.
 - For every claim about a harness, the card names the file that carries it and the count of records behind the number.
 - The attached-session gap is stated as a number (0 of 36) with the command that produced it, not as "usually absent".
-- If the rollout is accepted as a source, a live run shows a non-null `throughput` for a Codex participant in `telemetry.jsonl`; if refused, the reference says refused and why.
+- The reference says “refused” and explains the coupling and the missing model-active field; no Codex rollout parser is added to the sidecar.

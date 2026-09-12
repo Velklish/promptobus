@@ -437,6 +437,8 @@ a repository path, a worktree, a session ref, a branch name and every message
 body of the run. None of them is a field below, and a record carrying one
 stops validating.
 
+The Codex rollout is not a sidecar producer. `event_msg.token_count.info` in the Codex-owned rollout contains token usage (see the [normalized fixture](../../test/fixtures/codex-app-server/0.146.0/TokenUsage-0.146.0-2026-09-12.json)), but the file is outside the bus, tied to a harness-specific participant home, and has no model-active generation time. The rollout is therefore deliberately refused as a source. Claude's `assistant.message.usage` has the same model-active gap; Cursor supplies output tokens without a generation duration. Any rate inferred from wall-clock gaps is an upper bound, not a measurement.
+
 The only identifier is `task`: an opaque local key, not the id. It exists so
 PB-37 can tell records of one run from records of another, and the slug a
 person typed does not travel. It is a truncated SHA-256 with no salt — stable
