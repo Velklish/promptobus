@@ -286,7 +286,19 @@ function armCleanup(home) {
   }
 }
 
-export async function codexMain(argv) {
+// Global options: accepted only BEFORE the subcommand, refused after it, as the real
+// binary does. A stand tolerant of either order cannot see the PB-170 defect at all.
+const GLOBAL_OPTIONS = new Set(['--dangerously-bypass-hook-trust']);
+
+export async function codexMain(args) {
+  let argv = args;
+  while (argv.length && GLOBAL_OPTIONS.has(argv[0])) argv = argv.slice(1);
+  const late = argv.find((a) => GLOBAL_OPTIONS.has(a));
+  if (late) {
+    process.stderr.write(`codex-stub: unexpected argument ${late} found\n`);
+    process.exitCode = 2;
+    return;
+  }
   if (argv.includes('--version') || argv[0] === '--version') {
     process.stdout.write(`${HARNESS_VERSION}\n`);
     return;

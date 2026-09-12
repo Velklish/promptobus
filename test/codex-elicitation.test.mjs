@@ -1,9 +1,11 @@
-// Codex elicitation: the holder declines mcpServer/elicitation/request so the
-// turn continues, and the log carries only allowlisted fields. Run: npm test
+// Codex elicitation: one method, several questions — 03-cli § The Codex holder. Run: npm test
+// Asserts the REPLY on the wire, not the decision: PB-161.4 is where the two disagree.
 import { check } from './check.mjs';
-import { decideApproval, serverRequestSummary } from '../lib/codex-session.js';
+import { approvalReply, decideApproval, serverRequestSummary } from '../lib/codex-session.js';
 
 const SECRET = 'SECRET-PROMPT-DO-NOT-LOG';
+
+/** A server's own elicitation: a question to a person, and there is none. */
 const params = {
   serverName: 'probe-mcp',
   threadId: 'thread-1',
@@ -13,18 +15,88 @@ const params = {
   url: 'https://example.invalid/elicit',
 };
 
+// The shape codex-cli 0.146.0 actually sends for its own per-call MCP tool approval:
+// an EMPTY object schema, no `required`, no option field. Read from codex-rs at tag
+// rust-v0.146.0 (`core/src/mcp_tool_call.rs`, `app-server-protocol/.../v2/mcp.rs`), not
+// captured off a wire — the holder does not log payloads, and saying which it is matters.
+const approval = {
+  serverName: 'promptobus-promptobus',
+  threadId: 'thread-1',
+  mode: 'form',
+  message: SECRET,
+  requestedSchema: { type: 'object', properties: {} },
+  _meta: { codex_approval_kind: 'mcp_tool_call' },
+};
+
 const worker = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
 const reviewer = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer' };
 
+const reply = (p, record) => {
+  const d = decideApproval('mcpServer/elicitation/request', p, record);
+  return approvalReply('mcpServer/elicitation/request', d.allow);
+};
+
 {
   const d = decideApproval('mcpServer/elicitation/request', params, worker);
-  check(': a worker elicitation is declined — the participant has no person to answer',
+  check(': a worker elicitation from a server is declined — the participant has no person to answer',
     d.allow === false && /no person/.test(d.why), JSON.stringify(d));
 }
 
 {
   const d = decideApproval('mcpServer/elicitation/request', params, reviewer);
-  check(': a reviewer elicitation is declined the same way',
+  check(': a reviewer elicitation from a server is declined the same way',
+    d.allow === false && /no person/.test(d.why), JSON.stringify(d));
+}
+
+{
+  const r = reply(params, reviewer);
+  check(': a server elicitation is answered with a decline and nothing else',
+    r.action === 'decline' && Object.keys(r).length === 1, JSON.stringify(r));
+}
+
+// Where the defect lives: a decline here is what killed every bus call of a live reviewer.
+// `content: {}` under `action: "accept"` is Accept by design for this request — the schema
+// has no fields to answer, so there is nothing to fill and nothing to get wrong.
+for (const [role, record] of [['worker', worker], ['reviewer', reviewer]]) {
+  const r = reply(approval, record);
+  check(`: codex-cli's own tool approval is accepted for a ${role} — the bus call survives`,
+    r.action === 'accept' && JSON.stringify(r.content) === '{}', JSON.stringify(r));
+}
+
+// The discriminator is a STRING MATCH, not a truthiness test. `tool_suggestion` is a real
+// second value of the same `_meta` key — it asks to install or enable a tool, which is a
+// question to a person, and accepting it would let one through with nobody there.
+for (const kind of ['tool_suggestion', 'something_new', 'MCP_TOOL_CALL', 'mcp_tool_call ']) {
+  const p = { ...approval, _meta: { codex_approval_kind: kind } };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: kind «${kind}» is NOT a tool-call approval and is declined`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
+}
+
+// A non-string marker must not be coerced into one, and the array is the case a strict
+// COMPARISON does not catch on its own: `String(['mcp_tool_call'])` is the allowed
+// discriminator exactly, so the coercion had to go, not the comparison.
+for (const [name, kind] of [
+  ['an object', { tool: 'mcp_tool_call' }],
+  ['an array holding the allowed value', ['mcp_tool_call']],
+  ['an array of one allowed value among others', ['mcp_tool_call', 'x']],
+  ['a number', 1],
+  ['true', true],
+  ['null', null],
+]) {
+  const p = { ...approval, _meta: { codex_approval_kind: kind } };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: ${name} where the kind should be is declined, not coerced`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ kind, d, r }));
+}
+
+{
+  const { _meta, ...noMarker } = approval;
+  void _meta;
+  const d = decideApproval('mcpServer/elicitation/request', noMarker, reviewer);
+  check(': the same request without the marker falls back to the decline PB-41 decided on',
     d.allow === false && /no person/.test(d.why), JSON.stringify(d));
 }
 
@@ -41,8 +113,101 @@ const reviewer = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer' };
 {
   const s = serverRequestSummary('mcpServer/elicitation/request', params);
   const blob = JSON.stringify(s);
-  check(': the allowlisted summary names method, server and mode only',
+  check(': the allowlisted summary names method, server, mode and shape only',
     s.method === 'mcpServer/elicitation/request' && s.server === 'probe-mcp' && s.mode === 'form'
+      && s.schema === true && s.kind === null
       && !blob.includes(SECRET) && !blob.includes('requestedSchema') && !blob.includes('example.invalid'),
     blob);
+}
+
+{
+  // The field that names the asker — without it the next live turn is unsettleable.
+  const s = serverRequestSummary('mcpServer/elicitation/request', approval);
+  const blob = JSON.stringify(s);
+  check(': the summary names WHICH question codex-cli asked, and still no message',
+    s.kind === 'mcp_tool_call' && s.schema === true && !blob.includes(SECRET), blob);
+}
+
+// The second half of the condition. Codex-cli classifies its own tool approval as the
+// marker AND a message-only schema (`mcp_server_elicitation.rs`), and a marked request
+// carrying a form to fill is a question to a person wearing the approval's label.
+for (const [name, requestedSchema] of [
+  ['a form with one field', { type: 'object', properties: { token: { type: 'string' } } }],
+  ['a form with a required field', { type: 'object', required: ['token'], properties: { token: { type: 'string' } } }],
+  ['properties that are not an object', { type: 'object', properties: ['token'] }],
+  ['a schema that is not an object', 'string'],
+]) {
+  const p = { ...approval, requestedSchema };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is declined — an approval has nothing to fill`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
+}
+
+// Shapes that are message-only in upstream, quoted from `mcp_server_elicitation.rs` at
+// tag `rust-v0.146.0`:
+//   let is_empty_object_schema = requested_schema.as_object().is_some_and(|schema| {
+//       schema.get("type").and_then(Value::as_str) == Some("object")
+//           && schema.get("properties").and_then(Value::as_object)
+//               .is_some_and(serde_json::Map::is_empty)
+//   });
+//   let is_message_only_schema = requested_schema.is_null() || is_empty_object_schema;
+// Only these two accept.
+for (const [name, requestedSchema] of [
+  ['an explicit null schema', null],
+  ['an empty object schema', { type: 'object', properties: {} }],
+]) {
+  const p = { ...approval, requestedSchema };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  check(`: the marker with ${name} is accepted — nothing to fill is the approval's shape`,
+    d.allow === true, JSON.stringify({ requestedSchema, d }));
+}
+
+// The guard is a WHITELIST: everything it does not prove is refused, including shapes
+// nobody has catalogued. These are the ones that leaked through a filter chain one at a
+// time — a different elicitation VARIANT, and a required field that is absent rather than
+// explicitly null. Upstream applies the schema test inside the Form arm only.
+// The plain URL case below does NOT prove the `mode` check: it carries no schema, so the
+// fail-closed-on-absence rule refuses it too, and it stays green with `mode` removed.
+// What proves `mode` is `mode: 'url'` with a VALID form schema, in the loop after it —
+// everything lawful except the variant. Deleting that case as a duplicate deletes the
+// only evidence for `mode` and leaves the probe green (measured: removing the `mode`
+// check reddens three cases, and this one is not among them).
+{
+  const url = { ...approval, mode: 'url', elicitationId: 'e-1', url: 'https://example.invalid/approve' };
+  delete url.requestedSchema;
+  const d = decideApproval('mcpServer/elicitation/request', url, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(': a URL elicitation carrying the marker is DECLINED — it is a different variant',
+    d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
+}
+
+for (const [name, mutate] of [
+  ['requestedSchema absent rather than null', (p) => { delete p.requestedSchema; }],
+  ['mode absent', (p) => { delete p.mode; }],
+  ['mode openai/form', (p) => { p.mode = 'openai/form'; }],
+  ['mode url with a form schema', (p) => { p.mode = 'url'; }],
+]) {
+  const p = { ...approval };
+  mutate(p);
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is DECLINED — the whitelist proves every field it needs`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ p, d, r }));
+}
+
+// And the three shapes an earlier revision of this file accepted by reading the upstream
+// condition as "no fields to fill" instead of quoting it. `properties` must be PRESENT
+// and empty, and `type` must be `object`; neither is inferable from the other.
+for (const [name, requestedSchema] of [
+  ['a schema with no properties key', { type: 'object' }],
+  ['a bare empty object', {}],
+  ['empty properties under a non-object type', { type: 'string', properties: {} }],
+  ['properties that are null', { type: 'object', properties: null }],
+]) {
+  const p = { ...approval, requestedSchema };
+  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: the marker with ${name} is DECLINED — upstream does not call that message-only`,
+    d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
 }

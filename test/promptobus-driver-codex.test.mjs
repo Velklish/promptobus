@@ -6,7 +6,7 @@
 // LaunchPlan.files. The loop runs on the real mechanism. Only the `codex` binary is
 // substituted ([harness-codex.mjs](harness-codex.mjs)).
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -49,7 +49,7 @@ const {
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
   TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath, startHolder, waitReady, reapHolder,
-  codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir, SESSION_ENV_VAR,
+  codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir, SESSION_ENV_VAR, PARTICIPANT_ARGV,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
@@ -928,15 +928,19 @@ const ctx = {
   settingsPath: path.join(SB, 'plan', 'reviewer-cdx.settings.json'),
 };
 const workerPlan = codexDriver.prepare(ctx);
-check(': argv is app-server --stdio, prompt separate; the plan writes only .codex',
-  workerPlan.argv.length === 2 && workerPlan.argv[0] === 'app-server' && workerPlan.argv[1] === '--stdio'
+// PB-170: the hook-trust bypass is a GLOBAL option and the whole defect was its position,
+// so the assertion is on the ORDER — `argv.includes(flag)` is green on the broken form too.
+check(': argv is the bypass flag, then app-server --stdio; prompt separate; no files on disk',
+  workerPlan.argv.length === 3
+  && workerPlan.argv.indexOf('--dangerously-bypass-hook-trust') < workerPlan.argv.indexOf('app-server')
+  && workerPlan.argv[1] === 'app-server' && workerPlan.argv[2] === '--stdio'
   && workerPlan.prompt === 'PROMPT'
-  // No canon and no guard command in this context, so `.codex/.gitignore` alone.
+  // `.codex/.gitignore` стал безусловным в этой же ветке — один файл, не ноль.
   && workerPlan.files.length === 1
   && workerPlan.files[0].path === path.join(ctx.cwd, '.codex', '.gitignore')
   && workerPlan.settings.sandbox === 'workspace-write'
   && workerPlan.settings.approvalPolicy === 'on-request',
-  JSON.stringify({ argv: workerPlan.argv.slice(0, 2), files: workerPlan.files, settings: workerPlan.settings }));
+  JSON.stringify({ argv: workerPlan.argv, files: workerPlan.files, settings: workerPlan.settings }));
 
 const reviewerPlan = codexDriver.prepare({ ...ctx, denyTools: REVIEWER_DENY, role: 'reviewer' });
 check('PB-161.2: reviewer — read-only, a working directory of its own, the reviewed tree attached as a read',
@@ -2049,7 +2053,10 @@ dropSession(deadRef, process.env);
 // exactly what it filters out.
 const ere = (s) => s.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
 const HOLD_PATTERN = `codex-hold\\.js ${ere(sessionsDir(env))}`;
-const APP_PATTERN = ere(`${path.join(SB, 'bin')}/codex.stub.mjs app-server --stdio`);
+// Built from the argv constant rather than retyped, and joined loosely: PB-170 put a
+// global option BETWEEN the binary and the subcommand, and a literal pattern stopped
+// matching — the leak check went green because it found nothing.
+const APP_PATTERN = [ere(`${path.join(SB, 'bin')}/codex.stub.mjs`), ...PARTICIPANT_ARGV.map(ere)].join('.*');
 
 function pgrep(pattern) {
   const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
@@ -2063,6 +2070,27 @@ function pgrep(pattern) {
 check(': both process reads are scoped to this file\'s own directories, not to a program name',
   HOLD_PATTERN.includes(ere(stateHome)) && APP_PATTERN.includes(ere(SB)),
   `hold ${HOLD_PATTERN} · app ${APP_PATTERN}`);
+
+// Proof that the pattern SEES a live app-server, not merely that it finds none. Without
+// it «no leak» means «found nothing», which is what a literal pattern started meaning the
+// moment a global option was built between the binary and the subcommand (PB-170).
+{
+  const bait = spawn(process.execPath, [path.join(SB, 'bin', 'codex.stub.mjs'), ...PARTICIPANT_ARGV], {
+    stdio: ['pipe', 'ignore', 'ignore'],
+    env,
+  });
+  const nap = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  let found = [];
+  for (let i = 0; i < 60 && !found.length; i += 1) {
+    found = pgrep(APP_PATTERN).filter((pid) => String(pid) === String(bait.pid));
+    if (!found.length) nap();
+  }
+  check(': the app-server pattern finds a live stub — otherwise «nothing left» proves nothing',
+    found.length === 1, `pid ${bait.pid} · ${APP_PATTERN} · found ${JSON.stringify(pgrep(APP_PATTERN))}`);
+  try { process.kill(bait.pid, 'SIGKILL'); } catch { /* already gone */ }
+  for (let i = 0; i < 60 && pgrep(APP_PATTERN).includes(String(bait.pid)); i += 1) nap();
+}
+
 
 planParticipant(HARNESS, 'worker:long-first', { turns: [{ do: [] }] });
 const longEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '3000', [HANG_AFTER_START_VAR]: '1' };

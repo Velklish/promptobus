@@ -151,8 +151,9 @@ registry and the process holder are in [codex-session.js](../../lib/codex-sessio
 `codex app-server --stdio` process, and that process runs in a `CODEX_HOME` of its
 own — one per participant, built at lift and removed at `done`. cwd, sandbox and
 instructions go as `thread/start` params; the MCP set goes into that home's
-`config.toml`, because there is no personal set left to merge with. Hooks under
-`app-server` do not run (`trustStatus: untrusted`, no bypass flag). The end-of-turn
+`config.toml`, because there is no personal set left to merge with. Hook TRUST is no
+longer the blocker — the participant's argv carries the bypass flag (`PARTICIPANT_ARGV`,
+PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
 channel is `turn/completed` only. `exec --json` is a smoke check.
 
 Same boundary as the neighbours: the rest of the mechanism does not import this

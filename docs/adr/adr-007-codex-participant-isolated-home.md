@@ -131,8 +131,10 @@ always, trusted or not, so the copy alone is enough. Where a reviewer's copy lan
   alternative — the mechanism's registry home — was not taken because the owner's
   decision named `$TMPDIR`.
 - A worker's repository can now put MCP servers and exec policies into its own
-  participant session through its `.codex/config.toml`. Hooks stay off: hook trust is a
-  second, separate record keyed by the hook's own hash, and the mechanism writes none.
+  participant session through its `.codex/config.toml`. Hooks: the trust blocker is gone
+  since the lift carries `--dangerously-bypass-hook-trust`, and whether a hook actually
+  runs for a participant is NOT established — one live reviewer gave `hook/started` = 0,
+  and the reason is the subject of PB-185.
 - The session rollout an operator may want to read is inside the participant home and
   goes away with it. `phrases.logs` names that home rather than `~/.codex`.
 - A repository that tracks `.codex/skills` of its own would have it overwritten by the
