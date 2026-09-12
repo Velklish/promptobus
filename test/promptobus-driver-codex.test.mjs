@@ -1940,6 +1940,9 @@ check(': the holder log names every notification method, including thread/status
     && /event turn\/started/.test(failLog)
     && /event turn\/completed/.test(failLog),
   failLog);
+check(': the holder log records the complete rate-limit notification payload',
+  /event account\/rateLimits\/updated payload=\{\"usedPercent\":12,\"primary\":\{\"usedPercent\":12,\"resetsAt\":\"2099-01-01T00:00:00Z\"\},\"planType\":\"plus\",\"rateLimitReachedType\":null\}/.test(failLog),
+  failLog);
 if (failWp?.sessionRef) await codexDriver.stop(failWp.sessionRef);
 
 planParticipant(HARNESS, 'worker:pend', {

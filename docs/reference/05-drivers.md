@@ -162,6 +162,15 @@ longer the blocker — the participant's argv carries the bypass flag (`PARTICIP
 PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
 channel is `turn/completed` only. `exec --json` is a smoke check.
 
+**The participant shell and the holder approval are separate boundaries.** Two independent
+Codex participants on codex-cli 0.146.0 had no successful apply_patch call, and direct
+un-escalated shell writes to each worktree were refused. $TMPDIR and /tmp accepted temporary
+writes; listen on 127.0.0.1 was refused separately. The ordinary git commit --allow-empty probe
+also returned rc=128 at index.lock. Successful worktree and Git metadata writes used the escalated
+exec_command route, including an independent generated git apply that exited 0 and the reversible
+empty-commit/reset probe, which returned rc=0 for both operations. The result is measured for those
+participants and version, not universal (PB-191, PB-194).
+
 A real lift prints a provenance line with the resolved CLI entry path, the executing Promptobus
 package path and version from `import.meta.url`, the host version, the participant binary path, and
 its version when known. The Codex session record keeps the same line as its first JSON field, and

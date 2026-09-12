@@ -1,7 +1,7 @@
 # PB-190 · AGENTS.md requires a mutation probe but never names the tool that runs one, so a participant hand-rolls it
 
 - **Order:** 100
-- **Scope:** `AGENTS.md` (the backslop block, gate 4), [guides/contributing](../../guides/contributing.md) § the probe
+- **Scope:** `AGENTS.md` repository-local process rules after the generated backslop block, [guides/contributing](../../guides/contributing.md) § the probe
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
 
@@ -45,16 +45,53 @@ which is every bus participant, in every harness. The probe is the sharpest inst
 hand-rolled substitute is actively dangerous, but the class is wider: a gate whose executor lives
 only in a guide is a gate the participant re-implements.
 
-## Work to do
+## Decision and change
 
-- Name `npm run probe` in the `AGENTS.md` gate itself, with the one fact that changes behaviour —
-  the restore comes from a snapshot, never from git — and a pointer to the guide for the four
-  outcomes. Two lines, not a copy of the guide.
-- Sweep the rest of `AGENTS.md` for the same shape: an obligation whose tool is named only in
-  `docs/`. Report the count even if it is one; a sweep that finds nothing is an answer.
-- Decide whether the participant's own rules bundle should carry the guide section at all, or
-  whether the rules file naming the command is enough. That decision belongs with whoever owns the
-  rules protocol, not with this card.
+The generated backslop block is deliberately unchanged. It occupies lines 1–19 of
+`AGENTS.md`, between `backslop:start` and `backslop:end`; `PB-95` measured that `backslop init`
+rewrites that block and removes a manual edit placed inside it. The durable fix is the
+repository-local `## Mutation probes` section at lines 21–23, outside the generated block. It
+names `npm run probe`, says to run it after the change is committed, records snapshot restore
+rather than Git restore, and points to the guide for the four outcomes and input forms.
+
+This boundary is measured in the file itself: `## Comments` has already lived outside the block
+and survived prior regeneration. The rule therefore belongs in the repository-owned part, while
+the generated block remains owned by the backslop package. The guide is not copied into
+`AGENTS.md`; the short bridge names the executable and its safety boundary.
+
+## Sweep result
+
+A full sweep found exactly one obligation/tool gap in this rules file: gate 4 required a mutation
+probe but did not name `npm run probe`. The other executable obligations name their `npx
+github:Velklish/backslop#v0.6.0` command in the generated block. The count is a count of
+obligations whose executor was only in documentation, not a count of commands in the file.
+
+## Verification
+
+The repository-local rule is now visible without opening the guide. The one-verdict guard in
+`test/process-rules.test.mjs` extracts only the text between `backslop:end` and the next H2,
+so a later occurrence cannot satisfy the rule. It fails when that local section loses the
+`npm run probe` name. The existing guide remains the canonical source for the
+four probe outcomes and `--mutate`/`--stdin-patch` forms. The successful mutation probes for this
+run are recorded in the worker report; the no-op probe was refused rather than counted as evidence.
+
+The guard mutation targets only the command phrase in the local section while the later
+comment-placement sentence still mentions `npm run probe`; the bounded guard therefore turns
+red where the old to-end-of-file slice stayed green.
+
+The full-suite boundary also requires every new `*.test.mjs` file to divert the participant
+home through `home.mjs` or `check.mjs`. The full suite caught this guard file before its import was
+added; the same boundary has now caught three new test files in two repositories. The
+consumer's own tracker has a card on this; it is not a reason to adjust a counter: workers cannot
+run the reserved full suite, so the local single-file check does not expose this boundary.
+
+## What remains open
+
+The upstream generated backslop template still does not name `npm run probe`, and this task does
+not change that foreign generator. A future `backslop init` should preserve the local section
+because it is outside the generated block, but other repositories will need their own local bridge
+or an upstream template change. This card remains in the queue for the approver; it is not archived
+here.
 
 ## Out of scope
 

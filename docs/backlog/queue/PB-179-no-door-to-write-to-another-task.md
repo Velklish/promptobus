@@ -38,6 +38,12 @@ There, a session cannot be an orchestrator because it has no identity; here, a s
 an orchestrator of a *second* task because its address is fixed by the config that started it.
 Both reduce to: who a session is, is decided once, by whoever wrote its MCP record.
 
+## Замер корня при разборе PB-178 (2026-09-12)
+
+Проверены `sessionOf`, `sessionIdOf` и `foreignSessionOf` в `src/protocol.ts`. `sessionOf` читает положительную привязку из `metadata.session`, `sessionIdOf` — из `metadata.sessionId`; `foreignSessionOf` сравнивает полный id, затем короткий и возвращает `null` для совпадения или для записи без обоих полей.
+
+**Отвергнутая формулировка:** корень назывался отсутствием положительной привязки participant address → session. Замер показал, что привязка есть; настоящий барьер — fail-open на непривязанной записи. Комментарий рядом с `foreignSessionOf` сознательно называет запись без session id неизвестной, а не чужой, и запрещает отказывать на этом основании. Это измеренная граница контракта, а не решение карточки; реализация здесь не менялась.
+
 ## Work to do
 
 - Decide whether a session may hold more than one role — one per task — and if so where that
@@ -70,11 +76,7 @@ one class — **the command grants more rights than it promises**:
 2. the declared role taken on faith — borrowing another task's orchestrator, self-registering an
    invented address;
 3. the fallback on an ownerless task, where ownership cannot be proved by construction;
-4. **the ownership check is negative, not positive.** `foreignSession` returns `null` both when
-   the session matches and when the participant record carries no session binding at all, after
-   which the write is allowed. Reproduced by the branch's own test: an unbound `worker:one` is
-   created without a session, the owner session exports `PROMPTOBUS_ROLE=worker:one` and writes
-   in its name.
+4. **the ownership check is fail-open for an unbound record.** `foreignSession` returns `null` both when the session matches and when the participant record carries neither `session` nor `sessionId`; the protocol comment says that record is unknown, not a stranger, and must not be refused on that. Reproduced by the branch's own test: an unbound `worker:one` is created without a session, the owner session exports `PROMPTOBUS_ROLE=worker:one` and writes in its name.
 
 **What is withdrawn and what is kept.** The subcommand is not registered — dispatcher, help,
 `SUBCOMMANDS` and the reference § Send all say so (`promptobus send …` answers
@@ -83,8 +85,4 @@ tests keep the argv shape the removed dispatcher parsed, so a re-registration me
 cases without rewriting them. **ADR-011 remains the decision** — a session's address is per task
 — with a section naming why its first implementation did not ship.
 
-**The missing link, named so the next pass does not rediscover it:** the store keeps no
-POSITIVE binding of a participant address to a session, so "this process is that participant"
-cannot be answered affirmatively today. `foreignSession` answers only "nobody else holds it",
-which is a different statement. Start there: `lib/send.js`, `test/send.test.mjs` and
-ADR-011 § The first implementation, in the branch of this run.
+**The rejected root, named so the next pass does not rediscover it:** the store does have a positive binding of a participant record to a session, in `metadata.session` and `metadata.sessionId`. `foreignSession` answers only whether a writer is a stranger; for an unbound record it returns `null` by the documented fail-open rule. The next pass should start at `src/protocol.ts`'s `sessionOf`, `sessionIdOf` and `foreignSessionOf`, then decide whether that intentional unknown case should remain open.

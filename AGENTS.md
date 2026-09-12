@@ -18,7 +18,13 @@ The task tracker and decision log live in `docs/` and are managed with `npx gith
 Worker boundaries: change only the assigned branch or worktree; do not touch status directories or `docs/archive/`; closure and triage belong to the approver.
 <!-- backslop:end -->
 
+## Mutation probes
+
+Test changes use `npm run probe` after the change is committed; its restore comes from the pre-mutation snapshot, never from Git. The [contributing guide](docs/guides/contributing.md) § the probe defines the four outcomes and the `--mutate`/`--stdin-patch` forms.
+
 ## Comments
+
+The mutation rule above names `npm run probe`; this section only governs comment placement.
 
 **Code is self-documenting, and an inline comment longer than two lines is forbidden** (owner's decision, 2026-09-12). A nuance that does not fit in two lines is either not written at all or moved into the documentation — `docs/reference/`, the affected README, or an ADR — leaving a short pointer beside the code only where one is needed to find it. Provenance never lives in a comment: a task number, a date, "review remark", a retelling of the lines below it belong to git and to the tracker.
 

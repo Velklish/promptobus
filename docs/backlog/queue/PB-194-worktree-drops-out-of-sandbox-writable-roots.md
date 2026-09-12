@@ -1,81 +1,118 @@
-# PB-194 · A live participant lost write to its own worktree mid-session while $TMPDIR stayed writable
+# PB-194 · The participant shell worktree is closed; escalated exec_command is the measured write route
 
 - **Order:** 10
-- **Scope:** [drivers](../../reference/05-drivers.md)
+- **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
 - **Created:** 2026-09-12
-- **Dependencies:** none
+- **Dependencies:** PB-191 for the file-change approval method
 
 ## Context
 
-A Codex worker of run `beklog-0912c` wrote eight files into its own worktree, then four minutes
-later could not write anything there at all. Nothing on the host changed: the files stay
-`-rw-r--r-- kim.p staff` and the directory `drwxr-xr-x`, and the orchestrator wrote and committed
-in that same worktree in the same minutes.
+The earlier claim said that a participant lost write access to its own worktree in the middle of a
+session. That is not established. It came from a participant report and an MTIME difference, not
+from a probe run inside that participant at the time of refusal.
 
-Measured from inside the participant, all on `codex-cli 0.146.0`, sandbox `workspace-write`,
-`approvalPolicy: on-request`:
+The measured contract is different and narrower: for two independent participants on
+codex-cli 0.146.0, the participant's ordinary shell worktree is closed at every measured attempt;
+the ordinary Git metadata probe below also failed at the linked worktree's `index.lock`.
+`$TMPDIR` and `/tmp` remain writable, and both worktree and metadata writes pass only through an
+explicitly escalated command. This is a two-participant, one-binary measurement, not a claim about
+every Codex version or every sandbox.
 
-```
-pwd                                   → …/.claude/worktrees/promptobus-beklog-0912c-pamyat-…
-git rev-parse --show-toplevel         → the same path
-test -w .                             → 1
-test -w CHANGELOG.md                  → 1
-printf '' >> docs/reference/05-sync.md → zsh: operation not permitted, 1
-echo "$TMPDIR"                        → /var/folders/t8/…/T/
-touch "$TMPDIR/pb-probe"              → 0
-touch /tmp/pb-probe-pamyat            → 0
-```
+For the participant tied to the earlier mid-session report, the session started at 09:15, an active
+turn ran at 15:59, and the probe was taken at 16:11. No writable-root probe was taken at either the
+session start or the active turn, so the inside measurement supports only the state at the probe
+instant. The old mid-session-drop story remains a rejected starting hypothesis, not an observed
+transition.
 
-Last successful write into the worktree: six files at one `mtime`, 18:16:38 local. First refusal:
-18:19:30. The session was never resumed — the mechanism has no resume path; the holder held the
-thread throughout.
+## Direct shell and neighboring paths
 
-The discrimination matters and is already done: **`$TMPDIR` and `/tmp` stayed writable**. So the
-sandbox did not flip to `read-only` as a mode — the declared worktree left the writable-roots set
-while the rest of the policy stayed in force. A mode flip and a lost root are different defects and
-would be fixed in different places, which is why the probe was run before any hypothesis.
+The first participant's inside probe ran on codex-cli 0.146.0 at 2026-09-12T16:11:43Z:
 
-Cost on the day: the worker could not commit either — `git` writes to the worktree too — so the
-orchestrator inserted the worker's `CHANGELOG` text and committed nine files on its behalf
-(`73b83f6e` in the consumer repo). That is a workaround, not a fix, and it does not scale: a
-participant that cannot write cannot take another card.
+    test -w .                                      -> rc=1
+    node mkdtemp with a relative prefix             -> EPERM: operation not permitted
+    node mkdtemp in os.tmpdir()                     -> /var/folders/.../T/pb-probe-3F4sOn, rc=0
+    node writeFileSync in os.tmpdir()               -> write ok, rc=0
+    mkdir/touch in /tmp                             -> rc=0
+    node listen 127.0.0.1                            -> listen EPERM, rc=1
 
-Escalation is not an answer here and must not be proposed as one: see [PB-191](PB-191-apply-patch-never-passes-containment.md) —
-`item/fileChange/requestApproval` of this generation carries no path, so containment fails closed on
-every escalated write. Twelve such refusals are in the run's journal.
+The relative mkdtemp attempt resolves its prefix under the worktree, so its refusal is the same
+worktree write boundary, not an independent refusal of mkdtemp. Both `$TMPDIR` (via
+`os.tmpdir()`) and `/tmp` remained writable. The listen refusal is a separate network
+boundary and is not evidence about file writes.
 
-## A hypothesis the consumer's tracker raised the same evening
+The independent second participant showed the same direct-shell boundary: `test -w .` returned
+rc=1, and an un-escalated `git apply` reported Operation not permitted while unlinking and
+writing files. No direct-shell worktree write succeeded in either participant measurement. The
+successful edits in both were made only through the escalated command route described below.
 
-The consumer repository's own tracker holds a class of refusals with the same shape: `listen EPERM` and
-`EPERM mkdtemp` inside a participant, on a tree where the orchestrator has neither refusal in the same
-minute. With this card that is three `EPERM`s of the same kind. If they are one phenomenon, the subject
-is not "`mkdtemp` and `listen` are special" but "the participant's sandbox narrows during the session",
-and the class closes by finding what narrows it rather than by reading those two calls.
+## Measured routes and Git metadata
 
-This is a hypothesis, and the cheap way to break it comes first: run `mkdtemp` and `listen` inside a
-participant **twice** — at the start of the session and after the first write refusal. If `mkdtemp`
-already refused while writes still worked, the two are independent and this paragraph goes.
+The three relevant routes are method-specific:
+
+- **Ordinary shell:** test -w . returned rc=1; an un-escalated git apply reported
+  Operation not permitted while writing the worktree; and
+  git commit --allow-empty -m "probe: git metadata write, ordinary shell" returned rc=128
+  with Operation not permitted while creating the linked worktree's index.lock. No commit
+  was created.
+- **Escalated exec_command:** with sandbox_permissions=require_escalated and an explicit
+  justification, an independent generated git apply returned rc=0, and the reversible
+  empty-commit/reset probe returned rc=0 for both operations. This route wrote both worktree
+  files and Git metadata for two independent participants.
+- **apply_patch:** one holder refused item/fileChange/requestApproval because it carried no
+  path, and the other wrapper returned patch rejected by user without applying a file. It did
+  not pass in either participant. The older applyPatchApproval shape, whose fileChanges map
+  has paths, was not captured live and remains open under PB-191.
+
+The prior empty-commit/reset result was launched through the escalated route; it does not establish
+an ordinary metadata exception. The ordinary probe above is the contrary measurement for this
+participant.
+
+## Cost of the wrong explanation
+
+The participant report plus mtime difference made the old mid-session-drop story plausible, but neither
+identified a transition nor the author of the changed files. The more expensive operational mistake
+was treating one refused method as proof that no participant route could work. Guidance not to request
+escalation closed the only route measured as successful for another participant; the orchestrator
+then had to commit that participant's branch by hand and return the task to the queue. The contract
+must name the method and escalation boundary instead of generalizing from one refusal.
+
+## What remains open
+
+- Whether the first participant was ever writable at lift or during its active turn, and whether any
+  participant can transition from writable to closed.
+- The source of the effective writable roots and a diagnostic that names the declared worktree as
+  outside them.
+- Whether the legacy `applyPatchApproval` shape is still emitted and accepted, and whether other
+  binary versions share this boundary.
+- Why the holder receives a pathless current file-change request; PB-191 records the method
+  distinction without weakening containment.
 
 ## Work to do
 
-- Establish what removes the worktree from the writable roots of a live thread. The candidates are
-  the holder's `runtimeWorkspaceRoots`, the per-turn policy the binary derives, and anything that
-  re-derives the root from a path spelling rather than from the resolved path. Name the one that
-  measurement supports and say how the others were excluded.
-- Give the participant a way to find out: a write refusal inside its own worktree must be
-  distinguishable from an ordinary permission error, because the participant currently reports
-  "the worktree is read-only" and cannot tell which of the two it is.
-- Decide whether the mechanism detects the state and relifts, or refuses the participant loudly.
-  A worker that silently loses its tree spends a whole card's worth of turns before saying so.
-
-## Out of scope
-
-- The escalation path — that is PB-191.
-- The `apply_patch` tool's own behaviour when the sandbox allows the write.
+- Measure the same participant at lift and after a refused write; attribute any intervening file
+  change before claiming a transition.
+- Name the source of the participant's effective writable roots and distinguish it from the
+  separate network restriction shown by listen.
+- Give the participant a diagnostic that says the declared worktree is outside its writable roots,
+  rather than only operation not permitted.
+- Capture the current and legacy file-change approval methods separately, including the route used
+  by a successful edit.
 
 ## Verification
 
-- A reproduction that takes a live participant from writing to not writing without touching the
-  host, with `$TMPDIR` still writable at the end — the two probes above run in one command.
-- A red check that fails while the defect stands, and a mutation probe showing the check is aimed
-  at the writable-roots decision and not at a mode flag.
+- Two independent codex-cli 0.146.0 participants: direct shell worktree probes were refused;
+  `$TMPDIR` and `/tmp` writes succeeded, and the first participant's network listen was refused
+  separately.
+- The first participant's exact probe was taken at 2026-09-12T16:11:43Z; the earlier participant
+  session had no root probes at 09:15 or 15:59, so no transition is claimed.
+- The current `item/fileChange/requestApproval` route was refused without a path in one participant,
+  and the other participant's `apply_patch` wrapper rejected with no file applied.
+- Explicitly escalated `exec_command` worktree edits succeeded for both participants, including an
+  independent generated `git apply` with exit 0.
+- The ordinary git commit --allow-empty -m "probe: git metadata write, ordinary shell"
+  returned rc=128 at index.lock and created no commit. The escalated generated git apply
+  returned rc=0, and the prior escalated empty-commit/reset probe returned rc=0 for both
+  operations before restoring HEAD to 9e29fb2.
+- The rejected mid-session narrative remains as a false starting point with its source named. The
+  transition, writable-root cause, legacy approval behavior and broader-version behavior remain open;
+  the card is not archived.

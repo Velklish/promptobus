@@ -1,166 +1,90 @@
-# PB-191 · A Codex participant can never use apply_patch: fileChange approval carries no path, so containment fails closed on every write
+# PB-191 · `apply_patch` never passes the measured Codex participant boundary
 
 - **Order:** 70
 - **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
 
-## What happens
+## Scope of the title
 
-A Codex participant's `apply_patch` is refused every time, for every patch, including a diagnostic
-no-op. The text it gets back names a person who was never asked:
+The title is bounded to the measured participant boundary, not every Codex release or every historical
+approval schema. Two independent Codex participants, both running codex-cli 0.146.0, produced no
+successful `apply_patch` call: the current pathless file-change request was refused for one, and the
+other participant's wrapper returned `patch rejected by user` without applying a file. Successful
+worktree edits used the separate escalated command route. That route distinction is the reason the
+title does not generalize beyond the two participants and this binary version.
 
-```
-Script failed
-Script error:
-patch rejected by user
-```
+The containment check is right and stays. A mutation whose bounds cannot be established is a
+mutation the holder must not approve. The holder's first branch is:
 
-Nobody rejected anything. The refusal comes from the holder's own containment check,
-`lib/codex-session.js:874-884`:
+    const raws = pathsOfApproval(params);
+    if (!raws.length) {
+      const why = method === 'item/fileChange/requestApproval'
+        ? 'item/fileChange/requestApproval carries no path to contain'
+        : 'action target is unreadable';
+      return { allow: false, why };
+    }
 
-```js
-const raws = pathsOfApproval(params);
-if (!raws.length) {
-  const why = method === 'item/fileChange/requestApproval'
-    ? 'item/fileChange/requestApproval carries no path to contain'
-    : 'action target is unreadable';
-  return { allow: false, why };
-}
-```
+## Live measurement
 
-**The check is right and stays.** A mutation whose bounds cannot be established is a mutation the
-holder must not approve, and failing closed is the correct answer. The break is at the other end:
-`item/fileChange/requestApproval` on codex-cli 0.146.0 **carries no path at all**, so the guard's
-first branch is the only branch that ever runs for a file change.
+Two independent Codex participants were measured on 2026-09-12 with codex-cli 0.146.0:
 
-## The measurement
+    participant A, current file-change request:
+    2026-09-12T16:14:27.787Z approval deny item/fileChange/requestApproval
+      item/fileChange/requestApproval carries no path to contain
+    2026-09-12T16:14:27.788253Z codex_core::tools::router
+      error=patch rejected by user
+      harness result: Script error: patch rejected by user
+      no file applied
 
-Three live Codex participants, 0912c run, holder journals in `~/.agents/codex/sessions/`:
+    participant B, apply_patch wrapper:
+      Script error: patch rejected by user
+      no file applied
 
-```
-worker:codex   approval deny  item/fileChange/requestApproval  × 9
-worker:pamyat  approval deny  item/fileChange/requestApproval  × 8
-               approval allow item/commandExecution/requestApproval × 39
-```
+No person rejected either edit. Participant A reached the holder's current
+`item/fileChange/requestApproval` method, which carries no path, and the holder refused before
+the patch could change the tree. Participant B independently received the same outcome at the
+harness boundary. Within this two-participant measurement, `apply_patch` never passed.
 
-Both participants hit it. One of them never got out: `git status --porcelain` in its worktree stayed
-at **0 lines with 0 commits for twenty minutes** while it retried the patch route. The other wrote
-its file anyway — through a shell command, which goes through
-`item/commandExecution/requestApproval`, carries a path, passes containment and is allowed.
+The same two participant measurements separated the successful route from the refused one:
+ordinary shell worktree checks were refused, while worktree edits passed through
+`exec_command` with `sandbox_permissions=require_escalated` and an explicit justification. The
+holder journal names that route as allowed `item/commandExecution/requestApproval`; an independent
+generated `git apply` through that route exited 0. This is a measured route for these participants,
+not proof that an un-escalated shell can write.
 
-Everything else about the two participants is identical: their `CODEX_HOME/config.toml` files differ
-only in `PROMPTOBUS_ROLE` and `PROMPTOBUS_CODEX_SESSION` (`diff` of the rest is empty), both carry
-`[projects."<worktree>"] trust_level = "trusted"`, and both worktree paths equal their own
-`realpath`. So the difference is not configuration, not trust and not a symlink — it is which door
-the model happened to knock on.
+`applyPatchApproval` is the older schema shape: its `fileChanges` map supplies path keys that
+`pathsOfApproval` can inspect. Neither live participant measurement received that method, so
+whether a current binary emits it and whether an in-root request is accepted remains open. The
+measured title therefore covers the current participant boundary and observed `apply_patch` calls,
+not an unseen legacy route.
 
-## Why this is worse than one refused tool
+## What is established and what is not
 
-- **The cost is silent and total.** A participant that only ever reaches for `apply_patch` produces
-  nothing at all, and its journal shows a running turn the whole time. From outside, `promptobus
-  status` says the session is alive and the turn is running — which is true and useless.
-- **The message blames the wrong party.** "patch rejected by user" reads as a human decision in a
-  session that has no human. Twenty minutes went into investigating a sandbox policy that was never
-  involved.
-- **The working route is undocumented.** That a Codex participant must write through shell commands
-  rather than the harness's own patch tool appears in no reference, no guide and no participant
-  prompt. Both participants found it by accident or by being told.
+- Two independent codex-cli 0.146.0 participants had no successful `apply_patch` call; one was
+  refused by the holder's pathless current method and one was rejected by the wrapper without a
+  file being applied.
+- The current `item/fileChange/requestApproval` request without a path is refused fail-closed with
+  a reason that names the method and missing containment input.
+- Ordinary, un-escalated shell writes did not pass the participant worktree boundary in either
+  measurement. `item/commandExecution/requestApproval` is a separate route; its allow does not
+  override an OS-level worktree refusal.
+- Worktree edits did pass through explicitly escalated `exec_command`, including an independent
+  generated `git apply` with exit 0. This is the passing route measured here, not a universal
+  participant guarantee.
+- The holder's containment logic and `pathsOfApproval` stay unchanged.
+- The legacy `applyPatchApproval` path and the exact condition under which a live participant
+  reaches it are not established by this turn.
+- The router text `patch rejected by user` is misleading: it hides a holder denial and falsely
+  suggests a human decision.
 
-## The workaround does not stick, measured 2026-09-12
+## The participant-facing gap
 
-A participant told the working route in plain words — with the refusal explained, the code quoted and
-the shell alternative spelled out — **went back to `apply_patch` an hour and a half later**, on the
-next piece of work, and reported the same refusal again as if it were new. It had not tried a shell
-write at all: "bash heredoc, python3 и sed не запускал".
-
-This is not inattention. `apply_patch` is the harness's own tool for editing a file, and a
-participant reaches for it by default; a sentence in a message competes with that default once and
-loses on the next turn. Two consequences follow, and the second is the reason this section exists:
-
-- an orchestrator has to repeat the instruction per piece of work, not per participant;
-- **any fix that lives only in a prompt will decay the same way.** If the answer to this card is
-  "tell participants to use shell", it must be carried by something the participant re-reads each
-  turn — its own rules bundle or the refusal text itself — and not by a message.
-
-That makes the refusal's wording load-bearing. "patch rejected by user" sends the reader to look for
-a human and a permission policy; it names neither the real gate nor the working route. A refusal that
-said which gate closed and what to use instead would have cost this run nothing.
-
-## The shell route is not universally open either, and the difference is unexplained
-
-The card says shell writes are the working route. On one participant of the 0912c run they were
-**not**: an ordinary `exec_command` running a `python3` heredoc that wrote a file **inside its own
-worktree** was refused with
-
-```
-PermissionError: [Errno 1] Operation not permitted
-```
-
-and the edit only went through on the escalated route. A sibling participant of the same run wrote
-its own worktree files through the ordinary route for two hours without escalation.
-
-**What was compared and found identical** (orchestrator's measurement, 2026-09-12):
-
-- sandbox mode in both session records: `workspace-write`;
-- both worktrees sit at `<repo>/.claude/worktrees/<name>` — same shape, different zone
-  (one under the consumer's clone area, one under the personal-projects area);
-- file permissions on both targets: `-rw-r--r--`, no macOS file flags (`ls -lO` flag column `-`);
-- the refused file was not immutable: the escalated write succeeded on it minutes later.
-
-**What is not established:** why one refusal happened. Zone, path depth, an extended attribute
-(`com.apple.provenance` is present on the refused file) and a transient condition all remain
-possible, and none was tested. The orchestrator is not sandboxed and cannot reproduce the refusal
-from outside, so the discriminating measurement has to be made from inside a participant.
-
-**Why it matters to this card.** The card's remedy is "write through shell". If shell is itself
-refused for some participants, that remedy is not a remedy but a second thing to discover by
-failure. Whoever answers this card must say which route is guaranteed, for which participants, and
-what a participant should do when the guaranteed one is refused — the answer today is "escalate",
-and nothing tells a participant that.
-
-## The fallback changes the shape of the failure, measured 2026-09-12
-
-A third participant of run 0912c hit the full sequence in one edit, and reported each step:
-
-1. `apply_patch` — refused by containment, as this card already records.
-2. Fallback to the documented remedy, a shell run of `/usr/bin/patch`.
-3. That patch was mis-assembled, so `patch` applied the hunks it could and **rejected the rest**,
-   leaving `.rej` files beside a half-edited source.
-
-The participant caught it, deleted the artefacts and re-read the diff hunk by hunk. But the third
-step is the one this card has to record, because it is not the same kind of failure as the first:
-
-- `apply_patch` refused **loudly and completely**. Nothing changed on disk, and the participant could
-  not mistake it for success.
-- Shell `patch` failed **partially**. The file was left syntactically valid and semantically half
-  finished — a call present with no implementation behind it is exactly the shape this produces —
-  and `node --check` on such a file returns 0.
-
-So the remedy this card hands a participant trades a refusal it cannot miss for a failure it can.
-Anyone writing the fix must say what the participant runs **after** the fallback to know the edit
-landed whole: a reject-file sweep, a rejected-hunk exit code read rather than ignored, or a diff
-re-read. "Write through shell" alone is not a complete instruction.
-
-## The refusal blames the user, measured 2026-09-12
-
-Three participants of run 0912c reported the refusal, and one of them quoted its text:
-
-```
-patch rejected by user
-```
-
-No user rejected anything. The containment gate refused, for the reason this card is about: the
-approval carries no path to contain. The wording hands the participant a false attribution, and the
-two readings lead to opposite actions — "a human said no" means stop and ask, while "the gate closed
-because it cannot see a path" means take the other route.
-
-This compounds the cost the card already records. A participant that believes a person refused its
-edit has no reason to look for a workaround at all, and the ones that found the shell route today
-found it by trying, not by being told.
-
-Whoever closes this card must say what the participant is shown when containment closes. If the text
-stays as it is, the remedy it points at is the wrong one.
+The refusal text that reaches a participant names neither the method nor the missing path. A
+participant therefore cannot distinguish a fail-closed file-change request from a human refusal.
+The measured fallback is not an ordinary shell command: that route was refused in both participants.
+The only successful worktree route observed here required explicit command escalation. Guidance that
+omits that boundary closes the route that actually worked.
 
 ## The boundary is the worktree itself, not the write method — measured 2026-09-12
 
@@ -209,19 +133,18 @@ cheapest one: the same four commands at the start of a participant's life, befor
 
 ## Work to do
 
-- Decide what the holder does when a mutation approval carries no path. Two shapes, and the choice
-  is the package's: derive the paths from the request some other way for this method (the request
-  carries the change itself, and the holder knows the participant's cwd), or keep failing closed and
-  **say so in the refusal text** — a `why` that names the method and the reason instead of
-  "rejected by user", which the holder does not author but does forward.
-- Whatever is chosen, tell the participant how to write. If shell is the supported route, it belongs
-  in the participant prompt and in 03-cli § The Codex holder, not in an orchestrator's message.
-- Measure whether the same hole exists for the other mutation methods in `MUTATION_APPROVALS`:
-  today only `item/fileChange/requestApproval` is known to arrive without a path, and "only that
-  one" is an assumption, not a measurement.
+- Capture a live holder request using the legacy `applyPatchApproval` shape and an in-root
+  `fileChanges` path, then record whether containment allows it. Do not infer that result from the
+  current `item/fileChange/requestApproval` refusal.
+- Decide whether the holder should derive a path for the current method or keep failing closed with a refusal that names the method and missing path.
+- Document a participant fallback only after its shell boundary is known; if shell is refused, the
+  participant needs a loud route to escalation or a relift rather than an instruction that simply
+  fails.
+- Measure the other mutation approval methods before claiming that only file-change requests are
+  pathless.
 
 ## Out of scope
 
-- The containment check itself and `pathsOfApproval` — both correct; this card does not weaken them.
-- The two-generation approval protocol of codex-cli 0.146.0 as such.
-- Hook firing for a Codex participant — `PB-185`, a different silence with a different cause.
+- Weakening the containment check or `pathsOfApproval`.
+- The participant worktree sandbox boundary itself; PB-194 records that measurement.
+- Hook firing for a Codex participant; PB-185 is a separate gate.

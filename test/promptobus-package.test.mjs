@@ -438,6 +438,46 @@ check('tarball contains the model catalog',
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
+const { absoluteOwnerHomePath, isTextContent } = await import(
+  pathToFileURL(path.join(REPO, 'scripts', 'audit-public.mjs')).href);
+const homePath = (...parts) => parts.join('');
+check('publicity audit rejects a bare owner-home fixture',
+  absoluteOwnerHomePath('test/fixtures/owner-home.txt',
+    homePath('/', 'home', '/', 'someone')) === true,
+  'a home path with no child segment must be a finding');
+const syntheticHomeFixtures = [
+  ['test/model-routing-adapter-claude.test.mjs',
+    homePath('/', 'home', '/', 'someone'),
+    homePath('/', 'home', '/', 'different/foreign')],
+  ['test/model-routing-preflight.test.mjs',
+    homePath('/', 'home', '/', 'someone', '/promptobus.json'),
+    homePath('/', 'home', '/', 'different/foreign')],
+  ['test/runner.test.mjs',
+    homePath('/', 'Users', '/', 'probe', '/.local/bin/cursor'),
+    homePath('/', 'Users', '/', 'different/foreign')],
+  ['test/session-env.test.mjs',
+    homePath('/', 'home', '/', 'parent', '/.promptobus'),
+    homePath('/', 'home', '/', 'different/foreign')],
+  ['test/session-env.test.mjs',
+    homePath('/', 'home', '/', 'parent'),
+    homePath('/', 'home', '/', 'different/foreign')],
+];
+check('publicity audit exempts only named synthetic home literals',
+  syntheticHomeFixtures.every(([name, value]) => absoluteOwnerHomePath(name, value) === false),
+  syntheticHomeFixtures.map(([name]) => name).join(', '));
+check('publicity audit does not exempt a whole synthetic fixture file',
+  syntheticHomeFixtures.every(([name, , other]) => absoluteOwnerHomePath(name, other) === true),
+  syntheticHomeFixtures.map(([name]) => name).join(', '));
+const extensionlessHome = Buffer.from(
+  homePath('/', 'home', '/', 'extensionless', '/secret'));
+check('publicity audit recognizes extensionless text by contents',
+  isTextContent(extensionlessHome)
+  && absoluteOwnerHomePath('LICENSE', extensionlessHome.toString('utf8')) === true,
+  'a LICENSE-like UTF-8 surface must be checked without an extension allowlist');
+check('publicity audit does not mistake a nested home directory for an owner home',
+  absoluteOwnerHomePath('test/promptobus-driver-cursor.test.mjs',
+    homePath('/', 'tmp', '/', 'home', '/tasks/t/workers/cur.mcp.json')) === false,
+  'the /home segment is nested below /tmp');
 check('publicity audit derives its root through import.meta.url',
   /path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/.test(publicityAudit),
   'audit-public.mjs must use path.dirname(fileURLToPath(import.meta.url))');
