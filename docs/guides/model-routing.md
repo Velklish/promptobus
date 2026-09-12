@@ -800,3 +800,267 @@ is what a written cache is validated against. Every object it declares is
 CLOSED, which is the mechanism that keeps a token off disk: the writer projects
 a verdict onto the declared fields, and anything an adapter added beside them
 never reaches the file.
+
+### The `models` command and the availability block it attaches
+
+Source: `lib/models.js`.
+
+`promptobus models` — what the resolver would pick right now.
+
+The command asks nothing of any harness unless `--refresh` says so: it is the
+question a person types, and a question that starts three harness binaries
+and waits out the preflight budget is not one. `--refresh` is therefore also
+the only thing that writes a cache entry here.
+
+
+The decision with the availability facts it was made on attached (ADR-004).
+
+The block is assembled HERE and not in the resolver, and that is the whole
+reason it exists as a separate step. `resolve` is pure — no disk, no clock of
+its own — and the snapshot is the command's, so the command is the one place
+that holds both. What it must not do is let the two outputs read different
+sources: `render` prints the decision document and nothing else, so the block
+has to travel inside the document or `--json` would stop carrying what the
+text shows.
+
+It is a PROJECTION, field by field, for the reason the cache projects: the
+snapshot entry is already the closed shape, and copying it wholesale would put
+whatever a future field holds into a second document with its own schema.
+
+The order is the snapshot's, which is the order the harnesses were declared in
+— deterministic, and the same order the text output prints.
+
+Exported because the golden fixtures are reproduced twice and the two runs must
+not disagree: the command check runs this command, and the resolver check calls
+the pure function and composes the same block from the same snapshot. A second
+copy of this projection in a test would be the second description of one
+contract that the schemas and this package's grammars already work to avoid.
+
+### Reading a cache entry back
+
+Source: `lib/model-routing/cache.js`.
+
+Late-start hook: a driver whose session failed to start on a limit reports it
+here, and the harness is exhausted from that moment.
+
+The evidence chooses the code, and `reason` is how a caller states evidence this
+function cannot see. Left out, it is derived as it always was: a reset the harness
+named makes it `subscription_exhausted`, and the entry expires by itself at that
+time; no reset makes it `manual_exhaustion`, the sticky kind, which only
+`--clear-exhausted` lifts.
+
+**The derivation is not the whole vocabulary, which is why the argument exists.**
+A harness can say the limit RESETS and name the time in a person's words and a
+person's timezone ("resets at 3pm"): that is a subscription limit with a reset
+nothing may parse, and it is `subscription_exhausted` with `resetAt: null` — a
+combination the derivation cannot express. Without the argument the one caller
+with that evidence wrote its entry through `writeEntries` instead, and one fact
+had two doors into the cache.
+
+A `resetAt` that IS readable still expires the entry by itself, whichever reason
+carries it; with none, both reasons are the sticky kind, and the reason then says
+who the limit belongs to rather than when it comes back.
+
+`source` is `probe`: the harness itself said so — it was asked to start and
+answered — even though nothing here started a preflight.
+
+The mark is per HARNESS, not per tuple: the availability snapshot has no tuple
+dimension, and a limit is an account fact rather than a model one. A tuple the
+run must avoid for another reason is the resolver's business.
+
+### What a cache entry may hold
+
+Source: `lib/model-routing/cache.js`.
+
+What a window binds, projected onto the closed scope shapes, or `undefined`
+when the value is present and is none of them.
+
+`undefined` rather than `null`, and the difference is the whole point: `null`
+is a CLAIM — this window binds the whole account — and an unreadable scope is
+not evidence for it. So a garbled scope takes its window with it (see
+`windowOf`) instead of being quietly widened into an account-wide limit, which
+would make the resolver apply somebody's per-model weekly cap to every tuple
+of that harness.
+
+A model scope may arrive without `models`: the adapter holds the driver's
+dictionary and could not resolve the harness's display name to ids. That
+window stays — it is printed for a person and binds nothing — and the resolver
+matches by exact id, so it never guesses a family (ADR-004). An `auto` pool
+without its list is the other way round: the harness publishes that list, so
+its absence is an adapter fault and the window goes. An `api` pool carries no
+list at all, being the complement, and one attached to it is dropped with the
+window rather than kept as a second, quieter claim.
+
+Exported for the same reason `modelList` is: the telemetry record carries a
+window's scope into a second file, and a second projection of one schema shape
+is a second set of rules about it.
+
+### The overlay findings, and what each one means
+
+Source: `lib/model-routing/validate.js`.
+
+ADR-004 § Catalog ratings from published results: "`validate` refuses a rated
+row with no source, unless the row is marked interpolated." Applied per
+rating, because that is the grain the ADR rates at — a row can have a
+published price behind `quotaCost` and nothing behind `speed`, and saying so
+is the difference between a citation and a decoration.
+
+Three ways a rating is accounted for, and no fourth:
+
+  * `evidence.sources` names it — the figure, the field it was banded
+    against, the page and the date are there to be re-checked;
+  * `evidence.interpolatedFrom` — the row is a rung of a ladder and the base
+    row carries every citation, which is also why they share an `assessedAt`;
+  * `evidence.hypothesis` names it — nothing is published for that exact
+    model, the ADR refuses to invent a number, and the row says so out loud.
+
+A rating in none of the three is an unsourced number wearing the same clothes
+as a sourced one, which is the whole failure this check exists to stop. A row
+with no `evidence` FIELD is the same failure and is treated as an empty one —
+otherwise deleting the field would be the way past the check. The v1 string
+form cannot express any of this, so a row that still uses it is left alone:
+this is an error about a citation that was attempted and came out short, not
+a migration gate.
+
+`interpolatedFrom` is checked twice over: the base row must exist, and it must
+not itself be interpolated. Both hold the same line — the exemption is one hop
+to a row that carries figures, and a chain of exemptions can close into a ring
+in which nothing cites a page at all.
+
+### Cursor: the pools a model is billed to
+
+Source: `lib/model-routing/adapter-cursor.js`.
+
+The inventory ids the `auto` pool covers.
+
+`autoBucketModels` names FAMILIES — `composer-2.5`, `cursor-grok-4.6` — while
+the inventory names ids with the effort level and the speed tier baked into
+them (`cursor-grok-4.6-xhigh-fast`). ADR-004 requires a scope that covers
+models to name them **by id**, because the resolver matches exactly and infers
+no family; so the family inference happens here, in the module that holds both
+lists, and what travels is ids.
+
+Two ways an id joins the pool through the bucket list, and this is the "say
+which" PB-27 asks for: the id **is** a bucket name, or it starts with a bucket
+name followed by a hyphen. The hyphen is the whole of the second rule — without
+it `vega` would claim `vegabond-3` — and a bucket name that matches no id
+contributes nothing rather than being carried as a guess.
+
+**And a third way, because the bucket list lags Cursor's own billing.**
+`tiered` is the set `autoTierModels` read off the aggregation, and an id in it
+joins the pool whatever the bucket list says. It is a UNION and never a
+subtraction: a model the bucket list names stays in the pool even with no event
+this cycle, because that list is the harness's own statement about the pool and
+an absent row is an absent measurement rather than a denial.
+
+An empty answer means no `auto` window at all: the schema requires the list on
+that pool, the harness publishes it, and its absence is this adapter's fault
+rather than a limit to report.
+
+### Codex: what the probe reads for the limit
+
+Source: `lib/model-routing/adapter-codex.js`.
+
+The subscription windows of a snapshot, normalised.
+
+`id` is the name the payload gives the window — `primary` and `secondary` — and
+nothing here renames them into hours and days: the length is a number the
+harness states (`windowDurationMins`), and a label invented from it would be a
+second, quieter claim about the same fact. A window whose `usedPercent` is not a
+number is not a window and is left out; the projection would drop it anyway.
+
+`kind` and `scope` are ADR-004's and are stated rather than derived: `primary`
+is the five-hour SESSION window and `secondary` the seven-day WEEKLY one — the
+names app-server gives two windows whose lengths it also states — and neither
+binds a model, so the scope is `null`, the account. A window whose length the
+payload does not state is LEFT OUT rather than given one: without a length
+there is no pace, and a length invented here would be a number app-server
+never said.
+
+A snapshot that names no window at all but carries the numbers at its own top
+level is one window, and it is `primary`. That shape is not invented here:
+`rateLimitReached` counts the snapshot itself among the windows it checks, and
+`rateLimitNote` reads `snap.primary?.usedPercent ?? snap.usedPercent` — the
+flat form has always been the primary window written without its name. Losing
+it would turn an exhaustion the harness DID time into a sticky one that only
+`--clear-exhausted` lifts.
+
+### Claude: the windows and what they are read from
+
+Source: `lib/model-routing/adapter-claude.js`.
+
+The account-wide row that is spent, or `null` when none is.
+
+**Account-wide only**, and that is a reading of ADR-004 rather than of PB-26's
+one sentence about "a window at 100 %". `exhausted` is a statement about the
+HARNESS — it takes every tuple on it out of routing — and a `weekly_scoped` row
+at 100 % says one model family is spent while the rest of the account runs. A
+spent scope travels as the window's own `usedPercent`, which is where the
+resolver reads it per tuple; a spent session or weekly-all window is the
+account, and that is this verdict.
+
+**`is_active: false` on a percentage is not an exhaustion**, and this is the one
+place the flag is read. The paragraph above says the flag adds nothing to a
+WINDOW, and it does not — every window is carried and the pace is computed per
+tuple. It says something here: a row the harness marks inactive is one that is
+not binding the account right now, and reading a spent inactive row as
+`exhausted` would take every Claude tuple out of routing on a limit that is not
+being enforced. So a percentage exhausts only a row the harness has not marked
+inactive.
+
+`locked_reason` is a separate fact and is NOT qualified by the flag: it is the
+endpoint saying the account may not spend that row at all, which is a state
+rather than a moment, and an inactive locked row is still locked.
+
+### Claude: the tier, offline first
+
+Source: `lib/model-routing/adapter-claude.js`.
+
+The usage answer as ADR-004 windows.
+
+`limits[]` is the general shape and the only one read: the top-level `five_hour`
+and `seven_day` objects duplicate two of its rows, and the neighbouring keys with
+odd names are experiments. A row whose `percent` is not a number is not a window
+and is left out — the snapshot projection would drop it anyway, and dropping it
+here is what keeps the count in the message honest.
+
+`usedPercent` is capped at 100 rather than dropped above it. The schema's range
+ends there, and "spent" is what a value past the end means; losing the window
+would lose the fact along with the number.
+
+A `weekly_scoped` row takes its id from the model's display name, because two
+scoped rows would otherwise collide on `weekly` and the second would be dropped
+as a duplicate.
+
+**`is_active` is read by nothing here, and that is not an oversight.** It marks
+the row that binds RIGHT NOW, which is a question the snapshot does not ask an
+adapter: every window is carried, ADR-003 takes `remaining` as the largest
+`usedPercent` over the applicable ones and ADR-004 names the binding window per
+candidate tuple. A flag saying which row binds the account as a whole would be a
+second, coarser answer to a question two consumers already answer per tuple.
+
+### The shared budget, and what a timeout leaves behind
+
+Source: `lib/model-routing/preflight.js`.
+
+Resolve the binary of every harness about to be probed, BEFORE any adapter
+starts, and hand each one its answer.
+
+**This is why the call is here and not in the adapters.** `resolveToolBin` is
+synchronous by contract and a host is free to start a process inside it — this
+package's own Cursor driver says its host asks `--version` with a 15 s ceiling.
+Called from inside a probe, such a resolve holds the event loop: the budget timer
+below cannot fire, the neighbouring adapters cannot make progress, and each
+adapter's own kill timer is stopped too, so the ceiling of the run becomes the sum
+of the resolves instead of one budget. No adapter can fix that from its own side.
+Resolved here, the cost is paid once per binary, in one place, outside the race.
+
+It is paid under the SAME deadline, and that is the second half of the fix: a
+resolve that spends the budget stops the loop from resolving any more, and the
+harnesses it never reached are reported rather than waited for. The one resolve
+already in flight cannot be interrupted — nothing interrupts a synchronous call —
+so the run may outlive its budget by that one resolve and by no more.
+
+The answer is memoised by tool NAME: two harnesses that name one binary cost one
+resolve. A host that throws is not a verdict here — `null` travels to the adapter,
+which says what a missing resolve means in its own words.
