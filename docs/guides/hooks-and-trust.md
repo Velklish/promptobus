@@ -248,3 +248,72 @@ driver, and it is taken from the registry
 Delivery is best-effort: the "delivered" mark is one, the mailbox is claimed. An
 activation refusal does not kill the process: the participant is marked with the
 `self-wake` channel, and delivery to the rest continues.
+
+### Whether a participant is busy with a turn: two branches
+
+Source: `src/supervisor.ts`.
+
+Whether the participant's session is busy with a turn. There are two
+branches, because there are two kinds of participant, and one branch
+is not enough for both.
+
+**There is a session reference** — take busyness from the snapshot: the
+driver declared it.
+
+**There is no reference** — that is how the task owner lives: their
+session was not raised by the driver, and the harness has no record of
+it at all. Busyness is then taken from the cycle watchman: it is called
+on EVERY end of turn and lays a mark (`markTurn`). An activation newer
+than the mark means that since then the session started a turn and has
+not yet given it back. The signal is cumulative, not instantaneous:
+"has it been free since the last activation", not "is it free this second".
+
+Neither source is a contract: no snapshot, no record, the watchman mark
+has never been laid — that is UNKNOWN, not busy, and the caller does
+what they would have done without the predicate.
+
+### When a participant counts as last activated
+
+Source: `src/supervisor.ts`.
+
+The participant has NEVER yet spoken on the bus, and their session already
+shows a finished turn — that is an unfinished start, not a stall. The
+window opened together with the new entry into the inspection: while
+`blocked` served as that entry, a fresh session never landed in it at all,
+and it shows `idle` between `--bg` and its first turn — a report would
+have gone out with the reason literally `idle`, because `state.json` has
+not been written yet by then.
+
+**The window sits inside the predicate, not in `blockedParticipants`
+next to the neighbouring `justSpawned`, because the `promptobus status`
+print calls the predicate directly, bypassing participant inspection**
+(`lib/status.js`) — put there, it would have left that print unprotected
+and split the channels, exactly against what the predicate was collapsed
+for.
+
+**And only this branch: a participant who has spoken at least once has a
+real timeline, and silence after activation is a stall regardless of the
+record's age**; a window over the whole `unknown` branch would have given
+half a minute of deafness to everyone at once.
+
+### What a warden round does, and what it refuses to do
+
+Source: `lib/warden.js`.
+
+One watch round. A wrapper over the state machine: a session snapshot arrives here,
+the registry leaves from here. `knock` is a suite seam: a stand-in driver for one
+round.
+
+**The round does not request a snapshot and has no right to.** It arrives as an
+argument and is held in a loop variable until the heartbeat; the round runs once a
+second, and a snapshot stands on a harness-query process launch. Measurement 2026-09-02
+(count by argv of a stand-in binary, three participants with sessions): the round —
+0 launches of `claude agents --json` both with a snapshot and without; the
+heartbeat — 1, both on a parsed reply and on an unparsed one.
+
+The cost of an "improvement" is there too, but it is counterfactual: if the round
+took state itself and WITHOUT a cache reset, sixty snapshots (a minute) would cost
+1 launch on a parsed reply and 60 on an unparsed one — a parse refusal is not
+cached on purpose ([liftoff.js](../../lib/liftoff.js)).
+Nobody pays that cost today: the snapshot dies on the FIRST `null`, and the loop
+resets the cache itself before the heartbeat snapshot.

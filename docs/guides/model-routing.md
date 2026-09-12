@@ -1087,3 +1087,135 @@ the delta has no first term, and the moment passes: the cache entry is a
 minute old by the time anything asks. The set is the resolver's own
 `applicableWindows`, not a second definition of the word, so a run is measured
 against the windows its pick was scored on. Empty when the harness has none.
+
+### Claude: the adapter a driver declares as availability
+
+Source: `lib/model-routing/adapter-claude.js`.
+
+The adapter a driver declares as `availability`.
+
+`models` is the inventory to report when the account turns out to be logged in:
+the alias set the driver accepts, together with its default model. It is a
+parameter rather than a constant here so that the two facts stay in one file —
+the driver's — instead of drifting between the lift and the probe.
+
+`scopeIds` is the second half of that dictionary: the display names the harness
+prints on a model-scoped limit row, and the ids each resolves to. It travels the
+same way and for the same reason — a copy inside this file would outlive a
+repin of the driver's own tables and go on naming an id nobody points at.
+
+`deps` is the seam for everything that leaves this process without being the
+harness binary: the keychain read and the two GETs. It defaults to the live
+implementations, so the driver declares the adapter exactly as it did; the suite
+passes its own, which is what lets every branch above be checked without a
+network or a person's keychain.
+
+### Claude: resolving a scope display name to model ids
+
+Source: `lib/model-routing/adapter-claude.js`.
+
+The model ids a scope's display name resolves to, or `null` when it resolves to
+none.
+
+A `weekly_scoped` row names its model the way a person reads it — "Fable" — and
+ADR-004 asks the adapter to resolve that into ids, because the resolver matches
+by exact id and infers no family. **The table is the driver's** and arrives as
+an argument, beside the inventory and for the same reason: it is one more
+reading of the dictionary the driver owns, and a copy of it here would go on
+naming an id nobody points at after a repin — silently, because a scope
+resolving to a stale id binds no row and prints no complaint.
+
+A name the table does not carry resolves to `null`: the window then stays in
+the snapshot, is printed for a person, and binds nothing, which is ADR-004's
+own rule and why the table may be short without being wrong.
+
+The answer is a fresh array on every call: it travels into a verdict, and a
+shared one would let a caller edit the driver's table.
+
+### Cache: what a write must not carry
+
+Source: `lib/model-routing/cache.js`.
+
+One harness entry, projected onto the closed snapshot shape.
+
+Field by field on purpose, never a spread: a spread is exactly how a `token`, a
+`rawOutput` or an `account` field an adapter attached would reach the file. The
+only free text that survives is `message`, and the contract says what it may
+hold — a human diagnosis, never harness output verbatim.
+
+The projection is by VALUE as well as by field, and it drops rather than
+repairs: an element of `models` or `windows` that is not one is left out, and
+the rest of the verdict stands. Nothing here invents a number — the file
+promises to validate against the snapshot schema, and a repaired value would
+validate while saying something the harness never said.
+
+A `checkedAt` that cannot be read becomes `NEVER_CHECKED`, never "now". Now is
+the one value that would make an unreadable stamp look freshly measured and
+hold it live for a whole TTL; the epoch makes the same entry read as expired,
+which sends the next run back to the adapter.
+
+### Rendering: which lines a decision must always print
+
+Source: `lib/model-routing/render.js`.
+
+The pace table: one row per eligible harness/pool representative, under the
+candidates (ADR-004).
+
+Per HARNESS/POOL group and not per candidate, because that is the comparison
+`balance` actually makes — each group is represented by the tuple that would
+be picked in it, and the largest `effective` leads. A pool-less window is the
+account-wide group.
+
+Which tuple that is comes from the DOCUMENT, `pace.representative`, and is not
+re-derived here. The rule is the resolver's — best eligible candidate meeting
+the role's quality floor — and a second copy of it in the renderer would show
+a different row on any run where the floor moved the first, with no marker on
+the tuple that was actually picked. A group with no eligible candidate has
+no representative and prints its note instead of six empty columns.
+
+Printed only when the strategy is `balance`, because that is the only strategy
+whose candidates carry a pace block at all.
+
+### The exclusion codes, in the ADR's order
+
+Source: `lib/model-routing/resolver.js`.
+
+The pace block of one candidate: how much of its binding window is spent
+against how much of that window has elapsed.
+
+**One unit, and it is stated once.** The owner's two inputs are shares of
+0…1; everything compared — `underspend`, `spendPenalty`, `effective`,
+`balance.band`, `balance.spendUnit` — is in PERCENTAGE POINTS of the window,
+the unit `usedPercent` is already in. The `× 100` below is the whole
+conversion, and both shares are published beside the result so a reader can
+recompute it. Mixing the two is not a rounding difference but a degenerate
+strategy: read as shares, every harness would fall inside one band and
+`balance` would quietly be `balanced`.
+
+The binding window is the applicable one with the highest `usedPercent`, and
+the id settles a tie so that two runs on one snapshot agree. A window whose
+`resetAt` is absent or is not in the future **is not paced**: the fact has
+expired, and the sixty-second TTL is what repairs it — a pace computed from a
+window that has already reset would be a number about a period that is over.
+
+### The models command surface
+
+Source: `lib/models.js`.
+
+Where the decision takes the moment its snapshot was assembled.
+
+`preflight` stamps its answer with the moment it ran, which is right only for
+a run in which every entry came back from a probe. It is wrong for one that
+asked nothing — the facts are as old as the cache is — and wrong again for a
+mixed run, where one harness was probed and two were reused: the fresh stamp
+would report the age of the freshest fact over the oldest one.
+
+So the stamp is the OLDEST entry's own `checkedAt`. A snapshot is only as
+fresh as the stalest thing inside it, which is the same rule the cache TTL
+cascade applies to a single entry, and it needs no second read of the file.
+An entry the cache never held carries the epoch, so a first run reports its
+facts as ageless rather than as freshly measured — the loud reading is the
+true one, and the harness rows carry `stale_cache` beside it.
+
+`source` is how the entries themselves came back, and it stays the resolver's
+to compute; this only chooses which stamp the age is measured from.

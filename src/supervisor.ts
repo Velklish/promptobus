@@ -152,25 +152,8 @@ export function stallStands(home: string, task: string, participant: Participant
     // A bad participant record has no right to lift the report of their stall.
     return true;
   }
-  // The participant has NEVER yet spoken on the bus, and their session already
-  // shows a finished turn — that is an unfinished start, not a stall. The
-  // window opened together with the new entry into the inspection: while
-  // `blocked` served as that entry, a fresh session never landed in it at all,
-  // and it shows `idle` between `--bg` and its first turn — a report would
-  // have gone out with the reason literally `idle`, because `state.json` has
-  // not been written yet by then.
-  //
-  // **The window sits inside the predicate, not in `blockedParticipants`
-  // next to the neighbouring `justSpawned`, because the `promptobus status`
-  // print calls the predicate directly, bypassing participant inspection**
-  // (`lib/status.js`) — put there, it would have left that print unprotected
-  // and split the channels, exactly against what the predicate was collapsed
-  // for.
-  //
-  // **And only this branch: a participant who has spoken at least once has a
-  // real timeline, and silence after activation is a stall regardless of the
-  // record's age**; a window over the whole `unknown` branch would have given
-  // half a minute of deafness to everyone at once.
+/** When a participant was last activated, and which marks count as activation.
+ * Why an attempt does not: guides/hooks-and-trust.md. */
   if (sent === null) return !justSpawned(participant);
   return sent < since;
 }
@@ -199,26 +182,8 @@ function heldBy(p: ParticipantV1 | null | undefined): string {
   return sessionIdOf(p) ?? sessionOf(p) ?? 'nobody';
 }
 
-/**
- * Whether the participant's session is busy with a turn. There are two
- * branches, because there are two kinds of participant, and one branch
- * is not enough for both.
- *
- * **There is a session reference** — take busyness from the snapshot: the
- * driver declared it.
- *
- * **There is no reference** — that is how the task owner lives: their
- * session was not raised by the driver, and the harness has no record of
- * it at all. Busyness is then taken from the cycle watchman: it is called
- * on EVERY end of turn and lays a mark (`markTurn`). An activation newer
- * than the mark means that since then the session started a turn and has
- * not yet given it back. The signal is cumulative, not instantaneous:
- * "has it been free since the last activation", not "is it free this second".
- *
- * Neither source is a contract: no snapshot, no record, the watchman mark
- * has never been laid — that is UNKNOWN, not busy, and the caller does
- * what they would have done without the predicate.
- */
+/** Whether the participant's session is busy with a turn.
+ * Why there are two branches and not one: guides/hooks-and-trust.md. */
 export function sessionBusy(home: string, task: string, participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): boolean {
   // The branch is chosen by the KIND of participant, not by whether their
   // session was found in the snapshot: the snapshot yields emptiness for an

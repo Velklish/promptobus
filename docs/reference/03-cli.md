@@ -879,3 +879,47 @@ per participant run would carry a run twice for no reason a reader could see.
 A failure here is a warning and never a refusal, the same rule the journal
 sweep below keeps: `done` has already closed the task and has no undo, and a
 read-only routing directory is not a reason to leave the run half-closed.
+
+### Dismiss: what it says and what it does not end
+
+Source: `lib/dismiss.js`.
+
+Stop watching a finished participant.
+
+The subject is its own, not a branch of `done` or `status`: closing a task sweeps the
+whole run, and printing state only reads — dismiss changes one participant's journal
+and is done mid-run, on every slice acceptance.
+
+What dismiss does and does not do:
+
+- **stops future warden reports** about this address — one filter, in
+  `blockedParticipants` ([status.js](../../lib/status.js)), and all three channels go through it:
+  the warden postcard and the line in tool replies. Postcards already sent are not
+  recalled;
+- **does not touch the mailbox.** Writing to a dismissed address is legal: the address
+  stays a participant, and the message waits for either a live session `mailbox` or a
+  participant raised again. Refusing a `result` would be a lost message where the
+  mechanism promises delivery;
+- **does not stop the session or close the task** — both commands stay with the person
+  and `promptobus done`.
+
+### Done: the order of close, telemetry and sweeps
+
+Source: `lib/done.js`.
+
+Stop managed sessions of a closed task. A session the mechanism started, it
+also closes: before this task a person stopped it by hand (`claude stop <id>`
+on acceptance), and the cost of delay was double — live sessions piled up on
+the machine, and worktree cleanup after a live session does not run at all,
+because the directory would leave from under its `cwd`.
+
+Only `managed` with a live session are stopped: the task owner has no session
+behind them at all, and `attached` the driver did not start and has no right
+to dispose of. A refusal of one participant does not break the walk — named
+out loud and we go on: this is the same walk after the task is closed, and
+you cannot throw from it.
+
+`registry` is a set seam: a stand-in driver counts calls without touching
+live `claude`. `snapshot` is a second seam, a function over participants:
+`done` supplies it so the whole command is hermetic in one argument; without
+it the snapshot is built with the same `registry`.

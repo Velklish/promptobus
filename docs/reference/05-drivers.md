@@ -137,3 +137,27 @@ subtree.
 
 Optional: a driver whose launch files land outside the repository claims none and is
 asked nothing.
+
+### Codex: what lives in the driver and what does not
+
+Source: `lib/driver-codex.js`.
+
+Codex harness driver — the third production bus driver.
+Everything the mechanism knows about Codex lives here: option vocabulary, command
+words, turning a plan into `thread/start` params, and approval replies. The thread
+registry and the process holder are in [codex-session.js](../../lib/codex-session.js).
+
+**What Codex does differently.** A session is a thread in its own
+`codex app-server --stdio` process, and that process runs in a `CODEX_HOME` of its
+own — one per participant, built at lift and removed at `done`. cwd, sandbox and
+instructions go as `thread/start` params; the MCP set goes into that home's
+`config.toml`, because there is no personal set left to merge with. Hooks under
+`app-server` do not run (`trustStatus: untrusted`, no bypass flag). The end-of-turn
+channel is `turn/completed` only. `exec --json` is a smoke check.
+
+Same boundary as the neighbours: the rest of the mechanism does not import this
+file — it takes the driver from the registry map.
+
+A registry-home refusal propagates from `readSession` through activation, inspect and
+stop. The `gone` outcome therefore means a named registry was read and contained no
+record; it is never an alias for missing configuration.
