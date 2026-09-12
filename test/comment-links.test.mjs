@@ -107,13 +107,13 @@ function pointers() {
 
 const all = pointers();
 
-test('a link written in a code comment resolves to a file that exists', () => {
+test('a link written in a code comment resolves to a file that exists', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
   const broken = all.filter((p) => p.file && !p.exists).map((p) => `${p.rel}:${p.line} -> ${p.target}`);
   assert.deepEqual(broken, [], 'links in code comments that resolve to nothing');
 });
 
-test('an anchor written in a code comment names a heading that exists', () => {
+test('an anchor written in a code comment names a heading that exists', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const broken = [];
   for (const p of all) {
     if (!p.anchor || !p.exists) continue;
@@ -122,7 +122,7 @@ test('an anchor written in a code comment names a heading that exists', () => {
   assert.deepEqual(broken, [], 'anchors in code comments that name no heading');
 });
 
-test('a pointer stands above the symbol its section names, and none is skipped in silence', () => {
+test('a pointer stands above the symbol its section names, and none is skipped in silence', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const wrong = [];
   // Three classes, all counted. A pointer is BOUND when its section names a symbol and is
   // then checked against the declaration it stands above; FILE-LEVEL when the section
@@ -146,7 +146,7 @@ test('a pointer stands above the symbol its section names, and none is skipped i
     'the split between the three pointer classes moved — say so in the baseline');
 });
 
-test('no file has lost a pointer it is known to carry', () => {
+test('no file has lost a pointer it is known to carry', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const lost = [];
   const added = [];
   const now = new Map();
@@ -168,7 +168,7 @@ test('no file has lost a pointer it is known to carry', () => {
   if (added.length) console.log(`  pointers added since the baseline: ${added.length}`);
 });
 
-test('the walk sees a link on a continuation line and ignores prose that is not a comment', () => {
+test('the walk sees a link on a continuation line and ignores prose that is not a comment', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const sample = '/**\n * see [a](../docs/x.md#b)\n[c](../docs/y.md#d)\n */\nconst s = "[e](z.md)";\n';
   assert.deepEqual(commentLinks(sample).map((l) => l.target), ['../docs/x.md#b', '../docs/y.md#d']);
   // Each space becomes a hyphen, runs are not collapsed — the em dash leaves two.

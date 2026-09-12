@@ -281,9 +281,9 @@ Neither source is a contract: no snapshot, no record, the watchman mark
 has never been laid — that is UNKNOWN, not busy, and the caller does
 what they would have done without the predicate.
 
-### `if` — the participant has NEVER yet spoken on the bus, and their session already
+### `stallStands` — the grace window before a participant has ever spoken
 
-Source: `src/supervisor.ts`, `if`.
+Source: `src/supervisor.ts`, `stallStands`.
 
 The participant has NEVER yet spoken on the bus, and their session already
 shows a finished turn — that is an unfinished start, not a stall. The

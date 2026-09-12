@@ -153,7 +153,7 @@ export function stallStands(home: string, task: string, participant: Participant
     return true;
   }
 /** A participant that has never spoken gets a grace window from `justSpawned`.
- * [guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already](../docs/guides/hooks-and-trust.md#if--the-participant-has-never-yet-spoken-on-the-bus-and-their-session-already) */
+ * [guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken](../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken) */
   if (sent === null) return !justSpawned(participant);
   return sent < since;
 }
@@ -609,6 +609,10 @@ export async function supervisorRound(home: string, task: string, {
       if (h.channel !== 'pull') {
         h.channel = 'pull';
         h.wake = null;
+        // A self-wake verdict from an earlier channel must not survive the move to pull:
+        // `status` would print a prognosis for knocks that no longer happen.
+        h.selfWake = null;
+        h.selfWakeChannel = null;
       }
     } else if (!endpoint?.socket) {
       // There is no contact point — nothing to knock with, and this is not

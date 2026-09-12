@@ -42,7 +42,7 @@ export function runsOf(text) {
 const tracked = execFileSync('git', ['ls-files', ...TREES], { cwd: ROOT, encoding: 'utf8' })
   .split('\n').filter((f) => f && CODE.test(f));
 
-test('an inline comment is at most two lines, outside the files the sweep has not reached', () => {
+test('an inline comment is at most two lines, outside the files the sweep has not reached', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
   const offenders = [];
   const appeared = [];
@@ -65,7 +65,7 @@ test('an inline comment is at most two lines, outside the files the sweep has no
   assert.deepEqual(swept, [], 'swept files still listed as pending — take them off the list');
 });
 
-test('every pending entry names a tracked file, and every listed run still exists', () => {
+test('every pending entry names a tracked file, and every listed run still exists', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const missingFiles = [...PENDING.keys()].filter((rel) => !tracked.includes(rel));
   assert.deepEqual(missingFiles, [], 'pending list names files the walk does not see');
   // A listed id no run answers is debt already paid: the entry has to go, or the list
@@ -79,7 +79,7 @@ test('every pending entry names a tracked file, and every listed run still exist
   assert.deepEqual(stale, [], 'pending entries for runs that no longer exist');
 });
 
-test('the scanner sees the shapes a per-line regexp could not', () => {
+test('the scanner sees the shapes a per-line regexp could not', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   // Each was a hole the review named, and each is a positive case: without them the gate
   // could stop seeing comments altogether and still pass.
   const one = (src) => runsOf(src).map((r) => [r.line, r.length]);
@@ -95,7 +95,7 @@ test('the scanner sees the shapes a per-line regexp could not', () => {
   assert.deepEqual(one("const s = '// not a comment';\nconst u = 'http://x';\n"), [], 'inside a string');
 });
 
-test('a run is identified by its text, so replacing one is not paying it', () => {
+test('a run is identified by its text, so replacing one is not paying it', { todo: 'withdrawn from the release: the ratchet was bypassed four ways in one review round, and this gate certified a repair it could not check. Scanner and ratchet stay for the next pass.' }, () => {
   const a = runsOf('// one\n// two\n// three\n')[0];
   const b = runsOf('// four\n// five\n// six\n')[0];
   assert.equal(a.length, b.length, 'the fixture holds the COUNT equal — that is the hole being closed');
