@@ -72,7 +72,7 @@ const {
   codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir, sessionFile, SESSION_ENV_VAR, PARTICIPANT_ARGV,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
-const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
+const { status: printStatus, stallStands, justSpawned, SPAWN_GRACE_SEC } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, toolName, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
@@ -2395,6 +2395,24 @@ check(': a log write under a removed registry does not rebuild the tree',
   !existsSync(reapHome), reapHome);
 
 {
+  // The subject is a stale view OUTSIDE the registration window — inside it status says
+  // "is starting" on purpose. Which branch this lands on must not depend on how long the
+  // file took to get here: on a fast runner the spawn above is still inside the 30 s
+  // window, and the check went red about the other branch. Aged by hand, precondition
+  // asserted — a changed window cannot make this green in silence.
+  const beforeAging = store.participantOf(store.readTask(home, TASK), WORKER);
+  store.upsertParticipant(home, TASK, {
+    ...beforeAging,
+    metadata: {
+      ...beforeAging?.metadata,
+      started: new Date(Date.now() - (SPAWN_GRACE_SEC + 5) * 1000).toISOString(),
+    },
+  });
+  const aged = store.participantOf(store.readTask(home, TASK), WORKER);
+  check(': the participant sits outside the registration window before the LISTED check',
+    justSpawned(aged) === false,
+    `started ${aged?.metadata?.started} · window ${SPAWN_GRACE_SEC} s`);
+
   const listedView = {
     state: 'stale',
     busy: false,
@@ -2411,7 +2429,10 @@ check(': a log write under a removed registry does not rebuild the tree',
     }
   }
   const listedOut = capture(() => printStatus(ws, { task: TASK, sessions: listedSnap }));
-  const listedLine = String(listedOut).split('\n').find((l) => l.includes(WORKER)) ?? String(listedOut);
+  // Picked by the whole address, not a substring: `worker:cdx-second` contains
+  // `worker:cdx`, and the journal order is not ours to rely on.
+  const listedLine = String(listedOut).split('\n')
+    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? String(listedOut);
   check(': promptobus status prints LISTED for a stale Codex inspect view',
     /is LISTED, but there is no process behind it/.test(listedLine)
       && /There will be no messages from it/.test(listedLine),

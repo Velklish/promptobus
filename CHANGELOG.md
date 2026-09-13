@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The Codex driver's LISTED check no longer depends on how fast the file runs.** A stale inspect view inside the 30 s registration window prints "is starting" by design, and the check reached that branch on a fast runner — the participant record is now aged past the window by hand, with the precondition asserted. Its status line is picked by the whole address instead of a substring, so a neighbour whose address starts with the same text (`worker:cdx-second`) cannot be read as the subject. Test-only; the status branches themselves are unchanged. (PB-159.1)
+
 ## [0.8.0] — 2026-09-13
 
 ### Changed
