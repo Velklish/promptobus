@@ -351,11 +351,13 @@ check('PB-204: the reviewer preamble carries the same header and the same bound 
   reviewHandoff.slice(0, 800));
 // The overflow path a worker has does not exist here: file writes are denied to this
 // session, so a rule that sent findings into an attached file could never be obeyed.
-check('PB-204: the reviewer is never told to attach an artifact it is forbidden to create',
-  /no artifact filename to quote/.test(reviewHandoff)
-  && /You have no artifact to move them into/.test(reviewHandoff)
+check('PB-204: the reviewer preamble says it produces no artifact and must not attach one',
+  /produce no artifact of your own/.test(reviewHandoff)
   && !/attached with artifactPath/.test(reviewHandoff)
   && plan.settings.permissions.deny.includes('Write'),
+  reviewHandoff.slice(0, 900));
+check('PB-204: the reviewer preamble may cite another participant\'s landed filename',
+  /may \*\*cite\*\* a landed filename another participant sent/.test(reviewHandoff),
   reviewHandoff.slice(0, 900));
 check('read-only: deny overrides writing and executing',
   ['Edit', 'Write', 'NotebookEdit', 'Bash'].every((t) => plan.settings.permissions.deny.includes(t))

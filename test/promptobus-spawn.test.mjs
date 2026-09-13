@@ -1633,5 +1633,164 @@ check('PB-204: MCP send returns the landed collision name and the header uses it
   && mcpResult?.body === mcpHeader,
   mcpFirstName + ' / ' + mcpSecondName + ' / ' + mcpResult?.body);
 
+const { guardVerdict } = await import(path.join(here, '..', 'lib', 'guard.js'));
+const ORDER_TASK = 'handoff-order-t20260913-163533';
+const ORDER_ADDR = 'worker:handoff-order';
+store.createTask(HOME, { id: ORDER_TASK, title: 'artifact hand-off order' });
+store.upsertParticipant(HOME, ORDER_TASK, store.participantRecord(ORDER_ADDR, { session: 'handoff-order-session' }));
+const gateRecordPath = path.join(SB, 'gates-handoff-order.json');
+writeFileSync(gateRecordPath, '{"records":[]}\n');
+const orderSend = (type, body, artifactPath = null) => store.sendMessage(HOME, ORDER_TASK, {
+  from: ORDER_ADDR, to: 'orchestrator', type, body, ...(artifactPath ? { artifactPath } : {}),
+});
+const unlandedName = orderSend('result', 'Gate: gates-not-landed-yet.json');
+check('PB-204.2: a dotted token that matches no landed artifact is not a claim',
+  unlandedName?.message?.type === 'result' && !unlandedName?.message?.artifact,
+  JSON.stringify(unlandedName?.message));
+const victimPath = path.join(SB, 'gates-victim.json');
+writeFileSync(victimPath, '{}');
+store.upsertParticipant(HOME, ORDER_TASK, store.participantRecord('worker:source', { session: 'source-session' }));
+store.sendMessage(HOME, ORDER_TASK, {
+  from: 'worker:source', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: victimPath,
+});
+const citeVictim = orderSend('result', 'Gate: gates-victim.json');
+check('PB-204.2: a result may cite another sender\'s landed artifact without linking it',
+  citeVictim?.message?.type === 'result' && !citeVictim?.message?.artifact,
+  JSON.stringify(citeVictim?.message));
+const orphanPath = path.join(SB, 'gates-orphan.json');
+writeFileSync(orphanPath, '{}');
+const orphanArt = store.sendMessage(HOME, ORDER_TASK, {
+  from: 'worker:source', to: 'orchestrator', type: 'artifact', body: 'orphan', artifactPath: orphanPath,
+});
+rmSync(path.join(store.messagesDir(HOME, ORDER_TASK), `${orphanArt.message.id}.json`));
+let orphanErr = null;
+try {
+  orderSend('result', 'Gate: gates-orphan.json');
+} catch (e) {
+  orphanErr = e;
+}
+check('PB-204.2: a landed name with no artifact message from any sender is refused',
+  orphanErr?.message?.includes('no artifact message from any sender') === true,
+  orphanErr?.message ?? 'no error');
+orderSend('artifact', 'gate record', gateRecordPath);
+const plain = orderSend('result', 'work complete, no artifact named in the header');
+check('PB-204.2: an artifactless result stays lawful',
+  plain?.message?.type === 'result' && !plain?.message?.artifact,
+  JSON.stringify(plain?.message));
+const linked = orderSend('result', 'Gate: gates-handoff-order.json');
+check('PB-204.2: a result that claims a landed artifact links to its metadata id',
+  linked?.message?.artifact && linked.message.artifact.length > 0,
+  JSON.stringify(linked?.message));
+const boldProse = orderSend('result', [
+  '- **Done** — закрыто',
+  '- **Gate** — not run, because a reviewer runs nothing',
+  '- **Open** — nothing',
+  '- **Decide** — принять правку lib/store.js и закрыть PB-204.2',
+].join('\n'));
+check('PB-204.2: bold-header prose with dotted words stays lawful when no artifact landed',
+  boldProse?.message?.type === 'result' && !boldProse?.message?.artifact,
+  JSON.stringify(boldProse?.message));
+const boldUnlanded = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — gates-never-sent.json',
+  '- **Open** — nothing',
+  '- **Decide** — nothing',
+].join('\n'));
+check('PB-204.2: bold-header Gate naming an unlanded file is not a claim',
+  boldUnlanded?.message?.type === 'result' && !boldUnlanded?.message?.artifact,
+  JSON.stringify(boldUnlanded?.message));
+const notesPath = path.join(SB, 'notes.md');
+writeFileSync(notesPath, '# notes\n');
+orderSend('artifact', 'notes', notesPath);
+const substringProse = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — not run, because a reviewer runs nothing',
+  '- **Open** — nothing',
+  '- **Decide** — see release-notes.md for context',
+].join('\n'));
+check('PB-204.2: a landed filename nested inside a longer word is not a claim',
+  substringProse?.message?.type === 'result' && !substringProse?.message?.artifact,
+  JSON.stringify(substringProse?.message));
+const boldDecide = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — not run, because a reviewer runs nothing',
+  '- **Open** — nothing',
+  '- **Decide** — gates-handoff-order.json',
+].join('\n'));
+check('PB-204.2: bold-header Decide naming a landed artifact links to its metadata id',
+  boldDecide?.message?.artifact && boldDecide.message.artifact.length > 0,
+  JSON.stringify(boldDecide?.message));
+const pathDecide = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — not run, because a reviewer runs nothing',
+  '- **Open** — nothing',
+  '- **Decide** — files/gates-handoff-order.json',
+].join('\n'));
+check('PB-204.2: a path-shaped Decide line still claims the landed basename',
+  pathDecide?.message?.artifact && pathDecide.message.artifact.length > 0,
+  JSON.stringify(pathDecide?.message));
+const boldGatePeriod = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — gates 4, green 4; record gates-handoff-order.json.',
+  '- **Open** — nothing',
+  '- **Decide** — nothing',
+].join('\n'));
+check('PB-204.2: bold-header Gate with trailing period still claims the landed name',
+  boldGatePeriod?.message?.artifact && boldGatePeriod.message.artifact.length > 0,
+  JSON.stringify(boldGatePeriod?.message));
+const boldGateLinked = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — gates-handoff-order.json',
+  '- **Open** — nothing',
+  '- **Decide** — nothing',
+].join('\n'));
+check('PB-204.2: bold-header Gate naming a landed artifact links to its metadata id',
+  boldGateLinked?.message?.artifact && boldGateLinked.message.artifact.length > 0,
+  JSON.stringify(boldGateLinked?.message));
+const secondPath = path.join(SB, 'gates-second.json');
+writeFileSync(secondPath, '{}');
+const secondArt = orderSend('artifact', 'second gate', secondPath);
+const thirdPath = path.join(SB, 'gates-third.json');
+writeFileSync(thirdPath, '{}');
+orderSend('artifact', 'third gate', thirdPath);
+const headerOrder = orderSend('result', [
+  '- **Done** — x',
+  '- **Gate** — gates-second.json, gates-handoff-order.json',
+  '- **Open** — nothing',
+  '- **Decide** — gates-third.json',
+].join('\n'));
+check('PB-204.2: the first landed name in the Gate line wins across Gate and Decide',
+  headerOrder?.message?.artifact === secondArt?.message?.artifact,
+  JSON.stringify(headerOrder?.message));
+const BEFORE_TASK = 'handoff-before-t20260913-163533';
+store.createTask(HOME, { id: BEFORE_TASK, title: 'result before artifact' });
+store.upsertParticipant(HOME, BEFORE_TASK, store.participantRecord('worker:before', { session: 'before-session' }));
+store.upsertParticipant(HOME, BEFORE_TASK, store.participantRecord('worker:other', { session: 'other-session' }));
+const beforePath = path.join(SB, 'gates-before.json');
+writeFileSync(beforePath, '{}');
+store.sendMessage(HOME, BEFORE_TASK, {
+  from: 'worker:before', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: beforePath,
+});
+const citeBefore = store.sendMessage(HOME, BEFORE_TASK, {
+  from: 'worker:other', to: 'orchestrator', type: 'result', body: 'Gate: gates-before.json',
+});
+check('PB-204.2: a result may cite another participant\'s gate record without linking it',
+  citeBefore?.message?.type === 'result' && !citeBefore?.message?.artifact,
+  JSON.stringify(citeBefore?.message));
+const HANDOFF_GUARD_TASK = 'handoff-guard-t20260913-163533';
+store.createTask(HOME, { id: HANDOFF_GUARD_TASK, title: 'artifact without result' });
+store.upsertParticipant(HOME, HANDOFF_GUARD_TASK,
+  store.participantRecord('worker:guard', { session: 'guard-session' }));
+const guardPath = path.join(SB, 'gates-guard.json');
+writeFileSync(guardPath, '{}');
+store.sendMessage(HOME, HANDOFF_GUARD_TASK, {
+  from: 'worker:guard', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: guardPath,
+});
+const guardPending = guardVerdict(HOME, HANDOFF_GUARD_TASK, 'worker:guard');
+check('PB-204.2: a gate-record artifact without a result blocks the turn',
+  guardPending?.key?.startsWith('handoff:') === true
+  && /gate-record artifact was sent/.test(guardPending.reason),
+  JSON.stringify(guardPending));
+
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

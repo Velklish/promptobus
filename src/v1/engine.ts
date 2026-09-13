@@ -89,6 +89,8 @@ export interface SendSyncInput {
   type: string;
   body: string;
   artifact?: { path: string; name?: (sha256: string, size: number) => string };
+  /** Metadata id of a prior artifact message; sets `message.artifact` without a new attachment. */
+  linkArtifact?: string;
 }
 
 /** Send outcome: the canon, artifact metadata, and "who to wake" events. */
@@ -233,8 +235,9 @@ export function openEngine({
 
   /** Steps 2–5: the commit point, fan-out, and "who to wake" events. Also one for both send branches. */
   function finish(task: string, meta: TaskV1, sender: ParticipantV1, recipients: ParticipantV1[],
-    input: { to: string[]; type: string; body: string }, artifact: ArtifactV1 | null): SendResult {
-    const draft = newMessage(task, sender.id, input.to, input.type, input.body, artifact?.id ?? null, now());
+    input: { to: string[]; type: string; body: string; linkArtifact?: string }, artifact: ArtifactV1 | null): SendResult {
+    const draft = newMessage(task, sender.id, input.to, input.type, input.body,
+      artifact?.id ?? input.linkArtifact ?? null, now());
     requireValid('message', draft, { task });
     const message = commitIntent(home, task, draft, now());
     faults('intent', { task, message: message.id });

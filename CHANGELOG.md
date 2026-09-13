@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Artifact hand-off order is now guarded at send and at turn end.** Only a **landed** filename that appears in the **Gate** or **Decide** line counts as a claim — dotted prose that matches no task artifact is not judged. `send` refuses a landed name with no `artifact` message from any sender; citing another participant's landed file is lawful. The canonical result carries the first claimed name in header order that this sender also sent, in its frozen `artifact` field; a citation alone leaves the field unset. A result with no landed-name claim stays lawful. The loop guard blocks ending a turn after a gate-record artifact with no `result` — a case answer expectation cannot see because any send clears `answerOwedSince`. (PB-204.2)
+
 - **The Codex driver's LISTED check no longer depends on how fast the file runs.** A stale inspect view inside the 30 s registration window prints "is starting" by design, and on a fast runner the check reached that branch — locally the record was only 3.5 s past the window. It is now aged past the window by hand, with the precondition asserted. Aging moves the record to the tail of the journal, so its status line is picked by the whole address rather than a substring a neighbour's address also carries (`worker:cdx-second`), and a picker miss now reads as empty instead of falling back to the whole output. Test-only; the status branches themselves are unchanged. (PB-159.1)
 
 ## [0.8.0] — 2026-09-13
