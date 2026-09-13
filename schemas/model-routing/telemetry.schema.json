@@ -72,6 +72,30 @@
         { "type": "null" }
       ]
     },
+    "idleSec": {
+      "description": "Total close-time seconds in which this participant waited on mailbox delivery, from notification to mailbox-taken confirmation; an interval still open at close contributes its notification-to-close lower bound. Null means no usable interval; this is not model-active time. Older records may omit it.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "idleSamples": {
+      "description": "Number of notification-to-delivery or open-at-close mailbox idle intervals included in idleSec. Additive and optional.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "deliveryLatencySec": {
+      "description": "Total close-time seconds from canonical message timestamps to mailbox-taken confirmation for this participant. Null means no complete delivery interval; it is not model-active time. Older records may omit it.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "deliverySamples": {
+      "description": "Number of canonical messages with a complete delivery interval included in deliveryLatencySec. Additive and optional.",
+      "type": "integer",
+      "minimum": 0
+    },
     "turns": {
       "description": "Messages this participant sent on the bus. Counted from the canonical message records, not from history: history holds what a mailbox fetched, and a result nobody read is still a turn.",
       "type": "integer",
@@ -183,6 +207,10 @@
       "lastResultAt": "2026-09-06T12:15:00.000Z",
       "endedAt": "2026-09-06T12:15:00.000Z",
       "durationSec": 4500,
+      "idleSec": 120,
+      "idleSamples": 2,
+      "deliveryLatencySec": 180,
+      "deliverySamples": 3,
       "throughput": { "outputTokens": 2400, "generationDurationSec": 48, "tokensPerSecond": null },
       "turns": 9,
       "reviewRounds": 2,
@@ -223,6 +251,10 @@
       "endedAt": "2026-09-06T12:20:00.000Z",
       "durationSec": 1200,
       "throughput": null,
+      "idleSec": null,
+      "idleSamples": 0,
+      "deliveryLatencySec": null,
+      "deliverySamples": 0,
       "turns": 3,
       "reviewRounds": 0,
       "questions": 0,

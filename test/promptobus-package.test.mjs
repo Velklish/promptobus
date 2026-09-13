@@ -420,7 +420,8 @@ check('tarball contains package.json',
 check('tarball contains built dist with declarations',
   files.includes('dist/index.js') && files.includes('dist/index.d.ts')
   && files.includes('dist/driver.js') && files.includes('dist/host-index.js')
-  && files.includes('dist/hooks.js') && files.includes('dist/contract.js'),
+  && files.includes('dist/hooks.js') && files.includes('dist/contract.js')
+  && files.includes('dist/telemetry.js') && files.includes('dist/telemetry.d.ts'),
   files.filter((f) => f.startsWith('dist/')).join(', '));
 // PB-173: the feed hook was the only template, and it is gone. A tarball that ships
 // one again means someone brought the hook back without re-deciding it.
@@ -598,6 +599,7 @@ const exportedSpecifiers = [
   'promptobus',
   'promptobus/driver',
   'promptobus/host',
+  'promptobus/telemetry',
   'promptobus/hooks',
   'promptobus/cli',
   'promptobus/schemas/v1/task.schema.json',
@@ -627,6 +629,11 @@ const specifierProbe = installed.status === 0
           }
           if (specifier === 'promptobus/hooks' && typeof module.planPromptobusHooks !== 'function') {
             throw new Error('hook planner planPromptobusHooks is missing');
+          }
+          if (specifier === 'promptobus/telemetry'
+            && (typeof module.telemetryStats !== 'function'
+              || typeof module.telemetrySummary !== 'function')) {
+            throw new Error('telemetry summary exports are missing');
           }
         }
         results.push({ specifier, ok: true });

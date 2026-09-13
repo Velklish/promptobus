@@ -1,6 +1,7 @@
 // The package entry point.
 // [reference/01-overview.md#the-package-entry-point](../docs/reference/01-overview.md#the-package-entry-point)
 
+export * from './telemetry.js';
 /** Protocol and store version this build understands. */
 export const PROTOCOL_VERSION = 1;
 

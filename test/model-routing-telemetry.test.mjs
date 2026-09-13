@@ -23,7 +23,7 @@ import './home.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 
@@ -43,6 +43,7 @@ const { models, routingContext, routingMetadata } = await import(path.join(ROOT,
 const { hostOf } = await import(path.join(ROOT, 'lib', 'host.js'));
 const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetry.js'));
 const { ROUTED_ROLES } = await import(path.join(ROOT, 'lib', 'model-routing', 'catalog.js'));
+const publicTelemetry = await import(path.join(ROOT, 'dist', 'telemetry.js'));
 
 const defaultTelemetryAdapter = adapterMap({
   claude: answeringStub({
@@ -842,6 +843,12 @@ badAddressMeta.participants.push({
   capabilities: null, metadata: { address: 'not-an-address', model: 'claude-opus', started: T1 },
 });
 writeFileSync(store.taskFile(badAddressHome, badAddressTask), JSON.stringify(badAddressMeta, null, 2) + '\n');
+store.sendMessage(badAddressHome, badAddressTask, {
+  from: 'orchestrator',
+  to: 'worker:good',
+  type: 'task',
+  body: 'canonical timing fixture',
+});
 telemetry.appendThroughputObservation(badAddressHome, badAddressTask, 'worker:good', { output_tokens: 42 });
 await capture(async () => close(badAddressSandbox, { task: badAddressTask, snapshot: noSessions }));
 const badAddressFile = telemetry.telemetryFileOf(badAddressHost);
@@ -899,3 +906,320 @@ check(': worker and reviewer durations end at their own result stamps, not the s
   && worker56?.recordedAt === reviewer56?.recordedAt
   && worker56?.durationSec === 75 * 60 && reviewer56?.durationSec === 90 * 60,
   JSON.stringify({ worker: worker56, reviewer: reviewer56 }));
+const SB205 = makeSandbox('promptobus-telemetry-summary-');
+writeHostConfig(SB205);
+const HOME205 = path.join(SB205, '.promptobus');
+const HOST205 = hostOf(SB205);
+const TASK205 = 'telemetriya-summary-t20260906-150000';
+const CLOSE205 = Date.now();
+const stamp205 = (offset) => new Date(CLOSE205 + offset).toISOString();
+store.createTask(HOME205, { id: TASK205, title: 'сводка телеметрии', owner: null });
+store.upsertParticipant(HOME205, TASK205, store.participantRecord('worker:timed', {
+  harness: 'claude',
+  mode: 'managed',
+  sessionRef: 'sess-timed',
+  model: 'claude-opus',
+  started: stamp205(-100000),
+  routing: {
+    strategy: 'balance',
+    tupleId: 'claude.opus.high',
+    windows: [{ id: 'session', kind: 'session', usedPercent: 10, scope: null }],
+  },
+}));
+store.upsertParticipant(HOME205, TASK205, store.participantRecord('reviewer:timed', {
+  harness: 'cursor',
+  mode: 'managed',
+  sessionRef: 'sess-reviewer-timed',
+  model: 'cursor-model',
+  started: stamp205(-200000),
+}));
+const inbound205 = store.sendMessage(HOME205, TASK205, {
+  from: 'orchestrator',
+  to: 'worker:timed',
+  type: 'task',
+  body: 'timed delivery fixture',
+});
+const inboundFile205 = path.join(
+  store.taskDir(HOME205, TASK205), 'messages', String(inbound205.message.id) + '.json',
+);
+const inboundEnvelope205 = readJson(inboundFile205);
+inboundEnvelope205.ts = stamp205(-40000);
+writeFileSync(inboundFile205, JSON.stringify(inboundEnvelope205, null, 2) + '\n');
+store.sendMessage(HOME205, TASK205, {
+  from: 'worker:timed',
+  to: 'orchestrator',
+  type: 'status',
+  body: 'timed status',
+});
+writeFileSync(store.wardenLogFile(HOME205, TASK205), [
+  stamp205(-30000) + ' notification worker:timed: unread 1, knock 1',
+  stamp205(0) + ' delivered worker:timed: mailbox was taken (had 1, knocks 1)',
+].join('\n') + '\n');
+store.writeHealth(HOME205, TASK205, {
+  'worker:timed': {
+    unread: 0, since: null, knockedAt: null, deliveredAt: stamp205(0), knocks: 0,
+  },
+  'reviewer:timed': {
+    unread: 0, since: null, knockedAt: stamp205(-60000), deliveredAt: stamp205(0), knocks: 1,
+  },
+});
+seedCache({ cacheFile: HOST205.routingPaths().cacheFile, usedPercent: 20 });
+const written205 = telemetry.appendTelemetry(
+  HOST205, HOME205, store.readTask(HOME205, TASK205), { at: CLOSE205 },
+);
+const rows205 = readFileSync(written205.file, 'utf8').split('\n').filter((line) => line.trim())
+  .map((line) => JSON.parse(line));
+const timed205 = rows205.find((row) => row.role === 'worker' && row.task === telemetry.taskHash(TASK205));
+const reviewer205 = rows205.find((row) => row.role === 'reviewer' && row.task === telemetry.taskHash(TASK205));
+check(': close-time projection records mailbox idle and delivery latency',
+  written205.written === 2
+  && timed205?.idleSec === 30 && timed205?.idleSamples === 1
+  && timed205?.deliveryLatencySec === 40 && timed205?.deliverySamples === 1,
+  JSON.stringify(timed205));
+check(': the role row retains quota cost as the binding window delta',
+  timed205?.windows?.[0]?.usedPercentAtEnd === 20, JSON.stringify(timed205?.windows?.[0]));
+const summaryStats205 = telemetry.telemetryStats(HOST205);
+const summary205 = summaryStats205?.summary?.find((run) => run.task === telemetry.taskHash(TASK205));
+check(': the persisted summary answers cost, wall-clock, and bus traffic by role',
+  summary205?.roles?.worker?.records === 1
+  && summary205.roles.worker.wallClockSec === 100
+  && summary205.roles.worker.quotaCostPercent === null
+  && summary205.roles.worker.quotaCostState === 'ambiguous'
+  && summary205.roles.worker.idleSec === 30
+  && summary205.roles.worker.deliveryLatencySec === 40
+  && summary205.roles.worker.busMessages === 1
+  && summary205.roles.reviewer.quotaCostPercent === null
+  && summary205.roles.reviewer.quotaCostState === 'unavailable',
+  JSON.stringify(summary205));
+check(': the role with the largest measured wall-clock is the bottleneck',
+  summary205?.bottleneckRole === 'reviewer'
+  && reviewer205?.durationSec === 200
+  && reviewer205?.idleSec === null
+  && reviewer205?.deliveryLatencySec === null,
+  JSON.stringify({ summary: summary205, reviewer: reviewer205 }));
+store.writeHealth(HOME205, TASK205, {
+  'worker:timed': {
+    unread: 1, since: stamp205(-20000), knockedAt: null, deliveredAt: stamp205(0), knocks: 1,
+  },
+});
+const reopenedRows205 = telemetry.telemetryRecords(
+  HOST205, HOME205, store.readTask(HOME205, TASK205), { at: CLOSE205 },
+);
+const reopenedTimed205 = reopenedRows205.find((row) => row.role === 'worker');
+check(': a current unread interval is measured after an earlier delivery',
+  reopenedTimed205?.idleSec === 50 && reopenedTimed205?.idleSamples === 2,
+  JSON.stringify(reopenedTimed205));
+const sharedQuota205 = {
+  id: 'session', kind: 'session', scope: null, usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+};
+const missingQuota205 = {
+  id: 'session', kind: 'session', scope: null, usedPercentAtSpawn: 10, usedPercentAtEnd: null,
+};
+const cursorWindow205 = {
+  id: 'weekly', kind: 'weekly', scope: null, usedPercentAtSpawn: 30, usedPercentAtEnd: 40,
+};
+const quotaInput205 = [
+  { task: 'quota-overlap-205', role: 'worker', harness: 'claude', windows: [sharedQuota205] },
+  { task: 'quota-overlap-205', role: 'reviewer', harness: 'claude', windows: [sharedQuota205] },
+  { task: 'quota-overlap-205', role: 'reviewer', harness: 'claude', windows: [] },
+  { task: 'quota-overlap-205', role: 'approver', harness: 'claude', windows: [missingQuota205] },
+  { task: 'quota-overlap-205', role: 'worker', harness: 'cursor', windows: [cursorWindow205] },
+];
+const quotaRows205 = telemetry.telemetrySummary(quotaInput205);
+const publicQuotaRows205 = publicTelemetry.telemetrySummary(quotaInput205);
+const quotaRun205 = quotaRows205.find((run) => run.task === 'quota-overlap-205');
+const claudeQuota205 = quotaRun205?.quotaEvidence?.find((evidence) => evidence.harness === 'claude');
+const cursorEvidence205 = quotaRun205?.quotaEvidence?.find((evidence) => evidence.harness === 'cursor');
+check(': quota delta remains run-wide evidence with participant coverage',
+  quotaRun205?.roles?.worker?.quotaCostPercent === null
+  && quotaRun205.roles.worker.quotaCostState === 'ambiguous'
+  && quotaRun205.roles.reviewer.quotaCostPercent === null
+  && quotaRun205.roles.reviewer.quotaCostState === 'ambiguous'
+  && quotaRun205.roles.approver.quotaCostPercent === null
+  && quotaRun205.roles.approver.quotaCostState === 'unavailable'
+  && claudeQuota205?.deltaPercent === 10 && claudeQuota205.state === 'ambiguous'
+  && claudeQuota205.coverage.some((row) => row.role === 'worker'
+    && row.records === 1 && row.measuredRecords === 1 && row.unavailableRecords === 0)
+  && claudeQuota205.coverage.some((row) => row.role === 'reviewer'
+    && row.records === 2 && row.measuredRecords === 1 && row.unavailableRecords === 1)
+  && claudeQuota205.coverage.some((row) => row.role === 'approver'
+    && row.records === 1 && row.measuredRecords === 0 && row.unavailableRecords === 1)
+  && cursorEvidence205?.deltaPercent === 10 && cursorEvidence205.state === 'measured',
+  JSON.stringify(quotaRun205));
+check(': public and private quota summaries stay in sync',
+  JSON.stringify(publicQuotaRows205) === JSON.stringify(quotaRows205),
+  JSON.stringify({ private: quotaRows205, public: publicQuotaRows205 }));
+const absentScopeWindow205 = {
+  id: 'session', kind: 'session', usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+};
+const invalidScopeWindow205 = {
+  id: 'session', kind: 'session', scope: { pool: 'unknown' },
+  usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+};
+const absentScopeInput205 = [
+  { task: 'scope-absence-205', role: 'worker', harness: 'claude', windows: [absentScopeWindow205] },
+  { task: 'scope-invalid-205', role: 'worker', harness: 'claude', windows: [invalidScopeWindow205] },
+];
+const absentScopeRows205 = telemetry.telemetrySummary(absentScopeInput205);
+const publicAbsentScopeRows205 = publicTelemetry.telemetrySummary(absentScopeInput205);
+check(': absent or invalid quota scope is not account-wide evidence',
+  [
+    absentScopeRows205.every((run) => run.quotaEvidence.length === 0),
+    absentScopeRows205.every((run) => run.roles.worker.quotaCostState === 'unavailable'),
+    publicAbsentScopeRows205.every((run) => run.quotaEvidence.length === 0),
+    publicAbsentScopeRows205.every((run) => run.roles.worker.quotaCostState === 'unavailable'),
+    JSON.stringify(publicAbsentScopeRows205) === JSON.stringify(absentScopeRows205),
+  ].every(Boolean),
+  JSON.stringify(absentScopeRows205));
+const malformedQuotaInput205 = [
+  { task: 'window-null-205', role: 'worker', harness: 'claude', windows: [null] },
+  {
+    task: 'window-kind-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'quarterly', scope: null,
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+    }],
+  },
+  {
+    task: 'window-low-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly', scope: null,
+      usedPercentAtSpawn: -10, usedPercentAtEnd: 10,
+    }],
+  },
+  {
+    task: 'window-high-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly', scope: null,
+      usedPercentAtSpawn: 110, usedPercentAtEnd: 120,
+    }],
+  },
+  {
+    task: 'window-extra-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly', scope: null,
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20, extra: true,
+    }],
+  },
+  {
+    task: 'window-array-205', role: 'worker', harness: 'claude',
+    windows: [[
+      'not-a-window',
+    ]],
+  },
+];
+const safeSummary205 = (summary, input) => {
+  try {
+    return summary(input);
+  } catch {
+    return null;
+  }
+};
+const malformedRows205 = safeSummary205(telemetry.telemetrySummary, malformedQuotaInput205);
+const publicMalformedRows205 = safeSummary205(publicTelemetry.telemetrySummary, malformedQuotaInput205);
+check(': malformed quota windows are unavailable rather than a crash or measurement',
+  [
+    malformedRows205?.length === 6,
+    malformedRows205?.every((run) => run.quotaEvidence.length === 0
+      && run.roles.worker.quotaCostState === 'unavailable'),
+    publicMalformedRows205?.length === 6,
+    publicMalformedRows205?.every((run) => run.quotaEvidence.length === 0
+      && run.roles.worker.quotaCostState === 'unavailable'),
+    JSON.stringify(publicMalformedRows205) === JSON.stringify(malformedRows205),
+  ].every(Boolean),
+  JSON.stringify({ private: malformedRows205, public: publicMalformedRows205 }));
+const canonicalScopeRows205 = telemetry.telemetrySummary([
+  {
+    task: 'scope-canonical-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly',
+      scope: { model: 'Example Deep', models: ['example-deep', 'example-quick'] },
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+    }],
+  },
+  {
+    task: 'scope-canonical-205', role: 'reviewer', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly',
+      scope: { models: ['example-quick', 'example-deep'], model: 'Example Deep' },
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+    }],
+  },
+]);
+const publicCanonicalScopeRows205 = publicTelemetry.telemetrySummary([
+  {
+    task: 'scope-canonical-205', role: 'worker', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly',
+      scope: { model: 'Example Deep', models: ['example-deep', 'example-quick'] },
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+    }],
+  },
+  {
+    task: 'scope-canonical-205', role: 'reviewer', harness: 'claude',
+    windows: [{
+      id: 'weekly', kind: 'weekly',
+      scope: { models: ['example-quick', 'example-deep'], model: 'Example Deep' },
+      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+    }],
+  },
+]);
+const duplicateScopeInput205 = [{
+  task: 'scope-duplicate-205', role: 'worker', harness: 'claude',
+  windows: [{
+    id: 'weekly', kind: 'weekly',
+    scope: { model: 'Example Deep', models: ['example-deep', 'example-deep'] },
+    usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
+  }],
+}];
+const duplicateScopeRows205 = telemetry.telemetrySummary(duplicateScopeInput205);
+const publicDuplicateScopeRows205 = publicTelemetry.telemetrySummary(duplicateScopeInput205);
+const canonicalRun205 = canonicalScopeRows205.find((run) => run.task === 'scope-canonical-205');
+const publicCanonicalRun205 = publicCanonicalScopeRows205.find((run) => run.task === 'scope-canonical-205');
+const duplicateRun205 = duplicateScopeRows205.find((run) => run.task === 'scope-duplicate-205');
+const publicDuplicateRun205 = publicDuplicateScopeRows205.find((run) => run.task === 'scope-duplicate-205');
+check(': quota scope keys canonicalize equivalent shapes and reject duplicate ids',
+  [
+    canonicalRun205?.quotaEvidence?.length === 1,
+    canonicalRun205?.quotaEvidence?.[0]?.state === 'ambiguous',
+    JSON.stringify(canonicalRun205?.quotaEvidence?.[0]?.scope)
+      === '{"model":"Example Deep","models":["example-deep","example-quick"]}',
+    canonicalRun205?.roles?.worker?.quotaCostState === 'ambiguous',
+    canonicalRun205?.roles?.reviewer?.quotaCostState === 'ambiguous',
+    duplicateRun205?.quotaEvidence?.length === 0,
+    duplicateRun205?.roles?.worker?.quotaCostState === 'unavailable',
+    publicCanonicalRun205?.quotaEvidence?.length === 1,
+    publicCanonicalRun205?.quotaEvidence?.[0]?.state === 'ambiguous',
+    publicDuplicateRun205?.quotaEvidence?.length === 0,
+    JSON.stringify(publicCanonicalScopeRows205) === JSON.stringify(canonicalScopeRows205),
+    JSON.stringify(publicDuplicateScopeRows205) === JSON.stringify(duplicateScopeRows205),
+  ].every(Boolean),
+  JSON.stringify({
+    private: { canonical: canonicalRun205, duplicate: duplicateRun205 },
+    public: { canonical: publicCanonicalRun205, duplicate: publicDuplicateRun205 },
+  }));
+const partialInput205 = [
+  { task: 'partial-summary-205', role: 'worker', durationSec: 100, idleSec: 30, deliveryLatencySec: 5 },
+  { task: 'partial-summary-205', role: 'worker', durationSec: null, idleSec: null, deliveryLatencySec: null },
+  { task: 'partial-summary-205', role: 'reviewer', durationSec: 200, idleSec: 40, deliveryLatencySec: 7 },
+];
+const partialRows205 = telemetry.telemetrySummary(partialInput205);
+const publicPartialRows205 = publicTelemetry.telemetrySummary(partialInput205);
+const partialRun205 = partialRows205.find((run) => run.task === 'partial-summary-205');
+check(': partial role fields stay unavailable and do not choose a bottleneck',
+  [
+    partialRun205?.roles?.worker?.wallClockSec === null,
+    partialRun205?.roles?.worker?.idleSec === null,
+    partialRun205?.roles?.worker?.deliveryLatencySec === null,
+    partialRun205?.roles?.reviewer?.wallClockSec === 200,
+    partialRun205?.roles?.reviewer?.idleSec === 40,
+    partialRun205?.bottleneckRole === null,
+    JSON.stringify(publicPartialRows205) === JSON.stringify(partialRows205),
+  ].every(Boolean),
+  JSON.stringify({ private: partialRows205, public: publicPartialRows205 }));
+const beforePrune205 = JSON.stringify(summaryStats205?.summary);
+rmSync(store.taskDir(HOME205, TASK205), { recursive: true, force: true });
+const afterPruneStats205 = telemetry.telemetryStats(HOST205);
+check(': the persisted summary survives pruning its source journal',
+  beforePrune205 === JSON.stringify(afterPruneStats205?.summary),
+  JSON.stringify(afterPruneStats205?.summary));

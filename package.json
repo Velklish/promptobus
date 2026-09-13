@@ -42,6 +42,10 @@
       "types": "./dist/host-index.d.ts",
       "default": "./dist/host-index.js"
     },
+    "./telemetry": {
+      "types": "./dist/telemetry.d.ts",
+      "default": "./dist/telemetry.js"
+    },
     "./hooks": {
       "types": "./dist/hooks.d.ts",
       "default": "./dist/hooks.js"
