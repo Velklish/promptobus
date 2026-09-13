@@ -9,11 +9,15 @@
 
 Found by the isolated reviewer on the PB-206.2 diff; the defect itself belongs to PB-206, which shipped the direct `worker`↔`approver` route. The route is fail-closed on an identity the participant MCP server cannot obtain, so on the Codex path it refuses every call.
 
+**Два места ниже цитируются блоком кода, а не блоком `quote`, и это вынужденно.** Блок `quote` сверяется с диском, а предмет карточки в том и состоял, чтобы этих строк не стало: после починки они исчезли, и сверка краснит `lint` у всякого, кто встанет на дерево с правкой. Класс заведён отдельной карточкой в трекере инструмента разметки.
+
 The MCP server takes its identity from the environment of its own process:
 
-<!-- quote:../../../src/mcp/server.ts -->
+`src/mcp/server.ts`, до правки:
+
+```
     const identity = resolveIdentity();
-<!-- /quote -->
+```
 
 `resolveIdentity` fills `session` from `sessionIdentity(env)`, which asks the driver registry to read a harness variable out of that environment. The direct route then demands it and refuses when it is absent:
 
@@ -33,9 +37,11 @@ The repository's own measurement says that environment never carries one. `docs/
 
 So every real participant tool call arrives with `session === null` and is refused, while the tool still advertises direct traffic. The suite does not catch it because the MCP test supplies an identity the real child never has:
 
-<!-- quote:../../../test/promptobus-mcp.test.mjs -->
+`test/promptobus-mcp.test.mjs`, до правки:
+
+```
     CLAUDE_CODE_SESSION_ID: 'direct-worker-session',
-<!-- /quote -->
+```
 
 Not yet reachable in practice: nothing lifts an `approver` (PB-206.5), so no participant can exercise the route today. That is why this is a card and not a stop-the-line defect — but it must close before an approver is liftable, or the fourth role ships with a door that is welded shut.
 
