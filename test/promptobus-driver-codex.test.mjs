@@ -11,9 +11,9 @@ import net from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import Ajv from 'ajv';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
@@ -981,6 +981,7 @@ check(': argv is the bypass flag, then app-server --stdio; prompt separate; no f
   && workerPlan.files.length === 1
   && workerPlan.files[0].path === path.join(ctx.cwd, '.codex', '.gitignore')
   && workerPlan.settings.sandbox === 'workspace-write'
+  && workerPlan.settings.addDirs.join(',') === '/tmp/wt,/tmp/rules'
   && workerPlan.settings.approvalPolicy === 'on-request',
   JSON.stringify({ argv: workerPlan.argv, files: workerPlan.files, settings: workerPlan.settings }));
 
@@ -1012,7 +1013,7 @@ const approverMcpPlan = codexDriver.prepare({
 check('PB-206 review: an approver MCP deny leaves repository writes enabled',
   approverMcpPlan.settings.sandbox === 'workspace-write'
   && approverMcpPlan.cwd === ctx.cwd
-  && approverMcpPlan.settings.addDirs.join(',') === '/tmp/rules'
+  && approverMcpPlan.settings.addDirs.join(',') === '/tmp/wt,/tmp/rules'
   && approverMcpPlan.mcpConfig.mcpServers.catalog?.disabled_tools?.join(',') === 'create_entry',
   JSON.stringify({ cwd: approverMcpPlan.cwd, settings: approverMcpPlan.settings, mcp: approverMcpPlan.mcpConfig }));
 
@@ -1466,6 +1467,47 @@ check(': Codex --dry-run does not present the prompt as a positional app-server 
   !/app-server --stdio <prompt>/.test(dry.out)
   && /turn\/start request/.test(dry.out), dry.out.slice(-600));
 
+const modeEnv = { ...env, PROMPTOBUS_CODEX_HOME: path.join(SB, 'fresh-mode-state') };
+const modeRef = 'fresh-mode-probe';
+writeSession({ ref: modeRef }, modeEnv);
+const sessionsMode = statSync(sessionsDir(modeEnv)).mode & 0o777;
+check(': a freshly created Codex sessions directory is private',
+  process.platform === 'win32' || sessionsMode === 0o700,
+  process.platform === 'win32'
+    ? 'win32: POSIX mode assertion skipped because Windows uses ACLs'
+    : sessionsMode.toString(8));
+dropSession(modeRef, modeEnv);
+const deadRef = 'dead-probe';
+writeSession({
+  ref: deadRef, state: 'dead', threadId: 't-dead', holderPid: process.pid,
+  error: 'app-server exited (9)',
+}, process.env);
+const deadView = codexDriver.inspect(deadRef);
+check(': inspect at state=dead — stall, even if holderPid is alive',
+  deadView.state === 'stale' && deadView.stall?.kind === 'stale' && /died|exited/.test(deadView.stall.reason),
+  JSON.stringify(deadView));
+dropSession(deadRef, process.env);
+
+const ere = (s) => s.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+const HOLD_PATTERN = `codex-hold\\.js ${ere(sessionsDir(env))}`;
+const APP_PATTERN = [ere(`${path.join(SB, 'bin')}/codex.stub.mjs`), ...PARTICIPANT_ARGV.map(ere)].join('.*');
+// File-owned paths keep a neighbour's process from satisfying the leak check.
+check(': both process reads are scoped to this file\'s own directories, not to a program name',
+  HOLD_PATTERN.includes(ere(stateHome)) && APP_PATTERN.includes(ere(SB)),
+  `hold ${HOLD_PATTERN} · app ${APP_PATTERN}`);
+
+
+liveCodex: {
+  const socketProbe = net.createServer();
+  const socketProbePath = socketPath('sandbox-bind-probe', env);
+  const socketPermission = await listenTestSocket(socketProbe, socketProbePath);
+  if (socketPermission.ok) {
+    await new Promise((resolve) => socketProbe.close(resolve));
+  }
+  if (!socketPermission.ok) {
+    skip('live Codex holder integration', socketPermission.reason);
+    break liveCodex;
+  }
 const CHOSEN_TITLE = 'Codex named slice';
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cdx', '--title', CHOSEN_TITLE, '--harness', 'codex'], { cwd: ws, env });
@@ -1606,16 +1648,6 @@ check(': two Codex workers on one task keep distinct title-based names',
     firstThread: appThread?.name, secondThread: secondThread?.name }));
 if (secondRef) await codexDriver.stop(secondRef);
 
-const modeEnv = { ...env, PROMPTOBUS_CODEX_HOME: path.join(SB, 'fresh-mode-state') };
-const modeRef = 'fresh-mode-probe';
-writeSession({ ref: modeRef }, modeEnv);
-const sessionsMode = statSync(sessionsDir(modeEnv)).mode & 0o777;
-check(': a freshly created Codex sessions directory is private',
-  process.platform === 'win32' || sessionsMode === 0o700,
-  process.platform === 'win32'
-    ? 'win32: POSIX mode assertion skipped because Windows uses ACLs'
-    : sessionsMode.toString(8));
-dropSession(modeRef, modeEnv);
 
 const timeEnv = { ...env, [CURRENT_TIME_VAR]: '1' };
 planParticipant(HARNESS, 'worker:time', { turns: [{ do: [] }] });
@@ -2078,17 +2110,6 @@ deafServer.close();
 rmSync(deafSock, { force: true });
 dropSession(deafRef, process.env);
 
-const deadRef = 'dead-probe';
-writeSession({
-  ref: deadRef, state: 'dead', threadId: 't-dead', holderPid: process.pid,
-  error: 'app-server exited (9)',
-}, process.env);
-const deadView = codexDriver.inspect(deadRef);
-check(': inspect at state=dead — stall, even if holderPid is alive',
-  deadView.state === 'stale' && deadView.stall?.kind === 'stale' && /died|exited/.test(deadView.stall.reason),
-  JSON.stringify(deadView));
-dropSession(deadRef, process.env);
-
 // Holder and app-server processes of THIS file, and nobody else's.
 //
 // `pgrep -f` reads the whole machine, and the patterns here used to be
@@ -2110,25 +2131,10 @@ dropSession(deadRef, process.env);
 // It answers a different question — processes of THIS file that were already up
 // before the refusal — and holders leaked by an earlier run of this same suite are
 // exactly what it filters out.
-const ere = (s) => s.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
-const HOLD_PATTERN = `codex-hold\\.js ${ere(sessionsDir(env))}`;
-// Built from the argv constant rather than retyped, and joined loosely: PB-170 put a
-// global option BETWEEN the binary and the subcommand, and a literal pattern stopped
-// matching — the leak check went green because it found nothing.
-const APP_PATTERN = [ere(`${path.join(SB, 'bin')}/codex.stub.mjs`), ...PARTICIPANT_ARGV.map(ere)].join('.*');
-
 function pgrep(pattern) {
   const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
   return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
 }
-
-// Sentinel over the two patterns above. Widening one back to a bare program name
-// is a one-word edit, and its cost is a red verdict in someone else's run days
-// later — so the sandbox path is required to be in both, here, where the edit
-// happens.
-check(': both process reads are scoped to this file\'s own directories, not to a program name',
-  HOLD_PATTERN.includes(ere(stateHome)) && APP_PATTERN.includes(ere(SB)),
-  `hold ${HOLD_PATTERN} · app ${APP_PATTERN}`);
 
 // Proof that the pattern SEES a live app-server, not merely that it finds none. Without
 // it «no leak» means «found nothing», which is what a literal pattern started meaning the
@@ -2449,4 +2455,5 @@ check('PB-161: done takes the home of a participant whose session died without a
   doneOut.status === 0 && !existsSync(orphanHomeLive),
   `${doneOut.status} · ${orphanHomeLive} · ${doneOut.out.slice(-400)}`);
 
+}
 restore();

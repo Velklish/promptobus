@@ -13,10 +13,11 @@
 // `knockSocket`, the contact point arrives in the store through `onJoin` of a live
 // MCP server. Only the binary is substituted.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
-import { makeSandbox, makeSockPath } from './sandbox.mjs';
+import { check, skip } from './check.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath } from './sandbox.mjs';
 import {
   authorErrors, claudeConfigDir, diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant,
   readLog, readTrace, sessionByName, stopAll, traceFile, waitFor,
@@ -55,6 +56,12 @@ writeFileSync(CFG, JSON.stringify({
 }, null, 2));
 
 const sock = makeSockPath('a2h-');
+const socketProbe = net.createServer();
+const socketProbePath = sock('sandbox-bind-probe');
+const socketPermission = await listenTestSocket(socketProbe, socketProbePath);
+if (socketPermission.ok) {
+  await new Promise((resolve) => socketProbe.close(resolve));
+}
 // The harness home is created by the stand itself and outside the sandbox: otherwise
 // cleanup on exit is a no-op — the sandbox hook removes the directory before the stand
 // has time to kill its processes.
@@ -91,6 +98,11 @@ const emptyList = claude('agents', '--json');
 check('an empty registry prints as an empty array, not a refusal',
   emptyList.stdout.trim() === '[]', emptyList.stdout);
 
+liveHarness: {
+  if (!socketPermission.ok) {
+    skip('live harness socket integration', socketPermission.reason);
+    break liveHarness;
+  }
 const bg = claude('--bg', '--name', NAME, '--mcp-config', CFG, '--model', 'opus', 'participant prompt');
 check('claude --bg reported in the form the mechanism parses the session id from',
   bg.status === 0 && /backgrounded · [0-9a-f]{6,} · /.test(bg.stdout), `${bg.status}: ${bg.stdout}${bg.stderr}`);
@@ -186,6 +198,7 @@ const idempotent = await claudeDriver.stop(NAME);
 check('a second stop is an outcome with its own words, not a refusal',
   idempotent.ok === true && idempotent.stopped === false, JSON.stringify(idempotent));
 
+}
 // --- diagnosis from the trace -------------------------------------------------
 
 // Scenario errors do not stop the participant, and E2E goes red on later steps: the

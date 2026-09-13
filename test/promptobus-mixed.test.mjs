@@ -38,8 +38,8 @@
 // pool load those thresholds either go red on working code or go green on nothing.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { check } from './check.mjs';
-import { makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
+import { check, skip } from './check.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
 import { REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
@@ -179,8 +179,12 @@ const report = await runScenario({
   // A second review round is the subject of this task: the Codex reviewer gets a NEW
   // diff at the same address, without a second session.
   reviewRounds: 2,
+  listenSocket: listenTestSocket,
 });
 
+if (report.skipped) {
+  skip('the mixed-harness orchestration loop requires a local Unix socket', report.skipped);
+} else {
 process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}`
   + ` · total ${(report.totalMs / 1000).toFixed(1)} s\n`);
 
@@ -223,6 +227,7 @@ check('no Cursor pane and no Codex thread left after the run — there was nothi
   panes.length === 0 && threads.length === 0 && heldThreads.length === 0,
   `panes ${JSON.stringify(panes.map((s) => s.name))} · threads ${JSON.stringify(threads.map((r) => r.threadId))}`
   + ` · live holders ${JSON.stringify(heldThreads.map((r) => r.holderPid))}`);
+}
 
 // Teardown order is the reverse of install: `withStubPath` restores PATH to the value
 // it saw ITSELF, and tearing down in install order would return a PATH without the

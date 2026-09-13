@@ -24,11 +24,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
+import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { check, skip } from './check.mjs';
+import { listenTestSocket, makeSandbox, makeSockDir } from './sandbox.mjs';
 import { SOCK_PREFIXES } from './sock-prefixes.mjs';
 import { SUITE_PREFIXES, sweepTestSandboxes, sweepTestSockets } from './tmpdir-sweep.mjs';
 import {
@@ -233,31 +234,54 @@ check(': liveness evidence preserves a live neighbouring socket directory',
 // Exercise the default probe, not only the injected predicate above. The
 // fixture uses a short relative root so the Unix socket path stays below
 // sun_path even when the runner diverts the suite's normal TMPDIR.
+const fakeListenError = (code) => {
+  const server = new EventEmitter();
+  server.listen = () => queueMicrotask(() => {
+    const error = Object.assign(new Error(`listen ${code}: probe`), { code, syscall: 'listen' });
+    server.emit('error', error);
+  });
+  return server;
+};
+const permissionRefusals = await Promise.all(['EACCES', 'EPERM']
+  .map((code) => listenTestSocket(fakeListenError(code), 'ignored')));
+check(': the socket skip primitive recognizes only measured permission refusals',
+  permissionRefusals.every((result) => result.ok === false && /listen E(?:ACCES|PERM)/.test(result.reason)),
+  JSON.stringify(permissionRefusals));
+let ordinaryBindError = null;
+try {
+  await listenTestSocket(fakeListenError('EINVAL'), 'ignored');
+} catch (error) {
+  ordinaryBindError = error;
+}
+check(': the socket skip primitive rejects a non-permission listen error',
+  ordinaryBindError?.code === 'EINVAL', ordinaryBindError?.message ?? '(no error)');
+
 if (process.platform !== 'win32') {
-  const SOCKET_FIXTURE = mkdtempSync('promptobus-sweep-socket-');
+  const socketFixture = makeSockDir('a2s-');
   const server = net.createServer();
+  const plain = path.join(socketFixture.dir, 'plain');
+  const empty = path.join(socketFixture.dir, 'empty');
+  mkdirSync(plain);
+  mkdirSync(empty);
+  writeFileSync(path.join(plain, 'plain.sock'), 'not a socket\n');
+  check(': a plain .sock file is not a live socket', !socketDirIsLive(plain), plain);
+  check(': an empty socket directory is not live', !socketDirIsLive(empty), empty);
   let listening = false;
   let probeError = null;
   try {
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(path.join(SOCKET_FIXTURE, 'live.sock'), resolve);
-    });
-    listening = true;
-    const plain = path.join(SOCKET_FIXTURE, 'plain');
-    const empty = path.join(SOCKET_FIXTURE, 'empty');
-    mkdirSync(plain);
-    mkdirSync(empty);
-    writeFileSync(path.join(plain, 'plain.sock'), 'not a socket\n');
-    check(': a live Unix socket is held by the default probe', socketDirIsLive(SOCKET_FIXTURE), SOCKET_FIXTURE);
-    check(': a plain .sock file is not a live socket', !socketDirIsLive(plain), plain);
-    check(': an empty socket directory is not live', !socketDirIsLive(empty), empty);
+    const bound = await listenTestSocket(server, socketFixture.sock('live'));
+    if (!bound.ok) {
+      skip(': default liveness checks require a local Unix socket', bound.reason);
+    } else {
+      listening = true;
+      check(': a live Unix socket is held by the default probe', socketDirIsLive(socketFixture.dir), socketFixture.dir);
+    }
   } catch (error) {
     probeError = error;
     check(': the socket probe fixture starts', false, error?.message ?? String(error));
   } finally {
     if (listening) await new Promise((resolve) => server.close(resolve));
-    rmSync(SOCKET_FIXTURE, { recursive: true, force: true });
+    rmSync(socketFixture.dir, { recursive: true, force: true });
   }
   if (probeError) console.error(`socket probe fixture: ${probeError.message ?? probeError}`);
 } else {

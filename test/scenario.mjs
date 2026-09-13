@@ -292,7 +292,7 @@ function startMcp(env, cwd) {
 
 // A real listener on a real socket: warden postcards arrive here on the same wire they
 // arrive on in a live session — an auth line and then the injection JSON.
-function startInbox(socketPath, token) {
+function startInbox(socketPath, token, listenSocket = null) {
   const seen = [];
   const server = createServer((conn) => {
     let data = '';
@@ -314,7 +314,8 @@ function startInbox(socketPath, token) {
   });
   return {
     seen,
-    listen: () => new Promise((res) => server.listen(socketPath, res)),
+    listen: () => (listenSocket ? listenSocket(server, socketPath)
+      : new Promise((res) => server.listen(socketPath, res))),
     close: () => new Promise((res) => server.close(res)),
   };
 }
@@ -461,7 +462,7 @@ function participantHarness(harness, address, flags) {
  * [check.mjs](check.mjs) helper, in a live run — its own report collector.
  */
 export async function runScenario({
-  check, harness, sandbox, workspace = null, timeouts = {}, trace = () => {}, reviewRounds = 1,
+  check, harness, sandbox, workspace = null, timeouts = {}, trace = () => {}, reviewRounds = 1, listenSocket = null,
 }) {
   const step = timeouts.step ?? 30000;
   const stall = timeouts.stall ?? 75000;
@@ -495,8 +496,13 @@ export async function runScenario({
   // person's.
   const orchSock = harness.sock('orchestrator');
   const orchToken = 'e2e-orchestrator-token';
-  const inbox = startInbox(orchSock, orchToken);
-  await inbox.listen();
+  const inbox = startInbox(orchSock, orchToken, listenSocket);
+  const listening = await inbox.listen();
+  if (listening?.ok === false) {
+    return {
+      timings: [], totalMs: 0, postcards: [], mechanism: { declared: PROMPTOBUS_BIN, reported: null }, skipped: listening.reason,
+    };
+  }
 
   const orchEnv = {
     ...process.env,

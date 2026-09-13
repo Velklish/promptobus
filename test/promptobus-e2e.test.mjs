@@ -18,8 +18,8 @@
 // The warden is therefore lifted as the FIRST step, before spawn — everything the scenario
 // manages to do before the silent turn is subtracted from that wait.
 import path from 'node:path';
-import { check } from './check.mjs';
-import { makeSandbox, makeSockPath } from './sandbox.mjs';
+import { check, skip } from './check.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath } from './sandbox.mjs';
 import {
   diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant, readLog, stopAll,
 } from './harness.mjs';
@@ -63,8 +63,13 @@ const harness = {
   cleanup: () => {},
 };
 
-const report = await runScenario({ check, harness, sandbox: SB, timeouts: { step: 30000, stall: 75000 } });
+const report = await runScenario({
+  check, harness, sandbox: SB, timeouts: { step: 30000, stall: 75000 }, listenSocket: listenTestSocket,
+});
 
+if (report.skipped) {
+  skip('the full E2E orchestration loop requires a local Unix socket', report.skipped);
+} else {
 // Step durations are always printed: they show what in the file is waiting, and they also
 // go into the task measurement. This is not a verdict — a number, not a sentence.
 process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}`
@@ -80,4 +85,5 @@ const left = await stopAll(HARNESS);
 check('no participant processes left after the run — there was nothing to kill',
   before.length === 0 && left.length === 0,
   `left in the registry ${JSON.stringify(before.map((s) => s.name))} · survived kill ${JSON.stringify(left)}`);
+}
 restore();

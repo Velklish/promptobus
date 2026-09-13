@@ -27,6 +27,25 @@ import { HARNESS_IDENTITY_VARS } from './hygiene.mjs';
 
 const SB = makeSandbox('promptobus-runner-');
 const here = path.dirname(fileURLToPath(import.meta.url));
+const checkUrl = JSON.stringify(pathToFileURL(path.join(here, 'check.mjs')).href);
+const verdictProcess = (body) => spawnSync(process.execPath, [
+  '--input-type=module', '--eval', `import { check, skip } from ${checkUrl}; ${body}`,
+], { encoding: 'utf8' });
+const ordinaryFailure = verdictProcess(
+  "check('ordinary failure', false, 'probe'); skip('socket-dependent group', 'listen EPERM: probe');",
+);
+// This audits check() itself, so its failure cannot depend on the helper under test.
+if (ordinaryFailure.status !== 1) process.exitCode = 1;
+check(': an ordinary failed verdict stays red when skip exists',
+  ordinaryFailure.status === 1 && /✖ ordinary failure — probe/.test(ordinaryFailure.stdout)
+  && /↷ SKIP socket-dependent group — listen EPERM: probe/.test(ordinaryFailure.stdout)
+  && /0\/2 passed, 1 skipped/.test(ordinaryFailure.stdout),
+  `status=${ordinaryFailure.status} · ${ordinaryFailure.stdout}`);
+const explicitSkip = verdictProcess("skip('socket-dependent group', 'listen EPERM: probe');");
+check(': an explicit skip is not passed and exits cleanly with its reason',
+  explicitSkip.status === 0 && /↷ SKIP socket-dependent group — listen EPERM: probe/.test(explicitSkip.stdout)
+  && /0\/1 passed, 1 skipped/.test(explicitSkip.stdout),
+  `status=${explicitSkip.status} · ${explicitSkip.stdout}`);
 
 const src = readFileSync(path.join(here, 'run.mjs'), 'utf8');
 const CAP_MS = 2000;
@@ -83,6 +102,7 @@ function plant(dir, source, { watchdog = false } = {}) {
   writeFileSync(path.join(dir, 'run.mjs'), source);
   copyFileSync(path.join(here, 'hygiene.mjs'), path.join(dir, 'hygiene.mjs'));
   writeFileSync(path.join(dir, 'home.mjs'), watchdog ? homeCopy : homeSrc);
+  copyFileSync(path.join(here, 'check.mjs'), path.join(dir, 'check.mjs'));
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
 }
 plant(SB, copy);
@@ -145,6 +165,28 @@ async function runCopy(dir, env = {}) {
   closeSync(fd);
   return { status: code, out: readFileSync(log, 'utf8') };
 }
+const SB_SKIP = makeSandbox('promptobus-runner-skip-');
+plant(SB_SKIP, src);
+writeFileSync(path.join(SB_SKIP, 'a-skip.test.mjs'),
+  "import { skip } from './check.mjs';\nskip('socket-dependent group', 'listen EPERM: denied');\n");
+writeFileSync(path.join(SB_SKIP, 'b-live.test.mjs'), "console.log('unskipped file ran');\n");
+const skippedRun = await runCopy(SB_SKIP);
+check(': a run with a fully skipped file stays green but names the skip in its summary',
+  skippedRun.status === 0
+  && /2\/2 test files passed; 1 check skipped in 1 file; 1 fully skipped file \(0 checks passed\): a-skip\.test\.mjs/
+    .test(skippedRun.out),
+  `status=${skippedRun.status} · ${skippedRun.out.slice(-500)}`);
+check(': the runner names the skipped file, verdict, and permission reason',
+  /a-skip\.test\.mjs: ↷ SKIP socket-dependent group — listen EPERM: denied/.test(skippedRun.out)
+  && /unskipped file ran/.test(skippedRun.out), skippedRun.out.slice(-500));
+
+writeFileSync(path.join(SB_SKIP, 'c-red.test.mjs'),
+  "import { check } from './check.mjs';\ncheck('ordinary failure', false, 'probe');\n");
+const skippedRedRun = await runCopy(SB_SKIP);
+check(': a red run ends by naming every fully skipped file too',
+  skippedRedRun.status === 1
+  && skippedRedRun.out.trimEnd().endsWith('↷ 1 fully skipped file (0 checks passed): a-skip.test.mjs'),
+  `status=${skippedRedRun.status} · ${skippedRedRun.out.slice(-500)}`);
 
 const { status, out: all } = await runCopy(SB);
 

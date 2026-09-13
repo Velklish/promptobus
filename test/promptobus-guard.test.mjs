@@ -19,9 +19,9 @@ import { spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import { captureSplit } from './console.mjs';
-import { makeSandbox, makeSockPath, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath, stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-guard-');
 const ROOT = realpathSync(SB);
@@ -102,20 +102,20 @@ check(`unread in the mailbox: the verdict names the count and the route via inbo
 // a session that is already ending its turn is too late. This branch would sit under the
 // warden's gate if it were about notification; it's about something else.
 store.claimWarden(HOME, TASK, { cli: 'проба' });
-// The socket path comes from the shared helper: under `npm test` the sandbox is moved into the
-// run directory, and `listen` on such a unix path fails with EINVAL (the sun_path limit), as an
-// unhandled event.
+// The canonical short temp root avoids sun_path; a sandbox refusal is a named skip below.
 const sockPath = makeSockPath('ags-');
 const ORCH_SOCK = sockPath('orch');
 const orchLive = createServer((c) => { c.end(); });
-await new Promise((res, rej) => {
-  orchLive.once('error', rej);
-  orchLive.listen(ORCH_SOCK, res);
-});
-store.writeWake(HOME, TASK, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: SESSION });
-check(': a live warden does not cancel unread mail — the turn is still returned',
-  guardVerdict(HOME, TASK, 'orchestrator')?.key === 'mailbox:2',
-  JSON.stringify(guardVerdict(HOME, TASK, 'orchestrator')));
+const orchListening = await listenTestSocket(orchLive, ORCH_SOCK);
+if (!orchListening.ok) {
+  skip(': a live warden does not cancel unread mail — local Unix socket unavailable',
+    orchListening.reason);
+} else {
+  store.writeWake(HOME, TASK, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: SESSION });
+  check(': a live warden does not cancel unread mail — the turn is still returned',
+    guardVerdict(HOME, TASK, 'orchestrator')?.key === 'mailbox:2',
+    JSON.stringify(guardVerdict(HOME, TASK, 'orchestrator')));
+}
 store.clearWarden(HOME, TASK);
 
 store.readInbox(HOME, TASK, 'orchestrator');
@@ -967,4 +967,4 @@ check('successor: the mailbox after a hint is untouched — the guard is not a r
   store.countInbox(HOME, SUCC, 'orchestrator') === 2
   && store.taskOwner(HOME, SUCC) === OLD_ORCH,
   `${store.countInbox(HOME, SUCC, 'orchestrator')} · ${store.taskOwner(HOME, SUCC)}`);
-orchLive.close();
+if (orchListening.ok) orchLive.close();

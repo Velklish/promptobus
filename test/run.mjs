@@ -386,6 +386,18 @@ if (!files.length) {
 }
 
 const failed = [];
+const skipped = [];
+const fullySkipped = [];
+function skipLines(out) {
+  return out.split(/\r?\n/).filter((line) => line.startsWith('↷ SKIP '));
+}
+
+function verdictSummary(out) {
+  const matches = [...out.matchAll(/^(\d+)\/(\d+) passed(?:, (\d+) skipped)?$/gm)];
+  const last = matches.at(-1);
+  return last ? { passed: Number(last[1]), total: Number(last[2]), skipped: Number(last[3] ?? 0) } : null;
+}
+
 const FAILURE_TAIL_LINES = 20;
 
 function failureTail(out) {
@@ -452,6 +464,13 @@ function runFile(name) {
 function report({ name, ms, out, why }) {
   console.log(`\n▸ ${name} — ${(ms / 1000).toFixed(1)} s`);
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
+  const fileSkips = skipLines(out);
+  if (fileSkips.length) skipped.push({ name, lines: fileSkips });
+  const verdict = verdictSummary(out);
+  if (!why && fileSkips.length && verdict?.passed === 0
+      && verdict.total === verdict.skipped && verdict.skipped === fileSkips.length) {
+    fullySkipped.push(name);
+  }
   if (why) {
     console.error(`✖ ${name} — failed (${why})`);
     failed.push({ name, why, tail: failureTail(out) });
@@ -616,6 +635,11 @@ if (interrupted) {
   }
 
   const passed = files.length - failed.length;
+  const skippedChecks = skipped.reduce((sum, file) => sum + file.lines.length, 0);
+  const skippedSummary = `${skippedChecks} check${skippedChecks === 1 ? '' : 's'} skipped in `
+    + `${skipped.length} file${skipped.length === 1 ? '' : 's'}`;
+  const fullySkippedSummary = `${fullySkipped.length} fully skipped file${fullySkipped.length === 1 ? '' : 's'}`
+    + ` (0 checks passed): ${fullySkipped.join(', ')}`;
   if (failed.length) {
     console.error(`\n✖ ${failed.length} of ${files.length} files failed, ${passed} passed:`);
     for (const f of failed) {
@@ -624,6 +648,12 @@ if (interrupted) {
         console.error('    output tail:');
         for (const line of f.tail) console.error(`      ${line}`);
       }
+    }
+  }
+  if (skippedChecks) {
+    console.log(`\n↷ ${skippedSummary}:`);
+    for (const file of skipped) {
+      console.log(`  ${file.name}: ${file.lines.join(' | ')}`);
     }
   }
   if (raised.length) {
@@ -637,6 +667,11 @@ if (interrupted) {
     console.error(`  the run directory is ${RUN_TMP}; the sealed PATH is ${SEAL_DIR},`
       + ' and its contents are the REACHABLE_BINARIES list in hygiene.mjs');
   }
-  if (failed.length || raised.length || escaped.length || heldOver.length) process.exitCode = 1;
-  else console.log(`\n${passed}/${files.length} test files passed`);
+  if (failed.length || raised.length || escaped.length || heldOver.length) {
+    process.exitCode = 1;
+    if (fullySkipped.length) console.log(`\n↷ ${fullySkippedSummary}`);
+  }
+  else console.log(`\n${passed}/${files.length} test files passed`
+    + (skippedChecks ? `; ${skippedSummary}` : '')
+    + (fullySkipped.length ? `; ${fullySkippedSummary}` : ''));
 }

@@ -75,15 +75,22 @@ function out(line) {
 // Check verdict: name, condition, and a detail printed only on red.
 export function check(name, cond, detail = '') {
   const ok = !!cond;
-  results.push({ name, ok });
+  results.push({ name, outcome: ok ? 'passed' : 'failed' });
   // The exit code is set on the spot: in the `exit` handler it can no
   // longer be changed, and the check may not live to the file tail.
   if (!ok) process.exitCode = 1;
   out(`${ok ? '✔' : '✖'} ${name}${!ok && detail ? ` — ${detail}` : ''}`);
 }
 
+export function skip(name, reason) {
+  results.push({ name, outcome: 'skipped' });
+  out(`↷ SKIP ${name} — ${String(reason).replace(/\s+/g, ' ').trim() || 'no reason given'}`);
+}
+
 process.on('exit', () => {
-  const passed = results.filter((r) => r.ok).length;
+  const passed = results.filter((r) => r.outcome === 'passed').length;
+  const skipped = results.filter((r) => r.outcome === 'skipped').length;
+  const failed = results.length - passed - skipped;
   // `beforeExit` alone is not enough. An unresolved top-level promise
   // empties the event loop — `beforeExit` fires, the file is counted
   // as having reached the end — and the process exits with code 13
@@ -104,13 +111,13 @@ process.on('exit', () => {
   // `beforeExit` — there it is still `undefined` on both Node 20 and
   // Node 25.
   const code = process.exitCode ?? 0;
-  const expected = passed === results.length ? 0 : 1;
+  const expected = failed === 0 ? 0 : 1;
   if (finished && code === expected) {
-    out(`\n${passed}/${results.length} passed`);
+    out(`\n${passed}/${results.length} passed${skipped ? `, ${skipped} skipped` : ''}`);
     return;
   }
   const last = results.length ? `after check "${results[results.length - 1].name}"` : 'before the first check';
-  out(`\n${passed}/${results.length} passed before abort`);
+  out(`\n${passed}/${results.length} passed${skipped ? `, ${skipped} skipped` : ''} before abort`);
   // The abort reason is not named: the same path takes the file on
   // `process.exit()` from `fail()`, an unhandled exception, and a
   // rejected promise with no handler. Naming one of them sends the

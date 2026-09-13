@@ -23,8 +23,8 @@ import { createServer } from 'node:net';
 import { existsSync, linkSync, mkdirSync, statSync, readFileSync, utimesSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
-import { makeSandbox, makeSockPath, snapshotOfList, stubCommand, withStubPath } from './sandbox.mjs';
+import { check, skip } from './check.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath, snapshotOfList, stubCommand, withStubPath } from './sandbox.mjs';
 import { capture } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-warden-');
@@ -607,7 +607,11 @@ const server = createServer((c) => {
   c.on('data', (d) => { buf += d; });
   c.on('end', () => { seen.push(buf); c.destroy(); });
 });
-await new Promise((res) => server.listen(LIVE_SOCK, res));
+const liveListening = await listenTestSocket(server, LIVE_SOCK);
+if (!liveListening.ok) {
+  skip(': real wire checks require a local Unix socket', liveListening.reason);
+} else {
+
 
 const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'проверка провода');
 await new Promise((res) => setTimeout(res, 50));
@@ -634,11 +638,12 @@ await new Promise((res) => setTimeout(res, 50));
 check('the doctor smoke test connects and sends ONLY auth — it does not touch someone else\'s turn',
   probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1, JSON.stringify(seen));
 
+await new Promise((res) => server.close(res));
+}
+
 const dead = await knockSocket({ socket: sockPath('no-such') }, 'в пустоту');
 check('a nonexistent socket — a failure with a reason, not an exception',
   dead.ok === false && typeof dead.error === 'string', JSON.stringify(dead));
-
-await new Promise((res) => server.close(res));
 
 // --- : the knock goes out on any unread ------------------------------
 //
@@ -656,20 +661,29 @@ const wserver = createServer((c) => {
   c.on('data', (d) => { buf += d; });
   c.on('end', () => { knocks.push(buf); c.destroy(); });
 });
-await new Promise((res) => wserver.listen(WSOCK, res));
+const waitedListening = await listenTestSocket(wserver, WSOCK);
 registerWake(HOME, WAITED, 'worker:api', {
   CLAUDE_CODE_MESSAGING_SOCKET: WSOCK, CLAUDE_CODE_MESSAGING_TOKEN: 'tok312',
 });
 const settle = () => new Promise((res) => setTimeout(res, 50));
+const checkNoWaitedKnock = (name) => {
+  if (!waitedListening.ok) skip(name, waitedListening.reason);
+  else check(name, knocks.length === 0, String(knocks.length));
+};
 
 store.sendMessage(HOME, WAITED, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'бриф' });
 await wdn.wardenRound(HOME, WAITED);
 await settle();
-const wired = (knocks[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
-check(': the knock goes out immediately — unread mail is the whole condition',
-  knocks.length === 1 && wired.length === 2 && wired[0]?.type === 'auth'
-  && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('бриф'),
-  JSON.stringify(knocks).slice(0, 300));
+if (!waitedListening.ok) {
+  skip(': immediate unread-mail knock requires a local Unix socket',
+    waitedListening.reason);
+} else {
+  const wired = (knocks[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
+  check(': the knock goes out immediately — unread mail is the whole condition',
+    knocks.length === 1 && wired.length === 2 && wired[0]?.type === 'auth'
+    && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('бриф'),
+    JSON.stringify(knocks).slice(0, 300));
+}
 
 // --- : a stall does not spawn a notification --------------------------------------
 //
@@ -689,8 +703,7 @@ const BLOCKED = [{ id: 'sb', name: 'Worker: вставший', state: 'blocked',
 knocks.length = 0;
 const rs1 = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
 await settle();
-check(': a stall does not spawn a notification',
-  knocks.length === 0, String(knocks.length));
+checkNoWaitedKnock(': a stall does not spawn a notification');
 const stallLineOf = (taskId, sessions) => {
   const listed = blockedParticipants(HOME, taskId, store.readTask(HOME, taskId).participants, sessions);
   return listed.map((s) => stallLine(s, taskId));
@@ -703,8 +716,9 @@ check(': the stall is named in the warden log',
 knocks.length = 0;
 const rs2 = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
 await settle();
-check(': the same stall a second time floods neither the log nor produces a knock',
-  knocks.length === 0 && rs2.length === 0, `${knocks.length} · ${JSON.stringify(rs2)}`);
+check(': the same stall a second time does not repeat the log',
+  rs2.length === 0, JSON.stringify(rs2));
+checkNoWaitedKnock(': the same stall a second time produces no knock');
 
 // No contact point needed: there's nothing to deliver. The mark is set right away.
 const LOST = 'sup-lost-t20260829-160005';
@@ -713,12 +727,15 @@ store.upsertParticipant(HOME, LOST, store.participantRecord('orchestrator', { ow
 store.upsertParticipant(HOME, LOST, store.participantRecord('worker:api', { name: 'Worker: вставший' }));
 knocks.length = 0;
 const rl1 = await wdn.reportStalls(HOME, LOST, { sessions: snap(LOST, BLOCKED) });
-check(': with no contact point the stall is still written, and there is no knock',
-  knocks.length === 0 && rl1.length === 1 && /worker:api stalled: permission prompt/.test(rl1[0]),
-  `${knocks.length} · ${JSON.stringify(rl1)}`);
+await settle();
+check(': with no contact point the stall is still written',
+  rl1.length === 1 && /worker:api stalled: permission prompt/.test(rl1[0]), JSON.stringify(rl1));
+checkNoWaitedKnock(': a task with no contact point produces no knock');
 const rl2 = await wdn.reportStalls(HOME, LOST, { sessions: snap(LOST, BLOCKED) });
-check(': a repeat with no socket produces no knock either',
-  knocks.length === 0 && rl2.length === 0, `${knocks.length} · ${JSON.stringify(rl2)}`);
+await settle();
+check(': a repeat with no contact point does not repeat the log',
+  rl2.length === 0, JSON.stringify(rl2));
+checkNoWaitedKnock(': a repeat with no contact point produces no knock');
 
 // The participant unstuck — the mark is cleared, or its next stall with the same reason
 // would not count as fresh.
@@ -727,35 +744,39 @@ await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, ALIVE_AGAIN) });
 knocks.length = 0;
 const rsAgain = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
 await settle();
-check(': the participant unstuck and stalled again — a new log entry, no knock',
-  knocks.length === 0 && rsAgain.length === 1 && /worker:api stalled: permission prompt/.test(rsAgain[0]),
-  `${knocks.length} · ${JSON.stringify(rsAgain)}`);
+check(': the participant unstuck and stalled again — a new log entry',
+  rsAgain.length === 1 && /worker:api stalled: permission prompt/.test(rsAgain[0]),
+  JSON.stringify(rsAgain));
+checkNoWaitedKnock(': the participant stalled again without a knock');
 
 const later = (n) => Date.now() + n * (wdn.KNOCK_RETRY_SEC * 1000 + 1000);
 knocks.length = 0;
 await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED), now: later(1) });
 await settle();
-check(': the re-knock threshold does not repeat the stall — the postcard was removed along with the repeats',
-  knocks.length === 0, String(knocks.length));
+checkNoWaitedKnock(': the re-knock threshold sends no stall postcard');
 
 const OTHER = [{ id: 'sb', name: 'Worker: вставший', state: 'blocked', pid: process.pid, waitingFor: 'sandbox request' }];
 knocks.length = 0;
 const rsOther = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, OTHER), now: later(10) });
 await settle();
 const otherLine = stallLineOf(STALLED, snap(STALLED, OTHER))[0];
-check(': a change of reason — a new log entry, no knock',
-  knocks.length === 0 && rsOther.length === 1 && rsOther[0] === otherLine
+check(': a change of reason — a new log entry',
+  rsOther.length === 1 && rsOther[0] === otherLine
   && /sandbox request/.test(rsOther[0]),
-  `${knocks.length} · ${JSON.stringify(rsOther)}`);
+  JSON.stringify(rsOther));
+checkNoWaitedKnock(': a change of stall reason produces no knock');
 
 knocks.length = 0;
 const rn = await wdn.reportStalls(HOME, STALLED, { sessions: null });
+await settle();
 check(': an unparsed session list produces no stall',
-  knocks.length === 0 && rn.length === 0, JSON.stringify(rn));
+  rn.length === 0, JSON.stringify(rn));
+checkNoWaitedKnock(': an unparsed session list produces no knock');
 const afterUnknown = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, OTHER) });
 await settle();
 check(': not-known does not erase the mark — the same stall is not repeated in the log',
-  knocks.length === 0 && afterUnknown.length === 0, `${knocks.length} · ${JSON.stringify(afterUnknown)}`);
+  afterUnknown.length === 0, JSON.stringify(afterUnknown));
+checkNoWaitedKnock(': not-known produces no knock');
 
 const NOWAKE = 'sup-nowake-t20260829-160006';
 store.createTask(HOME, { id: NOWAKE, title: 'стоп без сокета оркестратора', owner: SESSION });
@@ -765,7 +786,7 @@ const rnw = await wdn.reportStalls(HOME, NOWAKE, { sessions: snap(NOWAKE, BLOCKE
 check(': the orchestrator never handed over a socket — the stall is still in the log, no knock',
   rnw.length === 1 && /worker:api stalled: permission prompt/.test(rnw[0]), JSON.stringify(rnw));
 
-await new Promise((res) => wserver.close(res));
+if (waitedListening.ok) await new Promise((res) => wserver.close(res));
 
 // --- heartbeat and exit branches ------------------------------
 
@@ -914,7 +935,7 @@ const lserver = createServer((c) => {
   c.on('data', (d) => { buf += d; });
   c.on('end', () => { lastCards.push(buf); c.destroy(); });
 });
-await new Promise((res) => lserver.listen(LSOCK, res));
+const lastListening = await listenTestSocket(lserver, LSOCK);
 registerWake(HOME, LAST, 'orchestrator', {
   CLAUDE_CODE_MESSAGING_SOCKET: LSOCK, CLAUDE_CODE_MESSAGING_TOKEN: 'toklast',
 });
@@ -941,10 +962,15 @@ await new Promise((res) => setTimeout(res, 100));
 check(': the loop exited on an emptied-out task',
   /exited: no live participants remain/.test(lastOut), lastOut);
 const lastLog = store.tailWardenLog(HOME, LAST, 40);
-check(': the last stall is in the log on that same loop — no postcard',
-  lastCards.length === 0 && lastLog.some((l) => /worker:api GONE/.test(l)),
-  `cards ${lastCards.length} · ${lastLog.slice(-8).join(' | ')}`);
-await new Promise((res) => lserver.close(res));
+check(': the last stall is in the log on that same loop',
+  lastLog.some((l) => /worker:api GONE/.test(l)), lastLog.slice(-8).join(' | '));
+if (!lastListening.ok) {
+  skip(': the last stall sends no postcard over a local Unix socket', lastListening.reason);
+} else {
+  check(': the last stall sends no postcard on that same loop',
+    lastCards.length === 0, `cards ${lastCards.length}`);
+}
+if (lastListening.ok) await new Promise((res) => lserver.close(res));
 
 // The loop failed repeatedly — the process exits with a reason, rather than grinding through
 // failures until the ceiling. The failure is real: a directory sits where health.json should
@@ -2148,8 +2174,6 @@ check('successor: before claim a knock to the dead socket falls back to self-wak
 
 store.claimOwnership(HOME, HEIR_TASK, NEW_ORCH);
 const HEIR_SOCK = sockPath('heir-live');
-const heirSrv = createServer((c) => { c.end(); });
-await new Promise((res) => heirSrv.listen(HEIR_SOCK, res));
 const handed = registerWake(HOME, HEIR_TASK, 'orchestrator', {
   CLAUDE_CODE_MESSAGING_SOCKET: HEIR_SOCK,
   CLAUDE_CODE_MESSAGING_TOKEN: 'new',
@@ -2167,6 +2191,11 @@ check('successor: after claim the notification reaches the new socket',
   && store.readHealth(HOME, HEIR_TASK).orchestrator?.channel === 'socket'
   && !delivered.events.some((e) => /fell back to self-wake orchestrator/.test(e)),
   JSON.stringify({ calls: afterClaim.calls.map((c) => c.endpoint.socket), health: store.readHealth(HOME, HEIR_TASK).orchestrator, events: delivered.events }));
+const heirSrv = createServer((c) => { c.end(); });
+const heirListening = await listenTestSocket(heirSrv, HEIR_SOCK);
+if (!heirListening.ok) {
+  skip(': successor status over a live socket requires local Unix sockets', heirListening.reason);
+} else {
 // The socket is still listening: otherwise existsSync after close reads "dead" again, and a
 // naive "the orchestrator is always dead" printout on the ENOENT check would have stayed
 // green.
@@ -2175,6 +2204,7 @@ check('successor: with a live socket after claim, status does not call the owner
   /alarm: socket handed over/.test(liveOrch) && !/is dead since/.test(liveOrch),
   liveOrch);
 heirSrv.close();
+}
 
 const CLAIM_EMPTY = 'claim-empty-t20260904-050000';
 store.createTask(HOME, { id: CLAIM_EMPTY, title: 'claim без непрочитанного', owner: OLD_ORCH });

@@ -44,7 +44,7 @@
 // written in JS, and `.cmd` with `#!/bin/sh` would drift not in three
 // lines but in two different programs — exactly the problem the script
 // was unified onto one language to avoid.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -235,6 +235,9 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
 // seventy-eight and does not depend on the machine. The helper
 // bypasses the run `TMPDIR` on purpose, so the directory is removed
 // not by the runner but by the same exit hooks as a sandbox.
+export const TEST_SOCKET_ROOT = process.platform === 'win32' ? null : realpathSync('/tmp');
+const SOCKET_PERMISSION_CODES = new Set(['EACCES', 'EPERM']);
+
 export function makeSockPath(prefix) {
   return makeSockDir(prefix).sock;
 }
@@ -250,6 +253,23 @@ export function makeSockDir(prefix) {
   if (process.platform === 'win32') {
     return { dir: null, sock: (name) => `\\\\.\\pipe\\${prefix}${process.pid}-${name}` };
   }
-  const dir = keepUntilExit(mkdtempSync(path.join('/tmp', prefix)));
+  const dir = keepUntilExit(mkdtempSync(path.join(TEST_SOCKET_ROOT, prefix)));
   return { dir, sock: (name) => path.join(dir, `${name}.sock`) };
+}
+
+export function listenTestSocket(server, socketPath) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      if (error?.syscall === 'listen' && SOCKET_PERMISSION_CODES.has(error?.code)) {
+        resolve({ ok: false, reason: error.message ?? `listen ${error.code}` });
+        return;
+      }
+      reject(error);
+    };
+    server.once('error', onError);
+    server.listen(socketPath, () => {
+      server.off('error', onError);
+      resolve({ ok: true, reason: null });
+    });
+  });
 }
