@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The Codex driver's LISTED check no longer depends on how fast the file runs.** A stale inspect view inside the 30 s registration window prints "is starting" by design, and the check reached that branch on a fast runner — the participant record is now aged past the window by hand, with the precondition asserted. Its status line is picked by the whole address instead of a substring, so a neighbour whose address starts with the same text (`worker:cdx-second`) cannot be read as the subject. Test-only; the status branches themselves are unchanged. (PB-159.1)
+- **The Codex driver's LISTED check no longer depends on how fast the file runs.** A stale inspect view inside the 30 s registration window prints "is starting" by design, and on a fast runner the check reached that branch — locally the record was only 3.5 s past the window. It is now aged past the window by hand, with the precondition asserted. Aging moves the record to the tail of the journal, so its status line is picked by the whole address rather than a substring a neighbour's address also carries (`worker:cdx-second`), and a picker miss now reads as empty instead of falling back to the whole output. Test-only; the status branches themselves are unchanged. (PB-159.1)
 
 ## [0.8.0] — 2026-09-13
 

@@ -2429,14 +2429,17 @@ check(': a log write under a removed registry does not rebuild the tree',
     }
   }
   const listedOut = capture(() => printStatus(ws, { task: TASK, sessions: listedSnap }));
-  // Picked by the whole address, not a substring: `worker:cdx-second` contains
-  // `worker:cdx`, and the journal order is not ours to rely on.
+  // Picked by the whole address: `worker:cdx-second` contains `worker:cdx`, and the
+  // aging above moved this record to the tail of the journal, so the neighbour now
+  // prints first. A miss falls to '' — falling back to the whole output would let the
+  // regexps find the subject's text on somebody else's line and pass having picked
+  // nothing.
   const listedLine = String(listedOut).split('\n')
-    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? String(listedOut);
+    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? '';
   check(': promptobus status prints LISTED for a stale Codex inspect view',
     /is LISTED, but there is no process behind it/.test(listedLine)
       && /There will be no messages from it/.test(listedLine),
-    listedLine.slice(-800));
+    listedLine ? listedLine.slice(-800) : `no line starting with "${WORKER} \u00b7" in:\n${String(listedOut).slice(-800)}`);
 }
 
 // If the reap did not happen the checks above are already red; leaving the processes
