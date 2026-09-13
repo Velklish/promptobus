@@ -129,7 +129,7 @@ promptobus done
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
-| `promptobus status` | Active tasks: participants, unread mail, session state, routing and review-round counts |
+| `promptobus status` | Active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
 | `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
@@ -151,6 +151,8 @@ promptobus done
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 
 The full names a session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other two. Without `task` the server uses `PROMPTOBUS_TASK`, then the session's binding, then the only active task.
+
+A worker sends an artifact named by its result before sending that result, reads the landed filename from the immediate reply to its own `promptobus_send` call, and uses it in the header without ending the turn. The bus may number a colliding filename; reviewers cannot attach files.
 
 ### Model routing
 

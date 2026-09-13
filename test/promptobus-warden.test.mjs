@@ -440,6 +440,28 @@ check('promptobus status on orchestrator ENOENT names the dead owner and the cla
   out);
 check('promptobus status prints the tail of the warden journal', /warden journal/.test(out), out);
 
+// An explicit null is the write-time marker for a lift with no confirmed session. A record
+// from before the marker has neither field, so status must keep the two situations apart.
+const SESSION_REF_TASK = 'session-ref-t20260913-000000';
+store.createTask(HOME, { id: SESSION_REF_TASK, title: 'отсутствующая ссылка на сессию' });
+store.upsertParticipant(HOME, SESSION_REF_TASK,
+  store.participantRecord('worker:explicit-null', { name: 'session-not-recorded', session: null }));
+store.upsertParticipant(HOME, SESSION_REF_TASK,
+  store.participantRecord('worker:legacy', { name: 'legacy-no-reference' }));
+const sessionRefOut = capture(() => status(SB, {
+  task: SESSION_REF_TASK, sessions: snap(SESSION_REF_TASK, []),
+}));
+const sessionRefLine = (address) => sessionRefOut.split('\n').find((line) => line.includes(address)) ?? '';
+check('status names an explicit null as a session reference not recorded at write time',
+  /session reference was not recorded at write time/.test(sessionRefLine('worker:explicit-null')),
+  sessionRefLine('worker:explicit-null') || sessionRefOut);
+check('status keeps the snapshot state alongside the missing-reference diagnostic',
+  /session "session-not-recorded" is not in the list/.test(sessionRefLine('worker:explicit-null')),
+  sessionRefLine('worker:explicit-null') || sessionRefOut);
+check('status names a legacy record without either reference field as incomplete',
+  /participant record is incomplete: no session reference/.test(sessionRefLine('worker:legacy')),
+  sessionRefLine('worker:legacy') || sessionRefOut);
+
 // --- : what a postcard carries -----------------------------------------------
 
 // The text budget is shared across the whole postcard, not a per-message threshold: a batch

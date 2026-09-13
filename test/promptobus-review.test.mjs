@@ -352,7 +352,8 @@ check('PB-204: the reviewer preamble carries the same header and the same bound 
 // The overflow path a worker has does not exist here: file writes are denied to this
 // session, so a rule that sent findings into an attached file could never be obeyed.
 check('PB-204: the reviewer is never told to attach an artifact it is forbidden to create',
-  /You have no artifact to move them into/.test(reviewHandoff)
+  /no artifact filename to quote/.test(reviewHandoff)
+  && /You have no artifact to move them into/.test(reviewHandoff)
   && !/attached with artifactPath/.test(reviewHandoff)
   && plan.settings.permissions.deny.includes('Write'),
   reviewHandoff.slice(0, 900));
@@ -872,6 +873,10 @@ check(`: the refusal for a session that didn't happen names the route to re-rais
 const silentPart = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:cargos-api')?.metadata;
 check(`: the reviewer's record is in place even after the refusal — a repeat will raise it under the same address`,
   !!silentPart, JSON.stringify(store.readTask(home, silentTask.id).participants));
+check(`: the silent reviewer record writes an explicit missing session reference`,
+  !!silentPart
+  && Object.hasOwn(silentPart, 'session') && silentPart.session === null
+  && !Object.hasOwn(silentPart, 'sessionId'), JSON.stringify(silentPart));
 // Review note: only a successful raise clears the `pending` mark. A second upsert also
 // happens on refusal (the session id is appended in every outcome), and applyParticipant
 // replaces the record wholesale — without this branch the record would become
@@ -1895,7 +1900,8 @@ check(': a failed launch refuses instead of staying silent',
 check(': the participant is recorded before launch and the session is not fabricated',
   !!failedReviewer && failedReviewer.repo === 'repos/loads_search/fresh-api'
   && failedReviewer.repoAbs === realpathSync(FRESH) && failedReviewer.name?.startsWith('Review: ')
-  && !failedReviewer.session, JSON.stringify(failedReviewer));
+  && Object.hasOwn(failedReviewer, 'session') && failedReviewer.session === null
+  && !Object.hasOwn(failedReviewer, 'sessionId'), JSON.stringify(failedReviewer));
 // review() itself sets the mark, not the test: without it a repeat of the command would
 // take this record for a live reviewer and send the diff into a mailbox behind which
 // there's nobody.

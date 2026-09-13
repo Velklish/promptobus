@@ -869,7 +869,9 @@ check(': spawn with a claude that did not come up refuses, rather than staying s
 const afterFail = store.participantOf(store.readTask(HOME, FAIL_TASK), 'worker:sboy')?.metadata;
 check(': the participant is recorded, even though the claude launch failed',
   !!afterFail && !!afterFail.worktreeName && !!afterFail.branch, JSON.stringify(afterFail));
-check(': session of one that did not come up is not invented', !!afterFail && !afterFail.session, String(afterFail?.session));
+check(': a failed lift records that its session reference was not recorded at write time',
+  !!afterFail && Object.hasOwn(afterFail, 'session') && afterFail.session === null
+  && !Object.hasOwn(afterFail, 'sessionId'), JSON.stringify(afterFail));
 check(': the refusal names the route — repeat the same command',
   /repeat spawn with the same command/.test(failText), failText);
 // What it is all for: a repeat of the same command no longer hits "the name
@@ -978,9 +980,13 @@ check(`: there is no worker session in claude agents — a refusal, not a succes
 check(`: a refusal on a session that did not come up names the route — repeat spawn`,
   /repeat spawn with the same command/.test(silentText)
   && /There will be no messages from this address/.test(silentText), silentText);
+const silentWorker = store.participantOf(store.readTask(HOME, SILENT_TASK), 'worker:tihiy')?.metadata;
 check(`: the worker record is in place after the refusal too — a repeat will sit in its directory`,
-  !!store.readTask(HOME, SILENT_TASK).participants.find((p) => store.addressOf(p) === 'worker:tihiy'),
-  JSON.stringify(store.readTask(HOME, SILENT_TASK).participants));
+  !!silentWorker, JSON.stringify(silentWorker));
+check(`: the silent worker record writes an explicit missing session reference`,
+  !!silentWorker
+  && Object.hasOwn(silentWorker, 'session') && silentWorker.session === null
+  && !Object.hasOwn(silentWorker, 'sessionId'), JSON.stringify(silentWorker));
 
 // --- : a repeat spawn at a dismissed address calls the slice by the NEW brief ----------
 //
@@ -1561,12 +1567,71 @@ check('PB-201: the worker preamble names the gate record and the schema that exi
   && existsSync(path.join(here, '..', GATE_RECORD_SCHEMA))
   && /type=artifact/.test(handoff) && /git rev-parse HEAD/.test(handoff),
   handoff.slice(-900));
-// The reviewer resolves the record by name, so the name is not the author's choice: a
-// file called anything else is a record nobody finds (review note).
-check('PB-201: the worker is given the file name the reviewer resolves, not a free choice',
+// The reviewer resolves the record by stem, while the bus reply supplies the landed name.
+check('PB-204: the worker quotes its own send reply, including a numbered collision',
   handoff.includes(`\`${GATE_RECORD_STEM}-<your worker slug>.json\``)
-  && /a file named anything else is never found/.test(handoff),
+  && /immediate bus reply to your own/.test(handoff)
+  && /without ending the turn/.test(handoff)
+  && /the bus may append a number/.test(handoff)
+  && !/a file named anything else is never found/.test(handoff),
   handoff.slice(-700));
+
+const { Readable } = await import('node:stream');
+const { createMcpServer } = await import(path.join(here, '..', 'dist', 'index.js'));
+const MCP_ARTIFACT_TASK = 'mcp-artifact-t20260913-120000';
+const MCP_ARTIFACT_ADDRESS = 'worker:mcp-artifact';
+const MCP_ARTIFACT_SESSION = 'mcp-artifact-session';
+const mcpArtifactPath = path.join(SB, 'handoff-gate.patch');
+writeFileSync(mcpArtifactPath, 'gate record\n');
+store.createTask(HOME, { id: MCP_ARTIFACT_TASK, title: 'MCP artifact hand-off' });
+store.upsertParticipant(HOME, MCP_ARTIFACT_TASK,
+  store.participantRecord(MCP_ARTIFACT_ADDRESS, { session: MCP_ARTIFACT_SESSION }));
+const mcpServer = createMcpServer({
+  service: {
+    ...store.busService,
+    resolveTaskId: (home, task, session) => store.resolveTaskId(home, task, session, {
+      spawnRepo: 'promptobus spawn', spawnNewTask: 'promptobus spawn --new-task',
+    }),
+  },
+  protocolVersions: ['2025-06-18'],
+  resolveIdentity: () => ({
+    home: HOME, role: MCP_ARTIFACT_ADDRESS, declaredTask: MCP_ARTIFACT_TASK, session: MCP_ARTIFACT_SESSION,
+  }),
+  serverInfo: () => ({ name: 'promptobus', version: PACKAGE_VERSION }),
+  onJoin: () => {},
+  decorateParticipant: () => [],
+  stalls: () => null,
+  errorText: (event) => 'error: ' + event.kind,
+});
+const mcpCall = async (id, args) => {
+  const output = [];
+  await mcpServer.serve({
+    input: Readable.from([JSON.stringify({
+      jsonrpc: '2.0', id, method: 'tools/call',
+      params: { name: 'promptobus_send', arguments: args },
+    }) + '\n']),
+    output: { write: (chunk) => output.push(chunk) },
+  });
+  return JSON.parse(output.join(''));
+};
+const mcpText = (answer) => answer.result?.content?.map((c) => c.text).join('\n') ?? '';
+const mcpFirst = await mcpCall(1, {
+  to: 'orchestrator', type: 'artifact', body: 'first artifact', artifactPath: mcpArtifactPath,
+});
+const mcpSecond = await mcpCall(2, {
+  to: 'orchestrator', type: 'artifact', body: 'second artifact', artifactPath: mcpArtifactPath,
+});
+const mcpFirstName = mcpText(mcpFirst).match(/· artifact ([^ ·\n]+)/)?.[1] ?? '';
+const mcpSecondName = mcpText(mcpSecond).match(/· artifact ([^ ·\n]+)/)?.[1] ?? '';
+const mcpHeader = 'Gate: ' + mcpSecondName;
+await mcpCall(3, { to: 'orchestrator', type: 'result', body: mcpHeader });
+const mcpMessages = store.readInbox(HOME, MCP_ARTIFACT_TASK, 'orchestrator').messages;
+const mcpResult = mcpMessages.find((message) => message.type === 'result');
+check('PB-204: MCP send returns the landed collision name and the header uses it',
+  mcpFirstName === path.basename(mcpArtifactPath)
+  && mcpSecondName === 'handoff-gate-2.patch'
+  && mcpResult?.body === mcpHeader,
+  mcpFirstName + ' / ' + mcpSecondName + ' / ' + mcpResult?.body);
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });
