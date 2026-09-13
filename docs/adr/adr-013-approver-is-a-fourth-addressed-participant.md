@@ -107,7 +107,7 @@ to `done`, and the task stays active.
   consumer's own card owns those changes and the live acceptance run that proves the
   role in that repository.
 - This change pays the existing closed-list cost but does not redesign its sources.
-  [PB-206.4](../backlog/queue/PB-206.4-model-routing-role-contract-has-independent-copies.md)
+  [PB-206.4](../archive/PB-206.4-model-routing-role-contract-has-independent-copies/task.md)
   records the separate consolidation. In exchange, parity now checks the exported
   runtime lists, both default maps and all six schema surfaces. That check found two
   pre-existing silent disagreements while it was being written: the overlay `byRole`

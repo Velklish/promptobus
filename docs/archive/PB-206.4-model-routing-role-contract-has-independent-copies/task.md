@@ -9,31 +9,43 @@
 
 Finding discovered while adding `approver` in PB-206. The runtime has three independent closed role-list projections:
 
-<!-- quote:../../../lib/model-routing/catalog.js -->
+`lib/model-routing/catalog.js`, до правки:
+
+```js
 export const RULE_ROLES = ['worker', 'reviewer', 'approver'];
-<!-- /quote -->
+```
 
-<!-- quote:../../../lib/model-routing/resolver.js -->
+`lib/model-routing/resolver.js`, до правки:
+
+```js
 export const ROLES = ['worker', 'reviewer', 'approver'];
-<!-- /quote -->
+```
 
-<!-- quote:../../../lib/model-routing/telemetry.js -->
+`lib/model-routing/telemetry.js`, до правки:
+
+```js
   if (!['worker', 'reviewer', 'approver'].includes(p?.role)) return false;
-<!-- /quote -->
+```
 
 Two closed maps in `DEFAULT_POLICY` must repeat the same keys too:
 
-<!-- quote:../../../lib/model-routing/catalog.js -->
-  qualityFloor: Object.freeze({ worker: 5, reviewer: 9, approver: 7 }),
-<!-- /quote -->
+`lib/model-routing/catalog.js`, до правки:
 
-<!-- quote:../../../lib/model-routing/catalog.js -->
+```js
+  qualityFloor: Object.freeze({ worker: 5, reviewer: 9, approver: 7 }),
+```
+
+`lib/model-routing/catalog.js`, до правки:
+
+```js
   byRole: Object.freeze({
     worker: Object.freeze({ allow: Object.freeze({}), deny: Object.freeze({}) }),
     reviewer: Object.freeze({ allow: Object.freeze({}), deny: Object.freeze({}) }),
     approver: Object.freeze({ allow: Object.freeze({}), deny: Object.freeze({}) }),
   }),
-<!-- /quote -->
+```
+
+**Цитаты здесь блоками `quote` не оформлены, и это вынужденно.** Блок `quote` сверяется с диском, а предмет карточки в том и состоял, чтобы этих строк не стало: после починки они исчезли, и блок `quote` на них краснит `lint` у всякого, кто встанет на дерево с правкой. Тот же случай на другой карточке заведён отдельно — `BS-52` в трекере инструмента.
 
 Four JSON schemas repeat the same contract as enums or closed property maps. The
 parity check added in PB-206 found two pre-existing disagreements within ten minutes:
