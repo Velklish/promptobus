@@ -1,7 +1,7 @@
 # PB-210 · Встроенный формат находок не говорит, что метка severity значит, и reviewer занижает её объёмом правки
 
 - **Order:** 310
-- **Scope:** `lib/review.js` (встроенный формат находок в промпте ревьюера), `docs/reference/05-review.md`
+- **Scope:** `lib/review.js` (встроенный формат находок в промпте ревьюера), `docs/reference/03-cli.md` § Review
 - **Created:** 2026-09-13
 - **Dependencies:** none
 

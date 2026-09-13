@@ -314,6 +314,24 @@ check('prompt: mechanical checks are declared unavailable; standalone procedure 
   plan.prompt.includes('were not run')
   && /No findings/.test(plan.prompt)
   && !plan.prompt.includes('report only'));
+// PB-210: the built-in format used to list the labels and define none, and the reviewer
+// filled the label by fix size — measured 154 `minor`, 123 of them `minor` by cost.
+check('PB-210: the built-in finding format defines the label as cost, not as the size of the fix',
+  /The label is the finding's COST/.test(plan.prompt)
+  && /what breaks, or stays unverified, if nobody fixes it/.test(plan.prompt)
+  && /The size of the fix is not the label/.test(plan.prompt)
+  && /A two-line fix is `major` when the cost is high/.test(plan.prompt)
+  && /a large rewrite stays `minor` when the cost is low/.test(plan.prompt)
+  && /Do not write in prose that the cost is really higher than the label/.test(plan.prompt)
+  && /In doubt raise it/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => /COST/.test(l)) ?? plan.prompt);
+// PB-210: the three boundaries are what the label is actually filled from, and each is
+// bound to its own label here — deleting one or swapping two has to go red.
+check('PB-210: each of the three labels carries its own cost rule, and the rules are not interchangeable',
+  /`critical`: it breaks in use, loses data, or grants a right nobody granted\./.test(plan.prompt)
+  && /`major`: a stated contract or rule is broken, or a case the change claims to cover stays unchecked\./.test(plan.prompt)
+  && /`minor`: the cost is local and nothing else depends on it\./.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => /`critical`:/.test(l)) ?? plan.prompt);
 check('prompt: rules — repository (standalone: without a workspace module)',
   plan.prompt.includes(path.join(REPO, 'AGENTS.md')) && !plan.prompt.includes(['.', 'agents/base/rules'].join('')));
 // PB-201: the reviewer runs nothing, so a gate claim reaches it as a record it can read
