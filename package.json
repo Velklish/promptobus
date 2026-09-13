@@ -24,7 +24,7 @@
     "audit": "node scripts/audit-public.mjs",
     "pins": "node scripts/check-pins.mjs",
     "probe": "node scripts/mutation-probe.mjs",
-    "lint:backslop": "npx --yes github:Velklish/backslop#v0.7.0 lint"
+    "lint:backslop": "npx --yes github:Velklish/backslop#v0.8.0 lint"
   },
   "engines": {
     "node": ">=20"
