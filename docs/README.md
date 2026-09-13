@@ -28,6 +28,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-011-a-session-address-is-per-task.md](adr/adr-011-a-session-address-is-per-task.md) | A session's bus address becomes per-task. The `promptobus send` door built for it was withdrawn before release — four review rounds, four major findings of one class — and the missing piece is named: the store keeps no positive binding of a participant address to a session | Accepted |
 | [adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md](adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) | Stopping one participant is a verb of its own — `promptobus stop <address>` — and not a flag on `done` or `dismiss`; an artefact written at birth is erased by nothing but the mechanism that wrote it | Accepted |
 | [adr/adr-013-approver-is-a-fourth-addressed-participant.md](adr/adr-013-approver-is-a-fourth-addressed-participant.md) | Acceptance is the fourth addressed role: an `approver` lifted after green review, with a floor of 7, an empty package deny list and direct worker traffic | Accepted |
+| [adr/adr-014-mcp-session-proof.md](adr/adr-014-mcp-session-proof.md) | MCP-child identity comes from a driver-declared session-record pointer, accepted only for the record's own home, task and address and refreshed at each tool call | Accepted |
 
 ## Cross-cutting principles
 

@@ -1,11 +1,12 @@
 // Regression test for the Promptobus bus MCP server: the `promptobus mcp` subcommand.
 // Run: npm test
 //
-// The client here is scripted: two real stdio processes (orchestrator and worker)
-// speak line-delimited JSON-RPC 2.0 — exactly how Claude Code talks to them.
+// The client here is scripted: real stdio processes speak line-delimited JSON-RPC 2.0,
+// including the minimal child environments measured for participant harnesses.
 // What's under test is the hand-rolled protocol implementation and message delivery between processes.
 import {
-  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync,
+  symlinkSync, writeFileSync,
 } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -19,9 +20,22 @@ const ROOT = realpathSync(SB);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.join(here, '..', 'bin', 'promptobus.js');
 const HOME = path.join(ROOT, '.promptobus');
+const HOME_ALIAS_ROOT = path.join(ROOT, 'workspace-alias');
+symlinkSync(ROOT, HOME_ALIAS_ROOT, process.platform === 'win32' ? 'junction' : 'dir');
+const HOME_ALIAS = path.join(HOME_ALIAS_ROOT, '.promptobus');
 const TASK = 't20260813-090000';
 const WRONG_ROOT = path.join(ROOT, 'other-workspace');
 const WRONG_HOME = path.join(WRONG_ROOT, '.promptobus');
+const MCP_CHILD_GENERIC_NAMES = [
+  'HOME', 'LOGNAME', 'PATH', 'PWD', 'SHELL', 'SHLVL', 'TERM', 'TMPDIR', 'USER', '_', '__CF_USER_TEXT_ENCODING',
+];
+const MCP_CHILD_BASE_ENV = Object.fromEntries(MCP_CHILD_GENERIC_NAMES.map((name) => [
+  name,
+  name === 'HOME' || name === 'PWD' || name === 'TMPDIR' ? ROOT : String(process.env[name] ?? ''),
+]));
+const HARNESS_IDENTITY_NAMES = [
+  'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'CURSOR_CONVERSATION_ID',
+];
 
 // Two full workspaces with a task of the same id reproduce a live bug :
 // the CLI starts from the first one, but the stdio process's cwd is chosen by the MCP client and can
@@ -60,17 +74,16 @@ const canonicalPromptobus = {
 // it used to break this file.
 const strays = [];
 
-function startServer(role, { config = null, cwd = SB, task = TASK, env = {} } = {}) {
+function startServer(role, { config = null, cwd = SB, task = TASK, baseEnv = process.env, env = {} } = {}) {
   const child = spawn(config?.command ?? process.execPath, config?.args ?? [BIN, 'mcp'], {
     cwd,
     env: {
-      ...process.env,
+      ...baseEnv,
       ...(config?.env ?? {}),
       PROMPTOBUS_ROLE: role,
       PROMPTOBUS_TASK: task,
       ...(config ? {} : { PROMPTOBUS_HOME: HOME }),
-      // Session identity is set explicitly: it comes from the environment, and without
-      // this substitution the test would depend on what npm test happened to be run under.
+      // Per-server additions model either command identity or a generated MCP entry.
       ...env,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -157,10 +170,11 @@ check('canonical MCP config pins an absolute PROMPTOBUS_HOME',
 const aliasIdentity = store.resolveIdentity({
   PROMPTOBUS_ROLE: 'orchestrator',
   PROMPTOBUS_TASK: TASK,
-  PROMPTOBUS_HOME: path.join(SB, '.promptobus'),
+  PROMPTOBUS_HOME: HOME_ALIAS,
 }, WRONG_ROOT, { host: hostOf(WRONG_ROOT) });
 check('identity: a symlink alias of PROMPTOBUS_HOME resolves to the same physical form',
-  aliasIdentity.home === HOME, `${aliasIdentity.home} vs ${HOME}`);
+  HOME_ALIAS !== HOME && realpathSync(HOME_ALIAS) === HOME && aliasIdentity.home === HOME,
+  `${HOME_ALIAS} -> ${realpathSync(HOME_ALIAS)}; identity ${aliasIdentity.home}`);
 
 const init = await orch.call('initialize', {
   protocolVersion: '2025-03-26',
@@ -384,12 +398,20 @@ const picked = await loose.call('tools/call', { name: 'promptobus_task', argumen
 check('task: the task argument picks a task when several are active',
   text(picked).includes(`task ${SECOND}`) && text(picked).includes('ревью loads_search/cargos-api'), text(picked));
 
+const codexMcpRecord = path.join(ROOT, 'codex-mcp-session.json');
+writeFileSync(codexMcpRecord, `${JSON.stringify({
+  home: HOME_ALIAS,
+  task: TASK,
+  address: 'worker:cargos-api',
+  threadId: null,
+})}\n`);
+check('PB-206.6 fixture: the measured MCP child base has eleven generic names and no harness identity',
+  Object.keys(MCP_CHILD_BASE_ENV).sort().join(',') === [...MCP_CHILD_GENERIC_NAMES].sort().join(',')
+  && HARNESS_IDENTITY_NAMES.every((name) => !(name in MCP_CHILD_BASE_ENV)),
+  JSON.stringify(Object.keys(MCP_CHILD_BASE_ENV).sort()));
 const directCrossTask = startServer('worker:cargos-api', {
-  env: {
-    CLAUDE_CODE_SESSION_ID: 'direct-worker-session',
-    CODEX_THREAD_ID: '',
-    CURSOR_CONVERSATION_ID: '',
-  },
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: codexMcpRecord, PROMPTOBUS_WARDEN: 'off' },
 });
 await directCrossTask.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 directCrossTask.notify('notifications/initialized');
@@ -402,6 +424,11 @@ check('send: an explicit foreign task cannot auto-register a sender for direct w
   && /no sender participant/.test(text(unknownDirectCrossTask))
   && store.participantOf(store.readTask(HOME, SECOND), 'worker:cargos-api') === null,
   text(unknownDirectCrossTask));
+// Codex starts its MCP child before thread/start returns. The pointer is already there,
+// while the id appears in the same record only after the handshake.
+writeFileSync(codexMcpRecord, `${JSON.stringify({
+  home: HOME_ALIAS, task: TASK, address: 'worker:cargos-api', threadId: 'direct-worker-session',
+})}\n`);
 
 const sentSecond = await worker.call('tools/call', {
   name: 'promptobus_send',
@@ -443,13 +470,95 @@ const heldDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
   arguments: { to: 'approver:cargos-api', type: 'question', body: 'held direct', task: SECOND },
 });
-check('send: the explicit foreign task permits direct traffic only after this session holds its participant address',
+check('PB-206.6 review: a symlink-spelled Codex home proves the same physical held address',
   heldDirectCrossTask.result?.isError !== true
   && /sent question/.test(text(heldDirectCrossTask))
   && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 1,
   text(heldDirectCrossTask));
 directCrossTask.stop();
 
+const pointerlessDirect = startServer('worker:cargos-api', {
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_WARDEN: 'off' },
+});
+await pointerlessDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+pointerlessDirect.notify('notifications/initialized');
+const pointerlessRefusal = await pointerlessDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'no proof', task: SECOND },
+});
+check('PB-206.6: without a driver record pointer the existing direct-route identity refusal remains',
+  pointerlessRefusal.result?.isError === true
+  && /calling harness supplied no session identity/.test(text(pointerlessRefusal)),
+  text(pointerlessRefusal));
+pointerlessDirect.stop();
+
+const relativePointerDirect = startServer('worker:cargos-api', {
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_CODEX_SESSION: path.basename(codexMcpRecord), PROMPTOBUS_WARDEN: 'off' },
+});
+await relativePointerDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+relativePointerDirect.notify('notifications/initialized');
+const relativePointerRefusal = await relativePointerDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'relative proof', task: SECOND },
+});
+check('PB-206.6: an otherwise valid relative record pointer proves no direct sender',
+  relativePointerRefusal.result?.isError === true
+  && /calling harness supplied no session identity/.test(text(relativePointerRefusal)),
+  text(relativePointerRefusal));
+relativePointerDirect.stop();
+
+for (const [label, record] of [
+  ['home', { home: WRONG_HOME, task: TASK, address: 'worker:cargos-api', chatId: 'cursor-worker-session' }],
+  ['task', { home: HOME, task: SECOND, address: 'worker:cargos-api', chatId: 'cursor-worker-session' }],
+  ['address', { home: HOME, task: TASK, address: 'worker:other', chatId: 'cursor-worker-session' }],
+]) {
+  const file = path.join(ROOT, `cursor-mcp-wrong-${label}.json`);
+  writeFileSync(file, `${JSON.stringify(record)}\n`);
+  const mismatched = startServer('worker:cargos-api', {
+    baseEnv: MCP_CHILD_BASE_ENV,
+    env: { PROMPTOBUS_CURSOR_SESSION: file, PROMPTOBUS_WARDEN: 'off' },
+  });
+  await mismatched.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+  mismatched.notify('notifications/initialized');
+  const refused = await mismatched.call('tools/call', {
+    name: 'promptobus_send',
+    arguments: { to: 'approver:cargos-api', type: 'question', body: `wrong ${label}`, task: SECOND },
+  });
+  check(`PB-206.6: a readable session record for another ${label} proves no direct sender`,
+    refused.result?.isError === true
+    && /calling harness supplied no session identity/.test(text(refused)),
+    text(refused));
+  mismatched.stop();
+}
+
+const cursorMcpRecord = path.join(ROOT, 'cursor-mcp-session.json');
+writeFileSync(cursorMcpRecord, `${JSON.stringify({
+  home: HOME,
+  task: TASK,
+  address: 'worker:cargos-api',
+  chatId: 'cursor-worker-session',
+})}\n`);
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+  sessionId: 'cursor-worker-session',
+}));
+const cursorDirect = startServer('worker:cargos-api', {
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_CURSOR_SESSION: cursorMcpRecord, PROMPTOBUS_WARDEN: 'off' },
+});
+await cursorDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+cursorDirect.notify('notifications/initialized');
+const cursorHeldDirect = await cursorDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'cursor held direct', task: SECOND },
+});
+check('PB-206.6: a real-shape Cursor MCP child proves its held address through the session record',
+  cursorHeldDirect.result?.isError !== true
+  && /sent question/.test(text(cursorHeldDirect))
+  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 2,
+  text(cursorHeldDirect));
+cursorDirect.stop();
 const inboxSecond = await loose.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } });
 check('inbox: the task argument fetches the mailbox of the named task',
   text(inboxSecond).includes('отчёт по второй задаче') && text(inboxSecond).includes(`task=${SECOND}`),

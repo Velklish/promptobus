@@ -8,12 +8,25 @@ import { bindSessionIdentity, sessionIdentity } from '../lib/store.js';
 const VARS = Object.fromEntries(
   Object.entries(REGISTRY.drivers).map(([h, d]) => [h, d.options.identityVar]),
 );
+const MCP_RECORDS = Object.fromEntries(
+  Object.entries(REGISTRY.drivers).map(([h, d]) => [h, d.options.mcpIdentity]),
+);
 
 {
   check(': every declared driver answers the identity member — none is left out of the contract',
     Object.values(VARS).every((v) => typeof v === 'string' || v === null)
       && Object.keys(VARS).length === 3,
     JSON.stringify(VARS));
+}
+{
+  check('PB-206.6: every driver answers the distinct MCP-child identity member',
+    MCP_RECORDS.claude === null
+    && MCP_RECORDS.codex?.recordVar === 'PROMPTOBUS_CODEX_SESSION'
+    && MCP_RECORDS.codex?.idField === 'threadId'
+    && MCP_RECORDS.cursor?.recordVar === 'PROMPTOBUS_CURSOR_SESSION'
+    && MCP_RECORDS.cursor?.idField === 'chatId'
+    && new Set(Object.values(MCP_RECORDS).filter(Boolean).map((proof) => proof.recordVar)).size === 2,
+    JSON.stringify(MCP_RECORDS));
 }
 
 {

@@ -307,7 +307,7 @@ export function createMcpServer(options: McpOptions): {
   // duration: `ping` and neighbouring calls of the same session will wait for
   // it to finish. Detach that kind from this queue.
   async function serve({ input, output }: { input: McpInput; output: McpOutput }): Promise<void> {
-    const identity = resolveIdentity();
+    const initialIdentity = resolveIdentity();
     // Tasks this CONNECTION has already entered. The mark lives on the
     // connection, not on the factory: the server is lifted by the session
     // process, and enter is a property of the conversation, not of the module.
@@ -330,6 +330,7 @@ export function createMcpServer(options: McpOptions): {
           write({ jsonrpc: '2.0', id: null, error: { code: -32700, message: errorText({ kind: 'parse' }) } });
           continue;
         }
+        const identity = msg.method === 'tools/call' ? resolveIdentity() : initialIdentity;
         const answer = handle(msg, identity, joined);
         if (answer) write(answer);
       }

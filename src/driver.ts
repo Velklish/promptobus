@@ -271,6 +271,14 @@ export interface DriverPhrases {
   naming?: string;
 }
 
+/** A session record the harness puts in its participant MCP server's environment. */
+export interface McpIdentityRecord {
+  /** Environment variable carrying the absolute record path. */
+  recordVar: string;
+  /** Record field carrying the harness session id stored on the participant. */
+  idField: string;
+}
+
 /**
  * Allowed option values and harness versions. The consumer does not know them and
  * has no right to know: effort levels, permission modes and deniable tools are the
@@ -334,6 +342,8 @@ export interface DriverOptions {
    * core then says so instead of returning a plausible value. See 02-host.md and ADR-010.
    */
   identityVar: string | null;
+  /** Record proof for an MCP child, accepted only when home, task and address match. See 02-host.md and ADR-014. */
+  mcpIdentity: McpIdentityRecord | null;
   /** Ancestor variables that must not reach the session. */
   envDrop: string[];
   /**

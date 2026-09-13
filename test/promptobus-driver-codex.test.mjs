@@ -69,7 +69,7 @@ const {
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
   TURN_STARTED_TIMEOUT_MS, holderLogFile, socketPath, startHolder, waitReady, reapHolder,
-  codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir, SESSION_ENV_VAR, PARTICIPANT_ARGV,
+  codexMcpServers, codexMcpName, codexMcpPrefix, sessionsDir, sessionFile, SESSION_ENV_VAR, PARTICIPANT_ARGV,
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands } = await import(path.join(here, '..', 'lib', 'status.js'));
@@ -1347,6 +1347,11 @@ check('PB-166.2: the warden switch and its trace reach the participant MCP entry
   // The session file survives beside them: the forward adds, it does not swap.
   && typeof wardenOnBus[SESSION_ENV_VAR] === 'string' && wardenOnBus[SESSION_ENV_VAR] !== ''
   && !('PROMPTOBUS_WARDEN' in wardenOffBus) && !('PROMPTOBUS_WARDEN_TRACE' in wardenOffBus),
+  JSON.stringify({ set: wardenOnBus, unset: wardenOffBus }));
+check('PB-206.6: the Codex bus MCP entry carries the record pointer declared by its driver',
+  wardenOnBus[SESSION_ENV_VAR] === sessionFile('warden-forward-probe')
+  && wardenOffBus[SESSION_ENV_VAR] === sessionFile('warden-forward-probe')
+  && codexDriver.options.mcpIdentity?.recordVar === SESSION_ENV_VAR,
   JSON.stringify({ set: wardenOnBus, unset: wardenOffBus }));
 
 // `renderNotification` takes ONE argument — the arity the driver contract declares —

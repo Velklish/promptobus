@@ -198,6 +198,8 @@ import { runPromptobus } from 'promptobus/cli';
 
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](docs/reference/01-overview.md), [reference/02-host.md](docs/reference/02-host.md), [reference/04-protocol.md](docs/reference/04-protocol.md).
 
+For an MCP child whose harness omits its session variable, the driver names a session-record pointer instead; the adapter accepts it only when record and process resolve to the same physical home and name the exact task and address, and refreshes it at each tool call because the id may appear after the handshake. See [ADR-014](docs/adr/adr-014-mcp-session-proof.md).
+
 ## Development
 
 ```bash

@@ -208,6 +208,22 @@ The spawn path chooses a readable participant session name from the work-slice t
 
 **The resolver is injected, not imported, and the registry injects itself.** `lib/drivers.js` binds it with `bindSessionIdentity` at import — the shape a driver already uses to bind participant-home removal into the session store — so whoever loads the registry can answer. `lib/cli.js` binds it explicitly too, beside `bindHarnessHomes`: its command modules are imported dynamically and not all of them load the registry. Every driver imports `lib/store.js`, so the back edge is a real cycle — with a direct import the package loads when `store.js` is the entry module and dies with `ReferenceError: Cannot access 'CLAUDE' before initialization` when a driver module is. Unbound, the core answers `null` and says once that no registry is bound; it never falls back to reading a variable itself.
 
+**The MCP path has a separate, record-backed member.** `DriverOptions.mcpIdentity`
+declares the environment variable carrying an absolute session-record path and the field
+that carries its harness id, or `null` when the harness supplies no such proof. Codex
+declares `PROMPTOBUS_CODEX_SESSION`/`threadId`; Cursor declares
+`PROMPTOBUS_CURSOR_SESSION`/`chatId` and puts that pointer into its generated bus MCP
+entry because Cursor replaces the child's environment. Claude declares `null` and keeps
+using its command-path identity.
+
+**A readable record is not sufficient.** Its non-empty id is accepted only when the
+record's `home` and the process declaration pass through the shared physical path
+canonicalizer to the same place; `task` and `address` remain exact identifiers with no
+path aliases. Normalizing at the read boundary admits existing records written through a
+symlink without weakening the refusal for another physical home. Missing, unreadable or
+differently bound records leave identity null. The server refreshes proof for each tool
+call because Codex can connect before `thread/start` patches `threadId`. [ADR-014](../adr/adr-014-mcp-session-proof.md)
+
 ## Passing the host
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.

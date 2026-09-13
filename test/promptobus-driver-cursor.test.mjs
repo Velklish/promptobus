@@ -56,7 +56,7 @@ const {
   skillsNoteOf,
 } = cursorModule;
 const {
-  dropSession, injectText, launchScript, tmuxSessions, readSession, readTranscript, sessionFile,
+  dropSession, injectText, launchScript, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
   turnState,
   workspaceHash, writeSession,
@@ -476,6 +476,11 @@ check('PB-171: the warden switch and its trace reach the Cursor MCP entry, and o
   cursorWardenOn.PROMPTOBUS_WARDEN === 'off'
   && cursorWardenOn.PROMPTOBUS_WARDEN_TRACE === CURSOR_TRACE_SENTINEL
   && !('PROMPTOBUS_WARDEN' in cursorWardenOff) && !('PROMPTOBUS_WARDEN_TRACE' in cursorWardenOff),
+  JSON.stringify({ set: cursorWardenOn, unset: cursorWardenOff }));
+check('PB-206.6: the Cursor bus MCP entry carries the record pointer declared by its driver',
+  cursorWardenOn[SESSION_ENV_VAR] === sessionFile(ctx.ref)
+  && cursorWardenOff[SESSION_ENV_VAR] === sessionFile(ctx.ref)
+  && cursorDriver.options.mcpIdentity?.recordVar === SESSION_ENV_VAR,
   JSON.stringify({ set: cursorWardenOn, unset: cursorWardenOff }));
 
 const skillsPlan = cursorDriver.prepare({ ...ctx, root: skillsRoot, cwd: skillsWt });
