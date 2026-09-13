@@ -1,6 +1,6 @@
 # PB-208 · Accepting one piece cleans up nothing, and prune refuses on an active task
 
-- **Order:** 80
+- **Order:** 50
 - **Scope:** `lib/done.js` (`sweepWorktrees`, `sweepParticipantSecrets`), `lib/prune.js`, `lib/dismiss.js`, `lib/stop.js`, `lib/driver-codex.js` (participant homes), `docs/reference/03-cli.md`, `docs/reference/04-protocol.md` § Store layout
 - **Created:** 2026-09-12, owner's decision of the same day
 - **Dependencies:** PB-206

@@ -1,6 +1,6 @@
 # PB-195 · Evidence cards ship the owner's absolute home path to a public repository, and the publicity audit has no rule for it
 
-- **Order:** 120
+- **Order:** 80
 - **Scope:** `scripts/audit-public.mjs`, [reference/README](../../reference/README.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none

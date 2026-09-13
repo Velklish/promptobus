@@ -1,6 +1,6 @@
 # PB-209 · CI красен на каждом пуше: страж достоверности в пробе Cursor меряет стенные часы
 
-- **Order:** 1
+- **Order:** 20
 - **Scope:** `test/model-routing-adapter-cursor.test.mjs` (проверка «the probe does not block the event loop»), заглушки, которые она зовёт; смежное — [PB-159.1](PB-159.1-pooled-load-reds-beyond-preflight.md)
 - **Created:** 2026-09-13
 - **Dependencies:** none

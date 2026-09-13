@@ -1,6 +1,6 @@
 # PB-199 · The sweep test demands an absolute temp path of production and then makes its own fixtures in the working directory
 
-- **Order:** 160
+- **Order:** 120
 - **Scope:** `test/tmpdir-sweep.test.mjs`
 - **Created:** 2026-09-12
 - **Dependencies:** none

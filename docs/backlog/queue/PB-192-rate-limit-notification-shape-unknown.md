@@ -1,6 +1,6 @@
 # PB-192 · The holder's rate-limit notification journal must retain the full payload
 
-- **Order:** 200
+- **Order:** 160
 - **Scope:** `lib/codex-session.js` (`account/rateLimits/updated` journal and session-record branches), `lib/model-routing/adapter-codex.js` (the notification fallback), [03-cli](../../reference/03-cli.md) § Codex availability
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** `PB-24.1` is the neighbouring card and is **not** unblocked by this one — see below
