@@ -4,6 +4,14 @@ The catalog is the maintainers' rating of tuples and ships inside the package. A
 
 The decision behind all of it is [ADR-003](../adr/adr-003-model-routing.md); the command surface is [reference/03-cli.md](../reference/03-cli.md) § Model routing. This guide is the operational half: what is in the catalog file, how the layers combine, and the file to copy.
 
+## Routed roles and the schema boundary
+
+`ROUTED_ROLES` in `lib/model-routing/catalog.js` is the frozen runtime source for the routed participant vocabulary: `worker`, `reviewer` and `approver`. Catalog merge, validation, resolution, live-tuple accounting and telemetry consume that source. `RULE_ROLES` in the catalog and `ROLES` in the resolver remain compatibility exports only; each is the same object as `ROUTED_ROLES`, not a copied list.
+
+The model-routing JSON schemas remain static artifacts. The parity test in [test/model-routing-catalog.test.mjs](../../test/model-routing-catalog.test.mjs) compares their role enums and closed property maps with `ROUTED_ROLES`, alongside the runtime default maps. Adding a routed role therefore updates the canonical list, its role-specific defaults and the static schema artifacts in one change.
+
+An addressed participant outside `ROUTED_ROLES` — `orchestrator`, or a future role deliberately left unrouted — has an explicit outcome: policy role keys and resolver selection are rejected as unknown, while live-tuple and telemetry projections exclude it. It is not silently treated as routed.
+
 ## The layers
 
 ```text

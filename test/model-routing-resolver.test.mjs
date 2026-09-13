@@ -491,6 +491,7 @@ test('nothing reaching the floor is a warning and the best remaining one, not a 
   const warning = decision.warnings.find((w) => w.code === 'reviewer-floor-not-met');
   assert.ok(warning, 'the fallback must say it happened');
   assert.match(warning.message, /quality floor of 9 of 10/);
+  validDecision(decision, 'a decision carrying the reviewer floor fallback');
 });
 
 test('the worker has a floor too, and its own warning code', () => {

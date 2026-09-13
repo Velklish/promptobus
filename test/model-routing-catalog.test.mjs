@@ -40,7 +40,7 @@ import {
 } from '../lib/model-routing/validate.js';
 import * as validateRouting from '../lib/model-routing/validate.js';
 import { MODEL_ALIASES, MODEL_IDS, MODEL_SCOPE_IDS } from '../lib/driver-claude.js';
-import { routingContext } from '../lib/models.js';
+import { liveTuples, routingContext } from '../lib/models.js';
 import * as resolverRouting from '../lib/model-routing/resolver.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -800,7 +800,10 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
   assert.deepEqual(overlaySchema.properties.defaults.properties.strategy.enum, catalogRouting.STRATEGIES);
   assert.deepEqual(decisionSchema.properties.strategy.enum, catalogRouting.STRATEGIES);
 
-  const roles = [...catalogRouting.RULE_ROLES].sort();
+  const roles = [...catalogRouting.ROUTED_ROLES].sort();
+  assert.ok(Object.isFrozen(catalogRouting.ROUTED_ROLES), 'routed roles are immutable');
+  assert.strictEqual(catalogRouting.RULE_ROLES, catalogRouting.ROUTED_ROLES, 'catalog alias preserves identity');
+  assert.strictEqual(resolverRouting.ROLES, catalogRouting.ROUTED_ROLES, 'resolver alias preserves identity');
   assert.deepEqual([...resolverRouting.ROLES].sort(), roles, "resolver.js ROLES");
   assert.deepEqual(Object.keys(catalogRouting.DEFAULT_POLICY.qualityFloor).sort(), roles, "DEFAULT_POLICY.qualityFloor");
   assert.deepEqual(Object.keys(catalogRouting.DEFAULT_POLICY.byRole).sort(), roles, "DEFAULT_POLICY.byRole");
@@ -820,7 +823,28 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
 
   assert.deepEqual([...overlaySchema.$defs.weightSet.required].sort(), [...validateRouting.WEIGHT_KEYS].sort());
   assert.deepEqual([...decisionSchema.$defs.warningCode.enum].sort(), [...resolverRouting.DECISION_WARNINGS].sort());
+  const roleFloorWarnings = roles.map((role) => `${role}-floor-not-met`);
+  assert.deepEqual(
+    resolverRouting.DECISION_WARNINGS.filter((code) => code.endsWith('-floor-not-met')).sort(),
+    roleFloorWarnings,
+    'DECISION_WARNINGS has one floor warning for every routed role',
+  );
+  assert.deepEqual(
+    decisionSchema.$defs.warningCode.enum.filter((code) => code.endsWith('-floor-not-met')).sort(),
+    roleFloorWarnings,
+    'decision.schema.json has one floor warning for every routed role',
+  );
   assert.deepEqual([...decisionSchema.$defs.exclusionCode.enum].sort(), [...resolverRouting.EXCLUSION_CODES].sort());
+});
+
+test('every routed role has a valid default quality floor', () => {
+  for (const role of catalogRouting.ROUTED_ROLES) {
+    const floor = catalogRouting.DEFAULT_POLICY.qualityFloor[role];
+    assert.ok(
+      Number.isInteger(floor) && floor >= 1 && floor <= 10,
+      `${role}: default quality floor must be an integer from 1 to 10`,
+    );
+  }
 });
 
 test('a weight set is replaced whole, not field by field', () => {
@@ -833,6 +857,32 @@ test('a weight set is replaced whole, not field by field', () => {
   const merged = mergeRouting({ canonical: CATALOG, overlays: [overlay] });
   assert.deepEqual(merged.policy.weights.speed, { quality: 25, speed: 25, quotaCost: 25, remaining: 25 });
   assert.deepEqual(merged.policy.weights.economy, DEFAULT_POLICY.weights.economy);
+});
+test('unknown and deliberately unrouted roles have explicit outcomes', () => {
+  assert.equal(catalogRouting.isRoutedRole('orchestrator'), false);
+  assert.equal(catalogRouting.isRoutedRole('architect'), false);
+  assert.throws(() => rulesForRole(DEFAULT_POLICY, 'orchestrator'), /unknown role "orchestrator"/);
+  assert.throws(
+    () => mergeRouting({
+      canonical: CATALOG,
+      overlays: [overlayLayer('user', { schemaVersion: 2, qualityFloor: { architect: 3 } })],
+    }),
+    /unknown role "?architect"?/,
+  );
+  assert.throws(
+    () => mergeRouting({
+      canonical: CATALOG,
+      overlays: [overlayLayer('user', {
+        schemaVersion: 1, deny: { byRole: { architect: { models: ['claude-opus-5'] } } },
+      })],
+    }),
+    /unknown role "?architect"?/,
+  );
+  assert.deepEqual(liveTuples({ participants: [
+    { role: 'worker', harness: 'claude', metadata: { address: 'worker:ok', model: 'm' } },
+    { role: 'orchestrator', harness: 'claude', metadata: { address: 'orchestrator', model: 'm' } },
+    { role: 'architect', harness: 'claude', metadata: { address: 'architect:future', model: 'm' } },
+  ] }), [{ harness: 'claude', model: 'm', role: 'worker' }]);
 });
 
 test('policy overlay blocks keep their prototype when an overlay names __proto__', () => {

@@ -42,6 +42,7 @@ const { done } = await import(path.join(ROOT, 'lib', 'done.js'));
 const { models, routingContext, routingMetadata } = await import(path.join(ROOT, 'lib', 'models.js'));
 const { hostOf } = await import(path.join(ROOT, 'lib', 'host.js'));
 const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetry.js'));
+const { ROUTED_ROLES } = await import(path.join(ROOT, 'lib', 'model-routing', 'catalog.js'));
 
 const defaultTelemetryAdapter = adapterMap({
   claude: answeringStub({
@@ -205,6 +206,17 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('worker:hand', {
 // itself, already dismissed. It never lifted a session and must not be a row.
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:mimo', { dismissed: T1 }));
 
+// A model-bearing but deliberately unrouted participant must stay out of telemetry.
+store.upsertParticipant(HOME, TASK, {
+  id: 'architect-future',
+  role: 'architect',
+  harness: 'claude',
+  mode: 'managed',
+  sessionRef: 'sess-architect',
+  capabilities: null,
+  metadata: { address: 'architect:future', model: 'future-model', started: T1 },
+});
+
 // The mail. The bodies are the leak surface: one of them carries the token, the
 // address and the clone path all at once.
 const say = (from, to, type, body) => store.sendMessage(HOME, TASK, {
@@ -237,19 +249,22 @@ check(': one record per participant that lifted a session — four of them',
 // assertion is a BIJECTION: every lifted participant has exactly one row, and
 // every row names a lifted participant's own role, harness and model.
 const meta = store.readTask(HOME, TASK);
-const liftedOf = (p) => ['worker', 'reviewer', 'approver'].includes(p.role)
+const liftedOf = (p) => ROUTED_ROLES.includes(p.role)
   && typeof p.metadata?.model === 'string' && Boolean(p.metadata.model);
 const lifted = meta.participants.filter(liftedOf);
 const unlifted = meta.participants.filter((p) => !liftedOf(p));
 const same = (r, p) => r.role === p.role && r.harness === p.harness && r.model === p.metadata.model;
-check(': six participants, four lifted a session — and the rows are exactly those four',
-  meta.participants.length === 6 && lifted.length === 4 && rows.length === 4
+check(': seven participants, four lifted a session — and the rows are exactly those four',
+  meta.participants.length === 7 && lifted.length === 4 && rows.length === 4
   && lifted.every((p) => rows.filter((r) => same(r, p)).length === 1)
   && rows.every((r) => lifted.some((p) => same(r, p))),
   `${meta.participants.length} participants, ${lifted.length} lifted, ${rows.length} rows`);
-check(': the two without a row are the task owner and an address that only ever wrote once',
-  unlifted.map((p) => p.metadata?.address).sort().join(', ') === 'orchestrator, worker:mimo'
-  && unlifted.every((p) => !p.metadata?.model),
+check(': the three without a row include a model-bearing unrouted address',
+  unlifted.map((p) => p.metadata?.address).sort().join(', ') === 'architect:future, orchestrator, worker:mimo'
+  && unlifted.some((p) => p.metadata?.address === 'architect:future'
+    && p.metadata?.model === 'future-model')
+  && unlifted.filter((p) => p.metadata?.address !== 'architect:future')
+    .every((p) => !p.metadata?.model),
   unlifted.map((p) => `${p.metadata?.address}/${p.harness}`).join(', '));
 check(': done says how many records it appended and where',
   new RegExp(`telemetry: 4 record\\(s\\) appended to ${FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(out),
