@@ -189,6 +189,39 @@ Both stores name the task-directory layout (`<home>/tasks/<id>`) the same
 way, so the path comes from [protocol.ts](../../src/protocol.ts) — the shared bus
 dictionary.
 
+### Warden
+
+Source: `src/supervisor.ts`, `lib/warden.js`, `lib/guard.js`.
+
+The task warden is a detached process that watches every mailbox and knocks
+on unread mail. Its decisions live in the package state machine; the process
+loop, `fs.watch`, and auto-start live in `lib/warden.js`.
+
+**Two lifetime ceilings, measured at the top of `src/supervisor.ts`.**
+`WARDEN_TOTAL_SEC` (6 h) is the working ceiling: it ends the **warden process**
+for an **idle** task — no live participants and no unread mail — and names
+`sat out the overall ceiling 6 h` in the journal. While participants are alive
+or mail is unread, that ceiling does not fire. `WARDEN_ABSOLUTE_SEC` (72 h) is
+unconditional: it ends the process even with live work and names
+`hit the absolute limit 72 h` — a different line from the quiet idle exit
+(`no live participants remain`) and from the working ceiling.
+
+**Departure is visible.** Before clearing its mark the warden writes
+`waits/warden.exit.json` with the exit reason when it can. The loop guard
+reads it on the orchestrator's next turn end, clears the file, and names the
+prior reason. When no warden holds the seat it prints `NO WARDEN` with the
+`promptobus warden --task <id>` raise route; when a successor is already
+watching it prints the prior exit and any unread count without that mark or
+raise route — the gap mattered, not another lift. Without a note (crash,
+SIGKILL) the loop guard and workspace root guard still name the raise route
+when mail is unread and nobody is watching. Each `claimWarden` bumps a
+persisted generation in `waits/warden.gen.json` so a second death with the
+same unread count is not deduplicated against the first; draining the inbox
+clears the no-note hint marks.
+The workspace root guard has a third form beside dead owner and unread mail:
+**live owner, dead warden, unread** — it uses `contactSocketPath` so a
+`#<turn>` suffix on the wake socket does not hide a live owner.
+
 ### Migration: reading an older store
 
 Source: `src/migrate.ts`.

@@ -31,13 +31,15 @@ export * from './v1/index.js';
 // warden mark and log, stall and end-of-turn marks, session bindings, the
 // participant files directory, and the journal lock.
 export {
-  beatWarden, claimWarden, clearWarden, healthFile, lastTurnAt, liveWarden, lockBusyError,
-  logWarden, markTurn, onTaskLock, readBinding, readHealth, readStalls, readWake, sessionFile,
-  sessionsDir, stallsFile, tailWardenLog, WARDEN_BEAT_SEC, wakeFile, wardenLogFile,
-  wardenMarkFile, withTaskLock, workersDir, writeBinding, bindingNames, dropBinding,
-  writeHealth, writeStalls, writeWake,
+  beatWarden, claimWarden, clearWarden, clearWardenExit, healthFile, lastTurnAt, liveWarden,
+  lockBusyError, logWarden, markTurn, onTaskLock, readBinding, readHealth, readStalls,
+  readWake, readWardenExit, readWardenGeneration, sessionFile, sessionsDir, stallsFile, tailWardenLog,
+  WARDEN_BEAT_SEC, wakeFile, wardenLogFile, wardenMarkFile, withTaskLock, workersDir,
+  writeBinding, bindingNames, dropBinding, writeHealth, writeStalls, writeWake, writeWardenExit,
 } from './sidecar.js';
-export type { Binding, Health, LockHolder, Stalls, Suspend, Wake, WardenMark } from './sidecar.js';
+export type {
+  Binding, Health, LockHolder, Stalls, Suspend, Wake, WardenExit, WardenMark,
+} from './sidecar.js';
 // The adapter's bundled lib/ runtime imports package-owned helpers from their built
 // implementation modules; higher-level consumers should prefer protocol and store APIs.
 export { pidAlive } from './fs/proc.js';

@@ -863,12 +863,43 @@ check('the mailbox is fetched — nothing left to hold on to, and the process ex
   wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === 'no live participants remain',
   String(wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) })));
 
-// The ceiling is checked by substituting time, not by waiting out six hours.
-const capped = wdn.beatRound(HOME, BEAT, startedMs - wdn.WARDEN_TOTAL_SEC * 1000,
-  { now: startedMs, sessions: snap(BEAT, ALIVE) });
-check('sitting out the overall ceiling names itself as the exit reason',
-  capped === 'sat out the overall ceiling 6 h', String(capped));
-check('a few seconds short of the ceiling — keep sitting',
+// The working ceiling is conditional: live participants or unread defer it.
+const CEIL = 'sup-ceil-t20260913-163533';
+store.createTask(HOME, { id: CEIL, title: 'условный потолок', owner: SESSION });
+store.upsertParticipant(HOME, CEIL, store.participantRecord('worker:api', { name: 'Worker: потолок' }));
+const ceilMark = { pid: process.pid, started: new Date().toISOString(), beat: new Date().toISOString() };
+store.writeJsonAtomic(store.wardenMarkFile(HOME, CEIL), ceilMark);
+const CEIL_ALIVE = [{ id: 'sx', name: 'Worker: потолок', state: 'busy', pid: process.pid }];
+const ceilStarted = Date.now();
+const ceilPast = ceilStarted - wdn.WARDEN_TOTAL_SEC * 1000;
+check('the working ceiling does not fire while a participant is alive',
+  wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, CEIL_ALIVE) }) === null,
+  String(wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, CEIL_ALIVE) })));
+store.sendMessage(HOME, CEIL, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт чтения' });
+check('the working ceiling does not fire while unread mail remains',
+  wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, []) }) === null,
+  String(wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, []) })));
+store.readInbox(HOME, CEIL, 'orchestrator');
+check('after the participant is gone and the mailbox is fetched, the process exits quietly',
+  wdn.beatRound(HOME, CEIL, ceilStarted, { sessions: snap(CEIL, []) }) === 'no live participants remain',
+  String(wdn.beatRound(HOME, CEIL, ceilStarted, { sessions: snap(CEIL, []) })));
+const CEIL_IDLE = 'sup-ceil-idle-t20260913';
+store.createTask(HOME, { id: CEIL_IDLE, title: 'потолок на пустом', owner: SESSION });
+store.upsertParticipant(HOME, CEIL_IDLE, store.participantRecord('worker:api', { name: 'Worker: пусто' }));
+store.writeJsonAtomic(store.wardenMarkFile(HOME, CEIL_IDLE), {
+  ...ceilMark, beat: new Date().toISOString(),
+});
+check('sitting idle past the working ceiling names itself as the exit reason',
+  wdn.beatRound(HOME, CEIL_IDLE, ceilPast, { now: ceilStarted, sessions: snap(CEIL_IDLE, []) })
+    === 'sat out the overall ceiling 6 h',
+  String(wdn.beatRound(HOME, CEIL_IDLE, ceilPast, { now: ceilStarted, sessions: snap(CEIL_IDLE, []) })));
+const CEIL_IDLE_ALIVE = [{ id: 'sx', name: 'Worker: пусто', state: 'busy', pid: process.pid }];
+check('the absolute limit names itself separately from a quiet exit',
+  wdn.beatRound(HOME, CEIL_IDLE, ceilStarted - wdn.WARDEN_ABSOLUTE_SEC * 1000,
+    { now: ceilStarted, sessions: snap(CEIL_IDLE, CEIL_IDLE_ALIVE) }) === 'hit the absolute limit 72 h',
+  String(wdn.beatRound(HOME, CEIL_IDLE, ceilStarted - wdn.WARDEN_ABSOLUTE_SEC * 1000,
+    { now: ceilStarted, sessions: snap(CEIL_IDLE, CEIL_IDLE_ALIVE) })));
+check('a few seconds short of the working ceiling — keep sitting',
   wdn.beatRound(HOME, BEAT, startedMs - wdn.WARDEN_TOTAL_SEC * 1000 + 1000,
     { now: startedMs, sessions: snap(BEAT, ALIVE) }) === null);
 
@@ -918,6 +949,10 @@ Date.now = realNow;
 check(': the loop exits on an emptied-out task, rather than sitting out the ceiling',
   /exited: no live participants remain/.test(loopOut), loopOut);
 check('the warden mark is cleared on exit', store.liveWarden(HOME, LOOP) === null);
+const loopExit = store.readWardenExit(HOME, LOOP);
+check('the process writes a departure note before clearing its mark',
+  loopExit?.reason === 'no live participants remain',
+  JSON.stringify(loopExit));
 
 // --- : the task's last stall is written to the log on the same loop as the exit ---------
 //

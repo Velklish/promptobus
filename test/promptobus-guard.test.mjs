@@ -42,7 +42,7 @@ const { readThroughputSidecar, throughputSidecarFile } = await import(
 const { GUARD_HOOK_EVENT, GUARD_START_EVENT, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
-const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
+const { status, WARDEN_MARK } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { UNANSWERED_MARK } = await import(path.join(here, '..', 'lib', 'answers.js'));
 writeHostConfig(ROOT);
 
@@ -296,10 +296,16 @@ cli();
 // someone else's run — a human is editing their own code, and the turn gets returned to them
 // because of an unread mailbox belonging to someone else's orchestrator.
 send('result', 'лежит и ждёт владельца');
-const unbound = cli({ PROMPTOBUS_TASK: '', CLAUDE_CODE_SESSION_ID: 'sess-postoronnyaya-9999' });
-check(`unbound session: the guard stays silent even though the task's mailbox has unread mail`,
-  unbound.status === 0 && unbound.stdout === '' && unbound.stderr === '',
-  `status=${unbound.status} out=${JSON.stringify(unbound.stdout)} err=${JSON.stringify(unbound.stderr)}`);
+if (orchListening.ok) {
+  const unbound = cli({ PROMPTOBUS_TASK: '', CLAUDE_CODE_SESSION_ID: 'sess-postoronnyaya-9999' });
+  const unboundText = (() => { try { return JSON.parse(unbound.stdout).systemMessage; } catch { return ''; } })();
+  check(`unbound session: no turn return — only an advisory dead-warden hint at the root`,
+    unbound.status === 0 && unbound.stderr === '' && !unbound.stderr.includes(GUARD_MARK)
+    && unboundText.includes(WARDEN_MARK) && unboundText.includes(TASK),
+    `status=${unbound.status} out=${JSON.stringify(unbound.stdout)} err=${JSON.stringify(unbound.stderr)}`);
+} else {
+  skip('unbound session: dead-warden root hint — local Unix socket unavailable', orchListening.reason);
+}
 
 // The on-disk binding works on a par with the declared variable: spawn writes it for the
 // owner session, and without it the guard would never fire for a live orchestrator at all.
@@ -672,10 +678,14 @@ check('throughput: a hook observation is appended beside the guard mark without 
   && workerAfterHook?.metadata?.throughput === undefined
   && (statSync(throughputFile).mode & 0o777) === 0o600,
   `status=${throughputHook.status} sidecar=${JSON.stringify(throughput)} metadata=${JSON.stringify(workerAfterHook?.metadata?.throughput)}`);
-const wrongSession = asHook(stopEvent('sess-postoronnyaya-9999'), { PROMPTOBUS_TASK: '' });
-check('identity: a foreign session_id from the payload finds no binding — silence',
-  wrongSession.status === 0 && wrongSession.stdout === '' && wrongSession.stderr === '',
-  `status=${wrongSession.status} out=${JSON.stringify(wrongSession.stdout)}`);
+if (orchListening.ok) {
+  const wrongSession = asHook(stopEvent('sess-postoronnyaya-9999'), { PROMPTOBUS_TASK: '' });
+  const wrongText = (() => { try { return JSON.parse(wrongSession.stdout).systemMessage; } catch { return ''; } })();
+  check('identity: a foreign session_id finds no binding — no turn return, only the root dead-warden hint',
+    wrongSession.status === 0 && wrongSession.stderr === ''
+    && wrongText.includes(WARDEN_MARK) && wrongText.includes(TASK),
+    `status=${wrongSession.status} out=${JSON.stringify(wrongSession.stdout)}`);
+}
 // The on-disk binding for SESSION already exists (above) — and by it the task resolves
 // without PROMPTOBUS_TASK.
 const boundByEvent = asHook(stopEvent(), { PROMPTOBUS_TASK: '' });
@@ -824,6 +834,121 @@ const asHeir = (session, { cwd = SB, role = '', task = '', event = 'Stop' } = {}
 );
 const heirSaid = (run) => { try { return JSON.parse(run.stdout); } catch { return null; } };
 
+const EXIT_TASK = 'guard-exit-t20260913';
+store.createTask(HOME, { id: EXIT_TASK, title: 'отметка ухода', owner: SESSION });
+store.upsertParticipant(HOME, EXIT_TASK, store.participantRecord('worker:api', { name: 'w-exit' }));
+store.writeWardenExit(HOME, EXIT_TASK, {
+  reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
+});
+const exitRun = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: EXIT_TASK, PROMPTOBUS_ROLE: 'orchestrator',
+});
+const exitText = heirSaid(exitRun)?.systemMessage ?? '';
+check('loop guard: a dead warden is named on the turn end with the raise route',
+  exitRun.status === 0 && exitText.includes(WARDEN_MARK) && /promptobus warden/.test(exitText),
+  exitText || JSON.stringify(exitRun));
+check('loop guard: orchestrator Stop clears the exit mark after naming it',
+  store.readWardenExit(HOME, EXIT_TASK) === null);
+const { ensureWarden } = await import(path.join(here, '..', 'lib', 'warden.js'));
+const ERASE_TASK = 'guard-erase-exit-t20260913';
+store.createTask(HOME, { id: ERASE_TASK, title: 'автостарт не стирает отметку', owner: SESSION });
+store.writeWardenExit(HOME, ERASE_TASK, {
+  reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
+});
+ensureWarden(HOME, ERASE_TASK, { env: {}, launch: () => 4242, host: createStandaloneHost(ROOT) });
+check('ensureWarden before orchestrator Stop does not erase the exit mark',
+  store.readWardenExit(HOME, ERASE_TASK) !== null);
+store.clearWarden(HOME, ERASE_TASK);
+const REPL_TASK = 'guard-repl-warden-t20260913';
+store.createTask(HOME, { id: REPL_TASK, title: 'преемник не скрывает отметку', owner: SESSION });
+store.writeWardenExit(HOME, REPL_TASK, {
+  reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.475Z',
+});
+ensureWarden(HOME, REPL_TASK, { env: {}, launch: () => 4242, host: createStandaloneHost(ROOT) });
+store.claimWarden(HOME, REPL_TASK, { cli: 'successor' });
+const replRun = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: REPL_TASK, PROMPTOBUS_ROLE: 'orchestrator',
+});
+const replText = heirSaid(replRun)?.systemMessage ?? '';
+check('loop guard: a prior departure with a live successor names the gap, not a raise route',
+  replRun.status === 0 && replText.includes('sat out the overall ceiling 6 h')
+  && replText.includes('successor is watching')
+  && !replText.includes(WARDEN_MARK) && !/promptobus warden/.test(replText),
+  replText || JSON.stringify(replRun));
+store.clearWarden(HOME, REPL_TASK);
+store.claimWarden(HOME, EXIT_TASK, { cli: 'probe' });
+const liveRun = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: EXIT_TASK, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: a live warden leaves the exit notice silent',
+  liveRun.status === 0 && liveRun.stdout === '' && liveRun.stderr === '',
+  `status=${liveRun.status} out=${JSON.stringify(liveRun.stdout)} err=${JSON.stringify(liveRun.stderr)}`);
+store.clearWarden(HOME, EXIT_TASK);
+
+const LOOP_NOEXIT = 'guard-loop-noexit-t20260913';
+store.createTask(HOME, { id: LOOP_NOEXIT, title: 'loop без отметки ухода', owner: SESSION });
+store.upsertParticipant(HOME, LOOP_NOEXIT, store.participantRecord('worker:api', { name: 'w-loop-noexit' }));
+store.sendMessage(HOME, LOOP_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+const loopNoExitRun = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_NOEXIT, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: dead warden without an exit note names the raise route on Stop',
+  loopNoExitRun.status === 2 && /without leaving a note/.test(loopNoExitRun.stderr)
+  && /promptobus warden/.test(loopNoExitRun.stderr),
+  loopNoExitRun.stderr || JSON.stringify(loopNoExitRun));
+store.claimWarden(HOME, LOOP_NOEXIT, { cli: 'probe' });
+const loopNoExitLive = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_NOEXIT, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: a live warden stays silent about a missing exit note',
+  loopNoExitLive.status === 2 && !/without leaving a note/.test(loopNoExitLive.stderr),
+  loopNoExitLive.stderr || JSON.stringify(loopNoExitLive));
+store.clearWarden(HOME, LOOP_NOEXIT);
+
+const LOOP_RELIVE = 'guard-loop-relive-t20260913';
+store.createTask(HOME, { id: LOOP_RELIVE, title: 'повтор без отметки после живого надзирателя', owner: SESSION });
+store.upsertParticipant(HOME, LOOP_RELIVE, store.participantRecord('worker:api', { name: 'w-loop-relive' }));
+store.sendMessage(HOME, LOOP_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+const loopRelive1 = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_RELIVE, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: first dead warden without exit note warns',
+  loopRelive1.status === 2 && /without leaving a note/.test(loopRelive1.stderr),
+  loopRelive1.stderr || JSON.stringify(loopRelive1));
+store.claimWarden(HOME, LOOP_RELIVE, { cli: 'relive' });
+store.clearWarden(HOME, LOOP_RELIVE);
+const loopRelive2 = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_RELIVE, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: second death with same unread warns again after live warden',
+  loopRelive2.status === 2 && /without leaving a note/.test(loopRelive2.stderr),
+  loopRelive2.stderr || JSON.stringify(loopRelive2));
+
+const LOOP_DRAIN = 'guard-loop-drain-t20260913';
+store.createTask(HOME, { id: LOOP_DRAIN, title: 'повтор без отметки после слива ящика', owner: SESSION });
+store.upsertParticipant(HOME, LOOP_DRAIN, store.participantRecord('worker:api', { name: 'w-loop-drain' }));
+store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+const loopDrain1 = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_DRAIN, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: dead warden without exit note warns before drain',
+  loopDrain1.status === 2 && /without leaving a note/.test(loopDrain1.stderr),
+  loopDrain1.stderr || JSON.stringify(loopDrain1));
+store.readInbox(HOME, LOOP_DRAIN, 'orchestrator');
+const loopDrainQuiet = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_DRAIN, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: drained inbox clears the no-exit mark',
+  loopDrainQuiet.status === 0 && loopDrainQuiet.stdout === '' && loopDrainQuiet.stderr === '',
+  `status=${loopDrainQuiet.status} out=${JSON.stringify(loopDrainQuiet.stdout)} err=${JSON.stringify(loopDrainQuiet.stderr)}`);
+store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ещё' });
+const loopDrain2 = asHook(stopEvent(SESSION), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_DRAIN, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('loop guard: second death with same unread warns again after drain',
+  loopDrain2.status === 2 && /without leaving a note/.test(loopDrain2.stderr),
+  loopDrain2.stderr || JSON.stringify(loopDrain2));
+
 let probeCalls = 0;
 const countingProbe = async (socket) => {
   probeCalls += 1;
@@ -837,6 +962,111 @@ const liveOwner = asHeir(HEIR);
 check('successor: owner is alive — the guard stays silent for a foreign session at the root',
   liveOwner.status === 0 && liveOwner.stdout === '' && liveOwner.stderr === '',
   `status=${liveOwner.status} out=${JSON.stringify(liveOwner.stdout)} err=${JSON.stringify(liveOwner.stderr)}`);
+
+const WDN_DEAD = 'wdn-dead-t20260913';
+const LIVE_ORCH = 'sess-live-orch-dddd';
+store.createTask(HOME, { id: WDN_DEAD, title: 'живой владелец, мёртвый надзиратель', owner: LIVE_ORCH });
+store.upsertParticipant(HOME, WDN_DEAD, store.participantRecord('worker:api', { name: 'w-dead' }));
+store.sendMessage(HOME, WDN_DEAD, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+store.writeWardenExit(HOME, WDN_DEAD, {
+  reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
+});
+if (orchListening.ok) {
+  store.writeWake(HOME, WDN_DEAD, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
+  const wdnHint = asHeir(HEIR);
+  const wdnText = heirSaid(wdnHint)?.systemMessage ?? '';
+  check('successor: live owner and dead warden with unread — the guard names the raise route',
+    wdnHint.status === 0 && wdnText.includes(WDN_DEAD) && wdnText.includes(WARDEN_MARK)
+    && /promptobus warden/.test(wdnText),
+    wdnText || JSON.stringify(wdnHint));
+
+  const WDN_TURN = 'wdn-turn-t20260913';
+  store.createTask(HOME, { id: WDN_TURN, title: 'сокет с #turn', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_TURN, store.participantRecord('worker:api', { name: 'w-turn' }));
+  store.sendMessage(HOME, WDN_TURN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWardenExit(HOME, WDN_TURN, {
+    reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.474Z',
+  });
+  store.writeWake(HOME, WDN_TURN, 'orchestrator', {
+    socket: `${ORCH_SOCK}#42`, token: 't', session: LIVE_ORCH,
+  });
+  const turnHint = asHeir(HEIR);
+  const turnText = heirSaid(turnHint)?.systemMessage ?? '';
+  check('successor: #<turn> on the wake socket does not hide a live owner',
+    turnHint.status === 0 && turnText.includes(WDN_TURN) && turnText.includes(WARDEN_MARK),
+    turnText || JSON.stringify(turnHint));
+
+  const WDN_TURN_NOSID = 'wdn-turn-nosid-t20260913';
+  store.createTask(HOME, { id: WDN_TURN_NOSID, title: 'сокет #turn без session', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_TURN_NOSID, store.participantRecord('worker:api', { name: 'w-turn-ns' }));
+  store.sendMessage(HOME, WDN_TURN_NOSID, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWardenExit(HOME, WDN_TURN_NOSID, {
+    reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.476Z',
+  });
+  store.writeWake(HOME, WDN_TURN_NOSID, 'orchestrator', { socket: `${ORCH_SOCK}#7`, token: 't' });
+  const turnNsHint = asHeir(HEIR);
+  const turnNsText = heirSaid(turnNsHint)?.systemMessage ?? '';
+  check('successor: #<turn> without a trusted session stamp still finds a live owner',
+    turnNsHint.status === 0 && turnNsText.includes(WDN_TURN_NOSID) && turnNsText.includes(WARDEN_MARK),
+    turnNsText || JSON.stringify(turnNsHint));
+
+  const WDN_NOEXIT = 'wdn-noexit-t20260913';
+  store.createTask(HOME, { id: WDN_NOEXIT, title: 'без отметки ухода', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_NOEXIT, store.participantRecord('worker:api', { name: 'w-noexit' }));
+  store.sendMessage(HOME, WDN_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWake(HOME, WDN_NOEXIT, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
+  const noExitHint = asHeir(HEIR);
+  const noExitText = heirSaid(noExitHint)?.systemMessage ?? '';
+  check('successor: dead warden without an exit note still names the raise route',
+    noExitHint.status === 0 && noExitText.includes(WDN_NOEXIT)
+    && /without leaving a note/.test(noExitText),
+    noExitText || JSON.stringify(noExitHint));
+
+  const WDN_RELIVE = 'wdn-relive-t20260913';
+  store.createTask(HOME, { id: WDN_RELIVE, title: 'повтор без отметки после живого надзирателя', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_RELIVE, store.participantRecord('worker:api', { name: 'w-relive' }));
+  store.sendMessage(HOME, WDN_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWake(HOME, WDN_RELIVE, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
+  const wdnRelive1 = asHeir(HEIR);
+  const wdnRelive1Text = heirSaid(wdnRelive1)?.systemMessage ?? '';
+  check('successor: first dead warden without exit note warns',
+    wdnRelive1.status === 0 && wdnRelive1Text.includes(WDN_RELIVE)
+    && /without leaving a note/.test(wdnRelive1Text),
+    wdnRelive1Text || JSON.stringify(wdnRelive1));
+  store.claimWarden(HOME, WDN_RELIVE, { cli: 'relive' });
+  store.clearWarden(HOME, WDN_RELIVE);
+  const wdnRelive2 = asHeir(HEIR);
+  const wdnRelive2Text = heirSaid(wdnRelive2)?.systemMessage ?? '';
+  check('successor: second death with same unread warns again after live warden',
+    wdnRelive2.status === 0 && wdnRelive2Text.includes(WDN_RELIVE)
+    && /without leaving a note/.test(wdnRelive2Text),
+    wdnRelive2Text || JSON.stringify(wdnRelive2));
+
+  const WDN_DRAIN = 'wdn-drain-t20260913';
+  store.createTask(HOME, { id: WDN_DRAIN, title: 'повтор без отметки после слива ящика', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_DRAIN, store.participantRecord('worker:api', { name: 'w-drain' }));
+  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWake(HOME, WDN_DRAIN, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
+  const wdnDrain1 = asHeir(HEIR);
+  const wdnDrain1Text = heirSaid(wdnDrain1)?.systemMessage ?? '';
+  check('successor: dead warden without exit note warns before drain',
+    wdnDrain1.status === 0 && wdnDrain1Text.includes(WDN_DRAIN)
+    && /without leaving a note/.test(wdnDrain1Text),
+    wdnDrain1Text || JSON.stringify(wdnDrain1));
+  store.readInbox(HOME, WDN_DRAIN, 'orchestrator');
+  const wdnDrainQuiet = asHeir(HEIR);
+  const wdnDrainQuietText = heirSaid(wdnDrainQuiet)?.systemMessage ?? '';
+  check('successor: drained inbox clears the no-exit mark',
+    wdnDrainQuiet.status === 0 && !/without leaving a note/.test(wdnDrainQuietText),
+    wdnDrainQuietText || JSON.stringify(wdnDrainQuiet));
+  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ещё' });
+  const wdnDrain2 = asHeir(HEIR);
+  const wdnDrain2Text = heirSaid(wdnDrain2)?.systemMessage ?? '';
+  check('successor: second death with same unread warns again after drain',
+    wdnDrain2.status === 0 && wdnDrain2Text.includes(WDN_DRAIN)
+    && /without leaving a note/.test(wdnDrain2Text),
+    wdnDrain2Text || JSON.stringify(wdnDrain2));
+}
 
 const START_SID = 'sess-bound-start-dddd';
 const START_TASK = 'start-t20260904-030000';

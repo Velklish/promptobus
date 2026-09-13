@@ -819,6 +819,7 @@ test('the state-machine intervals are the same numbers that were in the CLI ward
   assert.equal(bus.KNOCK_RETRY_SEC, 120);
   assert.equal(bus.SILENCE_SEC, 900);
   assert.equal(bus.WARDEN_TOTAL_SEC, 6 * 3600);
+  assert.equal(bus.WARDEN_ABSOLUTE_SEC, 72 * 3600);
   assert.equal(bus.ROUND_FAIL_LIMIT, 3);
   assert.equal(bus.SPAWN_GRACE_SEC, 30);
 });

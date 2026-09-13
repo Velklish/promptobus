@@ -100,6 +100,53 @@ export function dropWardenMark(home: string, id: string): void {
   rmSync(wardenMarkFile(home, id), { force: true });
 }
 
+function wardenExitFile(home: string, id: string): string {
+  return path.join(taskDir(home, id), 'waits', 'warden.exit.json');
+}
+
+/** Warden departure note for the loop guard — written before the mark is cleared. */
+export interface WardenExit {
+  reason: string;
+  at: string;
+}
+
+export function writeWardenExit(home: string, id: string, note: WardenExit): void {
+  writeJsonAtomic(wardenExitFile(home, id), note);
+}
+
+export function readWardenExit(home: string, id: string): WardenExit | null {
+  try {
+    const raw = JSON.parse(readFileSync(wardenExitFile(home, id), 'utf8')) as WardenExit;
+    return typeof raw?.reason === 'string' && typeof raw?.at === 'string' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearWardenExit(home: string, id: string): void {
+  rmSync(wardenExitFile(home, id), { force: true });
+}
+
+function wardenGenerationFile(home: string, id: string): string {
+  return path.join(taskDir(home, id), 'waits', 'warden.gen.json');
+}
+
+export function readWardenGeneration(home: string, id: string): number {
+  try {
+    const raw = JSON.parse(readFileSync(wardenGenerationFile(home, id), 'utf8')) as { gen?: number };
+    const gen = raw?.gen;
+    return typeof gen === 'number' && Number.isInteger(gen) && gen >= 0 ? gen : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function bumpWardenGeneration(home: string, id: string): number {
+  const gen = readWardenGeneration(home, id) + 1;
+  writeJsonAtomic(wardenGenerationFile(home, id), { gen });
+  return gen;
+}
+
 // The live warden of this task, or `null`. Two signs, both required: a live
 // pid (the system reuses numbers) and an unstale `beat` (a process killed
 // between beats would otherwise count as live for up to three periods).
@@ -379,6 +426,7 @@ export function claimWarden(home: string, id: string, {
     const now = new Date().toISOString();
     const mark: WardenMark = { pid, started: now, beat: now, ...(cli ? { cli } : {}), ...(harness ? { harness } : {}) };
     writeWardenMark(home, id, mark);
+    bumpWardenGeneration(home, id);
     return { mark };
   }, { session });
 }

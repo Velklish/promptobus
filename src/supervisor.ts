@@ -29,8 +29,11 @@ export const KNOCK_RETRY_SEC = 120;
 // turn is inspected, not after.
 export const SILENCE_SEC = 900;
 
-// Process lifetime ceiling — guards a forgotten run whose task stayed open overnight.
+// Working lifetime ceiling — only ends the warden process for an idle task; live work defers it.
 export const WARDEN_TOTAL_SEC = 6 * 3600;
+
+// Unconditional process ceiling — guards a forgotten run and a stuck delivery loop.
+export const WARDEN_ABSOLUTE_SEC = 72 * 3600;
 
 // How many consecutive round failures the process tolerates before exiting.
 // One failure is a transient (the task lock is held by a neighbouring spawn,
@@ -425,13 +428,17 @@ export function beatRound(home: string, task: string, startedMs: number, { now =
   // work. Session identity goes to the lock: whose process holds the journal
   // is known to the environment, and the adapter reads it.
   if (!beatWarden(home, task, { session })) return 'another process took the warden place';
-  // Unread keeps the process even with an empty live list: the mailbox may
-  // not have been taken.
-  if (!liveWatched(home, task, sessions).length && !unreadLeft(home, task)) {
-    return 'no live participants remain';
+  const live = liveWatched(home, task, sessions);
+  const unread = unreadLeft(home, task);
+  const idle = !live.length && !unread;
+  if (now - startedMs >= WARDEN_ABSOLUTE_SEC * 1000) {
+    return `hit the absolute limit ${Math.round(WARDEN_ABSOLUTE_SEC / 3600)} h`;
   }
-  if (now - startedMs >= WARDEN_TOTAL_SEC * 1000) {
-    return `sat out the overall ceiling ${Math.round(WARDEN_TOTAL_SEC / 3600)} h`;
+  if (idle) {
+    if (now - startedMs >= WARDEN_TOTAL_SEC * 1000) {
+      return `sat out the overall ceiling ${Math.round(WARDEN_TOTAL_SEC / 3600)} h`;
+    }
+    return 'no live participants remain';
   }
   return null;
 }
