@@ -76,6 +76,8 @@ import process from 'node:process';
 const args = process.argv.slice(2);
 const mode = process.env.STUB_CURSOR_MODE ?? 'ok';
 const account = process.env.STUB_CURSOR_ACCOUNT ?? '';
+const EVENT_LOOP_PROBE_DELAY_MS = 100;
+const answer = (fn) => mode === 'event-loop-probe' ? setTimeout(fn, EVENT_LOOP_PROBE_DELAY_MS) : fn();
 // Both subcommands colour their output even when stdout is not a terminal.
 const cyan = (s) => \`\\u001b[36m\${s}\\u001b[39m\`;
 const dim = (s) => \`\\u001b[2m\${s}\\u001b[22m\`;
@@ -96,13 +98,13 @@ if (args[0] === 'status') {
   // says the account is in: what the adapter must read, and what it must ignore.
   else if (mode === 'status-garbled') { process.stdout.write('Something went sideways.\\n'); process.exitCode = 1; }
   else if (mode === 'status-nonzero') { loggedInLine(); process.exitCode = 1; }
-  else loggedInLine();
+  else answer(loggedInLine);
 } else if (args[0] === 'models') {
   if (mode === 'slow-models' || mode === 'late-status') hang();
   else if (mode === 'models-refuse') process.exitCode = 1;
   else if (mode === 'models-garbled') process.stdout.write(\`\${dim('Available models')}\\n\`);
   else {
-    process.stdout.write([
+    answer(() => process.stdout.write([
       dim('Available models'),
       '',
       ...${JSON.stringify(STUB_MODELS)}.map(([id, name]) => \`\${cyan(id)} \${dim('- ' + name)}\`),
@@ -110,7 +112,7 @@ if (args[0] === 'status') {
       dim("Tip: use --model <id> (or /model <id> in interactive mode) to switch. Parameterized models "
         + "also accept quoted overrides, e.g. --model 'claude-opus-4-8[context=1m,effort=high,fast=false]'."),
       '',
-    ].join('\\n'));
+    ].join('\\n')));
   }
 } else {
   process.exitCode = 2;
@@ -371,7 +373,7 @@ test('the probe does not block the event loop, so the preflight budget can still
   // 20 ms interval once, however long the block — node coalesces the periods it
   // missed into a single callback — while a probe that yields lets it tick on every
   // turn. Five is a fifth of what an unloaded run counts here.
-  const host = machine();
+  const host = machine({ mode: 'event-loop-probe' });
   const started = Date.now();
   let ticks = 0;
   const beat = setInterval(() => { ticks += 1; }, 20);
