@@ -7,7 +7,7 @@
 
 ## Context
 
-A participant telemetry record already exists ([PB-36](../../archive/PB-36-participant-telemetry-record/result.md)): `done` appends one JSON line per participant that lifted a session, with the tuple, the strategy that chose it, the lift and end stamps, the bus traffic, the quota windows and `concurrentParticipants`. It carries `role`, and it lives outside the bus journal, so it survives pruning.
+A participant telemetry record already exists ([PB-36](../PB-36-participant-telemetry-record/result.md)): `done` appends one JSON line per participant that lifted a session, with the tuple, the strategy that chose it, the lift and end stamps, the bus traffic, the quota windows and `concurrentParticipants`. It carries `role`, and it lives outside the bus journal, so it survives pruning.
 
 Three of the four numbers needed to price a run by role are not in it.
 
