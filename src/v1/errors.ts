@@ -48,6 +48,7 @@ export const ERROR_CODES = [
   'constraint-unavailable',
   'candidates-empty',
   'limit-hit-at-start',
+  'harness-refused',
 ] as const;
 
 /** v1 refusal code. */

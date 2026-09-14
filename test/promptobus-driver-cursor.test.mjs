@@ -81,8 +81,8 @@ check(': without a name the previous driver is taken — Claude Code argv does n
 const approverRoute = cursorDriver.stallRoute({
   kind: 'gone', address: 'approver:cur', doneCommand: 'promptobus done',
 }, null);
-check(': an approver without a session is returned to the consumer lift, never worker spawn',
-  /task orchestrator/.test(approverRoute)
+check(': an approver without a session names that Cursor cannot relift an approver',
+  /Cursor cannot lift an approver/.test(approverRoute)
   && !/lift the worker/.test(approverRoute), approverRoute);
 
 function thrown(fn) {

@@ -7,7 +7,7 @@
 
 ## Context
 
-[PB-206](../../archive/PB-206-approver-is-not-a-participant/task.md) made acceptance a fourth addressed role and carried it end to end: the protocol grammar, the store, the MCP surface, the role lists of model routing and their schemas, the quality floor, the routing policy. Its ADR says the task orchestrator lifts an approver for one piece after a green review.
+[PB-206](../PB-206-approver-is-not-a-participant/task.md) made acceptance a fourth addressed role and carried it end to end: the protocol grammar, the store, the MCP surface, the role lists of model routing and their schemas, the quality floor, the routing policy. Its ADR says the task orchestrator lifts an approver for one piece after a green review.
 
 **No command does that, and the obvious substitute is closed on purpose.**
 

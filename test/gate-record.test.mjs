@@ -77,6 +77,7 @@ check('PB-201: the sha is a sha and the exit code is a number — a claim in pro
 check('PB-201: the address is an address, in bus spelling and not as a participant id',
   accepts(doc(record({ by: 'orchestrator' })))
   && accepts(doc(record({ by: 'reviewer:pb-prompts' })))
+  && accepts(doc(record({ by: 'approver:pb-prompts' })))
   && refuses(doc(record({ by: 'worker-pb-prompts' })))
   && refuses(doc(record({ by: 'Worker:PB' }))),
   'an address outside the protocol spelling was accepted');

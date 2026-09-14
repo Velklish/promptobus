@@ -7,21 +7,32 @@ gets is the workspace's call, and how a task is journalled is the engine's.
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
-## Approver: a lift after green review
+## Approver: lift after a reviewer result
 
-The task orchestrator lifts `approver:<slug>` for one piece only after that piece's
-review is green, never at the beginning of a run. The exact consumer command and its
-pipeline live in the consumer's own card; this package supplies the address, shared liftoff vocabulary,
-driver role and routed tuple.
+The task orchestrator lifts `approver:<slug>` with `promptobus review <path> --task <id> --approver`
+once a `type=result` from the matching `reviewer:<slug>` is on record in the task journal.
+The command does not judge that result. Consumer acceptance procedure stays in the consumer's
+card; this package supplies the address, liftoff, driver role, routed tuple and working
+directory.
 
-The role needs repository writes and shell commands for merged-tree gates, squash and
-archive, so its package deny list is empty. A host may add its exact external MCP write
-tools through `participantDenyTools('approver')`; the bus is never denied. The
-translated entries remove only those MCP tools and do not select the repository sandbox:
-a Codex approver remains `workspace-write`. That classification is independent of the
-reviewer, whose deny lists and read-only sandbox remain unchanged.
-[ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md) records the
-floor of 7 and the worker↔approver routing exception.
+The approver session cwd is the repository clone root; a worker service worktree is attached
+through `addDirs` when the review subject is that worktree. Claude Code writes launch files
+to the task store. **Cursor and Codex cannot lift an approver:** Cursor reads project
+configuration only from the selected workspace's `.cursor/`; Codex reads project hooks and
+`.codex/skills` from the thread cwd, and writing launch files into the shared clone root
+would overwrite or delete untracked project content without restoration. The approver role
+ships on Claude Code only — measured on a live lift. `review --approver --harness cursor`
+and `--harness codex` refuse before start. The role needs
+repository writes and shell commands for merged-tree gates, squash and archive, so its
+package deny list is empty. A host may add its exact external MCP write tools through
+`participantDenyTools('approver')`; the completeness gate runs before any harness branch on
+the harness that can lift an approver. The bus is never denied. That classification is
+independent of the reviewer, whose deny lists and read-only sandbox remain unchanged.
+[ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md) records the floor of 7
+and the worker↔approver routing exception; [ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)
+records the `--approver` flag and the reviewer-result precondition. A repeat lift reuses an
+alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
+session starts a fresh approver instead of spawning a second session beside the first.
 
 ## Cursor: the persist session
 

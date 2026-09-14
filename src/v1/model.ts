@@ -45,7 +45,7 @@ export type ParticipantMode = 'managed' | 'attached';
 /**
  * Snapshot of the driver's capabilities at the moment the participant was lifted.
  *
- * Five fields are required, five are not, and that is not a loosening of the
+ * Five fields are required, six are optional, and that is not a loosening of the
  * schema: records written before the contract grew sit in live journals, and
  * if the schema required the new fields, a previous-release task would stop
  * being readable as a whole. The snapshot is the evidence of what the
@@ -62,6 +62,7 @@ export interface CapabilitiesSnapshot {
   systemPrompt?: boolean;
   sessionList?: boolean;
   enter?: boolean;
+  approverLift?: boolean;
 }
 
 /**

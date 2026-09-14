@@ -18,8 +18,8 @@ export type Activation = 'push' | 'pull';
 /**
  * What the driver can do. The snapshot is stored in the participant record.
  *
- * There are ten flags, in two kinds. The first five declare OPERATIONS — each has
- * a same-named method, and `requireCapability` asks for them. The last five
+ * There are eleven flags, in two kinds. The first five declare OPERATIONS — each has
+ * a same-named method, and `requireCapability` asks for them. The last six
  * declare harness PROPERTIES, which have no method: they must be asked before
  * launch, because without them a role or an output line cannot be assembled —
  * not a separate call.
@@ -39,7 +39,7 @@ export interface DriverCapabilities {
   denyTools?: boolean;
   /**
    * Whether the harness can mechanically deny canonical MCP write tools for a
-   * reviewer. An absent flag means MCP writes remain prompt-only for that harness.
+   * reviewer or approver. An absent flag means MCP writes remain prompt-only for that harness.
    */
   mcpDenyTools?: boolean;
   /**
@@ -75,6 +75,8 @@ export interface DriverCapabilities {
    * differently.
    */
   enter?: boolean;
+  /** Whether `review --approver` may lift on this harness. */
+  approverLift?: boolean;
 }
 
 // Participant mode — a v1 record field (`managed` | `attached`), and it has no second
@@ -610,7 +612,7 @@ export function requireCapability(driver: Driver, op: 'spawn' | 'attach' | 'insp
 }
 
 /** Harness properties without their own operation: asked by the flag, not by method presence. */
-export type DriverFeature = 'denyTools' | 'mcpDenyTools' | 'systemPrompt' | 'sessionList' | 'enter';
+export type DriverFeature = 'denyTools' | 'mcpDenyTools' | 'systemPrompt' | 'sessionList' | 'enter' | 'approverLift';
 
 /**
  * Whether the driver declared a harness property. Such flags have no operation, so

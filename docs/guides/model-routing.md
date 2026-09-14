@@ -104,9 +104,13 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 
 **All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and thirteen rows reach it: Claude Code's Fable and Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-5.6-sol` at `xhigh`, `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-003's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
 
-**All three harnesses also offer an approver.** Its floor is 7, and exactly 31
-shipped tuples reach it with an assessed base row at the same floor. Acceptance follows
-a recipe after green review but makes costly state changes; [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)
+**Only Claude Code lifts an approver.** Its floor is 7, and exactly 11
+shipped tuples reach it with an assessed base row at the same floor. Cursor and
+Codex refuse before launch: Cursor reads project configuration only from the
+selected workspace; Codex would have to write into the shared clone root
+(`review --approver --harness cursor` or `--harness codex`, [ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)).
+The lift is `review --approver` once a reviewer result is on record; acceptance work makes costly
+state changes, and [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)
 records why that work rejects 6 without buying the independent defect discovery of 8.
 
 **Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.

@@ -16,7 +16,7 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | orchestrator | orchestrator | Session that owns the task mailbox and routes work. | `src/protocol.ts` (`ORCHESTRATOR`) |
 | worker | worker | Session that edits one git worktree and reports on the bus. | `src/protocol.ts` (`workerAddress`) |
 | reviewer | reviewer | Read-only session that inspects a diff. | `src/protocol.ts` (`reviewerAddress`) |
-| approver | approver | Session lifted after one piece has a green review to carry out that piece's acceptance. | `src/protocol.ts` (`approverAddress`), [ADR-013](adr/adr-013-approver-is-a-fourth-addressed-participant.md) |
+| approver | approver | Session lifted with `review --approver` once a reviewer result is on record, to carry out that piece's acceptance. | `src/protocol.ts` (`approverAddress`), [ADR-013](adr/adr-013-approver-is-a-fourth-addressed-participant.md), [ADR-015](adr/adr-015-approver-lift-is-a-flag-on-review.md) |
 | harness | harness | Agent runtime a driver talks to. This CLI ships `claude`, `cursor`, and `codex`. | `lib/drivers.js`, `lib/driver-claude.js` |
 | driver | driver | Adapter that starts, inspects, wakes, and stops one harness. | `src/driver.ts` |
 | holder | holder | Detached process that keeps one Codex `app-server --stdio` stream open after `promptobus spawn` returns. It owns the JSON-RPC stream, answers approvals, listens for driver turns, and watches the participant's session record. | `lib/codex-session.js` (“Why the holder is a separate process”), `lib/codex-hold.js` (`holdMain`) |

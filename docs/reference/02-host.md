@@ -122,7 +122,7 @@ rule to that role; an incomplete answer is not an empty deny list. The classific
 covers every server the host hands the participant, not only third-party ones, and a
 complete answer lets the driver translate the pairs into its own deny syntax. That
 translation disables only the named MCP tools; it does not choose the participant's
-repository sandbox. In particular, a Codex approver remains `workspace-write`.
+repository sandbox. Codex cannot lift an approver ([ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)).
 
 The approver's package deny list is empty because it needs repository writes and shell
 commands for merged-tree gates, squash and archive. The reviewer lists are unchanged.

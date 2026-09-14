@@ -191,12 +191,12 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
 }));
 store.dismissParticipant(HOME, TASK, 'reviewer:api', T2);
 store.upsertParticipant(HOME, TASK, store.participantRecord('approver:api', {
-  harness: 'codex',
+  harness: 'claude',
   mode: 'managed',
   sessionRef: 'sess-approver',
-  model: 'gpt-accept',
+  model: 'claude-fable-5-1',
   started: T2,
-  routing: { strategy: 'quality', role: 'approver', tupleId: 'codex.gpt-accept', windows: [] },
+  routing: { strategy: 'quality', role: 'approver', tupleId: 'claude-fable-51-high', windows: [] },
 }));
 // Explicit `--model`, no routing at all. It gets a record too, so a hand-picked
 // tuple is measured beside a routed one.
@@ -239,7 +239,7 @@ const rows = lines.map((l) => JSON.parse(l));
 const by = (role, model) => rows.find((r) => r.role === role && r.model === model);
 const worker = by('worker', 'claude-opus');
 const reviewer = by('reviewer', 'gpt-x');
-const approver = by('approver', 'gpt-accept');
+const approver = by('approver', 'claude-fable-5-1');
 const hand = by('worker', 'claude-sonnet');
 
 check(': one record per participant that lifted a session — four of them',
@@ -277,7 +277,7 @@ for (const [i, row] of rows.entries()) {
 }
 
 check(': the approver record carries the addressed role and its routing tuple',
-  approver.role === 'approver' && approver.tuple === 'codex.gpt-accept',
+  approver.role === 'approver' && approver.tuple === 'claude-fable-51-high',
   JSON.stringify(approver));
 
 check(': the routed worker carries its strategy, its source and its tuple',

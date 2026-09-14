@@ -69,7 +69,7 @@ worker floor of 5 for a state transition whose wrong target is costly to restore
 rejected because it buys the stronger independent defect-finding judgement assigned to the
 reviewer, while the approver starts only after that judgement is green and follows a recipe.
 At 7 the shipped catalog offers 31 tuples across Claude Code, Cursor and Codex; floors 6 and
-8 would offer 40 and 22 respectively. The threshold is therefore tied to the role's work,
+8 would offer 40 and 22 respectively. **The three-harness count is superseded for approver routing by [ADR-015](adr-015-approver-lift-is-a-flag-on-review.md):** only Claude Code lifts an approver, and the shipped catalog now offers 11 approver tuples on Claude Code alone. The threshold is therefore tied to the role's work,
 not chosen as the midpoint between worker 5 and reviewer 9. Both routing and validation
 read effective quality — the tuple's general rating with `roleRatings[role]` over it —
 for the tuple and its assessed base row.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:v1:gate-record",
   "title": "Gate record",
-  "description": "A worker's gate run in machine form, attached to a result as an artifact. NOT an engine record: the four models `validate` knows are task, participant, message and artifact, and an artifact payload is opaque bytes to the engine. One entry per gate command, not per session.",
+  "description": "A worker's or approver's gate run in machine form, attached to a result as an artifact. NOT an engine record: the four models `validate` knows are task, participant, message and artifact, and an artifact payload is opaque bytes to the engine. One entry per gate command, not per session.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "records"],
@@ -60,7 +60,7 @@
         "by": {
           "description": "The bus address that ran the command, in address spelling rather than participant id.",
           "type": "string",
-          "pattern": "^(orchestrator|(?:worker|reviewer):[a-z0-9][a-z0-9-]*)$"
+          "pattern": "^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$"
         },
         "tail": {
           "description": "The tail of the combined output — the summary line, and for a non-zero exit the failing assertion in full. Bounded so the record stays readable; the whole log belongs in the log.",

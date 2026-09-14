@@ -94,6 +94,7 @@ export const SUITE_PREFIXES = [
   // per-harness one would have to be added again for every driver that gains an
   // adapter, and the sweep does not care which harness left the directory.
   'promptobus-adapter-',
+  'promptobus-approver-',
   // Three prefixes without the package name, and they stay as the files spell
   // them: `hooks.test.mjs` and `install.test.mjs` write `pb-`, and renaming
   // their literals to match the list would be an edit in someone else's file

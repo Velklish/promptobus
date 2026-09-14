@@ -46,7 +46,7 @@ promptobus done [--task <id>] [--keep-sessions]
 promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
-promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
+promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver] [--dry-run]
 promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
 ```
 
@@ -178,7 +178,7 @@ You do not merge the worker branch until you accept the result. The worker does 
 
 `promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read.
 
-A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`. Spawn cannot create a reviewer address. This package has no standalone approver-lift command; the consumer lifts that role after a green review.
+A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
 
 A participant who sent you mail and then ended the turn is waiting, not stopped.
 

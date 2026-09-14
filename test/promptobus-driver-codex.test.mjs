@@ -151,8 +151,8 @@ check(': without a name the previous driver is taken — Claude Code argv does n
 const approverRoute = codexDriver.stallRoute({
   kind: 'gone', address: 'approver:cdx', doneCommand: 'promptobus done',
 }, null);
-check(': an approver without a session is returned to the consumer lift, never worker spawn',
-  /task orchestrator/.test(approverRoute)
+check(': an approver without a session names that Codex cannot relift an approver',
+  /Codex cannot lift an approver/.test(approverRoute)
   && !/lift the worker/.test(approverRoute), approverRoute);
 
 check(': Codex capabilities are declared, all ten',
@@ -1013,9 +1013,14 @@ const approverMcpPlan = codexDriver.prepare({
 check('PB-206 review: an approver MCP deny leaves repository writes enabled',
   approverMcpPlan.settings.sandbox === 'workspace-write'
   && approverMcpPlan.cwd === ctx.cwd
-  && approverMcpPlan.settings.addDirs.join(',') === '/tmp/wt,/tmp/rules'
-  && approverMcpPlan.mcpConfig.mcpServers.catalog?.disabled_tools?.join(',') === 'create_entry',
-  JSON.stringify({ cwd: approverMcpPlan.cwd, settings: approverMcpPlan.settings, mcp: approverMcpPlan.mcpConfig }));
+  && approverMcpPlan.configDir === reviewSandbox(ctx.settingsPath)
+  && approverMcpPlan.configDir !== ctx.cwd
+  && approverMcpPlan.settings.addDirs.includes(ctx.cwd)
+  && approverMcpPlan.settings.addDirs.includes(reviewSandbox(ctx.settingsPath))
+  && approverMcpPlan.mcpConfig.mcpServers.catalog?.disabled_tools?.join(',') === 'create_entry'
+  && approverMcpPlan.files.every((f) => f.path.startsWith(reviewSandbox(ctx.settingsPath)))
+  && !approverMcpPlan.files.some((f) => f.path.startsWith(path.join(ctx.cwd, '.codex'))),
+  JSON.stringify({ cwd: approverMcpPlan.cwd, configDir: approverMcpPlan.configDir, settings: approverMcpPlan.settings, mcp: approverMcpPlan.mcpConfig, files: approverMcpPlan.files.map((f) => f.path) }));
 
 // --- PB-180: the participant's hooks land where the participant looks ----------------
 
@@ -1047,6 +1052,19 @@ check('PB-180: the hooks file carries the guard for both events, with THIS parti
     doc.hooks.Stop[0].hooks[0].command === GUARD_CMD
     && doc.hooks.SessionStart[0].hooks[0].command === GUARD_CMD),
   JSON.stringify({ worker: workerHooks, reviewer: reviewerHooks }));
+const hookedApprover = codexDriver.prepare({ ...ctx, guardCommand: GUARD_CMD, role: 'approver' });
+const approverSandbox = reviewSandbox(ctx.settingsPath);
+const approverHooks = hooksOf(hookedApprover, approverSandbox);
+check('PB-206 review: an approver hooks file stays in task storage, not the clone root',
+  approverHooks !== null
+  && hookedApprover.cwd === ctx.cwd
+  && hookedApprover.files.every((f) => !f.path.startsWith(path.join(ctx.cwd, '.codex')))
+  && hookedApprover.files.some((f) => f.path === path.join(approverSandbox, '.codex', 'hooks.json')),
+  JSON.stringify({ cwd: hookedApprover.cwd, files: hookedApprover.files.map((f) => f.path) }));
+check('PB-206 review: the approver hooks file carries the guard for both events',
+  approverHooks.hooks.Stop[0].hooks[0].command === GUARD_CMD
+  && approverHooks.hooks.SessionStart[0].hooks[0].command === GUARD_CMD,
+  JSON.stringify(approverHooks));
 // Negative control: without a guard command the plan writes no hooks file at all, so the
 // two checks above are measuring the command and not the shape of `files`.
 check('PB-180: no guard command, no hooks file',

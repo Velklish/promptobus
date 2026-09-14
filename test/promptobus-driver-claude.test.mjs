@@ -193,6 +193,6 @@ check(': and it no longer asserts that only a person can answer',
   !/only a person/i.test(route), route);
 
 const approverRoute = stallRoute({ kind: 'gone', address: 'approver:api' }, null, null);
-check(': an approver without a session is returned to the consumer lift, never worker spawn',
-  /task orchestrator/.test(approverRoute)
+check(': an approver without a session is returned to the review --approver lift, never worker spawn',
+  /lift the approver again/.test(approverRoute)
   && !/lift the worker/.test(approverRoute), approverRoute);

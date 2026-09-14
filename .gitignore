@@ -9,6 +9,9 @@ coverage/
 .env.*
 !.env.example
 
+# Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
+/gates-*-t*-*.json
+
 # backslop:start
 .claude/skills/backslop-*
 .cursor/rules/backslop-*

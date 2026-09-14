@@ -467,6 +467,13 @@ test('the reference error-code table is a subset of ERROR_CODES', async () => {
   assert.deepEqual(documented.filter((c) => !ERROR_CODES.includes(c)), []);
 });
 
+test('harness-refused is declared in ERROR_CODES and named in the reference table', async () => {
+  const { ERROR_CODES } = await import('../dist/index.js');
+  const documented = tableCodes(docSection('### Error codes', '### Files'));
+  assert.ok(ERROR_CODES.includes('harness-refused'));
+  assert.ok(documented.includes('harness-refused'));
+});
+
 test('--help names models, --strategy and --allow-payg', async () => {
   const { helpText } = await import('../lib/cli.js');
   const text = helpText({ kind: 'promptobus-host', commandName: 'promptobus', version: '0.0.0' });
