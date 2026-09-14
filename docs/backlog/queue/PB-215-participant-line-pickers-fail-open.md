@@ -1,5 +1,6 @@
 # PB-215 · Выборка строки участника в тестах падает fail-open: промах отдаёт весь вывод, и проверка зеленеет, ничего не выбрав
 
+- **Order:** 455
 - **Scope:** `test/promptobus-driver-codex.test.mjs` (1703, 1735), `test/promptobus-driver-cursor.test.mjs` (1059, 1264, 1295, 1337)
 - **Created:** 2026-09-13
 - **Dependencies:** PB-159.1
