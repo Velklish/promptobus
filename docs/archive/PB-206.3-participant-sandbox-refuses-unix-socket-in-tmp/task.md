@@ -27,7 +27,7 @@ Error: listen EPERM: operation not permitted /tmp/ags-dOIrvY/orch.sock
 code: 'EPERM', errno: -1, syscall: 'listen', port: -1
 ```
 
-`test/promptobus-e2e.test.mjs` and `test/promptobus-mixed.test.mjs` return the same `EPERM` from `test/scenario.mjs:317` on `/tmp/…/orchestrator.sock`. Each of the three was run twice back to back; the exit code of the `node --test` command was 1 every time, at load averages between 8 and 18 — far below the 115…198 of [PB-159.1](../../backlog/queue/PB-159.1-pooled-load-reds-beyond-preflight.md).
+`test/promptobus-e2e.test.mjs` and `test/promptobus-mixed.test.mjs` return the same `EPERM` from `test/scenario.mjs:317` on `/tmp/…/orchestrator.sock`. Each of the three was run twice back to back; the exit code of the `node --test` command was 1 every time, at load averages between 8 and 18 — far below the 115…198 of [PB-159.1](../../backlog/active/PB-159.1-pooled-load-reds-beyond-preflight.md).
 
 **The abort point is not stable, and an earlier draft of this card claimed it was.** The same `test/promptobus-guard.test.mjs`, in the same sandbox and on the same unchanged tree, stopped after 4 verdicts of 68 at 20:16 and reached 58 of 68 at 20:28. The file is red either way and the refusal is the same `EPERM`, but how far a run gets before hitting it varies. What decides that — which temporary directory the run draws, how many sockets are already bound — is unmeasured, and the work must not assume a fixed failure point.
 

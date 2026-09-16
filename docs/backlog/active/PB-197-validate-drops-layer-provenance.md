@@ -1,9 +1,9 @@
 # PB-197 · validate() drops the layer provenance of merged-catalog warnings, so a consumer cannot tell its own warning from the catalog's
 
-- **Order:** 120
 - **Scope:** [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none
+- **Taken:** 2026-09-16
 
 ## Context
 

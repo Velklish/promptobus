@@ -1,9 +1,9 @@
 # PB-200 · The exemption's token boundary is narrower than the detector's, so a longer path on an exempt prefix escapes
 
-- **Order:** 150
 - **Scope:** `scripts/audit-public.mjs`
 - **Created:** 2026-09-12
 - **Dependencies:** none
+- **Taken:** 2026-09-16
 
 ## Context
 
