@@ -45,6 +45,11 @@ const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetr
 const { ROUTED_ROLES } = await import(path.join(ROOT, 'lib', 'model-routing', 'catalog.js'));
 const publicTelemetry = await import(path.join(ROOT, 'dist', 'telemetry.js'));
 
+// PB-212: telemetrySummary has one implementation, re-exported, not two that could agree by
+// coincidence — a defect in the shared algorithm cannot hide behind output parity any more.
+check(': telemetry.telemetrySummary is the same function as the public one, not a twin',
+  telemetry.telemetrySummary === publicTelemetry.telemetrySummary, 'the re-export is missing');
+
 // The owner gate is a positive proof, and the suite strips harness identity from the
 // environment: a file that cannot name its caller would only ever see the refusal.
 process.env.CLAUDE_CODE_SESSION_ID = 'sess-telemetry-stand';
@@ -1030,7 +1035,6 @@ const quotaInput205 = [
   { task: 'quota-overlap-205', role: 'worker', harness: 'cursor', windows: [cursorWindow205] },
 ];
 const quotaRows205 = telemetry.telemetrySummary(quotaInput205);
-const publicQuotaRows205 = publicTelemetry.telemetrySummary(quotaInput205);
 const quotaRun205 = quotaRows205.find((run) => run.task === 'quota-overlap-205');
 const claudeQuota205 = quotaRun205?.quotaEvidence?.find((evidence) => evidence.harness === 'claude');
 const cursorEvidence205 = quotaRun205?.quotaEvidence?.find((evidence) => evidence.harness === 'cursor');
@@ -1050,9 +1054,6 @@ check(': quota delta remains run-wide evidence with participant coverage',
     && row.records === 1 && row.measuredRecords === 0 && row.unavailableRecords === 1)
   && cursorEvidence205?.deltaPercent === 10 && cursorEvidence205.state === 'measured',
   JSON.stringify(quotaRun205));
-check(': public and private quota summaries stay in sync',
-  JSON.stringify(publicQuotaRows205) === JSON.stringify(quotaRows205),
-  JSON.stringify({ private: quotaRows205, public: publicQuotaRows205 }));
 const absentScopeWindow205 = {
   id: 'session', kind: 'session', usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
 };
@@ -1065,14 +1066,10 @@ const absentScopeInput205 = [
   { task: 'scope-invalid-205', role: 'worker', harness: 'claude', windows: [invalidScopeWindow205] },
 ];
 const absentScopeRows205 = telemetry.telemetrySummary(absentScopeInput205);
-const publicAbsentScopeRows205 = publicTelemetry.telemetrySummary(absentScopeInput205);
 check(': absent or invalid quota scope is not account-wide evidence',
   [
     absentScopeRows205.every((run) => run.quotaEvidence.length === 0),
     absentScopeRows205.every((run) => run.roles.worker.quotaCostState === 'unavailable'),
-    publicAbsentScopeRows205.every((run) => run.quotaEvidence.length === 0),
-    publicAbsentScopeRows205.every((run) => run.roles.worker.quotaCostState === 'unavailable'),
-    JSON.stringify(publicAbsentScopeRows205) === JSON.stringify(absentScopeRows205),
   ].every(Boolean),
   JSON.stringify(absentScopeRows205));
 const malformedQuotaInput205 = [
@@ -1120,37 +1117,14 @@ const safeSummary205 = (summary, input) => {
   }
 };
 const malformedRows205 = safeSummary205(telemetry.telemetrySummary, malformedQuotaInput205);
-const publicMalformedRows205 = safeSummary205(publicTelemetry.telemetrySummary, malformedQuotaInput205);
 check(': malformed quota windows are unavailable rather than a crash or measurement',
   [
     malformedRows205?.length === 6,
     malformedRows205?.every((run) => run.quotaEvidence.length === 0
       && run.roles.worker.quotaCostState === 'unavailable'),
-    publicMalformedRows205?.length === 6,
-    publicMalformedRows205?.every((run) => run.quotaEvidence.length === 0
-      && run.roles.worker.quotaCostState === 'unavailable'),
-    JSON.stringify(publicMalformedRows205) === JSON.stringify(malformedRows205),
   ].every(Boolean),
-  JSON.stringify({ private: malformedRows205, public: publicMalformedRows205 }));
+  JSON.stringify(malformedRows205));
 const canonicalScopeRows205 = telemetry.telemetrySummary([
-  {
-    task: 'scope-canonical-205', role: 'worker', harness: 'claude',
-    windows: [{
-      id: 'weekly', kind: 'weekly',
-      scope: { model: 'Example Deep', models: ['example-deep', 'example-quick'] },
-      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
-    }],
-  },
-  {
-    task: 'scope-canonical-205', role: 'reviewer', harness: 'claude',
-    windows: [{
-      id: 'weekly', kind: 'weekly',
-      scope: { models: ['example-quick', 'example-deep'], model: 'Example Deep' },
-      usedPercentAtSpawn: 10, usedPercentAtEnd: 20,
-    }],
-  },
-]);
-const publicCanonicalScopeRows205 = publicTelemetry.telemetrySummary([
   {
     task: 'scope-canonical-205', role: 'worker', harness: 'claude',
     windows: [{
@@ -1177,11 +1151,8 @@ const duplicateScopeInput205 = [{
   }],
 }];
 const duplicateScopeRows205 = telemetry.telemetrySummary(duplicateScopeInput205);
-const publicDuplicateScopeRows205 = publicTelemetry.telemetrySummary(duplicateScopeInput205);
 const canonicalRun205 = canonicalScopeRows205.find((run) => run.task === 'scope-canonical-205');
-const publicCanonicalRun205 = publicCanonicalScopeRows205.find((run) => run.task === 'scope-canonical-205');
 const duplicateRun205 = duplicateScopeRows205.find((run) => run.task === 'scope-duplicate-205');
-const publicDuplicateRun205 = publicDuplicateScopeRows205.find((run) => run.task === 'scope-duplicate-205');
 check(': quota scope keys canonicalize equivalent shapes and reject duplicate ids',
   [
     canonicalRun205?.quotaEvidence?.length === 1,
@@ -1192,23 +1163,14 @@ check(': quota scope keys canonicalize equivalent shapes and reject duplicate id
     canonicalRun205?.roles?.reviewer?.quotaCostState === 'ambiguous',
     duplicateRun205?.quotaEvidence?.length === 0,
     duplicateRun205?.roles?.worker?.quotaCostState === 'unavailable',
-    publicCanonicalRun205?.quotaEvidence?.length === 1,
-    publicCanonicalRun205?.quotaEvidence?.[0]?.state === 'ambiguous',
-    publicDuplicateRun205?.quotaEvidence?.length === 0,
-    JSON.stringify(publicCanonicalScopeRows205) === JSON.stringify(canonicalScopeRows205),
-    JSON.stringify(publicDuplicateScopeRows205) === JSON.stringify(duplicateScopeRows205),
   ].every(Boolean),
-  JSON.stringify({
-    private: { canonical: canonicalRun205, duplicate: duplicateRun205 },
-    public: { canonical: publicCanonicalRun205, duplicate: publicDuplicateRun205 },
-  }));
+  JSON.stringify({ canonical: canonicalRun205, duplicate: duplicateRun205 }));
 const partialInput205 = [
   { task: 'partial-summary-205', role: 'worker', durationSec: 100, idleSec: 30, deliveryLatencySec: 5 },
   { task: 'partial-summary-205', role: 'worker', durationSec: null, idleSec: null, deliveryLatencySec: null },
   { task: 'partial-summary-205', role: 'reviewer', durationSec: 200, idleSec: 40, deliveryLatencySec: 7 },
 ];
 const partialRows205 = telemetry.telemetrySummary(partialInput205);
-const publicPartialRows205 = publicTelemetry.telemetrySummary(partialInput205);
 const partialRun205 = partialRows205.find((run) => run.task === 'partial-summary-205');
 check(': partial role fields stay unavailable and do not choose a bottleneck',
   [
@@ -1218,9 +1180,8 @@ check(': partial role fields stay unavailable and do not choose a bottleneck',
     partialRun205?.roles?.reviewer?.wallClockSec === 200,
     partialRun205?.roles?.reviewer?.idleSec === 40,
     partialRun205?.bottleneckRole === null,
-    JSON.stringify(publicPartialRows205) === JSON.stringify(partialRows205),
   ].every(Boolean),
-  JSON.stringify({ private: partialRows205, public: publicPartialRows205 }));
+  JSON.stringify(partialRun205));
 const beforePrune205 = JSON.stringify(summaryStats205?.summary);
 rmSync(store.taskDir(HOME205, TASK205), { recursive: true, force: true });
 const afterPruneStats205 = telemetry.telemetryStats(HOST205);
