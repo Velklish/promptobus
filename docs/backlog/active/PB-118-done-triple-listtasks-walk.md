@@ -1,9 +1,9 @@
 # PB-118 · done() calls listTasks(home) three times per invocation (sweepWorktrees, sweepParticipantSecrets, sweepJournals/pruneCandidates), re-parsing every task journal each time and repeating any broken-task warning up to three times
 
-- **Order:** 250
 - **Scope:** `lib/done.js` (`sweepWorktrees`, `sweepParticipantSecrets`), `lib/prune.js` (`sweepJournals`, `pruneCandidates`), `lib/store.js` (`listTasks`, `withTaskCache`)
 - **Created:** 2026-09-06
 - **Dependencies:** none
+- **Taken:** 2026-09-16
 
 ## Context
 
