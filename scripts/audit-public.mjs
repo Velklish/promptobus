@@ -37,9 +37,13 @@ const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
 const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
 const BRAND_ID = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}-workspace-[0-9a-f]+\\b`, 'iu');
 const HOME_ROOT = ['(?:^|[^\\w])/', '(?:Users|home)', '/'].join('');
-const HOME_USER = `[^/\\s"'<>]*[A-Za-z0-9][^/\\s"'<>]*`;
+// ONE token-boundary grammar, and both halves below are built from it
+// ([reference/README](../docs/reference/README.md)).
+const TOKEN_STOP = '\\s"\'<>';
+const TOKEN_CHARACTER = new RegExp(`[^${TOKEN_STOP}]`, 'u');
+const HOME_USER = `[^/${TOKEN_STOP}]*[A-Za-z0-9][^/${TOKEN_STOP}]*`;
 const ABSOLUTE_HOME_PATH = new RegExp(
-  `${HOME_ROOT}${HOME_USER}(?:/[^\\s"'<>]+)?`,
+  `${HOME_ROOT}${HOME_USER}(?:/[^${TOKEN_STOP}]+)?`,
   'u',
 );
 
@@ -69,7 +73,9 @@ const ABSOLUTE_HOME_PATH_EXEMPTIONS = new Map([
     syntheticHome('/', 'home', '/parent'),
   ]],
 ]);
-const isPathCharacter = (value) => value !== undefined && /[A-Za-z0-9._/-]/u.test(value);
+// Strips a literal only where it is the WHOLE token, and "whole" is read off
+// `TOKEN_CHARACTER` — the same class the detector accepts inside a path.
+const isPathCharacter = (value) => value !== undefined && TOKEN_CHARACTER.test(value);
 const stripSyntheticHomeLiteral = (text, literal) => {
   let cursor = 0;
   let stripped = '';

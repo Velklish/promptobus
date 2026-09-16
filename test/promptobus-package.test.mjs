@@ -469,6 +469,18 @@ check('publicity audit exempts only named synthetic home literals',
 check('publicity audit does not exempt a whole synthetic fixture file',
   syntheticHomeFixtures.every(([name, , other]) => absoluteOwnerHomePath(name, other) === true),
   syntheticHomeFixtures.map(([name]) => name).join(', '));
+// Detection and stripping read the SAME token boundary: every character the
+// detector accepts, and a delimiter it does not, against each exemption.
+const samePrefixTails = ['~', '%', ':', '\\', '/', '.', '-', 'x'];
+const boundaryEscapes = syntheticHomeFixtures.flatMap(([name, value]) => samePrefixTails
+  .filter((tail) => absoluteOwnerHomePath(name, `${value}${tail}leak`) !== true)
+  .map((tail) => `${name} + ${JSON.stringify(tail)}`));
+check('publicity audit reports a longer path built on an exempt prefix, whatever joins them',
+  boundaryEscapes.length === 0, boundaryEscapes.join(', '));
+check('publicity audit still exempts the literal against a delimiter the detector refuses',
+  syntheticHomeFixtures.every(([name, value]) => ['"', "'", '<', '>', ' ']
+    .every((edge) => absoluteOwnerHomePath(name, `${edge}${value}${edge}`) === false)),
+  syntheticHomeFixtures.map(([name]) => name).join(', '));
 const extensionlessHome = Buffer.from(
   homePath('/', 'home', '/', 'extensionless', '/secret'));
 check('publicity audit recognizes extensionless text by contents',
