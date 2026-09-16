@@ -13,7 +13,7 @@ import { linkFailure } from './artifacts.js';
 import { fail, PromptobusError } from './errors.js';
 import {
   brokenInboxDir, brokenMessagesDir, historyDir, historyRef, historyRoot, inboxDir, inboxRef, intentFile,
-  intentsDir, messageFile, messagesDir, ownerOfIntent, taskDir,
+  intentsDir, messageFile, messagesDir, ownerOfIntent,
 } from './layout.js';
 import { compactStamp, MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';

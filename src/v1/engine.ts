@@ -235,7 +235,7 @@ export function openEngine({
   }
 
   /** Steps 2–5: the commit point, fan-out, and "who to wake" events. Also one for both send branches. */
-  function finish(task: string, meta: TaskV1, sender: ParticipantV1, recipients: ParticipantV1[],
+  function finish(task: string, sender: ParticipantV1, recipients: ParticipantV1[],
     input: { to: string[]; type: string; body: string; linkArtifact?: string }, artifact: ArtifactV1 | null): SendResult {
     const draft = newMessage(task, sender.id, input.to, input.type, input.body,
       artifact?.id ?? input.linkArtifact ?? null, now());
@@ -275,7 +275,7 @@ export function openEngine({
     claimOwner: (task, id) => claimOwner(home, task, id, now, cli),
 
     async send(task, input) {
-      const { sender, recipients, meta } = prepare(task, input);
+      const { sender, recipients } = prepare(task, input);
 
       // --- artifact: after policy, before the message -----------------------------------
       // The order is required: a policy refusal must not leave a blob in the
@@ -297,11 +297,11 @@ export function openEngine({
         });
         faults('artifact', { task, artifact: artifact.id });
       }
-      return finish(task, meta, sender, recipients, input, artifact);
+      return finish(task, sender, recipients, input, artifact);
     },
 
     sendSync(task, input) {
-      const { sender, recipients, meta } = prepare(task, input);
+      const { sender, recipients } = prepare(task, input);
       let artifact: ArtifactV1 | null = null;
       if (input.artifact) {
         const source = input.artifact;
@@ -322,7 +322,7 @@ export function openEngine({
         });
         faults('artifact', { task, artifact: artifact.id });
       }
-      return finish(task, meta, sender, recipients, input, artifact);
+      return finish(task, sender, recipients, input, artifact);
     },
 
     read(task, participant) {

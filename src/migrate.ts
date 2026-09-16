@@ -6,7 +6,6 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import process from 'node:process';
 import { writeJsonAtomic } from './fs/atomic.js';
 import { withDirLock } from './fs/lock.js';
 import type { LockHolder } from './fs/lock.js';
