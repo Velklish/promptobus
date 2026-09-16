@@ -7,7 +7,7 @@
 
 ## Context
 
-Everything the mechanism cleans up, it cleans up for a whole task. `done` stops the managed sessions, sweeps the worktrees of closed tasks, removes a branch it has proven merged by two measurements ([PB-6](../../archive/PB-6-done-blames-conflict-after-squash/result.md), [PB-158](../../archive/PB-158-done-keeps-a-branch-it-proved-merged/result.md)), and finally sweeps journals older than the threshold. Per piece there is nothing: `dismiss` removes supervision only, `stop` kills one session, and neither touches a directory. `engine.prune` **refuses on an active task** — and at the moment one piece is accepted, the task is still active by definition.
+Everything the mechanism cleans up, it cleans up for a whole task. `done` stops the managed sessions, sweeps the worktrees of closed tasks, removes a branch it has proven merged by two measurements ([PB-6](../PB-6-done-blames-conflict-after-squash/result.md), [PB-158](../PB-158-done-keeps-a-branch-it-proved-merged/result.md)), and finally sweeps journals older than the threshold. Per piece there is nothing: `dismiss` removes supervision only, `stop` kills one session, and neither touches a directory. `engine.prune` **refuses on an active task** — and at the moment one piece is accepted, the task is still active by definition.
 
 What that leaves behind, checked on disk rather than inferred:
 
