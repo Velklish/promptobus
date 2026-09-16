@@ -1,10 +1,10 @@
 # PB-188 · The two comment-sweep gates are withdrawn from the release: three rounds, four bypasses, and one false certificate
 
-- **Order:** 230
 - **Scope:** `test/comment-scan.mjs`, `test/comment-length.test.mjs`, `test/comment-links.test.mjs`,
   [contributing](../../guides/contributing.md) § the sweep
 - **Created:** 2026-09-12, release run
 - **Dependencies:** the sweep itself is `PB-172`; the removals it made stay
+- **Taken:** 2026-09-16
 
 ## What happened
 
@@ -25,7 +25,7 @@ text. The link gate's floors (`seen > 50`, `checked > 30`) were replaced by a pe
 
 1. **`comment-scan.mjs:23`** — the scanner stops parsing a physical line at the first comment
    marker and holds no template-literal state. `/* x */ // one` followed by two `//` lines misses
-   the three-line run; `const s = "[x](missing.md)"; // note` feeds the link gate a link taken
+   the three-line run; `const s = "[x](../queue/missing.md)"; // note` feeds the link gate a link taken
    **from a string literal**.
 2. **`comment-length.test.mjs:31`** — the baseline is reduced to a `Set`, so **multiplicity is
    lost**: a copy of an already-allowed long block in the same pending file carries the same hash
