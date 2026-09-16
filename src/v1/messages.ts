@@ -657,8 +657,14 @@ export function peekInbox(home: string, task: string, participant: string): {
     let record: ReadRecord;
     try {
       record = readRecord(file, name, brokenInboxDir(home, task, participant));
-    } catch {
+    } catch (e) {
       // The owner took it between the listing and the read: they will deliver the message.
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      // Any other refusal is present-and-broken, never absent
+      // ([01-overview](../../docs/reference/01-overview.md) § Store home).
+      const errno = (e as NodeJS.ErrnoException).code;
+      if (typeof errno !== 'string') throw e;
+      broken.push({ name, code: errno, note: (e as Error).message, attic: null, failure: null });
       continue;
     }
     if ('broken' in record) {

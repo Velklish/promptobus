@@ -22,7 +22,8 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
+  unlinkSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -372,6 +373,39 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
     assert.match(broken[0].note, /did not parse/);
     assert.ok(broken[0].attic && !existsSync(path.join(box, dirtyName)));
   });
+
+  // A dangling symlink is the ENOENT of the race with no seam to inject one:
+  // the listing sees the name, the read does not find the file.
+  const goneName = '20260903T000000000-8888-abcdef.json';
+  symlinkSync(path.join(box, 'nothing-is-here.json'), path.join(box, goneName));
+  await t.test('peek: a ref that vanished between the listing and the read is a silent skip', () => {
+    const { messages, broken } = engine.peek(task.id, 'orchestrator');
+    assert.equal(messages.length, 3);
+    assert.equal(broken.length, 0, broken.map((b) => `${b.name} ${b.code}`).join(' | '));
+  });
+  // `unlinkSync` and not `rmSync`: a dangling symlink is ENOENT to the stat
+  // `rm` takes its decision from, so `force` skips it and the ref would stay.
+  unlinkSync(path.join(box, goneName));
+
+  // `chmod` refuses nothing on Windows or under `uid 0`, where the record parses
+  // and the verdict changes; same cut as [tmpdir-sweep](tmpdir-sweep.test.mjs).
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    const shutName = '20260903T000000000-7777-abcdef.json';
+    const shutFile = path.join(box, shutName);
+    writeFileSync(shutFile, '{"id":"x"}');
+    chmodSync(shutFile, 0o000);
+    await t.test('peek: a ref that cannot be opened is named in broken, not counted as absent', () => {
+      const { messages, broken } = engine.peek(task.id, 'orchestrator');
+      assert.equal(messages.length, 3, 'the readable mail is unaffected');
+      const note = broken.find((b) => b.name === shutName);
+      assert.ok(note, broken.map((b) => `${b.name} ${b.code}`).join(' | ') || '(nothing in broken)');
+      assert.equal(note.code, 'EACCES', note.code);
+      assert.equal(note.attic, null, 'the ref stays in place for a later visit');
+      assert.ok(existsSync(shutFile), 'and it is still in the inbox');
+    });
+    chmodSync(shutFile, 0o600);
+    rmSync(shutFile, { force: true });
+  }
 
   await t.test('glance: glances in silence — touches no refs and sets no broken aside', () => {
     writeFileSync(path.join(box, dirtyName), 'not json at all');
