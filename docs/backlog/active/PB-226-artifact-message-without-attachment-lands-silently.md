@@ -1,9 +1,9 @@
 # PB-226 · A type=artifact message with no artifactPath is accepted and delivered without an attachment
 
-- **Order:** 420
 - **Scope:** `src/mcp/tools.ts` (`promptobus_send` input), `src/v1/engine.ts` (`send`, the `input.artifact` branch), [04-protocol](../../reference/04-protocol.md) § Artifacts
 - **Created:** 2026-09-16
 - **Dependencies:** none
+- **Taken:** 2026-09-17
 
 ## Context
 

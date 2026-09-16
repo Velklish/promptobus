@@ -1,9 +1,9 @@
 # PB-225 · The reviewer is pointed at gate and handover records, not at the evidence artifacts the author attached
 
-- **Order:** 410
 - **Scope:** `lib/review.js` (the review subject: `gateRecordsNote`, `handoverRecordsNote`), [03-cli](../../reference/03-cli.md) § Review, [04-protocol](../../reference/04-protocol.md) § Artifacts
 - **Created:** 2026-09-16
 - **Dependencies:** none; the handover record that narrows the gap is `PB-216`
+- **Taken:** 2026-09-17
 
 ## Context
 
