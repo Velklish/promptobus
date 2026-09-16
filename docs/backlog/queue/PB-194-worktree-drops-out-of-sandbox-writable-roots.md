@@ -3,7 +3,7 @@
 - **Order:** 90
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
 - **Created:** 2026-09-12
-- **Dependencies:** PB-191 for the file-change approval method
+- **Dependencies:** PB-191 for the file-change approval method; PB-196 goes first — three of the four open questions below ask whether other binary versions share this boundary, and PB-196 is the upgrade that answers them
 
 ## Context
 

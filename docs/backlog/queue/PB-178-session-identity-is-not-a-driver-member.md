@@ -1,4 +1,4 @@
-# PB-178 · `sessionIdentity` reads one harness's environment variable directly, while every other harness fact is a driver member
+# PB-178 · Контракт идентичности закрыт, живой демонстрации на трёх харнессах нет
 
 - **Order:** 200
 - **Scope:** `lib/store.js` (`sessionIdentity`), `lib/drivers.js` (the driver contract),

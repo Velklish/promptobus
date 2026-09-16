@@ -3,7 +3,7 @@
 - **Order:** 310
 - **Scope:** `lib/spawn.js` (`buildPrompt`, форма сдачи), `lib/review.js` (та же форма во второй копии), `schemas/v1/gate-record.schema.json` как образец, `docs/reference/03-cli.md` § Spawn
 - **Created:** 2026-09-13
-- **Dependencies:** PB-201 (запись гейта как машинный факт)
+- **Dependencies:** PB-201 (запись гейта как машинный факт). Близнец в ati-agents — `BL-678`, форма сдачи в скилле оркестрации: одно решение, два носителя. Расходятся, если делать порознь
 
 ## Context
 
