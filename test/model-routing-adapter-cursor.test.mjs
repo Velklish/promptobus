@@ -199,7 +199,24 @@ const NO_ACCOUNT = {
  */
 const stubAdapter = (deps = {}) => cursorAvailability(CURSOR_TOOL, { ...NO_ACCOUNT, ...deps });
 
-const ask = (host, timeoutMs = 10_000, deps = {}) => {
+/**
+ * The budget of a check whose subject is NOT the deadline. A verdict check has to see
+ * the verdict, and 10 s did not: under a loaded machine the probe answered past it and
+ * `quota_unknown` came back `probe_timeout` — about the neighbours, not about the
+ * account (PB-159.1). Measured on this tree, idle: one probe costs ~0.5 s, so 60 s is a
+ * hundredfold margin, and a genuinely hung probe still reddens as `probe_timeout` well
+ * inside the file watchdog (240 s, home.mjs) rather than taking the file down.
+ *
+ * Three checks measure the deadline itself and pass their own small budget — 300, 700 and
+ * 2000 ms — so this number does not reach them. One further check has a wall-clock
+ * assertion and DOES take it: "the probe does not block the event loop" calls `ask` with no
+ * budget, and its own assertions are a counted tick and a LOWER bound on the elapsed time.
+ * Raising an upper bound cannot break either of those, which is why it is left on the
+ * default rather than pinned to a number of its own.
+ */
+const VERDICT_BUDGET_MS = 60_000;
+
+const ask = (host, timeoutMs = VERDICT_BUDGET_MS, deps = {}) => {
   const adapter = stubAdapter(deps);
   return adapter.probe({ host, toolBin: host.resolveToolBin(adapter.tool), timeoutMs, refresh: false });
 };
@@ -435,7 +452,7 @@ test('the binary comes from the request: this adapter resolves none of its own',
     resolveToolBin: () => { throw new Error('the preflight resolved this already'); },
   };
   const verdict = await stubAdapter()
-    .probe({ host: hostile, toolBin: resolved, timeoutMs: 10_000, refresh: false });
+    .probe({ host: hostile, toolBin: resolved, timeoutMs: VERDICT_BUDGET_MS, refresh: false });
   assert.equal(verdict.reason, 'quota_unknown', verdict.message);
   assert.equal(verdict.version, STUB_VERSION);
 });
@@ -698,7 +715,7 @@ test('a logged-in account whose dashboard answers is available, with two pool wi
   // `unknown`, not `available`". ADR-004 supersedes the assumption under it, and
   // the word still means auth, model AND limit confirmed.
   const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [POLICY_CALL]: ok(LIMIT_STATUS) } });
-  const verdict = await ask(machine(), 10_000, wired.deps);
+  const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
   assert.equal(verdict.state, 'available', verdict.message);
   assert.equal(verdict.reason, null);
   assert.deepEqual(verdict.tier, { name: 'included:7000', source: 'derived' });
@@ -720,7 +737,7 @@ test('the snapshot paces a grok-4.6 tuple against the auto pool the aggregation 
   const wired = account({
     replies: { [USAGE_CALL]: ok(BUCKET_LAG), [EVENTS_CALL]: ok(AGGREGATED), [POLICY_CALL]: ok(LIMIT_STATUS) },
   });
-  const verdict = await ask(host, 10_000, wired.deps);
+  const verdict = await ask(host, VERDICT_BUDGET_MS, wired.deps);
   assert.equal(verdict.state, 'available', verdict.message);
   const auto = verdict.windows.find((w) => w.id === 'monthly-auto');
   assert.deepEqual(auto.scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
@@ -744,7 +761,7 @@ test('the aggregation call is optional: a refusal costs the second pool route an
   // adapter's own comment says so — a stub cannot hold a clock it does not own.
   for (const reply of [{ error: 'timeout' }, { status: 500, doc: null }, ok(null)]) {
     const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [EVENTS_CALL]: reply } });
-    const verdict = await ask(machine(), 10_000, wired.deps);
+    const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
     assert.equal(verdict.state, 'available', verdict.message);
     assert.deepEqual(verdict.windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
     assert.deepEqual(verdict.windows[0].scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
@@ -754,7 +771,7 @@ test('the aggregation call is optional: a refusal costs the second pool route an
 test('the token reaches one header and nothing else — not the verdict, not the cache', async () => {
   const host = machine();
   const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE) } });
-  const verdict = await ask(host, 10_000, wired.deps);
+  const verdict = await ask(host, VERDICT_BUDGET_MS, wired.deps);
   assert.equal(wired.asked[0].token, FAKE_TOKEN, 'the header did get the token');
   assert.equal(JSON.stringify(verdict).includes(FAKE_TOKEN), false, 'the token is in the verdict');
 
@@ -799,7 +816,7 @@ test('no token is quota_unknown, not a logged-out account', async () => {
   // every Cursor tuple out of routing on a dialog somebody dismissed. PB-27's text
   // says `not_authenticated` here; this follows ADR-004's own reading of the word,
   // and the reference says so.
-  const verdict = await ask(machine(), 10_000, { readToken: async () => null });
+  const verdict = await ask(machine(), VERDICT_BUDGET_MS, { readToken: async () => null });
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'quota_unknown');
   assert.match(verdict.message, /no access token could be read/);
@@ -809,7 +826,7 @@ test('no token is quota_unknown, not a logged-out account', async () => {
 test('a dashboard that refuses the token is not_authenticated: that one IS about the account', async () => {
   for (const status of [401, 403]) {
     const wired = account({ replies: { [USAGE_CALL]: { status, doc: null } } });
-    const verdict = await ask(machine(), 10_000, wired.deps);
+    const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
     assert.equal(verdict.state, 'unavailable', `status ${status}`);
     assert.equal(verdict.reason, 'not_authenticated', `status ${status}`);
     assert.match(verdict.message, /cursor-agent login/);
@@ -818,18 +835,18 @@ test('a dashboard that refuses the token is not_authenticated: that one IS about
 
 test('a dashboard that answers otherwise, times out, or cannot be reached keeps its own code', async () => {
   const other = account({ replies: { [USAGE_CALL]: { status: 500, doc: null } } });
-  assert.equal((await ask(machine(), 10_000, other.deps)).reason, 'quota_unknown');
+  assert.equal((await ask(machine(), VERDICT_BUDGET_MS, other.deps)).reason, 'quota_unknown');
   const slow = account({ replies: { [USAGE_CALL]: { error: 'timeout' } } });
-  assert.equal((await ask(machine(), 10_000, slow.deps)).reason, 'probe_timeout');
+  assert.equal((await ask(machine(), VERDICT_BUDGET_MS, slow.deps)).reason, 'probe_timeout');
   const gone = account({ replies: { [USAGE_CALL]: { error: 'network' } } });
-  assert.equal((await ask(machine(), 10_000, gone.deps)).reason, 'probe_failed');
+  assert.equal((await ask(machine(), VERDICT_BUDGET_MS, gone.deps)).reason, 'probe_failed');
 });
 
 test('the policy call is optional: a refusal costs the nudge and nothing else', async () => {
   // PB-27 says to skip it on timeout, and the windows still count — it carries a
   // warning and the windows are the fact.
   const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [POLICY_CALL]: { error: 'timeout' } } });
-  const verdict = await ask(machine(), 10_000, wired.deps);
+  const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
   assert.equal(verdict.state, 'available');
   assert.equal(verdict.windows.length, 2);
   assert.equal(/api pool is past/.test(verdict.message), false);
@@ -845,7 +862,7 @@ test('one spent pool does not exhaust the harness; both do', async () => {
     planUsage: { ...PERIOD_USAGE.planUsage, apiPercentUsed: 100 },
   };
   const half = account({ replies: { [USAGE_CALL]: ok(onePool) } });
-  const running = await ask(machine(), 10_000, half.deps);
+  const running = await ask(machine(), VERDICT_BUDGET_MS, half.deps);
   assert.equal(running.state, 'available', running.message);
   assert.equal(running.windows.find((w) => w.id === 'monthly-api').usedPercent, 100);
 
@@ -854,7 +871,7 @@ test('one spent pool does not exhaust the harness; both do', async () => {
     planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: 100, apiPercentUsed: 100 },
   };
   const spent = account({ replies: { [USAGE_CALL]: ok(bothPools) } });
-  const out = await ask(machine(), 10_000, spent.deps);
+  const out = await ask(machine(), VERDICT_BUDGET_MS, spent.deps);
   assert.equal(out.state, 'exhausted', out.message);
   assert.equal(out.reason, 'subscription_exhausted');
   assert.equal(out.resetAt, '2030-01-04T00:00:00.000Z');
@@ -862,7 +879,7 @@ test('one spent pool does not exhaust the harness; both do', async () => {
 
 test('a cycle the adapter cannot place is quota_unknown with the tier still reported', async () => {
   const wired = account({ replies: { [USAGE_CALL]: ok({ ...PERIOD_USAGE, billingCycleEnd: 'soon' }) } });
-  const verdict = await ask(machine(), 10_000, wired.deps);
+  const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'quota_unknown');
   assert.deepEqual(verdict.tier, { name: 'included:7000', source: 'derived' });
@@ -898,12 +915,12 @@ test('a refused environment key is quota_unknown; a refused keychain token is no
   // tuple out of routing because of a variable a person exported for the binary.
   for (const status of [401, 403]) {
     const keychain = account({ replies: { [USAGE_CALL]: { status, doc: null } } });
-    const refused = await ask(machine(), 10_000, keychain.deps);
+    const refused = await ask(machine(), VERDICT_BUDGET_MS, keychain.deps);
     assert.equal(refused.state, 'unavailable', `keychain ${status}`);
     assert.equal(refused.reason, 'not_authenticated', `keychain ${status}`);
 
     const env = account({ source: 'env', replies: { [USAGE_CALL]: { status, doc: null } } });
-    const soft = await ask(machine(), 10_000, env.deps);
+    const soft = await ask(machine(), VERDICT_BUDGET_MS, env.deps);
     assert.equal(soft.state, 'unknown', `env ${status}`);
     assert.equal(soft.reason, 'quota_unknown', `env ${status}`);
     assert.match(soft.message, /CURSOR_API_KEY/);
@@ -923,7 +940,7 @@ test('one window read is never both pools spent', async () => {
     planUsage: { ...PERIOD_USAGE.planUsage, apiPercentUsed: 100 },
   };
   const wired = account({ replies: { [USAGE_CALL]: ok(apiOnly) } });
-  const verdict = await ask(machine(), 10_000, wired.deps);
+  const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
   assert.deepEqual(verdict.windows.map((w) => w.id), ['monthly-api']);
   assert.equal(verdict.state, 'available', verdict.message);
   assert.equal(/both usage pools/.test(verdict.message), false);
@@ -935,7 +952,7 @@ test("the harness's own usage line reaches a diagnosis only when the harness is 
   // you've hit your usage limit" — so it travels on the exhausted branch and not
   // on the healthy one.
   const healthy = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE) } });
-  const running = await ask(machine(), 10_000, healthy.deps);
+  const running = await ask(machine(), VERDICT_BUDGET_MS, healthy.deps);
   assert.equal(running.state, 'available');
   assert.equal(/the harness says/.test(running.message), false, running.message);
 
@@ -944,7 +961,7 @@ test("the harness's own usage line reaches a diagnosis only when the harness is 
     planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: 100, apiPercentUsed: 100 },
   };
   const spent = account({ replies: { [USAGE_CALL]: ok(bothPools) } });
-  const out = await ask(machine(), 10_000, spent.deps);
+  const out = await ask(machine(), VERDICT_BUDGET_MS, spent.deps);
   assert.equal(out.state, 'exhausted');
   assert.match(out.message, /the harness says: You've hit your usage limit/);
 });

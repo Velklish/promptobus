@@ -208,6 +208,18 @@ check('the next file of the chain is still run',
 check(': without an auto-lift trace the gate stays silent',
   !/wardens were raised/.test(all), all.slice(-300));
 
+// Three places, each failing on its own; the shape is asserted, not a value — the run does
+// not choose its own load. Why the runner prints it: contributing.md § Worker path, gates.
+const LOAD = String.raw`\d+\.\d\d \d+\.\d\d \d+\.\d\d`;
+check(': the run names its cores and the load average before the pool and before the serial group',
+  new RegExp(`▸ \\d+ cores, load average ${LOAD} before the pool`).test(all)
+  && new RegExp(`▸ load average ${LOAD} before the serial group`).test(all),
+  all.split('\n').filter((l) => /load average/.test(l)).join(' | ') || '(no load line at all)');
+check(': a failed file carries the load at its start and at its end, and how to read it',
+  new RegExp(`load average ${LOAD} at its start, ${LOAD} at its end, on \\d+ cores`).test(all)
+  && /the load average is the MACHINE, not this run/.test(all),
+  all.split('\n').filter((l) => /at its start|is the MACHINE/.test(l)).join(' | ') || '(no per-file load)');
+
 // --- warden auto-lift gate -----------------------------------
 //
 // A real lift is not needed here and is harmful: it would start a

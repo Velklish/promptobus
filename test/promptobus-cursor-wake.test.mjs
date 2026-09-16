@@ -21,7 +21,7 @@
 // turn is held by a pause, the warden loop runs once a second, and under pool load those
 // thresholds either go red on working code or go green on nothing.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -36,7 +36,7 @@ const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 
 
 const { cursorDriver } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
-  tmuxSessions, readSession, CURSOR_TMUX_SERVER,
+  tmuxSessions, readSession, pidAlive, lockFile, CURSOR_TMUX_SERVER,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 
 // --- the run talks to ITS tmux, not to the machine's --------------------------------
@@ -182,6 +182,20 @@ check('step 4: the wake happened WITHOUT a new process — the session pane is t
 store.sendMessage(home, TASK, {
   from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerB}: ответ пришёл во время хода`,
 });
+
+// The step-4 wake still holds the inject lock under load, so the state is waited for and
+// asserted on its own line: contributing.md § Suite isolation.
+const lockPath = lockFile(ref, env);
+const lockHolder = () => {
+  if (!existsSync(lockPath)) return null;
+  try { return JSON.parse(readFileSync(lockPath, 'utf8')); } catch { return null; }
+};
+// The title claims only what a poll proves — the window against the live warden is
+// narrowed, not closed: contributing.md § Suite isolation.
+const lockFree = await waitFor(() => !pidAlive(Number(lockHolder()?.pid)) || null, { timeoutMs: 30000 });
+check('step 5: the previous writer let the inject lock go before this delivery',
+  lockFree === true,
+  `${lockPath} · ${existsSync(lockPath) ? JSON.stringify(lockHolder()) : '(no lock)'}`);
 
 const busyDelivery = await cursorDriver.activate({ ref }, {
   kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],

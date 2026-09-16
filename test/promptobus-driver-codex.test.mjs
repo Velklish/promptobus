@@ -2185,7 +2185,9 @@ function pgrep(pattern) {
 
 
 planParticipant(HARNESS, 'worker:long-first', { turns: [{ do: [] }] });
-const longEnv = { ...env, PROMPTOBUS_CODEX_READY_MS: '3000', [HANG_AFTER_START_VAR]: '1' };
+// No lift budget of its own: the stand's 20 s applies. The subject here is that the lift
+// SUCCEEDS, and a 3 s window measured the machine's neighbours instead (PB-159.1).
+const longEnv = { ...env, [HANG_AFTER_START_VAR]: '1' };
 const longFirst = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'long-first', '--harness', 'codex'], { cwd: ws, env: longEnv });
 const longPart = store.participantOf(store.readTask(home, TASK), 'worker:long-first');

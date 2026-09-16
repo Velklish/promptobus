@@ -177,6 +177,11 @@ function testEnv(tmp) {
 // lanes already wait on the longest file, and lanes beyond that idle.
 const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
 
+// Machine load beside every red — a candidate explanation, never a verdict, and no
+// classifying of assertions: contributing.md § Worker path, gates.
+const CORES = os.cpus().length;
+const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
+
 // Serial group: files whose checks measure wall-clock. Run last and
 // without neighbours, on a still machine — under pool load their
 // thresholds either go red on sound code or, worse, go green on
@@ -415,6 +420,7 @@ function failureTail(out) {
 function runFile(name) {
   return new Promise((resolve) => {
     const started = Date.now();
+    const loadAtStart = loadLine();
     const log = path.join(OUT_DIR, `${name}.log`);
     const fd = openSync(log, 'w');
     const child = spawn(process.execPath, [path.join(here, name)], {
@@ -451,7 +457,7 @@ function runFile(name) {
       else if (error) why = `did not start: ${error.message}`;
       else if (signal) why = `signal ${signal}`;
       else if (status !== 0) why = `code ${status}`;
-      resolve({ name, ms: Date.now() - started, out, why });
+      resolve({ name, ms: Date.now() - started, out, why, loadAtStart, loadAtEnd: loadLine() });
     };
     child.on('error', (e) => { error = e; finish(null, null); });
     child.on('close', (status, signal) => finish(status, signal));
@@ -461,7 +467,7 @@ function runFile(name) {
 // File output in one piece: title with duration, buffer, failure
 // diagnosis. File time is always printed — the run breakdown is built
 // from it, and the serial group is decided from it.
-function report({ name, ms, out, why }) {
+function report({ name, ms, out, why, loadAtStart, loadAtEnd }) {
   console.log(`\n▸ ${name} — ${(ms / 1000).toFixed(1)} s`);
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
   const fileSkips = skipLines(out);
@@ -473,7 +479,7 @@ function report({ name, ms, out, why }) {
   }
   if (why) {
     console.error(`✖ ${name} — failed (${why})`);
-    failed.push({ name, why, tail: failureTail(out) });
+    failed.push({ name, why, tail: failureTail(out), loadAtStart, loadAtEnd });
   }
 }
 
@@ -492,10 +498,14 @@ const serial = files.filter((n) => SERIAL.includes(n));
 const pooled = files.filter((n) => !SERIAL.includes(n));
 console.log(`▸ ${files.length} files: ${pooled.length} in a pool of ${POOL}, `
   + `${serial.length} in the serial group at the end`);
+console.log(`▸ ${CORES} cores, load average ${loadLine()} before the pool`);
 
 await runGroup(pooled, POOL);
 console.log(`▸ pool peak: ${peakLive}`);
-if (!interrupted) await runGroup(serial, 1);
+if (!interrupted) {
+  console.log(`▸ load average ${loadLine()} before the serial group`);
+  await runGroup(serial, 1);
+}
 
 // The exit code is SET, not issued via `process.exit`. File output
 // goes through `process.stdout.write`, and on macOS a pipe write is
@@ -644,11 +654,17 @@ if (interrupted) {
     console.error(`\n✖ ${failed.length} of ${files.length} files failed, ${passed} passed:`);
     for (const f of failed) {
       console.error(`  ✖ ${f.name} — ${f.why}`);
+      console.error(`    load average ${f.loadAtStart} at its start, ${f.loadAtEnd} at its end,`
+        + ` on ${CORES} cores`);
       if (f.tail.length) {
         console.error('    output tail:');
         for (const line of f.tail) console.error(`      ${line}`);
       }
     }
+    console.error('  the load average is the MACHINE, not this run: a check whose assertion is a'
+      + ' wall-clock budget MAY go red because neighbours took the time. That is a candidate, not a'
+      + ' verdict — discharge it with that file standalone twice AND on the base commit, exit codes'
+      + ' for each; see contributing.md § Suite isolation');
   }
   if (skippedChecks) {
     console.log(`\n↷ ${skippedSummary}:`);
