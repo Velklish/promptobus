@@ -377,6 +377,32 @@ const quietOut = await capture(async () => done(QUIET, { task: QUIET_TASK, snaps
 check(': nothing to remove — done says nothing about cleanup',
   !/journals removed|nothing to remove/.test(quietOut) && /closed/.test(quietOut), quietOut.trim());
 
+// --- : done() shares one listTasks walk across its three sweeps (PB-118) -----------
+//
+// Before the fix, sweepWorktrees, sweepParticipantSecrets and sweepJournals each parsed
+// the tree on their own — a broken task.json would be warned about up to three times in
+// one call. The home is its own: a handful of ordinary closed tasks plus one that fails
+// to parse at all.
+const LISTONCE = path.join(SB, 'listtasks-once-ws');
+const listOnceHome = path.join(LISTONCE, '.promptobus');
+mkdirSync(listOnceHome, { recursive: true });
+writeFileSync(path.join(LISTONCE, 'AGENTS.md'), 'песочница\n');
+writeHostConfig(LISTONCE);
+const LO_DONE_A = closedAgo(listOnceHome, 'listonce-a-t20260910-010000', 'закрытый A', 1);
+const LO_DONE_B = closedAgo(listOnceHome, 'listonce-b-t20260910-020000', 'закрытый B', 1);
+const LO_BROKEN = 'listonce-broken-t20260910-030000';
+store.createTask(listOnceHome, { id: LO_BROKEN, title: 'битый журнал', owner: null });
+writeFileSync(store.taskFile(listOnceHome, LO_BROKEN), '{неразборчивый журнал');
+const LO_NOW = 'listonce-seychas-t20260910-040000';
+store.createTask(listOnceHome, { id: LO_NOW, title: 'закрываемая сейчас', owner: null });
+const listOnceOut = await capture(async () => done(LISTONCE, { task: LO_NOW, snapshot: noSessions }));
+const brokenMatches = listOnceOut.match(new RegExp(`task ${LO_BROKEN} skipped:.*is unreadable`, 'g')) ?? [];
+check(': a broken task journal is warned about once per done() call, not once per sweep',
+  brokenMatches.length === 1, `${brokenMatches.length} occurrences: ${listOnceOut.trim()}`);
+check(': the ordinary closed tasks are untouched by the broken neighbour',
+  [LO_DONE_A, LO_DONE_B].every((id) => existsSync(store.taskDir(listOnceHome, id))),
+  listOnceOut.trim());
+
 // --- PB-208: the participant files of a closed task, settings included -------------
 //
 // The secrets sweep took the contact point, the mcp-config and the `<stem>.*` directories,
