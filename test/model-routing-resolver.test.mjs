@@ -1302,6 +1302,54 @@ test('every paced harness at its cap is a soft fallback, not a refusal', () => {
   validDecision(decision, 'a balance decision where every harness is capped');
 });
 
+/** The balance snapshot with one harness fully unspent, so that harness leads on pace. */
+const leading = (harness) => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  for (const window of snapshot.harnesses[harness].windows) window.usedPercent = 0;
+  return snapshot;
+};
+
+test('the ceiling is a gate before the harness is chosen, one case per harness', () => {
+  // The ceiling bounds the CHOICE and not the score, and that shows only on a
+  // harness that would otherwise win — so each leads on pace in its own case.
+  const cases = [
+    { harness: 'claude', tupleId: 'claude-fable' },
+    { harness: 'codex', tupleId: 'codex-sol' },
+    { harness: 'cursor', tupleId: 'cursor-composer' },
+  ];
+  for (const { harness, tupleId } of cases) {
+    const snapshot = leading(harness);
+    const live = liveOn(harness, tupleId, 1);
+    const open = paced({ strategy: 'balance', snapshot, liveParticipants: live });
+    assert.equal(open.chosen.harness, harness, `${harness}: it must win before the ceiling to mean anything`);
+
+    const at = paced({
+      strategy: 'balance', snapshot, liveParticipants: live, workspace: capping({ [harness]: 1 }),
+    });
+    assert.notEqual(at.chosen.harness, harness, `${harness}: at its ceiling it must be out of the field`);
+    assert.equal(paceOf(at, tupleId).atCap, true, harness);
+    assert.match(at.warnings.find((w) => w.code === 'live-participant-cap').message,
+      new RegExp(`^${harness} is at its live-participant cap of 1 \\(1 already up\\)`));
+
+    // Out of the FIELD and not penalised: every score, every place and the
+    // representative are the run without the ceiling, byte for byte.
+    assert.deepEqual(scoredIds(at), scoredIds(open), harness);
+    assert.equal(byId(at, tupleId).excluded, null, harness);
+    assert.equal(byId(at, tupleId).score.total, byId(open, tupleId).score.total, harness);
+    assert.equal(paceOf(at, tupleId).representative, true, harness);
+
+    // One above the live count is room, and the harness is back in the field —
+    // the probe target: a gate that stopped reading the number stays elsewhere.
+    const room = paced({
+      strategy: 'balance', snapshot, liveParticipants: live, workspace: capping({ [harness]: 2 }),
+    });
+    assert.equal(room.chosen.harness, harness, `${harness}: a ceiling above the live count bounds nothing`);
+    assert.equal(paceOf(room, tupleId).atCap, undefined, harness);
+    assert.equal(room.warnings.some((w) => w.code === 'live-participant-cap'), false, harness);
+    validDecision(at, `a balance decision with ${harness} at its ceiling`);
+  }
+});
+
 test('the cap is read from the merged policy and is not a literal of the resolver', () => {
   // The user layer is under the workspace layer, and the highest layer naming a
   // harness wins for that harness alone.
