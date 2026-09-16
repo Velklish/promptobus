@@ -154,9 +154,15 @@ const file = (name, body) => {
 // Own payload of the accepted piece, own payload of the neighbour, and one payload BOTH
 // sent: the shared blob must survive, because a blob is deduplicated inside the task.
 const SHARED = 'the very same bytes\n';
-say('worker:accepted', 'orchestrator', 'artifact', 'мои гейты', file('gates-accepted.json', '{"records":["accepted"]}\n'));
+// A record its published schema accepts: `send` refuses one that its schema rejects, and
+// the subject here is what the sweep takes, not the shape of the document.
+const gateRecord = (by) => `${JSON.stringify({
+  schemaVersion: 1,
+  records: [{ command: 'npm test', exit: 0, tree: 'a'.repeat(40), dirty: false, at: '2026-09-13T12:00:00.000Z', by }],
+})}\n`;
+say('worker:accepted', 'orchestrator', 'artifact', 'мои гейты', file('gates-accepted.json', gateRecord('worker:accepted')));
 say('worker:accepted', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
-say('worker:neighbour', 'orchestrator', 'artifact', 'соседские гейты', file('gates-neighbour.json', '{"records":["neighbour"]}\n'));
+say('worker:neighbour', 'orchestrator', 'artifact', 'соседские гейты', file('gates-neighbour.json', gateRecord('worker:neighbour')));
 say('worker:neighbour', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
 say('worker:open', 'orchestrator', 'artifact', 'незакрытое', file('open-patch.diff', 'diff of work nobody took\n'));
 say('worker:vanished', 'orchestrator', 'artifact', 'пропавшее', file('vanished-patch.diff', 'diff of a tree that went\n'));

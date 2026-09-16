@@ -14,10 +14,18 @@ export interface OutgoingMessage {
   session?: string | null;
 }
 
-/** Send outcome: the canon and the artifact metadata, if there was one. */
+/** A file already in the task holding these very bytes, and how many names the payload has. */
+export interface SameContent {
+  filename: string;
+  names: number;
+}
+
+/** Send outcome: the canon, the artifact metadata if there was one, and whether its bytes repeat. */
 export interface SentMessage {
   message: MessageV1;
   artifact: ArtifactV1 | null;
+  /** The file these bytes already landed under; `null` or absent — they are new here. */
+  sameContent?: SameContent | null;
 }
 
 /** What was found in the mailbox: messages and human lines about unreadable ones. */

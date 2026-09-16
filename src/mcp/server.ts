@@ -177,7 +177,7 @@ export function createMcpServer(options: McpOptions): {
       }
       case 'promptobus_send': {
         const to = args?.to as string;
-        const { message, artifact } = service.send(home, task, {
+        const { message, artifact, sameContent } = service.send(home, task, {
           from: role,
           to,
           type: args?.type as string,
@@ -191,6 +191,10 @@ export function createMcpServer(options: McpOptions): {
         const unread = service.unreadNote(home, task, role, session);
         return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, task), to)}${ADDR_MARK}${to}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`
+          // Said plainly, not as a warning: a repeat send is lawful, and the sender is the
+          // one who cannot otherwise tell this reply from the reply to a new version.
+          + (sameContent ? ` · the same content as ${sameContent.filename}`
+            + `${sameContent.names > 1 ? ` (${sameContent.names} names)` : ''}` : '')
           + ` · ${service.identityLabel(home, task, role, session)}`
           + (unread ? `\n${unread}` : '');
       }

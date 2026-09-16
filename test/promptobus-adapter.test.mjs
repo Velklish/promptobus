@@ -364,6 +364,147 @@ const noFile = thrown(() => store.sendMessage(home, task.id, {
   artifactPath: path.join(SB, 'ghost.txt'),
 }));
 check('artifact: a nonexistent path → refusal', noFile.threw && /artifact is missing/.test(noFile.msg), noFile.msg);
+
+// --- the name that lands: a leading dot hides the file from every ordinary reader -------
+
+const hiddenSrc = path.join(SB, '.gate-evidence.json');
+writeFileSync(hiddenSrc, '{"kind":"hidden"}\n');
+const hidden = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'скрытое имя', artifactPath: hiddenSrc,
+});
+const visibleListing = readdirSync(store.filesDir(home, task.id));
+check('artifact: a leading dot is dropped, so an ordinary listing shows the file',
+  hidden.artifact.filename === 'gate-evidence.json'
+  && visibleListing.includes('gate-evidence.json')
+  && !visibleListing.includes('.gate-evidence.json'),
+  `${hidden.artifact.filename} · ${visibleListing.join(', ')}`);
+
+// The negative control of the whole normalisation: an ordinary name is not touched at all.
+check('artifact: a name with no leading dot is unchanged to the byte',
+  withArt.artifact.filename === 'contract.json' && withArt2.artifact.filename === 'contract-2.json',
+  `${withArt.artifact.filename} · ${withArt2.artifact.filename}`);
+
+const shadowSrc = path.join(SB, 'gate-evidence.json');
+writeFileSync(shadowSrc, '{"kind":"plain"}\n');
+const shadow = store.sendMessage(home, task.id, {
+  from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'то же имя без точки', artifactPath: shadowSrc,
+});
+check('artifact: collision protection runs on the landed name — a dot does not buy a second slot',
+  shadow.artifact.filename === 'gate-evidence-2.json'
+  && /hidden/.test(readFileSync(path.join(store.filesDir(home, task.id), 'gate-evidence.json'), 'utf8')),
+  shadow.artifact.filename);
+
+const occupied = path.join(SB, 'review-taken.diff');
+writeFileSync(occupied, 'diff --git a b\n');
+store.occupyTaskFile(store.filesDir(home, task.id), 'review-taken', '.diff', 'written by the mechanism\n');
+const besideMechanism = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'рядом со служебным', artifactPath: occupied,
+});
+check('artifact: a name a mechanism file already holds is a collision, numbered like any other',
+  besideMechanism.artifact.filename === 'review-taken-2.diff'
+  && /written by the mechanism/.test(readFileSync(path.join(store.filesDir(home, task.id), 'review-taken.diff'), 'utf8')),
+  besideMechanism.artifact.filename);
+
+const dotsOnly = path.join(SB, '....');
+writeFileSync(dotsOnly, 'нечего показать\n');
+const dotsRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'имя из одних точек', artifactPath: dotsOnly,
+}));
+check('artifact: a name of nothing but dots is refused to the sender, with the reason',
+  dotsRefusal.threw && /no name left once leading dots are dropped/.test(dotsRefusal.msg), dotsRefusal.msg);
+check('artifact: the refused name left no blob and no file behind it',
+  !readdirSync(store.blobsDir(home, task.id)).some((n) => n.startsWith('.tmp-blob'))
+  && !readdirSync(store.filesDir(home, task.id)).some((n) => n.startsWith('.')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+// --- the same bytes twice: lawful, free, and silent until now ---------------------------
+
+const repeatSrc = path.join(SB, 'evidence-run.log');
+writeFileSync(repeatSrc, 'gates 4, green 4\n');
+const firstSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'первый раз', artifactPath: repeatSrc,
+});
+check('artifact: the first send of these bytes reports no twin', firstSend.sameContent === null,
+  JSON.stringify(firstSend.sameContent));
+const renamedSrc = path.join(SB, 'evidence-run-fixed.log');
+writeFileSync(renamedSrc, 'gates 4, green 4\n');
+const repeatSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'думал, что исправил', artifactPath: renamedSrc,
+});
+check('artifact: a repeat of the same bytes names the file that already holds them',
+  repeatSend.sameContent?.filename === 'evidence-run.log' && repeatSend.sameContent?.names === 2,
+  JSON.stringify(repeatSend.sameContent));
+writeFileSync(renamedSrc, 'gates 4, green 3\n');
+const changedSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'а теперь правда исправил', artifactPath: renamedSrc,
+});
+check('artifact: other bytes report no twin — the reading is of content, not of the source name',
+  changedSend.sameContent === null, JSON.stringify(changedSend.sameContent));
+
+// --- a record is checked against the schema it names, before its payload lands ----------
+
+const badGate = path.join(SB, 'gates-adapter.json');
+writeFileSync(badGate, JSON.stringify({ schemaVersion: 1, records: [{ command: 'npm test', exit: '0' }] }));
+const gateRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись гейтов', artifactPath: badGate,
+}));
+check('gate record: a document its own schema refuses does not land silently',
+  gateRefusal.threw
+  && /gate-record\.schema\.json/.test(gateRefusal.msg)
+  && /\/records\/0\/exit/.test(gateRefusal.msg)
+  && /\/records\/0\/tree: required field is missing/.test(gateRefusal.msg),
+  gateRefusal.msg);
+check('gate record: the refusal left nothing of the record in the task',
+  !existsSync(path.join(store.filesDir(home, task.id), 'gates-adapter.json')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+const goodGate = {
+  schemaVersion: 1,
+  records: [{
+    command: 'npm test',
+    exit: 0,
+    counts: { files: 69, tests: 1902 },
+    tree: 'a'.repeat(40),
+    dirty: false,
+    at: '2026-09-16T15:05:00.000Z',
+    by: 'worker:a',
+  }],
+};
+writeFileSync(badGate, JSON.stringify(goodGate));
+const goodSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись гейтов', artifactPath: badGate,
+});
+check('gate record: a valid one passes through byte for byte',
+  goodSend.artifact.filename === 'gates-adapter.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'gates-adapter.json'), 'utf8') === JSON.stringify(goodGate),
+  goodSend.artifact.filename);
+
+const brokenJson = path.join(SB, 'gates-unparsed.json');
+writeFileSync(brokenJson, 'gates 4, green 4\n');
+const parseRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'не JSON', artifactPath: brokenJson,
+}));
+check('gate record: a file named as a record that is not JSON at all is refused too',
+  parseRefusal.threw && /did not parse as JSON/.test(parseRefusal.msg), parseRefusal.msg);
+
+const badHandover = path.join(SB, 'handover-adapter.json');
+writeFileSync(badHandover, JSON.stringify({ schemaVersion: 1, tree: 'a'.repeat(40) }));
+const handoverRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: badHandover,
+}));
+check('handover record: the same door, the same refusal — one mechanism covers both records',
+  handoverRefusal.threw && /handover-record\.schema\.json/.test(handoverRefusal.msg)
+  && /\/checks: required field is missing/.test(handoverRefusal.msg),
+  handoverRefusal.msg);
+
+const neutral = path.join(SB, 'gates-not-a-record.txt');
+writeFileSync(neutral, 'not json, not a record\n');
+const neutralSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'обычный файл', artifactPath: neutral,
+});
+check('records: a file that claims neither stem is not read as one — the check is by name',
+  neutralSend.artifact.filename === 'gates-not-a-record.txt', neutralSend.artifact.filename);
+
 store.readInbox(home, task.id, store.ORCHESTRATOR);
 
 // --- task lifecycle ----------------------------------------------------

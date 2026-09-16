@@ -1,5 +1,5 @@
-// The handover record (PB-213): the five pre-handover checks by ajv, and the bounds
-// against lib/handoff.js. Why there is no second validator: 04-protocol.md § the handover record.
+// The handover record (PB-213): the five pre-handover checks by ajv, the bounds against
+// lib/handoff.js, and the shipped reader `send` refuses by: 04-protocol.md § the handover record.
 import './home.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { check } from './check.mjs';
 import { HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM } from '../lib/handoff.js';
+import { schemaErrors, unsupportedKeywords } from '../lib/schema.js';
 import { validate } from '../dist/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -195,3 +196,54 @@ check('PB-213: the engine does not know this model either — an artifact payloa
   validate('handover-record', doc()).ok === false
   && /unknown model/.test(validate('handover-record', doc()).note ?? ''),
   JSON.stringify(validate('handover-record', doc())));
+
+// --- the reader `send` refuses by, against the reference it must not drift from --------
+//
+// The same pairing the gate-record file makes: `ajv` is a devDependency and the package
+// ships with none, so the check that runs at send reads the schema FILE. One fixture set,
+// two verdicts, and a disagreement means the shipped reader refuses the wrong documents.
+
+check('PB-217: the reader implements every keyword this schema uses',
+  unsupportedKeywords(schema).length === 0, unsupportedKeywords(schema).join(', '));
+
+const fixtures = [
+  doc(),
+  doc({ tree: 'a'.repeat(64) }),
+  doc({ tree: '1966ace' }),
+  doc({ base: 'main' }),
+  doc({ by: 'approver:t5pb' }),
+  doc({ by: 'worker-t5pb' }),
+  doc({ at: '2026-09-16T14:41:07Z' }),
+  doc({ note: 'trust me' }),
+  doc({ schemaVersion: 2 }),
+  ...HANDOVER_CHECKS.map((name) => { const one = checks(); delete one[name]; return doc({ checks: one }); }),
+  ...HANDOVER_CHECKS.map((name) => doc({ checks: checks({ [name]: notRun }) })),
+  doc({ checks: checks({ mutationProbe: { notRun: '' } }) }),
+  doc({ checks: checks({ mutationProbe: { notRun: 'ran out of time', tree: BRANCH } }) }),
+  doc({ checks: checks({ mutationProbe: probe({ applied: false }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ reddened: [] }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ mutatedRunExit: 0 }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ mutatedRunExit: 255 }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ exit: 1 }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ verdicts: { baseTotal: 26, passed: 0, unaccounted: 25 } }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ mutated: 'lib/handoff.js' }) }) }),
+  doc({ checks: checks({ treeState: { beforeProbe: ' M lib/handoff.js', afterRestore: '' } }) }),
+  doc({ checks: checks({ treeState: { beforeProbe: '' } }) }),
+  doc({ checks: checks({ verdictNames: { removed: [{ name: 'a stale case', reason: 'the contract it asserted was removed' }] } }) }),
+  doc({ checks: checks({ verdictNames: { removed: ['a stale case'] } }) }),
+  doc({ checks: checks({ verdictNames: { removed: [], added: ['a new case'] } }) }),
+  doc({ checks: checks({ environmentalRed: { claims: [claim()] } }) }),
+  doc({ checks: checks({ environmentalRed: { claims: [claim({ onBase: { command: 'npm test', exit: 0, red: false } })] } }) }),
+  doc({ checks: checks({ environmentalRed: { claims: ['flaky on CI'] } }) }),
+  doc({ checks: checks({ gatesNotRun: { gates: [{ command: 'npm run pins', because: 'the registry is unreachable' }] } }) }),
+  doc({ checks: checks({ gatesNotRun: { gates: [{ command: 'npm run pins' }] } }) }),
+  doc({ checks: { ...checks(), note: 'trust me' } }),
+  'handover done',
+];
+const disagreed = fixtures.filter((f) => accepts(f) !== (schemaErrors(schema, f).length === 0));
+check(`PB-217: the shipped reader and the reference agree on all ${fixtures.length} fixtures`,
+  disagreed.length === 0, JSON.stringify(disagreed.slice(0, 2)));
+
+check('PB-217: the fixture set holds documents of both verdicts',
+  fixtures.some((f) => accepts(f)) && fixtures.some((f) => !accepts(f)),
+  `${fixtures.filter((f) => accepts(f)).length} accepted of ${fixtures.length}`);

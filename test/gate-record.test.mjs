@@ -1,5 +1,5 @@
-// The gate record (PB-201): shape by ajv, and the bounds against lib/handoff.js.
-// Why there is no second validator here: 04-protocol.md § The gate record.
+// The gate record (PB-201): shape by ajv, the bounds against lib/handoff.js, and the
+// shipped reader `send` refuses by: 04-protocol.md § The gate record.
 import './home.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { check } from './check.mjs';
 import { GATE_RECORD_SCHEMA, GATE_RECORD_STEM, GATE_TAIL_MAX, RESULT_BODY_MAX } from '../lib/handoff.js';
+import { schemaErrors, unsupportedKeywords } from '../lib/schema.js';
 import { validate } from '../dist/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -120,3 +121,91 @@ check('PB-201: the engine does not know this model — an artifact payload stays
 check('PB-204: the body bound is a number the package states once',
   Number.isInteger(RESULT_BODY_MAX) && RESULT_BODY_MAX === 2400,
   String(RESULT_BODY_MAX));
+
+// --- the reader `send` refuses by, against the reference it must not drift from --------
+//
+// `ajv` is a devDependency and the package ships with none, so the check that refuses a
+// record at send reads the schema FILE itself. Two verdicts over one fixture set: the
+// reference above and the shipped reader, and they have to agree on every document.
+
+check('PB-217: the reader implements every keyword this schema uses',
+  unsupportedKeywords(schema).length === 0, unsupportedKeywords(schema).join('; '));
+
+// A word the reader knows is not a word it reads WHEREVER it stands: `$ref` and `oneOf`
+// answer the whole node and drop its siblings, and `items` is read as one schema.
+const refuses_ = (s) => { try { schemaErrors(s, {}); return false; } catch { return true; } };
+check('PB-217: a shape the reader reads only bare is refused, not answered half-way',
+  refuses_({ $defs: { a: { type: 'string' } }, $ref: '#/$defs/a', minLength: 3 })
+  && refuses_({ oneOf: [{ type: 'string' }], maxLength: 4 })
+  && refuses_({ type: 'array', items: [{ type: 'string' }, { type: 'number' }] })
+  && refuses_({ type: 'object', properties: { a: { type: 'array', items: [{ type: 'string' }] } } })
+  && refuses_({ type: ['string', 'null'] })
+  && refuses_({ type: 'object', properties: { a: { type: ['string', 'null'] } } })
+  && !refuses_({ $defs: { a: { type: 'string' } }, description: 'bare', $ref: '#/$defs/a' })
+  && !refuses_({ description: 'bare', oneOf: [{ type: 'string' }, { type: 'number' }] }),
+  'a node the reader reads only bare was answered anyway');
+
+// `propertyNames` is a schema, not a `pattern` field: a bound or a `$ref` beside the
+// pattern was read as no constraint, and a key the schema refuses went through.
+const boundedNames = {
+  type: 'object',
+  propertyNames: { type: 'string', pattern: '^[a-z-]+$', maxLength: 6 },
+  additionalProperties: { type: 'integer' },
+};
+const refNames = {
+  $defs: { name: { type: 'string', pattern: '^[a-z]+$' } },
+  type: 'object',
+  propertyNames: { $ref: '#/$defs/name' },
+  additionalProperties: { type: 'integer' },
+};
+const agreed = (s, v) => ajv.compile(s)(v) === (schemaErrors(s, v).length === 0);
+check('PB-217: the whole of `propertyNames` judges a field name, not its pattern alone',
+  schemaErrors(boundedNames, { gates: 4 }).length === 0
+  && schemaErrors(boundedNames, { 'a-very-long-name': 4 }).length > 0
+  && schemaErrors(boundedNames, { Gates: 4 }).length > 0
+  && schemaErrors(refNames, { gates: 4 }).length === 0
+  && schemaErrors(refNames, { 'gates-2': 4 }).length > 0
+  && [{ gates: 4 }, { 'a-very-long-name': 4 }, { Gates: 4 }].every((v) => agreed(boundedNames, v))
+  && [{ gates: 4 }, { 'gates-2': 4 }].every((v) => agreed(refNames, v)),
+  'a field name the schema refuses was let through, or the reference disagreed');
+
+const fixtures = [
+  doc(record()),
+  doc(record({ command: 'npm test', counts: { files: 64, tests: 1902 } }), record()),
+  ...required.map((field) => { const one = record(); delete one[field]; return doc(one); }),
+  doc(record({ tree: 'a'.repeat(64) })),
+  doc(record({ tree: '1966ace' })),
+  doc(record({ tree: 'HEAD' })),
+  doc(record({ exit: '0' })),
+  doc(record({ exit: -1 })),
+  doc(record({ exit: 256 })),
+  doc(record({ exit: 1.5 })),
+  doc(record({ dirty: 'no' })),
+  doc(record({ by: 'orchestrator' })),
+  doc(record({ by: 'worker-pb-prompts' })),
+  doc(record({ counts: { 'test-files': 64 } })),
+  doc(record({ counts: { files: '64' } })),
+  doc(record({ counts: { Files: 64 } })),
+  doc(record({ counts: { files: -1 } })),
+  doc(record({ command: '' })),
+  doc(record({ command: 'x'.repeat(513) })),
+  doc(record({ tail: 'x'.repeat(GATE_TAIL_MAX) })),
+  doc(record({ tail: 'x'.repeat(GATE_TAIL_MAX + 1) })),
+  doc(record({ note: 'trust me' })),
+  { schemaVersion: 1, records: [record()], note: 'trust me' },
+  { records: [record()] },
+  { schemaVersion: 2, records: [record()] },
+  { schemaVersion: 1, records: Array.from({ length: 17 }, () => record()) },
+  { schemaVersion: 1, records: 'four green' },
+  [record()],
+  doc(),
+  'gates 4, green 4',
+];
+const disagreed = fixtures.filter((f) => accepts(f) !== (schemaErrors(schema, f).length === 0));
+check(`PB-217: the shipped reader and the reference agree on all ${fixtures.length} fixtures`,
+  disagreed.length === 0, JSON.stringify(disagreed.slice(0, 2)));
+
+// Both halves measured, so the set above cannot be all-valid or all-invalid and still pass.
+check('PB-217: the fixture set holds documents of both verdicts',
+  fixtures.some((f) => accepts(f)) && fixtures.some((f) => !accepts(f)),
+  `${fixtures.filter((f) => accepts(f)).length} accepted of ${fixtures.length}`);

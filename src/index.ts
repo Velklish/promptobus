@@ -57,7 +57,7 @@ export type {
   McpEvent, McpIdentity, McpInput, McpJoin, McpOptions, McpOutput, McpServerInfo, McpStalls,
 } from './mcp/server.js';
 export type {
-  MailboxRead, OutgoingMessage, PromptobusService, SentMessage,
+  MailboxRead, OutgoingMessage, PromptobusService, SameContent, SentMessage,
 } from './mcp/service.js';
 export {
   ADDR_MARK, MAILBOX_EMPTY, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages,

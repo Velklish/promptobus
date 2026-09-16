@@ -1606,6 +1606,15 @@ check('PB-213: a check left out is not a check passed, and an impossible one is 
   && /does not run these checks for you/.test(handoff),
   handoff.slice(-900));
 
+// The preamble says both halves of what the bus does with a record and must not contradict
+// itself: it checks the SHAPE and refuses, it does not run or grade the checks themselves.
+check('PB-217: the preamble says the bus checks a record\'s shape, and says it once',
+  /checks the record against that schema when you send it/.test(handoff)
+  && /checked against its schema at send too/.test(handoff)
+  && /checks the SHAPE of what you send against the schema and refuses/.test(handoff)
+  && !/does not validate what you send/.test(handoff),
+  handoff.slice(-1200));
+
 const { Readable } = await import('node:stream');
 const { createMcpServer } = await import(path.join(here, '..', 'dist', 'index.js'));
 const MCP_ARTIFACT_TASK = 'mcp-artifact-t20260913-120000';
@@ -1653,6 +1662,13 @@ const mcpSecond = await mcpCall(2, {
 });
 const mcpFirstName = mcpText(mcpFirst).match(/· artifact ([^ ·\n]+)/)?.[1] ?? '';
 const mcpSecondName = mcpText(mcpSecond).match(/· artifact ([^ ·\n]+)/)?.[1] ?? '';
+// The second send carried the same bytes: content addressing makes that lawful and free,
+// and the reply is what tells the sender apart from the reply to a corrected file.
+check('PB-217: the MCP send reply names the file these bytes already landed under',
+  / · the same content as handoff-gate\.patch \(2 names\)/.test(mcpText(mcpSecond)),
+  mcpText(mcpSecond));
+check('PB-217: the first send of these bytes says nothing about a repeat',
+  !/the same content as/.test(mcpText(mcpFirst)), mcpText(mcpFirst));
 const mcpHeader = 'Gate: ' + mcpSecondName;
 await mcpCall(3, { to: 'orchestrator', type: 'result', body: mcpHeader });
 const mcpMessages = store.readInbox(HOME, MCP_ARTIFACT_TASK, 'orchestrator').messages;
@@ -1668,8 +1684,42 @@ const ORDER_TASK = 'handoff-order-t20260913-163533';
 const ORDER_ADDR = 'worker:handoff-order';
 store.createTask(HOME, { id: ORDER_TASK, title: 'artifact hand-off order' });
 store.upsertParticipant(HOME, ORDER_TASK, store.participantRecord(ORDER_ADDR, { session: 'handoff-order-session' }));
+// A record its published schema accepts: the hand-off ORDER is the subject here, and
+// `send` refuses a document named as a record that its own schema rejects.
+const gateRecordText = (command) => JSON.stringify({
+  schemaVersion: 1,
+  records: [{
+    command,
+    exit: 0,
+    tree: 'a'.repeat(40),
+    dirty: false,
+    at: '2026-09-13T16:35:33.000Z',
+    by: ORDER_ADDR,
+  }],
+});
+const handoverRecordText = JSON.stringify({
+  schemaVersion: 1,
+  tree: 'a'.repeat(40),
+  base: 'b'.repeat(40),
+  at: '2026-09-16T15:05:00.000Z',
+  by: 'worker:guard',
+  checks: {
+    verdictNames: { removed: [] },
+    mutationProbe: {
+      tree: 'a'.repeat(40),
+      mutated: 'lib/handoff.js:14',
+      mutatedRunExit: 1,
+      applied: true,
+      verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
+      reddened: ['one verdict'],
+    },
+    treeState: { beforeProbe: '', afterRestore: '' },
+    environmentalRed: { claims: [] },
+    gatesNotRun: { gates: [] },
+  },
+});
 const gateRecordPath = path.join(SB, 'gates-handoff-order.json');
-writeFileSync(gateRecordPath, '{"records":[]}\n');
+writeFileSync(gateRecordPath, gateRecordText('npm test'));
 const orderSend = (type, body, artifactPath = null) => store.sendMessage(HOME, ORDER_TASK, {
   from: ORDER_ADDR, to: 'orchestrator', type, body, ...(artifactPath ? { artifactPath } : {}),
 });
@@ -1678,7 +1728,7 @@ check('PB-204.2: a dotted token that matches no landed artifact is not a claim',
   unlandedName?.message?.type === 'result' && !unlandedName?.message?.artifact,
   JSON.stringify(unlandedName?.message));
 const victimPath = path.join(SB, 'gates-victim.json');
-writeFileSync(victimPath, '{}');
+writeFileSync(victimPath, gateRecordText('npm run audit'));
 store.upsertParticipant(HOME, ORDER_TASK, store.participantRecord('worker:source', { session: 'source-session' }));
 store.sendMessage(HOME, ORDER_TASK, {
   from: 'worker:source', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: victimPath,
@@ -1688,7 +1738,7 @@ check('PB-204.2: a result may cite another sender\'s landed artifact without lin
   citeVictim?.message?.type === 'result' && !citeVictim?.message?.artifact,
   JSON.stringify(citeVictim?.message));
 const orphanPath = path.join(SB, 'gates-orphan.json');
-writeFileSync(orphanPath, '{}');
+writeFileSync(orphanPath, gateRecordText('npm run pins'));
 const orphanArt = store.sendMessage(HOME, ORDER_TASK, {
   from: 'worker:source', to: 'orchestrator', type: 'artifact', body: 'orphan', artifactPath: orphanPath,
 });
@@ -1778,10 +1828,10 @@ check('PB-204.2: bold-header Gate naming a landed artifact links to its metadata
   boldGateLinked?.message?.artifact && boldGateLinked.message.artifact.length > 0,
   JSON.stringify(boldGateLinked?.message));
 const secondPath = path.join(SB, 'gates-second.json');
-writeFileSync(secondPath, '{}');
+writeFileSync(secondPath, gateRecordText('npm run build'));
 const secondArt = orderSend('artifact', 'second gate', secondPath);
 const thirdPath = path.join(SB, 'gates-third.json');
-writeFileSync(thirdPath, '{}');
+writeFileSync(thirdPath, gateRecordText('npm run probe'));
 orderSend('artifact', 'third gate', thirdPath);
 const headerOrder = orderSend('result', [
   '- **Done** — x',
@@ -1797,7 +1847,7 @@ store.createTask(HOME, { id: BEFORE_TASK, title: 'result before artifact' });
 store.upsertParticipant(HOME, BEFORE_TASK, store.participantRecord('worker:before', { session: 'before-session' }));
 store.upsertParticipant(HOME, BEFORE_TASK, store.participantRecord('worker:other', { session: 'other-session' }));
 const beforePath = path.join(SB, 'gates-before.json');
-writeFileSync(beforePath, '{}');
+writeFileSync(beforePath, gateRecordText('npm run lint'));
 store.sendMessage(HOME, BEFORE_TASK, {
   from: 'worker:before', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: beforePath,
 });
@@ -1812,7 +1862,7 @@ store.createTask(HOME, { id: HANDOFF_GUARD_TASK, title: 'artifact without result
 store.upsertParticipant(HOME, HANDOFF_GUARD_TASK,
   store.participantRecord('worker:guard', { session: 'guard-session' }));
 const guardPath = path.join(SB, 'gates-guard.json');
-writeFileSync(guardPath, '{}');
+writeFileSync(guardPath, gateRecordText('npm run gates'));
 store.sendMessage(HOME, HANDOFF_GUARD_TASK, {
   from: 'worker:guard', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: guardPath,
 });
@@ -1828,7 +1878,7 @@ store.createTask(HOME, { id: HANDOVER_GUARD_TASK, title: 'handover record withou
 store.upsertParticipant(HOME, HANDOVER_GUARD_TASK,
   store.participantRecord('worker:guard', { session: 'guard-session' }));
 const handoverGuardPath = path.join(SB, 'handover-guard.json');
-writeFileSync(handoverGuardPath, '{}');
+writeFileSync(handoverGuardPath, handoverRecordText);
 store.sendMessage(HOME, HANDOVER_GUARD_TASK, {
   from: 'worker:guard', to: 'orchestrator', type: 'artifact', body: 'handover', artifactPath: handoverGuardPath,
 });
