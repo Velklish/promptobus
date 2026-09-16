@@ -19,7 +19,9 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { afterEach } from 'node:test';
@@ -207,8 +209,11 @@ const stubAdapter = (deps = {}) => cursorAvailability(CURSOR_TOOL, { ...NO_ACCOU
  * hundredfold margin, and a genuinely hung probe still reddens as `probe_timeout` well
  * inside the file watchdog (240 s, home.mjs) rather than taking the file down.
  *
- * Three checks measure the deadline itself and pass their own small budget — 300, 700 and
- * 2000 ms — so this number does not reach them. One further check has a wall-clock
+ * Four checks measure the deadline itself and pass their own small budget — 200, 300, 700
+ * and 2000 ms — so this number does not reach them. The 200 ms one asserts about the
+ * CHILD's fate (did it keep running past the kill), not about verdict timing, so its own
+ * margin question is answered by growth over a wait, not by outrunning the sleep.
+ * One further check has a wall-clock
  * assertion and DOES take it: "the probe does not block the event loop" calls `ask` with no
  * budget, and its own assertions are a counted tick and a LOWER bound on the elapsed time.
  * Raising an upper bound cannot break either of those, which is why it is left on the
@@ -383,8 +388,8 @@ test('the probe does not block the event loop, so the preflight budget can still
   // asserted is not this probe's duration but that OTHER work ran while it was in
   // flight.
   //
-  // Mutation probe: put `run()` from lib/exec.js back in place of `runOut`'s spawn
-  // and this goes red while every other check in the file stays green.
+  // Mutation probe: put `run()` from lib/exec.js back in place of `spawnAndCapture`'s
+  // spawn and this goes red while every other check in the file stays green.
   // Counted rather than timed: the file runs in the pool, and a threshold in
   // milliseconds would measure the machine's neighbours. A blocked loop fires a
   // 20 ms interval once, however long the block — node coalesces the periods it
@@ -434,6 +439,37 @@ test('the deadline holds when a grandchild keeps the output pipe open, and the p
   assert.equal(verdict.reason, 'probe_timeout', verdict.message);
   assert.ok(took < 2000, `the probe answered ${took} ms after a 700 ms deadline`);
   assert.equal(pipes(), before, 'the probe left an unread pipe holding the event loop open');
+});
+
+test('a timed-out child is actually killed, not just outlived by the verdict', async () => {
+  // The verdict resolves from the SAME timer that fires `child.kill('SIGKILL')` in
+  // spawnAndCapture, so a probe_timeout answer proves nothing about whether the kill
+  // itself ran — done({timedOut:true, ...}) fires on the timer regardless. The stub
+  // appends to a marker file once a second, ten times: a killed child stops growing
+  // it at whatever point the kill landed; an unkilled one keeps growing it on a
+  // machine-independent cadence, so the check reads GROWTH after the deadline
+  // rather than a single write timed against the sleep — no fixed margin to outrun.
+  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-adapter-cursor-'));
+  const marker = path.join(dir, 'survived');
+  const bin = path.join(dir, CURSOR_TOOL);
+  // `echo`/`>>` are shell builtins, not `seq`: the suite's PATH is sealed to a fixed
+  // binary allowlist (sh, sleep, ... — see hygiene.mjs) and neither `seq` nor `touch`
+  // is on it.
+  writeFileSync(bin, `#!/bin/sh\nfor i in 1 2 3 4 5 6 7 8 9 10; do echo . >> ${JSON.stringify(marker)}; sleep 1; done\n`);
+  chmodSync(bin, 0o755);
+  const host = {
+    routingPaths: () => ({ cacheFile: path.join(dir, 'model-routing', 'cache.json'), overlays: [] }),
+    resolveToolBin: () => ({ ok: true, bin, version: STUB_VERSION }),
+  };
+  const sizeOf = () => (existsSync(marker) ? readFileSync(marker, 'utf8').length : 0);
+  const verdict = await ask(host, 200);
+  assert.equal(verdict.reason, 'probe_timeout', verdict.message);
+  const before = sizeOf();
+  // 2.5 loop steps, not 1: a wait equal to one step could land right after a write
+  // and see none of the mutation's own — an unkilled child would still read as killed.
+  await new Promise((r) => { setTimeout(r, 2500); });
+  assert.equal(sizeOf(), before,
+    'the marker kept growing past the deadline — the child was not actually killed');
 });
 
 test('the binary comes from the request: this adapter resolves none of its own', async () => {
@@ -900,7 +936,7 @@ test('the keychain token comes first and the environment key is the fallback', (
   // Both searched from the start of the file, not from a window around one of
   // them: an offset would make the check depend on how far apart the two lines
   // happen to sit, which is not what it is about.
-  const keychainAt = source.indexOf('runOut(SECURITY_BIN, TOKEN_ARGV');
+  const keychainAt = source.indexOf('readKeychainSecret(TOKEN_SERVICE');
   const envAt = source.indexOf('process.env[TOKEN_ENV]');
   assert.ok(keychainAt > 0, 'the keychain read is not there at all');
   assert.ok(envAt > keychainAt, 'the environment key is read before the keychain');
@@ -983,4 +1019,20 @@ test('the driver wires the live token read and the live dashboard call', () => {
   // adapter with no `deps`, which is what leaves the live implementations in place.
   const driver = readFileSync(path.join(ROOT, 'lib', 'driver-cursor.js'), 'utf8');
   assert.match(driver, /availability: cursorAvailability\(CURSOR_TOOL\),/);
+});
+
+test("runOut's stdout guard now lives in the shared spawnAndCapture, once, ahead of close (PB-81)", () => {
+  // PB-149 measured a live reproduction of the stream `'error'` event unforceable on this
+  // Node build, so that fix was pinned by a static check rather than a forced crash; this
+  // one does the same for the consolidation that followed it. `runOut` no longer spawns
+  // anything itself — it delegates to `spawnAndCapture`, so the guard is checked there,
+  // once, not per adapter.
+  const shared = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-common.js'), 'utf8');
+  const dataAt = shared.indexOf("child.stdout.on('data'");
+  const guardAt = shared.indexOf("child.stdout.on('error'");
+  const closeAt = shared.indexOf("child.on('close'");
+  assert.ok(dataAt > 0 && guardAt > dataAt && closeAt > guardAt,
+    `the stdout error guard is not installed between the data listener and close: ${dataAt}, ${guardAt}, ${closeAt}`);
+  const cursorSource = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
+  assert.match(cursorSource, /await spawnAndCapture\(cmd, args, timeoutMs\)/);
 });

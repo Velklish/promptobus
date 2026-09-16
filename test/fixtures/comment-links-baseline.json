@@ -104,7 +104,6 @@
       "../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids",
       "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-004-windows",
       "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none",
-      "../../docs/guides/model-routing.md#killing-a-probes-child-why-three-lines-and-not-one",
       "../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability"
     ],
     "lib/model-routing/adapter-codex.js": [
@@ -116,7 +115,6 @@
       "../../docs/guides/model-routing.md#cursor-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers",
       "../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off-getaggregatedusageevents",
-      "../../docs/guides/model-routing.md#killing-a-probes-child-why-three-lines-and-not-one",
       "../../docs/guides/model-routing.md#events--which-pool-a-model-is-billed-to-and-why-the-bucket-list-is-not-the-only-source"
     ],
     "lib/model-routing/cache.js": [

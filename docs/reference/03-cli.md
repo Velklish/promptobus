@@ -286,7 +286,7 @@ They are `PromptobusError` codes and live in `ERROR_CODES` (`src/v1/errors.ts`) 
 
 ### Availability: the adapter, the preflight and the cache
 
-The harness-neutral half: the adapter contract, the budgeted preflight and the cache. Each adapter has its own subsection below; a driver that declares none answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks. Every adapter guards its own child pipes, so a stream error cannot escape as an uncaught exception before `close` carries the outcome.
+The harness-neutral half: the adapter contract, the budgeted preflight and the cache. Each adapter has its own subsection below; a driver that declares none answers `unknown` / `probe_failed`, which the resolver penalises rather than blocks. Every adapter guards its own child pipes, so a stream error cannot escape as an uncaught exception before `close` carries the outcome. `lib/model-routing/adapter-common.js` holds what the Claude and Cursor adapters share — the spawn-and-capture dance behind that guard, one keychain read, one HTTP-JSON call, and the `verdict()` shape all three adapters, the preflight and the driver stand-in build; Codex's own app-server lifecycle stays its own function, since it is a long-lived RPC child rather than a spawn-and-capture.
 
 **The adapter** is a `tool` name and one method, declared by a driver as `availability` (`src/model-routing.ts`, `src/driver.ts`):
 
