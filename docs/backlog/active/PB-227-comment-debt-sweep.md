@@ -1,9 +1,9 @@
 # PB-227 · Sweep the remaining long-comment debt: the pending list holds 1282 runs and 42 more sit outside it
 
-- **Order:** 235
 - **Scope:** comments in `lib/**`, `src/**`, `bin/**`, `templates/**`; the documentation they move into — `docs/reference/`, subsystem READMEs; [contributing](../../guides/contributing.md) § the sweep
 - **Created:** 2026-09-16
 - **Dependencies:** none for the sweep itself; `PB-188` rebuilds the gates and regenerates the pending list from whatever this card leaves
+- **Taken:** 2026-09-16
 
 ## Context
 
