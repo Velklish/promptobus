@@ -45,6 +45,10 @@ const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetr
 const { ROUTED_ROLES } = await import(path.join(ROOT, 'lib', 'model-routing', 'catalog.js'));
 const publicTelemetry = await import(path.join(ROOT, 'dist', 'telemetry.js'));
 
+// The owner gate is a positive proof, and the suite strips harness identity from the
+// environment: a file that cannot name its caller would only ever see the refusal.
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-telemetry-stand';
+
 const defaultTelemetryAdapter = adapterMap({
   claude: answeringStub({
     state: 'available', reason: null, message: 'refreshed',

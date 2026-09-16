@@ -1019,6 +1019,58 @@ A failure here is a warning and never a refusal, the same rule the journal
 sweep below keeps: `done` has already closed the task and has no undo, and a
 read-only routing directory is not a reason to leave the run half-closed.
 
+### `ownership` — the owner gate of `done`, `stop` and `dismiss`
+
+Source: `lib/store.js`, `ownership`, `unprovenOwnerLine`, `ownerRoute`.
+
+The answer carries two fields, and they are not each other's negation. **`allowed` is the
+right**, and it is granted only by evidence: the call names a session and that session is
+the recorded owner of the `orchestrator` address. **`gated` is the narrower "proved
+foreign"** — the call names a session, the task names an owner, and the two differ. The
+advisory readers take `gated` and only `gated`: the foreign-mailbox heading of
+`promptobus_mailbox`, the unread tail, the `status` warning, the attach gate of `spawn` and
+`review`, the restamp door of `retitleTask`, and the guard's successor hint. None of them
+may call a mailbox somebody else's on an absence of evidence.
+
+`right` names which of five answers it is, so a refusal can say what could not be proven
+rather than what was missing:
+
+| `right` | `allowed` | `gated` | when |
+|---|---|---|---|
+| `owner` | yes | no | the call names a session and it is the recorded owner |
+| `ownerless` | yes | no | the call names a session and the task records no owner |
+| `no-identity` | no | no | the call names no session at all |
+| `foreign` | no | yes | the call names a session and the owner is another one |
+| `other-address` | no | no | the address asked about is not `orchestrator` |
+
+**`done`, `stop` and `dismiss` refuse on `!allowed`, not on `gated`.** Each of the three
+ends or edits somebody's run — the close sweeps worktree directories of closed tasks, the
+stop takes a worker off work another session is watching, the dismiss stops reports
+addressed to another owner — and until PB-223 all three passed a call that carried no
+session identity, over any task in the store including a live foreign one. The gate is
+now the same direction as `requireSweeper`: proven, never assumed.
+
+**A task with no recorded owner belongs to nobody, and the exception is named.** The owner
+is written only when the environment supplied identity at `createTask`, so a run opened
+from a shell that names no session has no owner by construction — nothing about it can be
+proven beyond the caller naming itself, and that is exactly what is asked of it. Such a
+task is not migrated and is not locked away: a session that names itself may close it. A
+call that names nothing is refused there too, because "nobody owns it" is not "anybody may".
+
+**The cost is named as well: a shell with no harness identity can no longer run these three
+commands.** A harness names its own session, so the route out is a session that does.
+`ownerRoute` has a branch per story, and each has to be walkable by whoever gets it:
+`mailbox {claim: true}` goes to the owner whose daemon died; a task with no recorded owner
+has no owning session to send anyone to, so its route is "any session that names itself";
+and an environment where two harnesses name themselves is repaired by removing a variable,
+not by finding a session. That last case is the one [Session identity](02-host.md#session-identity)
+separates as `contested`: the head then carries the resolver's own reason, which lists the
+variables found — a refusal that said "no session identity" there would send its reader
+hunting for what was present twice over. **`other-address` has no branch and throws**: its
+`owner` is `null` because the gate never looked the owner up, so both texts would read
+"records no mailbox owner" about a task that has one. Nothing true is available to print
+there, and a wrong line is worse than a stack.
+
 ### `dismiss` — stop watching a finished participant
 
 Source: `lib/dismiss.js`, `dismiss`.
@@ -1108,14 +1160,15 @@ The task mailbox owner, or a participant of this task with role `approver` whose
 session is the calling one. Nobody else, and the right is a **positive proof**: the caller
 must be shown to be one of the two, and everything else refuses.
 
-**This is deliberately not the gate of `done`, `stop` and `dismiss`.** Those read `ownership`,
-which answers `gated: false` when the task records no owner or the call carries no session
-identity — fail-open, because their subject is the owner's own run. The piece sweep deletes
-one participant's worktree, branch and blobs out of a task where other participants are still
-working, so the absence of evidence cannot read as permission: a call with no identity is
-refused, and so is one on a task with no recorded owner unless an approver of it proves the
-session. The deviation is the reason [ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md)
-records the gate as its own decision.
+**This is still not the gate of `done`, `stop` and `dismiss`, but no longer for the reason
+[ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) gave.**
+Those three now read `allowed` from [`ownership`](#ownership--the-owner-gate-of-done-stop-and-dismiss)
+and refuse every absence too ([ADR-017](../adr/adr-017-the-owner-gate-is-a-positive-proof.md)), so
+the directions agree. What still differs is the SET of callers: the sweep deletes one
+participant's worktree, branch and blobs out of a task where other participants are still
+working, and it admits the approver of this task on its own recorded session, which the owner
+gate knows nothing about. A task with no recorded owner parts them too — the owner gate lets
+a self-naming session through, the sweep refuses unless an approver proves the session.
 
 The approver's proof is the one direct worker↔approver traffic uses (`requireDirectSender`):
 the record must carry a session of its own, and `foreignSessionOf` must not call the caller

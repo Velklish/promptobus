@@ -9,7 +9,7 @@
 
 `ownership` возвращает `gated: false` в двух случаях: у задачи нет записанного владельца **или** вызывающий не несёт идентичности сессии.
 
-<!-- quote:../../../lib/store.js -->
+<!-- quote:before:../../../lib/store.js -->
   if (!owner || !session) return { gated: false, owner, session };
 <!-- /quote -->
 

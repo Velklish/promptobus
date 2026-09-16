@@ -108,7 +108,7 @@ export const SUITE_PREFIXES = [
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-driver-',
   'promptobus-e2e-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-legacy-',
-  'promptobus-mcp-', 'promptobus-migration-', 'promptobus-package-',
+  'promptobus-mcp-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',
   'promptobus-promptobus', 'promptobus-races-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
   // that starts with it.

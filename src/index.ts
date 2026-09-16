@@ -20,7 +20,7 @@ export {
   startedOf, TASK_ID_RE,
   TASK_TITLE_SEP, taskDir, tasksDir, UNDECLARED_HARNESS, UNDECLARED_ROLE, workerAddress,
 } from './protocol.js';
-export type { Clock as TaskClock, Ownership } from './protocol.js';
+export type { Clock as TaskClock, Ownership, OwnershipRight } from './protocol.js';
 
 // Protocol and store v1 — flat, not a namespace: the `v1` namespace existed
 // because the flat names were taken by the compatibility layer, and with that

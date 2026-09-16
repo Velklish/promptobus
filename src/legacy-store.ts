@@ -115,10 +115,12 @@ export function taskOwner(home: string, id: string): string | null {
 // backward compatibility outranks the guard. Participant addresses are not gated:
 // the address is declared in their mcp-config.
 export function ownership(home: string, id: string, addr: string, session: string | null): Ownership {
-  if (addr !== ORCHESTRATOR) return { gated: false, owner: null, session };
+  if (addr !== ORCHESTRATOR) return { gated: false, allowed: false, right: 'other-address', owner: null, session };
   const owner = taskOwner(home, id);
-  if (!owner || !session) return { gated: false, owner, session };
-  return { gated: owner !== session, owner, session };
+  if (!session) return { gated: false, allowed: false, right: 'no-identity', owner, session };
+  if (!owner) return { gated: false, allowed: true, right: 'ownerless', owner, session };
+  const mine = owner === session;
+  return { gated: !mine, allowed: mine, right: mine ? 'owner' : 'foreign', owner, session };
 }
 
 // Claim of the mailbox by a successor session. Returns the previous owner:

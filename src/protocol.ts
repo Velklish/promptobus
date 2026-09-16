@@ -358,9 +358,17 @@ export function ownerOf(p: WithMetadata | null | undefined): string | null {
   return field(p, 'owner');
 }
 
-/** Mailbox ownership: whether it is closed for another session. */
+/** How the owner gate answered: what it proved, not what it failed to find. */
+export type OwnershipRight = 'owner' | 'ownerless' | 'no-identity' | 'foreign' | 'other-address';
+
+/**
+ * Mailbox ownership. `allowed` is the right, proven positively; `gated` is the narrower
+ * "proved foreign" the advisory lines read, and the two are not each other's negation.
+ */
 export interface Ownership {
   gated: boolean;
+  allowed: boolean;
+  right: OwnershipRight;
   owner: string | null;
   session: string | null;
 }

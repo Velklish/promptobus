@@ -18,6 +18,10 @@ const { history } = await import(path.join(here, '..', 'lib', 'history.js'));
 const { dismiss } = await import(path.join(here, '..', 'lib', 'dismiss.js'));
 const { prune } = await import(path.join(here, '..', 'lib', 'prune.js'));
 
+// The owner gate is a positive proof, and the suite strips harness identity from the
+// environment: a file that cannot name its caller would only ever see the refusal.
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-host-stand';
+
 const thrown = (fn) => {
   try { fn(); return { threw: false, msg: '' }; }
   catch (e) { return { threw: true, msg: String(e.message ?? e) }; }

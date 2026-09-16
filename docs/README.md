@@ -31,6 +31,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-014-mcp-session-proof.md](adr/adr-014-mcp-session-proof.md) | MCP-child identity comes from a driver-declared session-record pointer, accepted only for the record's own home, task and address and refreshed at each tool call | Accepted |
 | [adr/adr-015-approver-lift-is-a-flag-on-review.md](adr/adr-015-approver-lift-is-a-flag-on-review.md) | Approver lift is `promptobus review <path> --task <id> --approver` after a reviewer result is on record; session cwd is the clone root | Accepted |
 | [adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md](adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) | Cleaning up after one accepted piece is a verb of its own — `promptobus sweep <address>` — called by the approver as well as the owner; the keep list is derived from what `done` reads to write telemetry, and it is a check rather than a comment | Accepted |
+| [adr/adr-017-the-owner-gate-is-a-positive-proof.md](adr/adr-017-the-owner-gate-is-a-positive-proof.md) | The owner gate of `done`, `stop` and `dismiss` grants the right by evidence and refuses every absence of it; a task with no recorded owner belongs to nobody, and the named exception is a session that names itself | Accepted |
 
 ## Cross-cutting principles
 

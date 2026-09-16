@@ -24,6 +24,10 @@ const bus = await import(path.join(here, '..', 'dist', 'index.js'));
 const { stop } = await import(path.join(here, '..', 'lib', 'stop.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 
+// The owner gate is a positive proof, and the suite strips harness identity from the
+// environment: a file that cannot name its caller would only ever see the refusal.
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-stop-stand';
+
 const HOST = createStandaloneHost({ cwd: SB, commandName: 'promptobus', home: HOME });
 
 // Sessions the stand-in calls alive, and the records it has retired. A `stop` removes the ref

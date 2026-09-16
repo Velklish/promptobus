@@ -42,7 +42,7 @@ export interface PromptobusService {
   countInbox(home: string, task: string, addr: string): number;
   /** Reply heading: home, task by id and name, address, and drift from the session binding. */
   identityLabel(home: string, task: string, addr: string, session?: string | null): string;
-  /** Mailbox ownership: whether it is closed for another session. */
+  /** Mailbox ownership: `allowed` is the right, proven; `gated` is the narrower "proved foreign". */
   ownership(home: string, task: string, addr: string, session: string | null): Ownership;
   /** Read without taking: the originals stay with the owner. */
   peekInbox(home: string, task: string, addr: string): MailboxRead;

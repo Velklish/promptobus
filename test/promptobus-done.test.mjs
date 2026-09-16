@@ -21,6 +21,10 @@ const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { stopManaged } = await import(path.join(here, '..', 'lib', 'done.js'));
 const bus = await import(path.join(here, '..', 'dist', 'index.js'));
 
+// The owner gate is a positive proof, and the suite strips harness identity from the
+// environment: a file that cannot name its caller would only ever see the refusal.
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-done-stand';
+
 // There is no substitution of the binary here at all, and that is the point under
 // test (review finding): the walk builds its session snapshot with the SAME
 // registry it stops with, so participant liveness is declared by the stand-in
