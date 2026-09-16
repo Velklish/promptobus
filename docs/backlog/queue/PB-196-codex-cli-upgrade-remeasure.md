@@ -1,6 +1,6 @@
 # PB-196 · Eight minor versions behind: the upgrade is a measurable event, not a background chore
 
-- **Order:** 110
+- **Order:** 80
 - **Scope:** [drivers](../../reference/05-drivers.md), [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none. Blocks PB-194, PB-191, PB-185 and PB-214: all four were measured on 0.146.0, and a fix written against that boundary is wasted if the upgrade moves it
