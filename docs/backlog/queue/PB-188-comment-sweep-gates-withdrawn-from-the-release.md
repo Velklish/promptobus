@@ -59,6 +59,23 @@ existed, and it was stated before the work rather than after the finding.
   explicitly, because the automatic check is no longer a witness.
 - `CHANGELOG` carries the withdrawal and its reason.
 
+## Measured 2026-09-16, while the gates were `todo`
+
+The pending list drifted in both directions with nobody watching, on `main` at `77b382f`,
+using the gate's own `longRuns` and run identity over the tracked `lib`, `src`, `bin`,
+`templates` code files (85 files; 65 listed in the pending file, 1282 listed run ids):
+
+- 6 long runs in files the list does not name — `lib/answers.js:54,66`, `lib/send.js:9,29,43,50`
+  (the last one 10 lines), both files beside the gate's own subject;
+- 36 long runs in listed files that the list does not name (new debt swapped in — the
+  round-4 bypass in the wild), among them `lib/driver-cursor.js:869` at 12 lines;
+- 58 listed ids that no run answers any more (debt paid, entry not removed);
+- 0 listed files that are swept clean, 0 listed files that are not tracked.
+
+So 42 unlisted long runs appeared in four days of `todo`. When the gates come back, the
+pending list is regenerated from the tree as a multiset of run identities and then only
+shrinks; sweeping the debt itself is not this card.
+
 ## Work to do
 
 - Rebuild the scanner as a lexer that returns exact comment spans with state carried **across**
