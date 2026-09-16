@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Windows is outside the participant contract.** Owner decision of 2026-09-16: participant sessions — a Cursor tmux pane, a Codex app-server holder — are lifted on macOS and Linux only, and neither driver probes, adapts or promises Windows. The two cards that carried the Windows line (Cursor headless turns, the Codex holder on Windows) are closed with this boundary written into README § Requirements and the CLI reference, not returned to the queue. The CLI and host layer stay cross-platform.
 
+### Fixed
+
+- **Two identity variables at once are no longer reported as none.** `resolveSessionIdentity` returned `null` both when nothing in the environment named a session and when more than one variable did, and the direct `worker` ↔ `approver` route refused the second case with the words "the calling harness supplied no session identity" — sending its reader to hunt for a variable that was there twice over. Measured live on 2026-09-13: `promptobus mcp` started from a shell one harness had raised, with another harness's variable set by hand; sending to the orchestrator kept working while the direct route refused, so the participant saw a selective failure explained by the wrong cause. The resolver now names its state — `resolved`, `none`, `contested`, `contested-records` — and both contested reasons list the variables found and say to clear the environment down to one of them: what is missing is nothing, what is extra is a variable. The refusal stands rather than picking a winner, because a silent preference would hand the participant somebody else's identity. `sessionIdentityReport` gives the whole answer to a caller whose refusal must say why, and the direct route uses it; with no variable at all the old wording is unchanged, because there identity really is absent. (PB-218)
+
 ## [0.9.0] — 2026-09-14
 
 ### Changed

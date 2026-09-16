@@ -493,6 +493,34 @@ check('PB-206.6: without a driver record pointer the existing direct-route ident
   text(pointerlessRefusal));
 pointerlessDirect.stop();
 
+// PB-218, the live shape: `promptobus mcp` started from a shell one harness raised, with
+// another harness's variable set by hand. Both reach the child, the resolver refuses, and
+// the refusal used to say the harness supplied NO identity — sending the reader to look for
+// what was there twice.
+const contestedDirect = startServer('worker:cargos-api', {
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: {
+    CLAUDE_CODE_SESSION_ID: 'parent-session',
+    CODEX_THREAD_ID: 'own-thread',
+    PROMPTOBUS_WARDEN: 'off',
+  },
+});
+await contestedDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+contestedDirect.notify('notifications/initialized');
+const contestedRefusal = await contestedDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'two claimants', task: SECOND },
+});
+check('PB-218: two identity variables at once are not reported as none — the refusal names both',
+  contestedRefusal.result?.isError === true
+  && /CLAUDE_CODE_SESSION_ID/.test(text(contestedRefusal))
+  && /CODEX_THREAD_ID/.test(text(contestedRefusal))
+  && !/calling harness supplied no session identity/.test(text(contestedRefusal)),
+  text(contestedRefusal));
+check('PB-218: and it says what to remove, not what to add',
+  /removing it answers/.test(text(contestedRefusal)), text(contestedRefusal));
+contestedDirect.stop();
+
 const relativePointerDirect = startServer('worker:cargos-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_CODEX_SESSION: path.basename(codexMcpRecord), PROMPTOBUS_WARDEN: 'off' },

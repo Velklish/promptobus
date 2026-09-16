@@ -64,6 +64,26 @@ for (const [harness, variable] of Object.entries(VARS)) {
 }
 
 {
+  // PB-218: nothing and too much are opposite troubles, and the resolver must not answer
+  // both with one null. The state is a NAME on the answer — prose alone left the reader of
+  // a refusal hunting for a variable that was there twice over.
+  const none = resolveSessionIdentity({});
+  const two = resolveSessionIdentity({ [VARS.claude]: 'parent', [VARS.codex]: 'mine' });
+  const one = resolveSessionIdentity({ [VARS.claude]: 'alone' });
+  check('PB-218: the two nulls are told apart by name, not by counting candidates at the caller',
+    none.reason === 'none' && two.reason === 'contested' && none.reason !== two.reason,
+    JSON.stringify({ none: none.reason, two: two.reason }));
+  check('PB-218: a resolved identity is named too, so "resolved" is not the absence of a reason',
+    one.reason === 'resolved' && one.id === 'alone' && one.why === null, JSON.stringify(one));
+  check('PB-218: the contested reason says to REMOVE, and names both variables to choose between',
+    two.why.includes(VARS.claude) && two.why.includes(VARS.codex)
+    && /removing it answers/.test(two.why) && !/missing.*variable to add|add the missing/.test(two.why),
+    two.why);
+  check('PB-218: the empty environment is not told to remove anything — there is nothing there',
+    !/removing it answers/.test(none.why), none.why);
+}
+
+{
   // The shape a live Codex participant actually has: its own CODEX_THREAD_ID plus the
   // orchestrator's CLAUDE_CODE_SESSION_ID, leaked because SESSION_ENV_DROP drops only
   // CODEX_HOME (measured 2026-09-12; the leak itself is PB-182). The old reader returned
