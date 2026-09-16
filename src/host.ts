@@ -75,19 +75,8 @@ export interface HostFreshness {
 
 export interface HostToolBin {
   ok: boolean;
-  /**
-   * How to launch the tool. This is the only field that reaches a process spawn —
-   * `liftoffParticipant` and the drivers pass it straight into it.
-   *
-   * A bare name (`PATH` resolve) and an absolute path are equally lawful: the
-   * host chooses. The field has no other name. An implementation that returned
-   * the path under its own title — `path`, `binPath` — would silently break
-   * participant lift: `lib/**` is JavaScript, types check nothing there, and
-   * `run(undefined)` is only visible in a live run. That is exactly what
-   * happened at the extract: the consumer's implementation returned `path`, consumers
-   * read `path`, and the declared name was `bin` — the drift lived until the
-   * first suite run.
-   */
+  /** How to launch the tool — the ONLY field that reaches a process spawn. A bare name and an
+   * absolute path are equally lawful, and the field has no other name: a renamed one broke lift. */
   bin?: string;
   /** The binary's own version string as the host read it, raw.
    * [reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means](../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means) */
@@ -97,23 +86,15 @@ export interface HostToolBin {
   reason?: string;
 }
 
-/**
- * Former store, if this workspace ever has one.
- * `rel` — from the workspace root, exactly two segments joined by `/`: the
- * outer directory and the store inside it. Segments are non-empty, not `.`
- * and not `..`; an absolute path and `\\` are a shape error, not "no legacy".
- * `done` — the former CLI's close-active-tasks command, `<id>` placeholder.
- */
-/**
- * The clone a directory belongs to, as the host names it. `abs` — the clone
- * root; `nsPath` — the host's namespace path for it (`group/repo`,
- * `external/repo`, or whatever the host uses for participant and task names).
- */
+/** The clone a directory belongs to, as the host names it: `abs` is the clone root, `nsPath` the
+ * host's namespace path for it (`group/repo`, `external/repo`, or whatever the host uses). */
 export interface HostClone {
   abs: string;
   nsPath: string;
 }
 
+/** Former store, if this workspace ever has one. `rel` is two non-empty segments from the workspace
+ * root — absolute or `\\` is a shape error, not "no legacy"; `done` closes former tasks, `<id>`. */
 export interface HostLegacyLayout {
   rel: string;
   done: string;
@@ -145,11 +126,8 @@ export interface PromptobusHost {
   workspaceRoot(): string;
   promptobusHome(): string;
   findRoot(cwd: string): string | null;
-  /**
-   * Model-routing files: the availability cache and the overlay layers, lowest
-   * precedence first. See `HostRoutingPaths` — these are account-scoped, and
-   * `promptobusHome()` is not used for routing.
-   */
+  /** Model-routing files: the availability cache and the overlay layers, lowest precedence first.
+   * Account-scoped — `promptobusHome()` is not used for routing. */
   routingPaths(): HostRoutingPaths;
   /** The environment variable one harness's registry is named by, and the refusal.
    * [reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says](../docs/reference/02-host.md#harnessstatehome--the-harness-session-registry-and-the-refusal-when-nobody-says) */
@@ -186,22 +164,11 @@ export interface PromptobusHost {
   isClone(abs: string): boolean;
   formatCandidate(candidate: HostRepoCandidate): string;
   inWorkspace(abs: string): boolean;
-  /**
-   * The clone `abs` sits in, or `null` when no clone of this workspace
-   * contains it. The host owns the layout entirely: which zones exist
-   * (`repos/<group>/<repo>`, `external/<repo>`, a flat root), how deep a
-   * namespace goes, whether a bare repository directly under a zone counts.
-   * The package asks and never walks the tree itself: a walk from one "repos
-   * root" knew a single zone, and the second zone a host grew turned into a
-   * refusal the host could not word.
-   */
+  /** The clone `abs` sits in, or `null`. The host owns the layout entirely; the package asks and
+   * never walks the tree itself, because a walk knew one zone and refused the second. */
   cloneOf(abs: string): HostClone | null;
-  /**
-   * Reviewer refusal about clone layout. `null` — this kind of refusal does
-   * not apply for this host. A host that requires a particular shape of clone
-   * (a group/repo pair, a known zone) says so in its `no-clone` and
-   * `cwd-outside` texts: what a clone is, `cloneOf` has already decided.
-   */
+  /** Reviewer refusal about clone layout; `null` means this kind does not apply for this host. What
+   * a clone IS has already been decided by `cloneOf`. */
   reviewLayoutError(
     kind: 'not-clone' | 'outside' | 'no-clone' | 'cwd-outside' | 'ask-path',
     ctx?: { targetDir?: string; repoDir?: string; abs?: string; dir?: string },
@@ -214,36 +181,18 @@ export interface PromptobusHost {
   extraEnv(): Record<string, string>;
   resolveToolBin(name: string): HostToolBin;
   substituteVars(value: unknown): unknown;
-  /**
-   * Where to migrate from and how to close former tasks. `null` — nothing to
-   * migrate from; that is how standalone and any host without a former-store
-   * history look.
-   */
+  /** Where to migrate from and how to close former tasks. `null` — nothing to migrate from, which is
+   * how standalone and any host without a former-store history look. */
   legacyLayout(): HostLegacyLayout | null;
 
   formatCommand(args: string[]): string;
   formatNpx(args: string[]): string;
   busCommand(args: string[]): string;
-  /**
-   * How to LAUNCH a bus subcommand: the whole argv, no leading `node`.
-   *
-   * `busCommand` next to it is for printing to a person, and is no good for
-   * launch: the string would have to be parsed back. The package must not
-   * assemble argv itself: it does not know whether its subcommands live at the
-   * consumer binary root or under their own word. Assembled on that assumption,
-   * `[binPath(), 'mcp']` would land in the consumer help, not on the bus —
-   * silently, because a foreign CLI answers an unknown subcommand with help
-   * and exit 0.
-   */
+  /** How to LAUNCH a bus subcommand: the whole argv, no leading `node`. The package must not build
+   * it — a wrong guess lands in the consumer help, silently, because that exits 0. */
   busArgv(args: string[]): string[];
-  /**
-   * How to LAUNCH the loop guard hook: the whole argv, with no leading `node`.
-   *
-   * Unlike `busArgv`, this uses `layoutBinPath()` because the hook is written into
-   * project settings and must call the entry that belongs to that layout. `args`
-   * starts with `guard`; a host whose commands live under a prefix includes that
-   * prefix here. The hook planner does not infer either part.
-   */
+  /** How to LAUNCH the loop guard hook: the whole argv, no leading `node`. Unlike `busArgv` this uses
+   * `layoutBinPath()` — the hook is written into project settings and must call that layout's entry. */
   guardArgv(args: string[]): string[];
   cloneHint(nsPath: string): string;
   syncHint(): string;

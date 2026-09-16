@@ -335,3 +335,9 @@ took state itself and WITHOUT a cache reset, sixty snapshots (a minute) would co
 cached on purpose ([liftoff.js](../../lib/liftoff.js)).
 Nobody pays that cost today: the snapshot dies on the FIRST `null`, and the loop
 resets the cache itself before the heartbeat snapshot.
+
+The loop variable holding it starts as `undefined`, meaning "not taken yet", and the
+very first round takes it from INSIDE the guard rather than before it. A refusal
+raised before the guard would carry the process past `finally` — without clearing the
+mark and without a journal line — and the next bus command would start a warden into
+the same death. `null` from a snapshot is a legal state and is not re-taken.

@@ -22,14 +22,12 @@ export {
 } from './protocol.js';
 export type { Clock as TaskClock, Ownership, OwnershipRight } from './protocol.js';
 
-// Protocol and store v1 — flat, not a namespace: the `v1` namespace existed
-// because the flat names were taken by the compatibility layer, and with that
-// gone there is no second set of names here at all.
+// Protocol and store v1 — flat, not a namespace: the `v1` namespace existed because the flat names
+// were taken by the compatibility layer, and with that gone there is no second set here.
 export * from './v1/index.js';
 
-// Task-directory files the store does not hold: contact points, health, the
-// warden mark and log, stall and end-of-turn marks, session bindings, the
-// participant files directory, and the journal lock.
+// Task-directory files the store does not hold: contact points, health, warden mark and log, stall
+// and end-of-turn marks, session bindings, the participant files directory, and the journal lock.
 export {
   beatWarden, claimWarden, clearWarden, clearWardenExit, healthFile, lastTurnAt, liveWarden,
   lockBusyError, logWarden, markTurn, onTaskLock, readBinding, readHealth, readStalls,
@@ -44,18 +42,16 @@ export type {
 // implementation modules; higher-level consumers should prefer protocol and store APIs.
 export { pidAlive } from './fs/proc.js';
 
-// Store `v0.61.0` — as a namespace, not a scatter: its names and v1's are the
-// same, and in a shared space they would collide. Two callers only: migration
-// and the suite that checks reading a legacy fixture.
+// Store `v0.61.0` as a namespace, not a scatter: its names and v1's are the same and would collide.
+// Two callers only — migration, and the suite that checks reading a legacy fixture.
 export * as legacy from './legacy-store.js';
 
 // Former-store migration → `.promptobus`. Where to migrate from is declared by the host.
 export { migrate, migrationNeeded, preflight, splitLegacyRel } from './migrate.js';
 export type { MigrationOptions, MigrationPlan, MigrationReport, TaskReport } from './migrate.js';
 
-// Bus MCP server: transport, negotiation, and the tool dispatcher. The consumer
-// supplies a service and callbacks and gets `serve` — workspace, Git, and harness
-// do not cross this boundary ([mcp/server.ts](mcp/server.ts)).
+// Bus MCP server: transport, negotiation and the tool dispatcher. Workspace, Git and harness do not
+// cross this boundary ([mcp/server.ts](mcp/server.ts)).
 export { createMcpServer, negotiateProtocol } from './mcp/server.js';
 export type {
   McpEvent, McpIdentity, McpInput, McpJoin, McpOptions, McpOutput, McpServerInfo, McpStalls,
@@ -68,13 +64,8 @@ export {
 } from './mcp/render.js';
 export type { DecorateParticipant } from './mcp/render.js';
 
-// Driver contract, registry, and the warden state machine. A separate block:
-// the driver also has its own `./driver` entry point — the contract is declared
-// there — and here the same surface arrives together with the store, because
-// the consumer takes them together: the registry is passed into the state
-// machine, and the state machine reads the task store. The availability adapter
-// contract ([model-routing.ts](model-routing.ts)) rides the same star: a driver
-// declares it as `availability`, and the two are read together.
+// Driver contract, registry and the warden state machine, together because a consumer takes them
+// together: the registry goes into the state machine, and the state machine reads the task store.
 export * from './driver.js';
 export * from './supervisor.js';
 

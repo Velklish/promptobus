@@ -1,10 +1,8 @@
 // Typed protocol errors.
 // [reference/03-cli.md#error-codes](../../docs/reference/03-cli.md#error-codes)
 
-/**
- * Refusal-code list. A constant, not in-place strings: the consumer branches
- * on the code, and an undeclared code is read as an unknown refusal.
- */
+/** Refusal-code list. A constant, not in-place strings: the consumer branches on the code, and an
+ * undeclared code is read as an unknown refusal. */
 export const ERROR_CODES = [
   // routing policy
   'policy-required',
@@ -33,12 +31,8 @@ export const ERROR_CODES = [
   // disk
   'lock-busy',
   'link-refused',
-  // model routing. The adapter raises these, not the core: the codes belong to
-  // the CLI surface ADR-003 fixed, and they live here because the consumer
-  // branches on a code from one list — a second list beside this one would be
-  // a second vocabulary for the same kind of refusal. Their prose half is the
-  // error-code table of [reference/04-protocol.md#typed-protocol-errors](../../docs/reference/04-protocol.md#typed-protocol-errors), and the suite reads the two
-  // as one list.
+  // model routing. The adapter raises these, not the core, and they live here because the consumer
+  // branch on one list; the prose half is [04-protocol.md § Typed protocol errors](../../docs/reference/04-protocol.md#typed-protocol-errors).
   'strategy-unknown',
   'role-unknown',
   'harness-unknown',
@@ -57,10 +51,8 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 /** Facts of the refusal: which task, participant, file. Read by the consumer, not by a person. */
 export type ErrorContext = Record<string, unknown>;
 
-/**
- * Protocol v1 refusal. A class, not a bare `Error`: the consumer tells a bus
- * refusal from a crash with `instanceof`, and branches on `code`.
- */
+/** Protocol v1 refusal. A class, not a bare `Error`: the consumer tells a bus refusal from a crash
+ * with `instanceof`, and branches on `code`. */
 export class PromptobusError extends Error {
   readonly code: ErrorCode;
 

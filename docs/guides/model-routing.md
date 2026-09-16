@@ -186,7 +186,7 @@ Line by line:
 - `qualityFloor` raises or lowers the bar per role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. All three are soft floors and choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line;
-- `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it;
+- `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
 - `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
 - `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the **user** file. **Nothing writes it**: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
 - `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone. Every value is an integer from 1 through 10, and an overlay that carries a `ratings` block **must** declare `schemaVersion: 2`: a block written on the old 1–5 scale is refused by the load and by `models validate` with the route *rewrite `ratings` on the 1–10 scale and set `schemaVersion: 2`*, because a 3 was a middle of five and is a low third of ten and nothing may translate it silently. The two quality-floor keys are on the same scale and are refused the same way: `reviewerQualityFloor: 5` was the top band of five and is half way up ten, so a v1 file holding one would quietly lower your reviewer floor from 9 to 5. An overlay carrying none of the three — a deny list, a strategy default, an account answer, weights — is still read on `schemaVersion: 1`, unchanged. `models calibrate --write` is the one command that writes this block, and only after you agree to the exact lines it printed;
@@ -684,6 +684,29 @@ seconds is not one. A harness with no live entry then reports `unknown` /
 
 Flags are the CLI's words; this module takes `refresh` and `dryRun` as options
 and knows nothing about argv.
+
+#### Killing a probe's child: why three lines and not one
+
+All three adapters end a timed-out launch the same way, and the shape is not
+redundancy. **The kill alone does not end the wait.** `close` fires when the last
+stdio pipe closes, not when the child dies, so a grandchild holding the inherited
+pipe keeps the probe pending long after the signal. Measured live on 2026-09-05
+against a `#!/bin/sh` wrapper whose `sleep 5` held the pipe: a 300 ms deadline gave
+the right verdict 5.2 s late — exactly the overshoot the deadline exists to prevent.
+
+So each adapter does three things, and they are three different jobs. It ANSWERS at
+the deadline, which is the timing the check is about. It `destroy`s the pipes and
+`unref`s the child handle, so a process the harness left behind cannot hold the
+event loop open after the run is over. And the signal is `SIGKILL`, not `SIGTERM`:
+the budget is already spent by the time the timer fires, and a child that ignores a
+polite signal would spend the rest of the run's ceiling on top of it. Either of the
+first two would incidentally unstick the other's symptom, which is why deleting one
+as redundant reads as safe and is not.
+
+A signal the mechanism did not send is a different fact again: a crash or a person's
+`kill`, never the budget. Reporting it as `probe_timeout` would hide a harness that
+dies on every probe behind a code that reads as "the machine was busy", so the
+adapters carry their own `timedOut` flag, set by their own timer and by nothing else.
 
 ### The availability cache: the first disk boundary of routing
 

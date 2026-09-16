@@ -18,10 +18,8 @@ import { FILENAME_RE, SCHEMA_VERSION } from './model.js';
 import type { ArtifactV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
 
-/**
- * Artifact source: a file on disk or a stream. Nothing else — "a string as
- * payload" would invite putting on the bus what already sits in the message body.
- */
+/** Artifact source: a file on disk or a stream. Nothing else — "a string as payload" would invite
+ * putting on the bus what already sits in the message body. */
 export type ArtifactSource =
   | { path: string; filename?: string }
   | { stream: NodeJS.ReadableStream; filename: string };
@@ -29,11 +27,8 @@ export type ArtifactSource =
 let tmpSeq = 0;
 const NO_FAULT: FaultHook = () => {};
 
-/**
- * Artifact file name — from the source. Called BEFORE the blob is written: a
- * bad name, caught by the schema only after, would leave payload in the task
- * with no metadata, an orphan blob on a flat path (review remark).
- */
+/** Artifact file name, from the source. Called BEFORE the blob is written: a bad name caught only by
+ * the schema afterwards would leave payload in the task with no metadata. */
 export function nameOf(source: ArtifactSource): string {
   let name: string;
   if ('stream' in source) {
@@ -45,9 +40,8 @@ export function nameOf(source: ArtifactSource): string {
     if (typeof source.path !== 'string' || !source.path) fail('artifact-source', 'artifact path is not named');
     name = source.filename || path.basename(source.path);
   }
-  // The same grammar as the schema: a path separator in the name would mean
-  // metadata addresses something outside the task. The schema checks it too —
-  // but only on a record already on disk.
+  // The same grammar as the schema: a path separator in the name would mean metadata addressing
+  // something outside the task. The schema checks it too — but only on a record already on disk.
   if (!FILENAME_RE.test(name) || name === '.' || name === '..' || name.length > 255) {
     fail('artifact-source', `invalid artifact file name: «${name}»`, { filename: name });
   }
@@ -60,15 +54,8 @@ function inputOf(source: ArtifactSource): NodeJS.ReadableStream {
   return createReadStream(source.path);
 }
 
-/**
- * Put the payload into a task blob. Returns the digest and the size.
- *
- * Written through a temporary neighbour, and put in place with `link`: a
- * taken name yields `EEXIST`, and that is not a refusal, it is dedup — the
- * payload under this digest is already there. A blob must not be overwritten
- * at all: it is immutable, and a second write on top would change the payload
- * for every metadata record at once.
- */
+/** Put the payload into a task blob, returning digest and size. Put in place with `link`: `EEXIST` is
+ * dedup, not a refusal. A blob is immutable — a second write would change it for every record. */
 export async function stashBlob(home: string, task: string, source: ArtifactSource): Promise<{ sha256: string; size: number }> {
   const dir = blobsDir(home, task);
   mkdirSync(dir, { recursive: true });
@@ -128,26 +115,12 @@ export function stashBlobSync(home: string, task: string, file: string): { sha25
   return { sha256, size: content.length };
 }
 
-// Refusals with which the FS says "a hard link cannot be put here": a foreign
-// volume, no hard links at all, no rights on the directory, the inode's link
-// limit.
-//
-// `ENOENT` must not enter this list: `materialize` ([messages.ts](messages.ts))
-// reads it as "a neighbour who materialized the message earlier took the
-// intent" and for that compares the raw exception `code`. If `ENOENT` landed
-// here, this would return a `PromptobusError` with code `link-refused`, the
-// compare would not recognise it, and race tolerance would die in silence.
+// Refusals with which the FS says a hard link cannot be put here. `ENOENT` must NOT join this list:
+// `materialize` reads it as "a neighbour took the intent" and compares the raw errno code.
 const LINK_REFUSALS = ['EXDEV', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EACCES', 'EMLINK'];
 
-/**
- * Hard-link refusal — a typed code, not a bare errno.
- *
- * A filesystem without hard links and a link across a volume boundary are
- * lawful environment conditions, not a mechanism crash. The code answers them
- * so the adapter can tell a person in words; no half-written record is left —
- * fan-out breaks on the step, the intent stays open, and recovery will take
- * it to the end when the condition is lifted.
- */
+/** Hard-link refusal as a typed code, not a bare errno: a filesystem without hard links is a lawful
+ * environment condition. No half-written record is left — the intent stays open for recovery. */
 export function linkFailure(e: unknown, target: string): Error {
   const code = (e as NodeJS.ErrnoException).code ?? '';
   if (LINK_REFUSALS.includes(code)) {
@@ -168,11 +141,8 @@ export function newArtifact(id: string, sha256: string, filename: string, size: 
   return { schemaVersion: SCHEMA_VERSION, id, sha256, filename, size, blob: blobRef(sha256) };
 }
 
-/**
- * Read metadata. Missing — `artifact-not-found`; unreadable for another errno
- * — `artifact-broken`, the errno in context. Invalid metadata goes to
- * `broken/artifacts` — one corrupt record must not cost the task the rest.
- */
+/** Read metadata. Missing — `artifact-not-found`; another errno — `artifact-broken`. Invalid metadata
+ * goes to `broken/artifacts`: one corrupt record must not cost the task the rest. */
 export function readArtifact(home: string, task: string, id: string, fault: FaultHook = NO_FAULT): ArtifactV1 {
   const file = artifactFile(home, task, id);
   let raw;
@@ -218,13 +188,8 @@ function isolateArtifact(home: string, task: string, name: string): void {
   }
 }
 
-/**
- * Read the artifact payload, checking the digest. A mismatch is a typed
- * refusal, not a quiet read: a corrupt blob handed over as payload is the
- * case artifacts are hash-addressed for. A missing blob is `artifact-not-found`;
- * a blob that cannot be read for another errno is `artifact-broken`, the errno
- * in context.
- */
+/** Read the artifact payload, checking the digest: a mismatch is a typed refusal, which is what
+ * artifacts are hash-addressed for. Missing is `artifact-not-found`, another errno `artifact-broken`. */
 export function readBlob(home: string, task: string, meta: ArtifactV1, fault: FaultHook = NO_FAULT): Buffer {
   const file = blobOf(home, task, meta);
   let content: Buffer;
@@ -275,13 +240,8 @@ export function listArtifacts(home: string, task: string): { artifacts: Artifact
   return { artifacts, broken };
 }
 
-/**
- * Blobs no metadata record points at. They appear lawfully: a crash between
- * writing the blob and writing the metadata leaves payload with no name.
- * They must not be deleted one by one — a blob is deduplicated, and it is
- * "nobody's" only until the next send of the same payload; `prune` takes
- * them with the task.
- */
+/** Blobs no metadata record points at. They appear lawfully, and must not be deleted one by one: a
+ * blob is deduplicated and is "nobody's" only until the next send of the same payload. */
 export function orphanBlobs(home: string, task: string): string[] {
   let names: string[];
   try {

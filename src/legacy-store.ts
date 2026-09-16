@@ -16,13 +16,8 @@ import {
 } from './sidecar.js';
 import type { Binding } from './sidecar.js';
 
-/**
- * Diagnostics for a person. Arrives as an argument and only where the reader
- * reports corruption: the package writes nothing to process streams, and the
- * environment and output are the adapter business.
- * Unnamed — the reader stays silent, and the `broken` list is returned to
- * the caller as before.
- */
+/** Diagnostics for a person, arriving as an argument and only where the reader reports corruption:
+ * the package writes nothing to process streams. Unnamed — the reader stays silent. */
 export type Warn = (msg: string) => void;
 
 const SILENT: Warn = () => {};
@@ -34,9 +29,8 @@ let seq = 0;
 // Temporary-name counter of its own: the `seq` number goes into the file name and keeps send order.
 let tmpSeq = 0;
 
-// File-operation error code. `strict` yields the caught value as `unknown`, and
-// reading codes (`EEXIST`, `ENOENT`) is the same condition as in the JS
-// edition of this file.
+// File-operation error code. `strict` yields the caught value as `unknown`, and reading codes
+// (`EEXIST`, `ENOENT`) is the same condition as in the JS edition of this file.
 type Errno = NodeJS.ErrnoException;
 const errno = (e: unknown): Errno => e as Errno;
 
@@ -102,18 +96,15 @@ export function taskExists(home: string, id: unknown): boolean {
   return TASK_ID_RE.test((id ?? '') as string) && existsSync(taskFile(home, id as string));
 }
 
-// Owner of the `orchestrator` address — the session the task was born in:
-// `promptobus spawn` and `promptobus review` are launched by Bash from it and
-// inherit its identity.
+// Owner of the `orchestrator` address — the session the task was born in: the lift commands are
+// launched from it and inherit its identity.
 export function taskOwner(home: string, id: string): string | null {
   const meta = readTask(home, id);
   return (meta.participants ?? []).find((p) => p.address === ORCHESTRATOR)?.owner ?? null;
 }
 
-// Own mailbox or a foreign one — the only condition on the whole bus. Nothing
-// to compare (no identity or no owner) — the mechanism stays silent entirely:
-// backward compatibility outranks the guard. Participant addresses are not gated:
-// the address is declared in their mcp-config.
+// Own mailbox or a foreign one — the only condition on the whole bus. With nothing to compare the
+// mechanism stays silent: participant addresses are declared in their mcp-config and are not gated.
 export function ownership(home: string, id: string, addr: string, session: string | null): Ownership {
   if (addr !== ORCHESTRATOR) return { gated: false, allowed: false, right: 'other-address', owner: null, session };
   const owner = taskOwner(home, id);
@@ -123,9 +114,8 @@ export function ownership(home: string, id: string, addr: string, session: strin
   return { gated: !mine, allowed: mine, right: mine ? 'owner' : 'foreign', owner, session };
 }
 
-// Claim of the mailbox by a successor session. Returns the previous owner:
-// there is one `owner` field, and no history. A claim is also a rebind: the
-// owner declares its current task too.
+// Claim of the mailbox by a successor session, returning the previous owner: there is one `owner`
+// field and no history. A claim is also a rebind — the owner declares its current task too.
 export function claimOwnership(home: string, id: string, owner: string): string | null {
   const previous = withTaskLock(home, id, () => {
     const meta = readTask(home, id);
@@ -138,17 +128,8 @@ export function claimOwnership(home: string, id: string, owner: string): string 
   return previous;
 }
 
-// --- declared session→task binding ------------------------
-//
-// The binding is laid as a per-session file next to `tasks/`: without it the
-// session task was inferred by the "only active one" guess — with several
-// active the bus refused the lifted session, with one a foreign session
-// picked it up as its own. Hybrid: where there is no identity (manual
-// launch, tests, CI), resolve falls back to the same guess. The session
-// name is checked by task-id grammar — if it does not fit, there is no
-// binding at all. Only an ACTIVE task is bound: `liveBinding` never yields
-// a closed one. Claiming the mailbox of a closed task is still lawful —
-// nobody forbade reading its correspondence.
+// --- declared session→task binding: without it the task was inferred by "the only active one", and
+// a foreign session picked it up. Only an ACTIVE task is bound; where there is no identity, the guess stands.
 export function bindSession(home: string, id: string, session: string | null): Binding | null {
   const file = sessionFile(home, session);
   if (!file || !taskExists(home, id) || readTask(home, id).status !== 'active') return null;
@@ -156,10 +137,8 @@ export function bindSession(home: string, id: string, session: string | null): B
   return writeJsonAtomic(file, mark);
 }
 
-// Binding of this session or `null`. Read by LIVENESS, not by file presence:
-// a session that kept working after `promptobus done` must fall back to the
-// spare path again. Under one `try` both the mark and the journal: a
-// truncated `task.json` would drop `resolveTaskId`.
+// Binding of this session, or `null`. Read by LIVENESS, not by file presence: a session still
+// working after `done` must fall back to the spare path. One `try` covers both mark and journal.
 export function liveBinding(home: string, session: string | null): Binding | null {
   const file = sessionFile(home, session);
   if (!file) return null;
@@ -176,9 +155,8 @@ export function boundTaskId(home: string, session: string | null): string | null
   return liveBinding(home, session)?.task ?? null;
 }
 
-// Bind a session to the task it owns. Spawn and review call this, not
-// `bindSession`: a session that entered a foreign run with an explicit
-// `--task` would send argument-less calls into a foreign journal.
+// Bind a session to the task it owns. Spawn and review call this, not `bindSession`: a session that
+// entered a foreign run with an explicit `--task` would send argument-less calls into that journal.
 export function bindIfOwner(home: string, id: string, session: string | null): Binding | null {
   if (!session || taskOwner(home, id) !== session) return null;
   return bindSession(home, id, session);
@@ -230,9 +208,8 @@ export function createTask(home: string, {
   };
   mkdirSync(inboxDir(home, id, ORCHESTRATOR), { recursive: true });
   mkdirSync(artifactsDir(home, id), { recursive: true });
-  // The `wx` flag: between the `taskExists` check and the write a second
-  // first spawn of the same run fits, and a latecomer through `rename` would
-  // silently overwrite the participants of the one that went first.
+  // The `wx` flag: between the `taskExists` check and the write a second first spawn of the same run
+  // fits, and a latecomer through `rename` would silently overwrite the winner's participants.
   try {
     writeFileSync(taskFile(home, id), JSON.stringify(meta, null, 2) + '\n', { flag: 'wx' });
   } catch (e) {
@@ -242,11 +219,8 @@ export function createTask(home: string, {
   return meta;
 }
 
-// Journal cache for one request: one bus-tool call reads task.json four to
-// six times from places that do not know about each other. It lives exactly
-// as long as the wrapped synchronous stretch: outside it a neighbour edits
-// the journal lawfully. `writeTask` and `withTaskLock` extinguish it.
-// Reader invariant: do not mutate a `readTask` result under the cache.
+// Journal cache for one request: one bus-tool call reads task.json four to six times. It lives
+// exactly as long as the wrapped synchronous stretch. Do not mutate a `readTask` result under it.
 let taskCache: Map<string, TaskMeta> | null = null;
 
 export function withTaskCache<T>(fn: () => T): T {
@@ -259,10 +233,8 @@ export function withTaskCache<T>(fn: () => T): T {
   }
 }
 
-// The journal cache is lifted for the lock: under it the journal changes
-// both by our write and by a foreign one the lock waited for. Registration
-// is here, at the cache owner — the lock itself lives in
-// [sidecar.ts](sidecar.ts) and knows nothing of caches.
+// The journal cache is lifted for the lock: under it the journal changes both by our write and by
+// the foreign one the lock waited for. Registered here, at the cache owner.
 onTaskLock((fn) => withoutTaskCache(fn));
 
 function withoutTaskCache<T>(fn: () => T): T {
@@ -288,10 +260,8 @@ export function readTask(home: string, id: string): TaskMeta {
   return meta;
 }
 
-// The journal is written the same way as a message: a temporary file in the
-// same directory and `rename` over it. `writeFileSync` truncates the file
-// to zero — a parallel reader finds it empty, and a process that died
-// mid-write leaves a truncated journal forever.
+// The journal is written like a message: a temporary file in the same directory and `rename` over
+// it. `writeFileSync` truncates to zero, and a death mid-write leaves a truncated journal forever.
 export function writeTask(home: string, meta: TaskMeta): TaskMeta {
   writeJsonAtomic(taskFile(home, meta.id), meta);
   // What was written is reread the same way — a snapshot from before the write would lie.
@@ -299,9 +269,8 @@ export function writeTask(home: string, meta: TaskMeta): TaskMeta {
   return meta;
 }
 
-// The listing survives both a foreign directory and a broken journal: one
-// corrupt task would otherwise extinguish every bus command — `listTasks`
-// feeds `resolveTaskId`.
+// The listing survives both a foreign directory and a broken journal: one corrupt task would
+// otherwise extinguish every bus command, since `listTasks` feeds `resolveTaskId`.
 export function listTasks(home: string, warn: Warn = SILENT): TaskMeta[] {
   const dir = tasksDir(home);
   if (!existsSync(dir)) return [];
@@ -322,15 +291,8 @@ export function activeTasks(home: string, warn: Warn = SILENT): TaskMeta[] {
   return listTasks(home, warn).filter((t) => t.status === 'active');
 }
 
-// Active task of the process. Three sources, in descending strength: an
-// explicit declaration (a tool argument, `--task`, `A2A_TASK`), the session
-// binding, the "only active one" inference — a spare path for those who
-// have no identity; its gates watch it.
-//
-// All three refusals are addressed to a person — a typo in the id, an empty
-// journal, several active tasks at once — so they are thrown as
-// `GateError`: a bare `Error` is printed with a stack by the CLI top-level
-// catch, and a lawful refusal reads as a breakage of the mechanism itself.
+// Active task of the process, from three sources in descending strength: an explicit declaration,
+// the session binding, the "only active one" inference. All three refusals are `GateError`.
 export function resolveTaskId(home: string, declared: string | null | undefined, session: string | null, warn: Warn = SILENT): string {
   if (declared) {
     if (!taskExists(home, declared)) throw new GateError(`task ${declared} is not in ${tasksDir(home)}`);
@@ -351,10 +313,8 @@ export function resolveTaskId(home: string, declared: string | null | undefined,
     + 'then it resolves on its own. Need a new run — start it with promptobus spawn --new-task.');
 }
 
-// The mailbox that was read from and written to is named in every bus reply:
-// home, task, address. The task is named by title too: a foreign task is
-// given away by the subject, the id is not. The same place names the drift
-// "session is bound to A, the journal says B" — it is lawful.
+// The mailbox read from and written to is named in every bus reply: home, task, address — and the
+// task by title too, since a foreign task is given away by its subject and not by an id.
 export function identityLabel(home: string, task: string, addr: string, session: string | null = null): string {
   const { title } = readTask(home, task);
   const named = title && title !== task ? `${task} «${title}»` : task;
@@ -377,27 +337,19 @@ export function upsertParticipant(home: string, id: string, participant: Partici
   return withTaskLock(home, id, () => writeTask(home, applyParticipant(readTask(home, id), participant)));
 }
 
-// Dismiss a participant from watch: the orchestrator closed the session
-// itself, and the warden has nowhere to learn that — without the mark it
-// would report "GONE" about a closed one. The mark lives on the participant
-// record in the journal: keep it on the process, and its death would bring
-// the reports back. Returns `{ found, was }`: "no such participant" and
-// "the mark was already there" are two different answers.
+// Dismiss a participant from watch: without the mark the warden would report "GONE" about a session
+// the orchestrator closed. The mark lives on the record, and `{ found, was }` are two answers.
 function setDismissed(home: string, id: string, address: string, at: string | null): { found: boolean; was: string | null } {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = (meta.participants ?? []).find((x) => x.address === address);
     if (!p) return { found: false, was: null };
     const was = p.dismissed ?? null;
-    // The state is already what they ask to make it — do not touch the
-    // journal: a repeat dismiss does not rewrite the dismiss time, and a
-    // return to watch does not write the journal for one that was not
-    // dismissed — the most common case on a re-review, and it would cost a
-    // task lock.
+    // The state is already what they ask for — do not touch the journal: a repeat dismiss does not
+    // rewrite the time, and a return to watch for one never dismissed would cost a task lock.
     if (Boolean(was) === Boolean(at)) return { found: true, was };
-    // A return is DELETION of the field, not `null` in it: every journal
-    // reader would have to tell `dismissed: null` from a dismiss, and the
-    // field is checked for truthiness.
+    // A return is DELETION of the field, not `null` in it: every reader would otherwise have to
+    // tell `dismissed: null` from a dismiss, and the field is checked for truthiness.
     const { dismissed, ...rest } = p;
     writeTask(home, applyParticipant(meta, at ? { ...rest, dismissed: at } : rest));
     return { found: true, was };
@@ -410,18 +362,14 @@ export function dismissParticipant(home: string, id: string, address: string, at
   return setDismissed(home, id, address, at);
 }
 
-// Return to watch — where the participant is given new work. A lift again
-// clears the mark itself (the record is laid whole); a re-review of a live
-// session — this call.
+// Return to watch — where the participant is given new work. A fresh lift clears the mark itself,
+// since the record is laid whole; a re-review of a live session uses this call.
 export function watchParticipant(home: string, id: string, address: string): { found: boolean; was: string | null } {
   return setDismissed(home, id, address, null);
 }
 
-// Task title from the titles of its tracks: otherwise a run of three tracks
-// would read as the work of one. Computed over the WHOLE journal and called
-// AFTER the participant write — two spawns from one pre-image would yield
-// "A · B" and "A · C", and the winner would lose the foreign track.
-// An empty list is not a reason to rename: a former-CLI task has no `title` field.
+// Task title from the titles of its tracks, or a run of three would read as one. Computed over the
+// WHOLE journal and AFTER the participant write, or two spawns would lose a foreign track.
 export function titleFromLines(meta?: TaskMeta | null): string | null {
   const lines = [...new Set((meta?.participants ?? [])
     .filter((p) => String(p.address ?? '').startsWith('worker:') && p.title)
@@ -438,26 +386,20 @@ export interface Retitle {
   session?: string | null;
 }
 
-// The task title is written after the fact: grafting a new track appends to
-// it, and `--task-title` pins it for good (`titleExplicit`). One door
-// remains — restamping: `restamp` sets the plan by double explicitness
-// (`--task-title` plus an explicit `--task`), and the right is checked here
-// by the same `ownership` as the rest of the bus — under the lock, not in
-// the plan: the mailbox may have changed owner after the plan was built.
+// The task title is written after the fact: a new track appends to it and `--task-title` pins it.
+// Restamping needs double explicitness, and the right is checked here under the lock, not in the plan.
 export function retitleTask(home: string, id: string, {
   title = null, fromLines = false, explicit = false, restamp = false, session = null,
 }: Retitle = {}): string | null {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     if (meta.titleExplicit && !(restamp && !ownership(home, id, ORCHESTRATOR, session).gated)) return null;
-    // `fromLines` is computed HERE and only here: the `--dry-run` prediction
-    // lives in a separate intent field (`preview`) that this function does
-    // not read.
+    // `fromLines` is computed HERE and only here: the `--dry-run` prediction lives in a separate
+    // intent field that this function does not read.
     const next = fromLines ? titleFromLines(meta) : title;
     if (!next || next === meta.title) {
-      // The mark is set even when the title is already that: otherwise a
-      // title a person named explicitly would stay unprotected from the
-      // next graft.
+      // The mark is set even when the title already matches: otherwise a title a person named
+      // explicitly would stay unprotected from the next graft.
       if (explicit) {
         meta.titleExplicit = true;
         writeTask(home, meta);
@@ -490,9 +432,8 @@ function storeArtifact(home: string, id: string, srcAbs: string): string {
   mkdirSync(dir, { recursive: true });
   const ext = path.extname(src);
   const stem = path.basename(src, ext);
-  // The copy itself takes the name, not a check before it: `existsSync` in a
-  // loop is TOCTOU. `COPYFILE_EXCL` gives the name to exactly one, a
-  // latecomer takes the next number.
+  // The copy itself takes the name, not a check before it: `existsSync` in a loop is TOCTOU.
+  // `COPYFILE_EXCL` gives the name to exactly one, and a latecomer takes the next number.
   for (let i = 1; ; i += 1) {
     const name = i === 1 ? `${stem}${ext}` : `${stem}-${i}${ext}`;
     try {
@@ -520,10 +461,8 @@ export function sendMessage(home: string, id: string, { from, to, type, body, ar
     throw new Error(`type «${type}» is not a v1 protocol type: ${MESSAGE_TYPES.join(', ')}`);
   }
   if (typeof body !== 'string' || !body.trim()) throw new Error('body is empty — a message with no text is not sent');
-  // The addressee must be listed as a task participant: a typo in the slug
-  // would pass grammar, the function opens the mailbox directory itself, and
-  // send would return success. There is no lawful send to an unregistered
-  // address — spawn writes the participant BEFORE launch.
+  // The addressee must be listed as a task participant: a typo in the slug would pass grammar, the
+  // directory would be opened here, and send would return success. Spawn writes the participant first.
   const known = (readTask(home, id).participants ?? []).map((p) => p.address);
   if (!known.includes(to)) {
     throw new Error(`task ${id} has no participant «${to}» — there is nobody to pick the message up, `
@@ -534,11 +473,8 @@ export function sendMessage(home: string, id: string, { from, to, type, body, ar
   const now = new Date();
   const dir = inboxDir(home, id, to);
   mkdirSync(dir, { recursive: true });
-  // Name uniqueness is held by the disk, not by process memory: each process
-  // has its own `seq` counter. The temporary file is in the same directory
-  // (rename and link are atomic only inside one FS; the reader picks `.json`
-  // and does not take a leading dot). We `link`, not `rename`: it refuses
-  // on a taken name instead of a quiet overwrite.
+  // Name uniqueness is held by the disk, not by process memory. The temporary file is in the same
+  // directory, and we `link` rather than `rename`: it refuses a taken name instead of overwriting.
   tmpSeq += 1;
   const tmp = path.join(dir, `.tmp-msg-${process.pid}-${tmpSeq}`);
   const ts = compactStamp(now);
@@ -567,10 +503,8 @@ function inboxNames(dir: string): string[] {
   return readdirSync(dir).filter((n) => n.endsWith('.json') && !n.startsWith('.')).sort();
 }
 
-// One message from the mailbox: parsed, `null` if a neighbour took it, and
-// `null` if broken — the broken one goes to `broken/` with a report. Were it
-// to throw SyntaxError outward, the mailbox would jam forever, and the whole
-// run with it.
+// One message from the mailbox: parsed, `null` if a neighbour took it, `null` if broken — the broken
+// one goes to `broken/` with a report. A SyntaxError thrown outward would jam the mailbox forever.
 function takeMessage(dir: string, name: string, attic: string, broken: string[], warn: Warn): Message | null {
   const file = path.join(dir, name);
   let raw;
@@ -594,9 +528,8 @@ function takeMessage(dir: string, name: string, attic: string, broken: string[],
       // damage and that the file stayed.
       note = `BROKEN MESSAGE ${name}: did not parse (${(e as Error).message}) and was not set aside (${(moveErr as Error).message}) — skipped`;
     }
-    // Report on two channels: diagnostics for a person, the `broken` list
-    // for the agent (on the MCP path stderr is read by the harness, not the
-    // session, and without the list the message would vanish in silence).
+    // Reported on two channels: diagnostics for a person, the `broken` list for the agent — on the
+    // MCP path stderr is read by the harness, and without the list the message would vanish.
     warn(note);
     broken.push(note);
     return null;
@@ -620,10 +553,8 @@ export function readInbox(home: string, id: string, addr: string, warn: Warn = S
     try {
       renameSync(path.join(dir, n), path.join(done, n));
     } catch (e) {
-      // A neighbour took it between the read and the move — a skip, not a
-      // refusal: a refusal would come from the middle of the walk, when
-      // some messages have already gone to `read/`. The message is not
-      // lost — the neighbour took it, and that neighbour will deliver it.
+      // A neighbour took it between the read and the move — a skip, not a refusal: a refusal would
+      // come mid-walk, after some messages had already gone to `read/`. Nothing is lost.
       if (errno(e).code !== 'ENOENT') throw e;
       continue;
     }
@@ -636,12 +567,8 @@ export function countInbox(home: string, id: string, addr: string): number {
   return inboxNames(inboxDir(home, id, addr)).length;
 }
 
-// Accumulated unread does not speak for itself: notification is best-effort,
-// if it did not arrive the message sits and the session thinks nobody wrote.
-// The counter rides as a tail on replies where the session does not take
-// the mailbox (`send`, `task`, `promptobus review` output); zero is not
-// named. To a foreign mailbox the line says something else: the originals
-// will not be given to it.
+// Accumulated unread does not speak for itself: notification is best-effort. The counter rides as a
+// tail on replies where the session does not take the mailbox; zero is not named.
 export function unreadNote(home: string, id: string, addr: string, session: string | null = null): string | null {
   const n = countInbox(home, id, addr);
   if (!n) return null;
@@ -651,10 +578,8 @@ export function unreadNote(home: string, id: string, addr: string, session: stri
     + `${own.owner}, this one is ${own.session}. ${FOREIGN_ROUTE}`;
 }
 
-// Glance into the mailbox without touching anything in it — needed by the
-// warden. Unlike `peekInbox`, that one sets the unreadable aside in
-// `broken/` and names it aloud, and warden diagnostics go to
-// `stdio: 'ignore'` — what was set aside would vanish without a word to anyone.
+// Glance into the mailbox without touching anything — for the warden. `peekInbox` sets the
+// unreadable aside and names it aloud, and warden diagnostics go nowhere anyone would read.
 export function glanceInbox(home: string, id: string, addr: string): Message[] {
   const dir = inboxDir(home, id, addr);
   const msgs: Message[] = [];
@@ -669,10 +594,8 @@ export function glanceInbox(home: string, id: string, addr: string): Message[] {
   return msgs;
 }
 
-// Look at incoming without taking them — needed by a foreign session: `mailbox`
-// gives it a copy, and the originals stay with the owner. Messages are taken
-// by the owner-session `mailbox`, which may also have taken the file between
-// the listing and the read.
+// Look at incoming without taking them — for a foreign session: `mailbox` gives it a copy and the
+// originals stay with the owner, who may have taken the file between the listing and the read.
 export function peekInbox(home: string, id: string, addr: string, warn: Warn = SILENT): { msgs: Message[]; broken: string[] } {
   const dir = inboxDir(home, id, addr);
   const attic = brokenDir(home, id, addr);
@@ -691,11 +614,8 @@ export function peekInbox(home: string, id: string, addr: string, warn: Warn = S
 // Stamp and sender in the message file name — the shape `sendMessage` sets.
 const MSG_NAME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})-\d{4}-(.+)\.json$/;
 
-// When the address last SENT on the bus; `null` — has not sent anything yet.
-// Message bodies are not read at all: the file name carries both the
-// timestamp and the sender, and this is asked on every heartbeat for every
-// stalled one. We look at both places a message lawfully lives — unread in
-// the recipient mailbox and read in `read/`.
+// When the address last SENT on the bus; `null` means not yet. Bodies are not read at all — the file
+// name carries the stamp and the sender — and both places a message lawfully lives are looked at.
 export function lastSentAt(home: string, id: string, address: string): number | null {
   const from = addrDir(address);
   let last: number | null = null;
@@ -717,9 +637,8 @@ export function lastSentAt(home: string, id: string, address: string): number | 
       }
       for (const n of names) {
         const m = MSG_NAME_RE.exec(n);
-        // The sender is checked whole, not by the name tail: the slug
-        // `x-worker-api` has the same tail `-worker-api.json`, and its
-        // messages would pass as messages of `worker:api`.
+        // The sender is checked whole, not by the name tail: the slug `x-worker-api` has the same
+        // tail, and its messages would pass as messages of `worker:api`.
         if (!m || m[8] !== from) continue;
         const at = Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!, +m[7]!);
         if (last === null || at > last) last = at;
@@ -730,12 +649,8 @@ export function lastSentAt(home: string, id: string, address: string): number | 
 }
 
 
-// --- re-export of the dictionary and adapter files ------------------------------------
-//
-// The module surface stays as migration and the fixture generator knew it:
-// the bus dictionary and the task-directory files moved to neighbouring
-// modules, but a consumer of the legacy slice has no reason to call them
-// through two imports.
+// --- re-export of the dictionary and adapter files: the module surface stays as migration and the
+// fixture generator knew it, and a consumer of this slice has no reason to call through two imports.
 export {
   addrDir, brokenNote, claimRoute, FOREIGN_MARK, FOREIGN_ROUTE, GateError, isAddress,
   MAILBOX_CLAIMED_MARK, MESSAGE_TYPES, newTaskIdentity, ORCHESTRATOR, participantFileStem,

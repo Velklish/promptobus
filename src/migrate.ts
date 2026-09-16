@@ -29,16 +29,8 @@ import type { HostLegacyLayout, PromptobusHost } from './host.js';
 /** Transient successful-assembly mark. It survives `rename` and is removed after cleanup. */
 const MARK = 'migrating.json';
 
-/**
- * How long to wait for a neighbour that is already moving.
- *
- * The move starts with EVERY bus stdio server, and a server is lifted for
- * every session and every participant: two launches in one workspace are the
- * ordinary case, not a race from theory. A measurement on a copy of a live
- * workspace (71 tasks, 36 MB) was 1.45 s; thirty seconds cover it twenty
- * times over, and only a LIVE neighbour sits them out (the lock drops a
- * dead one itself).
- */
+/** How long to wait for a neighbour that is already moving. Two launches in one workspace are the
+ * ordinary case; a measured move (71 tasks, 36 MB) took 1.45 s, and only a LIVE neighbour sits it out. */
 const MIGRATION_WAIT_MS = 30_000;
 
 /** Steps at which the suite can abort the migration. Not supplied in production at all. */
@@ -69,15 +61,8 @@ export interface MigrationReport {
   tasks: TaskReport[];
   brokenTasks: string[];
   bindings: number;
-  /**
-   * Whether THIS call did anything. `false` — there was nothing to move, or
-   * a neighbour did it all: the move runs from two processes at once, and
-   * the loser leaves empty-handed. The field is not there for completeness:
-   * without it an empty report is indistinguishable from a successful move,
-   * and the numeric report — the one promised to a person — would say
-   * "0 tasks, 0 messages, former directory removed" where the neighbour
-   * moved seventy-one tasks.
-   */
+  /** Whether THIS call did anything. Without it an empty report is indistinguishable from a
+   * successful move, and the numeric report would say "0 tasks" where a neighbour moved seventy-one. */
   moved: boolean;
   /** The work was already done by a previous run — the switch is finished without a rebuild. */
   resumed: boolean;
@@ -144,13 +129,8 @@ function markOf(home: string): { from?: string } | null {
   }
 }
 
-/**
- * Parse `legacyLayout().rel`: exactly two segments joined by `/` — the outer
- * directory and the store inside it. An absolute path, empty segments, `.`,
- * `..`, and `\\` are a shape error, not "there is no legacy": otherwise
- * `path.join` walks above the workspace root, and a split on both separators
- * cuts a POSIX name that contains a backslash in two.
- */
+/** Parse `legacyLayout().rel`: exactly two segments joined by `/`. An absolute path, empty segments,
+ * `.`, `..` and `\\` are a shape error, not "no legacy" — `path.join` would walk above the root. */
 export function splitLegacyRel(rel: string): [string, string] {
   const s = String(rel ?? '');
   if (path.isAbsolute(s) || s.startsWith('/') || s.startsWith('\\') || s.includes('\\')) {
@@ -188,14 +168,8 @@ function requireLayout(
   return layout;
 }
 
-/**
- * Whether migration is needed and whether it may run. Not a single change on
- * disk — a refusal arrives before any mutation by construction. An explicit
- * `null` — nothing to move from (standalone, a host with no former store).
- * The second argument has no default: a forgotten call site must not look
- * like "nothing to migrate from". A bad `rel` is a host-configuration
- * error, not a workspace state.
- */
+/** Whether migration is needed and may run — not a single change on disk. The second argument has no
+ * default: a forgotten call site must not look like "nothing to migrate from". */
 export function preflight(root: string, layout: HostLegacyLayout | null): MigrationPlan {
   const named = requireLayout(layout, 'preflight');
   const target = homeOf(root);
@@ -235,10 +209,8 @@ export function preflight(root: string, layout: HostLegacyLayout | null): Migrat
     return plan;
   }
   if (existsSync(target)) {
-    // Both roots at once. The current transient mark tells unfinished cleanup
-    // from a foreign `.promptobus`: the first we finish, the second is the very
-    // case the refusal was introduced for. An old completed-move record is not
-    // proof: previous releases left it behind after cleanup had finished.
+    // Both roots at once. The current transient mark tells unfinished cleanup from a foreign home:
+    // an old completed-move record is not proof — previous releases left it behind after cleanup.
     if (markOf(target)?.from === legacyHome) {
       plan.needed = true;
       return plan;
@@ -290,9 +262,8 @@ function activeLegacyTasks(legacyHome: string): string[] {
     if (!TASK_ID_RE.test(name)) continue;
     try {
       const meta = JSON.parse(readFileSync(path.join(dir, name, 'task.json'), 'utf8')) as { status?: string };
-      // A broken task is not counted as active: there is nothing to activate
-      // it with, and a refusal on it would not let the former CLI close it —
-      // that CLI would stumble on it too.
+      // A broken task is not counted as active: there is nothing to activate it with, and a refusal
+      // on it would not let the former CLI close it — that CLI would stumble on it too.
       if (meta?.status !== 'done') active.push(name);
     } catch {
       // An unreadable journal is not an active task. It goes to migration-broken.
@@ -306,11 +277,8 @@ export function migrationNeeded(root: string, layout: HostLegacyLayout | null): 
   return preflight(root, layout).needed;
 }
 
-/**
- * Move the store. A preflight refusal is a `GateError` with human text: that
- * is a lawful outcome, not a mechanism breakage. Without a layout — an empty
- * report, the disk is not touched.
- */
+/** Move the store. A preflight refusal is a `GateError` with human text — a lawful outcome, not a
+ * mechanism breakage. Without a layout the report is empty and the disk is not touched. */
 export function migrate(root: string, {
   fault = NO_FAULT, waitMs = MIGRATION_WAIT_MS, session = null, harness = null, ...rest
 }: MigrationOptions = {}): MigrationReport {
@@ -327,20 +295,8 @@ export function migrate(root: string, {
   }
   if (!plan.needed) return empty();
 
-  // **The move runs under a lock, and the lock is not a safety net here.** It
-  // starts with every bus stdio server and with every command, so two
-  // processes in one workspace enter here almost together — the ordinary
-  // case, not a race from theory. Without the lock the order loses data in
-  // silence: A assembled a part, B removed its temporary directory, A wrote
-  // the rest and the mark, A renamed — the new root is an incomplete store
-  // with a successful-assembly mark, the old one is gone, and there is no
-  // rollback by construction of the task.
-  //
-  // The primitive is the same as the task journal: a directory with an owner
-  // file and release on a dead pid ([fs/lock.ts](fs/lock.ts)). The loser does
-  // NOT refuse: it re-asks preflight and sees a root that has already moved.
-  // A refusal at server start would mean "the bus vanished" for the second
-  // session on a clear path.
+  // **The move runs under a lock, and the lock is not a safety net here**: without it two processes
+  // lose data in silence, with no rollback. The loser does NOT refuse — it re-asks preflight.
   try {
     return withDirLock(lockOf(root), () => migrateLocked(root, layout, empty(), fault, harness), {
       waitMs,
@@ -350,9 +306,8 @@ export function migrate(root: string, {
     });
   } catch (e) {
     if (!(e instanceof MigrationBusy)) throw e;
-    // The lock sat out to the end — but the neighbour may have finished the
-    // move in exactly this window. Ask again: a moved root is an outcome for
-    // us, not a reason to refuse.
+    // The lock sat out to the end — but the neighbour may have finished in exactly this window. Ask
+    // again: a moved root is an outcome for us, not a reason to refuse.
     const after = preflight(root, layout);
     if (after.refusal) throw new GateError(after.refusal);
     if (after.sweep) {
@@ -372,9 +327,8 @@ function migrateLocked(
   fault: MigrationFault,
   harness: string | null,
 ): MigrationReport {
-  // While we waited for the lock, the neighbour may have done everything.
-  // Preflight is re-asked HERE, not only outside: outside it was read before
-  // the wait, and the decision from it has had time to go stale.
+  // While we waited for the lock the neighbour may have done everything. Preflight is re-asked HERE
+  // because the outside read happened before the wait and has had time to go stale.
   const plan = preflight(root, layout);
   if (plan.refusal) throw new GateError(plan.refusal);
   if (plan.sweep) {
@@ -395,11 +349,8 @@ function migrateLocked(
   }
 
   const temp = tempOf(root);
-  // A leftover of a foreign assembly under the lock is already garbage: the
-  // directory takes its place in one `rename`, and an unfinished one does
-  // not survive until then, and we hold the lock — so the former owner
-  // either released it, or is dead and was dropped by pid. This `rm` cannot
-  // catch a live neighbour.
+  // A leftover of a foreign assembly under the lock is already garbage: we hold the lock, so its
+  // former owner either released it or was dropped by pid. This `rm` cannot catch a live neighbour.
   rmSync(temp, { recursive: true, force: true });
 
   try {
@@ -448,33 +399,16 @@ function legacyTaskIds(legacyHome: string): string[] {
 
 // --- one task ---------------------------------------------------------------
 
-/**
- * Deterministic tail of a record id: the same legacy record yields the same
- * name on any repeat. A random tail here would be a direct loss — an
- * interrupted and repeated migration would lay the same messages under
- * different names.
- */
+/** Deterministic tail of a record id: the same legacy record yields the same name on any repeat. A
+ * random tail would be a direct loss — a repeated migration would lay the same messages twice. */
 function tail(seed: string): string {
   return createHash('sha256').update(seed).digest('hex').slice(0, 6);
 }
 
 const LEGACY_MSG_RE = /^(\d{8}T\d{9})-(\d{4})-/;
 
-/**
- * v1 message name from a legacy name. The stamp and the counter are taken as
- * they are: history order rests on them, and string sort must stay the same.
- * The sender leaves the name — in v1 it lives as a field on the record.
- *
- * **The tail is seeded by the directory, not by the file name alone, and
- * that is not decoration.** Names in the former store are unique inside ONE
- * mailbox, not the task: two senders under the same address from two
- * processes built one name, and `link` inside its own directory (as a
- * catalog) told them apart. Seeding by the file name alone would give them
- * one id for the whole task — the second canonical would not be written
- * (`existsSync`), the link would swallow `EEXIST`, and the message would
- * vanish in silence. Repeat determinism stays intact: each legacy file
- * lives in exactly one directory.
- */
+/** v1 message name from a legacy one; stamp and counter are taken as they are, since history order
+ * rests on them. **The tail is seeded by the DIRECTORY**: legacy names are unique per mailbox, not per task. */
 function recordIdOf(legacyId: string, at: string, box: string): string {
   const seed = `${box}/${legacyId}`;
   const m = LEGACY_MSG_RE.exec(`${legacyId}-`);
@@ -537,25 +471,14 @@ export interface MigrationOptions {
   fault?: MigrationFault;
   /** How long to wait for the move lock. */
   waitMs?: number;
-  /**
-   * Identity of the session that started the move — only for diagnosing a
-   * busy lock. The environment is read by the adapter, so the value arrives
-   * as an argument.
-   */
+  /** Identity of the session that started the move — only for diagnosing a busy lock. The environment
+   * is read by the adapter, so the value arrives as an argument. */
   session?: string | null;
-  /**
-   * Harness of former-CLI records: they have no `harness` field at all, and
-   * v1 requires it on every participant record. Harness names do not and
-   * cannot live in the package — their home is with the drivers — so the
-   * adapter supplies the name. Unnamed — the record says the harness is
-   * undeclared.
-   */
+  /** Harness of former-CLI records, which have none, though v1 requires one. Harness names cannot
+   * live in the package — their home is with the drivers — so the adapter supplies it. */
   harness?: string | null;
-  /**
-   * Where to migrate from. An explicit `null` — nothing to move from, even
-   * if the host is another. Not passed — `host.legacyLayout()` is taken, and
-   * without a host — also nothing to move from.
-   */
+  /** Where to migrate from. An explicit `null` means nothing to move from even if the host says
+   * otherwise; not passed, `host.legacyLayout()` is taken, and without a host — also nothing. */
   layout?: HostLegacyLayout | null;
   host?: Pick<PromptobusHost, 'legacyLayout'>;
 }
@@ -566,16 +489,8 @@ function capsOf(value: unknown): CapabilitiesSnapshot | null {
   }).ok ? (value as CapabilitiesSnapshot | null) : null;
 }
 
-/**
- * Former-store participant record into the v1 model.
- *
- * The legacy record goes into `metadata` WHOLE, and that is the main property
- * of the translation: driver fields, the track title, the repository, the
- * watch-dismiss mark, and everything the adapter ever wrote come back to the
- * reader byte for byte. The v1 fields of its own — `role`, `harness`,
- * `mode`, `sessionRef`, `capabilities` — are a view of the same record:
- * the schema, policy, and the activation event read them.
- */
+/** Former-store participant record into the v1 model. The legacy record goes into `metadata` WHOLE —
+ * everything the adapter ever wrote comes back byte for byte — and the v1 fields are a view of it. */
 function participantToV1(p: legacy.Participant, harness: string | null): ParticipantV1 {
   const declared = typeof p.harness === 'string' ? p.harness.trim() : '';
   const ref = typeof p.sessionRef === 'string' && p.sessionRef ? p.sessionRef
@@ -583,20 +498,13 @@ function participantToV1(p: legacy.Participant, harness: string | null): Partici
   const raw = typeof p.mode === 'string' ? p.mode.trim() : '';
   const usable = isAddress(p?.address);
   return {
-    // A bad address does NOT drop the record: one damaged row has no right
-    // to cost the rest, and `promptobus done` on such a record still
-    // collects secrets and directories.
-    // The id must be stable: the same address yields the same name on
-    // every pass.
+    // A bad address does NOT drop the record: one damaged row may not cost the rest. The id must be
+    // stable — the same address yields the same name on every pass.
     id: usable ? addrDir(p.address) : `broken-${tail(String(p?.address))}`,
     role: usable ? roleOf(p.address) : UNDECLARED_ROLE,
     harness: declared || harness || UNDECLARED_HARNESS,
-    // Mode is required by the schema, and a legacy record may lack it
-    // entirely. The rule is the same as `modeOf`: spawn lifted a session
-    // for the participant, so `managed`; there is no session — `attached`,
-    // as with the task owner. An unfamiliar value stays in `metadata`, and
-    // `modeOf` unpacks it — here it has no right to become `managed` in
-    // silence.
+    // Mode is required by the schema and a legacy record may lack it. Same rule as `modeOf`: a
+    // session reference means `managed`, none means `attached`; an unfamiliar value stays in `metadata`.
     mode: raw === 'managed' || raw === 'attached' ? raw : (ref ? 'managed' : 'attached'),
     sessionRef: ref,
     capabilities: capsOf(p.capabilities ?? null),
@@ -608,19 +516,15 @@ function toV1Task(id: string, meta: legacy.TaskMeta, harness: string | null): Ta
   const participants: ParticipantV1[] = [];
   const seen = new Set<string>();
   for (const p of meta.participants ?? []) {
-    // The translation is the same one the compatibility layer does: two
-    // editions of one rule would drift in silence. A record with a bad
-    // address is neither dropped nor lost — it gets a stable tail from the
-    // address itself, and `promptobus done` on it still collects secrets
-    // and directories.
+    // The same translation the compatibility layer does — two editions of one rule would drift. A
+    // record with a bad address is neither dropped nor lost: it gets a stable tail from the address.
     const one = participantToV1(p, harness);
     if (seen.has(one.id)) continue;
     seen.add(one.id);
     participants.push(one);
   }
-  // The task owner must be a participant: in v1 it is the same kind of
-  // record. The former `createTask` always laid down `orchestrator`, but a
-  // journal edited by hand could lose it.
+  // The task owner must be a participant: in v1 it is the same kind of record. The former
+  // `createTask` always laid `orchestrator` down, but a journal edited by hand could lose it.
   if (!seen.has(ORCHESTRATOR)) {
     participants.unshift(participantToV1({ address: ORCHESTRATOR }, harness));
   }
@@ -645,14 +549,8 @@ function toV1Task(id: string, meta: legacy.TaskMeta, harness: string | null): Ta
 
 // --- artifacts ------------------------------------------------------------------
 
-/**
- * Each file in `artifacts/` becomes a SHA-256 blob plus a metadata record;
- * the file name stays visible to a person as a hard link in `files/`.
- * Returns a "file name → record id" map: message links are rewritten from it.
- *
- * An orphan — a file no message points at — is moved along with the rest:
- * only `prune` may delete it, and then together with the task.
- */
+/** Each file in `artifacts/` becomes a SHA-256 blob plus a metadata record, with the name kept as a
+ * hard link in `files/`. An orphan moves with the rest: only `prune` may delete it, with the task. */
 function migrateArtifacts(legacyHome: string, temp: string, id: string, meta: legacy.TaskMeta, report: TaskReport): Map<string, string> {
   const named = new Map<string, string>();
   const from = path.join(legacyHome, 'tasks', id, 'artifacts');
@@ -703,9 +601,8 @@ function migrateArtifacts(legacyHome: string, temp: string, id: string, meta: le
     try {
       linkSync(blob, path.join(files, name));
     } catch {
-      // The name is taken — that is what a same-named file with different
-      // content looks like; the former store already told them apart with a
-      // number at send time, and here both names are already different.
+      // The name is taken — what a same-named file with different content looks like. The former
+      // store already told them apart with a number at send time, so both names differ here.
     }
     named.set(name, record.id);
     report.artifacts += 1;
@@ -729,9 +626,8 @@ function migrateMessages(legacyHome: string, temp: string, id: string, named: Ma
       }
     }
   }
-  // Already set aside by the former store: `broken/<address>` → `broken/inbox/<participant>`.
-  // v1 has three `broken/` directories, not one — a participant whose id is
-  // `artifacts` would otherwise walk off with someone else.
+  // Already set aside by the former store. v1 has three `broken/` directories, not one — a
+  // participant whose id is `artifacts` would otherwise walk off with someone else.
   for (const dir of boxes(path.join(taskAt, 'broken'))) {
     const attic = brokenInboxDir(temp, id, dir);
     mkdirSync(attic, { recursive: true });
@@ -776,9 +672,8 @@ function migrateMessage(src: string, temp: string, id: string, box: string, targ
   }
   const message = legacyMsg && !why ? toV1Message(id, legacyMsg, named, box) : null;
   if (!message) {
-    // A broken or untranslatable record — into `broken/inbox/<participant>`
-    // under its own name. A truncated file left by a process death mid-write
-    // looks exactly like this.
+    // A broken or untranslatable record goes to `broken/inbox/<participant>` under its own name. A
+    // truncated file left by a process death mid-write looks exactly like this.
     const attic = brokenInboxDir(temp, id, box);
     mkdirSync(attic, { recursive: true });
     writeFileSync(path.join(attic, path.basename(src)), raw);
@@ -786,9 +681,8 @@ function migrateMessage(src: string, temp: string, id: string, box: string, targ
       + '— set aside in broken/inbox');
     return false;
   }
-  // Canonical and the recipient link are one inode, as on send: the link is
-  // laid AFTER the canonical, and a repeat pass over a finished one does
-  // nothing.
+  // Canonical and the recipient link are one inode, as on send: the link is laid AFTER the canonical,
+  // and a repeat pass over a finished one does nothing.
   mkdirSync(messagesDir(temp, id), { recursive: true });
   const canonical = path.join(messagesDir(temp, id), `${message.id}.json`);
   if (!existsSync(canonical)) writeFileSync(canonical, `${JSON.stringify(message, null, 2)}\n`);
@@ -823,16 +717,8 @@ function toV1Message(task: string, m: legacy.Message, named: Map<string, string>
 
 // --- adapter files -------------------------------------------------------------
 
-/**
- * What is copied as-is: files that neither store holds.
- *
- * `wake/` is absent from the list on purpose. A contact point carries a
- * messaging-socket address and a live-session token; there are no sessions
- * at migration time (active tasks block it), and participants hand them in
- * themselves on the first call to the bus. A moved contact point would be
- * the address of a dead socket — the warden would knock on it until the
- * first refusal.
- */
+/** What is copied as-is: files that neither store holds. `wake/` is absent on purpose — a moved
+ * contact point would be the address of a dead socket, and the warden would knock until it refused. */
 const SIDECAR = ['health.json', 'supervisor.json', 'supervisor.log', 'stalls.json', 'waits', 'workers'];
 
 function copySidecar(legacyHome: string, temp: string, id: string): void {

@@ -15,11 +15,8 @@ export interface LockHolder {
   since: string | null;
 }
 
-/**
- * Who holds the lock. A former-CLI lock holds the pid as a string — that is
- * read too: the only process that can outlive the directory is one that died
- * mid-write.
- */
+/** Who holds the lock. A former-CLI lock holds the pid as a string and is read too: the only process
+ * that can outlive the directory is one that died mid-write. */
 export function lockHolder(lock: string): LockHolder | null {
   let raw;
   try { raw = readFileSync(path.join(lock, 'owner'), 'utf8').trim(); } catch { return null; }
@@ -32,14 +29,8 @@ export function lockHolder(lock: string): LockHolder | null {
   return { pid: Number(raw) || null, session: null, since: null };
 }
 
-/**
- * An orphaned lock — by pid liveness: a process that died mid-write leaves the
- * directory forever. We take the directory aside with `rename`, not delete it
- * in place: between a foreign `rm` and our own `mkdir` a neighbour would slip
- * in, and a second cleaner would wipe its fresh lock. A holder with no pid is
- * left alone: between `mkdir` and writing the owner file the lock is a live
- * grab, not an orphan.
- */
+/** An orphaned lock, by pid liveness. Taken aside with `rename` rather than deleted in place, or a
+ * neighbour would slip in between; a holder with no pid is a live grab and is left alone. */
 export function dropDeadLock(lock: string): boolean {
   const held = lockHolder(lock);
   if (!held?.pid || pidAlive(held.pid)) return false;
@@ -61,24 +52,12 @@ export interface DirLockOptions {
   onBusy: (held: LockHolder | null, waitedMs: number) => Error;
 }
 
-/**
- * Locks taken by THIS process right now. Needed for nesting: an adapter
- * read-modify-write takes the task lock, and a store operation inside it takes
- * the same one — and without accounting for its own locks the process would
- * sit out `waitMs` on itself and refuse with "journal busy", naming its own
- * pid as the holder.
- *
- * Nesting is lawful and safe: the lock separates PROCESSES, and inside a
- * process the stretch under it is synchronous, so the nested call is the same
- * critical section. Only the call that took the lock drops it: the inner one
- * leaves without touching the directory.
- */
+/** Locks taken by THIS process right now, for nesting: without them a process would sit out `waitMs`
+ * on itself. Nesting is safe — the lock separates PROCESSES — and only the outer call drops it. */
 const held = new Set<string>();
 
-/**
- * Take the lock directory, run, and drop. A dead holder is dropped while
- * waiting; a live one sits out `waitMs` and refuses in the caller's words.
- */
+/** Take the lock directory, run, and drop. A dead holder is dropped while waiting; a live one sits
+ * out `waitMs` and refuses in the caller's words. */
 export function withDirLock<T>(lock: string, fn: () => T, {
   waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
 }: DirLockOptions): T {

@@ -6,12 +6,8 @@ import process from 'node:process';
 
 let atomicSeq = 0;
 
-/**
- * Write a file whole: a temporary neighbour in the same directory and `rename` over it.
- *
- * `writeFileSync` truncates the file to zero — a parallel reader finds it empty,
- * and a process that died mid-write leaves a truncated file forever.
- */
+/** Write a file whole: a temporary neighbour in the same directory, then `rename` over it.
+ * `writeFileSync` truncates to zero — a parallel reader finds it empty, and a death leaves it so. */
 export function writeFileAtomic(file: string, content: string, { mode = null, preserveMode = false }: { mode?: number | null; preserveMode?: boolean } = {}): void {
   const dir = path.dirname(file);
   mkdirSync(dir, { recursive: true });
@@ -26,9 +22,8 @@ export function writeFileAtomic(file: string, content: string, { mode = null, pr
     if (m !== null) chmodSync(tmp, m);
     renameSync(tmp, file);
   } catch (e) {
-    // recursive: a directory can sit where tmp should be (an aborted pass, a
-    // foreign FS); `force` alone will not lift it, and the next write would
-    // hit it forever.
+    // recursive: a directory can sit where tmp should be, and `force` alone will not lift it —
+    // the next write would hit it forever.
     rmSync(tmp, { force: true, recursive: true });
     throw e;
   }

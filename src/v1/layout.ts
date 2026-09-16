@@ -13,9 +13,8 @@ export function homeOf(root: string): string {
   return path.join(root, ROOT_DIR);
 }
 
-// Grammar is checked on EVERY name that enters a path: an id arrives both from
-// the adapter and from a foreign record on disk, and `..` in it would walk the
-// record out of the task.
+// Grammar is checked on EVERY name that enters a path: an id arrives both from the adapter and from
+// a foreign record on disk, and `..` in it would walk the record out of the task.
 function safeTask(id: unknown): string {
   if (typeof id !== 'string' || !TASK_ID_RE.test(id)) {
     fail('task-not-found', `invalid task id: «${String(id)}»`, { task: id });
@@ -71,12 +70,8 @@ export function intentFile(home: string, task: string, message: string): string 
   return path.join(intentsDir(home, task), `${safeRecord(message)}.json`);
 }
 
-/**
- * Lease of an unclosed fan-out: `<id>.owner` next to the intent. The path is
- * assembled FROM the intent path, not from the id a second time: recovery walks
- * the directory by file names and asks for the lease before parsing the
- * record — it has a path in hand, not an id.
- */
+/** Lease of an unclosed fan-out: `<id>.owner` beside the intent. Assembled FROM the intent path, not
+ * from the id again — recovery walks by file names and asks for the lease before parsing. */
 export function ownerOfIntent(intent: string): string {
   return `${intent.slice(0, -'.json'.length)}.owner`;
 }
@@ -103,11 +98,8 @@ export function historyRef(home: string, task: string, participant: string, mess
   return path.join(historyDir(home, task, participant), `${safeRecord(message)}.json`);
 }
 
-/**
- * Isolated. Two subdirectories, not one: `inbox/<participant>` and `artifacts`
- * — otherwise a participant whose id is `artifacts` would take foreign records
- * as its own.
- */
+/** Isolated. Two subdirectories, not one: `inbox/<participant>` and `artifacts` — otherwise a
+ * participant whose id is `artifacts` would take foreign records as its own. */
 export function brokenInboxDir(home: string, task: string, participant: string): string {
   return path.join(taskDir(home, task), 'broken', 'inbox', safeParticipant(participant));
 }

@@ -2,11 +2,8 @@
 // [reference/01-overview.md#reading-about-a-process](../../docs/reference/01-overview.md#reading-about-a-process)
 import process from 'node:process';
 
-/**
- * Whether the process is alive. Signal 0 sends nothing, it only checks that the
- * target is reachable; `EPERM` means "the process exists, but it is not ours" —
- * also alive.
- */
+/** Whether the process is alive. Signal 0 sends nothing and only checks reachability; `EPERM` means
+ * the process exists but is not ours — also alive. */
 export function pidAlive(pid: unknown): boolean {
   if (!Number.isInteger(pid) || (pid as number) <= 0) return false;
   try {

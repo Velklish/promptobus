@@ -34,6 +34,36 @@ records the `--approver` flag and the reviewer-result precondition. A repeat lif
 alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
 session starts a fresh approver instead of spawning a second session beside the first.
 
+## A stop returns after the record is gone, not after the command returns
+
+Both session drivers wait past their own stop command, and the numbers behind that come
+from a live run rather than from caution. Measured 2026-09-03 on `claude` 2.1.251, three
+runs in a row: `claude stop <id>` returned in 677, 801 and 898 ms, while the record left
+`claude agents --json` after 1070, 1145 and 1218 ms from the start of the call — so the
+command returns 270–390 ms **before** the session is gone from the registry. The ceiling
+of 10 s is an eightfold margin on the worst of those; it is not the cost of a normal stop
+but the point past which the wait ends and says so out loud. The poll step is shorter than
+one probe, since each probe is a `claude agents --json` run measured at 0.34–0.41 s, and a
+shorter step would add processes without adding information; at the ceiling that is about
+twenty probes, and only on a hung stop. The list is taken fresh on every probe, because a
+parsed reply is remembered until the cache reset and the loop would otherwise read one
+snapshot until the ceiling.
+
+Why the wait exists at all: directory cleanup follows the stop, asks for session state, and
+on a still-live record lawfully keeps the worktree with "will be removed on the next
+promptobus done". The live run of 2026-09-03 00:14 went red on exactly that — four verdicts
+on steps 13–14 beside a green stop. The outcome is a **tristate**, not a boolean: `gone` —
+no record; `timeout` — the ceiling ran out with the record still there; `unreadable` — the
+registry could not be read. Saying "session closed" on an unreadable registry would assert
+the unchecked, which is what the "unknown is not death" rule exists to prevent. The caller
+maps `timeout` and `unreadable` onto one unconfirmed outcome, but their reasons differ and
+they tell a person different things.
+
+The Cursor side waits for the same reason: the harness command takes the pane down long
+before the processes the turn started are gone, so the operation returns only once the
+harness no longer has the session. That timing, and the reap it earned, are measured in
+[03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune).
+
 ## Cursor: the persist session
 
 Source: `lib/cursor-persist.js`.
@@ -71,6 +101,14 @@ and held no readable record.
 Every number and shape below was taken from live spike runs (2026-09-03, `agent`
 2026.09.02-c22c1a3, tmux 3.6b), not inferred from documentation: Cursor has no docs
 on `persist` at all, and the subcommand itself has no flags of its own.
+
+**Nothing is refused on the requested effort, and that is a measurement rather than a gap.**
+In Cursor the effort level is a flat suffix on the model id, not a separate flag, so only the
+binary knows whether a given model-and-level pair exists: not every model has every level, and
+one level appears on a single family. Asking it costs almost nothing and refusing on a guess
+would cost a lift — a bad id comes back in about two seconds with empty stdout and a list of
+the ids that do exist, without opening a chat. So `optionRefusal` refuses on the binary version
+and on `tmux`, and leaves the model-and-level pair to the binary.
 
 ### The driver contract
 
@@ -214,6 +252,58 @@ file — it takes the driver from the registry map.
 A registry-home refusal propagates from `readSession` through activation, inspect and
 stop. The `gone` outcome therefore means a named registry was read and contained no
 record; it is never an alias for missing configuration.
+
+#### The two `mcp_servers` transports, and the field that kills the config load
+
+The workspace MCP set is written into the `[mcp_servers]` tables of the participant home's
+`config.toml`, and Codex has **two transports whose fields do not overlap**:
+`streamable_http` knows `url`, `http_headers` and `bearer_token_env_var`; `stdio` knows
+`command`, `args`, `env` and `cwd`. A foreign field is not ignored — it kills the config
+load entirely and the participant does not lift at all, with the reply *"failed to load
+configuration: args is not supported for streamable_http in `mcp_servers.<name>`"*.
+Measured on codex-cli 0.146.0 with `thread/start` into an isolated `CODEX_HOME`: `{args,
+env}` on top of a url-server produced exactly that refusal, `{url, http_headers}` lifted the
+thread. An unknown transport — Claude Code's `sse` has no Codex counterpart — is not emitted
+at all, because a record with neither `url` nor `command` is an unbuildable half.
+
+The isolated home removed the NAME collision the key prefix was first introduced against:
+there is no personal set left to merge with, so the entries have one source and one shape.
+The prefix stays for the other thing it does, which the home does not replace — the tool
+name the participant is told is derived from the config key (§ Consumer identity inside a
+harness in [02-host](02-host.md)).
+
+`ThreadStartParams.config` remains the passthrough for the one key that is per-turn rather
+than per-home: `model_reasoning_effort`, which both roles honour. Measured on codex-cli
+0.146.0 with no paid turn — the thread echoes the asked level back as
+`ThreadStartResponse.reasoningEffort`; the first `turn/start` sends effort as well, and that
+value persists across later wakes on the same thread. Both roles use `turn/start` so the bus
+tools stay on the participant thread: `review/start` was an observed stall of the bus mailbox
+and is unused.
+
+#### The holder's record watch
+
+The holder outlives the command that started it — that is the point of it — but it must not
+outlive its own SESSION, and nothing else can reap it: `stop` and the suite stands both reap
+from a cleanup hook, and the take-down that leaks is the one no hook reaches. The suite
+runner takes a file down with `SIGKILL` at a file timeout and on Ctrl-C; a run on 2026-09-04
+left twelve holder processes alive into the next day, each holding a session file in a
+directory that no longer existed.
+
+The record IS the session: `dropSession` removes it on stop, and so does whoever removes the
+tree it lives in, so gone means there is nothing left to hold. The watch tests with
+`existsSync` rather than a read — the record is replaced by rename and is never transiently
+absent, while an unreadable file is a reason to keep holding rather than to die. The
+app-server is killed FIRST and the exit is immediate, because the child's own exit handler
+writes to the holder log and that write would recreate the tree that was just removed. The
+interval is `unref`ed, so the watch is never the reason the process is alive.
+
+The holder log follows the same rule from the other side: it does NOT create its directory.
+The sessions directory is written before the holder starts, and by the time it is missing the
+run that owned it is gone — recreating it would resurrect the tree the holder is about to die
+with. The window is real: the app-server's stderr and the protocol notifications both log,
+and either can arrive inside the five seconds between the tree going and the record watch
+firing. A write with nowhere to go is dropped, because this is diagnostics and the holder
+must not fall over its own log.
 
 ### `reviewSandbox` — reviewer working directory: the mechanism's own, not the tree under review
 

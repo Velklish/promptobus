@@ -15,12 +15,8 @@ export interface Verdict {
   /** Path to the bad field: `participants[1].harness`. Empty when accepted. */
   at: string;
   note: string;
-  /**
-   * Unfamiliar fields the refusal is about. A separate field, not a parse of
-   * `note`: the reader uses it to tell "a record written by a mechanism newer
-   * than me" from corruption, and the refusal text is prose — a matcher on it
-   * would drift with the first wording change.
-   */
+  /** Unfamiliar fields the refusal is about — a separate field, not a parse of `note`: the reader
+   * tells "written by a newer mechanism" from corruption by it, and prose would drift. */
   extra: readonly string[];
 }
 
@@ -34,9 +30,8 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-// An extra field is a refusal, not a loosening: `additionalProperties: false`
-// stands in all four schemas, and a validator that let an unfamiliar field
-// through would drift from the schema in silence.
+// An extra field is a refusal, not a loosening: `additionalProperties: false` stands in all four
+// schemas, and a validator that let one through would drift from the schema in silence.
 function extras(value: Record<string, unknown>, allowed: readonly string[]): string[] {
   return Object.keys(value).filter((k) => !allowed.includes(k));
 }
@@ -101,9 +96,8 @@ function participant(value: unknown, at: string): Verdict | null {
   if (id) return id;
   const role = text(value.role, `${at}.role`, ROLE_RE);
   if (role) return role;
-  // Harness is required and non-empty: v1 has no fallback at all. A record
-  // without a harness is the one the registry fallback was invented for, and
-  // in v1 nobody creates one.
+  // Harness is required and non-empty: v1 has no fallback at all. A record without one is what the
+  // registry fallback was invented for, and in v1 nobody creates one.
   const harness = text(value.harness, `${at}.harness`, HARNESS_RE);
   if (harness) return harness;
   if (value.mode !== 'managed' && value.mode !== 'attached') {
@@ -216,9 +210,8 @@ function artifact(value: unknown): Verdict {
 
 const VALIDATORS: Record<ModelName, (value: unknown) => Verdict> = {
   task,
-  // A participant is checked both on its own and inside a task journal, so the
-  // path to the field arrives as a prefix. A standalone record has no prefix —
-  // a leading dot in the path is extra.
+  // A participant is checked both on its own and inside a task journal, so the path arrives as a
+  // prefix. A standalone record has none — a leading dot in the path is extra.
   participant: (value) => {
     const verdict = participant(value, '');
     return verdict ? { ...verdict, at: verdict.at.replace(/^\./, '') } : OK;

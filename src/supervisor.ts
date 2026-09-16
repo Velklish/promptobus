@@ -18,15 +18,12 @@ import type {
 // Polling mailboxes — a safety net for `fs.watch`, which loses events.
 export const TICK_MS = 1000;
 
-// Knock retry: the mailbox is still not taken — knock again. Two minutes are
-// measured to the participant's turn, not the network: a session busy with a
-// long turn is allowed to stay silent for minutes.
+// Knock retry: the mailbox is still not taken — knock again. Two minutes are measured to the
+// participant's turn, not the network: a long turn is allowed to stay silent for minutes.
 export const KNOCK_RETRY_SEC = 120;
 
-// Silence threshold: unread must not sit longer than this — the participant
-// either stalled, or is not receiving notifications at all. Fifteen minutes
-// means "not answering", not "thinking": the mailbox is taken BEFORE the
-// turn is inspected, not after.
+// Silence threshold: unread must not sit longer than this. Fifteen minutes means "not answering",
+// not "thinking" — the mailbox is taken BEFORE the turn is inspected, not after.
 export const SILENCE_SEC = 900;
 
 // Working lifetime ceiling — only ends the warden process for an idle task; live work defers it.
@@ -35,15 +32,12 @@ export const WARDEN_TOTAL_SEC = 6 * 3600;
 // Unconditional process ceiling — guards a forgotten run and a stuck delivery loop.
 export const WARDEN_ABSOLUTE_SEC = 72 * 3600;
 
-// How many consecutive round failures the process tolerates before exiting.
-// One failure is a transient (the task lock is held by a neighbouring spawn,
-// a file is being rewritten underfoot); three in a row is not.
+// How many consecutive round failures the process tolerates before exiting. One is a transient (a
+// held task lock, a file rewritten underfoot); three in a row is not.
 export const ROUND_FAIL_LIMIT = 3;
 
-// Registration window for a freshly spawned session: spawn writes the
-// participant into the journal BEFORE the session appears at the harness with
-// its process, and the absence of a process in that gap means an unfinished
-// start, not death.
+// Registration window for a freshly spawned session: spawn writes the participant BEFORE the
+// session appears at the harness, and the gap means an unfinished start, not death.
 export const SPAWN_GRACE_SEC = 30;
 
 const NO_FAULT: FaultHook = () => {};
@@ -78,20 +72,15 @@ function marksOf(health: Record<string, unknown>, addr: string): HealthMark {
   return (v && typeof v === 'object' ? v : {}) as HealthMark;
 }
 
-// The window is SYMMETRIC: spawn time is written by that machine's clock, and
-// a clock set backwards would make a fresh record "from the future" with a
-// negative age.
+// The window is SYMMETRIC: spawn time is written by that machine's clock, and a clock set
+// backwards would make a fresh record "from the future" with a negative age.
 export function justSpawned(participant: ParticipantV1 | null | undefined, now: number = Date.now()): boolean {
   const at = Date.parse(String(startedOf(participant) ?? ''));
   return Number.isFinite(at) && Math.abs(now - at) < SPAWN_GRACE_SEC * 1000;
 }
 
-// When a turn was last STARTED for the participant. There are three marks, and
-// all three mean the same thing — the participant was reached: spawn (`started`
-// in the task journal), a successful activation (`knockedAt`), and the mailbox
-// they took (`deliveredAt`). An activation attempt (`triedAt`) is left out on
-// purpose: a failed activation did not start a turn, and silence after it
-// speaks of a deaf channel, not a stall — the bus has its own words for that.
+// When a turn was last STARTED: three marks, all meaning the participant was reached. A failed
+// activation (`triedAt`) is left out — silence after it speaks of a deaf channel, not a stall.
 function lastActivation(home: string, task: string, participant: ParticipantV1 | null | undefined): number | null {
   const marks = marksOf(readHealth(home, task), String(addressOf(participant) ?? ''));
   const at = [startedOf(participant), marks.knockedAt, marks.deliveredAt]
@@ -124,18 +113,14 @@ function viewOf(participant: ParticipantV1 | null | undefined, sessions: Session
   return sessions[String(addressOf(participant) ?? '')] ?? { state: 'gone', busy: false, stall: null, id: null };
 }
 
-/**
- * Participant session state: `alive` | `dead` | `unknown`. An unparsed
- * snapshot, a record without a session reference, and a participant whom
- * there is no one to ask about — unknown, not death.
- */
+/** Participant session state: `alive` | `dead` | `unknown`. An unparsed snapshot, a record with no
+ * session reference, and a participant nobody can be asked about are unknown, not death. */
 export function liveParticipant(participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): 'alive' | 'dead' | 'unknown' {
   if (!sessionRefOf(participant)) return 'unknown';
   const view = viewOf(participant, sessions);
   if (!view || view.state === 'unknown') return 'unknown';
-  // The question is one: will we reach them. A record that outlived its
-  // process is unreachable exactly like an absent one; `promptobus status`
-  // distinguishes them, because a human needs the reason.
+  // The question is one: will we reach them. A record that outlived its process is unreachable
+  // exactly like an absent one; `status` tells them apart, because a person needs the reason.
   return view.state === 'alive' ? 'alive' : 'dead';
 }
 
@@ -166,17 +151,12 @@ export function stallStands(home: string, task: string, participant: Participant
 export function wakeTakenBy(home: string, task: string, p: ParticipantV1 | null | undefined, endpoint?: Wake | null): string | null {
   const addr = addressOf(p);
   if (!addr) return null;
-  // The record is read by the caller when they already have it: the watch
-  // round reads every participant's contact point every second, and a second
-  // read of the same file is an extra syscall per participant per second
-  // (review note). No argument — we read ourselves: the stall report goes
-  // past the round.
+  // The record is read by the caller when they already have it: the round reads every contact point
+  // every second. No argument — we read ourselves: the stall report goes past the round.
   const wake = endpoint === undefined ? readWake(home, task, addr) : endpoint;
   const held = wake?.session ?? null;
-  // What is returned is the TAKER — the session from the contact point, not
-  // the one the address is bound to: that is what the reason line names, and
-  // that is how a human identifies the second session. The comparison rule
-  // is shared (`foreignSessionOf`), and it has no second copy.
+  // What is returned is the TAKER — the session from the contact point, not the one the address is
+  // bound to: that is what the reason line names. The comparison rule is shared, with no copy.
   return held && foreignSessionOf(p, held) ? held : null;
 }
 
@@ -188,13 +168,8 @@ function heldBy(p: ParticipantV1 | null | undefined): string {
 /** Whether the participant's session is busy with a turn.
  * [guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn](../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn) */
 export function sessionBusy(home: string, task: string, participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot): boolean {
-  // The branch is chosen by the KIND of participant, not by whether their
-  // session was found in the snapshot: the snapshot yields emptiness for an
-  // unparsed state and for a vanished record alike, and on that emptiness a
-  // participant with a session would have gone into the watchman branch —
-  // where they may have no end-of-turn mark at all, and the activation is
-  // newer by construction: knock-retry would go silent where the state is
-  // unknown.
+  // The branch is chosen by the KIND of participant, not by whether the snapshot found a session:
+  // on emptiness a session-bearing participant would fall into the watchman branch and go silent.
   if (sessionRefOf(participant)) {
     const view = viewOf(participant, sessions);
     return view ? view.busy === true : false;
@@ -205,51 +180,31 @@ export function sessionBusy(home: string, task: string, participant: Participant
   return since !== null && since > turn;
 }
 
-/**
- * Task participants from whom no messages are to be expected: the session
- * is standing on a prompt, or the record outlived its process. `null` —
- * the state is unknown: that is not "everyone is alive".
- *
- * "Listed, but there is no process" is checked BEFORE the stall: a record
- * that outlived its process also carries a stall flag, and the route would
- * have been "wake with a message" — and there is no one to wake.
- */
+/** Task participants from whom no messages are to be expected; `null` means the state is unknown,
+ * which is not "everyone is alive". "Listed, but no process" is checked BEFORE the stall. */
 export function blockedParticipants(home: string, task: string, participants: ParticipantV1[] | null | undefined, sessions: SessionSnapshot): StalledParticipant[] | null {
-  // The task store is asked on entry, not at the first stall: inside
-  // `stallStands` only the actually stalled reach the throw, and a call with
-  // a forgotten store would stay silent until someone stalled, then throw
-  // in the middle of a warden round or a `mailbox` reply.
+  // The task store is asked on entry, not at the first stall: a call with a forgotten store would
+  // stay silent until someone stalled, then throw inside a warden round or a `mailbox` reply.
   if (!home || !task) throw new Error('blockedParticipants: home and task are required — stall inspection reads the task store');
   if (sessions === null) return null;
   const stalled: StalledParticipant[] = [];
-  // The record's harness travels into the report with it: the stall ROUTE
-  // is asked of the same driver that inspected the state, and this function
-  // is not given a `registry` — it reads a ready snapshot. A registry is
-  // not opened here on purpose: the snapshot was assembled earlier, and a
-  // second source of truth about the harness would have drifted from it
-  // in silence.
+  // The record's harness travels into the report with it: the ROUTE is asked of the same driver
+  // that inspected the state, and a second source of truth about the harness would drift in silence.
   const harnessOfRecord = (p: ParticipantV1) => (
     typeof p.harness === 'string' && p.harness.trim() ? p.harness.trim() : null);
   for (const p of participants ?? []) {
     const ref = sessionRefOf(p);
     if (!ref) continue;
-    // A participant taken off watch does not go into the report at all.
-    // Watch is lifted as a whole, not only the `gone` outcome: a filter on
-    // the outcome would have made silence depend on a race of two
-    // orchestrator commands. A new spawn record is laid without the mark.
+    // A participant taken off watch does not enter the report at all. Watch is lifted as a whole:
+    // a filter on the outcome would make silence depend on a race of two orchestrator commands.
     if (dismissedOf(p)) continue;
     const view = viewOf(p, sessions)!;
-    // There is no one to ask about them — there is no driver for their
-    // harness, or that driver does not inspect. Stay silent: a made-up
-    // "GONE" report would have called for raising a session that is still
-    // working.
+    // Nobody to ask about them — no driver for their harness, or that driver does not inspect. Stay
+    // silent: a made-up "GONE" would call for raising a session that is still working.
     if (view.state === 'unknown') continue;
     const repoAbs = repoAbsOf(p);
-    // No record at all — also a report: a participant stopped by a human
-    // and a failed spawn would otherwise be invisible. Their own state, not
-    // `stale`: there is no trace of a session. The registration window
-    // covers this branch too: a just-spawned session is not in the list
-    // AT ALL.
+    // No record at all is also a report: a participant stopped by a person and a failed spawn would
+    // otherwise be invisible. Its own state, not `stale` — there is no trace of a session.
     if (view.state === 'gone') {
       if (justSpawned(p)) continue;
       stalled.push({
@@ -261,9 +216,8 @@ export function blockedParticipants(home: string, task: string, participants: Pa
         repoAbs,
         harness: harnessOfRecord(p),
         kind: 'gone',
-        // Words about a vanished record belong to the driver: it alone
-        // knows where it went missing and what that is called at its
-        // harness. It did not say — we speak neutrally, we do not invent.
+        // Words about a vanished record belong to the driver: it alone knows where it went missing
+        // and what that is called at its harness. It did not say — we speak neutrally.
         reason: view.stall?.reason ?? 'the harness has no session record',
       });
       continue;
@@ -287,9 +241,8 @@ export function blockedParticipants(home: string, task: string, participants: Pa
       });
       continue;
     }
-    // An ordinary end of turn is not a stall, and the task store decides
-    // that, not the snapshot: home and task are needed exactly for that
-    // (`stallStands`).
+    // An ordinary end of turn is not a stall, and the task store decides that, not the snapshot:
+    // home and task are required for exactly this.
     if (stallStands(home, task, p, view.stall)) {
       stalled.push({
         address: String(addressOf(p)),
@@ -302,21 +255,8 @@ export function blockedParticipants(home: string, task: string, participants: Pa
       });
       continue;
     }
-    // The session is working, but there is nothing to reach it with: another
-    // session holds its address's contact point (`wakeTakenBy`). For the
-    // owner this is the same class as a stall — there will be no messages
-    // from such a participant, and mailbox will not say so — so the report
-    // goes through the same channel. Checked LAST: a dead record is a
-    // larger trouble, and naming it a foreign contact point would have
-    // sent the human the wrong way.
-    // The registration window is the same as the neighbouring branches: on
-    // a re-spawn the participant record carries a new session id, while
-    // `wake/<address>.json` remains from the previous one, and until the
-    // new bus server handshake (`onJoin` will rewrite it) the freshly
-    // spawned participant would have looked deaf. The refusal to knock in
-    // the watch round is NOT covered by the window on purpose: knocking on
-    // a foreign socket is forbidden in those thirty seconds too, but
-    // reporting them is too early.
+    // The session works but nothing can reach it: another session holds its contact point. Checked
+    // LAST — a dead record is the larger trouble — and the registration window covers a re-spawn.
     const taken = justSpawned(p) ? null : wakeTakenBy(home, task, p);
     if (taken) {
       stalled.push({
@@ -336,13 +276,8 @@ export function blockedParticipants(home: string, task: string, participants: Pa
 // The mark of reported stalls lives in the task store (`readStalls`/`writeStalls`):
 // without it the report would repeat every round, burning turn after turn at the addressee.
 
-/**
- * What is new among the stalls, WITHOUT the mark. The caller sets the mark
- * (`commitStalls`). `retryMs` — the time after which a marked stall is
- * fresh again; `maxTries` — the ceiling of attempts on one reason, zero
- * (the default) — no retry at all.
- * `current === null` — session state was not inspected: that is not "there are no stalls".
- */
+/** What is new among the stalls, WITHOUT the mark — the caller sets it. `current === null` means
+ * session state was not inspected, which is not "there are no stalls". */
 export function pendingStalls(home: string, task: string, probe: (ps: ParticipantV1[] | undefined) => StalledParticipant[] | null, { now = Date.now(), retryMs = 0, maxTries = 1 } = {}): {
   fresh: StalledParticipant[]; current: Stalls | null;
 } {
@@ -375,16 +310,8 @@ export function commitStalls(home: string, task: string, current: Stalls | null)
   writeStalls(home, task, current);
 }
 
-/**
- * Whom the warden still has reason to watch. Count only participants with
- * a session reference: their state is observable, and a human session
- * behind the owner address is observable from nowhere — treat them as
- * alive, or the "no live remain" exit would become unreachable.
- * Unknown is not taken as dead: an unparsed snapshot leaves everyone
- * alive — otherwise an exit on an unavailable external command. The
- * registration window (`justSpawned`) comes from the same place: a
- * just-spawned session is not in the snapshot at all.
- */
+/** Whom the warden still has reason to watch: only participants with a session reference, since a
+ * person's session is observable from nowhere. Unknown is not taken as dead, nor is a fresh spawn. */
 export function liveWatched(home: string, task: string, sessions: SessionSnapshot): string[] {
   let meta;
   try {
@@ -418,15 +345,11 @@ function unreadLeft(home: string, task: string): boolean {
   });
 }
 
-/**
- * Heartbeat: renew our mark and check three reasons to exit. Lifted out of
- * the loop for the test: checking a branch inside the loop would have cost
- * the suite half an hour of waiting.
- */
+/** Heartbeat: renew our mark and check three reasons to exit. Lifted out of the loop for the test —
+ * checking a branch inside the loop would have cost the suite half an hour of waiting. */
 export function beatRound(home: string, task: string, startedMs: number, { now = Date.now(), sessions = null as SessionSnapshot, session = null as string | null } = {}): string | null {
-  // A successor intercepted the mark — two cannot watch, they continue the
-  // work. Session identity goes to the lock: whose process holds the journal
-  // is known to the environment, and the adapter reads it.
+  // A successor intercepted the mark — two cannot watch, and they continue the work. Session
+  // identity goes to the lock: whose process holds the journal is known to the environment.
   if (!beatWarden(home, task, { session })) return 'another process took the warden place';
   const live = liveWatched(home, task, sessions);
   const unread = unreadLeft(home, task);
@@ -443,15 +366,8 @@ export function beatRound(home: string, task: string, startedMs: number, { now =
   return null;
 }
 
-/**
- * Message extract for a notification: the driver builds its text from it.
- *
- * The sender is named by ADDRESS, and the artifact by filename: a human
- * reads the postcard, and a participant record id (`worker-api`) or an
- * artifact metadata id would have been a machine tail instead of a name.
- * Both translations are done here and from the task journal: the message
- * carries the id, and the name sits in the record.
- */
+/** Message extract for a notification. The sender is named by ADDRESS and the artifact by FILENAME:
+ * a record id or a metadata id would be a machine tail instead of a name. Both come from the journal. */
 function previewOf(home: string, meta: TaskV1, m: MessageV1): NotificationMessage {
   const sender = meta.participants.find((p) => p.id === m.sender);
   let artifact: string | null = null;
@@ -485,13 +401,8 @@ function brokenPreview(note: BrokenNote, now: number): NotificationMessage {
   };
 }
 
-/**
- * One watch round: look at all task mailboxes, wake those who have unread,
- * update health. Activation goes through the participant's driver, taken
- * from the registry by their harness. `sessions` — the snapshot from the
- * last heartbeat: the round runs once a second, and it is not allowed its
- * own poll. `null` — there is no session state, and that is unknown.
- */
+/** One watch round: look at all mailboxes, wake those with unread, update health. `sessions` is the
+ * snapshot from the last heartbeat — the round runs once a second and gets no poll of its own. */
 export async function supervisorRound(home: string, task: string, {
   now = Date.now(), registry, sessions = null as SessionSnapshot, faults = NO_FAULT,
 }: {
@@ -543,9 +454,8 @@ export async function supervisorRound(home: string, task: string, {
       continue;
     }
 
-    // `since` — when the mailbox stopped being empty: silence is counted
-    // from it, and a new message on top of an old one does not reset it —
-    // otherwise silence would never be seen.
+    // `since` — when the mailbox stopped being empty: silence is counted from it, and a new message
+    // on top of an old one does not reset it, or silence would never be seen.
     if (!was.unread) {
       h.since = new Date(now).toISOString();
       h.knocks = 0;
@@ -555,10 +465,8 @@ export async function supervisorRound(home: string, task: string, {
     }
     h.unread = unread;
 
-    // The participant's driver is taken from the registry by their harness —
-    // and one participant's failure has no right to take the watch over the
-    // others: an unknown harness stays in the journal as a line, and the
-    // round goes on.
+    // The driver is taken from the registry by harness, and one participant's failure may not take
+    // the watch over the others: an unknown harness stays a line in the journal, and the round goes on.
     let driver;
     try {
       driver = driverFor(registry, harnessOf(p, registry));
@@ -574,45 +482,29 @@ export async function supervisorRound(home: string, task: string, {
     }
 
     const endpoint = readWake(home, task, addr);
-    // Whose contact point this really is: asked before the knock-retry
-    // thresholds — a hijacked channel is not "not yet time", it is
-    // "nowhere to knock".
+    // Whose contact point this really is, asked before the knock-retry thresholds: a hijacked
+    // channel is not "not yet time", it is "nowhere to knock".
     const taken = wakeTakenBy(home, task, p, endpoint);
-    // Contact-point fingerprint: channel address only. A pid or hand-over time can
-    // change when the Stop hook and the bus server hand over the same session's point.
-    // A driver that needs an immediate wake can encode its turn counter in the socket.
+    // Contact-point fingerprint: channel address only. A pid or hand-over time changes when two
+    // writers hand over the same session's point; a turn counter in the socket asks for a wake.
     const print = endpoint?.socket ? endpoint.socket : null;
     const moved = print !== null && was.wake !== undefined && print !== was.wake;
 
-    // The knock-retry threshold is counted from ATTEMPT TIME, not success:
-    // otherwise a non-responding channel would get an attempt every second.
-    // `knockedAt` remains the time of the last SUCCESSFUL delivery: stall
-    // inspection reads it as "when we got through".
+    // The knock-retry threshold counts from ATTEMPT time, not success, or a dead channel would get
+    // an attempt every second. `knockedAt` stays the last SUCCESSFUL delivery.
     const triedAt = Date.parse(h.triedAt ?? '');
     const grew = unread > (was.unread ?? 0);
     const stale = Number.isFinite(triedAt) && now - triedAt >= KNOCK_RETRY_SEC * 1000;
-    // A retry on the SAME unread waits until the session gives the turn
-    // back: a busy session will see the notification only at the end of the
-    // turn, and the turn will be returned to it by the cycle watchman with
-    // the unread anyway. This does not apply to the first knock on a new
-    // message: the session has not seen it yet. The task owner has no
-    // session in the snapshot, and busyness there is taken from the cycle
-    // watchman — both branches are in `sessionBusy`.
+    // A retry on the SAME unread waits until the session gives the turn back — it will see the
+    // notification at the end of it anyway. The first knock on a new message does not wait.
     const since = Date.parse(h.since ?? '');
     const waited = Number.isFinite(since) ? now - since : 0;
-    // Bound of the cumulative signal: the gate does not hold longer than
-    // the silence threshold. A successful activation does not confirm
-    // delivery, and one dropped by the recipient's queue limits — the very
-    // case redelivery was introduced for — did not wake the session: it
-    // never started a turn and will not finish one, the watchman mark will
-    // not move, and busyness would have stayed true forever. Sitting longer
-    // than the threshold — knock, regardless of busyness.
+    // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
+    // dropped by a queue limit never starts a turn — so past the threshold we knock regardless.
     const busy = stale && waited < SILENCE_SEC * 1000 && sessionBusy(home, task, p, sessions);
     if (!pushes(driver)) {
-      // A pull-driver does not wake the session at all — it runs its own
-      // polling, and core only shows its capability and the unread. Health
-      // is still kept like everyone else's: such a participant's silence
-      // is visible by the same threshold.
+      // A pull-driver does not wake the session at all — it polls. Health is kept like everyone
+      // else's, so such a participant's silence is visible by the same threshold.
       if (h.channel !== 'pull') {
         h.channel = 'pull';
         h.wake = null;
@@ -622,9 +514,8 @@ export async function supervisorRound(home: string, task: string, {
         h.selfWakeChannel = null;
       }
     } else if (!endpoint?.socket) {
-      // There is no contact point — nothing to knock with, and this is not
-      // held back by the threshold: the participant can hand over the
-      // channel after the message has already landed.
+      // No contact point — nothing to knock with, and the threshold does not hold this back: the
+      // participant may hand over the channel after the message has already landed.
       const why = 'no contact point — the participant did not hand over a socket';
       if (h.channel !== 'self-wake' || h.knockError !== why) {
         events.push(`fell back to self-wake ${addr}: ${why}`);
@@ -635,13 +526,8 @@ export async function supervisorRound(home: string, task: string, {
       h.selfWakeChannel = null;
       h.wake = null;
     } else if (taken) {
-      // Another session holds the contact point (`wakeTakenBy` above). Do
-      // not knock on it: it is not dead, it leads into a FOREIGN session —
-      // a knock would start a turn for them, and the addressee would stay
-      // deaf. Nothing to wait for and nothing to do: the real owner will
-      // rewrite the record with their own on their first end of turn. Once
-      // per reason: a hijacked contact point lives for minutes, and the
-      // round runs once a second.
+      // Another session holds the contact point: a knock would start a turn for THEM and leave the
+      // addressee deaf. Nothing to wait for, and said once per reason — the round runs every second.
       const why = `contact point is held by session ${taken}, while the address is bound to ${heldBy(p)}`;
       if (h.channel !== 'self-wake' || h.knockError !== why) {
         events.push(`fell back to self-wake ${addr}: ${why} — the knock would have gone to a foreign session`);
@@ -654,21 +540,12 @@ export async function supervisorRound(home: string, task: string, {
     } else if (!Number.isFinite(triedAt) || grew || moved || (stale && !busy)) {
       h.triedAt = new Date(now).toISOString();
       h.wake = print;
-      // The mailbox is read exactly here, not every round. `glanceInbox`,
-      // not `peekInbox`: the warden does not set a broken ref aside, but its
-      // refusal is carried in the postcard for the next retry.
-      // A non-errno exception from this test-only hook intentionally propagates;
-      // production has no hook, and engine.glance does not carry it to this path.
+      // The mailbox is read exactly here, not every round. `glanceInbox`, not `peekInbox`: the
+      // warden does not set a broken ref aside, but carries its refusal in the postcard.
       const { messages: box, broken } = glanceInbox(home, task, p.id, faults);
       h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
-      // A retry carries only what arrived after the last knock: before, it
-      // listed the whole box again, up to six messages in one postcard.
-      // How many sit in total is said by the counter in the header. The
-      // full list goes where the session has not seen the previous knock: there
-      // was none at all, or the participant restarted. A changed contact-point
-      // socket alone is not enough: turn-aware drivers change it at every turn end.
-      // The cutoff is by message id, not by time: names in the mailbox are sorted
-      // by send order (`readInbox`), and a second clock is not needed for that.
+      // A retry carries only what arrived after the last knock; the full list goes where the session
+      // has not seen the previous one. The cutoff is by message id — mailbox names sort by send order.
       const wakeSession = endpoint?.session ?? null;
       const restarted = wakeSession !== (was.wakeSession ?? null);
       const upTo = restarted ? null : was.knockedTo ?? null;
@@ -681,10 +558,8 @@ export async function supervisorRound(home: string, task: string, {
         kind: 'unread', task, address: addr, unread, messages: previews,
       });
       if (r?.ok) {
-        // The channel is the driver's declaration, not the contact-point
-        // wire. The `wake.socket` field is also present on inject/rpc:
-        // there it is a registry or holder path, not a messaging socket.
-        // The `socket` literal named the wrong transport to a human.
+        // The channel is the driver's declaration, not the contact-point wire: `wake.socket` is also
+        // present on inject/rpc, where it is a registry or holder path, not a messaging socket.
         h.channel = driver.options?.knockChannel ?? 'socket';
         h.knockError = null;
         h.selfWake = null;
@@ -692,20 +567,16 @@ export async function supervisorRound(home: string, task: string, {
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
         h.wakeSession = wakeSession;
-        // How far we knocked: not only what was shown, but also what went
-        // into the "and N more" tail — the postcard said it, and there is
-        // no need to repeat it a second time.
+        // How far we knocked: not only what was shown, but also what went into the "and N more"
+        // tail — the postcard said it, and there is no need to repeat it.
         if (box.length && !broken.length) h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
         const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
         events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
           + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`
           + `${moved ? ' (contact point rewritten)' : ''}`);
       } else {
-        // Once per reason: a dead channel returns the same error every two minutes.
-        // The phrase names the driver's channel: printing the `socket` literal
-        // sent inspection toward a transport that inject/rpc does not have.
-        // `socket` is printed as the word "socket" — that is how the line has
-        // long been read at a harness with channel `socket`.
+        // Once per reason: a dead channel returns the same error every two minutes. The phrase names
+        // the driver's channel — the `socket` literal sent inspection at a transport inject/rpc lack.
         const why = r?.error ?? 'unknown';
         const channel = driver.options?.knockChannel ?? 'socket';
         const label = channel === 'socket' ? 'socket' : channel;
@@ -739,10 +610,8 @@ export async function supervisorRound(home: string, task: string, {
   return { stop: null, events };
 }
 
-// Activation of one participant. A driver refusal is an outcome, not an
-// exception: delivery to the others must go on, and something thrown
-// outward would have taken the whole round together with the health of
-// the other addresses.
+// Activation of one participant. A driver refusal is an outcome, not an exception: delivery to the
+// others must go on, and a throw would take the whole round with it.
 async function activate(driver: Driver, target: ActivationTarget, notification: Notification): Promise<ActivateResult> {
   if (typeof driver.activate !== 'function') {
     return { ok: false, error: `driver "${driver.id}" does not wake itself: it has no activate operation` };
@@ -755,28 +624,15 @@ async function activate(driver: Driver, target: ActivationTarget, notification: 
   }
 }
 
-/**
- * Participant stall. A standing session sends no messages, and you cannot
- * learn about it from the mailbox: the participant is standing, and the
- * owner waits for a message that will not come.
- *
- * Escalation is visibility: a line in status and a journal entry. A stall
- * postcard is not sent — a separate notification burned orchestrator turns
- * every round until the stall was lifted. The mark is set immediately:
- * there is nothing to deliver, nothing to retry.
- *
- * Returns fresh stalls as a structure. The journal line is assembled by
- * the adapter via `stallLine`: otherwise the reason and the route would
- * have vanished from the post-mortem record.
- */
+/** Participant stall. Escalation is visibility — a status line and a journal entry, no postcard: a
+ * separate notification burned orchestrator turns every round. The journal line is the adapter's. */
 export async function stallRound(home: string, task: string, { sessions = null as SessionSnapshot, now = Date.now() }: {
   sessions?: SessionSnapshot; now?: number;
 } = {}): Promise<StalledParticipant[]> {
   const { fresh, current } = pendingStalls(home, task, (ps) => blockedParticipants(home, task, ps, sessions),
     { now, retryMs: 0, maxTries: 1 });
-  // The set may have changed even without new ones: a participant unstuck.
-  // Move the mark anyway — otherwise their next stall with the same reason
-  // would not be counted fresh.
+  // The set may have changed even without new ones: a participant unstuck. Move the mark anyway, or
+  // their next stall with the same reason would not be counted fresh.
   commitStalls(home, task, current);
   return fresh;
 }

@@ -19,11 +19,8 @@ import type {
 export const HOST_CONFIG = 'promptobus.json';
 const DEFAULT_COMMAND = 'promptobus';
 
-// Model-routing file names of the standalone host. Names, not a path: the two
-// homes they hang off differ — the user home for what belongs to the account,
-// the workspace's own store home for what the TOOL writes. One name serves both
-// overlays because a layer is told apart by its id and its home, not by its
-// basename.
+// Model-routing file names of the standalone host. Names, not paths: the two homes they hang off
+// differ, and one name serves both overlays because a layer is told apart by its id and its home.
 const ROUTING_HOME = ROOT_DIR;
 const PROJECT_HOME = ROOT_DIR;
 const ROUTING_DIR = 'model-routing';
@@ -54,14 +51,8 @@ interface HostFile {
   rules?: string[];
   mcp?: Record<string, unknown>;
   skills?: string;
-  /**
-   * Argv of the command that restores the process skills a repository does not
-   * keep in git, never a shell line. Read by `spawn` from the SPAWNED
-   * REPOSITORY's own `promptobus.json` by path — the standalone host does not
-   * answer it for the workspace, and no host method exists for it, because a
-   * generator belongs to the repository and a host describes a workspace
-   * (`GENERATOR_FIELD` in `lib/spawn.js`; [reference/03-cli.md#spawn](../docs/reference/03-cli.md#spawn)).
-   */
+  /** Argv of the command that restores process skills a repository does not keep in git, never a
+   * shell line. Read from the SPAWNED REPOSITORY's own file ([03-cli.md § Spawn](../docs/reference/03-cli.md#spawn)). */
   generate?: string[];
 }
 
@@ -110,10 +101,8 @@ function defaultBranchOf(repoDir: string): string | null {
   return git(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
-// The clone `dir` sits in: descend from the root by path parts to the first
-// directory with `.git`. The root itself is never a clone here — a standalone
-// workspace holds its clones below the root, the same shape the review fixture
-// plants. nsPath — the path from the root, `/`-joined.
+// The clone `dir` sits in: descend from the root to the first directory with `.git`. The root itself
+// is never a clone here — a standalone workspace holds its clones below it. `nsPath` is the path from it.
 function cloneBelow(root: string, dir: string): HostClone | null {
   const rel = path.relative(root, dir);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
@@ -156,31 +145,20 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       const hit = findConfig(cwd);
       return existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
     },
-    // Routing files of a standalone workspace. The user home carries the cache
-    // and the `user` overlay — they are the account's, and the same account is
-    // reached from every checkout on this machine; the store home carries the
-    // workspace layer, which is the one the tool writes. Standalone ships no
-    // product policy, so there is no third layer here: a consumer inserts its
-    // own between these two, read-only, and marks no second writable one.
+    // Routing files of a standalone workspace: the user home carries the account's cache and `user`
+    // overlay, the store home the workspace layer the tool writes. A consumer inserts its own between.
     routingPaths: (): HostRoutingPaths => ({
       cacheFile: path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR, ROUTING_CACHE),
       overlays: [
         { id: 'user', path: path.join(os.homedir(), ROUTING_HOME, ROUTING_OVERLAY) },
-        // The workspace layer is STATE: the tool writes it (`models strategy
-        // --set`), so it lives in this package's own directory in the workspace
-        // rather than in the repository root, where a `.gitignore` is a contract
-        // with the repository and not with us. It used to be
-        // `<workspaceRoot>/model-routing.local.json`, and that path is no longer
-        // read — there is no fallback, because two paths under one layer id would
-        // make the file a person edits depend on which of them exists (ADR-004).
+        // The workspace layer is STATE the tool writes, so it lives in this package's own directory
+        // rather than the repository root. There is no fallback path: two would make the file depend on which exists.
         { id: 'workspace', path: path.join(home, ROUTING_OVERLAY), writable: true },
       ],
     }),
 
-    // Session registry of one harness. Standalone answers the same path the
-    // package used to fall back to, so a single-user checkout keeps working
-    // with no variable set: the refusal is for a host that names nothing, not
-    // for the ordinary case.
+    // Session registry of one harness. Standalone answers the path the package used to fall back to,
+    // so a single-user checkout keeps working: the refusal is for a host that names nothing.
     harnessStateHome: (harness: string): string | null => (harness
       ? path.join(os.homedir(), ROUTING_HOME, harness)
       : null),
@@ -288,20 +266,8 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     },
 
     extraEnv: () => ({ ...extra }),
-    // No `version`, deliberately. This host does not search for the binary at
-    // all — it hands the name back and lets `PATH` decide — so the only way to
-    // learn a version here is to START the binary, and `resolveToolBin` is
-    // synchronous: that is `spawnSync` on the lift path and inside the
-    // availability preflight, where a blocking resolve stops the one budget
-    // timer that caps the whole probe. Paying that on every resolve to fill a
-    // field nothing refuses on is the wrong trade for the host that ships with
-    // the package.
-    //
-    // The consequence is named in [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host) and in
-    // `HostToolBin.version`: under this host the `ultracode` refusal never
-    // refuses, the two proven-version warnings never warn, and an availability
-    // verdict carries no version. A consumer host that probes fills the field
-    // and gets all three back.
+    // No `version`, deliberately: this host does not search for the binary, and `resolveToolBin` is
+    // synchronous — see [02-host.md § The standalone host](../docs/reference/02-host.md#the-standalone-host).
     resolveToolBin: (name): HostToolBin => ({ ok: true, bin: name }),
     substituteVars: (value) => value,
     legacyLayout: () => null,
@@ -310,9 +276,8 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     formatNpx: (args) => ['npx', commandName, ...args].join(' '),
     busCommand: (args) => [commandName, ...args].join(' '),
     busArgv: (args) => [binPath, ...args],
-    // Keep the established standalone command spelling for its default entry;
-    // a configured command name is already the dispatch word, so it must not
-    // receive the package's default prefix.
+    // Keep the established standalone spelling for its default entry: a configured command name is
+    // already the dispatch word and must not receive the package's default prefix.
     guardArgv: (args) => commandName === DEFAULT_COMMAND
       ? [binPath, commandName, ...args]
       : [binPath, ...args],

@@ -116,7 +116,9 @@ and one stray line in it breaks the client.
 
 The package declares an error as a typed event; the consumer supplies the
 text: JSON-RPC codes are part of the protocol and live here; the words are
-part of the output and live at the adapter.
+part of the output and live at the adapter. A tool refusal is not one of
+those: it arrives as text with `isError`, not as a protocol error, because
+the agent must read it and fix the call rather than lose the connection.
 
 ### The tool declarations
 
@@ -132,6 +134,11 @@ takes it from there, checking the quote in the documentation; a live
 **The name prefix is double on purpose**: the full name a session sees is
 `mcp__promptobus__promptobus_send`. The client namespaces names itself, and
 short `send` and `task` collide with foreign ones in a shared session set.
+The cost is known and accepted: the client prepends
+`PostToolUse:mcp__<server>__<…> says:` to every journal line in the tape.
+
+**There is no expectation tool in the set and there will not be one.** A
+task has one alarm, and that is the warden.
 
 ### Rendering a reply for a participant
 

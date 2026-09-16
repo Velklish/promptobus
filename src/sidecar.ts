@@ -23,40 +23,29 @@ export function sessionsDir(home: string): string {
 
 // --- task warden -------------------------------------------------------------
 
-// Listening on the bus is held by a process, not by the model. It has no
-// state of its own — everything lives here, in the task directory: the
-// warden dying loses nothing, and a restart starts from the same place.
+// Listening on the bus is held by a process, not by the model. It has no state of its own —
+// everything lives in the task directory, so the warden dying loses nothing.
 
-// Process mark: `{pid, started, beat, cli, harness}`.
-//
-// The file name is leftover from the former warden name and must not be
-// renamed: a task opened by the previous release is read by the new CLI, and
-// under a new name its mark would go unseen — two wardens would stand on one
-// task, each with its own delivery loop.
+// Process mark. The file name is leftover from the former warden name and must not be renamed: under
+// a new name a previous release's mark would go unseen, and two wardens would stand on one task.
 export function wardenMarkFile(home: string, id: string): string {
   return path.join(taskDir(home, id), 'supervisor.json');
 }
 
-// Participant contact point — the address of their messaging socket and the
-// token to it. The participant hands it over themselves: the harness puts the
-// socket address and token into the environment of every child process of the
-// session — the warden needs neither a session registry nor the participant
-// pid. The token is a secret; the file is written with mode `0600`.
+// Participant contact point — their messaging socket address and its token, handed over by the
+// participant itself. The token is a secret; the file is written with mode `0600`.
 export function wakeFile(home: string, id: string, addr: string): string {
   return path.join(taskDir(home, id), 'wake', `${addrDir(addr)}.json`);
 }
 
-// What the warden knows about delivery to each address. A file of its own,
-// not fields on the task journal: a write happens on every delivery, and the
-// journal is edited under the lock.
+// What the warden knows about delivery to each address. A file of its own, not fields on the task
+// journal: a write happens on every delivery, and the journal is edited under the lock.
 export function healthFile(home: string, id: string): string {
   return path.join(taskDir(home, id), 'health.json');
 }
 
-// Warden log — line-oriented, append-only: deliveries, rollbacks, escalations.
-// A person reads it when asking why a participant stayed silent. This is NOT
-// the task journal: that one holds the task. The file name is the former one
-// for the same reason as `wardenMarkFile` above.
+// Warden log — line-oriented, append-only: deliveries, rollbacks, escalations. This is NOT the task
+// journal, and the file name is the former one for the same reason as the warden mark.
 export function wardenLogFile(home: string, id: string): string {
   return path.join(taskDir(home, id), 'supervisor.log');
 }
@@ -65,11 +54,8 @@ export function stallsFile(home: string, id: string): string {
   return path.join(taskDir(home, id), 'stalls.json');
 }
 
-// How often the warden refreshes its mark. The constant lives here, next to
-// the liveness read: a process is live by the freshness of `beat`, and if the
-// write period drifted from the stale threshold the mechanism would declare
-// a live one dead. The `liveWarden` threshold is three periods: one missed
-// beat happens under machine load.
+// How often the warden refreshes its mark, kept next to the liveness read: a drift between the write
+// period and the stale threshold would declare a live process dead. The threshold is three periods.
 export const WARDEN_BEAT_SEC = 30;
 
 /** Mark of the task warden process. */
@@ -147,9 +133,8 @@ function bumpWardenGeneration(home: string, id: string): number {
   return gen;
 }
 
-// The live warden of this task, or `null`. Two signs, both required: a live
-// pid (the system reuses numbers) and an unstale `beat` (a process killed
-// between beats would otherwise count as live for up to three periods).
+// The live warden of this task, or `null`. Two signs, both required: a live pid (the system reuses
+// numbers) and an unstale `beat` (a process killed between beats would count as live).
 export function liveWarden(home: string, id: string): WardenMark | null {
   const mark = readWardenMark(home, id);
   if (!mark) return null;
@@ -177,11 +162,8 @@ export function readWake(home: string, id: string, addr: string): Wake | null {
   }
 }
 
-// Hand over the contact point. It is called often, so a file with the same
-// contents is not rewritten — otherwise every bus-tool call would cost a disk
-// write. Mode `0600`: the file holds the session token; on macOS the mode is
-// not actually enforced, but the token is stored and sent always — code
-// without it is not portable.
+// Hand over the contact point. Called often, so a file with the same contents is not rewritten.
+// Mode `0600` for the session token: macOS does not enforce it, but code without it is not portable.
 export function writeWake(home: string, id: string, addr: string, {
   socket, token = null, pid = process.pid, session = null,
 }: { socket?: string | null; token?: string | null; pid?: number; session?: string | null } = {}): Wake | null {
@@ -218,12 +200,8 @@ export function writeHealth(home: string, id: string, health: Health): Health {
   return health;
 }
 
-/**
- * Mark of reported stalls: reason, time of the last report, and a try
- * counter per address. The former CLI wrote a bare reason string here — that
- * is read as a mark with no time, and such a stall is repeated only when the
- * reason changes.
- */
+/** Mark of reported stalls: reason, time of the last report, and a try counter per address. A former
+ * CLI wrote a bare reason string, read as a mark with no time — repeated only when the reason changes. */
 export type Stalls = Record<string, { reason: string; at: string | null; tries?: number }>;
 
 export function readStalls(home: string, id: string): Stalls {
@@ -243,9 +221,8 @@ export function writeStalls(home: string, id: string, stalls: Stalls): Stalls {
   return stalls;
 }
 
-// Append a line to the warden log. No lock and no atomic replace:
-// `appendFileSync` of one line shorter than the pipe buffer does not tear,
-// and there is one writer. A log-write refusal must not stop delivery.
+// Append a line to the warden log. No lock and no atomic replace: one line shorter than the pipe
+// buffer does not tear, there is one writer, and a log-write refusal must not stop delivery.
 export function logWarden(home: string, id: string, line: string): boolean {
   try {
     mkdirSync(taskDir(home, id), { recursive: true });
@@ -269,12 +246,8 @@ export function tailWardenLog(home: string, id: string, n = 3): string[] {
 
 // --- end-of-turn mark --------------------------------------------------------
 
-// End-of-turn mark for an address: `waits/<address>.turn.json`, next to the
-// loop-guard counter. The guard sets it — it is called on EVERY turn end —
-// and it is the only sign that "the session yielded the turn" for a
-// participant with no bg session: an orchestrator interactive session has no
-// harness session record at all. The guard counter will not do: it lives
-// only while the guard is returning the turn, and a clean pass WIPES it.
+// End-of-turn mark for an address. The guard sets it on EVERY turn end, and it is the only sign that
+// a session yielded the turn where there is no bg session. The guard counter will not do — it wipes.
 function turnFile(home: string, id: string, addr: string): string {
   return path.join(taskDir(home, id), 'waits', `${addrDir(addr)}.turn.json`);
 }
@@ -296,30 +269,15 @@ export function lastTurnAt(home: string, id: string, addr: string): number | nul
   }
 }
 
-// --- session-to-task bindings ----------------------------------------
-//
-// The binding is a file per session, next to `tasks/`: without it the
-// session task was inferred by the "only active one" guess — with several
-// active the bus refused the session that came up, with one a foreign
-// session took it as its own. Hybrid: where there is no identity (manual
-// start, tests, CI), resolve falls back to that same guess. The session
-// name is checked against the task-id grammar — if it does not fit, there
-// is no binding at all.
+// --- session-to-task bindings: a file per session, without which the task was inferred by "the only
+// active one" and a foreign session took it. Where there is no identity, resolve falls back to that guess.
 export function sessionFile(home: string, session: string | null): string | null {
   if (typeof session !== 'string' || !TASK_ID_RE.test(session)) return null;
   return path.join(sessionsDir(home), `${session}.json`);
 }
 
-/**
- * Mark binding a session to a task.
- *
- * `role` and `address` are optional and are written when the caller knows
- * them. They were added for participant identity (role and task): today that
- * identity reaches the session only through the env of its mcp-config, and
- * when it starts being read from the binding the field will already be
- * there — a second migration will not be needed. Missing fields are lawful:
- * the orchestrator writes a binding too, and it has one known address.
- */
+/** Mark binding a session to a task. `role` and `address` are written when the caller knows them:
+ * missing fields are lawful — the orchestrator writes a binding too, with one known address. */
 export interface Binding {
   session: string;
   task: string;
@@ -354,16 +312,8 @@ export function dropBinding(home: string, session: string): void {
   if (file) rmSync(file, { force: true });
 }
 
-// --- task-journal lock -------------------------------------------------------
-//
-// The primitive lives in [fs/lock.ts](fs/lock.ts) and is shared by both
-// stores; what stays here are the words of its refusals — they are for a
-// person — and suspending the journal cache for the duration of the lock.
-//
-// The cache is suspended by whoever holds it: under the lock the journal
-// changes both by this write and by the foreign one the lock waited out.
-// Holders register as a list, not as a single field: the package has two
-// stores, and the second registrar must not undo the first.
+// --- task-journal lock: the primitive is shared by both stores ([fs/lock.ts](fs/lock.ts)); what stays
+// here are its refusal words and suspending the journal cache. Holders register as a list, not a field.
 
 /** Wrapper that suspends the journal cache for the duration of the call. */
 export type Suspend = <T>(fn: () => T) => T;
@@ -389,14 +339,8 @@ export function lockBusyError(id: string, lock: string, held: LockHolder | null,
   return new GateError(`task ${id} journal is busy: waited ${waitedMs} ms, lock ${lock}. ${who}`);
 }
 
-// Task lock. Exported for journal read-modify-write on the adapter side
-// (`markWorktreesSwept` in `promptobus done`) and for the test — `waitMs` is
-// its seam.
-//
-// Session identity arrives as an ARGUMENT and only for busy-lock diagnosis:
-// whose process holds the journal is known to the environment, and the
-// adapter reads the environment. Unnamed — the refusal will say "who holds
-// it, the lock did not name".
+// Task lock, exported for journal read-modify-write on the adapter side and for the test, whose seam
+// is `waitMs`. Session identity arrives as an ARGUMENT and only for busy-lock diagnosis.
 export function withTaskLock<T>(home: string, id: string, fn: () => T, {
   waitMs = LOCK_WAIT_MS, session = null,
 }: { waitMs?: number; session?: string | null } = {}): T {
@@ -406,10 +350,8 @@ export function withTaskLock<T>(home: string, id: string, fn: () => T, {
   return withDirLock(lock, guarded, {
     waitMs,
     session,
-    // No task directory at all — that is not a busy lock: we speak with the
-    // words and the class of `readTask`. The class is required on a par with
-    // the words: the same text arriving with a stack or without is read as
-    // two different outcomes.
+    // No task directory at all is not a busy lock: we speak with the words and the CLASS of
+    // `readTask` — the same text with a stack or without reads as two different outcomes.
     onMissing: () => new GateError(`task ${id} is not in ${tasksDir(home)}`),
     onBusy: (held, waitedMs) => lockBusyError(id, lock, held, waitedMs),
   });
@@ -431,9 +373,8 @@ export function claimWarden(home: string, id: string, {
   }, { session });
 }
 
-// Heartbeat: only OUR own mark is extended, and only an existing one. The
-// place was taken — `null` is returned, and the process exits on that:
-// two must not watch the same task.
+// Heartbeat: only OUR own mark is extended, and only an existing one. The place was taken — `null`,
+// and the process exits on that: two must not watch the same task.
 export function beatWarden(home: string, id: string, {
   pid = process.pid, session = null,
 }: { pid?: number; session?: string | null } = {}): WardenMark | null {
@@ -446,9 +387,8 @@ export function beatWarden(home: string, id: string, {
   }, { session });
 }
 
-// Only our own mark is cleared: a process whose place was taken would carry
-// off a foreign record — and the next reader would see "no warden" while one
-// is live.
+// Only our own mark is cleared: a process whose place was taken would carry off a foreign record,
+// and the next reader would see "no warden" while one is live.
 export function clearWarden(home: string, id: string, pid: number = process.pid, {
   session = null,
 }: { session?: string | null } = {}): boolean {

@@ -14,10 +14,8 @@ export const MODELS = ['task', 'participant', 'message', 'artifact'] as const;
 /** Model name. */
 export type ModelName = (typeof MODELS)[number];
 
-// Field grammar exported to v1 consumers. The task grammar is the protocol-owned
-// exception described above: an adapter assembles the id from its own slug and
-// stamp. A participant identifier is its own and independent: role is never
-// derived from it, so there is no colon in it at all.
+// Field grammar exported to v1 consumers. A participant identifier is its own and independent: role
+// is never derived from it, so there is no colon in it at all.
 export { TASK_ID_RE };
 export const PARTICIPANT_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const ROLE_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -42,15 +40,8 @@ export const BLOB_PATH_RE = /^blobs\/[0-9a-f]{64}$/;
 /** Participant mode: the driver lifted the session (`managed`) or it attached itself (`attached`). */
 export type ParticipantMode = 'managed' | 'attached';
 
-/**
- * Snapshot of the driver's capabilities at the moment the participant was lifted.
- *
- * Five fields are required, six are optional, and that is not a loosening of the
- * schema: records written before the contract grew sit in live journals, and
- * if the schema required the new fields, a previous-release task would stop
- * being readable as a whole. The snapshot is the evidence of what the
- * participant was lifted with: what the driver did not declare then is not in it.
- */
+/** Snapshot of the driver's capabilities at the moment the participant was lifted. Six fields are
+ * optional so a previous-release task stays readable; it is evidence of what the lift declared. */
 export interface CapabilitiesSnapshot {
   spawn: boolean;
   attach: boolean;
@@ -65,11 +56,8 @@ export interface CapabilitiesSnapshot {
   approverLift?: boolean;
 }
 
-/**
- * Task participant. The ID is independent, the role is a field: the former
- * bus's `worker:<slug>` mixed address, role, and harness in one string, and a
- * second harness requires them to be split.
- */
+/** Task participant. The ID is independent and the role is a field: the former bus mixed address,
+ * role and harness in one string, and a second harness requires them split. */
 export interface ParticipantV1 {
   id: string;
   role: string;

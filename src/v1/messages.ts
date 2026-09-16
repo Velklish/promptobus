@@ -24,15 +24,8 @@ export type FanoutStep =
   | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read'
   | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
 
-/**
- * Fault-injection seam. Fan-out points are called AFTER each durable step; a
- * throw from one is a crash exactly at that point. Read points are called
- * immediately BEFORE their named filesystem operation so the suite can
- * inject an errno without relying on platform permission semantics. The
- * recovery-only `intent-materialize` point is called after validation and
- * immediately before materialization so the suite can inject that race. Not
- * supplied in production at all.
- */
+/** Fault-injection seam: fan-out points fire AFTER each durable step, read points immediately
+ * BEFORE their named filesystem operation. Not supplied in production at all. */
 export type FaultHook = (step: FanoutStep, info: Record<string, unknown>) => void;
 
 const NO_FAULT: FaultHook = () => {};
@@ -63,24 +56,16 @@ export function previewOf(m: MessageV1): NotificationMessage {
 
 let seq = 0;
 
-/**
- * New record id: a timestamp, a sender counter, and a random tail. String
- * sort equals send order, so a second clock is not needed. The tail is
- * random, not just a counter: `seq` lives in process memory, and under one
- * address both the session and its background command walk — two processes
- * in the same millisecond would assemble the same name.
- */
+/** New record id: a timestamp, a sender counter and a random tail, so string sort equals send order.
+ * The tail is random because `seq` lives in process memory and two processes share an address. */
 export function newRecordId(now: Date): string {
   seq = (seq + 1) % 10000;
   const stamp = compactStamp(now);
   return `${stamp}-${String(seq).padStart(4, '0')}-${randomBytes(3).toString('hex')}`;
 }
 
-// Idempotent hard link: `true` — we put it, `false` — it was already there.
-// `EEXIST` from the LINK is not a refusal, it is the whole point of the step:
-// recovery writes what is missing and does not touch what is ready. From the
-// `mkdir` above it, `EEXIST` is a refusal — a non-directory sits where the
-// directory must be — and goes out classified like any other mkdir errno.
+// Idempotent hard link. `EEXIST` from the LINK is the whole point of the step — recovery writes
+// what is missing; from the `mkdir` it is a refusal, and goes out classified like any mkdir errno.
 function linkOnce(from: string, to: string): boolean {
   try {
     mkdirSync(path.dirname(to), { recursive: true });
@@ -150,27 +135,13 @@ function openIntent(home: string, task: string, message: MessageV1): void {
   mkdirSync(intentsDir(home, task), { recursive: true });
   const intent = intentFile(home, task, message.id);
   writeFileSync(intent, `${JSON.stringify(message, null, 2)}\n`, { flag: 'wx' });
-  // The lease AFTER the intent, not before: an orphaned lease describes nobody's
-  // fan-out, and the "intent is there, lease is not yet" window is closed by
-  // age — such an intent is younger than the threshold.
+  // The lease AFTER the intent, not before: an orphaned lease describes nobody's fan-out, and the
+  // "intent there, lease not yet" window is closed by age.
   leaseIntent(intent);
 }
 
-/**
- * Step 3: link the canon to the intent. Idempotent — recovery calls the same
- * thing.
- *
- * There is no "canon already there" check before the link, and that is not
- * a simplification: it was the same window, only wider — a neighbour fits
- * between it and `link`. `EEXIST` from the link itself already means "the
- * canon is in place", and `linkOnce` reports that by returning `false`.
- *
- * `ENOENT` on the source is not a refusal, it is "materialized by another":
- * a neighbour who took the same fan-out to the end took the intent, and the
- * canon is already in place. A refusal from here would break the sender's
- * loop on a DELIVERED message. But if there is no canon then either — that
- * is a real loss, and it stays a refusal.
- */
+/** Step 3: link the canon to the intent, idempotent. There is no "already there" check before the
+ * link — `EEXIST` says it; `ENOENT` on the source means another took the fan-out to the end. */
 function materialize(home: string, task: string, message: string): boolean {
   const canonical = messageFile(home, task, message);
   try {
@@ -183,32 +154,23 @@ function materialize(home: string, task: string, message: string): boolean {
   }
 }
 
-/**
- * Steps 3–5 in one pass: the canon, refs for recipients, drop the intent.
- * Called by both send and recovery — exactly one code, otherwise recovery
- * would repair something other than what broke.
- */
+/** Steps 3–5 in one pass: the canon, refs for recipients, drop the intent. Called by both send and
+ * recovery — exactly one code, or recovery would repair something other than what broke. */
 export function completeFanout(home: string, task: string, message: MessageV1, fault: FaultHook = NO_FAULT): string[] {
   materialize(home, task, message.id);
   fault('canonical', { task, message: message.id });
   const fresh: string[] = [];
   for (const [index, recipient] of message.recipients.entries()) {
-    // Fresh — those who must be woken — a recipient is counted for the process
-    // whose ref landed. `linkOnce` returns `false` on `EEXIST` when between
-    // `delivered()` and `link` a neighbour already put the ref: two recoverers
-    // would otherwise both name the recipient as fresh, and two activation
-    // events would go out for one message. Delivery is still one — one ref —
-    // only the report of it was doubled.
+    // Fresh — those who must be woken: a recipient is counted for the process whose ref landed, or
+    // two recoverers would both name it fresh and send two activation events for one message.
     if (!delivered(home, task, recipient, message.id)
       && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id))) {
       fresh.push(recipient);
     }
     fault('ref', { task, message: message.id, recipient, index });
   }
-  // Step 5. Only after refs for ALL: an intent dropped earlier would take
-  // with it the only trace of the undelivered, and nobody would write the
-  // missing ref. The lease leaves with it: it describes an unclosed fan-out,
-  // and a closed one needs no owner.
+  // Step 5, only after refs for ALL: an intent dropped earlier would take the only trace of the
+  // undelivered with it. The lease leaves with it — a closed fan-out needs no owner.
   const intent = intentFile(home, task, message.id);
   rmSync(intent, { force: true });
   rmSync(ownerOfIntent(intent), { force: true });
@@ -271,12 +233,8 @@ export function commitIntent(home: string, task: string, message: MessageV1, now
   }
 }
 
-/**
- * What was found unreadable while reading the mailbox. Reason and place are
- * split into fields, not glued into a string: the adapter assembles the text
- * for a person, and a glue would force it to cut the string back with a
- * regex — the two report channels would drift on the first word edit.
- */
+/** What was found unreadable while reading the mailbox. Reason and place are separate fields, not
+ * glued: a glue would force the adapter to cut it back with a regex, and the channels would drift. */
 export interface BrokenNote {
   name: string;
   /** Protocol validation code, or filesystem errno when the record stays for retry. */
@@ -330,14 +288,8 @@ function readRecord(file: string, name: string, attic: string | null): ReadRecor
   return { message: parsed as MessageV1 };
 }
 
-/**
- * Take incoming and move the refs to history. There is no processing ack and
- * no exactly-once: the mailbox guarantees the message is kept until read,
- * and only that.
- *
- * Order is by file name: timestamp plus counter, so string sort equals send
- * order.
- */
+/** Take incoming and move the refs to history. No processing ack and no exactly-once: the mailbox
+ * keeps a message until read, and that is all. Order is by file name, which is send order. */
 export function readInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
@@ -345,9 +297,8 @@ export function readInbox(home: string, task: string, participant: string, fault
   const messages: MessageV1[] = [];
   const broken: BrokenNote[] = [];
   const names = inboxNames(dir);
-  // The history directory is created here, not on the first send: `rename` of
-  // a ref needs a ready parent, and creating it empty for every participant
-  // is unnecessary.
+  // The history directory is created here, not on the first send: `rename` of a ref needs a ready
+  // parent, and creating it empty for every participant is unnecessary.
   if (names.length) ensureHistoryDir(home, task, participant);
   for (const name of names) {
     const file = path.join(dir, name);
@@ -356,9 +307,8 @@ export function readInbox(home: string, task: string, participant: string, fault
       fault('inbox-read', { task, participant, name, mode: 'read' });
       record = readRecord(file, name, brokenInboxDir(home, task, participant));
     } catch (e) {
-      // A neighbour took it between the listing and the read — a skip, not a
-      // refusal: the second reader took the message, and that reader will
-      // deliver it.
+      // A neighbour took it between the listing and the read — a skip, not a refusal: the second
+      // reader took the message, and that reader will deliver it.
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
       const errno = (e as NodeJS.ErrnoException).code;
       if (typeof errno !== 'string') throw e;
@@ -373,10 +323,8 @@ export function readInbox(home: string, task: string, participant: string, fault
       fault('history-ref', { task, participant, name });
       renameSync(file, historyRef(home, task, participant, record.message.id));
     } catch (e) {
-      // ENOENT here is the same neighbour who took it. A refusal from here
-      // comes from the MIDDLE of the walk, when some refs have already gone
-      // to history: report it, leave this ref in the inbox for the next read,
-      // and return what already moved instead of trying to put it back.
+      // ENOENT here is the same neighbour. A refusal from the MIDDLE of the walk would strand refs
+      // already moved: report it, leave this one in the inbox, and return what moved.
       const errno = (e as NodeJS.ErrnoException).code;
       if (errno === 'ENOENT') continue;
       if (typeof errno !== 'string') throw e;
@@ -399,11 +347,8 @@ export interface HistoryQuery {
   task?: string;
   participant?: string;
   limit?: number;
-  /**
-   * Cursor of the previous page: an opaque string that `cursor` returned.
-   * There is no need to assemble it by hand, and it should not be — the
-   * order-key form belongs to history.
-   */
+  /** Cursor of the previous page: an opaque string `cursor` returned. It should not be assembled by
+   * hand — the order-key form belongs to history. */
   before?: string;
   all?: boolean;
 }
@@ -423,37 +368,21 @@ export interface HistoryPage {
   broken: BrokenNote[];
 }
 
-/**
- * Order key: the message id, and on a tie — the participant. One message sits
- * with many, and it has as many history records as recipients.
- *
- * **The cursor is this key whole, not the message id** (review remark). The
- * limit counts RECORDS, so a page boundary lawfully cuts a group of records
- * of one message; a cursor by id would cut the next page by the whole group
- * at once, and records left of the cut would land on no page at all.
- */
+/** Order key: the message id, and on a tie the participant. **The cursor is this key WHOLE**, not the
+ * message id: the limit counts RECORDS, and an id cursor would leave records on no page at all. */
 function orderKey(message: string, participant: string): string {
   return `${message} ${participant}`;
 }
 
-/**
- * Compare order keys. One comparison for both sort and cursor cut: two
- * different comparisons on the same data give two different orders, and the
- * page boundary stops matching itself. `localeCompare` is no good here at
- * all — it depends on the locale, and the key is machine-made.
- */
+/** Compare order keys — one comparison for both sort and cursor cut, or the page boundary would stop
+ * matching itself. `localeCompare` is no good: it depends on the locale, and the key is machine-made. */
 function byKey(a: string, b: string): number {
   if (a < b) return -1;
   return a > b ? 1 : 0;
 }
 
-/**
- * Task history: what was read, from old to new, last 50 records by default.
- *
- * There is no unread here at all, and that is not a gap: unread sits in the
- * mailbox, and if it landed here the history would stop telling delivered
- * from read — and fan-out recovery stands on that distinction.
- */
+/** Task history: what was read, old to new, last 50 records by default. Unread is not here — it sits
+ * in the mailbox, and fan-out recovery stands on telling delivered from read. */
 export function history(home: string, tasks: string[], { participant, limit = 50, before, all = false }: HistoryQuery): HistoryPage {
   const refs: { key: string; task: string; participant: string; file: string }[] = [];
   for (const task of tasks) {
@@ -473,9 +402,8 @@ export function history(home: string, tasks: string[], { participant, limit = 50
     }
   }
   refs.sort((a, b) => byKey(a.key, b.key));
-  // Exclusive cursor: the page returns records strictly OLDER than it, so
-  // there are no repeats on the page boundary. The comparison is the same
-  // one the records were sorted with.
+  // Exclusive cursor: the page returns records strictly OLDER than it, so there are no repeats on
+  // the boundary. The comparison is the one the records were sorted with.
   const older = before ? refs.filter((r) => byKey(r.key, before) < 0) : refs;
   const page = all ? older : older.slice(Math.max(0, older.length - Math.max(0, limit)));
   const entries: HistoryEntry[] = [];
@@ -517,15 +445,8 @@ export interface RecoverFailure {
   note: string;
 }
 
-/**
- * Recover fan-out of one task: walk unclosed intents and write what is missing.
- *
- * Idempotent by construction: both the canon and every ref are put with
- * `link`, and `EEXIST` here means "already there". A second call on a
- * healthy store does nothing. A classified hard-link refusal or permanent
- * intent loss is returned for this message and does not stop recovery of its
- * neighbours.
- */
+/** Recover fan-out of one task: walk unclosed intents and write what is missing. Idempotent by
+ * construction; a classified refusal for one message does not stop recovery of its neighbours. */
 export function recoverTask(home: string, task: string, meta: TaskV1, fault: FaultHook = NO_FAULT): {
   repairs: Repair[]; events: ActivationEvent[]; broken: BrokenNote[]; failed: RecoverFailure[];
 } {
@@ -542,9 +463,8 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
   const names = entries.filter((n) => n.endsWith('.json') && !n.startsWith('.'));
   for (const name of names) {
     const file = path.join(intentsDir(home, task), name);
-    // The lease gate stands BEFORE the record is parsed: a live neighbour's
-    // torn record is lawful too — `wx` creates the file atomically, and the
-    // contents are written after, and a half of them is visible.
+    // The lease gate stands BEFORE the record is parsed: a live neighbour's torn record is lawful
+    // too — `wx` creates the file atomically and the contents land after.
     if (!abandonedIntent(file)) continue;
     let raw: string;
     try {
@@ -574,9 +494,8 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
       }
     }
     if (code) {
-      // A torn intent record is the only form of corruption a crash inside
-      // the commit point produces: the send did not return then, and there
-      // was no message for the sender.
+      // A torn intent record is the only corruption a crash inside the commit point produces: the
+      // send did not return then, and there was no message for the sender.
       const where = code === 'schema-version-unsupported'
         ? { attic: null, failure: null }
         : isolate(file, brokenMessagesDir(home, task), name);
@@ -592,9 +511,8 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
       fault('intent-materialize', { task, message: message.id });
       fresh = completeFanout(home, task, message, fault);
     } catch (e) {
-      // A classified environmental refusal leaves the intent in place for a
-      // later pass. ENOENT at materialization means both sources are already
-      // gone, so the message cannot be retried. Everything else still escapes.
+      // A classified environmental refusal leaves the intent for a later pass; ENOENT at
+      // materialization means both sources are gone. Everything else still escapes.
       if (!(e instanceof PromptobusError) || e.code !== 'link-refused') throw e;
       const failureCode = e.context.errno === 'ENOENT' ? 'intent-lost' : e.code;
       failed.push({ task, message: message.id, code: failureCode, note: e.message });
@@ -603,9 +521,8 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
     repairs.push({ task, message: message.id, recipients: fresh, canonical: !hadCanonical });
     for (const id of fresh) {
       const who = meta.participants.find((p) => p.id === id);
-      // A recipient who is no longer in the journal still gets the ref: it
-      // would have sat there without the crash too. There is nobody to wake
-      // — no event for them.
+      // A recipient no longer in the journal still gets the ref — it would have sat there without
+      // the crash too. There is nobody to wake, so no event for them.
       if (who) events.push(eventFor(home, task, who, [message]));
     }
   }
@@ -613,20 +530,8 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
   return { repairs, events, broken, failed };
 }
 
-/**
- * Remove leases that have nothing to describe. An orphaned `<id>.owner`
- * remains when a former-version code closes the fan-out: it drops the
- * intent and does not know about the lease. The garbage leaves in silence
- * — there is no promise behind it at all.
- *
- * The decision is taken from ONE listing, and it is never atomic: `readdir`
- * may return a `.owner` from a position not yet walked and not return a
- * `.json` that landed in a position already walked — then a live lease is
- * swept. The cost of that error is one-sided: the intent stays without a
- * lease, that is, it falls into the "liveness unknown — wait for the
- * threshold" branch. Recovery becomes more careful from that, not bolder,
- * and cannot pick up a neighbour's in-flight fan-out.
- */
+/** Remove leases that have nothing to describe. The decision comes from ONE listing and is never
+ * atomic — but the error is one-sided: a swept live lease only makes recovery more careful. */
 function sweepLeases(dir: string, entries: string[]): void {
   const open = new Set(entries.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -'.json'.length)));
   for (const name of entries) {
@@ -637,15 +542,8 @@ function sweepLeases(dir: string, entries: string[]): void {
 
 export { messagesDir };
 
-/**
- * Look into the mailbox without touching anything in it. The difference from
- * `readInbox` is one and it is everything: refs stay in the inbox and do not
- * go to history. Broken ones are set aside the same way — otherwise one
- * unreadable record would return to the reader on every visit.
- *
- * A foreign session calls this: `mailbox` gives it a copy, and the originals
- * stay with the owner.
- */
+/** Look into the mailbox without touching anything: refs stay and do not go to history. Broken ones
+ * are still set aside, or one unreadable record would return to the reader on every visit. */
 export function peekInbox(home: string, task: string, participant: string): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
@@ -676,12 +574,8 @@ export function peekInbox(home: string, task: string, participant: string): {
   return { messages, broken };
 }
 
-/**
- * Glance into the mailbox in silence: touches no refs and sets no broken
- * aside. A filesystem refusal is reported in `broken` and the ref stays in
- * place for a later glance. Needed by the supervisor — its diagnostics go to
- * `stdio: 'ignore'`, and what was set aside would vanish without a word to anyone.
- */
+/** Glance into the mailbox in silence: no refs touched and nothing set aside. Needed by the
+ * supervisor — its diagnostics go nowhere anyone would read, and what was set aside would vanish. */
 export function glanceInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
@@ -710,22 +604,8 @@ export function glanceInbox(home: string, task: string, participant: string, fau
   return { messages, broken };
 }
 
-/**
- * When the participant last SENT on the bus; `null` — they have sent nothing
- * yet.
- *
- * The record name does not carry the sender (a stamp, a counter, and a
- * random tail), so there is no answer without reading the contents. This is
- * asked on every heartbeat for every one who has stalled, and correspondence
- * accumulates on the order of three megabytes a day — so the parse is
- * **incremental**: each record is read exactly once in the life of the
- * process, and the next call touches only names it has not seen yet. A cache
- * keyed on directory state would not do here: any send changes it, and the
- * walk would become full again.
- *
- * The canon is immutable and disappears only with the task, so what was seen
- * does not go stale.
- */
+/** When the participant last SENT on the bus. The record name carries no sender, so the parse is
+ * **incremental**: each record is read once per process, since the canon is immutable. */
 const sentSeen = new Map<string, { seen: Set<string>; last: Map<string, number> }>();
 
 export function lastSentAt(home: string, task: string, participant: string): number | null {

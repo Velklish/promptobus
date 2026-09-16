@@ -15,65 +15,28 @@ function named(participant: ParticipantV1 | null | undefined): string {
 /** How the participant is activated: the driver wakes the session itself (push) or the session polls (pull). */
 export type Activation = 'push' | 'pull';
 
-/**
- * What the driver can do. The snapshot is stored in the participant record.
- *
- * There are eleven flags, in two kinds. The first five declare OPERATIONS — each has
- * a same-named method, and `requireCapability` asks for them. The last six
- * declare harness PROPERTIES, which have no method: they must be asked before
- * launch, because without them a role or an output line cannot be assembled —
- * not a separate call.
- */
+/** What the driver can do; the snapshot is stored in the participant record. Eleven flags in two
+ * kinds: five declare OPERATIONS with a same-named method, six declare harness PROPERTIES. */
 export interface DriverCapabilities {
   spawn: boolean;
   attach: boolean;
   activation: Activation;
   inspect: boolean;
   stop: boolean;
-  /**
-   * Whether the harness can deny the session tools. Without it a read-only participant
-   * does not exist at all, and `review` must refuse BEFORE launch: a launched reviewer
-   * with write rights is not “review without a guarantee”, but a session that edits
-   * the code under review.
-   */
+  /** Whether the harness can deny the session tools. Without it a read-only participant does not
+   * exist, and `review` must refuse BEFORE launch rather than edit the code under review. */
   denyTools?: boolean;
-  /**
-   * Whether the harness can mechanically deny canonical MCP write tools for a
-   * reviewer or approver. An absent flag means MCP writes remain prompt-only for that harness.
-   */
+  /** Whether the harness can mechanically deny canonical MCP write tools for a reviewer or
+   * approver. Absent means MCP writes stay prompt-only for that harness. */
   mcpDenyTools?: boolean;
-  /**
-   * Whether the harness can accept its settings file or a system prompt for a single launch.
-   * Today only the capabilities SNAPSHOT in the participant record reads it — evidence of
-   * what it was launched with; the mechanism has no branch on it, because a driver without
-   * a settings file will deliver the participant neither a loop guard nor skills, i.e. will
-   * not launch it at all. `--harness` asks it first: there a person chooses the driver.
-   */
+  /** Whether the harness takes its settings file or a system prompt for a single launch. Only the
+   * capabilities SNAPSHOT reads it — a driver without one will not launch a participant at all. */
   systemPrompt?: boolean;
-  /**
-   * Whether the harness has a session registry. Without it the session state is
-   * unknown, not death: the mechanism has no right to declare a session dead just
-   * because there is no one to ask about it.
-   *
-   * Read today TWOFOLD and without a branch on the flag itself: a driver without a
-   * registry does not declare `inspect`, the snapshot gives such a participant
-   * `unknown`, and from that `promptobus status` prints “no one to ask about it”,
-   * cleanup leaves the directory, and the supervisor does not stop it. The flag
-   * names the REASON for that unknown — so a second driver can declare it out loud
-   * rather than by a silent absence of the operation.
-   */
+  /** Whether the harness has a session registry. Without it session state is unknown, not death.
+   * The flag names the REASON for that unknown, rather than leaving a silent absent operation. */
   sessionList?: boolean;
-  /**
-   * Whether a person can ENTER the session from a terminal. The word `attach` in the
-   * contract is taken by the participant mode (`attached`), so human entry is called
-   * `enter` (glossary).
-   *
-   * Today the capabilities snapshot and `phrases.enter` read it; the driver gives the
-   * adapter an enter string for the stall route; there is no separate branch on the
-   * flag — the route is that branch. `--harness` asks it first: for a harness with
-   * no human entry the advice “only a person can reply” would have to be written
-   * differently.
-   */
+  /** Whether a person can ENTER the session from a terminal. `attach` in the contract is taken by
+   * the participant mode, so human entry is `enter` (glossary); the stall route is its branch. */
   enter?: boolean;
   /** Whether `review --approver` may lift on this harness. */
   approverLift?: boolean;
@@ -83,19 +46,8 @@ export interface DriverCapabilities {
 // declaration: the driver contract and the store schema must speak of the same thing.
 export type { ParticipantMode } from './v1/model.js';
 
-/**
- * Session state in the snapshot. `alive` — a process stands behind the record, `stale` —
- * the record outlived its process, `gone` — there is no record at all. Distinguishing
- * these three is the driver's duty: harnesses have different signs, and core has one
- * question — whether to wait for messages from the participant.
- *
- * `unknown` is a fourth and is not about the session but about the observer: there
- * was no one to ask. No driver was found for the record's harness, or the driver did
- * not declare `inspect`. No consumer treats this as death: the rule “unknown is not
- * death” holds the supervisor exit, the stall report, and `promptobus done` cleanup —
- * taking unknown for death, the mechanism would stop a live task's listener and
- * remove a running session's config.
- */
+/** Session state in the snapshot: `alive`, `stale`, `gone` — and `unknown`, which is about the
+ * OBSERVER, not the session. No consumer treats unknown as death. */
 export type SessionState = 'alive' | 'stale' | 'gone' | 'unknown';
 
 /** Session stall as the driver named it: `kind` chooses the route, `reason` — words for a person. */
@@ -112,29 +64,17 @@ export interface SessionView {
   stall: SessionStall | null;
   /** Session identifier for the adapter's human routes. */
   id: string | null;
-  /**
-   * The harness word about the state — for the adapter's human line. Core does not
-   * read it and makes no decisions from it: each harness has its own vocabulary, and
-   * agreeing on one is impossible, but showing it to a person is possible.
-   */
+  /** The harness word about the state, for the adapter's human line. Core neither reads it nor
+   * decides from it: each harness has its own vocabulary, and showing it is still possible. */
   note?: string | null;
 }
 
-/**
- * Snapshot of participant sessions: address → what is known about its session. The key
- * is the ADDRESS, not the record id: health, stall marks and contact points are keyed
- * the same way, and it is what goes into the notification a person reads
- * ([protocol.ts](protocol.ts), `addressOf`). `null` — there is no state at all (the
- * driver did not parse the harness reply), and that is NOT “everyone is alive”. A
- * participant without a session reference (a person session behind the owner address)
- * is not listed in the snapshot at all.
- */
+/** Snapshot of participant sessions, keyed by ADDRESS as health and contact points are. `null` means
+ * no state at all — NOT "everyone is alive"; a participant with no session reference is not listed. */
 export type SessionSnapshot = Record<string, SessionView> | null;
 
-/**
- * Harness-neutral MCP descriptor: how the participant reaches the bus and the other
- * servers. The driver itself translates it into its own config and arguments.
- */
+/** Harness-neutral MCP descriptor: how the participant reaches the bus and the other servers. The
+ * driver translates it into its own config and arguments. */
 export interface McpDescriptor {
   address: string;
   task: string;
@@ -145,13 +85,8 @@ export interface McpDescriptor {
 /** A driver deny rule: plain harness ids, or structured MCP rules kept until prepare. */
 export type DriverDenyTool = string | HostMcpTool;
 
-/**
- * Launch context: everything the driver needs, and nothing about its harness. Not a
- * single argv, flag name, or home path is here — the driver assembles those itself
- * in `prepare`. The consumer names the SUBJECT (“directories the participant may
- * read”, “the loop-guard command”), and only the driver knows how that looks for
- * the harness.
- */
+/** Launch context: everything the driver needs and nothing about its harness. The consumer names the
+ * SUBJECT; only the driver knows how that looks for the harness. */
 export interface SpawnContext {
   /** Opaque session reference the driver later uses to recognise the session. */
   ref: string;
@@ -191,24 +126,16 @@ export interface LaunchFile {
   secret: boolean;
 }
 
-/**
- * Launch plan: translation of the harness-neutral context into argv, configs and files.
- * Assembled by ONE `prepare` call, and the same object goes into `spawn`: `--dry-run`
- * printing and the real launch must speak of the same thing, and two assembly calls
- * would silently diverge.
- */
+/** Launch plan: the harness-neutral context as argv, configs and files. Assembled by ONE `prepare`
+ * call, and the same object goes into `spawn`, so print and deed cannot diverge. */
 export interface LaunchPlan {
   /** Launch arguments, excluding a prompt delivered through a non-positional channel. */
   argv: string[];
-  /**
-   * Assignment text when the harness does not take it as a positional argument.
-   * A driver with such a channel delivers it itself, for example through a `turn/start` request.
-   */
+  /** Assignment text when the harness does not take it as a positional argument; such a driver
+   * delivers it itself, for example through a `turn/start` request. */
   prompt?: string;
-  /**
-   * Descriptive command line for `--dry-run` when `argv` alone is not the runnable
-   * command. Absent — the consumer prints `<tool> <argv without the last element> <prompt>`.
-   */
+  /** Descriptive command line for `--dry-run` when `argv` alone is not runnable. Absent — the
+   * consumer prints `<tool> <argv without the last element> <prompt>`. */
   dryRunCommand?: string;
   /** MCP config in the harness form: `--dry-run` reads it and the consumer writes it to disk. */
   mcpConfig: unknown;
@@ -216,21 +143,13 @@ export interface LaunchPlan {
   settings: unknown;
   /** What will go to disk before launch. Order matters: the driver writes them in that order. */
   files: LaunchFile[];
-  /**
-   * Session working directory, if the driver chose NOT the one the caller named.
-   * Needed where the harness does not accept settings for a single launch and reads
-   * them from its own working directory: if it seated such a participant in the
-   * caller directory, configs would land in a foreign tree. Field absent — the
-   * directory from `SpawnContext.cwd` is used.
-   */
+  /** Session working directory when the driver chose NOT the one the caller named — needed where a
+   * harness reads settings from its working directory, or configs would land in a foreign tree. */
   cwd?: string;
 }
 
-/**
- * Harness words that the adapter inserts into its lines. Shared text stays with the
- * adapter; the harness-specific command comes as a string from here: otherwise
- * everyone who prints a session line would have to know the harness enter command.
- */
+/** Harness words the adapter inserts into its lines. Shared text stays with the adapter; the
+ * harness-specific command comes from here, or every printer would know the enter command. */
 export interface DriverPhrases {
   /** Where a person sees their sessions — the command as they would type it. */
   sessions: string;
@@ -242,34 +161,16 @@ export interface DriverPhrases {
   stop(id: string): string;
   /** View the session journal. */
   logs(id: string): string;
-  /**
-   * How THIS harness names an MCP server tool — the name the session calls it by.
-   * The client assembles the name, not the server, and different clients differ:
-   * a participant prompt that names bus and memory tools must take the spelling
-   * from here, otherwise the participant looks for a tool it does not have under
-   * that name.
-   *
-   * The host is passed because for one harness the spelling carries the consumer's
-   * identity: its MCP config keys are namespaced to avoid colliding with the
-   * operator's personal set, the tool name is built out of the config key, and the
-   * namespace is `commandName`. A driver whose spelling does not depend on the
-   * workspace ignores the argument.
-   */
+  /** How THIS harness names an MCP server tool. The host is passed because for one harness the
+   * spelling carries the consumer's identity; a driver that does not depend on it ignores it. */
   tool(server: string, name: string, host: PromptobusHost): string;
   /** The reviewer's MCP boundary in this harness's own measured vocabulary. */
   mcpBoundary: string;
-  /**
-   * Rules of THIS harness appended to the participant prompt: what belongs to the
-   * tool, not the assignment — its headless habits. Empty — nothing to append, and
-   * the prompt stays exactly what the caller assembled.
-   */
+  /** Rules of THIS harness appended to the participant prompt — its headless habits. Empty means
+   * nothing to append, and the prompt stays exactly what the caller assembled. */
   promptRules: string;
-  /**
-   * What this harness calls the session when the mechanism does not choose the name.
-   * `--dry-run` prints this string: it must say what is NOT in its output and why —
-   * a name the binary invents at start cannot be printed in advance. Not declared —
-   * the mechanism chooses the session name, and `--dry-run` prints it as-is.
-   */
+  /** What this harness calls the session when the mechanism does not choose the name: `--dry-run`
+   * prints this, because a name the binary invents at start cannot be printed in advance. */
   naming?: string;
 }
 
@@ -281,18 +182,11 @@ export interface McpIdentityRecord {
   idField: string;
 }
 
-/**
- * Allowed option values and harness versions. The consumer does not know them and
- * has no right to know: effort levels, permission modes and deniable tools are the
- * harness vocabulary, not the bus.
- */
+/** Allowed option values and harness versions. The consumer does not know them and has no right to:
+ * effort levels, permission modes and deniable tools are harness vocabulary, not the bus. */
 export interface DriverOptions {
-  /**
-   * Harness binary name: the adapter resolves its path by it, checks the version and
-   * prints the command in `--dry-run`. It matches the driver `id` not by rule but
-   * by fact for this harness: the name in the registry map and the executable name
-   * are different subjects.
-   */
+  /** Harness binary name: the adapter resolves its path by it. It matches the driver `id` by fact
+   * rather than by rule — a registry key and an executable name are different subjects. */
   tool: string;
   /** Allowed effort values. */
   effortLevels: string[];
@@ -301,25 +195,14 @@ export interface DriverOptions {
   /** Allowed permission modes and the one taken without a flag. */
   permissionModes: string[];
   defaultPermissionMode: string;
-  /**
-   * Model the participant is launched with without the `--model` flag. Home is the
-   * driver: the model-name vocabulary belongs to the harness entirely, and one
-   * binary default is rejected by another as any unknown id.
-   */
+  /** Model the participant is launched with when there is no `--model` flag. The home is the driver:
+   * one binary's default is refused by another as any unknown id. */
   defaultModel: string;
-  /**
-   * Model alias published by the harness → the full ids it resolves to today.
-   * Optional: a harness whose model names are all full names declares none, and
-   * `models calibrate` then resolves nothing for it. The driver is the only
-   * holder of this answer — an alias points at whatever the vendor moved it to —
-   * so it is handed over here rather than read out of a driver module.
-   */
+  /** Model alias the harness publishes → the full ids it resolves to today. The driver is the only
+   * holder of this answer, since an alias points wherever the vendor moved it. */
   modelAliases?: Record<string, string[]>;
-  /**
-   * Whether the harness takes the workspace skills directory for one session.
-   * Optional: not declared — “does not take”, and the output line says so out loud
-   * instead of promising the participant skills it never received.
-   */
+  /** Whether the harness takes the workspace skills directory for one session. Not declared means
+   * "does not take", and the output says so rather than promising skills never received. */
   skillsDir?: boolean;
   /** Directories inside the participant's working directory this driver's launch files claim.
    * [reference/05-drivers.md#launch-directories-a-driver-claims](../docs/reference/05-drivers.md#launch-directories-a-driver-claims) */
@@ -328,32 +211,18 @@ export interface DriverOptions {
   denyTools: string[];
   /** Harness version on which the wake channel was proven. Not a gate — evidence. */
   provenVersion: string;
-  /**
-   * How the driver wakes the session: `socket` — a knock on a live session channel,
-   * `turn` — a new turn on it, `inject` — inserting text into a live session besides
-   * the socket. The distinction is not cosmetic: the set's stand-in channel substitutes
-   * delivery only where it truly is a socket — the others have nothing to substitute,
-   * and their `endpoint` is not a socket at all.
-   */
+  /** How the driver wakes the session: `socket`, `turn`, or `inject`. Not cosmetic — the suite's
+   * stand-in channel substitutes delivery only where it truly is a socket. */
   knockChannel: string;
-  /**
-   * Variable carrying the harness's OWN session id in a process it starts, or `null`
-   * when the harness offers none. It answers for ONE path — a command the session runs —
-   * and not for an MCP server child, whose environment a harness may scrub entirely
-   * (measured on one of them). A driver that has nothing to offer declares `null`; the
-   * core then says so instead of returning a plausible value. See 02-host.md and ADR-010.
-   */
+  /** Variable carrying the harness's OWN session id in a process it starts, or `null`. It answers
+   * for a command the session runs, not for an MCP server child. See 02-host.md and ADR-010. */
   identityVar: string | null;
   /** Record proof for an MCP child, accepted only when home, task and address match. See 02-host.md and ADR-014. */
   mcpIdentity: McpIdentityRecord | null;
   /** Ancestor variables that must not reach the session. */
   envDrop: string[];
-  /**
-   * Workspace utilities without which the driver will not launch a session. Names,
-   * not paths: resolve, minimum version and refusal wording are held by the
-   * consumer — that is also where the tool declaration lives. Optional: not
-   * declared — the harness has no such dependencies, and there is nothing to ask.
-   */
+  /** Workspace utilities without which the driver will not launch: NAMES, not paths — resolve,
+   * minimum version and refusal wording are the consumer's. Not declared means none. */
   utils?: string[];
 }
 
@@ -390,43 +259,24 @@ export interface StalledParticipant {
   repoAbs: string | null;
   kind: string;
   reason: string;
-  /**
-   * The record harness, as it named it. The consumer needs it to ask the ROUTE
-   * of the same driver that parsed the state: the stall line is printed by
-   * `status`, the `mailbox` reply and the supervisor report, and the command in
-   * it is harness-specific. Field absent from the record — `null`, and the
-   * consumer takes its registry `fallback`.
-   */
+  /** The record harness as it named it: the consumer needs it to ask the ROUTE of the same driver
+   * that parsed the state. Absent from the record — `null`, and the registry `fallback` is taken. */
   harness: string | null;
 }
 
-/**
- * Notification: what core asks to deliver. There is no text here on purpose — the
- * driver renders it, because the frame and the words belong to the harness channel,
- * not the bus.
- */
+/** Notification: what core asks to deliver. There is no text here on purpose — the driver renders it,
+ * because the frame and the words belong to the harness channel, not the bus. */
 export type Notification =
   { kind: 'unread'; task: string; address: string; unread: number; messages: NotificationMessage[] };
 
-/**
- * Stop outcome. Two flags, not one: `ok` says the operation did not refuse, and
- * `stopped` — that the session was actually stopped. The session is already gone,
- * the record has no identifier, the state was not parsed — that is success, but
- * there was nothing to stop, and printing such an outcome as “session closed”
- * would assert the unproven.
- */
+/** Stop outcome. Two flags, not one: `ok` says the operation did not refuse, `stopped` that a session
+ * was actually stopped — nothing to stop is success, and must not print as "session closed". */
 export interface StopResult {
   ok: boolean;
   stopped: boolean;
   note: string;
-  /**
-   * The driver ISSUED the stop command but could not confirm the session vanished:
-   * the wait ceiling ran out or the registry after the command was not parsed.
-   * Without this flag `stopped: false` means “there was no session even before the
-   * command”, and the consumer would print two different outcomes in the same
-   * words — “there was nothing to stop” would deny that a stop was in fact needed.
-   * Cleanup leaves the participant directory: for it the session is not dead.
-   */
+  /** The driver ISSUED the stop and could not confirm the session vanished. Without this flag
+   * `stopped: false` would also mean "there was no session", and cleanup leaves the directory. */
   attempted?: boolean;
 }
 
@@ -440,23 +290,15 @@ export interface ActivateResult {
 export interface Driver {
   readonly id: string;
   readonly capabilities: DriverCapabilities;
-  /**
-   * Harness vocabulary: allowed option values, versions, deniable tools.
-   * Required, not “if present” (review remark): CLI help, both launches, `doctor`
-   * and `lint` read it — and they read it WITHOUT a check, because a driver without
-   * an options vocabulary will not launch a session at all. Making it optional
-   * would defer and blur the refusal: the CLI takes values from it at the module
-   * top level, so it would crash on any CLI command, including `--version`.
-   */
+  /** Harness vocabulary. Required, not "if present": the CLI takes values from it at module top
+   * level, so an optional field would turn a missing driver vocabulary into a crash on `--version`. */
   readonly options: DriverOptions;
   /** Harness strings for the adapter's human routes. Required for the same reason. */
   readonly phrases: DriverPhrases;
   /** Optional pre-launch binary normalization; absence keeps the host result unchanged. */
   normalizeTool?(tool: HostToolBin, context?: { env?: Record<string, string | undefined> }): HostToolBin;
-  /**
-   * Translate the harness-neutral context into its launch plan. Writes nothing and
-   * starts nothing: `--dry-run` prints exactly what `spawn` will execute.
-   */
+  /** Translate the harness-neutral context into its launch plan. Writes nothing and starts nothing:
+   * `--dry-run` prints exactly what `spawn` will execute. */
   prepare?(context: SpawnContext): LaunchPlan;
   /** Translate canonical host MCP write-tool identities into this harness's deny rules. */
   mcpDenyTools?(tools: readonly HostMcpTool[]): DriverDenyTool[];
@@ -465,30 +307,16 @@ export interface Driver {
   /** What was said about the launch after success: unconfirmed check, unparsed id. */
   saidLiftoff?(result: unknown): void;
   inspect?(ref: string): SessionView | null;
-  /**
-   * Remove the harness state of one closed participant that does NOT live in its
-   * worktree. `done` calls it for a participant whose session is dead, with or without
-   * a worktree; a driver that keeps nothing outside one does not declare it.
-   *
-   * It exists because the worktree sweep cannot reach what sits elsewhere, and
-   * `stop` — which can — is only called for a session that is still alive. A harness
-   * that gives each participant a private directory outside the worktree therefore has
-   * one leak with no cleanup path: the participant whose process was killed rather
-   * than stopped. When that directory holds credentials, leaving it is the whole
-   * problem. Called after the task is closed, so it must not throw for anything the
-   * caller can survive.
-   */
+  /** Remove the harness state of one closed participant that does NOT live in its worktree — the
+   * one leak with no other cleanup path, and it may hold credentials. Must not throw. */
   sweepParticipant?(participant: unknown, taskId: string): unknown;
   /** Forget the remembered session list: after launch and stop it is stale. */
   forgetSessions?(): void;
   activate?(target: ActivationTarget, notification: Notification): Promise<ActivateResult> | ActivateResult;
   /** Notification text into this harness channel. Inside `activate`; outward — for the seam. */
   renderNotification?(notification: Notification): string;
-  /**
-   * What a person should do with this stall — in their harness commands. Shared
-   * text (“stalled”, “LISTED”, “GONE”) stays with the adapter: it is one for all
-   * harnesses.
-   */
+  /** What a person should do with this stall, in their harness commands. The shared state words stay
+   * with the adapter: they are one for all harnesses. */
   stallRoute?(stall: StalledParticipant & { task?: string | null }, id: string | null, ref: string | null): string;
   /** Hand the contact point of ITS OWN session into the task store: only the harness knows the socket address. */
   registerWake?(home: string, task: string, address: string, env?: unknown, session?: string | null): unknown;
@@ -496,65 +324,25 @@ export interface Driver {
   sayForeignWrite?(home: string, task: string, address: string, held: string, session: string | null, what: string): void;
   /** Wake-channel smoke for diagnostics: whether a socket was handed over and whether it accepts a connection. */
   checkWake?(env?: unknown): Promise<WakeProbe>;
-  /**
-   * Environment of the session being launched: the caller's `extra` is laid over the
-   * inherited one, and the driver strips variables leaking from the ancestor. The
-   * second argument is required in practice: it carries a lever the mechanism itself
-   * sets (the memory-hook gate), and a driver that reads only `base` would lose it
-   * silently.
-   */
+  /** Environment of the session being launched: the caller's `extra` over the inherited one, with
+   * ancestor leaks stripped. The second argument carries a lever the mechanism itself sets. */
   sessionEnv?(base: unknown, extra?: Record<string, string>): Record<string, string | undefined>;
-  /**
-   * Refusal by harness version for the requested options — before the first write to
-   * disk. `null` — nothing to refuse for: the version is fine or was not read, and
-   * the mechanism has no right to assert “older than required” about the unread.
-   */
+  /** Refusal by harness version for the requested options, before the first write to disk. `null`
+   * means nothing to refuse for: the version is fine, or it was not read and may not be claimed. */
   optionRefusal?(options: { effort?: string | null }, tool: unknown): string | null;
-  /**
-   * Names of delivered MCP servers shadowed by the user's PERSONAL records. Personal
-   * config is a harness property: for a second driver it lives in a different place
-   * and a different form, and the output line about shadowing is one for all.
-   */
+  /** Names of delivered MCP servers shadowed by a person's PERSONAL records. Personal config is a
+   * harness property; the output line about shadowing is one for all. */
   shadowedUserServers?(names: string[]): string[];
-  /**
-   * Stop the session. `ok` — the operation did not refuse, `stopped` — the session
-   * was actually stopped: nothing to stop is also success, but a different outcome,
-   * and they must not be confused.
-   *
-   * **The operation returns when the harness already has NO session** — or with an
-   * honest `stopped: false` and a reason in `note`, if the wait ran past its own
-   * ceiling. Promising “stopped” earlier is not allowed: cleanup follows the stop,
-   * and it asks the driver for the session state — if `stop` returned before its
-   * death, the walk would see a live session and would lawfully leave its directory
-   * until the next task close.
-   *
-   * The driver may wait, so the outcome can also be a promise: `stopParticipant`
-   * `await`s it, and the consumer must do the same. A synchronous driver also
-   * satisfies the contract — it has nothing to wait for if its harness loses the
-   * session in the same call.
-   */
+  /** Stop the session. **It returns when the harness already has NO session**, or with an honest
+   * `stopped: false` and a reason — cleanup follows the stop. The outcome may be a promise. */
   stop?(ref: string): StopResult | Promise<StopResult>;
-  /**
-   * Availability adapter of this harness: what the ACCOUNT can do, asked before
-   * any session exists ([model-routing.ts](model-routing.ts)).
-   *
-   * Optional, and its absence is a state rather than an error: the registry
-   * answers `unknown` / `probe_failed` for a driver that declares none, and the
-   * resolver penalises `unknown` instead of blocking on it. That is what lets the
-   * preflight ship before the adapters do.
-   */
+  /** Availability adapter of this harness: what the ACCOUNT can do, asked before any session exists.
+   * Its absence is a state, not an error — the registry answers `unknown` / `probe_failed`. */
   readonly availability?: AvailabilityAdapter;
 }
 
-/**
- * `harness → driver` map. The consumer assembles it itself and passes it into core
- * explicitly: core neither creates drivers nor looks them up.
- *
- * `fallback` — the harness attributed to a participant record that has NO `harness`
- * field at all. The former CLI left such records when there was one harness; a
- * legacy fixture sits on them too. An empty field is not the same as an unknown
- * name: a non-empty unfamiliar harness refuses, and fallback does not save it.
- */
+/** `harness → driver` map, assembled by the consumer and passed in: core neither creates nor looks up
+ * drivers. `fallback` is for a record with NO `harness` field; a non-empty unknown name refuses. */
 export interface Registry {
   readonly drivers: Readonly<Record<string, Driver>>;
   readonly fallback: string | null;
@@ -597,11 +385,8 @@ export function driverFor(registry: Registry, harness: string | null | undefined
   return driver;
 }
 
-/**
- * Whether the driver can do what is asked of it. Asked BEFORE the store changes: a
- * declared capability without an operation is the same refusal as an undeclared
- * one, because they are indistinguishable to the caller.
- */
+/** Whether the driver can do what is asked. Asked BEFORE the store changes: a declared capability
+ * without an operation is the same refusal as an undeclared one. */
 export function requireCapability(driver: Driver, op: 'spawn' | 'attach' | 'inspect' | 'stop'): void {
   if (!driver.capabilities?.[op]) {
     throw new GateError(`driver «${driver.id}» cannot ${op} — this operation is not declared by it`);
@@ -614,12 +399,8 @@ export function requireCapability(driver: Driver, op: 'spawn' | 'attach' | 'insp
 /** Harness properties without their own operation: asked by the flag, not by method presence. */
 export type DriverFeature = 'denyTools' | 'mcpDenyTools' | 'systemPrompt' | 'sessionList' | 'enter' | 'approverLift';
 
-/**
- * Whether the driver declared a harness property. Such flags have no operation, so
- * `requireCapability` does not fit here: there is nothing to ask except the
- * declaration itself. An undeclared property is read as “no”: the silent “it
- * probably can” is exactly the case the flag was introduced for.
- */
+/** Whether the driver declared a harness property. Such flags have no operation, so an undeclared one
+ * is read as "no" — the silent "it probably can" is what the flag exists against. */
 export function hasFeature(driver: Driver, feature: DriverFeature): boolean {
   return driver.capabilities?.[feature] === true;
 }
@@ -629,26 +410,15 @@ export function pushes(driver: Driver): boolean {
   return driver.capabilities?.activation === 'push';
 }
 
-/**
- * Opaque session reference of the participant record. Former-CLI records carried it
- * in the `name` field; migration ([migrate.ts](migrate.ts)) gave them a separate
- * field, so only that is read here — v1 has no second source.
- */
+/** Opaque session reference of the participant record. Former-CLI records carried it in `name`;
+ * migration gave them a field of their own, and v1 has no second source. */
 export function sessionRefOf(participant: ParticipantV1 | null | undefined): string | null {
   const ref = participant?.sessionRef;
   return typeof ref === 'string' && ref ? ref : null;
 }
 
-/**
- * Write a participant the driver launched (`managed`) or whose session it attached to
- * (`attached`).
- *
- * The registry is asked FIRST, and that is the whole point of the function: an
- * unknown harness and an undeclared operation refuse before anything changes in
- * the task journal. A refusal after the write would leave in the journal a
- * participant with nothing to wake it by — and the journal is read by the
- * supervisor, by `status`, and by cleanup.
- */
+/** Write a participant the driver launched or attached to. The registry is asked FIRST: a refusal
+ * after the write would leave a participant in the journal with nothing to wake it by. */
 export function openParticipant(home: string, task: string, participant: ParticipantV1, registry: Registry, { mode = 'managed' as ParticipantMode } = {}): {
   driver: Driver; meta: TaskV1; record: ParticipantV1;
 } {
@@ -659,15 +429,8 @@ export function openParticipant(home: string, task: string, participant: Partici
     throw new GateError(`participant ${named(participant)}: driver «${driver.id}» received no session reference — `
       + 'there will be nothing to recognise its session by later');
   }
-  // The record is given to the caller in full: `putParticipant` writes the participant
-  // in full, and whoever appends a session id to it must put back THE SAME record, not
-  // one assembled anew — otherwise the driver fields would vanish on the very next write.
-  //
-  // A store refusal is translated into `GateError`, as the mechanism door translates
-  // it: two commands call launch, and a busy journal is a lawful outcome for them.
-  // Two `promptobus spawn` of one run contend for the journal by construction, and
-  // the loser must read “task journal is busy”, not a `PromptobusError` stack from
-  // the outer catch.
+  // The record is given to the caller in full: whoever appends a session id must put back THE SAME
+  // record. A store refusal becomes a `GateError` — a busy journal is lawful for two lift commands.
   const record: ParticipantV1 = { ...participant, ...participantDriverFields(driver, { mode, ref }) };
   let meta: TaskV1;
   try {
@@ -679,21 +442,15 @@ export function openParticipant(home: string, task: string, participant: Partici
   return { driver, meta, record };
 }
 
-/**
- * Participant mode. Field absent entirely — `managed`: the former CLI left records
- * from spawn, and spawn launched the session itself. A participant without a
- * session reference has no mode: no one launched a session behind it (that is how
- * the task owner lives).
- */
+/** Participant mode. Absent entirely means `managed` — the former CLI left spawn records. A
+ * participant with no session reference has no mode: nobody launched a session behind it. */
 export function modeOf(participant: ParticipantV1 | null | undefined): ParticipantMode | null {
   if (!sessionRefOf(participant)) return null;
   const raw = typeof participant?.mode === 'string' ? participant.mode.trim() : '';
   // Field absent entirely — `managed`: that is how the former CLI wrote participants, and spawn launched the session.
   if (!raw) return 'managed';
-  // An unfamiliar non-empty value is a typo or junk from a hand edit, and a default
-  // here is destructive (review remark): “if not attached, then managed” would stop
-  // a session the driver did not launch. There is no mode — there is no one to stop
-  // it, and an explicit call refuses.
+  // An unfamiliar non-empty value is a typo or junk from a hand edit, and a default here is
+  // destructive: "if not attached, then managed" would stop a session the driver did not launch.
   return raw === 'managed' || raw === 'attached' ? raw : null;
 }
 
@@ -702,29 +459,15 @@ export function isManaged(participant: ParticipantV1 | null | undefined): boolea
   return modeOf(participant) === 'managed';
 }
 
-/**
- * Stop a participant session — a driver operation, not a command.
- *
- * Only `managed` may be stopped: the driver did not launch a session that attached
- * itself, and capability has nothing to do with it — the matter is the mode. The
- * refusal is explicit, not a silent skip: a foreign session quietly left alive is
- * exactly the case the mode was declared as a field for.
- *
- * Idempotence is on the driver: the session is already gone, it is dead, or its
- * state was not parsed — that is an outcome with its own words, not an error.
- *
- * The outcome is `await`ed: the driver may wait until the harness no longer has
- * the session, and the consumer must wait for it — otherwise cleanup would proceed
- * from a state that is not there yet.
- */
+/** Stop a participant session — a driver operation, not a command. Only `managed` may be stopped, and
+ * the refusal is explicit; the outcome is awaited, since the driver may wait for the harness. */
 export async function stopParticipant(participant: ParticipantV1, registry: Registry): Promise<StopResult> {
   const driver = driverFor(registry, harnessOf(participant, registry));
   requireCapability(driver, 'stop');
   const mode = modeOf(participant);
   if (mode !== 'managed') {
-    // An unfamiliar value is named literally: “there is no mode” about a field that
-    // has something written in it would read as “there is no field”, and they are
-    // fixed differently.
+    // An unfamiliar value is named literally: "there is no mode" about a field with something in it
+    // would read as "there is no field", and the two are fixed differently.
     const raw = typeof participant?.mode === 'string' ? participant.mode.trim() : '';
     const said = mode ?? (raw ? `«${raw}» — the contract does not know this mode` : 'there is no session behind it');
     throw new GateError(`participant ${named(participant)}: mode ${mode ? `«${mode}»` : said} — `
@@ -749,23 +492,8 @@ export function participantDriverFields(driver: Driver, { mode, ref }: {
 /** No one to ask: there is no driver, or it does not look. Neither death nor life — unknown. */
 const UNKNOWN: SessionView = { state: 'unknown', busy: false, stall: null, id: null };
 
-/**
- * Snapshot of participant sessions — the state-machine input. Taken once per heartbeat:
- * a driver reply stands on an external harness poll, and the supervision loop that
- * runs once a second does not start a poll of its own.
- *
- * If the driver did not parse the state of even one session — there is no snapshot
- * at all: unknown for one participant means the source is unavailable, not that
- * the others are dead.
- *
- * **One invalid record has no right to take the whole snapshot with it** (review
- * remark). A foreign harness and a driver that declared itself not looking give
- * that participant `unknown` — and the walk continues. Otherwise the refusal
- * leaked out and felled every snapshot reader at once: `promptobus status`
- * printing, the `promptobus done` walk in the middle of cleaning foreign tokens,
- * and the supervisor process itself. The supervision loop will speak about a
- * foreign harness — it has its own words and its own health mark there.
- */
+/** Snapshot of participant sessions, taken once per heartbeat. One unparsed session drops the whole
+ * snapshot; one INVALID record does not — it gets `unknown`, and the walk goes on. */
 export function snapshotSessions(participants: ParticipantV1[] | null | undefined, registry: Registry): SessionSnapshot {
   const view: Record<string, SessionView> = {};
   for (const p of participants ?? []) {
@@ -792,7 +520,6 @@ export function snapshotSessions(participants: ParticipantV1[] | null | undefine
   return view;
 }
 
-// Availability adapter contract, declared next door ([model-routing.ts](model-routing.ts))
-// and re-exported here: a driver implements both, and an author of one harness
-// should not have to find out that its two halves live behind two imports.
+// Availability adapter contract, declared next door and re-exported here: a driver implements both,
+// and an author should not find out that its two halves live behind two imports.
 export * from './model-routing.js';
