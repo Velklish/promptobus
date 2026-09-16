@@ -1,6 +1,6 @@
 # PB-214 · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути
 
-- **Order:** 365
+- **Order:** 320
 - **Scope:** `lib/codex-session.js` (`containmentPath`, `resolveTarget`, ветка отказа), `lib/spawn.js` и `lib/review.js` — как путь называется участнику в преамбуле; `docs/reference/03-cli.md`
 - **Created:** 2026-09-13
 - **Dependencies:** none

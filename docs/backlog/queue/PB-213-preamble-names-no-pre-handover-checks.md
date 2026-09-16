@@ -1,6 +1,6 @@
 # PB-213 · Преамбула участника требует форму сдачи, но не называет сверок, которые её подтверждают
 
-- **Order:** 360
+- **Order:** 310
 - **Scope:** `lib/spawn.js` (`buildPrompt`, форма сдачи), `lib/review.js` (та же форма во второй копии), `schemas/v1/gate-record.schema.json` как образец, `docs/reference/03-cli.md` § Spawn
 - **Created:** 2026-09-13
 - **Dependencies:** PB-201 (запись гейта как машинный факт)

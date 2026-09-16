@@ -1,6 +1,6 @@
 # PB-188 · The two comment-sweep gates are withdrawn from the release: three rounds, four bypasses, and one false certificate
 
-- **Order:** 220
+- **Order:** 230
 - **Scope:** `test/comment-scan.mjs`, `test/comment-length.test.mjs`, `test/comment-links.test.mjs`,
   [contributing](../../guides/contributing.md) § the sweep
 - **Created:** 2026-09-12, release run

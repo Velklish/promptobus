@@ -1,6 +1,6 @@
 # PB-191 · `apply_patch` never passes the measured Codex participant boundary
 
-- **Order:** 140
+- **Order:** 160
 - **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
