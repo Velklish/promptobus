@@ -57,7 +57,7 @@ const spawnWorker = (root, opts = {}) => spawnRaw(root, {
 });
 const { installWorktreeDeps, npmCiCommand } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { IDENTITY_VARS } = await import(path.join(here, 'hygiene.mjs'));
-const { ULTRACODE_MIN_VERSION } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const { ULTRACODE_MIN_VERSION, claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 const CLAUDE_MIN = '2.0.0';
 function versionLess(a, b) {
   const pa = String(a).split('.').map(Number);
@@ -794,6 +794,25 @@ check(': on the same binary other efforts pass — the refusal is pointed',
   xhighRun.status === 0
   && store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra'),
   `status=${xhighRun.status} ${xhighRun.stdout}${xhighRun.stderr}`);
+
+// --- : optionRefusal reads effortMinVersion generically, not a hardcoded ultracode
+// check (PB-120) — a second entry must refuse on its own, and an effort absent from
+// the map must still pass unconditionally.
+const savedEffortMinVersion = claudeDriver.options.effortMinVersion;
+claudeDriver.options.effortMinVersion = { ...savedEffortMinVersion, max: '9.9.9' };
+try {
+  const secondEntryRefusal = claudeDriver.optionRefusal(
+    { effort: 'max', statusCommand: 'status' }, { version: CLAUDE_MIN },
+  );
+  check(': a second effortMinVersion entry refuses on its own',
+    secondEntryRefusal !== null && secondEntryRefusal.includes(CLAUDE_MIN) && secondEntryRefusal.includes('9.9.9'),
+    String(secondEntryRefusal));
+  check(': an effort absent from effortMinVersion still passes unconditionally',
+    claudeDriver.optionRefusal({ effort: 'high', statusCommand: 'status' }, { version: CLAUDE_MIN }) === null,
+    String(claudeDriver.optionRefusal({ effort: 'high', statusCommand: 'status' }, { version: CLAUDE_MIN })));
+} finally {
+  claudeDriver.options.effortMinVersion = savedEffortMinVersion;
+}
 
 // --- : standalone host does not search install dirs ----------------------
 //

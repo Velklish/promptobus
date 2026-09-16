@@ -116,7 +116,7 @@ Queued assignments: [PB-45](archive/PB-45-registry-read-swallows-refusal/task.md
 
 Added after this snapshot: [PB-45.1](archive/PB-45.1-snapshot-path-hides-registry-refusal/task.md) — the snapshot path degrades a registry refusal to a reasonless `unknown`, so the operator still sees silence; it reaches into the shared `src/driver.ts` / `lib/status.js` seam.
 
-Deferred assignments: [PB-120](backlog/active/PB-120-dead-effort-map-and-fresh-flag.md).
+Deferred assignments: [PB-120](archive/PB-120-dead-effort-map-and-fresh-flag/task.md).
 
 ### R — Routing policy, overlays and availability
 
