@@ -222,6 +222,33 @@ The workspace root guard has a third form beside dead owner and unread mail:
 **live owner, dead warden, unread** — it uses `contactSocketPath` so a
 `#<turn>` suffix on the wake socket does not hide a live owner.
 
+**Who gets that advice: every session standing in the workspace root that is
+not already on the bus, whether or not it owns the task.** `deadWardenItems` in
+`lib/guard.js` asks for the root and for an identity and asks nothing about
+ownership, and that is the decision rather than an oversight. The one door above
+it is `sessionOnBus`, and it holds back four: a declared participant, a session
+with a task binding, the owner of any active task, and a session written on a
+participant record of any address but `orchestrator` — that last one is a worker
+or reviewer whose `PROMPTOBUS_ROLE` is absent from the environment while its id
+stands in the journal, and it is on the bus by the record rather than by the
+variable. The owner is not left without the advice: it gets the same line from
+the loop guard at its own end of turn (`wardenExitNotice`), which is the branch
+that also returns its turn. The state
+the advice exists for is an owner who is alive but making no moves because it
+waits for a delivery nobody is left to make: its own hook never fires while it
+waits, so a session with no connection to the task is the only one in that root
+able to notice at all. One run was lost exactly that way on 2026-09-13 — four
+hours fourteen minutes of silence with the owner alive.
+
+**The line that makes it affordable: the advice reaches everyone, the turn
+comes back only to the owner.** A foreign session gets `NO WARDEN` as a line in
+its output and its turn ends normally — `successorHint` answers code 0 and
+never code 2. The turn is returned only where the guard has already proven that
+this session is the address it is guarding, which is the owner's own end of
+turn. The two costs are not comparable: one is a line of text, the other takes
+a person's move away in their own work because somebody else's mailbox is
+unread.
+
 ### Migration: reading an older store
 
 Source: `src/migrate.ts`.

@@ -1066,6 +1066,45 @@ if (orchListening.ok) {
     wdnDrain2.status === 0 && wdnDrain2Text.includes(WDN_DRAIN)
     && /without leaving a note/.test(wdnDrain2Text),
     wdnDrain2Text || JSON.stringify(wdnDrain2));
+
+  // The boundary the dead-warden advice rests on: everyone in the root gets the
+  // ADVICE, only the owner gets the TURN BACK ([01-overview](../docs/reference/01-overview.md) § Warden).
+  const WDN_BOUND = 'wdn-boundary-t20260914';
+  store.createTask(HOME, { id: WDN_BOUND, title: 'граница совета и возврата хода', owner: LIVE_ORCH });
+  store.upsertParticipant(HOME, WDN_BOUND, store.participantRecord('worker:api', { name: 'w-bound' }));
+  store.sendMessage(HOME, WDN_BOUND, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.writeWardenExit(HOME, WDN_BOUND, {
+    reason: 'sat out the overall ceiling 6 h', at: '2026-09-14T01:05:21.473Z',
+  });
+  store.writeWake(HOME, WDN_BOUND, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
+
+  const liveWardenQuiet = (() => {
+    store.claimWarden(HOME, WDN_BOUND, { cli: 'boundary' });
+    const run = asHeir('sess-stranger-live-224');
+    store.clearWarden(HOME, WDN_BOUND);
+    return run;
+  })();
+  check('warden boundary: a live warden is silence for a stranger too — the advice is about an empty seat',
+    liveWardenQuiet.status === 0 && !(heirSaid(liveWardenQuiet)?.systemMessage ?? '').includes(WDN_BOUND),
+    heirSaid(liveWardenQuiet)?.systemMessage ?? JSON.stringify(liveWardenQuiet));
+
+  const stranger = asHeir('sess-stranger-224');
+  const strangerText = heirSaid(stranger)?.systemMessage ?? '';
+  check('warden boundary: a session that owns nothing on this task gets the advice',
+    stranger.status === 0 && strangerText.includes(WDN_BOUND) && strangerText.includes(WARDEN_MARK)
+    && /promptobus warden/.test(strangerText),
+    strangerText || JSON.stringify(stranger));
+  check('warden boundary: and it does NOT get the turn back — that half stays with the owner',
+    stranger.status === 0 && stranger.stderr === '',
+    `status=${stranger.status} err=${JSON.stringify(stranger.stderr)}`);
+
+  const ownerTurn = asHook(stopEvent(LIVE_ORCH), {
+    PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: WDN_BOUND, PROMPTOBUS_ROLE: 'orchestrator',
+  });
+  check('warden boundary: the owner gets both halves — the advice and the turn back',
+    ownerTurn.status === 2 && ownerTurn.stderr.includes(GUARD_MARK)
+    && ownerTurn.stderr.includes(WARDEN_MARK) && /promptobus warden/.test(ownerTurn.stderr),
+    `status=${ownerTurn.status} err=${JSON.stringify(ownerTurn.stderr)}`);
 }
 
 const START_SID = 'sess-bound-start-dddd';
