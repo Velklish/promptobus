@@ -7,7 +7,7 @@ import { writeFileAtomic, writeJsonAtomic } from './fs/atomic.js';
 import { LOCK_WAIT_MS, withDirLock } from './fs/lock.js';
 import type { LockHolder } from './fs/lock.js';
 import { pidAlive } from './fs/proc.js';
-import { lockDir } from './v1/layout.js';
+import { blobLockDir, lockDir } from './v1/layout.js';
 import { addrDir, GateError, requireTaskId, TASK_ID_RE, taskDir, tasksDir } from './protocol.js';
 
 // --- directories -------------------------------------------------------------
@@ -354,6 +354,24 @@ export function withTaskLock<T>(home: string, id: string, fn: () => T, {
     // `readTask` — the same text with a stack or without reads as two different outcomes.
     onMissing: () => new GateError(`task ${id} is not in ${tasksDir(home)}`),
     onBusy: (held, waitedMs) => lockBusyError(id, lock, held, waitedMs),
+  });
+}
+
+/** Publication lock, adapter side: a sweep judges a payload under the lock a send names one in.
+ * [reference/04-protocol.md#store-layout](../docs/reference/04-protocol.md#store-layout) */
+export function withBlobLock<T>(home: string, id: string, fn: () => T, {
+  waitMs = LOCK_WAIT_MS, session = null,
+}: { waitMs?: number; session?: string | null } = {}): T {
+  const task = requireTaskId(id);
+  const lock = blobLockDir(home, task);
+  return withDirLock(lock, fn, {
+    waitMs,
+    session,
+    onMissing: () => new GateError(`task ${id} is not in ${tasksDir(home)}`),
+    onBusy: (held, waitedMs) => lockBusyError(id, lock, held, waitedMs),
+    onSelfAsync: () => new GateError(`task ${id} payloads are held by an asynchronous publication `
+      + `of this process (lock ${lock}) — waiting for it here would block the loop that has to `
+      + 'release it, so there is nothing to wait for'),
   });
 }
 

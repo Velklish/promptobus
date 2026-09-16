@@ -448,7 +448,8 @@ check(': its own files-folder entry and its artifact record are gone',
   && !artifactRecords().some((a) => a.filename === 'gates-accepted.json'),
   readdirSync(store.filesDir(HOME, TASK)).join(', '));
 check(': but the BLOB stays while a second hard link holds it, and the line says so',
-  existsSync(acceptedBlob) && /another hard link to it is still there/.test(out), out.trim());
+  existsSync(acceptedBlob) && /the payload is still named/.test(out)
+  && /another hard link to it/.test(out), out.trim());
 rmSync(inflight, { force: true });
 check(': the blob the neighbour also sent SURVIVES — a blob leaves only when nothing names it',
   existsSync(sharedBlob) && sharedRecords().length === 1,

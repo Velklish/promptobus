@@ -17,6 +17,7 @@ export type {
   Engine, EngineOptions, PruneResult, RecoverResult, RoutingDecision, RoutingPolicy, SendInput,
   SendResult, SendSyncInput,
 } from './engine.js';
+export { blobNamed, listArtifacts } from './artifacts.js';
 export type { ArtifactSource } from './artifacts.js';
 export type { BrokenTask, Clock, NewTask, ParticipantPatch, ReaderVersion } from './store.js';
 export type {

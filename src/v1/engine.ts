@@ -22,7 +22,8 @@ import { MESSAGE_TYPES_V1 } from './model.js';
 import type { ArtifactV1, MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import {
   addParticipant, claimOwner, closeTask, createTask, listTasks, patchParticipant, putParticipant,
-  readTask, requireActive, requireParticipant, taskExists, withTaskLock, writeTask,
+  readTask, requireActive, requireParticipant, taskExists, withBlobLock, withBlobLockAsync,
+  withTaskLock, writeTask,
 } from './store.js';
 import type { BrokenTask, Clock, NewTask, ParticipantPatch } from './store.js';
 import { requireValid } from './validate.js';
@@ -286,9 +287,14 @@ export function openEngine({
         // by the schema only after, would leave payload in the task with no
         // metadata — an orphan blob until `prune`.
         const filename = nameOf(input.artifact);
-        const { sha256, size } = await stashBlob(home, task, input.artifact);
-        faults('blob', { task, sha256 });
-        artifact = writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
+        const source = input.artifact;
+        // Payload and record under one short lock: between them the payload is named by
+        // nothing, and a sweep running in that window takes it from under this send.
+        artifact = await withBlobLockAsync(home, task, async () => {
+          const { sha256, size } = await stashBlob(home, task, source);
+          faults('blob', { task, sha256 });
+          return writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
+        });
         faults('artifact', { task, artifact: artifact.id });
       }
       return finish(task, meta, sender, recipients, input, artifact);
@@ -303,13 +309,17 @@ export function openEngine({
         // the streaming branch: a bad one, caught only after, would leave
         // payload in the task with no metadata, an orphan blob on a flat path.
         nameOf({ path: source.path });
-        const { sha256, size } = stashBlobSync(home, task, source.path);
-        faults('blob', { task, sha256 });
-        // The name a person will see the record under is given by the adapter
-        // and AFTER the blob: name dedup without a digest is impossible. It
-        // is checked by the same `nameOf`.
-        const filename = nameOf({ path: source.path, filename: source.name?.(sha256, size) });
-        artifact = writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
+        // Payload, name and record under one short lock, for the reason the streaming
+        // branch gives: the `files/` link and the record both land inside it.
+        artifact = withBlobLock(home, task, () => {
+          const { sha256, size } = stashBlobSync(home, task, source.path);
+          faults('blob', { task, sha256 });
+          // The name a person will see the record under is given by the adapter
+          // and AFTER the blob: name dedup without a digest is impossible. It
+          // is checked by the same `nameOf`.
+          const filename = nameOf({ path: source.path, filename: source.name?.(sha256, size) });
+          return writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
+        });
         faults('artifact', { task, artifact: artifact.id });
       }
       return finish(task, meta, sender, recipients, input, artifact);

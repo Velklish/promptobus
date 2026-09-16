@@ -1225,8 +1225,7 @@ rest of the task holds.
 
 Source: `lib/sweep.js`, `artifactPlan`.
 
-The records of the artifacts one participant sent, and the set of digests every surviving
-record still names.
+The records of the artifacts one participant sent.
 
 The sender lives on the **message**, not on the artifact record, so the canonical messages
 are the only place that binds an artifact to whoever sent it. The `files/` entry is
@@ -1238,15 +1237,33 @@ cannot tell two entries of one deduplicated blob apart. An entry whose inode doe
 is left in place and named out loud, so a store that stopped hard-linking would surface as
 a line rather than as a sweep that quietly removes nothing.
 
-**A blob leaves only when nothing holds it, and "nothing" is read twice.** The record scan
-above is one reading; the hard-link count of the payload is the other. `placeFile` links a
-`files/` entry BEFORE the record lands, so a sender caught between those two steps has a
-second link and no second record — and the link count sees it where the scan cannot. A blob
-with another link is left in place and said out loud.
+### `sweepArtifacts` — the removals of one piece, under the publication lock
 
-That pair narrows the window rather than closing it: `send` and `sendSync` take no task
-lock, so a payload stashed but not yet linked is still invisible to both readings. Closing
-it fully means locking the publication path, which is not this command's to change.
+Source: `lib/sweep.js`, `sweepArtifacts`.
+
+The records, `files/` entries and blobs of the piece, removed in that order, with the
+count of each and the names of the two states that were not removed.
+
+**A blob leaves only when nothing names it, and the question has one answer.** That answer
+is `blobNamed` in the package ([04-protocol](04-protocol.md#store-layout)) — a metadata
+record of the task, or a hard link beyond the blob file itself — and `prune`'s own reading
+of orphan payloads is the same function. It used to be two: the sweep computed a set of
+surviving digests and separately read the link count, while the engine asked only the
+records, so one of them could call a payload nobody's while the other still held it.
+
+**The reading happens under the publication lock.** A send that carries an artifact writes
+the payload, names it and writes the record inside that same lock, so a sweep either has
+not started or sees a finished publication — never the window between a payload and its
+record, where nothing names it at all. The lock is the publication one and not the
+journal's: the journal lock is held here across a worktree removal, and an artifact send
+must not wait on git. The records are read ONCE, and only after the lock is in hand: a set
+read before the wait would miss what landed during it, and re-reading them per blob is
+quadratic in the task's artifacts. Under the lock nothing else can publish, so the only
+later change to that set is this sweep's own removals, tracked as they are made.
+
+A blob something still names is left in place and said out loud. An entry whose inode does
+not match its blob is left in place and named too, so a store that stopped hard-linking
+surfaces as a line rather than as a sweep that quietly removes nothing.
 
 ### `childOf` — a path built from a record field stays a direct child
 

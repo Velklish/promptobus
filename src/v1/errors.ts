@@ -30,6 +30,9 @@ export const ERROR_CODES = [
   'artifact-integrity',
   // disk
   'lock-busy',
+  // A synchronous take met an asynchronous holder of the SAME process. Not `lock-busy`:
+  // that one says "wait and retry", and here the wait is the hang.
+  'lock-self-async',
   'link-refused',
   // model routing. The adapter raises these, not the core, and they live here because the consumer
   // branch on one list; the prose half is [04-protocol.md § Typed protocol errors](../../docs/reference/04-protocol.md#typed-protocol-errors).

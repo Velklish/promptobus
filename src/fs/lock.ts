@@ -50,43 +50,130 @@ export interface DirLockOptions {
   onMissing: () => Error;
   /** The lock is held by a live holder longer than allowed. */
   onBusy: (held: LockHolder | null, waitedMs: number) => Error;
+  /** A synchronous take met an asynchronous holder of THIS process: waiting would hang. */
+  onSelfAsync?: (lock: string) => Error;
 }
 
-/** Locks taken by THIS process right now, for nesting: without them a process would sit out `waitMs`
- * on itself. Nesting is safe — the lock separates PROCESSES — and only the outer call drops it. */
-const held = new Set<string>();
+/**
+ * Locks held by a SYNCHRONOUS frame of this process right now. Needed for nesting: an
+ * adapter read-modify-write takes the task lock, and a store operation inside it takes the
+ * same one — without this the process would sit out `waitMs` on itself and refuse with
+ * "journal busy", naming its own pid as the holder.
+ *
+ * The licence is the synchronous stretch and nothing wider: the lock separates PROCESSES,
+ * and a synchronous frame cannot be interleaved, so a nested call IS the same critical
+ * section. An `await` breaks that, which is why an asynchronous holder neither asks this
+ * licence nor hands it out — it queues instead.
+ */
+const heldSync = new Set<string>();
 
-/** Take the lock directory, run, and drop. A dead holder is dropped while waiting; a live one sits
- * out `waitMs` and refuses in the caller's words. */
-export function withDirLock<T>(lock: string, fn: () => T, {
-  waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
-}: DirLockOptions): T {
-  // Our own lock — we work inside it. A missing task directory still stays the
-  // outer call's refusal: it does not reach here.
-  if (held.has(lock)) return fn();
-  const started = Date.now();
-  const deadline = started + waitMs;
+/** Locks an asynchronous holder of this process has in flight. Not a nesting licence. */
+const heldAsync = new Set<string>();
+
+/** Tail of the queue of asynchronous holders, per lock path. */
+const asyncQueue = new Map<string, Promise<void>>();
+
+// Waiting this one out synchronously would block the very loop that has to release it.
+// That is a caller mistake — a design with no lawful case — not a busy lock.
+function selfAsyncError(lock: string): Error {
+  return new Error(`lock ${lock} is held by an asynchronous holder in this process: a synchronous `
+    + 'wait would block the loop that must release it, so there is nothing to wait for');
+}
+
+// One attempt at the directory: `true` — it is ours, `false` — a live holder has it. A
+// dead holder is dropped and the attempt repeats; only the waiting differs between callers.
+function tryGrabDirLock(lock: string, session: string | null, onMissing: () => Error): boolean {
   for (;;) {
     try {
       mkdirSync(lock);
       writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({
         pid: process.pid, session, since: new Date().toISOString(),
       })}\n`);
-      break;
+      return true;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') throw onMissing();
       if (code !== 'EEXIST') throw e;
       if (dropDeadLock(lock)) continue;
-      if (Date.now() >= deadline) throw onBusy(lockHolder(lock), Date.now() - started);
-      sleepSync(retryMs);
+      return false;
     }
   }
-  held.add(lock);
+}
+
+// The wait, for a caller that has nothing else to do while it waits: a live holder is sat
+// out for `waitMs` and then refused in the caller's words.
+function grabDirLock(lock: string, {
+  waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
+}: DirLockOptions): void {
+  const started = Date.now();
+  const deadline = started + waitMs;
+  for (;;) {
+    if (tryGrabDirLock(lock, session, onMissing)) return;
+    if (Date.now() >= deadline) throw onBusy(lockHolder(lock), Date.now() - started);
+    sleepSync(retryMs);
+  }
+}
+
+// The same wait for a caller that is already asynchronous. `sleepSync` here would freeze
+// the loop of THIS process for the whole of a foreign hold — the send waits, not the loop.
+async function grabDirLockAsync(lock: string, {
+  waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
+}: DirLockOptions): Promise<void> {
+  const started = Date.now();
+  const deadline = started + waitMs;
+  for (;;) {
+    if (tryGrabDirLock(lock, session, onMissing)) return;
+    if (Date.now() >= deadline) throw onBusy(lockHolder(lock), Date.now() - started);
+    await new Promise((resolve) => { setTimeout(resolve, retryMs); });
+  }
+}
+
+function releaseDirLock(lock: string): void {
+  rmSync(lock, { recursive: true, force: true });
+}
+
+/** Take the lock directory, run, and drop. A missing task directory stays the caller's
+ * own refusal: a nested call does not reach the directory at all. */
+export function withDirLock<T>(lock: string, fn: () => T, options: DirLockOptions): T {
+  if (heldSync.has(lock)) return fn();
+  if (heldAsync.has(lock)) throw (options.onSelfAsync ?? selfAsyncError)(lock);
+  grabDirLock(lock, options);
+  heldSync.add(lock);
   try {
     return fn();
   } finally {
-    held.delete(lock);
-    rmSync(lock, { recursive: true, force: true });
+    heldSync.delete(lock);
+    releaseDirLock(lock);
   }
+}
+
+async function underDirLock<T>(lock: string, fn: () => Promise<T>, options: DirLockOptions): Promise<T> {
+  await grabDirLockAsync(lock, options);
+  heldAsync.add(lock);
+  try {
+    return await fn();
+  } finally {
+    heldAsync.delete(lock);
+    releaseDirLock(lock);
+  }
+}
+
+/**
+ * The same lock held across an await. `withDirLock` would drop the directory the moment
+ * `fn` handed back its promise, and its nesting licence would let the second holder of this
+ * process straight through — an `await` admits one where a synchronous frame cannot. So
+ * asynchronous holders of one lock path QUEUE inside the process and each takes the
+ * directory in turn; there is no licence to grant, because such a holder has no lawful nesting.
+ */
+export function withDirLockAsync<T>(lock: string, fn: () => Promise<T>, options: DirLockOptions): Promise<T> {
+  const previous = asyncQueue.get(lock) ?? Promise.resolve();
+  const run = previous.then(() => underDirLock(lock, fn, options));
+  const settled = run.then(() => {}, () => {});
+  asyncQueue.set(lock, settled);
+  // The tail is dropped once it is the one that settled: otherwise the map keeps an entry
+  // per lock path for the life of the process.
+  void settled.then(() => {
+    if (asyncQueue.get(lock) === settled) asyncQueue.delete(lock);
+  });
+  return run;
 }

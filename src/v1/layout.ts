@@ -52,6 +52,12 @@ export function lockDir(home: string, task: string): string {
   return path.join(taskDir(home, task), '.lock');
 }
 
+/** The publication lock, held while a payload is written and named and while a sweep judges
+ * it. Its own and not the journal's: that one is held across git, and a send must not wait. */
+export function blobLockDir(home: string, task: string): string {
+  return path.join(taskDir(home, task), '.lock-blobs');
+}
+
 /** Canonical messages. Immutable: inbox, history, and intent refs are the same inode. */
 export function messagesDir(home: string, task: string): string {
   return path.join(taskDir(home, task), 'messages');

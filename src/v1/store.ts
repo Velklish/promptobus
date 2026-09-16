@@ -3,10 +3,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { writeJsonAtomic } from '../fs/atomic.js';
 import { addressOf, mechanismVersionOf } from '../protocol.js';
-import { withDirLock } from '../fs/lock.js';
+import { withDirLock, withDirLockAsync } from '../fs/lock.js';
+import type { DirLockOptions } from '../fs/lock.js';
 import { fail, PromptobusError } from './errors.js';
 import type { ErrorCode } from './errors.js';
-import { lockDir, taskDir, taskFile, tasksDir } from './layout.js';
+import { blobLockDir, lockDir, taskDir, taskFile, tasksDir } from './layout.js';
 import type { FaultHook } from './messages.js';
 import { SCHEMA_VERSION } from './model.js';
 import type { ParticipantV1, TaskV1 } from './model.js';
@@ -99,6 +100,31 @@ export function withTaskLock<T>(home: string, task: string, fn: () => T, { waitM
       `task ${task} journal is busy: waited ${waitedMs} ms`,
       { task, waitedMs, holder: held }),
   });
+}
+
+function blobLockWords(home: string, task: string, waitMs: number): DirLockOptions {
+  return {
+    waitMs,
+    onMissing: () => new PromptobusError('task-not-found', `task ${task} is not in ${tasksDir(home)}`, { task }),
+    onBusy: (held, waitedMs) => new PromptobusError('lock-busy',
+      `task ${task} payloads are busy: waited ${waitedMs} ms`,
+      { task, waitedMs, holder: held }),
+    onSelfAsync: (lock) => new PromptobusError('lock-self-async',
+      `task ${task} payloads are held by an asynchronous publication of this process: `
+      + 'a synchronous wait would block the loop that must release them',
+      { task, lock }),
+  };
+}
+
+/** Writing a payload and naming it, or deciding a payload is nobody's — one short lock.
+ * [reference/04-protocol.md#store-layout](../../docs/reference/04-protocol.md#store-layout) */
+export function withBlobLock<T>(home: string, task: string, fn: () => T, { waitMs = 5000 } = {}): T {
+  return withDirLock(blobLockDir(home, task), fn, blobLockWords(home, task, waitMs));
+}
+
+/** The same lock for the streaming publication path, which writes the blob across an await. */
+export function withBlobLockAsync<T>(home: string, task: string, fn: () => Promise<T>, { waitMs = 5000 } = {}): Promise<T> {
+  return withDirLockAsync(blobLockDir(home, task), fn, blobLockWords(home, task, waitMs));
 }
 
 export function taskExists(home: string, task: string): boolean {

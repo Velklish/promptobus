@@ -13,19 +13,25 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
+import { Readable } from 'node:stream';
+
 import { ERROR_CODES, openEngine, PromptobusError } from '../dist/index.js';
+import { withDirLock, withDirLockAsync } from '../dist/fs/lock.js';
 
 const DIST = new URL('../dist/index.js', import.meta.url).href;
 const STATUS = new URL('../lib/status.js', import.meta.url).href;
 const HISTORY = new URL('../lib/history.js', import.meta.url).href;
 const PRUNE = new URL('../lib/prune.js', import.meta.url).href;
+const SWEEP = new URL('../lib/sweep.js', import.meta.url).href;
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-v1-races-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 
@@ -578,4 +584,232 @@ test('the FS refused a recipient inbox mkdir — recovery keeps the intent open'
   } finally {
     if (existsSync(inbox)) chmodSync(inbox, 0o700);
   }
+});
+
+// --- a sweep meets a sender between its payload and its record ----------------------
+//
+// The window the publication lock exists for: a neighbour's `stashBlob` finds the payload
+// already there (`EEXIST` is dedup), and until its own record lands the payload is named by
+// nothing a sweep can see. Three real processes, for the reason the whole file gives —
+// inside one the lock recognises itself and the window never arrives.
+//
+// **What is asserted is mutual exclusion, and it is asserted by an event, not by a clock.**
+// The sweeper marks the instant the lock is in its hands. Under the fix that mark cannot
+// appear while the sender sits in its stretch; without the fix it appears at once, because
+// nothing stands between the sweeper's own mark and its `mkdir`. The settle below covers
+// that gap alone — an unblocked take of this lock measured 0.173 ms at the median and
+// 1.142 ms at the worst of forty, so 400 ms is some three hundred times it — and a negative
+// claim is the one kind that needs a ceiling at all. The stand also proves it ENTERED the
+// window: a run that never saw the sender inside fails rather than passing on vacuous checks.
+const MARK_SETTLE_MS = 400;
+
+// Waiting for a file another process writes. An event with a ceiling: `null` when it never
+// came, and the caller decides whether that is a failure or the answer it wanted.
+async function until(mark, ceilingMs = 20_000) {
+  for (const started = Date.now(); Date.now() - started < ceilingMs;) {
+    if (existsSync(mark)) return Date.now();
+    await new Promise((r) => { setTimeout(r, 5); });
+  }
+  return null;
+}
+
+test('a sweep of a neighbour piece does not take a payload a live sender is publishing', async (t) => {
+  const root = sandbox();
+  const engine = open(root);
+  const id = taskWith(engine, 'race-blob-t20260916-170000');
+  const payload = path.join(SB, 'shared-payload.diff');
+  writeFileSync(payload, 'the very same bytes\n');
+
+  // The neighbour's piece: a landed record and a files/ entry, both going in the sweep.
+  const landed = await engine.send(id, {
+    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'соседский', artifact: { path: payload },
+  });
+  const taskAt = path.join(engine.home, 'tasks', id);
+  const files = path.join(taskAt, 'files');
+  mkdirSync(files, { recursive: true });
+  assert.ok(engine.linkBlob(id, landed.artifact.sha256, path.join(files, landed.artifact.filename)));
+
+  const marks = path.join(SB, 'race-marks');
+  mkdirSync(marks, { recursive: true });
+  const mark = (name) => path.join(marks, name);
+  const plan = {
+    broken: [],
+    going: [{
+      ...landed.artifact,
+      file: path.join(taskAt, 'artifacts', `${landed.artifact.id}.json`),
+      blob: path.join(taskAt, 'blobs', landed.artifact.sha256),
+      link: path.join(files, landed.artifact.filename),
+    }],
+  };
+  const kept = [path.join(taskAt, 'messages')];
+
+  // The sender stalls INSIDE the publication stretch: the hook fires between the payload
+  // and the record, marks the window, and leaves on the parent's word, not on a duration.
+  const sender = child(
+    `const { writeFileSync, existsSync } = await import('node:fs');\n`
+    + `const e = open(${J(root)}, { faults: (kind) => {\n`
+    + '  if (kind !== "blob") return;\n'
+    + `  writeFileSync(${J(mark('at-window'))}, "");\n`
+    + `  for (let i = 0; i < 6000 && !existsSync(${J(mark('go'))}); i += 1) {\n`
+    + '    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);\n'
+    + '  }\n'
+    // The sender says it LEFT, and that is what the parent reads to know it judged the
+    // sweeper against a live window: `go` is the parent's own write and proves nothing.
+    + `  writeFileSync(${J(mark('left-window'))}, "");\n`
+    + '} });\n'
+    + `await e.send(${J(id)}, { from: 'w-api', to: ['owner'], type: 'artifact', body: 'мой', artifact: { path: ${J(payload)} } });\n`,
+  );
+
+  const sawWindow = await until(mark('at-window'));
+
+  // The sweeper marks the instant the lock is its own: `withBlobLock` nests inside a
+  // process, so the `sweepArtifacts` beneath it runs in this very critical section.
+  const sweeper = child(
+    `const { writeFileSync } = await import('node:fs');\n`
+    + `const { withBlobLock } = await import(${J(DIST)});\n`
+    + `const { sweepArtifacts } = await import(${J(SWEEP)});\n`
+    + `writeFileSync(${J(mark('attempt'))}, "");\n`
+    + `const swept = withBlobLock(${J(engine.home)}, ${J(id)}, () => {\n`
+    + `  writeFileSync(${J(mark('entered'))}, "");\n`
+    + `  return sweepArtifacts(${J(engine.home)}, ${J(id)}, ${J(plan)}, ${J(kept)});\n`
+    + '});\n'
+    + `writeFileSync(${J(mark('swept'))}, JSON.stringify(swept));\n`,
+  );
+
+  const sawAttempt = await until(mark('attempt'));
+  // The one gap a clock has to cover: between the sweeper's own mark and its `mkdir`.
+  await new Promise((r) => { setTimeout(r, MARK_SETTLE_MS); });
+  const enteredWhileHeld = existsSync(mark('entered'));
+  const senderStillHeld = !existsSync(mark('left-window'));
+  writeFileSync(mark('go'), '');
+
+  const [senderRun, sweeperRun] = await Promise.all([sender, sweeper]);
+
+  await t.test('the stand entered the window and both processes ran', () => {
+    assert.ok(sawWindow, 'the sender never reported itself inside the publication stretch');
+    assert.ok(sawAttempt, 'the sweeper never reported an attempt');
+    assert.ok(senderStillHeld, 'the sender had already been released before the sweeper was judged');
+    exitedZero([senderRun, sweeperRun], (i) => (i ? 'sweeper' : 'sender'));
+  });
+  await t.test('the sweeper did not get the lock while the sender was inside its stretch', () => {
+    assert.equal(enteredWhileHeld, false,
+      `the sweeper held the publication lock ${MARK_SETTLE_MS} ms into a live sender's stretch`);
+  });
+  await t.test('and the payload stayed, because the sender named it before the sweep judged', () => {
+    const swept = JSON.parse(readFileSync(mark('swept'), 'utf8'));
+    assert.equal(swept.records, 1);
+    assert.equal(swept.files, 1);
+    assert.equal(swept.blobs, 0, `the sweep removed a payload under a live sender: ${J(swept)}`);
+    assert.deepEqual(swept.busy, [landed.artifact.filename]);
+  });
+  await t.test('the sender artifact reads back — payload and digest both', () => {
+    const after = openEngine({ root, policy: allowAll, recover: false });
+    const mine = after.listArtifacts(id).artifacts.filter((a) => a.id !== landed.artifact.id);
+    assert.equal(mine.length, 1, J(mine));
+    assert.equal(after.readArtifactContent(id, mine[0].id).toString(), 'the very same bytes\n');
+  });
+});
+
+// --- two publications of one process do not share a lock ----------------------------
+//
+// The hole a nesting licence opens once an `await` is in the stretch: the second holder of
+// THIS process would read "we already hold it", publish without the lock, and the first
+// would remove the directory from under it. The publication lock has no lawful nesting, so
+// holders of one path queue. Deterministic: the order is the assertion, not a duration.
+test('asynchronous holders of one lock path queue inside the process', async () => {
+  const lock = path.join(sandbox(), '.lock-two');
+  mkdirSync(path.dirname(lock), { recursive: true });
+  const words = {
+    onMissing: () => new Error('missing'),
+    onBusy: (h, ms) => new Error(`busy ${ms}`),
+  };
+  const order = [];
+  const hold = (who) => withDirLockAsync(lock, async () => {
+    order.push(`${who} in · lock ${existsSync(lock)}`);
+    await new Promise((r) => { setImmediate(r); });
+    order.push(`${who} out · lock ${existsSync(lock)}`);
+  }, words);
+  await Promise.all([hold('a'), hold('b')]);
+  assert.deepEqual(order, [
+    'a in · lock true', 'a out · lock true', 'b in · lock true', 'b out · lock true',
+  ]);
+  assert.equal(existsSync(lock), false, 'the last holder left the lock directory behind');
+});
+
+// A synchronous wait on an asynchronous holder of this process would block the very loop
+// that has to release it. That is a caller mistake, and it is answered rather than spun on.
+test('a synchronous take over a live asynchronous holder is refused, not waited out', async () => {
+  const lock = path.join(sandbox(), '.lock-mixed');
+  mkdirSync(path.dirname(lock), { recursive: true });
+  const words = { onMissing: () => new Error('missing'), onBusy: () => new Error('busy') };
+  let refusal = null;
+  await withDirLockAsync(lock, async () => {
+    await new Promise((r) => { setImmediate(r); });
+    try {
+      withDirLock(lock, () => 'taken', words);
+    } catch (e) {
+      refusal = e;
+    }
+  }, words);
+  assert.match(String(refusal?.message), /asynchronous holder in this process/);
+});
+
+// A foreign process holds the lock, and the asynchronous take waits for it. What must NOT
+// wait is this process's loop: `sleepSync` there would freeze every timer of the sender's
+// own session for the whole of a foreign hold, and a published API has to behave as async.
+test('an asynchronous take waits for a foreign holder without freezing its own loop', async () => {
+  const lock = path.join(sandbox(), '.lock-foreign');
+  mkdirSync(path.dirname(lock), { recursive: true });
+  mkdirSync(lock);
+  // A holder the lock reads as live and foreign: the pid is alive, so it is not dropped.
+  writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({ pid: process.pid, session: 'foreign', since: new Date().toISOString() })}\n`);
+  const words = { onMissing: () => new Error('missing'), onBusy: () => new Error('busy') };
+  const ticks = [];
+  const beat = setInterval(() => ticks.push(Date.now()), 10);
+  setTimeout(() => rmSync(lock, { recursive: true, force: true }), 150);
+  await withDirLockAsync(lock, async () => { ticks.push('inside'); }, { ...words, waitMs: 5000 });
+  clearInterval(beat);
+  // One tick is the whole claim: the loop was not frozen. A higher count would be a number
+  // about SCHEDULING — Node does not catch up missed periods, and one hiccup coalesces them.
+  const before = ticks.indexOf('inside');
+  assert.ok(before >= 1, `the loop of this process was frozen: ${before} timers ran while the take waited`);
+  assert.equal(existsSync(lock), false);
+});
+
+// --- two sends with an artifact in one process ---------------------------------------
+//
+// The same hole seen from the engine. The slow sender's payload arrives in pieces, the fast
+// one's is there at once: unlocked, the fast blob would be stashed first. Queued, the fast
+// send does not begin until the slow one has written its record, so the digests are marked
+// in the order the sends were STARTED and not in the order their payloads were ready.
+test('two artifact sends of one process publish one after the other, not side by side', async () => {
+  const root = sandbox();
+  const marked = [];
+  const engine = open(root, { faults: (kind, ctx) => { if (kind === 'blob') marked.push(ctx.sha256); } });
+  const id = taskWith(engine, 'race-two-sends-t20260916-190000');
+
+  // A stream that yields the loop several times before its bytes are all in: without the
+  // queue the neighbour below overtakes it, and the order of `marked` says so.
+  const slow = new Readable({ read() {} });
+  let ticks = 0;
+  const feed = () => {
+    if (ticks < 5) { ticks += 1; slow.push(`slow ${ticks}\n`); setImmediate(feed); return; }
+    slow.push(null);
+  };
+  setImmediate(feed);
+
+  const first = engine.send(id, {
+    from: 'w-api', to: ['owner'], type: 'artifact', body: 'медленный',
+    artifact: { stream: slow, filename: 'slow.txt' },
+  });
+  const second = engine.send(id, {
+    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'быстрый',
+    artifact: { stream: Readable.from(['fast bytes\n']), filename: 'fast.txt' },
+  });
+  const [slowSent, fastSent] = await Promise.all([first, second]);
+
+  assert.deepEqual(marked, [slowSent.artifact.sha256, fastSent.artifact.sha256],
+    'the second send stashed its payload while the first was still inside its stretch');
+  assert.equal(engine.readArtifactContent(id, slowSent.artifact.id).toString(), 'slow 1\nslow 2\nslow 3\nslow 4\nslow 5\n');
+  assert.equal(engine.readArtifactContent(id, fastSent.artifact.id).toString(), 'fast bytes\n');
 });
