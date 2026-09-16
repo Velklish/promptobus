@@ -31,7 +31,9 @@ import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
-import { GATE_RECORD_SCHEMA, GATE_RECORD_STEM, RESULT_BODY_MAX } from '../lib/handoff.js';
+import {
+  GATE_RECORD_SCHEMA, GATE_RECORD_STEM, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM, RESULT_BODY_MAX,
+} from '../lib/handoff.js';
 
 // realpath: the planner canonicalizes the root (macOS: /var → /private/var), and the
 // test expectations must be compared to canonical paths.
@@ -1575,6 +1577,34 @@ check('PB-204: the worker quotes its own send reply, including a numbered collis
   && /the bus may append a number/.test(handoff)
   && !/a file named anything else is never found/.test(handoff),
   handoff.slice(-700));
+// PB-213: the gate record says what ran; this one says why the run means anything. The
+// check is presence and shape — five named checks and no silent way past one — not length.
+check('PB-213: the worker preamble names the handover record and the schema that exists',
+  handoff.includes(HANDOVER_RECORD_SCHEMA)
+  && existsSync(path.join(here, '..', HANDOVER_RECORD_SCHEMA))
+  && handoff.includes(`\`${HANDOVER_RECORD_STEM}-<your worker slug>.json\``)
+  && /before the result/.test(handoff),
+  handoff.slice(-1200));
+// A shape the schema states in hex is asked for by the command that prints it: "the branch
+// sha" alone is what an author answers with an abbreviation the comparison can never match.
+check('PB-213: the preamble names the command the shas come from, and whose exit code the probe records',
+  /`git rev-parse HEAD` prints, at full length/.test(handoff)
+  && /the base sha you compared against, read the same way/.test(handoff)
+  && /with the mutation in place\*\* — not of the probe tool around it/.test(handoff),
+  handoff.slice(-1800));
+check('PB-213: the preamble names all five checks and the refusal marker of each',
+  /difference of verdict NAMES between the base commit and your branch/.test(handoff)
+  && /mutation probe/i.test(handoff) && /`file:line`/.test(handoff)
+  && /git status --porcelain` at both ends/.test(handoff)
+  && /call environmental, flaky or pre-existing/.test(handoff)
+  && /gate command you did NOT run/.test(handoff),
+  handoff.slice(-1800));
+check('PB-213: a check left out is not a check passed, and an impossible one is declared',
+  /A check you leave out is not a check you passed/.test(handoff)
+  && /`notRun`/.test(handoff)
+  && /honestly declared impossible passes/.test(handoff)
+  && /does not run these checks for you/.test(handoff),
+  handoff.slice(-900));
 
 const { Readable } = await import('node:stream');
 const { createMcpServer } = await import(path.join(here, '..', 'dist', 'index.js'));
@@ -1789,8 +1819,28 @@ store.sendMessage(HOME, HANDOFF_GUARD_TASK, {
 const guardPending = guardVerdict(HOME, HANDOFF_GUARD_TASK, 'worker:guard');
 check('PB-204.2: a gate-record artifact without a result blocks the turn',
   guardPending?.key?.startsWith('handoff:') === true
-  && /gate-record artifact was sent/.test(guardPending.reason),
+  && /record artifact was sent/.test(guardPending.reason),
   JSON.stringify(guardPending));
+// PB-213: the second record is the same state — an artifact sent, the result still owed —
+// and a verdict that knew only the gate record let this half of the hand-off end the turn.
+const HANDOVER_GUARD_TASK = 'handover-guard-t20260916-150500';
+store.createTask(HOME, { id: HANDOVER_GUARD_TASK, title: 'handover record without result' });
+store.upsertParticipant(HOME, HANDOVER_GUARD_TASK,
+  store.participantRecord('worker:guard', { session: 'guard-session' }));
+const handoverGuardPath = path.join(SB, 'handover-guard.json');
+writeFileSync(handoverGuardPath, '{}');
+store.sendMessage(HOME, HANDOVER_GUARD_TASK, {
+  from: 'worker:guard', to: 'orchestrator', type: 'artifact', body: 'handover', artifactPath: handoverGuardPath,
+});
+check('PB-213: a handover-record artifact without a result blocks the turn too',
+  guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard')?.key?.startsWith('handoff:') === true,
+  JSON.stringify(guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard')));
+store.sendMessage(HOME, HANDOVER_GUARD_TASK, {
+  from: 'worker:guard', to: 'orchestrator', type: 'result', body: 'Gate — handover-guard.json',
+});
+check('PB-213: and the result releases it, the same way the gate record\'s does',
+  guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard') === null,
+  JSON.stringify(guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard')));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:handover-record",
+  "title": "Handover record",
+  "description": "The pre-handover checks a worker made before reporting, in machine form, attached to a result as an artifact beside the gate record. The gate record says WHAT was run; this says why that run means anything. NOT an engine record: `validate` knows task, participant, message and artifact, and an artifact payload is opaque bytes to the engine. Every one of the five checks is required: a missing check is not a passed check, and the only way past one is its `notRun` branch with a reason.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tree", "base", "at", "by", "checks"],
+  "properties": {
+    "schemaVersion": {
+      "description": "The document's schema version. A newer one is not readable by an older reader and says so instead of being guessed at.",
+      "const": 1
+    },
+    "tree": {
+      "description": "The branch sha the checks describe: the HEAD commit sha, `git rev-parse HEAD`. Full length only — the reviewer compares it with the worktree HEAD it was handed, and an abbreviation is a record that can never match.",
+      "$ref": "#/$defs/sha"
+    },
+    "base": {
+      "description": "The base commit the branch was compared against, full length. Without it the verdict-name difference and the environmental-red claim name no second side.",
+      "$ref": "#/$defs/sha"
+    },
+    "at": {
+      "description": "Exactly what Date#toISOString prints: the date-time format alone allows offsets.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "by": {
+      "description": "The bus address that made the checks, in address spelling rather than participant id.",
+      "type": "string",
+      "pattern": "^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$"
+    },
+    "checks": {
+      "description": "The five checks. Each is either performed — and then the fields that prove it are required and bounded to their passing values — or declared `notRun` with a reason. There is no third branch: a check that was performed and failed is not handed over, it is fixed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdictNames", "mutationProbe", "treeState", "environmentalRed", "gatesNotRun"],
+      "properties": {
+        "verdictNames": {
+          "description": "The difference of verdict-NAME sets between base and branch. Counts are not this check: a suite that goes 244 to 242 to 246 reads as growth while a guarantee is gone, and a removed test never turns red.",
+          "oneOf": [{ "$ref": "#/$defs/verdictNames" }, { "$ref": "#/$defs/notRun" }]
+        },
+        "mutationProbe": {
+          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution.",
+          "oneOf": [{ "$ref": "#/$defs/mutationProbe" }, { "$ref": "#/$defs/notRun" }]
+        },
+        "treeState": {
+          "description": "`git status --porcelain` at both ends of the probe. A probe that started dirty proves nothing about the commit, and one that ended dirty left the mutation in the tree.",
+          "oneOf": [{ "$ref": "#/$defs/treeState" }, { "$ref": "#/$defs/notRun" }]
+        },
+        "environmentalRed": {
+          "description": "Every red this report calls environmental, flaky or pre-existing, with the evidence that makes the claim checkable. Red here and green on base is the author's own change.",
+          "oneOf": [{ "$ref": "#/$defs/environmentalRed" }, { "$ref": "#/$defs/notRun" }]
+        },
+        "gatesNotRun": {
+          "description": "Every gate command that was NOT run, each with its reason. The gate record carries one entry per command that ran; this is the other half, and it is what keeps a silent gap from reading as a green one.",
+          "oneOf": [{ "$ref": "#/$defs/gatesNotRun" }, { "$ref": "#/$defs/notRun" }]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "verdictName": {
+      "description": "A verdict's name as the runner prints it, not a description of it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "reason": {
+      "description": "Why, in the author's own words. Prose, but prose that names a cause rather than repeating the field.",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 512
+    },
+    "notRun": {
+      "description": "A check honestly declared impossible here, with the reason. It passes: a form that left no way to say this would be a form that rewards invented numbers, which is the defect it exists against.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notRun"],
+      "properties": {
+        "notRun": { "$ref": "#/$defs/reason" }
+      }
+    },
+    "verdictNames": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["removed"],
+      "properties": {
+        "removed": {
+          "description": "Verdict names present on base and absent on the branch, each with why it went. An empty array is the explicit `none`; a name with no reason is refused, which is the whole of this check.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "reason"],
+            "properties": {
+              "name": { "$ref": "#/$defs/verdictName" },
+              "reason": { "$ref": "#/$defs/reason" }
+            }
+          }
+        }
+      }
+    },
+    "mutationProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened"],
+      "properties": {
+        "tree": {
+          "description": "The sha the probe ran on. The probe comes after the commit: on an uncommitted tree the restore would take the fix with the mutation.",
+          "$ref": "#/$defs/sha"
+        },
+        "mutated": {
+          "description": "Where the mutation was made, as `file:line`. Not a description of it.",
+          "type": "string",
+          "pattern": "^[^\\n:]+:[0-9]+$",
+          "maxLength": 512
+        },
+        "mutatedRunExit": {
+          "description": "The exit code of the check run WITH the mutation in place — not the exit code of the probe tool around it, which in this repository leaves 0 on its single passing outcome. At least 1: a run that reddened a verdict cannot have exited 0, and a run that exited 0 saw nothing, which is a hole in the checks rather than a handover.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "applied": {
+          "description": "Whether the mutation actually reached the code. Only `true` is a probe: a run whose mutation never applied measured the unmutated tree, and its numbers are about nothing. A probe that failed to apply is declared through `notRun` instead.",
+          "const": true
+        },
+        "verdicts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseTotal", "passed", "unaccounted"],
+          "properties": {
+            "baseTotal": {
+              "description": "How many verdicts the same run reports without the mutation. The denominator every other number here is read against.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "passed": {
+              "description": "How many verdicts passed under the mutation.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "unaccounted": {
+              "description": "`baseTotal − passed − reddened.length`: verdicts the mutated run never reached. Only `0` is a probe. A run that stopped early prints numbers like `0/1` against a base of 26 that read as catastrophe and mean interruption, so the author does this subtraction and states the remainder rather than leaving the reader to infer it. A non-zero remainder is not a failing probe to report — it is an interrupted one, declared through `notRun` or run again.",
+              "const": 0
+            }
+          }
+        },
+        "reddened": {
+          "description": "The names of the verdicts that turned red under the mutation. At least one: a probe that reddens nothing found a hole in the tests, and that hole is the finding — not a handover.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/verdictName" }
+        }
+      }
+    },
+    "treeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beforeProbe", "afterRestore"],
+      "properties": {
+        "beforeProbe": {
+          "description": "What `git status --porcelain` printed before the probe. Empty, and nothing else: a probe started on a dirty tree measured something other than the commit.",
+          "const": ""
+        },
+        "afterRestore": {
+          "description": "What `git status --porcelain` printed after the restore. Empty, and nothing else: anything left here is the mutation still in the tree the reviewer reads.",
+          "const": ""
+        }
+      }
+    },
+    "environmentalRed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claims"],
+      "properties": {
+        "claims": {
+          "description": "One entry per red called environmental. An empty array is the explicit `none`.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "assertion", "onBase", "failures"],
+            "properties": {
+              "name": { "$ref": "#/$defs/verdictName" },
+              "assertion": {
+                "description": "The assertion text in full, as the runner printed it. A summary of it is not the evidence.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "onBase": {
+                "description": "The same verdict run on the base commit. Without it the claim is a word.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["command", "exit", "red"],
+                "properties": {
+                  "command": {
+                    "description": "The command as executed on the base commit, including flags.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "exit": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  },
+                  "red": {
+                    "description": "Whether the verdict is red on base too. Only `true` is a claim: red on the branch and green on base is the author's own change, and it is fixed rather than declared.",
+                    "const": true
+                  }
+                }
+              },
+              "failures": {
+                "description": "The symmetric difference of the failure sets, base against branch. `branchOnly` is what fails only on the branch — those are the author's own, whatever the run is called.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["branchOnly", "baseOnly"],
+                "properties": {
+                  "branchOnly": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "items": { "$ref": "#/$defs/verdictName" }
+                  },
+                  "baseOnly": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "items": { "$ref": "#/$defs/verdictName" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "gatesNotRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gates"],
+      "properties": {
+        "gates": {
+          "description": "One entry per gate command that was not run. An empty array says every gate ran, and the gate record holds them.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "because"],
+            "properties": {
+              "command": {
+                "description": "The gate command that was not run, as it would have been executed.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "because": { "$ref": "#/$defs/reason" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

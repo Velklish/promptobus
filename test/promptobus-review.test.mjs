@@ -18,7 +18,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
-import { GATE_RECORD_SCHEMA, RESULT_BODY_MAX } from '../lib/handoff.js';
+import { GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX } from '../lib/handoff.js';
 
 function rulesBlock(text, role, expectedFiles) {
   const lines = String(text).split('\n');
@@ -348,6 +348,23 @@ check('PB-201: a matching sha is evidence about the commit, not about whatever e
   /evidence about the COMMIT at that sha, and about nothing else/.test(plan.prompt)
   && /uncommitted changes and untracked files of the subject are outside it/.test(plan.prompt),
   plan.prompt.split('\n').find((l) => /COMMIT at that sha/.test(l)) ?? plan.prompt);
+// PB-213: the second record. The reviewer runs nothing, so it does not repeat the checks —
+// it reads which of the five the author claims, and says which are absent or declared `notRun`.
+check('PB-213: the reviewer is told to read the handover record and name the checks that are not there',
+  plan.prompt.includes(HANDOVER_RECORD_SCHEMA)
+  && /difference of verdict NAMES against the base commit/.test(plan.prompt)
+  && /mutation probe with the line it broke/.test(plan.prompt)
+  && /`git status --porcelain` at both ends of that probe/.test(plan.prompt)
+  && /every red called environmental with its run on the base commit/.test(plan.prompt)
+  && /every gate that was not run with its reason/.test(plan.prompt)
+  && /You produce no such record of your own/.test(plan.prompt)
+  && /you do not repeat these checks by hand/.test(plan.prompt)
+  && /neither reads as a pass/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => l.includes(HANDOVER_RECORD_SCHEMA)) ?? plan.prompt);
+check('PB-213: no handover record attached is said out loud, not left to be inferred',
+  /No handover record is attached to this task/.test(plan.prompt)
+  && /that is not a refusal and not a green/.test(plan.prompt),
+  plan.prompt.split('\n').find((l) => /No handover record/.test(l)) ?? plan.prompt);
 check('PB-201: with no record attached the reviewer is told the claim has nothing behind it',
   plan.gateRecords.length === 0
   && /No gate record is attached to this task/.test(plan.prompt)
@@ -2149,6 +2166,7 @@ writeFileSync(path.join(gateDir, 'gates-pb-prompts.json'), '{"schemaVersion":1,"
 writeFileSync(path.join(gateDir, 'gates-pb-guard.json'), '{"schemaVersion":1,"records":[]}\n');
 writeFileSync(path.join(gateDir, 'gates-pb-prompts-2.json'), '{"schemaVersion":1,"records":[]}\n');
 writeFileSync(path.join(gateDir, 'brief-pb-prompts.md'), 'not a gate record\n');
+writeFileSync(path.join(gateDir, 'handover-pb-prompts.json'), '{"schemaVersion":1}\n');
 claudeStub('process.exit(1);');
 const gatePlan = planReview(WS, { target: REPO, task: gateTask.id });
 check('PB-201: every attached record is resolved to an absolute path, and nothing else in the folder is',
@@ -2168,6 +2186,21 @@ check('PB-201: with several records the reviewer is told the sha is what selects
   /Use the one whose `tree` equals the worktree HEAD named above/.test(gatePlan.prompt)
   && /None matching that sha means no record covers this tree/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /Use the one whose/.test(l)) ?? gatePlan.prompt);
+// PB-213: the handover record is resolved by its own stem, and by that stem alone — the
+// gate record next to it answers a different question and is not a substitute for it.
+check('PB-213: the handover record is resolved beside the gate records and does not mix with them',
+  gatePlan.handoverRecords.length === 1
+  && path.isAbsolute(gatePlan.handoverRecords[0])
+  && path.basename(gatePlan.handoverRecords[0]) === 'handover-pb-prompts.json'
+  && !gatePlan.gateRecords.some((f) => /handover/.test(f))
+  && gatePlan.prompt.includes(gatePlan.handoverRecords[0])
+  && gatePlan.reReview.includes(gatePlan.handoverRecords[0]),
+  JSON.stringify(gatePlan.handoverRecords.map((f) => path.basename(f))));
+check('PB-213: with a record attached the reviewer is told the five names it must find in it',
+  /Handover records attached to this task/.test(gatePlan.prompt)
+  && HANDOVER_CHECKS.every((name) => gatePlan.prompt.includes(name))
+  && /a check that says `notRun` was not performed/.test(gatePlan.prompt),
+  gatePlan.prompt.split('\n').find((l) => /Handover records attached/.test(l)) ?? gatePlan.prompt);
 
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.
