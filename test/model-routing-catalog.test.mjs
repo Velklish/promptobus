@@ -1390,6 +1390,68 @@ test('the canonical-priority convention is enforced as a warning, not an error',
   assert.ok(order.warnings.some((w) => w.code === 'priority-not-canonical'));
 });
 
+test('a merged-catalog warning names the layer whose value raised it', () => {
+  // The question a reader puts to these three is "is this mine?", and without
+  // the field the catalog's warning and the reader's own are the same record.
+  const shipped = validateLayers({ canonical: canonicalLayer() });
+  const shippedLadder = shipped.warnings.filter((w) => w.code === 'ladder-indistinguishable');
+  assert.ok(shippedLadder.length, shipped.warnings.map((w) => w.code).join(' | '));
+  assert.ok(shippedLadder.every((w) => w.layer === 'catalog'),
+    shippedLadder.map((w) => w.layer).join(' | '));
+
+  // The same code from a personal overlay that collapses a rung. The case the
+  // consumer measured, and the one whose verdict flips with this field.
+  const rung = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('user', {
+      schemaVersion: 2,
+      ratings: { 'claude-fable-high': { quality: 10, speed: 2, quotaCost: 10 } },
+    })],
+  });
+  const mine = rung.warnings.find((w) => w.code === 'ladder-indistinguishable'
+    && w.tupleIds.includes('claude-fable-high'));
+  assert.ok(mine, rung.warnings.map((w) => `${w.code}:${w.layer}`).join(' | '));
+  assert.equal(mine.layer, 'user');
+
+  // A duplicate the overlay made, against one the catalog carries: both codes
+  // are attributable, and the two answers differ.
+  const collided = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('user', { schemaVersion: 2, priority: { 'claude-fable-high': 100 } })],
+  });
+  const duplicate = collided.warnings.find((w) => w.code === 'priority-duplicate');
+  assert.ok(duplicate, collided.warnings.map((w) => w.code).join(' | '));
+  assert.equal(duplicate.layer, 'user');
+  const catalogDuplicate = clone(CATALOG);
+  catalogDuplicate.tuples[1].priority = catalogDuplicate.tuples[0].priority;
+  assert.equal(validateLayers({ canonical: canonicalLayer(catalogDuplicate) })
+    .warnings.find((w) => w.code === 'priority-duplicate').layer, 'catalog');
+
+  // `priority-not-canonical` is raised from the priorities and the quality
+  // ratings together, so a layer that patched either of them is the answer.
+  const inverted = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [overlayLayer('user', {
+      schemaVersion: 2,
+      priority: { 'claude-fable-51-xhigh': 175, 'claude-fable-high': 100 },
+    })],
+  });
+  const canonicalWarning = inverted.warnings.find((w) => w.code === 'priority-not-canonical');
+  assert.ok(canonicalWarning, inverted.warnings.map((w) => w.code).join(' | '));
+  assert.equal(canonicalWarning.layer, 'user');
+
+  // Layer order IS precedence order, and the field follows it: the higher layer
+  // patched the value the lower one had already moved.
+  const stacked = validateLayers({
+    canonical: canonicalLayer(),
+    overlays: [
+      overlayLayer('user', { schemaVersion: 2, priority: { 'claude-fable-high': 105 } }),
+      overlayLayer('workspace', { schemaVersion: 2, priority: { 'claude-fable-high': 100 } }),
+    ],
+  });
+  assert.equal(stacked.warnings.find((w) => w.code === 'priority-duplicate').layer, 'workspace');
+});
+
 test('validate reports a broken file instead of throwing — that is when it is run', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-'));
   try {

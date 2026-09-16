@@ -1,0 +1,27 @@
+# PB-197 · Result
+
+**Closed 2026-09-16, completed — provenance is defined and always present rather than absent-or-maybe.** All three merged-catalog warnings — `priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` — now carry `layer`, and it is the **highest-precedence layer among the values the warning was raised from**, `catalog` when no overlay patched any of them. Layers apply in precedence order, so the last one to touch a value in the finding is the one that made it appear. The values each code reads are fixed and stated in the reference rather than left to the reader: the two canonical priorities for `priority-duplicate`; the priorities that set the order together with the `quality` ratings that set the verdict for `priority-not-canonical`; every rating of both rungs for `ladder-indistinguishable`, `roles` being a key no overlay may patch. The field is a single string rather than a list, by the precedent of `quality-floor-alias`, which already carried one: one field answers the consumer's only question — compare it with the id of my own layer.
+
+**The record the field is read from already existed on one half.** `mergeRouting` recorded `sources.ratings.<tupleId>.<rating>` and nothing for the priorities; it now records `sources.priority.<tupleId>` beside it, which is the same store the existing finding `layer` is read from. No new bookkeeping was invented for this — the gap was that half of it was never written.
+
+**`models validate` prints the field the way it prints a finding's**, as `<code> · <layer>: <message>`, and leaves the plain `<code>: <message>` where a warning carries no layer: the question "is this mine?" is asked at the command far more often than at the library call, and the separator is the one the errors line below already uses. `quality-floor-alias` is unchanged — it always carried a layer.
+
+**Verification.** The contract result is locked in `test/model-routing-catalog.test.mjs` (67 checks before, 68 after) over both worlds the card names — a personal overlay that collapses two rungs, and the shipped catalog with no overlay at all — and the printed form in `test/model-routing-command.test.mjs` (37 before, 38 after), which covers `quality-floor-alias · user`, `ladder-indistinguishable · catalog` and the absence of a separator on `promotion-expired` in one run. The consumer-side case the card offered as evidence — "an overlay raises a warning with no layer" — flips its verdict, which is what the card asked for.
+
+Five mutation probes, each taken after its commit:
+
+- `layer: layers.ratings(first.id, tuple.id)` removed from `ladder-indistinguishable` → red.
+- the write `sources.priority[tuple.id] = layerId` removed from `lib/model-routing/catalog.js` → red.
+- the rank comparison `(rank.get(id) ?? 0) > (rank.get(best) ?? 0)` replaced by `false` → red: the "highest-precedence" rule, not merely "some layer", is what the checks hold.
+- the printing line reverted to `` `${w.code}: ${w.message}` `` → the output check red, `pass 0, fail 1` under its name pattern.
+- `layer: 'catalog'` added to `promotion-expired` in `lib/model-routing/catalog.js` → red on the no-separator check.
+
+The last probe is the evidence for a review finding rather than for the code. The no-separator check was first written as `assert.equal(/promotion-expired · /.test(said.err), false)` — an assertion of absence, green both when the warning prints in the plain form and when the warning is not raised at all. `promotion-expired` exists today only because two catalog rows carry a `validUntil` in the past; the day that date is refreshed, half of that check would have fallen silent without going red. It is now `assert.match(said.err, /(?:^|\n)[^\n]*promotion-expired: /)` — an assertion of presence in the plain form, red in both of those worlds.
+
+**Review.** Two review rounds ran before acceptance — five findings across the track in the first, two in the second, all closed. Two of them landed on this card, both minor: the command did not print the new field, and the no-separator assertion above passed vacuously. The repository's two-line comment rule took two comment runs in `test/model-routing-catalog.test.mjs` down to two lines each.
+
+**Gates of this acceptance, on the merged tree of this commit.** `npx github:Velklish/backslop#v0.8.0 gates --keep-going` exit 0 — gates 4, green 4: `npm test` code 0 over 69 of 69 test files (2197 of 2197 style checks, 879 `node:test` — 870 pass, 0 fail, 9 todo); `backslop lint` code 0, no errors, one warning; `npm run audit` code 0, clean; `npm run pins` code 0. The worker's own run on its head was gates 4, green 4 by the same four commands. A first run of the same command on the same tree went red on one file of the sixty-nine — `test/promptobus-cursor-wake.test.mjs`, 12 of 18, every red assertion inside the live-harness steps — and it is named here because it was measured rather than waved away: the file was then run on its own twice on this tree, exit 0 and 18 of 18 each time, and once on the base commit, exit 0 and 18 of 18. It is reproduced by neither, its mechanism is not established, and it touches nothing this card changes; it is filed separately.
+
+**What is left open.** Nothing on this card. The one deliberate non-move is named rather than silent: no probe was taken on the two documentation paragraphs, because they change text and not behaviour.
+
+**Documentation in the same pass.** `docs/reference/03-cli.md` § Exclusion, adjustment and warning codes, `docs/guides/model-routing.md`, `CHANGELOG.md`.

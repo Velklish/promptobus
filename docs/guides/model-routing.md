@@ -206,6 +206,8 @@ Every finding carries `code`, the `layer` id it belongs to, `at` — the field i
 
 Warnings carry `code` and `message` and then whatever facts the caller may want without parsing prose. Those first two fields are the whole of a warning in a decision document — `warnings` in `decision.schema.json` is closed on them — so a decision copies them and translates nothing. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision. `promotion-expired` is also validate-only: it names a quota-cost promotion whose last observed date passed, and never reaches a decision.
 
+`priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` carry a `layer` as well, because they are raised from tuple values and after the merge those values may come from anywhere in your stack. It is the **highest-precedence layer among the values that raised the warning**, and `catalog` when your overlays touched none of them — so the question you actually have, *did my own file do this?*, is answered by comparing that field with your layer's id. It is always there: an overlay that collapses two rungs of a ladder gets `ladder-indistinguishable` with your layer's id on it, and the same code from the shipped catalog says `catalog`. `models validate` prints it on the line, as `<code> · <layer>: <message>`, so you do not have to call the library to ask.
+
 The same checks are a library call in `lib/model-routing/validate.js`, so a consumer can check a policy layer it ships without starting a subprocess:
 
 | Call | When |

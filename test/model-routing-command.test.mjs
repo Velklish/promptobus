@@ -541,6 +541,28 @@ test('`models validate` checks the shipped catalog and the layers the host names
   assert.equal(/user .*\[writable\]/.test(said.out), false, 'only one layer may be marked');
 });
 
+test('`models validate` prints the layer of a warning that carries one', async () => {
+  // The question the field was added for is "is this mine?", and a person asks
+  // it here rather than in a library call — so the line has to answer it.
+  dropOverlays();
+  writeOverlay(USER_OVERLAY(), {
+    schemaVersion: 2, reviewerQualityFloor: 2, qualityFloor: { reviewer: 5 },
+  });
+  try {
+    const said = await captureSplit(() => models(WS, { subcommand: 'validate' }));
+    assert.equal(said.value, 0, 'an advisory warning does not fail the command');
+    assert.match(said.err, /quality-floor-alias · user: /);
+    // Raised by the shipped catalog and by nothing of this person's: the same
+    // line has to say so instead of leaving them to guess.
+    assert.match(said.err, /ladder-indistinguishable · catalog: /);
+    // A warning with no layer keeps the plain shape. Positive form on purpose:
+    // an absence passes just as well when the warning itself stopped being raised.
+    assert.match(said.err, /(?:^|\n)[^\n]*promotion-expired: /);
+  } finally {
+    dropOverlays();
+  }
+});
+
 test('`models --clear-exhausted` drops a reset-less exhaustion and says so, and leaves a dated one alone', async () => {
   seedCache(HEALTHY());
   markExhausted(HOST, 'claude', { resetAt: null });
