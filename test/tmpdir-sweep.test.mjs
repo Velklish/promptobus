@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import process from 'node:process';
@@ -198,7 +199,7 @@ check(': a second pass has nothing to sweep — the remainder is not touched',
 // The marker's path is resolved before it is compared: a realpath spelling
 // difference is harmless, but a dead pid or a different existing directory
 // is not ownership evidence. Both negative cases must stay removable.
-const OWNER_FIXTURE = mkdtempSync('promptobus-sweep-owner-');
+const OWNER_FIXTURE = mkdtempSync(path.join(os.tmpdir(), 'promptobus-sweep-owner-'));
 const DEAD_OWNER = plant(OWNER_FIXTURE, 'dead', 3 * DAY);
 writeFileSync(path.join(DEAD_OWNER, RUN_OWNER_FILE), `${JSON.stringify({ pid: 2147483647, path: DEAD_OWNER })}\n`);
 const MISMATCH_OWNER = plant(OWNER_FIXTURE, 'mismatch', 3 * DAY);
@@ -428,6 +429,14 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
 // under `/tmp` past `os.tmpdir()` and is not the subject of THIS
 // sweep: its prefixes are watched by the section below.
 const declared = [];
+const relative = [];
+let literalArgs = 0;
+// The walk also refuses a `mkdtemp` given a BARE prefix, in three parts — the reason each
+// is its own part: contributing.md § Suite isolation. One, the extraction:
+const BARE_MKDTEMP = /mkdtemp(?:Sync)?\(\s*(['"`])([^'"`]*)\1/g;
+const literalMkdtemps = (text) => [...text.matchAll(BARE_MKDTEMP)].map((m) => m[2]);
+// Two, the verdict, beside it so the same samples reach both:
+const isBare = (pre) => !pre.startsWith('/');
 const SCAN = [here, scriptsDir];
 for (const dir of SCAN) {
   for (const file of readdirSync(dir).filter((n) => n.endsWith('.mjs')
@@ -444,6 +453,10 @@ for (const dir of SCAN) {
     for (const m of src.matchAll(/mkdtempSync\(\s*(?:path\.)?join\(\s*(?:os\.)?tmpdir\(\)\s*,\s*(['"`])([^'"`]+)\1/g)) {
       declared.push([file, m[2]]);
     }
+    for (const pre of literalMkdtemps(src)) {
+      literalArgs += 1;
+      if (isBare(pre)) relative.push([file, pre]);
+    }
   }
 }
 const uncovered = declared.filter(([, pre]) => !SUITE_PREFIXES.some((known) => pre.startsWith(known))
@@ -453,6 +466,24 @@ check(': the sweep prefix list covers every suite sandbox',
   declared.length > 0 && uncovered.length === 0,
   `literals found: ${declared.length} · uncovered: `
   + `${uncovered.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
+
+// Three, the samples: assembled from fragments, because this file is inside the walk.
+const call = (arg) => `mkdtemp${'Sync'}(${arg})`;
+const bare = literalMkdtemps(call("'pb-x-'"));
+const absolute = literalMkdtemps(call("'/tmp/pb-x-'"));
+const joined = literalMkdtemps(call('path.join(os.tmpdir(), "pb-x-")'));
+check(': the bare-prefix detector fires on a relative literal and on neither of the sound forms',
+  bare.join(',') === 'pb-x-' && isBare(bare[0])
+  && absolute.join(',') === '/tmp/pb-x-' && !isBare(absolute[0])
+  && joined.length === 0,
+  `relative: ${JSON.stringify(bare)} · absolute: ${JSON.stringify(absolute)}`
+  + ` · joined: ${JSON.stringify(joined)}`);
+
+// Counted by THIS detector, and with no floor of its own: zero is the lawful answer today.
+check(': no suite or live file builds a temp directory from a bare prefix',
+  relative.length === 0,
+  `mkdtemp calls with a literal first argument: ${literalArgs} · bare prefixes: `
+  + `${relative.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
 
 const dead = SUITE_PREFIXES.filter((known) => !declared.some(([, pre]) => pre.startsWith(known)));
 check(': the sweep prefix list has no dead entries',
