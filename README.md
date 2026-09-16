@@ -132,6 +132,7 @@ promptobus done
 | `promptobus status` | Active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
+| `promptobus sweep <address>` | Clean up after ONE accepted piece and leave the task active: its worktree and branch when the merge is provable, the blobs and files it sent, its files in `workers/` |
 | `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
 | `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |

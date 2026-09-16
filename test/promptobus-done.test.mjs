@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { check } from './check.mjs';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, snapshotOfList, writeHostConfig } from './sandbox.mjs';
 import { capture, captureSplit } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-done-');
@@ -372,3 +372,39 @@ store.createTask(path.join(QUIET, '.promptobus'), { id: QUIET_TASK, title: 'не
 const quietOut = await capture(async () => done(QUIET, { task: QUIET_TASK, snapshot: noSessions }));
 check(': nothing to remove — done says nothing about cleanup',
   !/journals removed|nothing to remove/.test(quietOut) && /closed/.test(quietOut), quietOut.trim());
+
+// --- PB-208: the participant files of a closed task, settings included -------------
+//
+// The secrets sweep took the contact point, the mcp-config and the `<stem>.*` directories,
+// and the settings file was in none of those lists: a task closed on 2026-09-10 still
+// carried three reviewer settings files. The precondition is asserted before the result —
+// a check on a file that never existed is green about nothing.
+const SECRETS = path.join(SB, 'secrets-ws');
+const secretsHome = path.join(SECRETS, '.promptobus');
+mkdirSync(secretsHome, { recursive: true });
+writeFileSync(path.join(SECRETS, 'AGENTS.md'), 'песочница\n');
+writeHostConfig(SECRETS);
+const SECRETS_TASK = 'secrets-t20260913-070000';
+store.createTask(secretsHome, { id: SECRETS_TASK, title: 'файлы участника уходят с задачей', owner: null });
+store.upsertParticipant(secretsHome, SECRETS_TASK, store.participantRecord('reviewer:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-no-such',
+}));
+mkdirSync(store.workersDir(secretsHome, SECRETS_TASK), { recursive: true });
+const secretFiles = {
+  mcp: store.participantMcpPath(secretsHome, SECRETS_TASK, 'reviewer:api'),
+  settings: store.participantSettingsPath(secretsHome, SECRETS_TASK, 'reviewer:api'),
+  wake: store.wakeFile(secretsHome, SECRETS_TASK, 'reviewer:api'),
+};
+writeFileSync(secretFiles.mcp, '{"mcpServers":{}}\n');
+writeFileSync(secretFiles.settings, '{"hooks":{}}\n');
+store.writeWake(secretsHome, SECRETS_TASK, 'reviewer:api', { socket: '/tmp/reviewer-api.sock', token: 'secret' });
+check(': the participant carries all three files BEFORE the close — the precondition is stated',
+  Object.values(secretFiles).every(existsSync),
+  Object.entries(secretFiles).filter(([, at]) => !existsSync(at)).map(([k]) => k).join(', '));
+// A snapshot built from an EMPTY harness list: the session is gone, which is what the
+// secrets sweep is gated on. `noSessions` would answer "unknown", and unknown keeps them.
+const deadSessions = (participants) => snapshotOfList(participants, []);
+await capture(async () => done(SECRETS, { task: SECRETS_TASK, snapshot: deadSessions }));
+check(': the settings file leaves with the mcp-config and the contact point, not after them',
+  !Object.values(secretFiles).some(existsSync),
+  Object.entries(secretFiles).filter(([, at]) => existsSync(at)).map(([k]) => k).join(', '));

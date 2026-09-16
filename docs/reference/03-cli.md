@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -802,7 +802,7 @@ The terms this section introduces — participant telemetry, telemetry record, w
 
 **Growth and clearing.** One line per participant, a few hundred bytes each: a run of three participants a day is on the order of a megabyte a decade. `promptobus models` prints the count and the size so the number is visible without opening the file. There is no rotation and no expiry in this version — remove the file with `rm` and the tool starts a new one at the next `done`.
 
-## Status, done, dismiss, history, prune
+## Status, done, sweep, dismiss, history, prune
 
 `status` lists active tasks, participants, unread counts, review-round/question/result counts, and warden health. A participant line includes `rounds N · questions N · results N` beside `unread N` whenever at least one of those counts is non-zero; the counts come from canonical message records, so they remain visible before any mailbox is fetched. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. That record also keeps `windows`: the applicable windows of the chosen tuple with the `usedPercent` they had at the lift, which is the starting value a later reader needs to say what the run spent. It is the resolver's own applicable set, and it is empty when the harness reported no window. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
 
@@ -827,6 +827,18 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 `dismiss <address>` drops a finished participant from watch.
 
 `stop <address>` closes ONE participant's session and leaves the task open. The task mailbox owner stops it, on the same gate as `done` and `dismiss`. It refuses an address that is not a participant of this task, the orchestrator — which has no session this mechanism started, being the one that started the others — and a participant lifted `attached`, whose session is a person's own window the mechanism never owned. A participant with no live session is not an error: there is nothing to stop and the task is still open. **The session record goes with the process**, because the stop runs through the driver's own `stop`, which retires the record — `dropSession` for Codex and Cursor, the registry entry leaving for Claude. That is the whole reason the command exists: a hand `kill` of the holder pid frees the memory and leaves the record reading `state: alive`, which only `done` on that task would ever clear, and anything reading the registry for liveness then reads a lie. A stop the driver could not confirm is **not** reported as success: the record may still read alive, and the line says so and names the harness's registry to look in.
+
+`sweep <address>` cleans up after ONE accepted piece and leaves the task active. It is the verb [ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) chose over a flag on `done`, for the reason [ADR-012](../adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) gave: `done` promises the whole task, and a subset flag makes every one of its promises conditional on a flag the reader has to notice.
+
+**Its gate is not the owner gate of the other three.** Acceptance runs in the approver's session, not the orchestrator's ([ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)), so the command admits the task mailbox owner **or** a participant of this task with role `approver` whose recorded session is the calling one — proven the same way direct worker↔approver traffic is proven, by the session on the participant record. Nobody else. It refuses the orchestrator, which owns the task rather than a piece of it, and an address that is not a participant, naming who is. **A session that is not dead refuses too, before anything is touched**: `git worktree remove` does not look at processes, and the directory would leave from under a running `cwd`. The refusal names `promptobus stop <address>` as the step before it. "Unknown" refuses on the same line as "alive": a record with no session reference cannot be told from a registry that did not answer, and the cost of the two mistakes is not the same.
+
+**What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same two content measurements `done` uses and no third one. The metadata records of the artifacts it **sent**, the `files/` entry of each, and the blob of each once no surviving record names it — a blob is deduplicated inside the task, which is why it leaves last and only then. Its files in `workers/` — the mcp-config, the settings file and the temporary stands — and its contact point under `wake/`.
+
+**What it never removes, and this is a check rather than a comment.** The journal, the canonical messages, the mailboxes, the warden log, `health.json`, `stalls.json` and the `waits/` sidecars. Those are exactly what `recordTelemetry` reads at `done` to write the rows a strategy is built from ([Participant telemetry](#participant-telemetry)), so a sweep that took one of them would blank that piece's telemetry row silently. `keptPaths` names them and `keptBy` refuses a removal aimed inside any of them; the suite runs the guard on both answers and then closes the swept task and reads the row back.
+
+**A piece whose merge is not provable keeps its tree — and its blobs and files with it.** One proof gates all three, because a tree that is not in the base and the artifacts that describe it may each be the only copy of that work. The card asks only for the tree; extending the same gate to the artifacts is safe under either reading of it. The secrets in `workers/` still go: they are gated on the session being dead, not on the merge, exactly as in `done`.
+
+**The `brief-<slug>.md` and `review-<slug>.diff` of the piece stay.** They are evidence, not product: the brief says what the participant was asked to do and the diff says what the reviewer read, and together they are why the piece was accepted. A sweep that took them would leave the acceptance without its grounds. "Files of the piece" therefore means the blobs the participant sent and their `files/` entries, and it is said here in words rather than left to be inferred from what the code happens to touch.
 
 **What each of the four commands does to a PROCESS, in one place, because the boundary used to be learned by hitting it.**
 
@@ -1046,6 +1058,149 @@ you cannot throw from it.
 live `claude`. `snapshot` is a second seam, a function over participants:
 `done` supplies it so the whole command is hermetic in one argument; without
 it the snapshot is built with the same `registry`.
+
+### `sweep` — clean up after one accepted piece
+
+Source: `lib/sweep.js`, `sweep`.
+
+Clean up after one accepted piece; the task stays active. The order is fixed and every step
+before the lock is a refusal point, in this order: resolve the task, refuse a closed one,
+prove the right, the address, the liveness of the session. Only then is the journal lock
+taken, and the destructive stretch runs inside it.
+
+The list of what is going is named BEFORE the first removal, the same move `done` and
+`stop` make with theirs: the command is irreversible, and a person reading the output
+should see what is leaving rather than what left.
+
+**A closed task is refused, and an explicit `--task` is not a way in.** The command promises
+the task stays active and prints that line at the end; on a closed task the line would be a
+lie, and what is left of one goes with `done` and `prune` instead.
+
+The exit code is 0 for every lawful outcome, a kept tree included — "not provably merged"
+is a verdict, not a failure, and the line carrying it is a warning. It is 1 when git refused
+a removal the disposition had already approved, and 1 for every refusal.
+
+### `keptPaths` — what the piece sweep must never take
+
+Source: `lib/sweep.js`, `keptPaths`.
+
+The run's telemetry and its mailboxes, as absolute paths: `task.json`, `messages/`,
+`waits/`, `inbox/`, `history/`, `health.json`, `supervisor.log` and `stalls.json`.
+
+It is derived rather than chosen. `recordTelemetry` reads exactly these to write a run's
+rows — the journal for the participant records and their windows, the canonical messages
+for idle time, the warden log and `health.json` for delivery latency, and the `waits/`
+sidecar for throughput. A path dropped from this list is a path the sweep becomes free to
+take, and the cost of taking one is a telemetry row that silently reads zero.
+
+`keptBy` is the check: it answers which kept path a removal would land inside, and the
+remover throws on a non-null answer instead of running.
+
+### `requireSweeper` — who may sweep a piece
+
+Source: `lib/sweep.js`, `requireSweeper`.
+
+The task mailbox owner, or a participant of this task with role `approver` whose recorded
+session is the calling one. Nobody else, and the right is a **positive proof**: the caller
+must be shown to be one of the two, and everything else refuses.
+
+**This is deliberately not the gate of `done`, `stop` and `dismiss`.** Those read `ownership`,
+which answers `gated: false` when the task records no owner or the call carries no session
+identity — fail-open, because their subject is the owner's own run. The piece sweep deletes
+one participant's worktree, branch and blobs out of a task where other participants are still
+working, so the absence of evidence cannot read as permission: a call with no identity is
+refused, and so is one on a task with no recorded owner unless an approver of it proves the
+session. The deviation is the reason [ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md)
+records the gate as its own decision.
+
+The approver's proof is the one direct worker↔approver traffic uses (`requireDirectSender`):
+the record must carry a session of its own, and `foreignSessionOf` must not call the caller
+foreign to it. A record with no session proves nothing and is not a way in.
+
+### `artifactRecords` — every record proven before a path is built from it
+
+Source: `lib/sweep.js`, `artifactRecords`.
+
+Every artifact record of the task, each parsed, validated against the `artifact` schema, and
+turned into two absolute paths — the blob and the `files/` entry — only if both stay direct
+children of the task's own directories.
+
+The reason is that a removal target is **built from record fields**. A record naming a
+`sha256` of `../../other-task/task.json` would aim `rm` at a neighbour's journal, and a
+record with no `filename` would throw while joining a path — after the worktree was already
+gone. Both are met here, before the first side effect. A record this walk cannot read stops
+the whole sweep and is named in the refusal: a piece does not leave on a guess about what the
+rest of the task holds.
+
+### `artifactPlan` — the blobs and files of one piece
+
+Source: `lib/sweep.js`, `artifactPlan`.
+
+The records of the artifacts one participant sent, and the set of digests every surviving
+record still names.
+
+The sender lives on the **message**, not on the artifact record, so the canonical messages
+are the only place that binds an artifact to whoever sent it. The `files/` entry is
+addressed by the name the record carries — `sendSync` writes it from `placeFile` after the
+digest, so a second send of the same payload is recorded under the numbered name that
+actually landed — and identity is then proven by the inode the entry shares with its blob.
+Both halves are needed: the name alone could name a foreign file, and the inode alone
+cannot tell two entries of one deduplicated blob apart. An entry whose inode does not match
+is left in place and named out loud, so a store that stopped hard-linking would surface as
+a line rather than as a sweep that quietly removes nothing.
+
+**A blob leaves only when nothing holds it, and "nothing" is read twice.** The record scan
+above is one reading; the hard-link count of the payload is the other. `placeFile` links a
+`files/` entry BEFORE the record lands, so a sender caught between those two steps has a
+second link and no second record — and the link count sees it where the scan cannot. A blob
+with another link is left in place and said out loud.
+
+That pair narrows the window rather than closing it: `send` and `sendSync` take no task
+lock, so a payload stashed but not yet linked is still invisible to both readings. Closing
+it fully means locking the publication path, which is not this command's to change.
+
+### `childOf` — a path built from a record field stays a direct child
+
+Source: `lib/sweep.js`, `childOf`.
+
+The path under `dir` for `name`, or `null` when `name` is empty, absolute, or walks out of
+`dir` — including through a separator of its own. The schema already refuses those shapes on
+a well-formed record; this is the second reading, on the path rather than on the field, so a
+future record shape cannot widen a removal by widening a pattern.
+
+### `sweepTree` — the tree and branch of one piece
+
+Source: `lib/sweep.js`, `sweepTree`.
+
+The worktree directory of one participant and the `worktree-` branch behind it, decided by
+`inspectWorktree` and `worktreeDisposition` — the same pair `done` uses, so there is no
+second opinion about what "merged" means and no third measurement.
+
+It answers one of four states, and the artifacts of the piece follow it: `removed` and
+`none` let them go, `kept` and `vanished` hold them.
+
+**`vanished` is not `none`, and the difference is the whole point of having both.** `none`
+means the record names no worktree at all — a reviewer, say — so there is nothing to prove
+and nothing to hold back. `vanished` means the journal names a directory that is not on
+disk: neither measurement can run, so nothing of that piece is judged taken, and its blobs
+and files stay with the branch that may still be the only copy. The orphaned registration in
+`.git/worktrees` is pruned either way.
+
+### `takePiece` — the destructive stretch, under the journal lock
+
+Source: `lib/sweep.js`, `takePiece`.
+
+Everything that removes anything, run inside `withTaskLock`.
+
+The lock is there for one race: `spawn` writes a participant record through that same lock,
+so a re-lift of the swept address between the liveness check and the removals would put a
+new worktree and new sidecars under a walk already taking the old ones away. Under the lock
+the record is read again and compared with the mark taken before it — the session reference,
+the worktree, the clone and the lift stamp — and a changed mark refuses with nothing removed.
+Liveness is asked a second time there for the same reason.
+
+It returns its refusals instead of calling `fail`: an exit from under the lock would leave
+the lock directory behind for the next command to wait on.
 
 ### `bgSessionsCache` — live background sessions by the names we set at spawn
 

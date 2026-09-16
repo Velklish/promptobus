@@ -30,6 +30,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-013-approver-is-a-fourth-addressed-participant.md](adr/adr-013-approver-is-a-fourth-addressed-participant.md) | Acceptance is the fourth addressed role: an `approver` lifted after green review, with a floor of 7, an empty package deny list and direct worker traffic | Accepted |
 | [adr/adr-014-mcp-session-proof.md](adr/adr-014-mcp-session-proof.md) | MCP-child identity comes from a driver-declared session-record pointer, accepted only for the record's own home, task and address and refreshed at each tool call | Accepted |
 | [adr/adr-015-approver-lift-is-a-flag-on-review.md](adr/adr-015-approver-lift-is-a-flag-on-review.md) | Approver lift is `promptobus review <path> --task <id> --approver` after a reviewer result is on record; session cwd is the clone root | Accepted |
+| [adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md](adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) | Cleaning up after one accepted piece is a verb of its own — `promptobus sweep <address>` — called by the approver as well as the owner; the keep list is derived from what `done` reads to write telemetry, and it is a check rather than a comment | Accepted |
 
 ## Cross-cutting principles
 
