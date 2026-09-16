@@ -1,0 +1,9 @@
+# PB-188.1 · Result
+
+**Closed 2026-09-17, completed inside `PB-188`.** The section in [drivers](../../reference/05-drivers.md) is headed `sweepParticipantHomes` and its `Source:` line names that symbol in `lib/driver-codex.js`, where the symbol is in fact declared; in the code the comment moved below the `bindParticipantHomeRemoval(…)` call, so the line it stands above is the declaration the section names. Nothing else about the file changed. The defect was of the class the withdrawn gate had certified as absent — the heading named `bindParticipantHomeRemoval`, declared in `lib/codex-session.js` and only imported here, while the prose described `sweepParticipantHomes` one line below the call — and it was found by the gate rebuilt in `PB-188`, not by a reader.
+
+**Verification.** `node --test test/comment-links.test.mjs` is green and `unbound` appears in no class of `test/fixtures/comment-links-baseline.json`; on the merged tree of the acceptance the whole file is 20 tests, 20 pass, 0 fail, 0 todo. **The measurement stands on its own:** in a temporary worktree at `7a7d146^`, with the rebuilt scanner and link gate copied in, this binding is red at `lib/driver-codex.js:308` — `unbound`, naming `bindParticipantHomeRemoval` and standing above no declaration and inside no symbol — so the gate is a witness to the defect and not only to its repair. The acceptance gates are those of `PB-188`: `gates 4, green 4`, `npm test` exit 0 over 69 of 69 test files, 0 todo.
+
+**Documentation in the same pass.** [drivers](../../reference/05-drivers.md) carries the corrected heading and `Source:` line; the CHANGELOG entry is under `## [Unreleased] · Fixed`, with `PB-188`'s.
+
+**What is left open.** Nothing of this card. The wider limit it illustrates is `PB-188`'s: the gate reads the binding and never the prose, so the mirror image — the right symbol under the wrong file — would still pass.

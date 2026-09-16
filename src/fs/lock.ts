@@ -54,17 +54,8 @@ export interface DirLockOptions {
   onSelfAsync?: (lock: string) => Error;
 }
 
-/**
- * Locks held by a SYNCHRONOUS frame of this process right now. Needed for nesting: an
- * adapter read-modify-write takes the task lock, and a store operation inside it takes the
- * same one — without this the process would sit out `waitMs` on itself and refuse with
- * "journal busy", naming its own pid as the holder.
- *
- * The licence is the synchronous stretch and nothing wider: the lock separates PROCESSES,
- * and a synchronous frame cannot be interleaved, so a nested call IS the same critical
- * section. An `await` breaks that, which is why an asynchronous holder neither asks this
- * licence nor hands it out — it queues instead.
- */
+/** Locks a SYNCHRONOUS frame of this process holds now: the nesting licence, and nothing wider.
+ *  Why the licence stops at an `await`: reference/04-protocol.md § Store layout. */
 const heldSync = new Set<string>();
 
 /** Locks an asynchronous holder of this process has in flight. Not a nesting licence. */
@@ -158,13 +149,8 @@ async function underDirLock<T>(lock: string, fn: () => Promise<T>, options: DirL
   }
 }
 
-/**
- * The same lock held across an await. `withDirLock` would drop the directory the moment
- * `fn` handed back its promise, and its nesting licence would let the second holder of this
- * process straight through — an `await` admits one where a synchronous frame cannot. So
- * asynchronous holders of one lock path QUEUE inside the process and each takes the
- * directory in turn; there is no licence to grant, because such a holder has no lawful nesting.
- */
+/** The same lock held across an await: `withDirLock` would drop the directory when `fn` handed
+ *  back its promise, so holders of one path queue instead of nesting. Licence: § Store layout. */
 export function withDirLockAsync<T>(lock: string, fn: () => Promise<T>, options: DirLockOptions): Promise<T> {
   const previous = asyncQueue.get(lock) ?? Promise.resolve();
   const run = previous.then(() => underDirLock(lock, fn, options));

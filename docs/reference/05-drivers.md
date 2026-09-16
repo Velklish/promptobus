@@ -326,9 +326,9 @@ must print the path a real lift will use. It sits beside the other participant f
 the task store, so `done` sweeps it with them — by the address stem, without asking a
 driver.
 
-### `bindParticipantHomeRemoval` — remove every home under the root that no session record names
+### `sweepParticipantHomes` — remove every home under the root that no session record names
 
-Source: `lib/driver-codex.js`, `bindParticipantHomeRemoval`.
+Source: `lib/driver-codex.js`, `sweepParticipantHomes`.
 
 Remove every home under the root that no session record names.
 

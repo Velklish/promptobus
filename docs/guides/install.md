@@ -141,8 +141,6 @@ Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust
 Source: `lib/install.js`, `install`. The feed-hook names `src/hooks.ts` still
 declares for removal are described here too.
 
-Source: `lib/install.js`.
-
 Project-level hook install for a consumer repository.
 Layout knowledge comes from the host. User-level directories
 (~/.claude, ~/.cursor, ~/.codex) are never written.

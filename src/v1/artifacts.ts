@@ -240,14 +240,8 @@ export function listArtifacts(home: string, task: string): { artifacts: Artifact
   return { artifacts, broken };
 }
 
-/**
- * Blobs NOTHING names — neither a metadata record nor a hard link beyond the blob file.
- * They appear lawfully: a crash between the payload and its record leaves payload with no
- * name at all. The hard-link half is why a payload the task's `files/` folder still shows
- * is not listed here — that folder entry is a name, and a human reads it. They must not be
- * deleted one by one: a blob is deduplicated, and it is "nobody's" only until the next send
- * of the same payload; `prune` takes them with the task.
- */
+/** Blobs NOTHING names — no metadata record, no hard link beyond the blob file itself.
+ *  Lawful, and never removed one by one; `prune` takes them: reference/04-protocol.md § Store layout. */
 export function orphanBlobs(home: string, task: string): string[] {
   let names: string[];
   try {

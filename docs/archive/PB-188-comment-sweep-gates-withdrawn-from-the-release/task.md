@@ -25,7 +25,7 @@ text. The link gate's floors (`seen > 50`, `checked > 30`) were replaced by a pe
 
 1. **`comment-scan.mjs:23`** — the scanner stops parsing a physical line at the first comment
    marker and holds no template-literal state. `/* x */ // one` followed by two `//` lines misses
-   the three-line run; `const s = "[x](../queue/missing.md)"; // note` feeds the link gate a link taken
+   the three-line run; `const s = "[x](../../backlog/queue/missing.md)"; // note` feeds the link gate a link taken
    **from a string literal**.
 2. **`comment-length.test.mjs:31`** — the baseline is reduced to a `Set`, so **multiplicity is
    lost**: a copy of an already-allowed long block in the same pending file carries the same hash
