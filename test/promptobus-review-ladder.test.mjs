@@ -12,11 +12,12 @@
 // branch `HEAD` stood on: if it misses, `merge-base` walks up to the common ancestor, and the
 // worker's diff gets someone else's unpushed work pulled back into it, trouble.
 //
-// The `defaultBranch` ladder (`fresh.js`) is origin-based (`origin/HEAD` →
-// `origin/master` → `origin/main`), and in this setup it does not work at all: the two
-// ladders have nothing to disagree about in one run. The order is written to match it for a
-// different reason — so the two detections read as one rule and the answers do not diverge
-// once the clone gets origin refs.
+// The `defaultBranch` ladder ([standalone.ts](../src/standalone.ts)) is
+// origin-based (`origin/HEAD` → `origin/master` → `origin/main`), and in
+// this setup it does not work at all: the two ladders have nothing to
+// disagree about in one run. The order is written to match it for a
+// different reason — so the two detections read as one rule and the
+// answers do not diverge once the clone gets origin refs.
 //
 // What the checks pin down. The main one is an INVARIANT, not a mechanism: the review base
 // equals the commit `worktree add` branched the branch from. It survives a legitimate swap of

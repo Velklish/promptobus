@@ -44,10 +44,10 @@
 //   `~/legacy/memory-hooks` and `~/.claude/settings.json`. Live trace
 //   2026-08-29: a `settings.json.bak.20260829224155` backup after a
 //   worker run, invisible as a leak in the run results. The swap is
-//   shared, not in individual files: `root.test.mjs` spawns the CLI
-//   on purpose, and `cli-flags.test.mjs` and `setup.test.mjs` only
-//   hold because they refuse before the `sync` tail — a point patch
-//   would close one file of three and stay silent about a fourth;
+//   shared, not in individual files: several suite files spawn the CLI
+//   on purpose, and others only hold because they refuse before the
+//   `sync` tail — a point patch would close some of them and stay
+//   silent about the next one added;
 // - **memory-hook lever** (`CONTEXT_STORE_*`). The ATI-host
 //   `extraEnv` sets `CONTEXT_STORE_STOP_GATE=0` on every bus
 //   participant — under a worker and a reviewer the variable is in

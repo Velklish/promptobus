@@ -34,8 +34,8 @@ const { dismiss } = await import(path.join(here, '..', 'lib', 'dismiss.js'));
 
 // The test sets session identity itself: `sessionIdentity` reads `CLAUDE_CODE_SESSION_ID`,
 // and without the substitution the owner gate would be checked differently in a Claude
-// Code session (the variable is there) and in CI (it is not). Same trick as in
-// promptobus.test.mjs.
+// Code session (the variable is there) and in CI (it is not). Same trick
+// used across this suite wherever session identity is a seam.
 const withSession = async (id, fn) => {
   const was = process.env.CLAUDE_CODE_SESSION_ID;
   if (id === null) delete process.env.CLAUDE_CODE_SESSION_ID;

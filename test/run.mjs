@@ -61,8 +61,8 @@ const files = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
 // failure and Ctrl+C. Each file does its own `mkdtemp` in `os.tmpdir()`,
 // and `os.tmpdir()` reads TMPDIR (POSIX) and TEMP/TMP (Windows) — so
 // swapping those variables sends EVERY sandbox into the run directory
-// at once: those the test creates and those the library under it
-// creates (hooks.js, headless.js). The files themselves need no edits.
+// at once: those the test creates and those the consumer CLI's own hook
+// and headless-review processes create. The files themselves need no edits.
 //
 // The runner cleans up, not each file: a file's trailing `rmSync` is
 // exactly what does not run when it is needed — on a failed check
@@ -218,11 +218,9 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 //
 // Who is not in the group, and why. `promptobus-mcp.test.mjs` has no
 // wall-clock thresholds left: its checks look at response contents and
-// store counters. `fresh.test.mjs` — the only threshold is
-// `spent < 10 000` at a 400 ms timeout, a twenty-five-fold margin.
-// In `install.test.mjs` and `zone.test.mjs` `Date.now()` builds fixture
-// age, and there is no clock threshold at all: load does not move
-// those files.
+// store counters. In `install.test.mjs` `Date.now()` only builds
+// fixture age, and there is no clock threshold at all: load does not
+// move that file.
 // `model-routing-adapter-codex.test.mjs` has one threshold, written to
 // the same shape: the probe of an app-server that never answers runs
 // under a 400 ms budget and must end inside 10 000 ms — the same
@@ -232,17 +230,13 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 // move the measurement by an order of magnitude before it reaches
 // either side. Everything else in the file is verdict fields against
 // a stub app-server, which load does not touch.
-// `promptobus.test.mjs` left the group with its rationale: the races it
-// sat there for moved into the nested package, and in the file itself
-// `Date.now()` only builds fixture age — the same case as `install` and
-// `zone`. Races today are run by `promptobus-package.test.mjs` as a
-// child `npm test --prefix cli/packages/promptobus`, and it is out of
-// the group on purpose: the race barrier releases children on readiness,
-// not on a timestamp; each child's return code is checked; and the
-// recovery window that made the file go red under the pool is closed
-// in the store — the races have no wall-clock thresholds left. File
-// measured under the pool: 186.5 s on a busy machine before vs 14.4 s
-// after (2026-09-02, load average 8).
+// `promptobus-package.test.mjs` runs its own child processes under a
+// race barrier that releases them on readiness, not on a timestamp;
+// each child's return code is checked, and the recovery window that
+// made the file go red under the pool is closed in the store — the
+// races have no wall-clock thresholds left. File measured under the
+// pool: 186.5 s on a busy machine before vs 14.4 s after (2026-09-02,
+// load average 8).
 //
 // The group is a list of names: a file renamed past this list would
 // slip into the pool in silence. [runner.test.mjs](runner.test.mjs)
@@ -303,9 +297,9 @@ const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'prompto
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
 // waited on the child with no deadline, and anything can hang a file —
-// an unresolved promise in swapped stdin (`answerWith`, setup.test.mjs),
-// a live git over the network. A person sees a silent console and does
-// not know whether the run is going or stuck.
+// an unresolved promise on swapped stdin, a live git over the network.
+// A person sees a silent console and does not know whether the run is
+// going or stuck.
 //
 // The number comes from the slowest suite file. That is now
 // `promptobus-review.test.mjs`: 27.7 s alone and 32–45 s under the pool

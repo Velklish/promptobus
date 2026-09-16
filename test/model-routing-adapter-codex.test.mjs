@@ -464,13 +464,13 @@ test('no limit source at all is unknown / quota_unknown, and the inventory still
 });
 
 test('an app-server that never answers ends on the budget as unknown / probe_timeout', async () => {
-  // The one wall-clock threshold in this file, and it is written the way
-  // `fresh.test.mjs` writes its own: a 400 ms budget against a 10 000 ms verdict,
-  // a twenty-five-fold margin. What it catches is a probe that spent its OWN
-  // ceiling instead of the preflight's budget — `INIT_TIMEOUT_MS`, 30 s, three
-  // times past the verdict — so load has to move the measurement by an order of
-  // magnitude before it touches either side. The register of who is outside the
-  // serial group and why ([run.mjs](run.mjs)) carries the same numbers.
+  // The one wall-clock threshold in this file: a 400 ms budget against a
+  // 10 000 ms verdict, a twenty-five-fold margin. What it catches is a probe
+  // that spent its OWN ceiling instead of the preflight's budget —
+  // `INIT_TIMEOUT_MS`, 30 s, three times past the verdict — so load has to
+  // move the measurement by an order of magnitude before it touches either
+  // side. The register of who is outside the serial group and why
+  // ([run.mjs](run.mjs)) carries the same numbers.
   const started = Date.now();
   const verdict = await probe({ flags: 'hang', timeoutMs: 400 });
   const spent = Date.now() - started;

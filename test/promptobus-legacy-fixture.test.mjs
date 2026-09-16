@@ -1,8 +1,8 @@
 // Bus legacy-fixture store: is it what it claims to be, and does today's reader still
 // read it the same way. Run: npm test
 //
-// Subject — not the store's behavior: that's covered by promptobus.test.mjs and its
-// neighbors. What's checked here is the migration baseline: the fixture was captured via
+// Subject — not the store's behavior: that's covered elsewhere in this suite. What's
+// checked here is the migration baseline: the fixture was captured via
 // the `v0.61.0` store, and the migration reads that very same snapshot
 // ([promptobus-migration.test.mjs](promptobus-migration.test.mjs)). If the fixture's
 // contents diverge from what the reader reads, the migration ends up written against an

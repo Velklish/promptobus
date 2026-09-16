@@ -77,10 +77,11 @@ export { sweptLine };
 // Foreign ones are not here and must not be: `promptobus-canary-`,
 // `promptobus-release-gates-`, and `promptobus-live-*` belong to their
 // live or release commands, so the suite must never sweep a live
-// participant's directory. `agents-review-` is created by production code
-// (`headless.js`). **`promptobus-e2e-` is shared**: `promptobus-e2e.test.mjs`
-// creates it, and separate release tooling may count such directories as
-// live-run sandboxes. The same age cut-off protects a going run.
+// participant's directory. `agents-review-` is created by the consumer
+// CLI's own headless review command. **`promptobus-e2e-` is shared**:
+// `promptobus-e2e.test.mjs` creates it, and separate release tooling may
+// count such directories as live-run sandboxes. The same age cut-off
+// protects a going run.
 //
 // Nested-package suite sandboxes (`promptobus-store-` and neighbours)
 // ARE on the list, even though another suite creates them. The

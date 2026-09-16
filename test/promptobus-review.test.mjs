@@ -7,8 +7,7 @@
 //
 // **Names like `a2a-…` in fixtures are left in on purpose**: that's what the previous
 // CLI called branches, worktree directories, and sessions, and they check that the hard
-// rename didn't break what was already established. Details are in
-// `promptobus.test.mjs`, the file's header comment.
+// rename didn't break what was already established.
 import { mkdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -91,8 +90,8 @@ g(REPO, 'commit', '-m', 'init', '-q');
 // `baseRef === null` branch by `CLEAN` and `SUB`; the reachability of the
 // `['master','main']` fallback in `localDefault` by `rebase-api` and `merged-api`, with
 // the order within it covered by promptobus-review-ladder.test.mjs (here both have one
-// local branch each); `dual-default` exercises the `defaultBranch` ladder from
-// fresh.js (`origin/HEAD` → `origin/master`).
+// local branch each); `dual-default` exercises the shared `defaultBranch`
+// ladder ([standalone.ts](../src/standalone.ts)) (`origin/HEAD` → `origin/master`).
 g(REPO, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
 g(REPO, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
 writeFileSync(path.join(REPO, 'a.txt'), 'v2\n');
@@ -298,9 +297,9 @@ check('prompt: external-system MCP is read-only only — the boundary is held by
 check('prompt: standalone host — there is no team-memory section',
   !plan.prompt.includes('`search_facts`') && !plan.prompt.includes('`save_fact`'));
 // : the reviewer has nothing to wait with and doesn't need to — the warden wakes it.
-// A gate paired with the worker's (promptobus.test.mjs): the participant's prompt sits
-// in its context always, so a surviving "wait" there outlives any rule removed
-// elsewhere.
+// A gate paired with the worker's own prompt check elsewhere in this suite:
+// the participant's prompt sits in its context always, so a surviving
+// "wait" there outlives any rule removed elsewhere.
 check(': the reviewer\'s prompt does not instruct opening a wait — there\'s one alarm clock per task',
   /nothing to wait with/.test(plan.prompt) && !/\bpromptobus wait\b/.test(plan.prompt)
   && /listened to by the bus warden/.test(plan.prompt), plan.prompt);
@@ -1763,9 +1762,10 @@ check(': the base is honestly named a guess by the default branch in this case',
 
 // --- : one default-branch detector shared by spawn and review ------------------------
 //
-// There used to be two detectors, and they answered differently: fresh.js (which
-// chooses spawn's base) goes `origin/HEAD` → `origin/master` → `origin/main`,
-// review.js went `origin/HEAD` → local `main` → `master`. In a clone where
+// There used to be two detectors, and they answered differently: spawn's own
+// (now folded into the shared ladder in [standalone.ts](../src/standalone.ts))
+// went `origin/HEAD` → `origin/master` → `origin/main`, review.js went
+// `origin/HEAD` → local `main` → `master`. In a clone where
 // `origin/HEAD` isn't set but both local `main` and `master` exist, the worker branched
 // off `master`, while the reviewer computed the diff from `main` — and the
 // orchestrator's work sitting on `master` went into the worker's diff, i.e. the  bug
@@ -1796,7 +1796,7 @@ g(DW, 'commit', '-m', 'работа', '-q');
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:dual', { repo: 'loads_search/dual-default', repoAbs: DUAL,
   worktree: DW, worktreeName: 'a2a-dual', branch: 'worktree-a2a-dual',
   name: 'Worker: две default-ветки (0826-1200, dual)' }));
-check('fixture: spawn would have branched off master — that\'s how fresh.js\'s detect chooses it',
+check('fixture: spawn would have branched off master — that\'s how the shared detector chooses it',
   gOut(DUAL, 'rev-parse', 'master') === D1 && gOut(DUAL, 'rev-parse', 'main') === D0,
   `master=${gOut(DUAL, 'rev-parse', 'master')} main=${gOut(DUAL, 'rev-parse', 'main')}`);
 

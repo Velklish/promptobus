@@ -1,7 +1,7 @@
 // Regression on the participant record that spawn itself writes. Run: npm test
 //
-// The neighboring promptobus.test.mjs takes the spawn PLAN under test and never reaches
-// `spawnSync`: the coverage boundary there runs along the binary. Because of that the
+// The plan-only checks elsewhere in this file take the spawn PLAN under test and never
+// reach `spawnSync`: the coverage boundary there runs along the binary. Because of that the
 // nine fields `upsertParticipant` puts into the task journal were checked by no test —
 // the plan was checked, the plan write was not, and a drift between them would have
 // been silent. A live case already passed nearby twice: one added `baseSha`, one —
@@ -411,8 +411,8 @@ check(': a value with a space went into the hook command quoted, not as two argu
 
 // --- : --task-title travels from the command line to the journal --------------
 //
-// The neighboring cli-flags.test.mjs checks that the flag survives parse; here —
-// that it reaches the work. Between those two points it has two traps, both
+// The flag's own parse is not the subject here — that it reaches the work
+// is. Between those two points it has two traps, both
 // silent: the `...values` spread puts the kebab key past the library options, and
 // `planSpawn` reads `opts.taskTitle`. A run of the real command, not a library
 // call.
@@ -545,7 +545,7 @@ check(': --task-title does not replace the work-slice title in the session name'
 
 // --- : a foreign task and a pinned title — by the real command --------
 //
-// The subject is the same as the plan in promptobus.test.mjs, but OUTPUT is
+// The subject is the same as the plan-only checks elsewhere in this file, but OUTPUT is
 // checked. The refusal and the warning are printed by `spawn`, not the plan:
 // leave them as plan fields — and both silences the task was opened for return
 // exactly where a person reads them.
@@ -673,8 +673,8 @@ check(': an unknown repository name names the path, not [object Object]',
 
 // --- : grafting a track appends the task title -----------------------
 //
-// The plan is checked by the neighboring promptobus.test.mjs; here the subject
-// is the journal: the task title must travel to disk, otherwise a run of three
+// The plan is checked by the plan-only checks elsewhere in this file; here the
+// subject is the journal: the task title must travel to disk, otherwise a run of three
 // tracks would stay the work of one.
 const BRIEF2 = path.join(SB, 'brief2.md');
 writeFileSync(BRIEF2, '# Резолв имени репозитория\n\nВторая линия того же захода.\n');
@@ -690,7 +690,7 @@ claudeSays([
 // this is not a race reproduction, it is a through-path check — that the journal
 // gets the assembly from the journal and the grafted track does not vanish from
 // it. The fork "passed string versus recalc under the lock" is closed by the
-// direct `retitleTask` check in promptobus.test.mjs, and the form of the intent
+// direct `retitleTask` check elsewhere in this suite, and the form of the intent
 // — a check there too: one side was not enough, the second round fell on it.
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:sosed', { repo: 'cargos-api', title: 'Линия соседа',
   name: 'Worker: Линия соседа (0827-1200)' }));
@@ -1044,7 +1044,7 @@ store.dismissParticipant(HOME, TASK453, 'worker:store');
 claudeSays([]);
 resetCliCaches();
 
-// `sessions: {}` is the same seam plans in promptobus.test.mjs live on: the
+// `sessions: {}` is the same seam the plan-only checks elsewhere in this file live on: the
 // former track's session is closed, and the "this address is already running"
 // gate must not see it. Without the seam the check would depend on HOW MUCH the
 // names differ: return the title from the old record, and the name would match

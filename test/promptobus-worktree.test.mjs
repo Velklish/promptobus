@@ -9,8 +9,7 @@
 //
 // **Names of the form `a2a-…` in fixtures are left in place on purpose**: that's what the
 // previous CLI called branches, worktree directories, and sessions, and they verify that the
-// hard rename didn't break what was already established. Details — in `promptobus.test.mjs`,
-// the file's header comment.
+// hard rename didn't break what was already established.
 import {
   writeFileSync, readFileSync, chmodSync, linkSync, mkdirSync, mkdtempSync, readdirSync, rmSync, existsSync, statSync,
 } from 'node:fs';

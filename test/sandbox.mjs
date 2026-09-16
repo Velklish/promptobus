@@ -71,10 +71,10 @@ export function resetCliCaches() {
 // usual, the exit code is set with `process.exitCode` or
 // `process.exit`.
 //
-// `platform` is set explicitly only so the win32 form can be checked
-// from a POSIX machine (exec.test.mjs): the whole point of the fix is
-// that on Windows the file must have a PATHEXT extension, and there
-// is nowhere to run the suite there today.
+// `platform` lets a caller ask for the win32 form (a `.cmd` file, PATHEXT-visible)
+// instead of the POSIX one — no test in this suite passes it today, and the
+// branch is not locally covered; it exists for a Windows path this repo
+// does not run, not for a check that runs here.
 export function stubCommand(dir, name, body, { platform = process.platform } = {}) {
   mkdirSync(dir, { recursive: true });
   const script = path.join(dir, `${name}.stub.mjs`);
@@ -224,7 +224,7 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
 // unhandled event: the test file dies whole. Alone the same file
 // passes — system `/var/folders/…/T` is shorter than the run
 // directory by exactly enough to fit. In one run this was stepped on
-// twice, in `promptobus-warden.test.mjs` and `doctor.test.mjs`, and
+// twice, in `promptobus-warden.test.mjs` and a second suite file, and
 // the helper lived as a copy in both.
 //
 // Measured on this machine 2026-08-29: `/tmp/adoc-XXXXXX/live.sock`

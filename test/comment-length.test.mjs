@@ -70,7 +70,7 @@ test('the pending list only ever shrinks', () => {
   // in the fixture passes every other check here, and raising one is an edit review can see.
   assert.ok(PENDING.size <= 10, `the pending list names ${PENDING.size} files, and the ceiling is 10`);
   const ids = [...PENDING.values()].flat().length;
-  assert.ok(ids <= 190, `the pending list owes ${ids} runs, and the ceiling is 190`);
+  assert.ok(ids <= 189, `the pending list owes ${ids} runs, and the ceiling is 189`);
 });
 
 /** The walk, with a count of what it actually read and judged beside its three verdict lists. */
@@ -103,7 +103,7 @@ test('the walk says how much it read, because an empty one gives the same green 
   // Measured before this floor existed: emptying the walk outright left 11 of 11 verdicts green,
   // since every list it fills is asserted EMPTY and an empty walk fills them all with nothing.
   assert.equal(walk.judged, tracked.length, `the walk judged ${walk.judged} of ${tracked.length} tracked files`);
-  assert.equal(walk.seen, 190, `the walk saw ${walk.seen} long runs, and the tree is known to carry 190`);
+  assert.equal(walk.seen, 189, `the walk saw ${walk.seen} long runs, and the tree is known to carry 189`);
 });
 
 test('the walk refuses each of the four shapes it exists to catch', () => {

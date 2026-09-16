@@ -150,10 +150,10 @@ test('a slow adapter does not hold the preflight: the run ends by the budget and
   });
   const elapsed = Date.now() - started;
 
-  // Twenty-five-fold, the margin `fresh.test.mjs` uses for the same reason: the
-  // file runs in the pool, and a tight wall-clock threshold measures the
-  // machine's neighbours rather than the budget. The slow stub answers at 30 s,
-  // so five seconds still proves the preflight did not wait for it.
+  // Twenty-five-fold, the same margin this suite uses elsewhere for the same
+  // reason: the file runs in the pool, and a tight wall-clock threshold
+  // measures the machine's neighbours rather than the budget. The slow stub
+  // answers at 30 s, so five seconds still proves the preflight did not wait for it.
   assert.ok(elapsed < budgetMs * 25, `the preflight ran ${elapsed} ms on a ${budgetMs} ms budget`);
   assert.equal(snapshot.harnesses.slow.state, 'unknown');
   assert.equal(snapshot.harnesses.slow.reason, 'probe_timeout');

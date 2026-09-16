@@ -245,7 +245,7 @@ check(': an explicit call on an unfamiliar mode refuses and names it verbatim',
 // --- switch for an irreversible action ----------------------------------------
 //
 // `--keep-sessions` is checked on the real command: the branch lives in `done`, not in
-// the walk, and the flag's declaration keeps its own gate (`cli-flags.test.mjs`). Here —
+// the walk, and the flag's own declaration is gated elsewhere in this suite. Here —
 // that the flag reaches the library by its kebab key and changes the command's course.
 const { done } = await import(path.join(here, '..', 'lib', 'done.js'));
 writeFileSync(path.join(SB, 'AGENTS.md'), 'песочница\n');
