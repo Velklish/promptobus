@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 29,
-    "citation": 36,
+    "citation": 37,
     "crossFile": 5,
     "fileLevel": 52,
     "bound": 50,
@@ -192,7 +192,8 @@
       "../docs/reference/03-cli.md"
     ],
     "lib/store.js": [
-      "../src/mcp/service.ts"
+      "../src/mcp/service.ts",
+      "../docs/reference/04-protocol.md#artifacts"
     ],
     "lib/sweep.js": [
       "../docs/reference/03-cli.md#keptpaths--what-the-piece-sweep-must-never-take",

@@ -32,6 +32,7 @@ import { check } from './check.mjs';
 import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
 import {
+  ATTACHMENT_CONTRACT,
   GATE_RECORD_SCHEMA, GATE_RECORD_STEM, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM, RESULT_BODY_MAX,
 } from '../lib/handoff.js';
 
@@ -1624,6 +1625,15 @@ check('PB-213: a check left out is not a check passed, and an impossible one is 
   && /honestly declared impossible passes/.test(handoff)
   && /does not run these checks for you/.test(handoff),
   handoff.slice(-900));
+
+// PB-225 contract 1: the worker is told the same thing the reviewer's subject is built on,
+// in the same words — one constant, so the two sides cannot drift. Without it a worker that
+// attached a probe transcript has no reason to expect the reviewer to have been shown it.
+check('PB-225: the worker preamble quotes the attachment contract word for word',
+  handoff.includes(ATTACHMENT_CONTRACT)
+  && /evidence you attached is evidence it has/.test(handoff)
+  && /a probe you only retell is not on record/.test(handoff),
+  handoff.slice(-2600));
 
 // The preamble says both halves of what the bus does with a record and must not contradict
 // itself: it checks the SHAPE and refuses, it does not run or grade the checks themselves.

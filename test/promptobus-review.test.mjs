@@ -8,7 +8,7 @@
 // **Names like `a2a-…` in fixtures are left in on purpose**: that's what the previous
 // CLI called branches, worktree directories, and sessions, and they check that the hard
 // rename didn't break what was already established.
-import { mkdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -17,7 +17,9 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
-import { GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX } from '../lib/handoff.js';
+import {
+  ATTACHMENT_CONTRACT, GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX,
+} from '../lib/handoff.js';
 
 function rulesBlock(text, role, expectedFiles) {
   const lines = String(text).split('\n');
@@ -1912,6 +1914,187 @@ check(`review note: for a worker with not a single commit, the base line does no
   untouched.baseRef === FORK && !/already merged/.test(String(untouched.baseLine))
   && /worktree branch point of worker:tretiy/.test(String(untouched.baseLine)),
   String(untouched.baseLine));
+// PB-225 contract 1: the subject lists every file the REVIEWED address attached — name,
+// type and time — not only the two schema-shaped records. Both reviewers of the 2026-09-16
+// run reported "no mutation probe on record" while the probe transcript sat in this folder
+// as an `evidence.md` the subject never named. The list is taken from the journal, which
+// binds sender to artifact, so a file cannot be attached and stay invisible here.
+const EVIDENCE = path.join(SB, 'evidence.md');
+writeFileSync(EVIDENCE, 'тринадцать проб, построчно\n');
+const ATTACHED_GATES = path.join(SB, 'gates-pervyy.json');
+writeFileSync(ATTACHED_GATES, `${JSON.stringify({
+  schemaVersion: 1,
+  records: [{
+    command: 'npm test', exit: 0, tree: FORK, dirty: false,
+    at: '2026-09-16T12:00:00.000Z', by: 'worker:pervyy',
+  }],
+})}\n`);
+const FOREIGN_EVIDENCE = path.join(SB, 'chuzhoe.md');
+writeFileSync(FOREIGN_EVIDENCE, `улика второго worker'а\n`);
+store.sendMessage(home, owned.id, {
+  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'проба', artifactPath: EVIDENCE,
+});
+store.sendMessage(home, owned.id, {
+  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'гейты', artifactPath: ATTACHED_GATES,
+});
+store.sendMessage(home, owned.id, {
+  from: 'worker:vtoroy', to: 'orchestrator', type: 'artifact', body: 'чужое', artifactPath: FOREIGN_EVIDENCE,
+});
+const attachedPlan = planReview(WS, { target: W1, task: owned.id });
+const evidenceLine = String(attachedPlan.prompt).split('\n')
+  .find((line) => line.startsWith('- ') && line.includes('evidence.md')) ?? '';
+check('PB-225: an attached evidence.md enters the subject with its name, its type and its time',
+  evidenceLine.includes(path.join(store.filesDir(home, owned.id), 'evidence.md'))
+  && / — other — /.test(evidenceLine)
+  && /\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/.test(evidenceLine),
+  evidenceLine || String(attachedPlan.prompt));
+check('PB-225: the two records keep their own type in that list, and their own blocks below it',
+  /- .*gates-pervyy\.json — gate record — /.test(String(attachedPlan.prompt))
+  && /Gate records attached to this task, read them/.test(String(attachedPlan.prompt)),
+  String(attachedPlan.attachments?.files.map((a) => `${path.basename(a.path)}:${a.kind}`).join(' ')));
+check('PB-225: a file another address attached is not the reviewed address\'s evidence and is not listed',
+  !/chuzhoe\.md/.test(String(attachedPlan.prompt))
+  && !/chuzhoe\.md/.test(String(attachedPlan.reReview)),
+  String(attachedPlan.attachments?.files.map((a) => path.basename(a.path)).join(' ')));
+check('PB-225: the contract is quoted word for word, and the re-review carries the same list',
+  String(attachedPlan.prompt).includes(ATTACHMENT_CONTRACT)
+  && String(attachedPlan.reReview).includes(ATTACHMENT_CONTRACT)
+  && String(attachedPlan.reReview).includes(path.join(store.filesDir(home, owned.id), 'evidence.md')),
+  `prompt=${String(attachedPlan.prompt).includes(ATTACHMENT_CONTRACT)} reReview=${String(attachedPlan.reReview).includes(ATTACHMENT_CONTRACT)}`);
+// An address that attached nothing is said so out loud: an omitted block reads as "nothing
+// attached", which is the very report the contract exists to make impossible.
+const emptyPlan = planReview(WS, { target: W3, task: owned.id });
+check('PB-225: an address with no attachments gets the whole list rather than a silent gap',
+  new RegExp(`worker:tretiy attached nothing as of ${emptyPlan.snapshot.at}`).test(String(emptyPlan.prompt))
+  && Array.isArray(emptyPlan.attachments?.files) && emptyPlan.attachments.files.length === 0,
+  JSON.stringify(emptyPlan.attachments));
+
+// PB-225 round 1: the list is read at plan time, like the diff beside it. Present tense here
+// promises a completeness the snapshot cannot have — a file attached a minute later is invisible
+// to this round, and the reviewer that trusted "the whole list" files the same false major.
+check('PB-225: the list names the moment it was read, and what a later attachment needs',
+  String(attachedPlan.prompt).includes(`attached these as of ${attachedPlan.snapshot.at}`)
+  && /attached after that moment reaches you only with a re-review/.test(String(attachedPlan.prompt))
+  && String(attachedPlan.reReview).includes(`attached these as of ${attachedPlan.snapshot.at}`),
+  String(attachedPlan.prompt).split('\n').find((l) => /attached these as of/.test(l)) ?? '');
+
+// The order is the order of SENDING, and evidence.md was sent before gates-pervyy.json.
+check('PB-225: the list holds send order, oldest first',
+  String(attachedPlan.prompt).indexOf('evidence.md — other')
+    < String(attachedPlan.prompt).indexOf('gates-pervyy.json — gate record'),
+  String(attachedPlan.attachments?.files.map((a) => path.basename(a.path)).join(' → ')));
+
+// The third branch: the main clone is nobody's worktree, so no address is the reviewed one. An
+// empty list there would be a lie — the subject says why there is none instead.
+const noOwnerPlan = planReview(WS, { target: REPO, task: task.id });
+check('PB-225: a subject that is no participant worktree is told why there is no list, not given an empty one',
+  /This subject is not a participant worktree/.test(String(noOwnerPlan.prompt))
+  && noOwnerPlan.attachments === null
+  && !/attached nothing as of/.test(String(noOwnerPlan.prompt)),
+  String(noOwnerPlan.attachments));
+
+// An artifact record that cannot be read drops its file out of the list. Silently is the one way
+// it must not go: the message is in the journal, the file may be on disk, and a short list that
+// says nothing is the defect PB-225 exists against, one layer down.
+const brokenArtifactDir = path.join(store.taskDir(home, owned.id), 'artifacts');
+const artifactRecordOf = (filename) => readdirSync(brokenArtifactDir)
+  .map((n) => path.join(brokenArtifactDir, n))
+  .find((f) => JSON.parse(readFileSync(f, 'utf8')).filename === filename);
+const brokenArtifactFile = artifactRecordOf('evidence.md');
+const foreignArtifactFile = artifactRecordOf('chuzhoe.md');
+const brokenArtifactBody = readFileSync(brokenArtifactFile, 'utf8');
+const foreignArtifactBody = readFileSync(foreignArtifactFile, 'utf8');
+const gatesArtifactFile = artifactRecordOf('gates-pervyy.json');
+const gatesArtifactBody = readFileSync(gatesArtifactFile, 'utf8');
+const attic = (f) => path.join(store.brokenArtifactsDir(home, owned.id), path.basename(f));
+// Two of the reviewed address's records break and one of ANOTHER address's does: with only one
+// broken the scoping check would pass for a list that never scoped at all. `gates-pervyy.json`
+// is one of the two because the gate block reads the folder and will still name it.
+for (const f of [brokenArtifactFile, gatesArtifactFile, foreignArtifactFile]) writeFileSync(f, '{ not json\n');
+const brokenPlan = planReview(WS, { target: W1, task: owned.id });
+check('PB-225: an unreadable artifact record makes the list short OUT LOUD, not silently',
+  /artifact record\(s\) of that address could not be read, so the list may be short/.test(String(brokenPlan.prompt))
+  && !/evidence\.md/.test(String(brokenPlan.prompt)),
+  JSON.stringify(brokenPlan.attachments?.broken));
+// Another address's unreadable record is not a gap in THIS list: the subject is one address.
+check('PB-225: the short-list warning is scoped to the reviewed address',
+  brokenPlan.attachments.broken.length === 2
+  && brokenPlan.attachments.broken.every((n) => [brokenArtifactFile, gatesArtifactFile]
+    .some((f) => n.includes(path.basename(f, '.json'))))
+  && !brokenPlan.attachments.broken.some((n) => n.includes(path.basename(foreignArtifactFile, '.json'))),
+  JSON.stringify(brokenPlan.attachments?.broken));
+// The FIRST read of a corrupt record moves it into `broken/artifacts` and only then throws, so
+// the store's own note exists once — and any ordinary call spends it before the next review.
+check('PB-225: the corrupt record is set aside by the first read, which is why the note is spent',
+  ![brokenArtifactFile, gatesArtifactFile].some(existsSync)
+  && [brokenArtifactFile, gatesArtifactFile].every((f) => existsSync(attic(f))),
+  `in place: ${[brokenArtifactFile, gatesArtifactFile].filter(existsSync).length}`);
+const brokenAgain = planReview(WS, { target: W1, task: owned.id });
+check('PB-225: a record already set aside is still counted, and by the journal rather than by the note',
+  /artifact record\(s\) of that address could not be read, so the list may be short/.test(String(brokenAgain.prompt))
+  && brokenAgain.attachments.broken.length === 2
+  && brokenAgain.attachments.broken.some((n) => n.includes(path.basename(brokenArtifactFile, '.json'))),
+  JSON.stringify(brokenAgain.attachments?.broken));
+// The reviewer's own diagnostic: the gate block reads the files FOLDER and the attachment list
+// reads the JOURNAL, so an unreadable record makes the two blocks name different sets.
+check('PB-225: blocks that disagree are named, not left for the reviewer to notice',
+  brokenAgain.gateRecords.some((f) => path.basename(f) === 'gates-pervyy.json')
+  && /Gate records attached to this task/.test(String(brokenAgain.prompt))
+  && !/- .*gates-pervyy\.json — gate record/.test(String(brokenAgain.prompt))
+  && /the list may be short/.test(String(brokenAgain.prompt)),
+  JSON.stringify(brokenAgain.gateRecords.map((f) => path.basename(f))));
+// Put the records back where the store looks and take the isolated copies with them: a record
+// lives in one place or the other, never both, and the fixture must leave a state the store makes.
+writeFileSync(brokenArtifactFile, brokenArtifactBody);
+writeFileSync(gatesArtifactFile, gatesArtifactBody);
+writeFileSync(foreignArtifactFile, foreignArtifactBody);
+for (const f of [brokenArtifactFile, gatesArtifactFile, foreignArtifactFile]) rmSync(attic(f), { force: true });
+check('PB-225: with the record readable again the file is back in the list',
+  /evidence\.md — other — /.test(String(planReview(WS, { target: W1, task: owned.id }).prompt)),
+  'restored');
+
+// The third branch, and the only one a CLOSED piece takes: after a sweep the record, the link in
+// the files folder and the blob leave together, so nothing is missing and a warning would be a
+// lie. 03-cli § Review calls it silent on purpose, and a contract nobody checks is not one.
+rmSync(brokenArtifactFile);
+const sweptPlan = planReview(WS, { target: W1, task: owned.id });
+check('PB-225: a record gone from BOTH places is a swept piece — no line, and no warning either',
+  !/evidence\.md/.test(String(sweptPlan.prompt))
+  && !/the list may be short/.test(String(sweptPlan.prompt))
+  && sweptPlan.attachments.broken.length === 0
+  && /- .*gates-pervyy\.json — gate record/.test(String(sweptPlan.prompt)),
+  JSON.stringify(sweptPlan.attachments?.broken));
+writeFileSync(brokenArtifactFile, brokenArtifactBody);
+
+// The id travels from the journal, which is read as raw JSON with nobody checking its grammar,
+// into a PATH under `broken/artifacts`. That is the shape `safeRecord` exists against, and the
+// journal is the one place a hand-written record reaches without passing the schema.
+const messageDir = path.join(store.taskDir(home, owned.id), 'messages');
+// The sender is taken from the reviewed address's OWN artifact message: cloned from any message
+// in the folder, the forgery lands outside this list and the check passes for the wrong reason.
+const sampleMessage = readdirSync(messageDir)
+  .map((n) => JSON.parse(readFileSync(path.join(messageDir, n), 'utf8')))
+  .find((m) => m.type === 'artifact' && m.artifact === path.basename(brokenArtifactFile, '.json'));
+const forgedMessage = path.join(messageDir, '20260826T120000000-9999-ffffff.json');
+writeFileSync(forgedMessage, JSON.stringify({
+  ...sampleMessage,
+  id: '20260826T120000000-9999-ffffff',
+  type: 'artifact',
+  body: 'запись с идентификатором, который уводит путь из задачи',
+  artifact: '../../../../evil',
+}));
+// The file the traversal would reach, so the check fails on a missing guard rather than on a
+// missing file: `broken/artifacts` + four levels up is the store home itself.
+const escapeTarget = path.join(home, 'evil.json');
+writeFileSync(escapeTarget, '{"schemaVersion":1}\n');
+const forgedPlan = planReview(WS, { target: W1, task: owned.id });
+check('PB-225: an artifact id that is no record id becomes no path, and no line',
+  !/evil/.test(String(forgedPlan.prompt))
+  && forgedPlan.attachments.broken.length === 0,
+  JSON.stringify(forgedPlan.attachments?.broken));
+rmSync(forgedMessage);
+rmSync(escapeTarget);
+
 // owned.id was kept active: the diff-base checks name it with an explicit `--task`, and
 // a closed journal is now a refusal, not a fixture.
 store.closeTask(home, owned.id);

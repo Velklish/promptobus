@@ -132,6 +132,8 @@ The name a sender passes is not always the name the artifact gets. **Leading dot
 
 **Hand-off order is machine-visible.** A claim is a **landed** filename that appears in the **Gate** or **Decide** line — dotted prose that matches no task artifact is not a claim. `send` refuses a landed name with no `artifact` message from **any** sender; citing another participant's landed file is lawful. The canonical result carries one metadata id in its `artifact` field — the first claimed landed name in header order that **this** sender also sent as an `artifact` message — using the frozen v1 field, not a new schema key. A citation with no own `artifact` message leaves the field unset. A result with no landed-name claim is lawful and is not judged. The loop guard adds a second case answer expectation cannot see: a gate-record artifact (`gates-<slug>.json`, with `numberedName` when the stem collides) sent since the last turn end with no `result` from the same sender in between holds the turn until the result goes out.
 
+**An address's attachments are visible to its reviewer.** Every artifact an address sends into a task before `review` runs is listed in that address's review subject by landed name, type and send moment, taken from the journal rather than from a name pattern; one sent after that moment arrives with the next re-review ([03-cli](03-cli.md#review) § Review).
+
 
 ### The result hand-off
 
