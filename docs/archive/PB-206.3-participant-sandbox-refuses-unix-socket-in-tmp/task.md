@@ -1,7 +1,7 @@
 # PB-206.3 · Binding a unix socket is EPERM in the Codex participant sandbox, and suite files abort on it
 
 - **Order:** 70
-- **Scope:** `test/check.mjs`, `test/run.mjs`, `test/runner.test.mjs`, `test/sandbox.mjs`; socket groups in `test/promptobus-{guard,e2e,mixed,warden,harness,driver-codex}.test.mjs`, `test/tmpdir-sweep.test.mjs` and `test/scenario.mjs`; `lib/driver-codex.js` (sandbox writable roots); adjacent — [PB-194](../../backlog/queue/PB-194-worktree-drops-out-of-sandbox-writable-roots.md)
+- **Scope:** `test/check.mjs`, `test/run.mjs`, `test/runner.test.mjs`, `test/sandbox.mjs`; socket groups in `test/promptobus-{guard,e2e,mixed,warden,harness,driver-codex}.test.mjs`, `test/tmpdir-sweep.test.mjs` and `test/scenario.mjs`; `lib/driver-codex.js` (sandbox writable roots); adjacent — [PB-194](../../backlog/deferred/PB-194-worktree-drops-out-of-sandbox-writable-roots.md)
 - **Created:** 2026-09-12, from a Codex worker's baseline in run opt0912
 - **Dependencies:** none
 
@@ -39,7 +39,7 @@ One boundary is worth stating rather than assuming: the full-suite runner reache
 
 Later measurement expanded the same class to seven files: guard, E2E, mixed-harness, warden, tmpdir sweep, the harness stand and the Codex-driver integration. The last one fails on the production holder's fallback path under Darwin's system temp (`/var/folders/…/pb-cdx-*.sock`), not under `/tmp`. Two minimal controls also fail with `listen EPERM` inside the already writable canonical `/private/tmp`, using both an absolute socket path and a path relative to that directory. Moving the socket or adding another writable directory therefore cannot repair this sandbox: the denied operation is unix-socket `bind`, independent of which measured writable temp root holds the path.
 
-`test/tmpdir-sweep.test.mjs` exposes the adjacent boundary separately. From this worker's non-writable worktree cwd it aborts first on a relative `mkdtemp`; from writable `/private/tmp` it reaches 34 of 35 assertions and then gets the same socket `EPERM`. That first refusal remains [PB-194](../../backlog/queue/PB-194-worktree-drops-out-of-sandbox-writable-roots.md), not evidence about sockets. The Codex launch plan now names `cwd` explicitly among `runtimeWorkspaceRoots` for every participant role instead of relying on an implicit working-directory grant; the reviewer still receives its reviewed tree through the same field because its actual working directory is the private review sandbox.
+`test/tmpdir-sweep.test.mjs` exposes the adjacent boundary separately. From this worker's non-writable worktree cwd it aborts first on a relative `mkdtemp`; from writable `/private/tmp` it reaches 34 of 35 assertions and then gets the same socket `EPERM`. That first refusal remains [PB-194](../../backlog/deferred/PB-194-worktree-drops-out-of-sandbox-writable-roots.md), not evidence about sockets. The Codex launch plan now names `cwd` explicitly among `runtimeWorkspaceRoots` for every participant role instead of relying on an implicit working-directory grant; the reviewer still receives its reviewed tree through the same field because its actual working directory is the private review sandbox.
 
 ## Decision
 

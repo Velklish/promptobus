@@ -1,6 +1,5 @@
 # PB-194 · The participant shell worktree is closed; escalated exec_command is the measured write route
 
-- **Order:** 90
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
 - **Created:** 2026-09-12
 - **Dependencies:** PB-191 for the file-change approval method; PB-196 goes first — three of the four open questions below ask whether other binary versions share this boundary, and PB-196 is the upgrade that answers them
@@ -116,3 +115,9 @@ must name the method and escalation boundary instead of generalizing from one re
 - The rejected mid-session narrative remains as a false starting point with its source named. The
   transition, writable-root cause, legacy approval behavior and broader-version behavior remain open;
   the card is not archived.
+
+## Deferred
+
+- **Deferred:** 2026-09-16
+- **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
+- **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.

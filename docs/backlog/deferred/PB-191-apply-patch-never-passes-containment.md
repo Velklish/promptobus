@@ -1,6 +1,5 @@
 # PB-191 · `apply_patch` never passes the measured Codex participant boundary
 
-- **Order:** 160
 - **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
@@ -148,3 +147,9 @@ cheapest one: the same four commands at the start of a participant's life, befor
 - Weakening the containment check or `pathsOfApproval`.
 - The participant worktree sandbox boundary itself; PB-194 records that measurement.
 - Hook firing for a Codex participant; PB-185 is a separate gate.
+
+## Deferred
+
+- **Deferred:** 2026-09-16
+- **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
+- **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.

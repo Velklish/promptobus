@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Windows is outside the participant contract.** Owner decision of 2026-09-16: participant sessions — a Cursor tmux pane, a Codex app-server holder — are lifted on macOS and Linux only, and neither driver probes, adapts or promises Windows. The two cards that carried the Windows line (Cursor headless turns, the Codex holder on Windows) are closed with this boundary written into README § Requirements and the CLI reference, not returned to the queue. The CLI and host layer stay cross-platform.
+
 ## [0.9.0] — 2026-09-14
 
 ### Changed

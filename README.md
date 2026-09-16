@@ -31,6 +31,7 @@ English is canonical. The Russian README is the only other language in this repo
 - Node.js 20 or newer
 - Git — worktrees, diffs and freshness checks
 - At least one harness CLI on `PATH` for `spawn` and `review`: Claude Code, Cursor (`cursor-agent`, plus `tmux`), or Codex
+- Participant sessions are lifted on macOS and Linux. **Windows is outside the participant contract** (owner decision, 2026-09-16): the Cursor participant is a tmux pane and the Codex holder is an app-server process measured on macOS only, and neither is adapted, probed or promised on Windows. The CLI itself, including the host layer, stays cross-platform.
 - For working on the package itself: `tmux` and `ast-grep` (see [Development](#development))
 
 ## Installation

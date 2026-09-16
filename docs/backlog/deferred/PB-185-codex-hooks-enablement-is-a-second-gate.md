@@ -1,6 +1,5 @@
 # PB-185 · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured
 
-- **Order:** 170
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12
@@ -114,3 +113,9 @@ on one unclosed fact — `hook/started` = 0 with no `hook/*` event of any kind �
   runs hooks produces `hook/started`, and a check that passes without one measures nothing.
 - Hook trust itself is settled by `PB-170` and the bypass flag stays. Hooks for a person's own Codex
   sessions are approved through `/hooks`; that boundary does not move.
+
+## Deferred
+
+- **Deferred:** 2026-09-16
+- **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
+- **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.

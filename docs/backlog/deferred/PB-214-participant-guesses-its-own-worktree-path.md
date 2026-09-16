@@ -1,6 +1,5 @@
 # PB-214 · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути
 
-- **Order:** 320
 - **Scope:** `lib/codex-session.js` (`containmentPath`, `resolveTarget`, ветка отказа), `lib/spawn.js` и `lib/review.js` — как путь называется участнику в преамбуле; `docs/reference/03-cli.md`
 - **Created:** 2026-09-13
 - **Dependencies:** none
@@ -44,3 +43,9 @@
 - Отказ содержит список разрешённых корней; фикстура проверяет наличие, а не текст целиком.
 - Живой прогон участника Codex: число отказов `action outside cwd/addDirs` за прогон сравнимо с замеренными 28 на пять участников, и после правки падает.
 - Отрицательный контроль: настоящее нарушение границы (`/private/tmp`) по-прежнему отвергается.
+
+## Deferred
+
+- **Deferred:** 2026-09-16
+- **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
+- **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.

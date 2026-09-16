@@ -1,6 +1,5 @@
 # PB-196 · Eight minor versions behind: the upgrade is a measurable event, not a background chore
 
-- **Order:** 80
 - **Scope:** [drivers](../../reference/05-drivers.md), [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none. Blocks PB-194, PB-191, PB-185 and PB-214: all four were measured on 0.146.0, and a fix written against that boundary is wasted if the upgrade moves it
@@ -59,3 +58,9 @@ guess.
 - Both versions named in every re-taken measurement, with the command and its exit code.
 - For each card listed above: closed by the upgrade, unchanged, or reopened — stated explicitly,
   with the evidence. "Not re-checked" is an acceptable answer only when written down as one.
+
+## Deferred
+
+- **Deferred:** 2026-09-16
+- **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
+- **Return condition:** The owner opens a dedicated Codex run; this card goes first in it, before any other card of the cluster is re-taken.
