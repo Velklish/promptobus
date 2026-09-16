@@ -32,9 +32,9 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { CATALOG_FILE, mergeRouting } from '../lib/model-routing/catalog.js';
-import { NEUTRAL_REMAINING_PERCENT, resolve } from '../lib/model-routing/resolver.js';
+import { DECISION_WARNINGS, NEUTRAL_REMAINING_PERCENT, resolve } from '../lib/model-routing/resolver.js';
 import { render, RUNTIME_ROWS_PER_HARNESS } from '../lib/model-routing/render.js';
-import { availabilityOf, routingMetadata } from '../lib/models.js';
+import { availabilityOf, routingLine, routingMetadata } from '../lib/models.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -1554,6 +1554,73 @@ test('the thresholds are policy values, and the defaults are ADR-004\'s', () => 
   assert.deepEqual(nearLimits(paced({})), []);
   assert.equal(nearLimits(paced({ workspace: overlay({ nearLimit: { usedPercent: 62 } }) })).length >= 1, true);
   assert.equal(nearLimits(paced({ workspace: overlay({ nearLimit: { underspend: -14 } }) })).length, 1);
+});
+
+// --- PB-216: one snapshot, one set of names, whichever output prints it -------
+
+/** The warning codes of the SHORT line — what `spawn`, `review` and `status` print. */
+function shortCodes(decision, snapshot = BALANCE_SNAPSHOT) {
+  const line = routingLine(routingMetadata(decision, snapshot));
+  const at = line.indexOf('warnings: ');
+  return at === -1 ? [] : line.slice(at + 'warnings: '.length).split(', ');
+}
+
+/** The warning codes of the DETAILED section — what `models` prints. */
+const detailedCodes = (decision) => render(decision).split('\n')
+  .filter((l) => l.startsWith('  ! '))
+  .map((l) => l.slice(4, l.indexOf(':', 4)));
+
+test('the short line and the detailed section name one decision with one set of names', () => {
+  // Measured against the card: a short line reading `unknown-remaining, near-limit,
+  // near-limit` beside a detailed section without `near-limit` sent a reader hunting
+  // for an exhausted window that did not exist.
+  for (const [what, decision] of [
+    ['the golden pair', decide({})],
+    ['the balance pair', paced({ strategy: 'balance', workspace: overlay({ nearLimit: { usedPercent: 25 } }) })],
+    ['a harness with no paceable window', paced({ strategy: 'balance', snapshot: windowless('cursor') })],
+    ['every harness short by rate', decide({ catalog: BALANCE_CATALOG, snapshot: NEAR_LIMIT_RATE_SNAPSHOT, strategy: 'balance' })],
+  ]) {
+    assert.deepEqual(shortCodes(decision), detailedCodes(decision),
+      `${what}: the two outputs of one decision disagree on names`);
+    for (const code of shortCodes(decision)) {
+      assert.ok(DECISION_WARNINGS.includes(code), `${what}: "${code}" is outside the declared dictionary`);
+    }
+  }
+});
+
+test('a snapshot with no warnings gives an empty set in both outputs, not an empty tail', () => {
+  const quiet = paced({});
+  assert.deepEqual(quiet.warnings, [], quiet.warnings.map((w) => w.code).join(' | '));
+  assert.deepEqual(shortCodes(quiet), []);
+  assert.deepEqual(detailedCodes(quiet), []);
+  assert.match(routingLine(routingMetadata(quiet, BALANCE_SNAPSHOT)), /· no warnings$/);
+  assert.equal(/\bwarnings:/.test(render(quiet)), false,
+    'a `warnings:` heading with nothing under it reads as a warning that failed to print');
+});
+
+test('near-limit is a pace measurement and says so, and says when it falls silent', () => {
+  // The card asked the output to answer both halves: what the number is, and why
+  // one snapshot can raise the name under one strategy and not under another. Once
+  // per document rather than per line: the fixture raises three.
+  const loud = paced({ strategy: 'balance', workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.equal(nearLimits(loud).length, 3, 'the fixture must raise more than one');
+  const note = render(loud).split('\n').filter((l) => /near-limit is measured from pace/.test(l));
+  assert.equal(note.length, 1, `the note is printed ${note.length} times, not once`);
+  assert.match(note[0], /not from a missing limit source — that one is `unknown-remaining`/);
+  assert.match(note[0], /not raised at all under the strategy it would propose/);
+  for (const w of nearLimits(loud)) {
+    assert.equal(/measured from pace/.test(w.message), false,
+      'the explainer belongs to the document, not to every line of it');
+  }
+
+  // And the silence itself, measured rather than described: the same snapshot under
+  // the strategy the line would propose names `near-limit` in neither output.
+  const quiet = paced({ strategy: 'economy', workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  assert.equal(shortCodes(quiet).includes('near-limit'), false);
+  assert.equal(detailedCodes(quiet).includes('near-limit'), false);
+  assert.deepEqual(shortCodes(quiet), detailedCodes(quiet));
+  assert.equal(/near-limit is measured from pace/.test(render(quiet)), false,
+    'a note about a signal this document does not carry explains nothing');
 });
 
 // --- ADR-004: the two new selectors ------------------------------------------
