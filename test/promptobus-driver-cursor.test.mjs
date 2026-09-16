@@ -1056,11 +1056,14 @@ check('step 3: the turn ended — the session is alive, not busy, and is named w
 
 {
   const idleStatus = cli([ 'status', '--task', TASK], { cwd: ws, env });
-  const idleLine = idleStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? idleStatus.out;
+  // Picked by the whole address, and a miss falls to '' so it reddens: the whole
+  // output would let these regexps find their text on a neighbour's line.
+  const idleLine = idleStatus.out.split('\n')
+    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? '';
   check(': idle after a turn — inspect.unknown, status is not a stall of unknown nature',
     idle?.stall?.kind === 'unknown' && /the turn ended/.test(String(idle?.stall?.reason))
     && idleStatus.status === 0 && /waiting for a message/.test(idleLine) && !/STALLED/.test(idleLine),
-    `${JSON.stringify(idle)} · ${idleLine}`);
+    `${JSON.stringify(idle)} · ${idleLine || `no "${WORKER} \u00b7" line in:\n${idleStatus.out.slice(-800)}`}`);
 }
 
 const pb153Record = readSession(ref, env);
@@ -1261,11 +1264,14 @@ check(': a turn silent past the threshold — a watchdog verdict, and the sessio
   `${JSON.stringify(silent)} · ${JSON.stringify(turnState(readSession(hangRef, env), env))}`);
 
 const hangStatus = cli([ 'status', '--task', HANG_TASK], { cwd: ws, env });
-const hangLine = hangStatus.out.split('\n').find((l) => l.includes(HANG_WORKER)) ?? hangStatus.out;
+// `worker:hang` is a prefix of the two workers below, so the address is matched whole;
+// a miss falls to '' and reddens instead of running the regexps over everything.
+const hangLine = hangStatus.out.split('\n')
+  .find((l) => l.trimStart().startsWith(`${HANG_WORKER} \u00b7`)) ?? '';
 check(': the status line of a standing Cursor does not contain claude — the route is from its driver',
   hangStatus.status === 0 && /STALLED/.test(hangLine) && !/claude /.test(hangLine)
   && /agent persist/.test(hangLine),
-  hangLine);
+  hangLine || `no "${HANG_WORKER} \u00b7" line in:\n${hangStatus.out.slice(-800)}`);
 
 const HANG_CHILD_TASK = 'cursorhangchild-t20260903-000000';
 const HANG_CHILD_WORKER = 'worker:hangchild';
@@ -1292,12 +1298,12 @@ check(': transcript silence with a live pane child is not a stop, the line is ho
   JSON.stringify(living));
 
 const livingStatus = cli([ 'status', '--task', HANG_CHILD_TASK], { cwd: ws, env });
-const livingLine = livingStatus.out.split('\n').find((l) => l.includes(HANG_CHILD_WORKER))
-  ?? livingStatus.out;
+const livingLine = livingStatus.out.split('\n')
+  .find((l) => l.trimStart().startsWith(`${HANG_CHILD_WORKER} \u00b7`)) ?? '';
 check(': status on silence with live processes does not say STALLED',
   livingStatus.status === 0 && /is alive/.test(livingLine) && !/STALLED/.test(livingLine)
   && /processes are alive/.test(livingLine),
-  livingLine);
+  livingLine || `no "${HANG_CHILD_WORKER} \u00b7" line in:\n${livingStatus.out.slice(-800)}`);
 
 cli([ 'done', '--task', HANG_CHILD_TASK], { cwd: ws, env });
 
@@ -1334,11 +1340,11 @@ check(': a silent turn writing in its worktree is not a stall, and the line says
   JSON.stringify(working));
 
 const workingStatus = cli([ 'status', '--task', HANG_WRITE_TASK], { cwd: ws, env });
-const workingLine = workingStatus.out.split('\n').find((l) => l.includes(HANG_WRITE_WORKER))
-  ?? workingStatus.out;
+const workingLine = workingStatus.out.split('\n')
+  .find((l) => l.trimStart().startsWith(`${HANG_WRITE_WORKER} \u00b7`)) ?? '';
 check(': status does not call an editing participant STALLED',
   workingStatus.status === 0 && !/STALLED/.test(workingLine) && /worktree was written/.test(workingLine),
-  workingLine);
+  workingLine || `no "${HANG_WRITE_WORKER} \u00b7" line in:\n${workingStatus.out.slice(-800)}`);
 
 cli([ 'done', '--task', HANG_WRITE_TASK], { cwd: ws, env });
 

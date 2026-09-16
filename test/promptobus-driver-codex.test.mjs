@@ -1718,11 +1718,14 @@ check('step 3: the turn ended — the session is alive and not busy',
 
 {
   const idleStatus = cli([ 'status', '--task', TASK], { cwd: ws, env });
-  const idleLine = idleStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? idleStatus.out;
+  // Picked by the whole address, and a miss falls to '' so it reddens: the whole
+  // output would let these regexps find their text on a neighbour's line.
+  const idleLine = idleStatus.out.split('\n')
+    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? '';
   check(': idle after a Codex turn — inspect.unknown, status is not a stall of unknown nature',
     idle?.stall?.kind === 'unknown' && /the turn ended/.test(String(idle?.stall?.reason))
     && idleStatus.status === 0 && /waiting for a message/.test(idleLine) && !/STALLED/.test(idleLine),
-    `${JSON.stringify(idle)} · ${idleLine}`);
+    `${JSON.stringify(idle)} · ${idleLine || `no "${WORKER} \u00b7" line in:\n${idleStatus.out.slice(-800)}`}`);
 }
 
 {
@@ -1750,10 +1753,11 @@ check('step 3: the turn ended — the session is alive and not busy',
       && stallStands(home, TASK, wp, failedView.stall) === true,
     JSON.stringify(failedView));
   const failedStatus = cli(['status', '--task', TASK], { cwd: ws, env });
-  const failedLine = failedStatus.out.split('\n').find((l) => l.includes(WORKER)) ?? failedStatus.out;
+  const failedLine = failedStatus.out.split('\n')
+    .find((l) => l.trimStart().startsWith(`${WORKER} \u00b7`)) ?? '';
   check(': promptobus status prints STALLED for a failed Codex turn',
     /STALLED/.test(failedLine) && /invalid_request_error: probe/.test(failedLine),
-    failedLine);
+    failedLine || `no "${WORKER} \u00b7" line in:\n${failedStatus.out.slice(-800)}`);
   writeSession({
     ...idleRec,
     busy: false,

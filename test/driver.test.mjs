@@ -571,7 +571,10 @@ test('an unreadable inbox ref is named in the postcard and clears on a later gla
   assert.ok(first.messages.some((message) => message.type === 'mailbox-broken' && message.ts), firstPostcard);
   assert.ok(firstRound.events.some((event) => event.includes(`EACCES ${refusedRef}`)), firstRound.events.join('\n'));
   const firstStatus = capture(() => status(path.dirname(home), { task, sessions: {} }));
-  const firstStatusLine = firstStatus.split('\n').find((line) => line.includes('worker:a')) ?? firstStatus;
+  // Picked by the whole address, and a miss falls to '' so it reddens: the whole output
+  // carries the participant line anyway, so a fallback to it would assert nothing.
+  const firstStatusLine = firstStatus.split('\n')
+    .find((line) => line.trimStart().startsWith('worker:a \u00b7')) ?? '';
   assert.ok(firstStatusLine.includes(`unreadable refs: EACCES ${refusedRef}`), firstStatus);
 
   refuse = false;
@@ -584,7 +587,10 @@ test('an unreadable inbox ref is named in the postcard and clears on a later gla
   const second = driver.calls.activate[1].notification;
   assert.ok(second.messages.some((message) => message.body === 'the first message'));
   const secondStatus = capture(() => status(path.dirname(home), { task, sessions: {} }));
-  const secondStatusLine = secondStatus.split('\n').find((line) => line.includes('worker:a')) ?? secondStatus;
+  const secondStatusLine = secondStatus.split('\n')
+    .find((line) => line.trimStart().startsWith('worker:a \u00b7')) ?? '';
+  // A miss would make the negative check vacuously true, so the line is required first.
+  assert.ok(secondStatusLine, secondStatus);
   assert.ok(!secondStatusLine.includes('unreadable refs:'), secondStatus);
 });
 
