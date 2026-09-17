@@ -2,14 +2,14 @@
 
 - **Order:** 380
 - **Area:** `schemas/v1/handover-record.schema.json`, the send-time schema check
-- **Created:** 2026-09-17, finding from an ati-agents run (BL-693)
+- **Created:** 2026-09-17, finding from a consumer's run
 - **Dependencies:** none
 
 ## Measurement
 
 The handover record already carries `mutationProbe.reddened` — the names that went red. What it does not carry is what the author *expected* to go red. Nothing in the schema, and nothing in the send-time check, compares the two, so a probe that reddened the wrong thing is indistinguishable from a probe that worked.
 
-Two live cases in one ati-agents task on 2026-09-17 (`BL-693`), both found by a human reading the content of the redness rather than its presence:
+Two live cases in one consumer task on 2026-09-17, both found by a human reading the content of the redness rather than its presence:
 
 1. **A verdict passed for a foreign reason.** A fixture used a relative path; `path.resolve` resolved it against the process working directory rather than the fixture root, so the refusal came from the resolver ("outside the working zones") and never reached the gate under test. The verdict was green even with the gate removed.
 2. **A block of verdicts did not run at all.** A bare `readLock` on an invalid file exits the process through `fail()`. Everything below it in the test file — including the whole parity block the change was made for — produced no verdicts. The run was red, but not for the reason claimed.
@@ -25,7 +25,7 @@ Let the record state the intent, and check it where the record is accepted:
 
 ## Not in scope
 
-- Counting executed verdicts to catch an aborted file, and isolating the fixture root per input. Both are test-suite hygiene and belong to the consumer's own suite — recorded there as `BL-693.2` in `ati-agents`.
+- Counting executed verdicts to catch an aborted file, and isolating the fixture root per input. Both are test-suite hygiene and belong to the consumer's own suite, and are recorded in its own tracker.
 - Deciding what a runner prints. The record describes what the author did; it does not require a runner to report totals it has no notion of.
 
 ## Checks
