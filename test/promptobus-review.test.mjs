@@ -2384,6 +2384,14 @@ check('PB-213: with a record attached the reviewer is told the five names it mus
   && HANDOVER_CHECKS.every((name) => gatePlan.prompt.includes(name))
   && /a check that says `notRun` was not performed/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /Handover records attached/.test(l)) ?? gatePlan.prompt);
+// PB-234: the field is optional, so a probe without it is a PRESENT check that passes in
+// silence — and deleting it is the cheapest way out of a refusal over it. Named on both sides.
+check('PB-234: a probe that names no target is named too — an absent `expected` is not a passed check',
+  /`mutationProbe` with no `expected`/.test(gatePlan.prompt)
+  && /cannot be told from a probe that reddened something else/.test(gatePlan.prompt)
+  && /Name its absence too/.test(gatePlan.prompt)
+  && /leaves no trace anywhere else/.test(gatePlan.prompt),
+  gatePlan.prompt.split('\n').find((l) => /no `expected`/.test(l)) ?? gatePlan.prompt);
 
 // PB-233: a session BOUND to task A lifts a review that opens task B. One binding stays, so B
 // gets none — and the contact point used to be written only by the first bus call FOR THAT TASK,

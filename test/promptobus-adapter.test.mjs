@@ -508,6 +508,95 @@ check('handover record: the same door, the same refusal — one mechanism covers
   && /\/checks: required field is missing/.test(handoverRefusal.msg),
   handoverRefusal.msg);
 
+// PB-234: the probe declares what it was made to redden, and the door compares the two
+// fields — which no schema keyword can do, and this repository's reader deliberately cannot.
+const handoverDoc = (probeOver = {}) => ({
+  schemaVersion: 1,
+  tree: 'a'.repeat(40),
+  base: 'b'.repeat(40),
+  at: '2026-09-17T09:12:00.000Z',
+  by: 'worker:a',
+  checks: {
+    verdictNames: { removed: [] },
+    mutationProbe: {
+      tree: 'a'.repeat(40),
+      mutated: 'lib/handoff.js:14',
+      mutatedRunExit: 1,
+      applied: true,
+      verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
+      reddened: ['the bound check'],
+      ...probeOver,
+    },
+    treeState: { beforeProbe: '', afterRestore: '' },
+    environmentalRed: { claims: [] },
+    gatesNotRun: { gates: [] },
+  },
+});
+
+const wrongTarget = path.join(SB, 'handover-wrong-target.json');
+writeFileSync(wrongTarget, JSON.stringify(handoverDoc({ expected: ['the parity block'] })));
+const targetRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: wrongTarget,
+}));
+check('PB-234: a probe that reddened something other than its declared target is refused, with both named',
+  targetRefusal.threw
+  && /contradicts itself/.test(targetRefusal.msg)
+  && /«the parity block»/.test(targetRefusal.msg)
+  && /«the bound check»/.test(targetRefusal.msg),
+  targetRefusal.msg);
+check('PB-234: the refusal left nothing of the contradicting record in the task',
+  !existsSync(path.join(store.filesDir(home, task.id), 'handover-wrong-target.json')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+// One target of two hit. Printing the MISSING part alone made the hit one read as a stray,
+// with nothing left saying it had been declared — so the refusal carries both lists whole.
+const halfTarget = path.join(SB, 'handover-half-target.json');
+writeFileSync(halfTarget, JSON.stringify(handoverDoc({ expected: ['the bound check', 'the parity block'] })));
+const halfRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: halfTarget,
+}));
+check('PB-234: one target of two hit is still a refusal, and the hit one is not printed as a stray',
+  halfRefusal.threw
+  && /declared «the bound check», «the parity block»/.test(halfRefusal.msg)
+  && /`reddened` names «the bound check»/.test(halfRefusal.msg)
+  && /so «the parity block» never turned red/.test(halfRefusal.msg),
+  halfRefusal.msg);
+// The diagnosis after the dash, not the data before it: "reddened other things" is true when
+// nothing declared hit and false when something did, and it sends the reader the wrong way.
+check('PB-234: the refusal diagnoses by branch — a partial hit is not "it reddened other things"',
+  /reached part of what it was declared against/.test(halfRefusal.msg)
+  && !/reddened other things/.test(halfRefusal.msg)
+  && /reddened other things/.test(targetRefusal.msg)
+  && !/reached part of what it was declared against/.test(targetRefusal.msg),
+  `partial: ${halfRefusal.msg}\ntotal: ${targetRefusal.msg}`);
+
+const hitTarget = path.join(SB, 'handover-target-hit.json');
+// `passed` drops with the second reddened name: 26 − 24 − 2 = 0. The schema takes `unaccounted`
+// as a `const`, so only the author's arithmetic holds it — a fixture is copied as the example.
+const hitDoc = handoverDoc({
+  expected: ['the bound check'],
+  reddened: ['the bound check', 'a neighbour'],
+  verdicts: { baseTotal: 26, passed: 24, unaccounted: 0 },
+});
+writeFileSync(hitTarget, JSON.stringify(hitDoc));
+const hitSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: hitTarget,
+});
+check('PB-234: the declared target among the names that reddened passes, and a wider net is not a fault',
+  hitSend.artifact.filename === 'handover-target-hit.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-target-hit.json'), 'utf8') === JSON.stringify(hitDoc),
+  hitSend.artifact?.filename);
+
+// The consumer holds records written by the previous version, mid-run: absence of the field
+// is the old record, and refusing it would break the reader this whole door exists to serve.
+const noTarget = path.join(SB, 'handover-no-target.json');
+writeFileSync(noTarget, JSON.stringify(handoverDoc()));
+const noTargetSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: noTarget,
+});
+check('PB-234: a record that declares no target lands as before — the field is optional',
+  noTargetSend.artifact.filename === 'handover-no-target.json', noTargetSend.artifact?.filename);
+
 const neutral = path.join(SB, 'gates-not-a-record.txt');
 writeFileSync(neutral, 'not json, not a record\n');
 const neutralSend = store.sendMessage(home, task.id, {

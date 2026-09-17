@@ -198,7 +198,7 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/hooks` | Hook planner: the bus feedback and guard hooks a harness file needs |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
 | `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
-| `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record and the model-routing documents |
+| `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record, the handover record and the model-routing documents |
 
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](docs/reference/01-overview.md), [reference/02-host.md](docs/reference/02-host.md), [reference/04-protocol.md](docs/reference/04-protocol.md).
 

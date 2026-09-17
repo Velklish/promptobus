@@ -108,6 +108,24 @@ check('PB-213: a mutation that never applied is not a probe, and neither is one 
   && refuses(doc({ checks: checks({ mutationProbe: probe({ reddened: 'the bound check' }) }) })),
   'a run that measured the unmutated tree was accepted as evidence');
 
+// PB-234: `expected` is the intent, `reddened` the outcome. The SHAPE is the schema's; the
+// comparison of the two is `recordRefusal`'s, and the send door asserts it in the adapter file.
+const TARGET = 'PB-201: the bound the schema publishes is the bound lib/handoff.js hands the preambles';
+
+check('PB-234: the probe may name what it was made to redden, as one name or as several',
+  accepts(doc({ checks: checks({ mutationProbe: probe({ expected: [TARGET] }) }) }))
+  && accepts(doc({ checks: checks({ mutationProbe: probe({ expected: [TARGET, 'a second verdict'] }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ expected: [] }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ expected: TARGET }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ expected: [{ name: TARGET }] }) }) })),
+  'the declared target was accepted in a shape nothing can be compared against');
+
+// The consumer holds records written by the previous version and is mid-run. A field that
+// refused them would break the mechanism reading them, so absence is the old record, not a gap.
+check('PB-234: a record written before the field keeps passing — the field is optional, not a migration',
+  accepts(doc()) && doc().checks.mutationProbe.expected === undefined,
+  'a record of the previous version was refused by a field it could not have carried');
+
 check('PB-213: the probe names a sha and a `file:line`, not a description of either',
   refuses(doc({ checks: checks({ mutationProbe: probe({ tree: 'HEAD' }) }) }))
   && refuses(doc({ checks: checks({ mutationProbe: probe({ tree: '1966ace' }) }) }))
@@ -227,6 +245,12 @@ const fixtures = [
   doc({ checks: checks({ mutationProbe: probe({ exit: 1 }) }) }),
   doc({ checks: checks({ mutationProbe: probe({ verdicts: { baseTotal: 26, passed: 0, unaccounted: 25 } }) }) }),
   doc({ checks: checks({ mutationProbe: probe({ mutated: 'lib/handoff.js' }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ expected: [TARGET] }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ expected: [] }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ expected: TARGET }) }) }),
+  // Schema-valid and self-contradicting: the agreement is about SHAPE, and the two fields
+  // are compared one layer up. A fixture here that both readers refused would hide that.
+  doc({ checks: checks({ mutationProbe: probe({ expected: ['a verdict that never reddened'] }) }) }),
   doc({ checks: checks({ treeState: { beforeProbe: ' M lib/handoff.js', afterRestore: '' } }) }),
   doc({ checks: checks({ treeState: { beforeProbe: '' } }) }),
   doc({ checks: checks({ verdictNames: { removed: [{ name: 'a stale case', reason: 'the contract it asserted was removed' }] } }) }),

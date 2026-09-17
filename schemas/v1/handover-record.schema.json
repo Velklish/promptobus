@@ -40,7 +40,7 @@
           "oneOf": [{ "$ref": "#/$defs/verdictNames" }, { "$ref": "#/$defs/notRun" }]
         },
         "mutationProbe": {
-          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution.",
+          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution, and a probe that turned the WRONG thing red is the same hole with a green look — which is what `expected` is here to tell apart.",
           "oneOf": [{ "$ref": "#/$defs/mutationProbe" }, { "$ref": "#/$defs/notRun" }]
         },
         "treeState": {
@@ -151,8 +151,15 @@
             }
           }
         },
+        "expected": {
+          "description": "The names the mutation was made to redden, written down BEFORE the run. Optional, because records written by an earlier version carry none; present, it is checked at `send` against `reddened` and every name here must appear there. Without it a probe that reddened the wrong thing is indistinguishable from one that worked: a fixture whose refusal came from the path resolver never reached the gate under test, and a verdict that turned red for a foreign reason reads exactly like one that turned red for the right one.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/verdictName" }
+        },
         "reddened": {
-          "description": "The names of the verdicts that turned red under the mutation. At least one: a probe that reddens nothing found a hole in the tests, and that hole is the finding — not a handover.",
+          "description": "The names of the verdicts that turned red under the mutation. At least one: a probe that reddens nothing found a hole in the tests, and that hole is the finding — not a handover. More names than `expected` is not a fault: a neighbouring verdict that also caught the mutation is a wider net, not a wrong probe.",
           "type": "array",
           "minItems": 1,
           "maxItems": 256,

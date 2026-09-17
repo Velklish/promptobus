@@ -1651,6 +1651,13 @@ check('PB-213: the preamble names all five checks and the refusal marker of each
   && /call environmental, flaky or pre-existing/.test(handoff)
   && /gate command you did NOT run/.test(handoff),
   handoff.slice(-1800));
+// PB-234: the field is optional in the schema, so nothing but this preamble makes a worker
+// write it. A silent field is a field no record carries.
+check('PB-234: the preamble asks the probe to name its target, and says the bus refuses a miss',
+  /`expected`/.test(handoff)
+  && /written down before the run/.test(handoff)
+  && /refuses the record when `reddened` does not carry that name/.test(handoff),
+  handoff.slice(-1800));
 check('PB-213: a check left out is not a check passed, and an impossible one is declared',
   /A check you leave out is not a check you passed/.test(handoff)
   && /`notRun`/.test(handoff)

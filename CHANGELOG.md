@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The handover record can now name the verdict its mutation probe was made to redden, and `send` refuses a record whose probe reddened something else.** `mutationProbe` carried `reddened` — what went red — and nothing about what the author was aiming at, so a probe that reddened the wrong thing was indistinguishable from one that worked. Both cases behind this were caught by a person reading the content of the redness rather than its presence: a fixture on a relative path whose refusal came from `path.resolve` and never reached the gate under test (green with the gate removed), and a file that exited through `fail()` partway and produced no verdicts at all below that line. `mutationProbe.expected` (`schemas/v1/handover-record.schema.json`) takes the names written down before the run, and `recordRefusal` (`lib/handoff.js`) refuses a record whose `reddened` does not carry every one of them, printing both lists whole and then the names that never reddened — whole, because the missing part alone made a target that WAS hit read as a stray. The diagnosis after the data branches on whether ANY declared target reddened: "it reddened other things" is true when none did and misleading when some did. **Subset, not equality:** more names in `reddened` is a wider net, not a wrong probe. The comparison sits beside the schema pass rather than inside it because JSON Schema cannot compare two of its own fields and the reader in `lib/schema.js` deliberately cannot either, and it goes through the one door both records already pass — there is no second validator to drift from the first. **The field is OPTIONAL:** consumers hold records written by 0.12.1 and read them mid-run, so a record with no `expected` passes exactly as before, and two suites send one through the door. What it does not catch is stated where it is defined rather than left to be discovered: an author who writes `expected` after reading `reddened`, and the aborted run — a file that dies partway can hold every declared name in `reddened` while every verdict below that line silently produced nothing. Counting executed verdicts is the consumer's own suite, not this schema. 04-protocol § The handover record.
+
 ## [0.12.1] — 2026-09-17
 
 ### Fixed
