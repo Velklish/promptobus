@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { runPromptobus } from '../lib/cli.js';
 import {
-  CURSOR_HOOK_EVENTS, HOME_HOOK_DIRS, assertCursorHookEvents, install, parseHarnessList, uninstall,
+  CURSOR_HOOK_EVENTS, CURSOR_HOOK_EVENTS_SOURCE_VERSION, CURSOR_PROVEN_HOOK_EVENTS, HOME_HOOK_DIRS,
+  assertCursorHookEvents, cursorUnprovenHookEvents, install, parseHarnessList, uninstall,
 } from '../lib/install.js';
 import { GateError } from '../lib/store.js';
 import { prune } from '../lib/prune.js';
@@ -412,13 +413,23 @@ test('install from a subdirectory writes the project root; prune keeps what inst
 });
 
 test('cursor event-name gate matches the driver list and rejects any other name', async () => {
-  const { KNOWN_HOOK_EVENTS } = await import('../lib/driver-cursor.js');
+  const { KNOWN_HOOK_EVENTS, PROVEN_HOOK_EVENTS, HOOK_EVENTS_SOURCE_VERSION } = await import('../lib/driver-cursor.js');
   assert.deepEqual(CURSOR_HOOK_EVENTS, KNOWN_HOOK_EVENTS);
-  assert.throws(() => assertCursorHookEvents({ postToolUse: [{}] }), (e) => (
-    e instanceof GateError && /unknown Cursor hook event "postToolUse"/.test(e.message)
+  // All three copies, not the list alone: the installer warns off the other two, and a drift
+  // there would warn about the wrong names or name the wrong build.
+  assert.deepEqual(CURSOR_PROVEN_HOOK_EVENTS, PROVEN_HOOK_EVENTS);
+  assert.equal(CURSOR_HOOK_EVENTS_SOURCE_VERSION, HOOK_EVENTS_SOURCE_VERSION);
+  assert.equal(CURSOR_HOOK_EVENTS.length, 21);
+  // A misspelling of a real inventory name is the case the gate exists for: `postToolUse` is
+  // Cursor's own and passes, and one letter more disables every hook in the file in silence.
+  assert.throws(() => assertCursorHookEvents({ postToolUseFailed: [{}] }), (e) => (
+    e instanceof GateError && /unknown Cursor hook event "postToolUseFailed"/.test(e.message)
   ));
   assert.throws(() => assertCursorHookEvents({ invented: [{}] }), (e) => e instanceof GateError);
   assert.doesNotThrow(() => assertCursorHookEvents({ stop: [{}] }));
+  for (const event of [...PROVEN_HOOK_EVENTS, 'postToolUse', 'afterMCPExecution']) {
+    assert.doesNotThrow(() => assertCursorHookEvents({ [event]: [{}] }), event);
+  }
 });
 
 test('cursor install rejects unknown event names already present in hooks.json', () => {
@@ -426,18 +437,74 @@ test('cursor install rejects unknown event names already present in hooks.json',
   const rel = path.join('.cursor', 'hooks.json');
   const before = {
     version: 1,
-    hooks: { postToolUse: [{ command: 'echo foreign-cursor-event' }] },
+    hooks: { postToolUseFailed: [{ command: 'echo foreign-cursor-event' }] },
   };
   mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
   writeFileSync(path.join(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
 
   assert.throws(
     () => doInstall(dir, home, { harnesses: 'cursor' }),
-    (e) => e instanceof GateError && /unknown Cursor hook event "postToolUse"/.test(e.message),
+    (e) => e instanceof GateError && /unknown Cursor hook event "postToolUseFailed"/.test(e.message),
   );
   assert.equal(fileText(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
   assert.equal(existsSync(path.join(dir, 'promptobus.json')), false);
   assert.equal(existsSync(path.join(dir, '.promptobus', 'manifest.json')), false);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('cursor install warns about a name known only from the bundle inventory, and does not refuse it', () => {
+  const { dir, home } = sandbox();
+  const rel = path.join('.cursor', 'hooks.json');
+  const before = {
+    version: 1,
+    hooks: { afterMCPExecution: [{ command: 'echo consumer-tracker' }] },
+  };
+  mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+  writeFileSync(path.join(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
+
+  let code = null;
+  const said = capture(() => { code = doInstall(dir, home, { harnesses: 'cursor' }); });
+  // Not a refusal: the name is legal on the build the inventory was read from, and the group
+  // stays in the file — what the line buys is that a silent kill on another build is not silent here.
+  assert.equal(code, 0);
+  assert.equal(readJson(dir, rel).hooks.afterMCPExecution[0].command, 'echo consumer-tracker');
+  assert.match(said, /afterMCPExecution/);
+  assert.match(said, new RegExp(CURSOR_HOOK_EVENTS_SOURCE_VERSION));
+  assert.deepEqual(cursorUnprovenHookEvents(readJson(dir, rel).hooks), ['afterMCPExecution']);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('a cursor install of only proven names says nothing about the inventory', () => {
+  const { dir, home } = sandbox();
+  let code = null;
+  const said = capture(() => { code = doInstall(dir, home, { harnesses: 'cursor' }); });
+  assert.equal(code, 0);
+  assert.deepEqual(cursorUnprovenHookEvents(readJson(dir, path.join('.cursor', 'hooks.json')).hooks), []);
+  assert.doesNotMatch(said, new RegExp(CURSOR_HOOK_EVENTS_SOURCE_VERSION));
+  assert.doesNotMatch(said, /bundle inventory/);
+});
+
+test('uninstall warns about the same inventory-only group, which it does not touch either', () => {
+  const { dir, home } = sandbox();
+  const rel = path.join('.cursor', 'hooks.json');
+  const before = {
+    version: 1,
+    hooks: { afterMCPExecution: [{ command: 'echo consumer-tracker' }] },
+  };
+  mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+  writeFileSync(path.join(dir, rel), `${JSON.stringify(before, null, 2)}\n`);
+  capture(() => doInstall(dir, home, { harnesses: 'cursor' }));
+
+  let code = null;
+  const said = capture(() => { code = doUninstall(dir, home); });
+  // `uninstall` shares runPlan with install, so the line is said on the fourth path as well.
+  // It is about the FILE and not about what the command wrote: the group is foreign, it stays
+  // in the file after the guard is taken out, and a silent kill on another build stays possible.
+  assert.equal(code, 0);
+  assert.equal(readJson(dir, rel).hooks.afterMCPExecution[0].command, 'echo consumer-tracker');
+  assert.equal(Object.hasOwn(readJson(dir, rel).hooks, 'stop'), false);
+  assert.match(said, /afterMCPExecution/);
+  assert.match(said, new RegExp(CURSOR_HOOK_EVENTS_SOURCE_VERSION));
   assert.deepEqual(homeHits(home), []);
 });
 

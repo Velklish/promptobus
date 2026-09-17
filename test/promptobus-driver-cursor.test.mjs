@@ -53,7 +53,7 @@ check(': Cursor diagnosis surfaces scenario errors before the later red verdict'
 const cursorModule = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
   cursorDriver, normalizeTool, reviewSandbox, PROVEN_CURSOR_VERSION, PHRASES, KNOWN_HOOK_EVENTS,
-  skillsNoteOf,
+  PROVEN_HOOK_EVENTS, HOOK_EVENTS_SOURCE_VERSION, skillsNoteOf,
 } = cursorModule;
 const {
   dropSession, injectText, launchScript, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
@@ -626,8 +626,20 @@ check(': the loop guard sits on stop, not sessionEnd, and calls the same command
 // the whole file.
 check(': the driver writes only known event names into hooks.json',
   Object.keys(hooks.hooks).every((name) => KNOWN_HOOK_EVENTS.includes(name))
-  && KNOWN_HOOK_EVENTS.includes('stop') && KNOWN_HOOK_EVENTS.length === 5,
+  && KNOWN_HOOK_EVENTS.includes('stop'),
   `${Object.keys(hooks.hooks).join(',')} · known: ${KNOWN_HOOK_EVENTS.join(',')}`);
+
+// The list is the bundle inventory of one named build, and the five the spike proved are a
+// subset of it. The count is checked because the gate refuses by ABSENCE from this list: a name
+// dropped out of it turns a legal hooks.json into a refusal, and nothing else here would say so.
+check(': the known-event list is the whole 21-name inventory of the build it names',
+  KNOWN_HOOK_EVENTS.length === 21
+  && new Set(KNOWN_HOOK_EVENTS).size === KNOWN_HOOK_EVENTS.length
+  && HOOK_EVENTS_SOURCE_VERSION === '2026.09.10-fd3934a',
+  `${KNOWN_HOOK_EVENTS.length} names of ${HOOK_EVENTS_SOURCE_VERSION}: ${KNOWN_HOOK_EVENTS.join(',')}`);
+check(': the five names the live spike proved are in it, and they are five',
+  PROVEN_HOOK_EVENTS.length === 5 && PROVEN_HOOK_EVENTS.every((name) => KNOWN_HOOK_EVENTS.includes(name)),
+  `${PROVEN_HOOK_EVENTS.join(',')} · known: ${KNOWN_HOOK_EVENTS.join(',')}`);
 
 check(': worker permissions — its own .cursor/cli.json with empty lists',
   JSON.stringify(JSON.parse(files['cli.json'].text)) === JSON.stringify({ permissions: { allow: [], deny: [] } }),

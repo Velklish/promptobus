@@ -916,6 +916,61 @@ If a knock is refused and that contact point then disappears, the next round rep
 
 No driver call on the warden beat path may block without a ceiling. Every launch through `run` carries the shared 60-second timeout and 32 MiB output budget; a call site may override either value.
 
+### Cursor hook events
+
+Source: `lib/driver-cursor.js`, `KNOWN_HOOK_EVENTS`, `PROVEN_HOOK_EVENTS`, `HOOK_EVENTS_SOURCE_VERSION`,
+`lib/install.js`, `cursorUnprovenHookEvents`.
+
+`KNOWN_HOOK_EVENTS` is the vocabulary of `.cursor/hooks.json`, and it is a gate list rather than a
+menu: an unknown event name in that file silently disables every hook in it, taking the loop guard
+and the wake channel with it and printing nothing anywhere. `install` refuses a name outside the
+list before it writes, over the MERGED event map and not over what it was about to add
+(`assertCursorHookEvents`). `lib/install.js` keeps its own copy under `CURSOR_HOOK_EVENTS`, held
+equal to the driver's by the suite instead of imported from it — the installer would otherwise pull
+the whole Cursor driver graph in for a list of strings.
+
+**The list is a bundle inventory, and an inventory is not a measurement.** The twenty-one names are
+the `_E` table of the `cursor-agent` `index.js` bundle, read on 2026-09-17 from the installed
+`2026.09.10-fd3934a` (`~/.local/share/cursor-agent/versions/<version>/index.js`) with no live
+session. `HOOK_EVENTS_SOURCE_VERSION` records that build beside the list, and it is deliberately a
+different number from `PROVEN_CURSOR_VERSION`: that one dates a lift, this one dates a read. The
+inventory is exact about which names the binary of that build parses and says nothing about which
+of them ever fire.
+
+**It is one build's dictionary, and it promises nothing about any other build.** The gate never
+reads a version — `assertCursorHookEvents` compares names and nothing else, and the binary updates
+itself with nothing here controlling that. So on a build where one of the sixteen unproven names is
+absent, a `.cursor/hooks.json` carrying it passes the gate and disables every hook in the file in
+silence: exactly the failure the list exists against, moved one build along. Raising
+`PROVEN_CURSOR_VERSION` (**2026.09.02**, older than the build the inventory came from) would not
+close it either — it would refuse builds that work today for a name nobody asked for. What stands
+instead is a **warning and never a refusal**: `install` reads the merged event map for names inside
+the inventory but outside `PROVEN_HOOK_EVENTS` (`cursorUnprovenHookEvents`) and, for each one it
+finds, says the name, the build the inventory was read from, and that another build would kill the
+whole file without a word. The group is written, and the person decides.
+
+**Five names are proven live**, and they are `PROVEN_HOOK_EVENTS`: `sessionStart`,
+`beforeSubmitPrompt`, `stop`, `sessionEnd`, `afterFileEdit` — the set the spike drove. Two
+qualifications travel with those five. `sessionEnd` is *accepted* rather than firing: it does not
+fire in a live session at all, not at end of turn and not on teardown, which is why the loop guard
+sits on `stop`. And being outside the five is not evidence either — `afterMCPExecution` is
+inventory only here while a consumer outside this package hangs a tracker on it and measured it
+firing on 2026-08-24.
+
+**Sixteen names are inventory only**: `beforeShellExecution`, `beforeMCPExecution`,
+`afterShellExecution`, `afterMCPExecution`, `beforeReadFile`, `beforeTabFileRead`,
+`afterTabFileEdit`, `afterAgentResponse`, `afterAgentThought`, `preCompact`, `subagentStart`,
+`subagentStop`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `workspaceOpen`. Nothing here has
+seen one of them fire, in `agent -p` or in the IDE, and nothing here asks one to: the list admits
+them to the file, it does not promise them.
+
+**What the twenty-one changed, and what they did not.** The driver writes one event and writes it
+from a constant, so what promptobus itself puts in the file has not moved. What moved is the answer
+to a foreign name already sitting in a project's `.cursor/hooks.json`: a `postToolUse` group there
+used to make `install` refuse, and now installs, because the binary of the recorded build knows that
+name. A misspelling still does not — `postToolUseFailed` for `postToolUseFailure` is refused by
+name, before any write, and that is the whole job of the list.
+
 ## The Codex holder
 
 The [glossary](../GLOSSARY.md) defines the harness terms used here — holder, contact point, persist session, thread, and session record — and keeps a Codex thread distinct from a Cursor persist session.

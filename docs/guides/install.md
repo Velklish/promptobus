@@ -114,7 +114,7 @@ The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is 
 
 The installer leaves an existing unselected harness file byte-for-byte untouched. If it finds an owned hook group left by an earlier install, it rewrites that file only to remove the group; `install --check` reports drift for that cleanup when needed.
 
-When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. Cleanup of a run must keep `.promptobus/`.
+When a guard id is not in the manifest, Promptobus recognises a guard group by a portable command signature: the rendered command has two quoted launch elements, optional unquoted host-prefix words, the bare `guard` word, and either no remaining words or exactly `--role <value> --task <value> --home <value>` (identity values may be quoted). Any `Stop`/`SessionStart` (Cursor `stop`) command with that shape is treated as ours whatever binary it launches; install replaces it and `uninstall` removes it. The node and bin paths are ignored by this fallback, so a copied guard from another checkout is replaced on install and removed by `uninstall`. A command that merely contains `guard`, adds an unknown flag, or invokes another subcommand remains foreign. Merge keeps foreign hook groups, foreign settings, and unknown fields, except guard-shaped commands described above; `uninstall` removes only owned records. Before writing a Cursor file, install validates the merged hook event map against Cursor's known event names; an unknown event fails the command and leaves the existing file unchanged. A KNOWN name that no spike proved firing does not fail it and is not removed: the known list is the hook-event inventory of one `cursor-agent` build ([03-cli](../reference/03-cli.md#cursor-hook-events) § Cursor hook events), so such a group is kept and warned about instead — on a build that does not know the name, every hook in the file is disabled in silence. Cleanup of a run must keep `.promptobus/`.
 
 A malformed or shared config file fails the command. The installer does not write a partial file.
 
@@ -130,6 +130,14 @@ The CLI prints `configured` and then:
 ```text
 Review: Codex requires /hooks; project hooks also depend on workspace trust.
 Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor participant by driver injection.
+```
+
+A Cursor file carrying an event name known only from the bundle inventory adds one more line — a
+warning, printed **before** `configured` and by `install`, `install --check`, `install --dry-run`
+and `uninstall` alike, since the group stays in the file on all four:
+
+```text
+Cursor: "afterMCPExecution" in .cursor/hooks.json — known from the 2026.09.10-fd3934a bundle inventory and never seen firing here. The gate reads that one build: on a build that does not know the name, every hook in the file is disabled in silence.
 ```
 
 Trust the project hooks in the harness. See [hooks-and-trust.md](hooks-and-trust.md).

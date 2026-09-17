@@ -78,7 +78,7 @@ Review: Codex requires /hooks; project hooks also depend on workspace trust.
 
 **Claude Code.** Project hooks in `.claude/settings.json` run only when this workspace is trusted. Approve the project when the harness asks. The Stop hook is `promptobus guard`. A clean mailbox exits 0 and prints nothing. Unread mail exits 2 and returns the turn.
 
-**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback reaches a Cursor participant by driver injection, not a project hook. The loop guard is `stop`. Cursor does not recognise `postToolUse`; adding it or another unknown event name to `.cursor/hooks.json` silently disables every hook in the file, so do not add one by hand. The installer validates the merged event map before writing and refuses an unknown event.
+**Cursor.** Project hooks live in `.cursor/hooks.json`. Trust the workspace hooks when Cursor asks. Bus feedback reaches a Cursor participant by driver injection, not a project hook. The loop guard is `stop`. An unknown event name in `.cursor/hooks.json` silently disables every hook in the file, so do not add one by hand: the names Cursor knows are the bundle inventory in [03-cli](../reference/03-cli.md#cursor-hook-events), of which five are proven live. A name from the other sixteen already in your file installs, with a warning: it is one build's dictionary, and a build that does not know the name disables every hook in the file in silence. The installer validates the merged event map before writing and refuses an unknown event.
 
 **Codex.** Review the new project hooks with `/hooks` before you rely on them. Project hooks also depend on trusting this workspace.
 
