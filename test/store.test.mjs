@@ -22,7 +22,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
   unlinkSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -40,7 +40,9 @@ process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 // adapter's business: there is no adapter here, and the suite plays it. The
 // example policy ("a worker must not write to a worker") lives in the CLI and
 // is checked there.
-const engineAt = (home) => store.openEngine({ home, policy: () => ({ allow: true }) });
+const engineAt = (home, faults) => store.openEngine({
+  home, policy: () => ({ allow: true }), ...(faults ? { faults } : {}),
+});
 
 // A participant record as the adapter lays it: id is the mailbox-directory
 // name, address is the `metadata` field by which a participant is named to a
@@ -343,7 +345,14 @@ test('task journal lock', async (t) => {
 // nearly left with it.
 test('peek, glance and lastSentAt — reads that do not take the mailbox', async (t) => {
   const home = path.join(SB, 'peek', '.promptobus');
-  const engine = engineAt(home);
+  // The injected refusal is armed per case: the hook sees every step of every operation in
+  // this test, and an unconditional throw would break the sends that set the mailbox up.
+  let refusedPeek = null;
+  let refusedCode = 'EACCES';
+  const engine = engineAt(home, (step, info) => {
+    if (step !== 'inbox-read' || info.mode !== 'peek' || info.name !== refusedPeek) return;
+    throw Object.assign(new Error(`${refusedCode}: injected peek read refusal`), { code: refusedCode });
+  });
   const task = engine.createTask({ id: 'peek-t20260903-000000', title: 'чтения', owner: participant('orchestrator') });
   engine.addParticipant(task.id, participant('worker:a'));
   for (const n of [1, 2, 3]) {
@@ -387,25 +396,31 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
   // `rm` takes its decision from, so `force` skips it and the ref would stay.
   unlinkSync(path.join(box, goneName));
 
-  // `chmod` refuses nothing on Windows or under `uid 0`, where the record parses
-  // and the verdict changes; same cut as [tmpdir-sweep](tmpdir-sweep.test.mjs).
-  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
-    const shutName = '20260903T000000000-7777-abcdef.json';
-    const shutFile = path.join(box, shutName);
-    writeFileSync(shutFile, '{"id":"x"}');
-    chmodSync(shutFile, 0o000);
-    await t.test('peek: a ref that cannot be opened is named in broken, not counted as absent', () => {
-      const { messages, broken } = engine.peek(task.id, 'orchestrator');
-      assert.equal(messages.length, 3, 'the readable mail is unaffected');
-      const note = broken.find((b) => b.name === shutName);
-      assert.ok(note, broken.map((b) => `${b.name} ${b.code}`).join(' | ') || '(nothing in broken)');
-      assert.equal(note.code, 'EACCES', note.code);
-      assert.equal(note.attic, null, 'the ref stays in place for a later visit');
-      assert.ok(existsSync(shutFile), 'and it is still in the inbox');
-    });
-    chmodSync(shutFile, 0o600);
-    rmSync(shutFile, { force: true });
-  }
+  // The same two halves again, through the seam this time. The disk can only be made to
+  // refuse one of them, and never on Windows or under `uid 0`, where `chmod` refuses nothing.
+  const injectedName = readdirSync(box).sort()[1];
+  await t.test('peek: an injected ENOENT on one ref is the same silent skip, with no skip of the case', () => {
+    refusedPeek = injectedName;
+    refusedCode = 'ENOENT';
+    const { messages, broken } = engine.peek(task.id, 'orchestrator');
+    refusedPeek = null;
+    assert.equal(messages.length, 2, 'the ref the owner took is not counted as read here');
+    assert.equal(broken.length, 0, broken.map((b) => `${b.name} ${b.code}`).join(' | '));
+    assert.equal(engine.unread(task.id, 'orchestrator'), 3, 'and nothing left the mailbox');
+  });
+
+  await t.test('peek: an injected EACCES is named in broken, not counted as absent', () => {
+    refusedPeek = injectedName;
+    refusedCode = 'EACCES';
+    const { messages, broken } = engine.peek(task.id, 'orchestrator');
+    refusedPeek = null;
+    assert.equal(messages.length, 2, 'the readable mail is unaffected');
+    const note = broken.find((b) => b.name === injectedName);
+    assert.ok(note, broken.map((b) => `${b.name} ${b.code}`).join(' | ') || '(nothing in broken)');
+    assert.equal(note.code, 'EACCES', note.code);
+    assert.equal(note.attic, null, 'the ref stays in place for a later visit');
+    assert.ok(existsSync(path.join(box, injectedName)), 'and it is still in the inbox');
+  });
 
   await t.test('glance: glances in silence — touches no refs and sets no broken aside', () => {
     writeFileSync(path.join(box, dirtyName), 'not json at all');

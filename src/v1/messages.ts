@@ -544,7 +544,7 @@ export { messagesDir };
 
 /** Look into the mailbox without touching anything: refs stay and do not go to history. Broken ones
  * are still set aside, or one unreadable record would return to the reader on every visit. */
-export function peekInbox(home: string, task: string, participant: string): {
+export function peekInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
   const dir = inboxDir(home, task, participant);
@@ -554,6 +554,7 @@ export function peekInbox(home: string, task: string, participant: string): {
     const file = path.join(dir, name);
     let record: ReadRecord;
     try {
+      fault('inbox-read', { task, participant, name, mode: 'peek' });
       record = readRecord(file, name, brokenInboxDir(home, task, participant));
     } catch (e) {
       // The owner took it between the listing and the read: they will deliver the message.
