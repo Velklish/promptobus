@@ -1,9 +1,9 @@
 # PB-233 · A second task lifted from a bound session leaves its orchestrator without a contact point: the warden knocks 0 and the loop guard watches only the bound task
 
-- **Order:** 
 - **Scope:** `lib/warden.js` (contact point of `orchestrator`), `lib/review.js` (task creation from a bound session), `lib/guard.js` (`boundTaskId`), the bus hook template that hands the session socket over, [03-cli](../../reference/03-cli.md) § the warden
 - **Created:** 2026-09-17, consumer run
 - **Dependencies:** none
+- **Taken:** 2026-09-17
 
 ## Context
 
@@ -15,6 +15,7 @@ Measured 2026-09-17, tasks `run-0917b-t20260917-074114` (A) and `bl-692-pin-prom
 - warden journal of B: `delivered orchestrator: mailbox was taken (had 1, knocks 0)` — zero knocks; the mailbox was emptied by the session's own `promptobus_mailbox {task: B}` after the person asked.
 - The same session in task A is knocked normally (every message of the run reached it as a postcard).
 - The loop guard (`guard.js:178`, `:411`) resolves the task to guard as `identity.declaredTask ?? boundTaskId(...)` — task A — so an unread message in B does not return the turn either.
+- Second measurement, minutes later: after the session called `promptobus_mailbox {task: B}` once, the next reviewer `result` in B DID produce a postcard — the warden journal shows a knock. So the contact point is handed over by `joinBus` in `lib/server.js` (`driver.registerWake(home, task, address)`) on the first bus call the session makes FOR THAT TASK; `review` creating task B registers nothing for the orchestrator, and until the orchestrator happens to call a bus tool with `task: B` the record stays `self-wake`. The first result of any solo review lifted from a bound session is therefore always missed.
 
 So the two wake channels both key on the session's ONE binding: the socket is handed over for the bound task, and a task the same session lifts later has an `orchestrator` record with no contact point. The skill text «self-wake at task creation clears on the first knock» is true only when a knock can happen; here none can.
 
