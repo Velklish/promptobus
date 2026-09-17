@@ -13,7 +13,7 @@ The inventory of the installed binary says otherwise. Read from `cursor-agent` 2
 
 `beforeShellExecution`, `beforeMCPExecution`, `afterShellExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`, `beforeTabFileRead`, `afterTabFileEdit`, `stop`, `beforeSubmitPrompt`, `afterAgentResponse`, `afterAgentThought`, `sessionStart`, `sessionEnd`, `preCompact`, `subagentStart`, `subagentStop`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `workspaceOpen`.
 
-One of the sixteen missing names is already in use outside this package: a consumer's context-store installer hangs a tracker on `afterMCPExecution`, measured firing on 2026-08-24. The gate today only narrows what the driver may write, and the driver writes one event, so the cost is zero — until a driver or an installer needs an event outside the five and the refusal reads as "Cursor cannot do that". The refusal is loud in the package and silent in the harness: an unknown name in `.cursor/hooks.json` disables every hook in the file.
+One of the sixteen missing names is already in use outside this package: a consumer's memory-hook installer hangs a tracker on `afterMCPExecution`, measured firing on 2026-08-24. The gate today only narrows what the driver may write, and the driver writes one event, so the cost is zero — until a driver or an installer needs an event outside the five and the refusal reads as "Cursor cannot do that". The refusal is loud in the package and silent in the harness: an unknown name in `.cursor/hooks.json` disables every hook in the file.
 
 ## Work to do
 
