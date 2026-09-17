@@ -108,6 +108,18 @@ and refuses every absence of it, and the answer carries the reason by name.
   refuses an ownerless task unless an approver proves the session. ADR-016 stands; only its
   reason for the deviation changes.
 
+**Amendment, 2026-09-17 (PB-231).** The second door now stands on `stop` and `dismiss` as well:
+all three cleanup commands admit the task mailbox owner **or** an approver of this task holding
+its own recorded session, and all three read it from one home — `approverHere` in `lib/store.js`,
+moved there out of `lib/sweep.js` so that no copy can drift. Accepting one piece is those three
+commands in a row, and the role the recipe names could execute one of them. The sets of callers
+therefore differ in one place only, the ownerless branch: the owner gate admits a session that
+names itself on a task with no recorded owner, and `requireSweeper` refuses it unless an approver
+proves the session. `done` is untouched — closing the run is the owner's — so the decision above
+stands word for word for it, and for `stop` and `dismiss` it is where their refusal starts rather
+than where it ends. A refusal to an approver-shaped caller now also says which of the two proofs
+failed: a record with no session of its own, or a session that is not the one on record.
+
 ## Consequences
 
 **A shell with no harness identity can no longer run `done`, `stop` or `dismiss`.** This is

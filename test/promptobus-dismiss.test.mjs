@@ -278,3 +278,30 @@ check(': one who returned under watch is reported again — and by a stall, not 
   backUnderWatch.length === 1 && backUnderWatch[0].address === REUSE_ADDR
   && backUnderWatch[0].kind === 'permission',
   JSON.stringify(backUnderWatch));
+
+// --- PB-231: the approver of an accepted piece drops its watch ---------------
+//
+// The owner gate above is not weakened: what is added is one more positive proof, the
+// sweep's own — an approver record of THIS task holding the calling session.
+
+const ACCEPTED = 'dismiss-t20260917-100600';
+const APPROVER_SESSION = 'sess-priyomshchik-0917';
+store.createTask(HOME, { id: ACCEPTED, title: 'приёмщик снимает участника принятого куска', owner: OWNER });
+store.upsertParticipant(HOME, ACCEPTED, store.participantRecord(WORKER, { name: `a2a-${ACCEPTED}-api`, started }));
+store.upsertParticipant(HOME, ACCEPTED, store.participantRecord('approver:api', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-approver-ref', sessionId: APPROVER_SESSION,
+}));
+
+const byApprover = await withSession(APPROVER_SESSION,
+  () => capture(() => dismiss(ROOT, { task: ACCEPTED, address: WORKER })));
+check(': an approver of this task dismisses the worker of the piece it accepted',
+  /dismissed from watch/.test(byApprover), byApprover);
+check(': and the mark is on the journal, not only in the line',
+  store.participantOf(store.readTask(HOME, ACCEPTED), WORKER)?.metadata?.dismissed !== undefined,
+  JSON.stringify(store.participantOf(store.readTask(HOME, ACCEPTED), WORKER)));
+
+const notApprover = await withSession('sess-gost-0917',
+  () => expectFail(() => dismiss(ROOT, { task: ACCEPTED, address: 'approver:api' })));
+check(': a stranger is still refused there, and is told which approver proof failed',
+  notApprover.failed && /is on record under/.test(notApprover.out)
+  && notApprover.out.includes(APPROVER_SESSION), notApprover.out);

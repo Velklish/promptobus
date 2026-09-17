@@ -151,3 +151,36 @@ let unconfirmedCode = null;
 const outUnconfirmed = await capture(async () => { unconfirmedCode = await stop(HOST, { task: TASK, address: 'worker:a' }, { registry: unconfirmed.registry }); });
 check(': an unconfirmed stop is not reported as success — the record may still read alive',
   unconfirmedCode === 1 && /not confirmed/.test(outUnconfirmed), outUnconfirmed.trim());
+
+// --- PB-231: the approver of an accepted piece closes its session ------------
+//
+// Every task above records no owner, so the gate lets a session that names itself through
+// and the approver branch is never reached. This one has an owner, and the caller is not it:
+// what admits the call is the approver record holding the calling session, and nothing else.
+
+reset();
+const GATED = 'stop-t20260917-100500';
+store.createTask(HOME, { id: GATED, title: 'приёмщик гасит участника своего куска', owner: 'sess-stop-hozyain' });
+store.upsertParticipant(HOME, GATED, store.participantRecord('worker:c', { harness: 'claude', mode: 'managed', sessionRef: 'sess-c' }));
+store.upsertParticipant(HOME, GATED, store.participantRecord('approver:c', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-approver-ref', sessionId: 'sess-stop-stand',
+}));
+
+live.add('sess-c');
+const strangerEnv = process.env.CLAUDE_CODE_SESSION_ID;
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-stop-gost';
+const byStranger = fakeRegistry();
+const outStranger = await expectFail(async () => stop(HOST, { task: GATED, address: 'worker:c' }, { registry: byStranger.registry }));
+process.env.CLAUDE_CODE_SESSION_ID = strangerEnv;
+check(': a stranger is refused on an owned task, and the session is left running',
+  outStranger.failed && byStranger.calls.length === 0 && live.has('sess-c'), outStranger.out.trim());
+check(': and the refusal names which approver proof failed — the session is not the one on record',
+  /is on record under sess-stop-stand/.test(outStranger.out) && /sess-stop-gost/.test(outStranger.out),
+  outStranger.out.trim());
+
+const byApprover = fakeRegistry();
+const outApprover = await capture(async () => stop(HOST, { task: GATED, address: 'worker:c' }, { registry: byApprover.registry }));
+check(': an approver of this task stops the session of the piece it accepted, though the owner is another session',
+  byApprover.calls.length === 1 && byApprover.calls[0] === 'sess-c' && !live.has('sess-c'), outApprover.trim());
+check(': and the task it cleaned up after is still open',
+  store.readTask(HOME, GATED).status === 'active', store.readTask(HOME, GATED).status);

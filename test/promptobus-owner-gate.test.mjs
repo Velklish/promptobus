@@ -147,6 +147,86 @@ for (const [name, call] of CONSUMERS.slice(1)) {
     owner.failed && /name the participant address/.test(owner.out), owner.out);
 }
 
+// --- PB-231: the cleanup recipe is executable by the role it names ----------------
+//
+// Accepting one piece is sweep, dismiss and stop in a row, and two thirds of that recipe
+// refused the approver the recipe names. The proof admitted here is the sweep's own — a
+// participant of THIS task with role `approver` whose recorded session is the calling one.
+// `done` is not lifted with them: closing the run stays the owner's.
+{
+  const APPROVED = 'gate-approver-t20260917-100300';
+  const APPROVER = 'sess-priyomshchik';
+  const REVIEWER = 'reviewer:api';
+  store.createTask(HOME, { id: APPROVED, title: 'приёмщик убирает за куском', owner: OWNER });
+  store.upsertParticipant(HOME, APPROVED, store.participantRecord(WORKER, { name: `sess-${APPROVED}`, mode: 'attached' }));
+  store.upsertParticipant(HOME, APPROVED, store.participantRecord(REVIEWER, { name: `rev-${APPROVED}`, mode: 'attached' }));
+  store.upsertParticipant(HOME, APPROVED, store.participantRecord('approver:api', {
+    harness: 'claude', mode: 'managed', sessionRef: 'sess-approver-ref', sessionId: APPROVER,
+  }));
+
+  // `dismiss` runs to the end here: it needs neither a driver nor a live session.
+  const worker = await withSession(APPROVER, () => capture(() => dismiss(ROOT, { task: APPROVED, address: WORKER })));
+  const reviewer = await withSession(APPROVER, () => capture(() => dismiss(ROOT, { task: APPROVED, address: REVIEWER })));
+  check('PB-231: an approver of this task dismisses the worker and the reviewer of the piece it accepted',
+    /dismissed from watch/.test(worker) && /dismissed from watch/.test(reviewer), `${worker}\n---\n${reviewer}`);
+
+  // `stop` is driven past the gate and left to refuse on the MISSING ADDRESS, as the owner
+  // is above: that refusal is the proof the gate let it through, with no driver in the way.
+  const stopped = await withSession(APPROVER, () => expectFail(() => stop(ROOT, { task: APPROVED })));
+  check('PB-231: and it passes the stop gate, stopped only by what comes after it',
+    stopped.failed && /name the participant address/.test(stopped.out), stopped.out);
+
+  const closing = await withSession(APPROVER, () => expectFail(() => done(ROOT, { task: APPROVED, snapshot: () => ({}) })));
+  check('PB-231: `done` is not lifted with them — closing the run is the owner\'s, and the task is still active',
+    closing.failed && /is bound to session/.test(closing.out)
+    && store.readTask(HOME, APPROVED).status === 'active', closing.out);
+
+  // The gate is not weakened for anyone else: both refusals are the owner gate's own text.
+  const stranger = await withSession(FOREIGN, () => expectFail(() => dismiss(ROOT, { task: APPROVED, address: WORKER })));
+  check('PB-231: a stranger is refused on that same task, in the owner gate\'s own words',
+    stranger.failed && /is bound to session/.test(stranger.out) && stranger.out.includes(OWNER)
+    && /mailbox \{claim: true\}/.test(stranger.out), stranger.out);
+  check('PB-231: and the refusal says WHICH approver proof failed — the session is not the one on record',
+    /is on record under/.test(stranger.out) && stranger.out.includes(APPROVER)
+    && stranger.out.includes(FOREIGN), stranger.out);
+  const nameless = await withSession(null, () => expectFail(() => stop(ROOT, { task: APPROVED, address: WORKER })));
+  check('PB-231: a call with no identity is refused too — an approver is proven by a session, not by a role',
+    nameless.failed && /carries no session identity/.test(nameless.out), nameless.out);
+  check('PB-231: and it is told nothing about the approver route — it could not prove either of them',
+    !/is on record under/.test(nameless.out), nameless.out);
+}
+{
+  // The other way the approver proof fails: a record with no session of its own. Said out
+  // loud, because "refused" alone sends the reader to look for a foreign session there is none of.
+  const BLIND = 'gate-approver-blind-t20260917-100400';
+  store.createTask(HOME, { id: BLIND, title: 'у приёмщика нет своей сессии', owner: OWNER });
+  store.upsertParticipant(HOME, BLIND, store.participantRecord(WORKER, { name: `sess-${BLIND}`, mode: 'attached' }));
+  store.upsertParticipant(HOME, BLIND, store.participantRecord('approver:api', { mode: 'attached' }));
+  const blind = await withSession(FOREIGN, () => expectFail(() => dismiss(ROOT, { task: BLIND, address: WORKER })));
+  check('PB-231: an approver record with no session of its own is named as the reason rather than passed over',
+    blind.failed && /carries no session of its own/.test(blind.out)
+    && !/is on record under/.test(blind.out), blind.out);
+}
+{
+  // A mixed set: one approver on record with a session, one with none. Each record is named by
+  // its OWN state — one sentence about "the approvers" would tell the session-less one a
+  // foreign id and agree with neither half.
+  const MIXED = 'gate-approver-mixed-t20260917-100500';
+  const HELD = 'sess-priyomshchik-dva';
+  store.createTask(HOME, { id: MIXED, title: 'два приёмщика, сессия у одного', owner: OWNER });
+  store.upsertParticipant(HOME, MIXED, store.participantRecord(WORKER, { name: `sess-${MIXED}`, mode: 'attached' }));
+  store.upsertParticipant(HOME, MIXED, store.participantRecord('approver:api', {
+    harness: 'claude', mode: 'managed', sessionRef: 'ref-api', sessionId: HELD,
+  }));
+  store.upsertParticipant(HOME, MIXED, store.participantRecord('approver:net', { mode: 'attached' }));
+  const mixed = await withSession(FOREIGN, () => expectFail(() => dismiss(ROOT, { task: MIXED, address: WORKER })));
+  check('PB-231: with two approver records the refusal names each one by its own state',
+    mixed.failed && mixed.out.includes(`approver:api is on record under ${HELD}`)
+    && /approver:net carries no session of its own/.test(mixed.out), mixed.out);
+  check('PB-231: and the record with no session of its own is not told the other one\'s id',
+    !/approver:net is on record under/.test(mixed.out), mixed.out);
+}
+
 // --- the named decision, through the commands -------------------------------------
 {
   const before = treeOf(OWNERLESS);

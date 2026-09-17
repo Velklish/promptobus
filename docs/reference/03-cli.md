@@ -850,13 +850,13 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 **A contact point outlives its session, and neither of the two obvious ways to read it is right.** `tasks/<id>/wake/<address>.json` is `{address, socket, token, pid, session, at}`, one per address, and nothing in it distinguishes "this session is reachable" from "this session was reachable once" — the file's own name invites the first reading, and a reader counting files counts a killed participant as live. **The `pid` in the file is not a liveness handle.** `writeWake` stores `process.pid` of whatever process wrote the file, which for a Claude participant is the Stop hook that exits immediately after; measured 2026-09-12 over a live store of nine contact points, eight named a pid that was already `ESRCH`, and five of those eight belonged to sessions that were demonstrably alive. Checking that pid would report almost every live participant dead. **The socket is the handle, and it must be read as a path.** A Codex address carries a `#<n>` thread suffix on one socket file, so `existsSync` over the whole address is false for a live Codex point: in the same measurement the raw check called both live Codex reviewers gone, while the path before the `#` separated all nine correctly — eight live, one gone, and the one it called gone was exactly the participant whose process had been killed. `status` therefore reads the socket path, not the address and not the pid, and marks a line it cannot vouch for: `alarm: socket handed over <at> — STALE: the socket it names is gone`. The same reading now backs the orchestrator's own line, which had been checking the raw address and was right only because that participant is never Codex.
 
-`dismiss <address>` drops a finished participant from watch.
+`dismiss <address>` drops a finished participant from watch. The task mailbox owner does it, or an approver of this task holding its own recorded session — the proof `sweep` and `stop` share.
 
-`stop <address>` closes ONE participant's session and leaves the task open. The task mailbox owner stops it, on the same gate as `done` and `dismiss`. It refuses an address that is not a participant of this task, the orchestrator — which has no session this mechanism started, being the one that started the others — and a participant lifted `attached`, whose session is a person's own window the mechanism never owned. A participant with no live session is not an error: there is nothing to stop and the task is still open. **The session record goes with the process**, because the stop runs through the driver's own `stop`, which retires the record — `dropSession` for Codex and Cursor, the registry entry leaving for Claude. That is the whole reason the command exists: a hand `kill` of the holder pid frees the memory and leaves the record reading `state: alive`, which only `done` on that task would ever clear, and anything reading the registry for liveness then reads a lie. A stop the driver could not confirm is **not** reported as success: the record may still read alive, and the line says so and names the harness's registry to look in.
+`stop <address>` closes ONE participant's session and leaves the task open. The task mailbox owner stops it, or an approver of this task holding its own recorded session — the same proof `dismiss` and `sweep` use; `done` stays the owner's alone. It refuses an address that is not a participant of this task, the orchestrator — which has no session this mechanism started, being the one that started the others — and a participant lifted `attached`, whose session is a person's own window the mechanism never owned. A participant with no live session is not an error: there is nothing to stop and the task is still open. **The session record goes with the process**, because the stop runs through the driver's own `stop`, which retires the record — `dropSession` for Codex and Cursor, the registry entry leaving for Claude. That is the whole reason the command exists: a hand `kill` of the holder pid frees the memory and leaves the record reading `state: alive`, which only `done` on that task would ever clear, and anything reading the registry for liveness then reads a lie. A stop the driver could not confirm is **not** reported as success: the record may still read alive, and the line says so and names the harness's registry to look in.
 
 `sweep <address>` cleans up after ONE accepted piece and leaves the task active. It is the verb [ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) chose over a flag on `done`, for the reason [ADR-012](../adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) gave: `done` promises the whole task, and a subset flag makes every one of its promises conditional on a flag the reader has to notice.
 
-**Its gate is not the owner gate of the other three.** Acceptance runs in the approver's session, not the orchestrator's ([ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)), so the command admits the task mailbox owner **or** a participant of this task with role `approver` whose recorded session is the calling one — proven the same way direct worker↔approver traffic is proven, by the session on the participant record. Nobody else. It refuses the orchestrator, which owns the task rather than a piece of it, and an address that is not a participant, naming who is. **A session that is not dead refuses too, before anything is touched**: `git worktree remove` does not look at processes, and the directory would leave from under a running `cwd`. The refusal names `promptobus stop <address>` as the step before it. "Unknown" refuses on the same line as "alive": a record with no session reference cannot be told from a registry that did not answer, and the cost of the two mistakes is not the same.
+**Its gate is not the owner gate of `done`, and `dismiss` and `stop` now stand on this side of that line.** Acceptance runs in the approver's session, not the orchestrator's ([ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)), so the command admits the task mailbox owner **or** a participant of this task with role `approver` whose recorded session is the calling one — proven the same way direct worker↔approver traffic is proven, by the session on the participant record, and read from the one home the three cleanup commands share (`approverHere` in `lib/store.js`). Nobody else. It refuses the orchestrator, which owns the task rather than a piece of it, and an address that is not a participant, naming who is. **A session that is not dead refuses too, before anything is touched**: `git worktree remove` does not look at processes, and the directory would leave from under a running `cwd`. The refusal names `promptobus stop <address>` as the step before it. "Unknown" refuses on the same line as "alive": a record with no session reference cannot be told from a registry that did not answer, and the cost of the two mistakes is not the same.
 
 **What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same two content measurements `done` uses and no third one. The metadata records of the artifacts it **sent**, the `files/` entry of each, and the blob of each once no surviving record names it — a blob is deduplicated inside the task, which is why it leaves last and only then. Its files in `workers/` — the mcp-config, the settings file and the temporary stands — and its contact point under `wake/`.
 
@@ -1110,7 +1110,8 @@ read-only routing directory is not a reason to leave the run half-closed.
 
 ### `ownership` — the owner gate of `done`, `stop` and `dismiss`
 
-Source: `lib/store.js`, `ownership`, `unprovenOwnerLine`, `ownerRoute`.
+Source: `lib/store.js`, `ownership`, `unprovenOwnerLine`, `ownerRoute`, `approverHere`,
+`unprovenApproverLine`.
 
 The answer carries two fields, and they are not each other's negation. **`allowed` is the
 right**, and it is granted only by evidence: the call names a session and that session is
@@ -1132,12 +1133,36 @@ rather than what was missing:
 | `foreign` | no | yes | the call names a session and the owner is another one |
 | `other-address` | no | no | the address asked about is not `orchestrator` |
 
-**`done`, `stop` and `dismiss` refuse on `!allowed`, not on `gated`.** Each of the three
-ends or edits somebody's run — the close sweeps worktree directories of closed tasks, the
-stop takes a worker off work another session is watching, the dismiss stops reports
-addressed to another owner — and until PB-223 all three passed a call that carried no
-session identity, over any task in the store including a live foreign one. The gate is
-now the same direction as `requireSweeper`: proven, never assumed.
+**`done`, `stop` and `dismiss` read `!allowed` and never `gated`, and for `done` that is the
+whole gate.** Each of the three ends or edits somebody's run — the close sweeps worktree
+directories of closed tasks, the stop takes a worker off work another session is watching, the
+dismiss stops reports addressed to another owner — and until PB-223 all three passed a call that
+carried no session identity, over any task in the store including a live foreign one. The gate is
+now the same direction as `requireSweeper`: proven, never assumed. For `stop` and `dismiss`,
+`!allowed` is where the refusal STARTS rather than where it ends: since PB-231 both read the
+second door below before refusing, so a call this gate does not admit may still be admitted as an
+approver of the task. `done` reads this gate and nothing else.
+
+**`stop` and `dismiss` have a second door, and `done` has not.** Cleaning up after one accepted
+piece is three commands — `sweep`, `dismiss`, `stop` — and until PB-231 the approver that recipe
+names could execute one of them, while the other two answered it with a refusal whose only route
+was `mailbox {claim: true}`: taking the mailbox off a live orchestrator mid-run. The three now
+share ONE proof, **`approverHere`** in `lib/store.js`: a participant of THIS task with role
+`approver` whose recorded session is the calling one, taken from the record's own session the way
+direct worker↔approver traffic is proven (`requireDirectSender`) — the full id by equality, the
+short prefix only where no full id was recorded, and a record carrying no session at all is not a
+way in. `sweep` reads it through [`requireSweeper`](#requiresweeper--who-may-sweep-a-piece); `stop`
+and `dismiss` read it beside `ownership`, so the owner passes on `allowed` and the approver on
+this. Nobody else moved: a stranger and a call that names no session are refused as before, with
+the same head and the same route. **`done` is deliberately outside the three** — closing the run is
+the owner's, and a verdict holds it there.
+
+**A refusal to an approver-shaped caller says which of the two proofs failed**
+(`unprovenApproverLine`): the approver record of this task carries no session of its own, or it is
+on record under a session that is not this one — both ids printed, so the reader is not left
+hunting for a foreign session where there is none. It is said only where the task HAS an approver
+record and the call named a session: told to a call that can name neither, it would be advice about
+a door that caller cannot open either way.
 
 **A task with no recorded owner belongs to nobody, and the exception is named.** The owner
 is written only when the environment supplied identity at `createTask`, so a run opened
@@ -1249,15 +1274,20 @@ The task mailbox owner, or a participant of this task with role `approver` whose
 session is the calling one. Nobody else, and the right is a **positive proof**: the caller
 must be shown to be one of the two, and everything else refuses.
 
-**This is still not the gate of `done`, `stop` and `dismiss`, but no longer for the reason
-[ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) gave.**
-Those three now read `allowed` from [`ownership`](#ownership--the-owner-gate-of-done-stop-and-dismiss)
-and refuse every absence too ([ADR-017](../adr/adr-017-the-owner-gate-is-a-positive-proof.md)), so
-the directions agree. What still differs is the SET of callers: the sweep deletes one
-participant's worktree, branch and blobs out of a task where other participants are still
-working, and it admits the approver of this task on its own recorded session, which the owner
-gate knows nothing about. A task with no recorded owner parts them too — the owner gate lets
-a self-naming session through, the sweep refuses unless an approver proves the session.
+**`stop` and `dismiss` now admit the same two callers, and the set of three cleanup commands is
+one recipe again** — the shape
+[ADR-016](../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) named without
+being able to execute it. All three read `allowed` from
+[`ownership`](#ownership--the-owner-gate-of-done-stop-and-dismiss) and refuse every absence
+([ADR-017](../adr/adr-017-the-owner-gate-is-a-positive-proof.md)), and all three take the approver
+from the one home the proof lives in, `approverHere` in `lib/store.js` — this function calls it,
+`stop` and `dismiss` call it beside their owner gate, and there is no second copy to drift.
+
+**Two things still part the sweep from the owner gate.** `done` is not lifted with the cleanup
+pair: closing the run is the owner's. And a task with no recorded owner parts them the other way —
+the owner gate lets a session that names itself through such a task (`ownerless`), while the sweep
+refuses it unless an approver proves the session, because what it deletes is a worktree, a branch
+and the blobs of a participant in a task where the others are still working.
 
 The approver's proof is the one direct worker↔approver traffic uses (`requireDirectSender`):
 the record must carry a session of its own, and `foreignSessionOf` must not call the caller
