@@ -1953,5 +1953,76 @@ check('PB-213: and the result releases it, the same way the gate record\'s does'
   guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard') === null,
   JSON.stringify(guardVerdict(HOME, HANDOVER_GUARD_TASK, 'worker:guard')));
 
+// PB-233: a task this session lifted is repaired AFTER every debt of its own — the principle
+// 03-cli § Guard and warden states, pinned where the two states coexist.
+const LIFT_ORDER_SID = 'sess-pb233-order';
+const LIFT_ORDER_DEBT = 'pb233-handoff-t20260917-110000';
+const LIFT_ORDER_OTHER = 'pb233-lifted-t20260917-110100';
+store.createTask(HOME, { id: LIFT_ORDER_DEBT, title: 'долг сдачи', owner: LIFT_ORDER_SID });
+store.upsertParticipant(HOME, LIFT_ORDER_DEBT,
+  store.participantRecord('worker:guard', { session: 'guard-session' }));
+store.createTask(HOME, { id: LIFT_ORDER_OTHER, title: 'поднятая с почтой', owner: LIFT_ORDER_SID });
+store.upsertParticipant(HOME, LIFT_ORDER_OTHER,
+  store.participantRecord('reviewer:api', { session: 'rev-session' }));
+store.sendMessage(HOME, LIFT_ORDER_OTHER,
+  { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'итог ревью' });
+const liftOrderPath = path.join(SB, 'gates-lifted-order.json');
+writeFileSync(liftOrderPath, gateRecordText('npm test'));
+store.sendMessage(HOME, LIFT_ORDER_DEBT, {
+  from: 'worker:guard', to: 'orchestrator', type: 'artifact', body: 'gate', artifactPath: liftOrderPath,
+});
+check('PB-233: a handoff debt of this session outranks unread in a task it lifted',
+  guardVerdict(HOME, LIFT_ORDER_DEBT, 'worker:guard', LIFT_ORDER_SID)?.key?.startsWith('handoff:') === true
+  && store.countInbox(HOME, LIFT_ORDER_OTHER, 'orchestrator') === 1,
+  JSON.stringify(guardVerdict(HOME, LIFT_ORDER_DEBT, 'worker:guard', LIFT_ORDER_SID)));
+store.sendMessage(HOME, LIFT_ORDER_DEBT,
+  { from: 'worker:guard', to: 'orchestrator', type: 'result', body: 'Gate — gates-lifted-order.json' });
+check('PB-233: with its own debt paid, the lifted task is what holds the turn',
+  guardVerdict(HOME, LIFT_ORDER_DEBT, 'worker:guard', LIFT_ORDER_SID)?.key === `lifted:${LIFT_ORDER_OTHER}:1`,
+  JSON.stringify(guardVerdict(HOME, LIFT_ORDER_DEBT, 'worker:guard', LIFT_ORDER_SID)));
+
+// PB-233: the SPAWN door of handOverContactPoints. `spawn` hands this session's socket to every
+// task it orchestrates, not only the one it is spawning into — the point follows the session.
+const SPAWN_LIFT_SID = 'sess-pb233-spawn';
+const SPAWN_LIFT_HERE = 'pb233-spawn-here-t20260917-120000';
+const SPAWN_LIFT_OTHER = 'pb233-spawn-other-t20260917-120100';
+const SPAWN_LIFT_SOCK = path.join(SB, 'pb233-spawn.sock');
+store.createTask(HOME, { id: SPAWN_LIFT_HERE, title: 'задача спавна', owner: SPAWN_LIFT_SID });
+store.createTask(HOME, { id: SPAWN_LIFT_OTHER, title: 'вторая задача той же сессии', owner: SPAWN_LIFT_SID });
+// The suite drops the messaging variables from its own environment (hygiene.mjs), so the socket
+// under test is this fixture's and never a live person's.
+const asSpawnSession = async (fn) => {
+  const was = {
+    CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
+    CLAUDE_CODE_MESSAGING_SOCKET: process.env.CLAUDE_CODE_MESSAGING_SOCKET,
+    CLAUDE_CODE_MESSAGING_TOKEN: process.env.CLAUDE_CODE_MESSAGING_TOKEN,
+  };
+  process.env.CLAUDE_CODE_SESSION_ID = SPAWN_LIFT_SID;
+  process.env.CLAUDE_CODE_MESSAGING_SOCKET = SPAWN_LIFT_SOCK;
+  process.env.CLAUDE_CODE_MESSAGING_TOKEN = 'pb233';
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+};
+const spawnLiftOpts = { repo: 'cargos-api', brief: BRIEF, task: SPAWN_LIFT_HERE, worker: 'pb233' };
+await asSpawnSession(async () => {
+  const spawnLiftPlan = await planSpawn(WS, spawnLiftOpts);
+  claudeSays([{ id: 'sess-pb233-w', name: spawnLiftPlan.name, state: 'working', pid: 4242 }]);
+  await quiet(() => spawnWorker(WS, spawnLiftOpts));
+});
+check('PB-233: spawn hands the contact point to the task it spawns into AND to the other task this session orchestrates',
+  store.readWake(HOME, SPAWN_LIFT_HERE, 'orchestrator')?.socket === SPAWN_LIFT_SOCK
+  && store.readWake(HOME, SPAWN_LIFT_OTHER, 'orchestrator')?.socket === SPAWN_LIFT_SOCK
+  && store.readWake(HOME, SPAWN_LIFT_OTHER, 'orchestrator')?.session === SPAWN_LIFT_SID,
+  JSON.stringify({
+    here: store.readWake(HOME, SPAWN_LIFT_HERE, 'orchestrator'),
+    other: store.readWake(HOME, SPAWN_LIFT_OTHER, 'orchestrator'),
+  }));
+
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

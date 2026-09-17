@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A second task lifted from a bound session left its orchestrator with no contact point: the warden knocked zero and the loop guard watched only the bound task.** A session bound to task A that ran `promptobus review` opened task B with itself as `orchestrator`, and nothing ever handed B a socket — the contact point was written by `joinBus` (`lib/server.js`) on the first bus call FOR THAT TASK, and a task the session had not yet called a bus tool on never got one. B's warden journal read `knocks 0`, `status --task B` read `self-wake (no contact point)`, and the reviewer's first `result` woke nobody; the loop guard did not return the turn either, because it resolves the task to guard as `identity.declaredTask ?? boundTaskId(...)` — task A. The contact point now follows the SESSION: `handOverContactPoints` (`lib/warden.js`) hands this session's socket to every active task whose `orchestrator` address it provably owns, called from `review` and `spawn` right after the task is created and from the loop guard at every end of turn, so a restarted session replaces a stale socket everywhere it orchestrates. One binding per session is unchanged, and so is the guarded task: the guard gains one more verdict as the LAST branch, below this address's own unread, its `UNANSWERED` debt and its pending hand-off — unread in any other task this session orchestrates, keyed `lifted:<id>:<n>` and naming each by id and title, so what the session owes on its own account is repaired before what was sent to a task it lifted. 03-cli § Guard and warden says what such a task gets today.
+
 ## [0.12.0] — 2026-09-17
 
 ### Added

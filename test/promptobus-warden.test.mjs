@@ -182,6 +182,30 @@ registerWake(HOME, TASK, 'worker:api', {
 check('handing over the same thing again rewrites nothing',
   readFileSync(store.wakeFile(HOME, TASK, 'worker:api'), 'utf8') === before);
 
+// PB-233: the contact point follows the SESSION, not the binding. One binding stays, so a task
+// the session lifted later is reached only through the ownership of its `orchestrator` address.
+const LIFT_SID = 'sess-pb233-warden';
+const LIFT_OWN = 'sup-lift-own-t20260917-100000';
+const LIFT_FOREIGN = 'sup-lift-foreign-t20260917-100100';
+store.createTask(HOME, { id: LIFT_OWN, title: 'поднятая своя', owner: LIFT_SID });
+store.createTask(HOME, { id: LIFT_FOREIGN, title: 'чужая', owner: 'sess-chuzhaya-7777' });
+const liftHanded = wdn.handOverContactPoints(HOME, {
+  env: { CLAUDE_CODE_MESSAGING_SOCKET: SOCK, CLAUDE_CODE_MESSAGING_TOKEN: 'deadbeef' },
+  session: LIFT_SID,
+});
+check(': the contact point reaches every task the session owns and no task it does not',
+  liftHanded.includes(LIFT_OWN) && !liftHanded.includes(LIFT_FOREIGN)
+  && store.readWake(HOME, LIFT_OWN, 'orchestrator')?.socket === SOCK
+  && store.readWake(HOME, LIFT_OWN, 'orchestrator')?.session === LIFT_SID
+  && store.readWake(HOME, LIFT_FOREIGN, 'orchestrator') === null,
+  JSON.stringify(liftHanded));
+check(': a session that names itself nowhere hands its socket to nobody',
+  wdn.handOverContactPoints(HOME, {
+    env: { CLAUDE_CODE_MESSAGING_SOCKET: SOCK }, session: null,
+  }).length === 0);
+store.closeTask(HOME, LIFT_OWN);
+store.closeTask(HOME, LIFT_FOREIGN);
+
 // --- delivery -----------------------------------------------------------------
 
 const idle = stubKnock();

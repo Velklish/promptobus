@@ -904,6 +904,9 @@ check('loop guard: a live warden stays silent about a missing exit note',
   loopNoExitLive.status === 2 && !/without leaving a note/.test(loopNoExitLive.stderr),
   loopNoExitLive.stderr || JSON.stringify(loopNoExitLive));
 store.clearWarden(HOME, LOOP_NOEXIT);
+// Drained on the way out: the guard watches every task this session owns, so a mailbox left full
+// here would return the turn of the blocks below and say nothing about their subject.
+store.readInbox(HOME, LOOP_NOEXIT, 'orchestrator');
 
 const LOOP_RELIVE = 'guard-loop-relive-t20260913';
 store.createTask(HOME, { id: LOOP_RELIVE, title: 'повтор без отметки после живого надзирателя', owner: SESSION });
@@ -923,6 +926,7 @@ const loopRelive2 = asHook(stopEvent(SESSION), {
 check('loop guard: second death with same unread warns again after live warden',
   loopRelive2.status === 2 && /without leaving a note/.test(loopRelive2.stderr),
   loopRelive2.stderr || JSON.stringify(loopRelive2));
+store.readInbox(HOME, LOOP_RELIVE, 'orchestrator');
 
 const LOOP_DRAIN = 'guard-loop-drain-t20260913';
 store.createTask(HOME, { id: LOOP_DRAIN, title: 'повтор без отметки после слива ящика', owner: SESSION });
@@ -1236,4 +1240,66 @@ check('successor: the mailbox after a hint is untouched — the guard is not a r
   store.countInbox(HOME, SUCC, 'orchestrator') === 2
   && store.taskOwner(HOME, SUCC) === OLD_ORCH,
   `${store.countInbox(HOME, SUCC, 'orchestrator')} · ${store.taskOwner(HOME, SUCC)}`);
+// PB-233: a session bound to task A lifted task B and is its orchestrator there too. One binding
+// stays, so B is watched by nothing — and with the knock channel gone the guard is the only
+// channel left. The knock channel IS gone here: no contact point is handed over in this suite.
+const LIFT_A = 'guard-lift-a-t20260917-100000';
+const LIFT_B = 'guard-lift-b-t20260917-100100';
+const LIFT_SID = 'sess-pb233-lift';
+store.createTask(HOME, { id: LIFT_A, title: 'связанная задача A', owner: LIFT_SID });
+store.createTask(HOME, { id: LIFT_B, title: 'поднятая задача B', owner: LIFT_SID });
+store.upsertParticipant(HOME, LIFT_B, store.participantRecord('reviewer:api', { name: 'r-lift-b' }));
+store.sendMessage(HOME, LIFT_B, { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'итог ревью' });
+check('PB-233: the lifted task really has no contact point — the knock channel is off for it',
+  store.readWake(HOME, LIFT_B, 'orchestrator') === null
+  && store.countInbox(HOME, LIFT_A, 'orchestrator') === 0,
+  JSON.stringify(store.readWake(HOME, LIFT_B, 'orchestrator')));
+const liftedVerdict = guardVerdict(HOME, LIFT_A, 'orchestrator', LIFT_SID);
+check('PB-233: the verdict of the BOUND task names the lifted one, its title and its count',
+  liftedVerdict?.key === `lifted:${LIFT_B}:1` && liftedVerdict.reason.includes(LIFT_B)
+  && liftedVerdict.reason.includes('поднятая задача B'),
+  JSON.stringify(liftedVerdict));
+check('PB-233: a session that owns neither is not held for them',
+  guardVerdict(HOME, LIFT_A, 'orchestrator', 'sess-postoronnyaya-9999') === null,
+  JSON.stringify(guardVerdict(HOME, LIFT_A, 'orchestrator', 'sess-postoronnyaya-9999')));
+const liftedRun = asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LIFT_A, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('PB-233: unread in the lifted task returns the turn of the session bound to another one',
+  liftedRun.status === 2 && liftedRun.stderr.includes(LIFT_B)
+  && /another task you are the orchestrator of/.test(liftedRun.stderr),
+  liftedRun.stderr || JSON.stringify(liftedRun));
+store.readInbox(HOME, LIFT_B, 'orchestrator');
+const liftedQuiet = asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LIFT_A, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('PB-233: with the lifted mailbox drained the turn goes through — the hold was for it alone',
+  liftedQuiet.status === 0 && liftedQuiet.stdout === '' && liftedQuiet.stderr === '',
+  `status=${liftedQuiet.status} out=${JSON.stringify(liftedQuiet.stdout)} err=${JSON.stringify(liftedQuiet.stderr)}`);
+
+// PB-233: the GUARD door of handOverContactPoints — the one that keeps the socket fresh across a
+// session restart. Only a run carrying the messaging variables reaches it: the suite drops them.
+const LIFT_SOCK_1 = path.join(ROOT, 'pb233-lift-1.sock');
+const LIFT_SOCK_2 = path.join(ROOT, 'pb233-lift-2.sock');
+const liftHook = (socket) => asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME,
+  PROMPTOBUS_TASK: LIFT_A,
+  PROMPTOBUS_ROLE: 'orchestrator',
+  CLAUDE_CODE_MESSAGING_SOCKET: socket,
+  CLAUDE_CODE_MESSAGING_TOKEN: 'lift',
+});
+const liftFirst = liftHook(LIFT_SOCK_1);
+check('PB-233: a turn end hands the contact point to the lifted task, not only to the bound one',
+  liftFirst.status === 0
+  && store.readWake(HOME, LIFT_B, 'orchestrator')?.socket === LIFT_SOCK_1
+  && store.readWake(HOME, LIFT_B, 'orchestrator')?.session === LIFT_SID
+  && store.readWake(HOME, LIFT_A, 'orchestrator')?.socket === LIFT_SOCK_1,
+  `status=${liftFirst.status} ${liftFirst.stderr} · ${JSON.stringify(store.readWake(HOME, LIFT_B, 'orchestrator'))}`);
+const liftAgain = liftHook(LIFT_SOCK_2);
+check('PB-233: a session back on a NEW socket replaces the stale one in the lifted task too',
+  liftAgain.status === 0
+  && store.readWake(HOME, LIFT_B, 'orchestrator')?.socket === LIFT_SOCK_2
+  && store.readWake(HOME, LIFT_A, 'orchestrator')?.socket === LIFT_SOCK_2,
+  `status=${liftAgain.status} ${liftAgain.stderr} · ${JSON.stringify(store.readWake(HOME, LIFT_B, 'orchestrator'))}`);
+
 if (orchListening.ok) orchLive.close();

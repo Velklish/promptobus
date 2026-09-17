@@ -2385,6 +2385,86 @@ check('PB-213: with a record attached the reviewer is told the five names it mus
   && /a check that says `notRun` was not performed/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /Handover records attached/.test(l)) ?? gatePlan.prompt);
 
+// PB-233: a session BOUND to task A lifts a review that opens task B. One binding stays, so B
+// gets none — and the contact point used to be written only by the first bus call FOR THAT TASK,
+// which for B never came: its warden knocked zero and the reviewer's first result reached nobody.
+const wdn = await import(path.join(here, '..', 'lib', 'warden.js'));
+const LIFT_SESSION = 'sess-pb233-orkestrator';
+const LIFT_SOCK = path.join(SB, 'pb233-orch.sock');
+// The suite drops the messaging variables from its own environment (hygiene.mjs), so the socket
+// under test is this fixture's and never a live person's.
+const asBoundSession = async (fn) => {
+  const was = {
+    CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
+    CLAUDE_CODE_MESSAGING_SOCKET: process.env.CLAUDE_CODE_MESSAGING_SOCKET,
+    CLAUDE_CODE_MESSAGING_TOKEN: process.env.CLAUDE_CODE_MESSAGING_TOKEN,
+  };
+  process.env.CLAUDE_CODE_SESSION_ID = LIFT_SESSION;
+  process.env.CLAUDE_CODE_MESSAGING_SOCKET = LIFT_SOCK;
+  process.env.CLAUDE_CODE_MESSAGING_TOKEN = 'pb233';
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+};
+const pb233Knock = () => {
+  const calls = [];
+  const fn = async (endpoint, body) => {
+    calls.push({ endpoint, body });
+    return { ok: true };
+  };
+  fn.calls = calls;
+  return fn;
+};
+
+const LIFT_A = 'pb233-a-t20260917-100000';
+const LIFT_REPO = path.join(WS, 'repos', 'loads_search', 'lifted-api');
+mkdirSync(LIFT_REPO, { recursive: true });
+g(LIFT_REPO, 'init', '-b', 'main');
+writeFileSync(path.join(LIFT_REPO, 'a.txt'), 'v1\n');
+g(LIFT_REPO, 'add', '.');
+g(LIFT_REPO, 'commit', '-m', 'init', '-q');
+writeFileSync(path.join(LIFT_REPO, 'a.txt'), 'v2\n');
+
+let liftPlan;
+claudeSays(JSON.stringify([]));
+await asBoundSession(async () => {
+  store.createTask(home, { id: LIFT_A, title: 'задача A' });
+  store.bindSession(home, LIFT_A);
+  await capture(async () => {
+    liftPlan = await review(WS, { tool: TOOL, target: LIFT_REPO, title: 'ревью из связанной сессии' });
+  });
+});
+const LIFT_B = liftPlan.taskId;
+const liftWake = store.readWake(home, LIFT_B, 'orchestrator');
+check('PB-233: review from a bound session opened a SECOND task, not a pickup of the bound one',
+  !!liftPlan.createNew && LIFT_B !== LIFT_A && store.taskOwner(home, LIFT_B) === LIFT_SESSION,
+  `${LIFT_B} owner=${store.taskOwner(home, LIFT_B)} createNew=${!!liftPlan.createNew}`);
+check('PB-233: the lifted task gets the session contact point at creation, before any bus call for it',
+  liftWake?.socket === LIFT_SOCK && liftWake.session === LIFT_SESSION,
+  JSON.stringify(liftWake));
+check('PB-233: one binding stays — the contact point follows the SESSION, not the binding',
+  store.boundTaskId(home, LIFT_SESSION) === LIFT_A, String(store.boundTaskId(home, LIFT_SESSION)));
+
+store.sendMessage(home, LIFT_B, { from: liftPlan.address, to: 'orchestrator', type: 'result', body: 'ревью готово' });
+const liftKnock = pb233Knock();
+await wdn.wardenRound(home, LIFT_B, { knock: liftKnock });
+check('PB-233: the FIRST result in the lifted task knocks on its orchestrator',
+  liftKnock.calls.length === 1 && liftKnock.calls[0].endpoint.socket === LIFT_SOCK
+  && store.readHealth(home, LIFT_B).orchestrator?.knocks === 1
+  && store.tailWardenLog(home, LIFT_B, 20).some((l) => /notification orchestrator/.test(l)),
+  `${liftKnock.calls.length} · ${JSON.stringify(store.readHealth(home, LIFT_B).orchestrator)}`);
+const liftStatus = await capture(() => status(WS, { task: LIFT_B, sessions: {} }));
+// The orchestrator LINE, not the whole print: the reviewer of this task has not started and its
+// own `self-wake` is the correct state there.
+const liftOrchLine = liftStatus.split('\n').find((l) => /^\s*orchestrator · /.test(l)) ?? '';
+check('PB-233: status of the lifted task no longer calls its orchestrator self-wake',
+  !!liftOrchLine && !/self-wake/.test(liftOrchLine) && /unread 1/.test(liftOrchLine), liftStatus);
+
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.
 process.env.PATH = PATH0;

@@ -137,7 +137,7 @@ promptobus done
 | `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
 | `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
-| `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread, or while an owed answer has not been sent |
+| `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread — in this task or in another task this session orchestrates — or while an owed answer has not been sent |
 | `promptobus warden` | Task listener. Any bus command starts it; `PROMPTOBUS_WARDEN=off` disables auto-start |
 | `promptobus mcp` | MCP server over stdio |
 | `promptobus install` / `uninstall` | Write or remove the project-level hooks |
