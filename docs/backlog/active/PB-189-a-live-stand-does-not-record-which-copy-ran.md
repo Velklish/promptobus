@@ -1,11 +1,11 @@
 # PB-189 · A live measurement records what happened but not which copy produced it
 
-- **Order:** 165
 - **Scope:** `lib/spawn.js` and `lib/review.js` (the lift line), `lib/codex-session.js` /
   `lib/cursor-persist.js` (the holder's journal header),
   [contributing](../../guides/contributing.md) § what the stands prove
 - **Created:** 2026-09-12, release run
 - **Dependencies:** none
+- **Taken:** 2026-09-17
 
 ## What happens
 
