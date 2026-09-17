@@ -239,8 +239,22 @@ export function createMcpServer(options: McpOptions): {
     });
   }
 
+  // The allowed keys come from the DECLARATION, not a second list: a handler list would
+  // drift from the schema, and the drift is invisible until a key is dropped in silence.
+  function requireDeclaredArgs(name: string, args: Record<string, unknown>): void {
+    const schema = MCP_TOOLS.find((t) => t.name === name)?.inputSchema;
+    if (schema?.additionalProperties !== false) return;
+    const known = Object.keys(schema.properties ?? {});
+    const extra = Object.keys(args).filter((key) => !known.includes(key));
+    if (!extra.length) return;
+    throw new GateError(`${name} has no parameter ${extra.map((k) => `"${k}"`).join(', ')} — `
+      + `it takes ${known.join(', ')}. A key the tool does not know is refused, not dropped: `
+      + 'a misspelt one carries its value nowhere and the call reads as accepted');
+  }
+
   function callTool(identity: McpIdentity, name: string, args: Record<string, unknown>, joined: Set<string>): string {
     const { home, declaredTask, session } = identity;
+    requireDeclaredArgs(name, args);
     // An explicit task argument outranks the session's declared one — the same way `--task` outranks `PROMPTOBUS_TASK`.
     const asked = typeof args?.task === 'string' ? args.task.trim() : '';
     return service.withTaskCache(() => {

@@ -173,6 +173,8 @@ function message(value: unknown): Verdict {
     return bad('type', `not a v1 protocol type: ${MESSAGE_TYPES_V1.join(', ')}`);
   }
   if (typeof value.body !== 'string' || !value.body) return bad('body', 'expected a non-empty string');
+  // `type: "artifact"` with no `artifact` field is REFUSED AT THE WRITE, not here: reading is
+  // retroactive, and records of that shape sit in live journals ([04-protocol](../../docs/reference/04-protocol.md) § Validation).
   if (Object.hasOwn(value, 'artifact')) {
     const art = text(value.artifact, 'artifact', RECORD_ID_RE);
     if (art) return art;

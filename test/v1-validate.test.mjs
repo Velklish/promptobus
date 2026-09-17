@@ -113,6 +113,18 @@ test('parity: invalid fixtures are rejected by both validators', () => {
   }
 });
 
+test('a type=artifact record written before the send refused one still READS as written', () => {
+  // The invariant is held at the WRITE. Held here too it would be retroactive: `readRecord`
+  // isolates a schema-invalid record into `broken/inbox`, so records of this shape sitting in
+  // live journals would stop being delivered — and two of them were measured in this run's own
+  // store. [04-protocol](../docs/reference/04-protocol.md) § Validation says which side holds it.
+  const old = JSON.parse(readFileSync(path.join(FIXTURES, 'valid', 'message', 'artifact-missing-old-shape.json'), 'utf8'));
+  assert.equal(old.type, 'artifact');
+  assert.equal(Object.hasOwn(old, 'artifact'), false, 'the fixture must be the shape under test');
+  assert.equal(validate('message', old).ok, true);
+  assert.equal(reference.message(old), true, 'the published schema refuses a record of the old shape');
+});
+
 test('parity: a newer schema version is a separate code, not generic invalidity', () => {
   // Distinguishing this from corruption is the code's job: a record from the
   // future is blocked without changing the store, and a corrupt one goes to

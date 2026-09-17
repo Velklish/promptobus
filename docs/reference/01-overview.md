@@ -140,6 +140,21 @@ The cost is known and accepted: the client prepends
 **There is no expectation tool in the set and there will not be one.** A
 task has one alarm, and that is the warden.
 
+**An undeclared top-level key is refused, and the refusal names it.** All
+three declarations carry `additionalProperties: false`, and the server
+checks the call against that same declaration before it resolves the task —
+MCP clients do not validate a tool's input schema, so a schema that only
+said so would change nothing. The allowed keys are read from the
+declaration rather than repeated in the handler: two lists would drift, and
+the drift shows itself only when a key is dropped in silence. That is what
+happened live — a file sent under `artifactName` instead of `artifactPath`
+left a `type=artifact` message with no attachment ([04-protocol](04-protocol.md) § Artifacts).
+The rule covers all three tools rather than `send` alone because the defect
+is the class and not the one call: `promptobus_mailbox` given `claimed`
+would have dropped the key and performed an ordinary take, leaving the
+mailbox with the session that already held it. A caller that passes keys of
+its own now meets a refusal naming the key.
+
 ### Rendering a reply for a participant
 
 Source: `src/mcp/render.ts`.

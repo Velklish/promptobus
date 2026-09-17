@@ -231,9 +231,20 @@ check('validation: an unknown message type is rejected', bad({ type: 'gossip' })
 check('validation: unknown recipient address is rejected', bad({ to: 'somebody' }).threw);
 check('validation: an empty body is rejected', bad({ body: '   ' }).threw);
 
+// `artifact` is the one type that cannot travel alone — it always carries a file
+// ([04-protocol](../docs/reference/04-protocol.md) § Artifacts), so the walk gives it one.
+const typeSample = path.join(SB, 'type-sample.txt');
+writeFileSync(typeSample, 'вложение к типу artifact\n');
 const rejectedType = store.MESSAGE_TYPES.filter((t) => thrown(() => store.sendMessage(home, task.id, {
   from: store.ORCHESTRATOR, to: 'worker:a', type: t, body: t,
+  ...(t === 'artifact' ? { artifactPath: typeSample } : {}),
 })).threw);
+const artifactAlone = thrown(() => store.sendMessage(home, task.id, {
+  from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'запись приложена',
+}));
+check('validation: type artifact with no artifactPath is rejected, and the refusal names the parameter',
+  artifactAlone.threw && artifactAlone.name === 'GateError' && /artifactPath/.test(artifactAlone.msg),
+  `${artifactAlone.name} · ${artifactAlone.msg}`);
 check(`validation: all ${store.MESSAGE_TYPES.length} protocol types are accepted`,
   rejectedType.length === 0, rejectedType.join(', '));
 

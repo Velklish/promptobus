@@ -10,6 +10,8 @@ export interface McpTool {
     type: 'object';
     properties?: Record<string, unknown>;
     required?: string[];
+    /** `false` — the server refuses a key the declaration does not carry, naming it. */
+    additionalProperties?: false;
   };
 }
 
@@ -25,6 +27,8 @@ const TASK_ARG = {
   },
 };
 
+// Every declaration carries `additionalProperties: false`, and the server enforces it:
+// a misspelt key used to be dropped in silence, and `claimed: true` reads as an ordinary take.
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'promptobus_send',
@@ -38,10 +42,15 @@ export const MCP_TOOLS: McpTool[] = [
         to: { type: 'string', description: 'recipient address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>' },
         type: { type: 'string', enum: MESSAGE_TYPES, description: 'v1 protocol message type' },
         body: { type: 'string', description: 'text: assignment, status, question, answer, result, or review remarks' },
-        artifactPath: { type: 'string', description: 'absolute file path; copied into the task artifacts/, the message gets the name' },
+        artifactPath: {
+          type: 'string',
+          description: 'absolute file path; copied into the task artifacts/, the message gets the name. '
+            + 'Required when type is artifact: an artifact message always carries a file',
+        },
         ...TASK_ARG,
       },
       required: ['to', 'type', 'body'],
+      additionalProperties: false,
     },
   },
   {
@@ -63,12 +72,13 @@ export const MCP_TOOLS: McpTool[] = [
         },
         ...TASK_ARG,
       },
+      additionalProperties: false,
     },
   },
   {
     name: 'promptobus_task',
     description: 'Metadata of the current task: id, title, status, participants with repositories '
       + 'and bg-sessions, unread counts, path to the artifacts folder.',
-    inputSchema: { type: 'object', properties: { ...TASK_ARG } },
+    inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
   },
 ];

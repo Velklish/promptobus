@@ -283,6 +283,7 @@ test('prevalidation: an empty list, duplicates, an unknown addressee, and a fore
     ['participant-not-found', { from: 'w-none', to: ['w-api'], type: 'task', body: 'a' }],
     ['message-type-unknown', { from: 'owner', to: ['w-api'], type: 'notify', body: 'a' }],
     ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'task', body: '' }],
+    ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись приложена' }],
   ];
   for (const [code, input] of cases) {
     await t.test(`prevalidation: ${code} on ${JSON.stringify(input.to)} ${input.type}`, async () => {
@@ -294,6 +295,111 @@ test('prevalidation: an empty list, duplicates, an unknown addressee, and a fore
     assert.equal(engine.unread(id, 'w-api'), 0);
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'messages')));
     assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'intents')));
+  });
+});
+
+// The invariant is held at the WRITE and nowhere else. Held in `validate` it would be
+// retroactive: `readRecord` isolates a schema-invalid record into `broken/inbox`, so journals
+// already holding this shape would stop delivering it.
+test('type=artifact carries a file at the write, and a record already written without one still reads', async (t) => {
+  const engine = open(sandbox());
+  const id = taskWith(engine);
+
+  await t.test('sendSync refuses type=artifact with no file, and the refusal names the field', () => {
+    const e = refusal(() => engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись приложена' }));
+    assert.ok(e instanceof PromptobusError, String(e));
+    assert.equal(e.code, 'schema-invalid');
+    assert.match(e.message, /artifact/);
+  });
+
+  await t.test('the refusal touched nothing — no message, no intent, no unread', () => {
+    assert.equal(engine.unread(id, 'w-api'), 0);
+    assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'messages')));
+  });
+
+  // `linkArtifact` satisfies the invariant without a second blob: `finish` writes it into the
+  // record's `artifact` field, so the message names a file that is already in the task.
+  await t.test('linkArtifact is the other way to carry one, and the record gets its id', () => {
+    const src = path.join(SB, 'linked-record.json');
+    writeFileSync(src, '{"schemaVersion":1}\n');
+    const first = engine.sendSync(id, {
+      from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись', artifact: { path: src },
+    });
+    assert.ok(first.artifact?.id, 'the attachment did not land');
+    const second = engine.sendSync(id, {
+      from: 'owner', to: ['w-docs'], type: 'artifact', body: 'та же запись, без второго блоба', linkArtifact: first.artifact.id,
+    });
+    assert.equal(second.message.type, 'artifact');
+    assert.equal(second.message.artifact, first.artifact.id);
+    assert.equal(second.artifact, null, 'linking must not stash a second blob');
+    assert.equal(engine.listArtifacts(id).artifacts.length, 1, 'a second artifact record was written');
+    assert.equal(engine.read(id, 'w-docs').messages[0].artifact, first.artifact.id);
+    engine.read(id, 'w-api');
+  });
+
+  // The id is CHECKED, not trusted: one of the right shape naming nothing would write exactly
+  // the message this task exists against — a record claiming an attachment it does not carry.
+  await t.test('a linkArtifact id that names nothing in this task is refused, and the refusal names it', () => {
+    const ghost = '20260902T101112345-0009-ffffff';
+    const before = engine.listArtifacts(id).artifacts.length;
+    const e = refusal(() => engine.sendSync(id, {
+      from: 'owner', to: ['w-api'], type: 'artifact', body: 'ссылка в пустоту', linkArtifact: ghost,
+    }));
+    assert.ok(e instanceof PromptobusError, String(e));
+    assert.equal(e.code, 'artifact-not-found');
+    assert.match(e.message, new RegExp(ghost));
+    assert.equal(engine.unread(id, 'w-api'), 0, 'the refusal delivered a message');
+    assert.equal(engine.listArtifacts(id).artifacts.length, before);
+  });
+
+  // Presence is asked without READING: `readArtifact` sets a corrupt record aside, and
+  // prevalidation must leave the task exactly as it found it.
+  await t.test('a link to a record that is on disk but corrupt is not set aside by prevalidation', () => {
+    const metas = engine.listArtifacts(id).artifacts;
+    const victim = metas[metas.length - 1].id;
+    const file = path.join(engine.home, 'tasks', id, 'artifacts', `${victim}.json`);
+    const attic = path.join(engine.home, 'tasks', id, 'broken', 'artifacts');
+    writeFileSync(file, '{"schemaVersion": 1, "id": "оборван');
+
+    engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'ссылка на битую запись', linkArtifact: victim });
+    assert.ok(existsSync(file), 'prevalidation moved the record out of the task');
+    assert.ok(!existsSync(attic), 'prevalidation created the broken/artifacts attic');
+
+    // The classification is the READER's, and it is the read that sets the record aside.
+    const e = refusal(() => engine.readArtifact(id, victim));
+    assert.ok(e instanceof PromptobusError, String(e));
+    assert.equal(e.code, 'schema-invalid');
+    assert.ok(!existsSync(file) && existsSync(attic), 'the reader did not set the corrupt record aside');
+    engine.read(id, 'w-api');
+  });
+
+  // A record of the shape a previous release wrote, put into the store directly — that is
+  // what sits in live journals, and no send can produce it any more.
+  const sent = engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'станет artifact' });
+  const box = engine.inboxPath(id, 'w-api');
+  const ref = path.join(box, `${sent.message.id}.json`);
+  const canon = path.join(engine.home, 'tasks', id, 'messages', `${sent.message.id}.json`);
+  const asWritten = { ...JSON.parse(readFileSync(canon, 'utf8')), type: 'artifact' };
+  rmSync(ref, { force: true });
+  rmSync(canon, { force: true });
+  writeFileSync(canon, `${JSON.stringify(asWritten)}\n`);
+  linkSync(canon, ref);
+
+  await t.test('peek reads the old shape as written and does not set it aside', () => {
+    const { messages, broken } = engine.peek(id, 'w-api');
+    assert.equal(broken.length, 0, broken.map((b) => `${b.name} ${b.code}`).join(' | '));
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].type, 'artifact');
+    assert.equal(Object.hasOwn(messages[0], 'artifact'), false);
+    assert.ok(!existsSync(path.join(engine.home, 'tasks', id, 'broken', 'inbox', 'w-api')),
+      'the record was isolated into broken/inbox');
+  });
+
+  await t.test('read delivers it too — the mailbox is not stopped by a record of the old shape', () => {
+    const { messages, broken } = engine.read(id, 'w-api');
+    assert.equal(broken.length, 0, broken.map((b) => `${b.name} ${b.code}`).join(' | '));
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].body, 'станет artifact');
   });
 });
 

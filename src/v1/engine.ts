@@ -1,6 +1,6 @@
 // The engine: the door every protocol write goes through.
 // [reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through](../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through)
-import { linkSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
   blobStats, listArtifacts, nameOf, newArtifact, orphanBlobs, readArtifact, readBlob, stashBlob,
@@ -9,7 +9,7 @@ import {
 import type { ArtifactSource } from './artifacts.js';
 import { fail } from './errors.js';
 import {
-  blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, taskDir, taskFile,
+  artifactFile, blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, taskDir, taskFile,
 } from './layout.js';
 import {
   commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf,
@@ -210,7 +210,9 @@ export function openEngine({
   }
 
   /** Step 1: everything checked BEFORE the first side effect. One for both send branches. */
-  function prepare(task: string, input: { from: string; to: string[]; type: string; body: string }): {
+  function prepare(task: string, input: {
+    from: string; to: string[]; type: string; body: string; artifact?: unknown; linkArtifact?: string;
+  }): {
     meta: TaskV1; sender: ParticipantV1; recipients: ParticipantV1[];
   } {
     const meta = requireActive(readTask(home, task, cli));
@@ -228,6 +230,18 @@ export function openEngine({
     }
     if (typeof input.body !== 'string' || !input.body) {
       fail('schema-invalid', 'body is empty — a message with no text is not sent', { task });
+    }
+    // At the WRITE and not in `validate`: reading is retroactive, and records of this shape
+    // sit in live journals ([04-protocol](../../docs/reference/04-protocol.md) § Validation).
+    if (input.type === 'artifact' && !input.artifact && !input.linkArtifact) {
+      fail('schema-invalid', 'type «artifact» with no artifact — a message of this type carries a file: '
+        + 'attach one with artifact, or name one already in the task with linkArtifact', { task, type: input.type });
+    }
+    // Presence, not a read: `readArtifact` sets a corrupt record aside, and prevalidation must
+    // leave the task untouched. A broken record is classified by whoever reads it next.
+    if (input.linkArtifact && !existsSync(artifactFile(home, task, input.linkArtifact))) {
+      fail('artifact-not-found', `artifact ${input.linkArtifact} is not in task ${task}`,
+        { task, artifact: input.linkArtifact, file: artifactFile(home, task, input.linkArtifact) });
     }
     for (const recipient of recipients) decide(sender, recipient, meta);
     faults('validate', { task, message: null });

@@ -1,6 +1,6 @@
 {
   "classes": {
-    "fileOnly": 29,
+    "fileOnly": 31,
     "citation": 37,
     "crossFile": 5,
     "fileLevel": 52,
@@ -292,7 +292,8 @@
       "../../docs/reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file"
     ],
     "src/v1/engine.ts": [
-      "../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through"
+      "../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through",
+      "../../docs/reference/04-protocol.md"
     ],
     "src/v1/errors.ts": [
       "../../docs/reference/03-cli.md#error-codes",
@@ -318,7 +319,8 @@
       "../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order"
     ],
     "src/v1/validate.ts": [
-      "../../docs/reference/04-protocol.md#validation-of-a-v1-record"
+      "../../docs/reference/04-protocol.md#validation-of-a-v1-record",
+      "../../docs/reference/04-protocol.md"
     ]
   }
 }

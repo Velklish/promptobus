@@ -323,6 +323,55 @@ check('tools/call: an unknown address — isError', badAddr.result?.isError === 
 const badTool = await orch.call('tools/call', { name: 'a2a_teleport', arguments: {} });
 check('tools/call: unknown tool — isError',
   badTool.result?.isError === true && /a2a_teleport/.test(text(badTool)), text(badTool));
+// : an approver sent a gate record under the key `artifactName`, and the bus delivered a
+// type=artifact message with a body and no file at all. The file here exists — the key is the defect.
+const wrongKeyFile = path.join(ROOT, 'attached-record.json');
+writeFileSync(wrongKeyFile, '{"schemaVersion":1}\n');
+const inboxBeforeRefusals = store.countInbox(HOME, TASK, 'worker:cargos-api');
+const artifactNoFile = await orch.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'worker:cargos-api', type: 'artifact', body: 'запись гейтов приложена' },
+});
+check('send: type=artifact with no artifactPath — isError, and the refusal names the parameter',
+  artifactNoFile.result?.isError === true && /artifactPath/.test(text(artifactNoFile)), text(artifactNoFile));
+const misspeltKey = await orch.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: {
+    to: 'worker:cargos-api', type: 'artifact', body: 'запись гейтов приложена', artifactName: wrongKeyFile,
+  },
+});
+check('send: an undeclared top-level key — isError, and the refusal names the key',
+  misspeltKey.result?.isError === true && /artifactName/.test(text(misspeltKey)), text(misspeltKey));
+// The call above is refused by the artifact rule too, so only its TEXT tells the two apart.
+// This one is lawful in every way but the key: nothing else in the bus has a reason to refuse it.
+const lawfulButForKey = await orch.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: {
+    to: 'worker:cargos-api', type: 'status', body: 'ключ с опечаткой, всё остальное законно', artifactName: wrongKeyFile,
+  },
+});
+check('send: a call lawful in everything but the key is still refused, by the key',
+  lawfulButForKey.result?.isError === true && /artifactName/.test(text(lawfulButForKey)),
+  text(lawfulButForKey));
+// The rule is the declaration's, not `send`'s. `claimed` is the shape that costs most silently:
+// dropped, it reads as an ordinary take, and the mailbox stays with the session that had it.
+// The mailbox must be NON-empty here, or a take that did happen would have carried nothing away.
+await worker.call('tools/call', {
+  name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body: 'не должно быть вычитано опечаткой' },
+});
+const unreadBeforeClaim = store.countInbox(HOME, TASK, 'orchestrator');
+const misspeltClaim = await orch.call('tools/call', {
+  name: 'promptobus_mailbox', arguments: { claimed: true },
+});
+check('mailbox: an undeclared key is refused there too, and the refusal takes nothing',
+  misspeltClaim.result?.isError === true && /claimed/.test(text(misspeltClaim))
+  && unreadBeforeClaim === 1 && store.countInbox(HOME, TASK, 'orchestrator') === unreadBeforeClaim,
+  `${unreadBeforeClaim} → ${store.countInbox(HOME, TASK, 'orchestrator')} · ${text(misspeltClaim)}`);
+// Drained deliberately: the scenario below this point starts from an empty orchestrator mailbox.
+await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
+check('send: neither refusal delivered anything — the mailbox is where it was',
+  store.countInbox(HOME, TASK, 'worker:cargos-api') === inboxBeforeRefusals,
+  `${store.countInbox(HOME, TASK, 'worker:cargos-api')} against ${inboxBeforeRefusals}`);
 
 const stillAlive = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check('task: task composition after errors',

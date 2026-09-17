@@ -178,6 +178,18 @@ for (const harness of ['cursor']) {
     `${JSON.stringify(saved)} · ${r}`);
 }
 
+// The refusal lives in `sendMessage`, where this caller and the `promptobus_send` tool meet
+// ([04-protocol](../docs/reference/04-protocol.md) § Artifacts); the tool half is checked live in promptobus-mcp.
+{
+  const before = inbox('worker:one').length;
+  // A `GateError` and not a bare one: that is what the top-level catch prints without a stack.
+  const r = expectThrow(() => call(['send', 'worker:one', '--body', 'record attached', '--type', 'artifact', '--task', TASK], baseEnv));
+  check(': type artifact with no file is refused here too, in the words the tool uses',
+    r.threw === true && r.name === 'GateError' && /artifactPath/.test(r.msg)
+    && inbox('worker:one').length === before,
+    `${r.name} · ${inbox('worker:one').length} against ${before} · ${r.msg}`);
+}
+
 // A declared role is a CLAIM. These are the ways of claiming one that must not work, and
 // each is checked by what it would have WRITTEN, not only by the exit code.
 {
