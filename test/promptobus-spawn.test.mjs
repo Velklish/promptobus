@@ -35,6 +35,7 @@ import {
   ATTACHMENT_CONTRACT,
   GATE_RECORD_SCHEMA, GATE_RECORD_STEM, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM, RESULT_BODY_MAX,
 } from '../lib/handoff.js';
+import { provenanceFromRecord, provenanceLine } from '../lib/provenance.js';
 
 // realpath: the planner canonicalizes the root (macOS: /var → /private/var), and the
 // test expectations must be compared to canonical paths.
@@ -239,6 +240,37 @@ check(': launch provenance is recorded without changing the host writer version'
     hostVersion: written?.hostVersion,
     binaryVersion: written?.binaryVersion,
   }));
+// Path is the only discriminator between a tree copy and an installed one at the same version,
+// and a verdict run FROM the tree cannot show that the field follows the executing copy.
+const otherCopy = path.join(SB, 'other-copy');
+mkdirSync(path.join(otherCopy, 'lib'), { recursive: true });
+writeFileSync(path.join(otherCopy, 'package.json'),
+  JSON.stringify({ name: 'promptobus', version: '0.0.0-other', type: 'module' }));
+writeFileSync(path.join(otherCopy, 'lib', 'provenance.js'),
+  readFileSync(path.join(here, '..', 'lib', 'provenance.js')));
+// ONE file is copied, so the copy loads only while `lib/provenance.js` imports nothing local.
+// A local import added there breaks that, and the refusal is this verdict rather than the file.
+let copiedLine;
+try {
+  const copied = await import(pathToFileURL(path.join(otherCopy, 'lib', 'provenance.js')).href);
+  copiedLine = copied.provenanceLine(copied.launchProvenance(
+    { version: '0.0.0-other', binPath: () => '/stand/promptobus.js' }, { bin: '/stand/claude', version: null }));
+} catch (e) {
+  copiedLine = `the copy did not load: ${e.message} — lib/provenance.js now imports something local,`
+    + ' and one copied file is no longer a copy of it. Copy what it imports, or move the check to a'
+    + ' copied directory';
+}
+check(': provenance names the copy that executes, not the tree that copy was taken from',
+  copiedLine.includes(' package=' + path.join(otherCopy, 'package.json') + '@0.0.0-other')
+  && !copiedLine.includes(PACKAGE_PATH),
+  copiedLine);
+// Reconstruction from a record must not claim the READER's copy: a holder journal header
+// would then name a copy that did not raise the session.
+const reconstructed = provenanceLine(provenanceFromRecord({ ref: 'a record from another copy' }));
+check(': a record that does not name its copy is reported unresolved, not as the reader',
+  reconstructed.includes('package=unresolved (the record does not name the copy that wrote it)')
+  && !reconstructed.includes(PACKAGE_PATH),
+  reconstructed);
 // Mechanism fields are checked by name. Checking them as one string is not allowed: a drift on one
 // field must name itself, not hide behind a shared "objects are not equal".
 check(': name — what went into --name, participants are looked up by it in claude agents',

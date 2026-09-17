@@ -242,7 +242,12 @@ its version when known. The Codex session record keeps the same line as its firs
 the holder log starts with it; Cursor's persistent session record does too. The protocol's
 existing `mechanismVersion` field remains the host writer version for mixed-version readers;
 provenance uses separate package and host fields. An unresolved CLI path names its reason, so a
-live measurement without an attributable header is not attributable. These fields identify the
+live measurement without an attributable header is not attributable. A header REBUILT from a
+record that carries no package field reports `package=unresolved (…)`: the reconstruction never
+substitutes the reading copy's own path, because a record written elsewhere would then be signed
+by whoever read it. The package path is the only discriminator between a tree copy and an
+installed one at the same version, so a check run from the tree does not demonstrate that the
+field follows the executing copy — a second copy at another path has to name itself. These fields identify the
 executing location and reported release, not exact code identity: different revisions at the
 same path and version remain indistinguishable.
 

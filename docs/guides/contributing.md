@@ -118,7 +118,12 @@ state under test, the participant home state, and the version and path of the co
 process. A stand shape or a changed output line cannot substitute for that provenance. A version
 without the package path is insufficient when tree and installed copies share a version. These
 fields identify a location and reported release, not exact code identity: different revisions at
-the same path and version remain indistinguishable.
+the same path and version remain indistinguishable. Two consequences for whoever writes the check.
+A verdict that runs from the tree and asserts the tree's own path proves nothing about the
+discriminator — it is true for any resolution, including a wrong one taken from `cwd`; the copy has
+to be run from a second path and name itself. And a header rebuilt from a record that carries no
+package field says `unresolved`, never the reading copy's path: a record written by another copy
+signed by its reader is the same false attribution in a quieter form.
 
 A harness stand is a stub binary, not the tool. It answers the protocol the driver speaks
 and does nothing else, so a check written against one proves the mechanism's half of an
