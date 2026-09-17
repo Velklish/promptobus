@@ -290,6 +290,29 @@ Neither source is a contract: no snapshot, no record, the watchman mark
 has never been laid — that is UNKNOWN, not busy, and the caller does
 what they would have done without the predicate.
 
+### `lastActivation` — when the participant was last REACHED
+
+Source: `src/supervisor.ts`, `lastActivation`.
+
+The newest of three marks that all mean the participant was reached: the
+record's `started`, the health `knockedAt`, and the health `deliveredAt`. A
+failed activation (`triedAt`) is left out — silence after it speaks of a deaf
+channel, not a stall. `null` means none of the three parses.
+
+**Three predicates read it, and they do not read it for the same thing.**
+`stallStands` and `promptStands` compare it with the participant's last SEND,
+and `null` there means "nothing to compare against" — the stall stands.
+`sessionBusy` reads it only on the branch for a participant with no session
+reference, compares it with the last END OF TURN rather than with a send, and
+on `null` answers `false`: nobody who was never reached is mid-turn.
+
+**It is exported for the sake of checks, and that is the whole of the
+addition.** A check that asserts "this participant is not stalled" has to
+establish the same order the predicate compares, and a private maximum over
+the three marks, written inside the check, drifts from the predicate it exists
+to guard the moment a fourth mark is added or one is dropped. The scenario's
+step 7 takes it through `lib/status.js`, by the same import as `stallStands`.
+
 ### `stallStands` — the grace window before a participant has ever spoken
 
 Source: `src/supervisor.ts`, `stallStands`.
@@ -313,6 +336,22 @@ for.
 real timeline, and silence after activation is a stall regardless of the
 record's age**; a window over the whole `unknown` branch would have given
 half a minute of deafness to everyone at once.
+
+**A knock that lands after the reply makes the stall stand again, and that
+is the contract, not a defect.** `since` is the newest of the three
+activation marks and `sent` is the participant's last message, so a
+re-knock on the warden's own retry threshold moves `since` past `sent` and
+the same finished turn becomes a stall. It has to: the question the branch
+asks is whether anything came back since the last time we reached them, and
+a fresh un-answered knock has had no answer. The consequence belongs to
+whoever writes a check. **A verdict that asserts "this participant is not
+stalled" owes itself the precondition `sent >= since`, waited for and
+asserted on its own line** — without it the verdict races the warden and
+goes red on sound code, which is the first of the two classes `PB-159.3`
+separated in step 7 of the scenario. Measured by hand on a store with the
+stamps set, 2026-09-17: one reply, one end of turn, and the answer flips
+with the knock's stamp alone — a knock 60 s after the reply gives `true`,
+a knock 60 s before it gives `false`.
 
 ### `wardenRound` — one watch round
 

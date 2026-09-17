@@ -1468,6 +1468,15 @@ check(': limit is reported even after a sent message',
   stallStands(HOME, CYCLE, asRecord(cycleP), { kind: 'limit', reason: LIMIT }) === true);
 check(': the same predicate on unknown after a sent message says "not a stall"',
   stallStands(HOME, CYCLE, asRecord(cycleP), { kind: 'unknown', reason: TURN_END }) === false);
+// PB-159.3, the re-knock class, driven by hand: one end of turn, one reply, and the answer
+// flips with the knock's stamp alone — this is the shape of scenario step 7's first red.
+store.writeHealth(HOME, CYCLE, { 'worker:api': { deliveredAt: beforeMsg, knockedAt: afterMsg } });
+const reknocked = stallStands(HOME, CYCLE, asRecord(cycleP), { kind: 'unknown', reason: TURN_END });
+store.writeHealth(HOME, CYCLE, { 'worker:api': { deliveredAt: beforeMsg } });
+check(': a re-knock landing AFTER the reply makes that same end of turn a stall again',
+  reknocked === true
+  && stallStands(HOME, CYCLE, asRecord(cycleP), { kind: 'unknown', reason: TURN_END }) === false,
+  `knock after the reply → ${reknocked} · reply ${cycleMsg.message.ts} · knock ${afterMsg}`);
 check(': there is no activation time at all — nothing to compare against, and the stall stays a stall',
   stallStands(HOME, CYCLE, { address: 'worker:bez-otmetok' }, { kind: 'unknown', reason: TURN_END }) === true);
 

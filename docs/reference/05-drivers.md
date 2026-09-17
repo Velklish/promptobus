@@ -247,9 +247,9 @@ record that carries no package field reports `package=unresolved (…)`: the rec
 substitutes the reading copy's own path, because a record written elsewhere would then be signed
 by whoever read it. The package path is the only discriminator between a tree copy and an
 installed one at the same version, so a check run from the tree does not demonstrate that the
-field follows the executing copy — a second copy at another path has to name itself. These fields identify the
-executing location and reported release, not exact code identity: different revisions at the
-same path and version remain indistinguishable.
+field follows the executing copy — a second copy at another path has to name itself. These
+fields identify the executing location and reported release, not exact code identity:
+different revisions at the same path and version remain indistinguishable.
 
 Same boundary as the neighbours: the rest of the mechanism does not import this
 file — it takes the driver from the registry map.

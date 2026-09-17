@@ -81,7 +81,7 @@ export function justSpawned(participant: ParticipantV1 | null | undefined, now: 
 
 // When a turn was last STARTED: three marks, all meaning the participant was reached. A failed
 // activation (`triedAt`) is left out — silence after it speaks of a deaf channel, not a stall.
-function lastActivation(home: string, task: string, participant: ParticipantV1 | null | undefined): number | null {
+export function lastActivation(home: string, task: string, participant: ParticipantV1 | null | undefined): number | null {
   const marks = marksOf(readHealth(home, task), String(addressOf(participant) ?? ''));
   const at = [startedOf(participant), marks.knockedAt, marks.deliveredAt]
     .map((v) => Date.parse(String(v ?? ''))).filter(Number.isFinite);

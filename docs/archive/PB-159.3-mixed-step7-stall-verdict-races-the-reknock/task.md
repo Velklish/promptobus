@@ -14,10 +14,11 @@ runs for the stub-Claude lineup, the mixed lineup and the live canary alike:
 
 <!-- quote:../../../test/scenario.mjs -->
 ```js
-    const stands = stallStands(home, TASK, participantOf(WORKER), viewAfterSend?.stall);
     check('step 7: a participant that finished a turn AFTER a send is not counted as stalled',
-      idleAfterSend === true && viewAfterSend?.stall?.kind === 'unknown' && stands === false,
-      `turn yielded: ${idleAfterSend} · snapshot ${JSON.stringify(viewAfterSend)} · predicate ${stands}`);
+      stands === false,
+      `predicate ${stands} · ${said(atVerdict)} · snapshot ${JSON.stringify(viewAfterSend)}`
+      + ' — a red here with the precondition above GREEN is the mechanism: a participant whose'
+      + ' send is not older than its activation was counted as stalled anyway');
 ```
 <!-- /quote -->
 

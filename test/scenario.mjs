@@ -65,7 +65,7 @@ export const store = await import(path.join(MECHANISM_ROOT, 'lib', 'store.js'));
 const { readStalls, TICK_MS } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
 // Stall parse and the reason from `state.json` come from the mechanism, not from our
 // own file read: the report must be checked with the same thing the warden uses.
-const { stallStands } = await import(path.join(MECHANISM_ROOT, 'lib', 'status.js'));
+const { lastActivation, stallStands } = await import(path.join(MECHANISM_ROOT, 'lib', 'status.js'));
 const { claudeDriver, sessionDetail } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'));
 
 // Message-body markers. We check by CONTAINMENT, not equality: on the stub harness the
@@ -750,21 +750,63 @@ export async function runScenario({
     // detail: a green without it is not auditable.
     const ref = wp?.sessionRef;
     const idleAfterSend = await waitFor(() => wh.idle(ref) || null, { timeoutMs: step });
+    // `since` comes from the MECHANISM, not from a copy of it: a private max over the three
+    // marks would drift from the predicate it exists to guard ([supervisor.ts](../src/supervisor.ts)).
+    const stampsOf = (addr) => ({
+      sent: store.lastSentAt(home, TASK, addr),
+      since: lastActivation(home, TASK, participantOf(addr)),
+    });
+    const said = (s) => `sent ${s.sent ? new Date(s.sent).toISOString() : 'none'}`
+      + ` · since ${s.since ? new Date(s.since).toISOString() : 'none'}`;
+    // The predicate's precondition is `sent >= since`, and nothing in the step holds that
+    // order — the warden re-knocks on its own threshold (PB-159.3, the re-knock class).
+    const stamps = await waitFor(() => {
+      const s = stampsOf(WORKER);
+      return s.since !== null && s.sent !== null && s.sent >= s.since ? s : null;
+    }, { timeoutMs: step });
+    // The snapshot and the predicate are taken HERE, in the two calls after the wait, and every
+    // verdict below is told what they said: a `check` detail is eager, and `diagnose` reaches
+    // tmux, so a verdict placed between the wait and the predicate would hold the window open
+    // for a late warden tick — the very race this split exists to name.
+    //
     // The snapshot is taken from the harness and given to the driver EXPLICITLY. The
     // parse default would assemble it through the session-registry cache: under the
     // suite this is the first call in the process and the snapshot is fresh by
     // accident, and in a live run the cache is already filled by this step — one
     // scenario line would check different things on two harnesses, against the promise
     // «harnesses differ, not the checks».
-    const viewAfterSend = wh.inspect(ref);
+    //
     // The predicate is called directly, not through participant parse: that one also
     // has a registration window (`justSpawned`) on top of silence, and in a fast
     // scenario a participant inside it — an empty list would again be green for the
     // wrong reason.
+    const viewAfterSend = wh.inspect(ref);
     const stands = stallStands(home, TASK, participantOf(WORKER), viewAfterSend?.stall);
+    const atVerdict = stampsOf(WORKER);
+    // The stamps are asserted TWICE: as the wait saw them and as they stand beside the
+    // predicate, so a knock inside the residual window reddens this line and not the last one.
+    check('step 7: the worker\'s last send is not older than its last activation — the predicate\'s precondition',
+      stamps !== null && atVerdict.sent !== null && atVerdict.since !== null
+      && atVerdict.sent >= atVerdict.since,
+      `${said(atVerdict)} — RE-KNOCK CLASS: a knock landed between the reply and the verdict,`
+      + ' so the predicate below is asked about a turn nobody has answered yet. The mechanism'
+      + ` is right to call that a stall · ${wh.diagnose()}`);
+    check('step 7: the worker turn yielded — the session handed the turn back before the snapshot',
+      idleAfterSend === true,
+      `turn yielded: ${idleAfterSend} — TIMED-OUT CLASS: the turn never came back inside the`
+      + ` step budget, so the two verdicts below are about a turn still running · ${wh.diagnose()}`);
+    // The second red under the old shared title is a stand that lost the session — a `stale`
+    // kind and a vanished tmux server, not a comparison of stamps (PB-159.3).
+    check('step 7: the worker session is alive and its turn ended silently — the snapshot the predicate is asked about',
+      viewAfterSend?.stall?.kind === 'unknown',
+      `snapshot ${JSON.stringify(viewAfterSend)}`
+      + ' — LOST-SESSION CLASS: the stand no longer holds the session the step ended on'
+      + ` (a persist session off its tmux server reads as kind «stale») · ${wh.diagnose()}`);
     check('step 7: a participant that finished a turn AFTER a send is not counted as stalled',
-      idleAfterSend === true && viewAfterSend?.stall?.kind === 'unknown' && stands === false,
-      `turn yielded: ${idleAfterSend} · snapshot ${JSON.stringify(viewAfterSend)} · predicate ${stands}`);
+      stands === false,
+      `predicate ${stands} · ${said(atVerdict)} · snapshot ${JSON.stringify(viewAfterSend)}`
+      + ' — a red here with the precondition above GREEN is the mechanism: a participant whose'
+      + ' send is not older than its activation was counted as stalled anyway');
 
     // --- two participants of one task: each with its own --------------------------
     //
