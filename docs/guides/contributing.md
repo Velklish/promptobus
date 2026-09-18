@@ -3,8 +3,8 @@
 This repository is run entirely through [backslop](https://github.com/Velklish/backslop). There is no issue tracker beside it. The pin is `backslop.json`.
 
 ```bash
-npx github:Velklish/backslop#v0.8.0 status
-npx github:Velklish/backslop#v0.8.0 lint
+npx github:Velklish/backslop#v0.9.0 status
+npx github:Velklish/backslop#v0.9.0 lint
 ```
 
 The CI and package lint commands name the same tag, but `backslop upgrade` does not move them. Measured at v0.4.0 → v0.6.0: it rewrote the pin in `backslop.json`, in `docs/**` and in root `*.md`, left `package.json` and `.github/workflows/ci.yml` exactly as they were, and `lint` stayed green with both still naming the old pin. Raise the pin in those two files by hand in the same pass — `npm run pins` is what tells you when you have not. That gate (`scripts/check-pins.mjs`) is red when any tracked file names a `backslop#vX.Y.Z` disagreeing with `cli` in `backslop.json`, and it skips exactly what `upgrade` skips: `CHANGELOG.md`, `docs/adr/**`, the task archive and task cards, which cite a version as evidence of a moment rather than as a command. It runs in `gates`, by hand, and in CI ahead of the `backslop init` step. What that ordering buys is a legible failure, not a repaired tree: nothing is committed in CI, so an `AGENTS.md` that `init` rewrote at a stale pin dies with the runner and is undone by nobody. Run first, the gate names `ci.yml`, which is where the stale pin actually is, instead of pointing at a file it had just rewritten. No CI run has been made to confirm the ordering behaves that way.
@@ -17,7 +17,7 @@ The CI and package lint commands name the same tag, but `backslop upgrade` does 
 
 **Write the spec in backticks whenever it appears in prose.** The gate takes the ref up to whitespace, a quote, a backtick, `)`, `]`, `,` or `;` — a period and a colon are NOT terminators. So a sentence ending `… npx github:…/backslop#v0.6.0.` outside backticks reads as the ref `v0.6.0.` and goes red (measured: `✖ docs/ROADMAP.md:18: names github:…/backslop#v0.6.0., expected #v0.6.0`). Inside backticks the closing backtick ends the ref and the line is green. For the same reason a generic form — `#<version>`, `#<sha>` — must not be written with the spec in front of it in a live file; today only `docs/archive/PB-94-ci-unpinned-ast-grep-backslop/task.md` does, and the archive is skipped. No exemption for `<…>` is built in, deliberately: an exemption is a hole shaped like the thing the gate looks for, which is the reason `scripts/audit-public.mjs` assembles its forbidden strings from fragments instead of exempting itself.
 
-**And an example of a WRONG ref cannot be written as a real one.** The gate does not tell an example from a fact, and it should not: a correct `github:Velklish/backslop#v0.8.0` in prose is green, and the tree is full of them — 47 live refs passed at the merge of this run. What reddened there were three examples of wrong refs (`#main`, `v0.6.0.`) written out in full, so every example above writes the owner segment as `…` on purpose. Same technique as `scripts/audit-public.mjs`: name the shape, never assemble the string.
+**And an example of a WRONG ref cannot be written as a real one.** The gate does not tell an example from a fact, and it should not: a correct `github:Velklish/backslop#v0.9.0` in prose is green, and the tree is full of them — 47 live refs passed at the merge of this run. What reddened there were three examples of wrong refs (`#main`, `v0.6.0.`) written out in full, so every example above writes the owner segment as `…` on purpose. Same technique as `scripts/audit-public.mjs`: name the shape, never assemble the string.
 
 **Green says what it looked at.** The summary prints `N of M tracked file(s) read`, the live and historical ref counts, and how many live refs sit outside `backslop.json` — because a pin gate that matched nothing would pass in silence. A tracked file it cannot open is a finding, not a skip: it cannot vouch for what it did not read. The gate carries no literal pin of its own either, reading the expected version out of `backslop.json` — a gate with one is one more place for a raise to miss — and it restates what `upgrade` skips rather than importing it, because the CLI arrives by npx and is not a dependency.
 
@@ -41,14 +41,14 @@ Procedure text lives in `AGENTS.md` (backslop block) and in the `backslop-task` 
 ## Worker path
 
 1. **Take the first queued task** from `status`, or create one:
-   - `npx github:Velklish/backslop#v0.8.0 new <slug> --title "…"` → triage
+   - `npx github:Velklish/backslop#v0.9.0 new <slug> --title "…"` → triage
    - add `--queue` to put it in the queue
    - A tiny change that does not alter a contract may skip a tracker file if one pass finishes it.
 2. **Change the code.** Reverse a prior decision by deleting it. Do not strike through. Use [glossary](../GLOSSARY.md) names. If a name is missing, propose a row.
-3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.8.0 adr <slug>` and a row in [docs/README.md](../README.md).
+3. **Document in the same pass.** Update the matching [reference](../reference/README.md) section, this guide if the workflow changed, and `CHANGELOG.md`. An architectural choice needs `npx github:Velklish/backslop#v0.9.0 adr <slug>` and a row in [docs/README.md](../README.md).
 4. **Gates on an unchanged tree.** Commands in `backslop.json` `gates` must exit 0. Also run `npm test` when you touch runtime code. The runner puts `promptobus-e2e.test.mjs`, `promptobus-mixed.test.mjs`, `promptobus-cursor-wake.test.mjs`, `promptobus-warden.test.mjs`, `model-routing-preflight.test.mjs`, and `runner.test.mjs` in the serial group because their wall-clock checks or nested pool measure machine neighbours. The serial group does not help when the neighbours are OTHER suites, so the run prints the machine's load average with its own numbers: cores and the load before the pool, the load before the serial group, and for every failed file the load when it started and when it finished. The runner does not judge which assertion is a budget — it cannot see one from the outside, and a hand list of "files with budgets" would rot with no sentinel able to catch it — so the reading is yours, and what the numbers give you is a candidate explanation rather than a verdict. A red whose assertion is a wall-clock budget, beside a load average several times the core count, MAY be a measurement of the machine; the load does not establish that, and the reader owes the evidence. What discharges it is the pair the rules ask for and both halves of it: that file standalone, twice, and the same file on the base commit, with the exit code of each. A green standalone run is a pointer and not an acquittal — the last time this class was followed to its end the pointer held and the cause was not load at all, it was a thirty-second registration window the file had outrun (PB-159.1, 2026-09-13), and the finding PB-159.3 carries two more reds of the same shape that load explains neither of. A red at a load the machine could carry is yours from the start. A test change needs a mutation probe, and `npm run probe` performs it: `npm run probe -- <file> (--mutate s/<js-regexp>/<replacement>/[gi] | --stdin-patch) [--run <command>]` commits-first by refusing on a dirty tree, snapshots the file, applies the mutation, runs the check, restores, and runs it again. Choosing a mutation that is meaningful stays yours, and so does the decision that a gate with an early cutoff needs a second probe feeding it a false positive. What is no longer yours to remember is the order: "commit first" was held by nothing but memory, and a probe over uncommitted work loses it — `git checkout --` takes the edit along with the mutation, which happened three times in two days, twice caught by the author and once reported as done and found by a reviewer.
 
-Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.8.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
+Report: what changed, how you verified it (numbers and exit codes), what you left open, findings outside the task. Open a finding with `npx github:Velklish/backslop#v0.9.0 new <slug> --parent N` and evidence. Do not push. Do not edit the repository's main tree from a worktree.
 
 Commit subject: `PB-N: <what was done>` when the change has a task number.
 
@@ -57,7 +57,7 @@ Commit subject: `PB-N: <what was done>` when the change has a task number.
 Review the diff. Then archive and triage in one pass:
 
 ```bash
-npx github:Velklish/backslop#v0.8.0 archive N
+npx github:Velklish/backslop#v0.9.0 archive N
 ```
 
 Fill `docs/archive/<id>-<slug>/result.md` (outcome, what was done, verification). `[TODO]` in that file fails lint. Review every `triage/` entry: merge, clarify, `mv N queue`, or `mv N deferred` with a return condition. Ask the owner only before rejecting.
