@@ -6,7 +6,8 @@
     "npm test",
     "npx github:Velklish/backslop#v0.9.0 lint",
     "npm run audit",
-    "npm run pins"
+    "npm run pins",
+    "npm run codex-schema"
   ],
   "version": "0.9.0",
   "lang": "en",

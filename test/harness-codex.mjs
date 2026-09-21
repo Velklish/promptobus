@@ -19,7 +19,9 @@ import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', '0.146.0');
+// The directory is named off the constant, not spelled again: a bumped `PROVEN_CODEX_VERSION`
+// with the old fixtures still underneath would validate a protocol nobody ships (`PB-242`).
+export const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', PROVEN_CODEX_VERSION);
 const codexFixtureAjv = new Ajv({
   strict: false,
   allErrors: true,

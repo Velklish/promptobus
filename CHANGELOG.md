@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A gate on the Codex protocol fixtures** (PB-242). The harness names the fixture directory off `PROVEN_CODEX_VERSION` instead of
+  repeating the number, `test/codex-fixtures.test.mjs` fails when the constant names a directory that does not exist, and
+  `npm run codex-schema` compares the installed `codex --version` with the version the fixtures were taken from, printing the
+  regeneration command on a mismatch. With no binary on the machine it says so and exits 0, so it belongs to the local gates.
+
 ## [0.13.0] — 2026-09-17
 
 ### Added
