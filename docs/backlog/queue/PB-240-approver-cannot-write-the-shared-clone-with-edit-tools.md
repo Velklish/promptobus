@@ -1,5 +1,6 @@
 # PB-240 · The approver role writes to the shared clone, which the harness forbids a background agent
 
+- **Order:** 510
 - **Scope:** [05-drivers](../../reference/05-drivers.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none

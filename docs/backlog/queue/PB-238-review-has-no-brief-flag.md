@@ -1,5 +1,6 @@
 # PB-238 · review takes no --brief, so an approver's assignment has to travel as a separate message
 
+- **Order:** 480
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none

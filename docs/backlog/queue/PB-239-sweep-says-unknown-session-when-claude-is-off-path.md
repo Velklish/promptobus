@@ -1,5 +1,6 @@
 # PB-239 · sweep reports session is unknown when claude is simply not on the lifted session's PATH
 
+- **Order:** 440
 - **Scope:** [03-cli](../../reference/03-cli.md), [05-drivers](../../reference/05-drivers.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none
@@ -9,7 +10,7 @@
 Cleanup run from inside a lifted participant fails, and the message blames the
 session:
 
-- `approver:perf`, 2026-09-21: `npx ati-agents promptobus sweep` → "claude
+- `approver:perf`, 2026-09-21: the consumer's `promptobus sweep` passthrough → "claude
   agents --json is unreadable".
 - `approver:storage-cli-git`, same evening: `sweep worker:storage-cli-git` →
   "session is unknown", while `stop` in the same session answered "no live

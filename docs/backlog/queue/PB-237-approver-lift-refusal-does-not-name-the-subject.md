@@ -1,5 +1,6 @@
 # PB-237 · The --approver refusal names a reviewer but not the subject it must have lifted from
 
+- **Order:** 450
 - **Scope:** [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none

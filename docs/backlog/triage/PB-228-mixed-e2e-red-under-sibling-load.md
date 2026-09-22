@@ -40,3 +40,25 @@ Investigated before filing rather than waved away:
 ## Verification
 
 - Whatever margin or serial-group change is chosen: the same file, run standalone and under a reproduced multi-worker load, passes both times.
+
+## Triage, 2026-09-22 — stays here until two numbers exist
+
+The subject is alive but the card cannot be queued on what it holds: its own premise ("wall-clock
+margin only") no longer matches its second quoted red. PB-159.3 (`e600dd47`) split step 7 into
+named verdicts — `test/scenario.mjs:788` the precondition, `:800` the snapshot with the
+LOST-SESSION class, `:805` the predicate — and the snapshot red quoted here reads as the
+LOST-SESSION class, which has nothing to do with margin. Queuing it now would buy a widened
+`WATCHDOG_MS` against a cause nobody established.
+
+What is missing, and neither number is in the card:
+
+1. **A red-on-base data point under reproduced load.** Run `test/promptobus-mixed.test.mjs`
+   standalone with N sibling `npm test` runs on the same machine, recording the load average and
+   the exit code of every run, then the same file on the base commit. Today's evidence is one red
+   that was never reproduced.
+2. **The two quoted reds re-read against the current cut of step 7.** Say which of the three
+   verdicts would go red on the same data — margin, LOST-SESSION, or the predicate. If it is the
+   second, the remainder belongs to that class and not to this card.
+
+Not rejected: the only red measured under a load this repository actually observed is worth
+keeping, and it is the kind of evidence a flaky-test story is usually written without.

@@ -1,5 +1,6 @@
 # PB-229 · The warden knocks once per message, so a four-message hand-off wakes the orchestrator four times
 
+- **Order:** 470
 - **Scope:** `lib/warden.js` (the knock), `lib/supervisor.js`, [03-cli](../../reference/03-cli.md) § Guard and warden
 - **Created:** 2026-09-17
 - **Dependencies:** none
