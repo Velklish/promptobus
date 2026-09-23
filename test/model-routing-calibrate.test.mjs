@@ -67,7 +67,7 @@ const TUPLES = JSON.parse(readFileSync(CATALOG_FILE, 'utf8')).tuples;
 // nothing anywhere went red (PB-34).
 const ALIASES = {
   claude: {
-    fable: ['claude-fable-5-1'], opus: ['claude-opus-5'], sonnet: ['claude-sonnet-5'],
+    fable: ['claude-fable-5-1'], opus: ['claude-opus-5-5'], sonnet: ['claude-sonnet-5'],
     haiku: ['claude-haiku-4-5'],
   },
 };
@@ -130,7 +130,7 @@ test('an accepted piece is a run that was not dismissed and sent a result', () =
 });
 
 test('an alias resolves through the driver dictionary, and only on its own harness', () => {
-  assert.deepEqual(resolveModel('claude', 'opus', ALIASES), { model: 'claude-opus-5', alias: 'opus' });
+  assert.deepEqual(resolveModel('claude', 'opus', ALIASES), { model: 'claude-opus-5-5', alias: 'opus' });
   assert.deepEqual(resolveModel('claude', 'claude-opus-5', ALIASES), { model: 'claude-opus-5', alias: null });
   // The same word at a harness that publishes no such alias is a model name.
   assert.deepEqual(resolveModel('cursor', 'opus', ALIASES), { model: 'opus', alias: null });
@@ -144,11 +144,11 @@ test('records group by (harness, model, effort) with aliases folded in — never
   // explicit-flag lift. Grouping by tuple would have produced one key.
   assert.equal(RECORDS.every((x) => x.tuple === null), true);
   assert.equal(r.keys.length, 6);
-  const opus = keyOf(r, 'claude', 'claude-opus-5', 'xhigh');
+  const opus = keyOf(r, 'claude', 'claude-opus-5-5', 'xhigh');
   // Four runs typed `--model opus` and three typed the full id: one key of seven.
   assert.equal(opus.runs, 7);
   assert.deepEqual(opus.aliasesSeen, ['opus']);
-  assert.equal(opus.tuple, 'claude-opus-xhigh');
+  assert.equal(opus.tuple, 'claude-opus-55-xhigh');
 });
 
 test('a dismissed run counts as a run and as spend, and never as a finished piece', () => {
@@ -187,24 +187,24 @@ test('runs on a model the catalog does not rate get medians and no proposal', ()
 test('the pivot is the most-observed eligible key and keeps its catalog bands', () => {
   const r = report();
   assert.deepEqual(r.pivot, {
-    harness: 'claude', model: 'claude-opus-5', effort: 'xhigh', tuple: 'claude-opus-xhigh', runs: 7,
+    harness: 'claude', model: 'claude-opus-5-5', effort: 'xhigh', tuple: 'claude-opus-55-xhigh', runs: 7,
   });
-  const opus = keyOf(r, 'claude', 'claude-opus-5', 'xhigh');
+  const opus = keyOf(r, 'claude', 'claude-opus-5-5', 'xhigh');
   assert.equal(opus.proposal.pivot, true);
   assert.equal(r.speedPivot, null);
   assert.equal(opus.proposal.speed.band, null);
   assert.match(opus.proposal.speed.why, /no throughput observation/);
   assert.equal(opus.proposal.quotaCost.band, opus.catalog.quotaCost);
   // And it is therefore never in the merge payload.
-  assert.equal(Object.hasOwn(r.ratings, 'claude-opus-xhigh'), false);
+  assert.equal(Object.hasOwn(r.ratings, r.pivot.tuple), false);
 });
 
 test('an eligible run-count tie chooses the earlier key order', () => {
   const r = report();
-  assert.equal(keyOf(r, 'claude', 'claude-opus-5', 'xhigh').runs, 7);
+  assert.equal(keyOf(r, 'claude', 'claude-opus-5-5', 'xhigh').runs, 7);
   assert.equal(keyOf(r, 'claude', 'claude-sonnet-5', 'xhigh').runs, 7);
   assert.deepEqual(r.pivot, {
-    harness: 'claude', model: 'claude-opus-5', effort: 'xhigh', tuple: 'claude-opus-xhigh', runs: 7,
+    harness: 'claude', model: 'claude-opus-5-5', effort: 'xhigh', tuple: 'claude-opus-55-xhigh', runs: 7,
   });
 });
 
@@ -227,10 +227,10 @@ test('a key window moves quotaCost independently of its missing throughput', () 
   assert.match(sonnet.proposal.speed.why, /no throughput observation/);
   // Completion duration remains visible evidence, but never supplies speed.
   assert.equal(sonnet.durationSec, 1950);
-  // quotaCost: band 2 against the pivot's 5 implies 1.25^-3 of its window
+  // quotaCost: band 2 against the pivot's 4 implies 1.25^-2 of its window
   // movement; the run actually moved twice as much — two bands up.
   assert.equal(sonnet.catalog.quotaCost, 2);
-  assert.equal(sonnet.proposal.quotaCost.implied, BAND_RATIO ** -3);
+  assert.equal(sonnet.proposal.quotaCost.implied, BAND_RATIO ** -2);
   assert.equal(sonnet.proposal.quotaCost.band, 4);
 });
 
@@ -338,7 +338,7 @@ test('the merge payload carries only ratings that moved', () => {
 
 test('the printed proposal carries the numbers behind it and never a quality rating', () => {
   const text = renderCalibration(report());
-  assert.match(text, /pivot \(local anchor\): claude · claude-opus-5 · xhigh — 7 run\(s\)/);
+  assert.match(text, /pivot \(local anchor\): claude · claude-opus-5-5 · xhigh — 7 run\(s\)/);
   assert.match(text, /speed: no proposal — no throughput observation for this model \(catalog 2\)/);
   assert.match(text, /quotaCost: 2 → 4 \(catalog 2\)/);
   assert.match(text, /median completion duration 1950s over 6 sample\(s\)/);

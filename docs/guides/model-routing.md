@@ -96,7 +96,7 @@ The Mythos refusal is account-dependent: that message is the only evidence separ
 
 **Neither Fable id was run.** Both were read out of the binary instead — `claude-fable-5` in PB-29 off 2.1.251, `claude-fable-5-1` in PB-34 off 2.1.263 — and that was judged sufficient because the read answers a strictly stronger question than the turn does. A successful turn proves the binary accepted the string; the binary's own baked model catalog is where that acceptance comes FROM. On 2.1.263 it names both ids as first-party rows of `family:"fable"` and lists both in its array of accepted ids, and `alias_migration` is empty. A turn could not have distinguished either id from a near neighbour the binary also takes; the catalog read names the exact strings. It also costs nothing against the plan, which matters more for the top-tier family than for the other two.
 
-That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it.
+That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it. An id that an older build does not carry also gets an entry in `MODEL_MIN_VERSION` beside it — `claude-opus-5-5` → 2.1.280, the version 2.1.263's own refusal names — and the inventory of a binary below that floor leaves the id out — on a host that hands over the binary's version; the standalone host does not, and there the floor drops nothing ([03-cli](../reference/03-cli.md#claude-code-what-its-adapter-asks)).
 
 The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
 
@@ -513,7 +513,7 @@ explicit `--model` carries no routing decision, so its record has
 tuple would silently drop the majority of a person's evidence and then report
 a confident median over the rest. The catalog row is found FROM the key
 afterwards, which is also where a Claude alias is resolved: `opus` and
-`claude-opus-5` are one key, because the driver's dictionary says they are.
+`claude-opus-5-5` are one key, because the driver's dictionary says they are.
 
 **The catalog is the anchor, not the local extremes.** ADR-005 decision 6
 rejected mapping the local minimum and maximum onto 1 and 10 (option 6A): with
@@ -1164,10 +1164,12 @@ Source: `lib/model-routing/adapter-claude.js`, `claudeAvailability`.
 
 The adapter a driver declares as `availability`.
 
-`models` is the inventory to report when the account turns out to be logged in:
-the alias set the driver accepts, together with its default model. It is a
-parameter rather than a constant here so that the two facts stay in one file —
-the driver's — instead of drifting between the lift and the probe.
+`inventoryOf` is the inventory to report when the account turns out to be logged
+in, as a function of the resolved binary's version: the ids and the alias set the
+driver accepts, together with its default model, less every id whose version
+floor that binary is below. It is a parameter rather than a constant here so that
+those facts stay in one file — the driver's — instead of drifting between the lift
+and the probe.
 
 `scopeIds` is the second half of that dictionary: the display names the harness
 prints on a model-scoped limit row, and the ids each resolves to. It travels the

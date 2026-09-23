@@ -391,12 +391,13 @@ read that as "old".
 
 The shipped standalone host is such a host. It hands the name back without
 searching (`src/standalone.ts`), so under it the `ultracode` refusal never
-refuses, the two proven-version warnings never warn, and an availability
+refuses, the two proven-version warnings never warn, the Claude inventory's
+version floor (`MODEL_MIN_VERSION`) drops nothing, and an availability
 verdict carries no version at all — that is the DEFAULT, not a rare case.
 
 Declared here because four readers already exist and none of them could
 name the field they read: the three drivers' `optionRefusal` and the three
 availability adapters, which report it to a person as the verdict's
-`version`. It is the drift `bin` above carries its comment about, one field
+`version` (the Claude one also filters its inventory by it). It is the drift `bin` above carries its comment about, one field
 over — and load-bearing for a diagnosis rather than for a launch, which is
 why it survived longer.

@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The Claude driver is proven on 2.1.280, and the `opus` alias resolves to `claude-opus-5-5`** (PB-245.1). A participant lifted
+  with `--model opus` on claude 2.1.280 took one bus message while idle and replied in 6.2 s, as on 2.1.263, and `claude agents
+  --json` printed the same nine fields; its transcript names `claude-opus-5-5` as the model of every turn. The binary also carries a
+  second table that still points `opus` at `claude-opus-5`, so the alias moved on that live reading rather than on the offline one.
+  `PROVEN_CLAUDE_VERSION` is `2.1.280` and `MODEL_ALIAS_IDS.opus` is `claude-opus-5-5`: `models calibrate` now books a `--model
+  opus` run — and every lift without `--model`, since `DEFAULT_MODEL` is `opus` — to Opus 5.5's rows, runs recorded before the
+  re-point included. The calibrate fixture follows: its aliased key and its pivot are Opus 5.5 at `xhigh`. The other three aliases
+  were re-read on 2.1.280 and did not move: `fable` and `sonnet` by the baked tables, which agree, and `haiku` by one turn whose
+  transcript names `claude-haiku-4-5-20251001`, the same dated name the full-id check left on 2.1.263.
+- **On a host that hands over the binary's version, routing on a claude build older than 2.1.280 no longer picks Opus 5.5**
+  (PB-245.1). Such a build refuses the id: on 2.1.263, `claude -p --model claude-opus-5-5` exits 1 with `API Error: 400 Claude
+  Code 2.1.263 does not support this model; version 2.1.280 or newer is required`. Until now the inventory was static, so a
+  routed pick on an Opus 5.5 tuple lifted a session the API refuses with that 400 (measured with `claude -p`). `MODEL_MIN_VERSION`
+  in `lib/driver-claude.js` now gives `claude-opus-5-5` a floor of 2.1.280, and the Claude availability adapter reports
+  `inventoryFor(version)`: below the floor the id is left out, so its rows are excluded as `model-not-in-inventory`. A version
+  that cannot be read, or none at all, drops nothing, and `claudeAvailability` takes that function where it took the array. The
+  floor needs a host that hands over `HostToolBin.version`. **The standalone host does not, so there the floor drops
+  nothing**: on an old build under it, run `claude update` or, until then, deny the id with an overlay, `deny: { models:
+  ["claude-opus-5-5"] }` (PB-245.3 asks whether that host should read the version). An explicit `--model claude-opus-5-5`
+  passes through unchanged.
+
 ## [0.15.0] — 2026-09-24
 
 ### Added

@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
-  CLAUDE, DEFAULT_MODEL, MODEL_ALIASES, MODEL_IDS, MODEL_SCOPE_IDS, claudeDriver, markLimitAtStart,
+  CLAUDE, DEFAULT_MODEL, MODEL_ALIASES, MODEL_IDS, MODEL_SCOPE_IDS, claudeDriver, inventoryFor, markLimitAtStart,
 } from '../lib/driver-claude.js';
 import { liftoffParticipant } from '../lib/liftoff.js';
 import {
@@ -129,15 +129,6 @@ const NO_ACCOUNT = {
 };
 
 /**
- * The inventory the driver hands its adapter, derived here from the driver's own
- * exported constants exactly as the driver derives it. What the checks assert is
- * still written out literally: an expectation computed from the constant under
- * test passes whatever that constant becomes, which is what the first mutation
- * probe of this file caught.
- */
-const DRIVER_MODELS = [...new Set([...MODEL_IDS, ...MODEL_ALIASES, DEFAULT_MODEL])];
-
-/**
  * The adapter under test, with the account half stubbed.
  *
  * It is built here rather than taken from `claudeDriver.availability` for one
@@ -146,7 +137,7 @@ const DRIVER_MODELS = [...new Set([...MODEL_IDS, ...MODEL_ALIASES, DEFAULT_MODEL
  * driver's wiring is pinned separately, as source, by the check at the foot of
  * this file — the same way the lift hook's wiring is pinned.
  */
-const adapter = (deps = {}) => claudeAvailability(DRIVER_MODELS, MODEL_SCOPE_IDS, { ...NO_ACCOUNT, ...deps });
+const adapter = (deps = {}) => claudeAvailability(inventoryFor, MODEL_SCOPE_IDS, { ...NO_ACCOUNT, ...deps });
 
 /**
  * Call an adapter the way the preflight does: the binary is resolved ONCE, before
@@ -349,7 +340,7 @@ test('the inventory is the pinned ids and the alias set the binary publishes, pl
   // the predecessor is a name the binary still takes. An id the catalog rates has
   // to be in the inventory or every Fable row would be excluded as
   // `model-not-in-inventory`.
-  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
+  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`, { version: '2.1.280' });
   const verdict = await probe(box.host);
   assert.deepEqual(verdict.models.map((m) => m.model),
     ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5',
@@ -391,8 +382,32 @@ test('the inventory the driver hands over is what the adapter reports, not a lis
   // and the default model stay in one file — the driver's. A copy inside the
   // adapter would drift, and this is what would notice.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
-  const verdict = await ask(claudeAvailability(['only-this-one'], MODEL_SCOPE_IDS, NO_ACCOUNT), box.host, 15_000);
+  const verdict = await ask(claudeAvailability(() => ['only-this-one'], MODEL_SCOPE_IDS, NO_ACCOUNT), box.host, 15_000);
   assert.deepEqual(verdict.models, [{ model: 'only-this-one' }]);
+});
+
+test('an id below its version floor leaves the inventory, and an unreadable version drops nothing', async () => {
+  // 2.1.263 answers `--model claude-opus-5-5` with a 400 naming 2.1.280, so on an older build a
+  // routed pick must fall to Opus 5 rather than lift a session the API refuses.
+  const listed = async (version) => (await probe(sandbox(
+    `process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`, { version }).host)).models.map((m) => m.model);
+  for (const older of ['2.1.263 (Claude Code)', '2.1.279']) {
+    const models = await listed(older);
+    assert.equal(models.includes('claude-opus-5-5'), false, `${older}: ${models.join(', ')}`);
+    assert.equal(models.includes('claude-opus-5'), true, `${older}: ${models.join(', ')}`);
+  }
+  assert.equal((await listed('2.1.280 (Claude Code)')).includes('claude-opus-5-5'), true);
+  assert.equal((await listed('a build that names no version')).includes('claude-opus-5-5'), true);
+});
+
+test('a host that hands over no version field at all — the standalone host — keeps claude-opus-5-5 in the inventory', async () => {
+  // The floor needs the version; `src/standalone.ts` resolves the name alone, so there it drops nothing (PB-245.3).
+  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
+  const host = { ...box.host, resolveToolBin: (name) => ({ ok: true, bin: path.join(box.dir, name) }) };
+  const verdict = await probe(host);
+  assert.equal(verdict.version, undefined);
+  const models = verdict.models.map((m) => m.model);
+  assert.equal(models.includes('claude-opus-5-5'), true, models.join(', '));
 });
 
 // --- the account: the tier, the windows, and what never travels ---------------
@@ -686,7 +701,7 @@ test('no credential record is quota_unknown, and nothing is claimed about the lo
   // The binary already answered the auth question. A keychain that refused, an
   // item that is not there and a file that is not there are one fact to the
   // caller — no token — and the diagnosis is about the limit.
-  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
+  const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`, { version: '2.1.280' });
   const verdict = await probe(box.host, 15_000, { readCredential: async () => null });
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'quota_unknown');
@@ -908,7 +923,7 @@ test('the driver wires the live keychain read and the live endpoint, and hands o
   // is what leaves the live implementations in place.
   const driver = readFileSync(path.join(here, '..', 'lib', 'driver-claude.js'), 'utf8');
   assert.match(driver, /const PROBE_MODELS = \[\.\.\.new Set\(\[\.\.\.MODEL_IDS, \.\.\.MODEL_ALIASES, DEFAULT_MODEL\]\)\];/);
-  assert.match(driver, /availability: claudeAvailability\(PROBE_MODELS, MODEL_SCOPE_IDS\),/);
+  assert.match(driver, /availability: claudeAvailability\(inventoryFor, MODEL_SCOPE_IDS\),/);
 });
 
 // --- the late-start hook ------------------------------------------------------
