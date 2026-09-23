@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `npm run probe`, so step 4 of the generated `AGENTS.md` block now names the command. The contributing guide's approver path gains
   `fold N`, a minor finding its `--evidence`, and its pin paragraph says that `upgrade` has moved `package.json` and CI pins since
   v0.8.0 and still reads no other file.
+- **The open backlog is re-triaged by the cost rule** (PB-249). Every card in `queue/`, `deferred/` and `minor/` carries a `Cost`
+  label. Each queue and deferred card filed before this run has a dated re-triage section, which lists the claims checked against the
+  tree with each command and exit code and states the stale ones as corrections or assumptions. Minor cards and hypotheses moved to
+  `minor/` with an `Evidence` section. Four return conditions had fired: PB-65.2 came back to the queue, and PB-146.3, PB-66.2 and
+  PB-13.2, labelled `minor`, went to `minor/`. Two return conditions were reworded to be checkable. The queue is ordered by cost, and
+  [ROADMAP](docs/ROADMAP.md) says so. The exception is PB-248, which heads the queue because the owner ordered it for this run. Two
+  minor batches were cut for the scopes the top of the queue touches. No runtime behaviour changed.
 
 ## [0.14.0] — 2026-09-23
 

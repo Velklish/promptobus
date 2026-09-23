@@ -1,9 +1,10 @@
 # PB-222 · Проектный слой приёмщика негде разместить безопасно ни на одном харнессе, кроме Claude
 
-- **Order:** 360
+- **Order:** 210
 - **Область:** размещение файлов запуска роли, работающей в корне клона; драйверы Cursor и Codex; жизненный цикл уборки при падении, остановке и закрытии
 - **Создана:** 2026-09-13; сведён PB-221 (замер по Cursor) — 2026-09-16
 - **Зависимости:** нет
+- **Cost:** major
 
 ## Контекст
 
@@ -68,3 +69,13 @@
 - Существовавший в клоне проектный файл цел после успеха, после падения и после закрытия — побайтно.
 - Два подъёма подряд и два одновременных на один клон: второй либо ждёт, либо отказывает с названной причиной, но не затирает первый.
 - Отрицательный контроль: клон без проектного слоя остаётся без него после закрытия, а не приобретает пустые каталоги.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: acceptance can run on Claude Code only, and two approvers on one clone are unguarded. They can merge twice into one index; ADR-015 names that risk and leaves it to the caller.
+
+- The refusal on both harnesses holds: `roleHarnessRefusal` (`lib/drivers.js:81-91`) returns the Cursor and the Codex text, and the approver lift calls it (`lib/approver.js:273`). Only `lib/driver-claude.js:601` declares `approverLift: true`.
+- **Correction:** the paragraph that begins "Часть этого уже сделана" describes a guard that is no longer in the tree. The cheap check against a live approver with the same clone path was removed with its claim, as the next paragraph says. `grep -rn -i "clone lock\|live approver" lib/approver.js lib/review.js lib/spawn.js` finds none, and `docs/adr/adr-015-approver-lift-is-a-flag-on-review.md:35` and `docs/reference/03-cli.md:133` call clone concurrency caller discipline. So the window the paragraph describes is today the whole of concurrency, not a remainder.
+- Side note from the code, not live-verified: the Codex refusal says the launch files would land in the clone root, while the unreachable Codex approver plan puts them under the review sandbox (`lib/driver-codex.js:365-375`, `fileRoot = configDir`). Settle it before the Codex half is reopened.
+- Not tree-checkable: the live Codex lift of 2026-09-13 and the four bypasses from the role-setup review.
+- Neighbours, not duplicates: PB-240 (the approver in the clone root, on the one supported harness), PB-241 (its second work item, serialising two roles, is the same mutex question), and PB-185 (presumably the older record the Out of scope names).

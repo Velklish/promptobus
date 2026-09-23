@@ -13,4 +13,4 @@ Where promptobus is going: goals and their rationale. This is a living document:
 
 ## Prioritisation principle
 
-A live break or a missing command that a published guide already names comes first. Owner requests next. The backlog order field is the queue, not this list.
+The queue is ordered by the cost label of the [backlog rules](backlog/README.md#how-to-maintain-it): `critical` first, then `major`, then `minor`. Within a label, a live break or a missing command that a published guide already names comes first. Owner requests next. The backlog order field is the queue, not this list.

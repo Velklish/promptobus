@@ -1,9 +1,10 @@
 # PB-243 · Mail delivery to the orchestrator costs more than it carries
 
-- **Order:** 540
-- **Scope:** [reference/04-protocol.md](../../reference/04-protocol.md), [lib/warden.js](../../../lib/warden.js), [lib/store.js](../../../lib/store.js), the `promptobus_mailbox` tool
+- **Order:** 130
+- **Scope:** [reference/04-protocol.md](../../reference/04-protocol.md), [lib/warden.js](../../../lib/warden.js), [lib/store.js](../../../lib/store.js), [lib/notification.js](../../../lib/notification.js) (the postcard), the `promptobus_mailbox` tool
 - **Created:** 2026-09-22
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -33,3 +34,14 @@ Postcards arrive in bursts: 143 of 287 landed within 90 seconds of the previous 
 - A measurement of the same shape before and after, on comparable runs: characters delivered to the orchestrator per message, postcards per run, and the share of them that are the fixed tail. The scripts are the owner's, outside this repository.
 - The protocol invariant holds: after the change a message is still marked read only through the mailbox, and a participant that reads only headers is still told it has unread mail.
 - A postcard for a short message carries the stub, not the body, and the recipient still learns who wrote, of what type and how large.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: mail delivery puts boilerplate and bodies the orchestrator has already read into its context, and every later turn re-reads them. The card puts that at about 26% of the orchestrator's carried history.
+
+- The mailbox has no headers mode: `promptobus_mailbox` takes `claim` and the task argument only (`src/mcp/tools.ts:57-68`), and the handler renders every message in full (`src/mcp/server.ts:160-175`).
+- The protocol side holds: `status` expects no answer (`docs/reference/04-protocol.md:38`), and "only mailbox marks messages read" is the postcard's own line (`lib/driver-claude.js:269`).
+- **More precise than the card:** the stub has no per-message threshold. The postcard's preview block has a budget of 2000 characters (`KNOCK_TEXT_MAX`, `lib/contract.js:22`). `previewBlock` (`lib/notification.js:25-43`) inlines each body that fits in what is left, and otherwise uses the stub `text N characters — fetch the mailbox` (`:20`). So "short" means "fits in the remaining budget".
+- **Assumption, not tree-checkable:** the 712-character fixed tail. The package's own tail for the Claude frame is 169 characters (the `fetchLine` and working-order line at `lib/driver-claude.js:266-272`, measured with `node --input-type=module -e` over `orderBody`). The harness paragraph that makes up the rest is not in this repository. The package's own tail (169) exceeds the 152 that the card's split leaves for it (712 − 560) by 17, so 712 does not decompose as stated.
+- The Scope misses where the postcard text is built: `lib/notification.js` and each driver's `orderBody`.
+- Not tree-checkable: the transcript counts of 2026-09-17 to 2026-09-21. The scripts are the owner's.

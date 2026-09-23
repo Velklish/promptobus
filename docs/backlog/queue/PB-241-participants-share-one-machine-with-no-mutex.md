@@ -1,9 +1,10 @@
 # PB-241 · Participants of one task share a machine and the bus offers them no mutex
 
-- **Order:** 530
+- **Order:** 70
 - **Scope:** [01-overview](../../reference/01-overview.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -53,3 +54,13 @@ entry. It held, and its weaknesses are the ones an empty directory has:
   same time, and neither of them was told about the mechanism by prose in its
   brief.
 - A holder that dies does not block the others indefinitely.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: participants who measure at the same time produce worthless wall-clock numbers and reds that cost review rounds. Every run with more than one participant on one machine invents its own convention.
+
+- The bus has no machine-wide lease. `grep -rn -i "lease\|mutex" lib src` finds only the protocol's fan-out lease (`src/v1/messages.ts`, "who is writing this fan-out") and the store's directory lock (`src/fs/lock.ts`); the MCP tools are `promptobus_send`, `promptobus_mailbox` and `promptobus_task` (`src/mcp/tools.ts`).
+- No document describes a convention: `grep -rn -i "mutex" docs/reference docs/guides skills` finds none.
+- A current instance, from outside the tree: the brief of this re-triage (2026-09-23) carries its own prose rule — one full `npm test` per machine, taken by asking the orchestrator for "the npm test slot" — because a neighbour's load turns this suite's e2e files red. That is the prose convention the card describes, still hand-delivered.
+- Not tree-checkable: the load average of 63 on 2026-09-21 and the `/tmp` directory lock of that run.
+- Neighbours: PB-228 (the same cause class, this repository's own suite) and PB-222 (its second work item, two approvers on one clone, is the same mutex question at clone scope).

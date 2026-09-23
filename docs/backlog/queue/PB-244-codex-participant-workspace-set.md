@@ -1,9 +1,10 @@
 # PB-244 · Give Codex workers and reviewers the workspace skill and MCP set without collisions
 
-- **Order:** 550
+- **Order:** 230
 - **Scope:** [reference/03-cli](../../reference/03-cli.md), [reference/05-drivers](../../reference/05-drivers.md), `lib/driver-codex.js`
 - **Created:** 2026-09-23
 - **Dependencies:** the consumer's measurement of Codex skill and MCP precedence and its workspace plugin change define the canonical Codex skill source and precedence
+- **Cost:** major
 
 ## Context
 
@@ -26,3 +27,12 @@ The owner requires a Codex worker and reviewer to receive the workspace skill an
 - In isolated fixtures, lift one worker and one reviewer with colliding and non-colliding personal skills. Record `skills/list` and the model-visible list: each workspace skill appears once with canonical content; unrelated personal skills retain their expected visibility.
 - Inspect `mcpServerStatus/list`, complete a usable MCP handshake, and verify reviewer write tools remain absent. Run the same fixture outside the workspace to prove its personal set is unchanged.
 - Record exact commands, exit codes, Codex version and test counts; run Promptobus gates after implementation.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: for a skill name that exists both in the workspace set and under `~/.agents/skills`, nothing establishes which copy a Codex participant uses — and the owner requires the workspace one.
+
+- The cited lines hold: the copy is `lib/driver-codex.js:372-384` (`workspaceSkillsDir`, `:284-291`, is `<root>/.codex/skills`); the isolated `CODEX_HOME` block runs `:758-822` today (the card's `:760-815` sits inside it); `:855` prints that `~/.agents/skills` follows `HOME`. The same statement stands in `docs/reference/05-drivers.md:373` and `docs/reference/03-cli.md:49`.
+- The reviewer boundary exists: `disabled_tools` at `lib/driver-codex.js:340`. The ADR the Out of scope names exists: `docs/adr/adr-007-codex-participant-isolated-home.md`.
+- **Blocked outside this repository:** both dependencies are the consumer's work and leave no trace in this tree, so the card cannot start until they land. It is therefore ordered last among the `major` cards, after the ones that can start. The owner's requirement is recorded here without a date.
+- Its Verification lifts a Codex worker and reviewer live and records the Codex version. On this machine that is 0.156.1 while PB-196, deferred, has not re-measured; the measurement belongs with PB-196's.

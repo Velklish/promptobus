@@ -3,6 +3,7 @@
 - **Scope:** [drivers](../../reference/05-drivers.md), [cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** none. Blocks PB-194, PB-191, PB-185 and PB-214: all four were measured on 0.146.0, and a fix written against that boundary is wasted if the upgrade moves it
+- **Cost:** major
 
 ## Context
 
@@ -64,3 +65,15 @@ guess.
 - **Deferred:** 2026-09-16
 - **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
 - **Return condition:** The owner opens a dedicated Codex run; this card goes first in it, before any other card of the cluster is re-taken.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: the fixture gate, gate 5 of 5, is red on the owner's machine in every run until this card re-measures, and the Codex protocol tests keep checking the 0.146.0 schemas while 0.156.1 is what lifts.
+
+- The binary moved without this card. `codex --version` → exit 0, `codex-cli 0.156.1`; 0.146.0 is no longer installed. "Installed 0.146.0, 0.154.0 offered" in the Context is the state of 2026-09-12.
+- `grep -n PROVEN_CODEX_VERSION lib/driver-codex.js` → exit 0: `37: … = '0.146.0'`, and the lift refusal `versionLess(tool.version, PROVEN_CODEX_VERSION)` at `:415` still admits anything newer.
+- "Nothing needs changing for the upgrade to be allowed" now holds for the lift only. Since PB-242 the fixture gate compares by equality (`scripts/check-codex-schema.mjs:37`, `if (version === PROVEN_CODEX_VERSION)`): `npm run codex-schema` → exit 1, "codex 0.156.1 is installed, the fixtures were taken from 0.146.0". So `PROVEN_CODEX_VERSION` is a floor for the lift and a pin for the gate. The PB-245 and PB-247 results record the same red as "5 gates, 4 green" and attribute it to this card.
+- `ls test/fixtures/codex-app-server/` → exit 0: one directory, `0.146.0`, 15 files.
+- `skills/extraRoots/set` is not part of the surface: `git grep -n extraRoots` → exit 0, and the only hit is this card; skills reach a participant by the copy into `.codex/skills` (`lib/driver-codex.js:372-384`). `thread/resume` is not called: `git grep -n 'thread/resume' -- lib src bin` → exit 1; `docs/reference/03-cli.md:996` names it as the recovery path. `thread/start` holds: `lib/codex-session.js:1219`.
+- Stated as assumptions, because the card names no command for them: "an extra root does not survive the process", and the one-shot `400 invalid_request_error` refusal of 2026-09-12.
+- **Return condition: not fired.** `git log --oneline --since=2026-09-16T00:00:00 -- lib/driver-codex.js lib/codex-session.js test/fixtures/codex-app-server` → exit 0, two comment-only commits (`5a7b306b`, `256e441e`), and no commit or card records a Codex run. Half of the deferral reason has expired: 0.146.0 is gone, so any Codex measurement now runs on 0.156.1. PB-246 (2026-09-23) keeps this card deferred and the fixtures with it. The return stays the owner's decision.

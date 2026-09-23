@@ -1,10 +1,11 @@
 # PB-179 · A session cannot write to a participant of another task: its own address is nailed by its MCP config, and there is no `send` command
 
-- **Order:** 210
+- **Order:** 200
 - **Scope:** `lib/spawn.js` (`participantMcp`, the `env` of the bus record), the MCP server's
   address resolution, `bin/` (a command), [03-cli](../../reference/03-cli.md)
 - **Created:** 2026-09-12
 - **Dependencies:** `PB-178` (same root: who a session is)
+- **Cost:** major
 
 ## Context
 
@@ -86,3 +87,14 @@ cases without rewriting them. **ADR-011 remains the decision** — a session's a
 — with a section naming why its first implementation did not ship.
 
 **The rejected root, named so the next pass does not rediscover it:** the store does have a positive binding of a participant record to a session, in `metadata.session` and `metadata.sessionId`. `foreignSession` answers only whether a writer is a stranger; for an unbound record it returns `null` by the documented fail-open rule. The next pass should start at `src/protocol.ts`'s `sessionOf`, `sessionIdOf` and `foreignSessionOf`, then decide whether that intentional unknown case should remain open.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: a session that opens a second task cannot drive that task's participants except by driving tmux by hand, and ADR-011's decision — a session's address is per task — has no implementation.
+
+- The address still comes from the MCP record: `lib/spawn.js:119` writes `PROMPTOBUS_ROLE`, `PROMPTOBUS_TASK` and `PROMPTOBUS_HOME` into its `env`, and `lib/store.js:1476` reads the role from it.
+- The refusal holds: `grep -rn "do not write to each other" lib src` → exit 0, `lib/store.js:244`.
+- The command list has grown and still has no `send`. `node bin/promptobus.js help` → exit 0 lists `stop`, `sweep`, `install` and `uninstall` beside the card's list. `lib/cli.js:297-298` says `send` is not registered, the default branch refuses an unknown command (`:416`), and `docs/reference/03-cli.md:877` is "Send — built, not published". `lib/send.js` and its 21 `check(` sites (`grep -c "check(" test/send.test.mjs` → 21) are on `main`, not only in a branch. `test/send.test.mjs:89` pins the unbound-address hole as a known hole.
+- `foreignSessionOf` is at `src/protocol.ts:230` and returns `null` for a record with neither id. The comment that named such a record "unknown" was cut in `256e441e` (PB-227); the rule is unchanged.
+- ADR-011 holds: `docs/adr/adr-011-a-session-address-is-per-task.md:65`, "The first implementation did not reach release".
+- Not tree-checkable: the consumer workspace's MCP files and the `env | grep` of 2026-09-12.

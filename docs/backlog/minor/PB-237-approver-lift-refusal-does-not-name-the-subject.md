@@ -1,9 +1,10 @@
 # PB-237 · The --approver refusal names a reviewer but not the subject it must have lifted from
 
-- **Order:** 450
-- **Scope:** [03-cli](../../reference/03-cli.md)
+- **Scope:** [03-cli § Review](../../reference/03-cli.md#review), `lib/approver.js`
 - **Created:** 2026-09-22
 - **Dependencies:** none
+- **Previous order:** 450
+- **Cost:** minor
 
 ## Context
 
@@ -53,3 +54,13 @@ approver.
 - The refusal, on the same mistake, prints the path that was passed and the
   paths that would work, and a reader who has never lifted an approver reaches
   the right command from the message alone.
+
+## Evidence
+
+Re-triaged 2026-09-23 on `39316bc2` from the repository root, and moved here from the queue as `minor`. The cost is one refused lift and a guess for an operator new to the rule, and nothing else depends on it.
+
+- The refusal holds and prints no path: `lib/approver.js:88-89` interpolates only the reviewer address and the task, while `repoDir` is in scope. The refusal three lines below already names both paths (`:96-98`, "… is recorded at <recorded>, not <repoDir>"), so only the "no such reviewer" branch lacks them.
+- The invented address follows from the fallback: with no worktree owner, `reviewerFor` takes the slug from the clone's base name (`lib/review.js:98-104`).
+- The neighbour the card cites holds: an unknown recipient is refused with the list of known participants (`lib/store.js:1206-1209`).
+- Nothing has changed since: `lib/approver.js` last changed in `52c3a737` (2026-09-16).
+- Not tree-checkable: the two refusals of 2026-09-21.

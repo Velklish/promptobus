@@ -1,9 +1,10 @@
 # PB-239 · sweep reports session is unknown when claude is simply not on the lifted session's PATH
 
-- **Order:** 440
+- **Order:** 50
 - **Scope:** [03-cli](../../reference/03-cli.md), [05-drivers](../../reference/05-drivers.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -50,3 +51,13 @@ not what happened.
 - `sweep` from a lifted session completes without the caller adjusting `PATH`.
 - With the harness binary genuinely absent, the message says so and names what
   it looked for.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: a participant cannot finish the sweep the approver recipe gives it. The orchestrator cleans up by hand, and `stop` in the same environment reports a false success.
+
+- The state query and `claude stop` both call bare `claude` through `PATH`: `lib/liftoff.js:128` runs `claude agents --json` and turns any error into `null` (`:129`), and `lib/driver-claude.js:561` runs `claude stop`. A missing binary and unreadable output end in the same `unknown` state. The lift resolves the binary through `host.resolveToolBin` (`lib/spawn.js:1308`, `lib/review.js:515`, `lib/approver.js:366`), so lift and state query find the binary two different ways.
+- "Session is unknown" is `lib/sweep.js:293`. It refuses any state but `dead`.
+- **Stronger than the card suspects, from the code:** `stop` treats any state but `alive` as "has no live session — nothing to stop" and exits 0 (`lib/stop.js:59-62`). With an unreadable registry it reports success while the session may still be alive.
+- `05-drivers.md` says nothing about `PATH`: `grep -n PATH docs/reference/05-drivers.md` → exit 1.
+- Not tree-checkable: the three approvers of 2026-09-21 and the `PATH` workaround.

@@ -3,7 +3,8 @@
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12
-- **Dependencies:** `PB-189` (a lift does not record the copy that ran, which is what blocks the firing measurement)
+- **Dependencies:** `PB-189` (a lift does not record the copy that ran, which is what blocks the firing measurement) — closed 2026-09-17
+- **Cost:** major
 
 ## Context
 
@@ -119,3 +120,13 @@ on one unclosed fact — `hook/started` = 0 with no `hook/*` event of any kind �
 - **Deferred:** 2026-09-16
 - **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
 - **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: a Codex participant runs without its own `Stop` and `SessionStart` hooks. Per [hooks-and-trust](../../guides/hooks-and-trust.md) that guard refuses to end a turn with unread mail, so a Codex participant can end one with mail waiting. That consequence is read off the guide's purpose, not measured.
+
+- The dependency is satisfied: `git log --oneline --grep=PB-189` → exit 0, `32a8ba34 PB-189: closed — …`.
+- The hook file and project trust hold as described: `grep -n "CODEX_HOOKS_REL\|trustPath\|trusted:\|trust_level" lib/driver-codex.js` → exit 0; `:99` names `.codex/hooks.json`, `:379` writes it under `fileRoot` (the name since PB-206.5; the behaviour is unchanged), `:170` is `trustPath`, `:814` is `trusted: [trustPath(workdir)]`. The lift writes no `hooks.json` into `CODEX_HOME`; `:99` is the only definition.
+- **Correction, from the tree:** "the flag arrived through a different route" does not hold. `lib/codex-hold.js` is a six-line shim that imports `holdMain` from `lib/codex-session.js` (`cat lib/codex-hold.js`), and the flag is that module's constant: `grep -n PARTICIPANT_ARGV lib/codex-session.js` → exit 0, `:24` and the spawn at `:853`. So `grep -c PARTICIPANT_ARGV lib/codex-hold.js` = 0 looked in the shim, and the route is the ordinary one. The same holds at tag `v0.7.0`: `git grep -n PARTICIPANT_ARGV v0.7.0 -- lib/codex-session.js` → exit 0, `:45` and the spawn at `:1046`. That the installed 0.7.0 copy matched the tag is an assumption. `docs/guides/hooks-and-trust.md:31` repeats the wrong inference ("the flag reached argv by another path"); it is in this card's Scope and is corrected with it.
+- Not tree-checkable and left as the author's records of 2026-09-12: the holder journals (`hook/started` = 0), the `codex features list` and `codex plugin list` readouts, and the binary's project-trust refusal text. All of them are on 0.146.0, which is no longer installed (`codex --version` → `codex-cli 0.156.1`).
+- **Return condition: not fired** — see the re-triage of PB-196: no Codex run is recorded, and PB-196 has not re-measured.

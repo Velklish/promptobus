@@ -1,8 +1,9 @@
 # PB-191 · `apply_patch` never passes the measured Codex participant boundary
 
-- **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :874-884), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
+- **Scope:** `lib/codex-session.js` (`pathsOfApproval`, the `MUTATION_APPROVALS` branch at :720-729), [03-cli](../../reference/03-cli.md) § The Codex holder, [guides/hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12, orchestrator's measurement during the 0912c backlog run
 - **Dependencies:** none
+- **Cost:** major
 
 ## Scope of the title
 
@@ -153,3 +154,18 @@ cheapest one: the same four commands at the start of a participant's life, befor
 - **Deferred:** 2026-09-16
 - **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
 - **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: on the measured binary a Codex participant's `apply_patch` never lands. What the participant is told is "patch rejected by user", and the only measured write route is escalated `exec_command`.
+
+- The branch moved and the code did not. `grep -n "MUTATION_APPROVALS.has\|carries no path to contain\|^function pathsOfApproval" lib/codex-session.js` → exit 0: `:517` is `pathsOfApproval`, `:720` is the branch, `:726` holds the reason text. The quoted block is `:723-729` today; `:874-884` was right at filing, and the Scope line now names the current lines. Nothing in the logic changed: `git log --oneline --since=2026-09-12T00:00:00 -S"carries no path to contain" -- lib/` → exit 0, empty.
+- The legacy shape carries paths: `test/fixtures/codex-app-server/0.146.0/ApplyPatchApprovalParams.json` requires `callId`, `conversationId` and `fileChanges`.
+- The participant gets no reason at all, which is stronger than the card's "names neither the method nor the missing path". The holder answers `{ decision: 'decline' }` (`lib/codex-session.js:403`, returned by `approvalReply` at `:1056`), and `why` goes only to the holder log and the warden log (`:1053-1054`).
+- `workspace-write` is the recorded mode: `grep -n workspace-write lib/driver-codex.js` → exit 0, `:34`, `:362`.
+- The documentation half is written already: `docs/reference/03-cli.md:1006-1023` records the pathless refusal, the router text and the escalated route. What stays open is the live captures and the holder decision.
+- Not tree-checkable and left as the author's records: the holder journal lines and the plain-shell probes of 2026-09-12 on 0.146.0. Whether 0.156.1 still sends a pathless `item/fileChange/requestApproval` is unknown until PB-196 generates its schema.
+
+**Merged from PB-214.** PB-214's third work item — 96 refusals `carries no path to contain` over one run of five Codex participants (2026-09-12 19:05 to 2026-09-13 08:30, the holder journal; no count command recorded) — is this card's subject: the same method and the same branch. For 0.146.0 the fixture answers its question "is the path in another field": `test/fixtures/codex-app-server/0.146.0/FileChangeRequestApprovalParams.json` has `grantRoot`, `itemId`, `reason`, `startedAtMs`, `threadId`, `turnId` and no target path. `grantRoot` asks to widen the root and is refused outright (`lib/codex-session.js:682`, `grantRoot escalation denied`).
+
+**Return condition: not fired** — see the re-triage of PB-196.

@@ -1,9 +1,10 @@
 # PB-236 · The warden keeps knocking a session whose harness reported a hard quota limit with a reset date days away
 
-- **Order:** 430
+- **Order:** 80
 - **Scope:** [03-cli § Guard and warden](../../reference/03-cli.md#guard-and-warden)
 - **Created:** 2026-09-17
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -63,3 +64,13 @@ usually far outside any run.
   and `status` shows it as unreachable until that time.
 - The orchestrator receives one report naming the time, not a silent change of behaviour.
 - A failure with no named reset still retries as it does now.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: `status` reports a quota-dead participant as running a turn, and the warden keeps knocking it, so the orchestrator reads unreachable as busy.
+
+- The formats hold: the knock line `notification ${addr}: unread ${unread}, knock ${h.knocks}` plus "(contact point rewritten)" (`src/supervisor.ts:574-576`); `Codex: last turn failed` (`lib/codex-session.js:993`); "the turn is running" (`lib/driver-codex.js:669`); "a later turn may succeed" (`:730`).
+- Nothing in the warden or `status` reads a quota or a reset: `grep -rln -i "usage limit\|try again at" lib src` → exit 1.
+- **Not in the card:** the Codex `activate` step already refuses to start a turn when the holder's `rateLimits` snapshot says the limit is reached (`lib/driver-codex.js:521-522`, "Codex account limit: … a new turn is not started"). Presumably it did not fire in the observed run because the refusal came as a turn error, not as a reached limit in the snapshot; that is inferred, not measured. The fix should say why that gate was bypassed.
+- Not tree-checkable: knocks 54 to 155 and the two-second cadence of 2026-09-17 (no run or journal named).
+- Neighbours: PB-235 (replacing the participant), PB-229 (the same knock decision at `src/supervisor.ts:540`).

@@ -5,6 +5,7 @@
   [reference/03-cli](../../reference/03-cli.md) § Codex availability, [guides/model-routing](../../guides/model-routing.md)
 - **Created:** 2026-09-12, release run
 - **Dependencies:** none
+- **Cost:** major
 
 ## The measurement was misattributed
 
@@ -83,3 +84,14 @@ question remains open; the cache/debug discrepancy and the instability of
   contains no hidden row, so that retention is not live-verified.
 - The guide and reference state that catalog membership is not a promise that the participant home
   exposes the model.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: whether the participant's `CODEX_HOME` exposes a catalog model is unanswered, so a routed pick can name a model the participant home does not list. The guide records the inventory as home-specific (`docs/guides/model-routing.md:103`).
+
+- Every measurement here is stamped 0.146.0, and the installed binary is `codex-cli 0.156.1` (`codex --version` → exit 0). The open measurement is to be taken on the binary that lifts.
+- The tuples stay and are still excluded: `grep -n "codex-mini-medium\|codex-mini-high\|gpt-5.4-mini" models/catalog.json` → exit 0, `:1873`, `:1875`, `:1915`, `:1917`. The owner's routing cache, read on 2026-09-23 outside this repository, lists seven Codex rows (three `gpt-6-*`, three `gpt-5.6-*`, `gpt-5.5`), none hidden and no `gpt-5.4-mini`.
+- The resolver side holds: `model-not-in-inventory` at `lib/model-routing/resolver.js:266`, `flag-not-in-inventory` only for overlay flags (`:596-606`), the human-visible row asserted at `test/model-routing-resolver.test.mjs:1441-1448`, and hidden-row retention in the stand fixture (`test/model-routing-adapter-codex.test.mjs:204-211`). `lib/model-routing/validate.js` imports no probe.
+- **Stale Verification line:** "the guide and reference state that catalog membership is not a promise". Only the guide says it (`docs/guides/model-routing.md:103`); `grep -n -i "catalog membership" docs/reference/03-cli.md docs/reference/05-drivers.md` → exit 1.
+- **Inconsistency to settle with the measurement:** the guide says the same executable with `CODEX_HOME` unset returned "a different seven-row set" (`docs/guides/model-routing.md:103`), while this card and `docs/reference/03-cli.md:583-593` record 8/7/8 rows for the unset home.
+- **Overlap with PB-246:** its item "re-check the inventory of the participant's own `CODEX_HOME`" is this card's open measurement. Whoever runs first records the owner and participant payloads side by side on 0.156.1 and answers the other card.

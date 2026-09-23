@@ -1,9 +1,10 @@
 # PB-235 · A reviewer whose harness runs out of quota cannot be re-raised on another tool, and the piece becomes unreviewable
 
-- **Order:** 420
+- **Order:** 90
 - **Scope:** [03-cli § Review](../../reference/03-cli.md#review)
 - **Created:** 2026-09-17
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -65,3 +66,14 @@ prevent.
 - A reviewer whose session cannot be revived can be replaced on another tool by a documented
   command, or the reference states plainly that it cannot and what to do instead.
 - No refusal names a remedy that the command refusing it cannot perform.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: once a reviewer's harness is quota-dead, the piece has no route to a reviewer except waiting or self-review, and the refusal advises a route the command cannot take.
+
+- The refusal holds: `lib/review.js:368-370`, "… open it its own task: --title <name>." So does "there is no task <id>" (`:159`).
+- `review` has no flag that creates a task: `new-task` appears only in the `spawn` block of `lib/cli.js` (`:45`, `:53`, `:348`, `:366`), and the review options are the twelve PB-238 lists.
+- **Correction:** `--title` on a resolved task is not applied. It is ignored with a notice: `lib/review.js:213` (`titleIgnored`) and `:779-781`, "--title is not applied — the name is taken from the journal of task <id>". The conclusion stands.
+- `dismiss` says what the card quotes: `lib/dismiss.js:49-50`.
+- The reference does not say a lost reviewer is lost for the run: `grep -n -i "lost for the run\|reviewer of another tool" docs/reference/03-cli.md` → exit 1.
+- Not tree-checkable: the live run of 2026-09-17 (seven rounds, a quota with a reset two days out).

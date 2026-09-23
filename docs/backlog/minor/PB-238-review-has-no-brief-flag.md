@@ -1,9 +1,10 @@
 # PB-238 · review takes no --brief, so an approver's assignment has to travel as a separate message
 
-- **Order:** 480
-- **Scope:** [03-cli](../../reference/03-cli.md)
+- **Scope:** [03-cli § Review](../../reference/03-cli.md#review), `lib/approver.js`, `lib/cli.js`
 - **Created:** 2026-09-22
 - **Dependencies:** none
+- **Previous order:** 480
+- **Cost:** minor
 
 ## Context
 
@@ -48,3 +49,12 @@ Observed on 2026-09-21 over `external/diffalanche`, twice.
 - An approver lifted with an assignment has it on its first turn, and the
   assignment is in the task's record without the orchestrator having sent a
   separate message.
+
+## Evidence
+
+Re-triaged 2026-09-23 on `39316bc2` from the repository root, and moved here from the queue as `minor`. The assignment already reaches the approver as a message, so the cost is the gap in the lift record and a race that is not measured.
+
+- The flag list holds: the `review` options in `lib/cli.js:219-236` are the twelve the card quotes, with no `brief`. `spawn` takes `--brief` (`lib/cli.js:346`), requires it (`lib/spawn.js:50`) and keeps it in the task files (`lib/spawn.js:1244`); `grep -n brief lib/approver.js` → exit 1.
+- **Assumption:** "the session may take its first turn before the message lands". No run records it, and how often it happens is not evidenced.
+- The "own command" alternative would revisit ADR-015 (`docs/adr/adr-015-approver-lift-is-a-flag-on-review.md`).
+- Not tree-checkable: the two lifts of 2026-09-21.

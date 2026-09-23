@@ -1,9 +1,10 @@
 # PB-249 · Open cards re-triaged by the cost rule and the minor evidence rule
 
-- **Order:** 600
+- **Order:** 20
 - **Scope:** `docs/backlog/`, [ROADMAP](../../ROADMAP.md)
 - **Created:** 2026-09-23
 - **Dependencies:** PB-247 — minor evidence is required from v0.10.0
+- **Cost:** major
 
 ## Context
 

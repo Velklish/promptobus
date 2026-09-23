@@ -2,7 +2,8 @@
 
 - **Scope:** [drivers](../../reference/05-drivers.md), the Codex participant sandbox boundary
 - **Created:** 2026-09-12
-- **Dependencies:** PB-191 for the file-change approval method; PB-196 goes first — three of the four open questions below ask whether other binary versions share this boundary, and PB-196 is the upgrade that answers them
+- **Dependencies:** PB-191 for the file-change approval method; PB-196 goes first — one of the four open questions below asks whether other binary versions share this boundary, and PB-196 is the upgrade that answers it
+- **Cost:** major
 
 ## Context
 
@@ -121,3 +122,16 @@ must name the method and escalation boundary instead of generalizing from one re
 - **Deferred:** 2026-09-16
 - **Reason:** Owner decision of 2026-09-16: the Codex cluster (PB-196, PB-194, PB-191, PB-185, PB-214) is deferred as a whole. The current run lifts Claude Code participants only, and every card in the cluster needs live Codex turns on the binary that PB-196 would replace — a fix measured against the old boundary would be lost with the upgrade.
 - **Return condition:** A dedicated Codex run opens and PB-196 has upgraded codex-cli in it; this card is then re-measured on the new binary before anything is changed.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: on the measured binary a Codex worker cannot write its worktree without an explicit escalation, and no lift-time diagnostic names that boundary.
+
+- The Dependencies line said three of the four open questions ask about other binary versions. One does: the third bullet of "What remains open". The line now says one.
+- The reference half is written: `grep -n "separate boundaries" docs/reference/05-drivers.md` → exit 0, `:230`, and the paragraph runs to `:237`, naming the closed shell worktree and the escalated route. It dates from `f56ec2f0` (2026-09-12), the same day as the card.
+- The diagnostic of work item 3 is still missing: `grep -rn -i "writable roots" lib/` → exit 1.
+- `workspace-write` with `approvalPolicy: 'on-request'` is what the lift records: `grep -n "workspace-write\|approvalPolicy: 'on-request'" lib/driver-codex.js` → exit 0, `:34`, `:362`, `:392`.
+- `9e29fb2` exists: `git log -1 --format='%h %s' 9e29fb2` → exit 0, `9e29fb29 PB-191: record method-dependent participant write boundaries`.
+- Not tree-checkable and left as the author's records: every probe of 2026-09-12 on 0.146.0, which is no longer installed (`codex --version` → `codex-cli 0.156.1`).
+- Overlap with PB-191, left split on purpose (each card hands the other its half): the fourth open question and the fourth work item here, and PB-191's first work item, are the same capture of the current and the legacy file-change methods. Whoever runs first records both.
+- **Return condition: not fired** — see the re-triage of PB-196.

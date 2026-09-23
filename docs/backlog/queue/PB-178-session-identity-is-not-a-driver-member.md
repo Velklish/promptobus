@@ -1,10 +1,11 @@
 # PB-178 · Контракт идентичности закрыт, живой демонстрации на трёх харнессах нет
 
-- **Order:** 200
+- **Order:** 190
 - **Scope:** `lib/store.js` (`sessionIdentity`), `lib/drivers.js` (the driver contract),
-  the three drivers, [02-host](../../reference/02-host.md), ADR-034
+  the three drivers, [02-host](../../reference/02-host.md), ADR-010
 - **Created:** 2026-09-12
 - **Dependencies:** none
+- **Cost:** major
 
 ## Context
 
@@ -90,3 +91,18 @@ PB-178.
 **Связь с PB-179.** Незакрытая половина про `claim` не закрывается одним членом драйвера.
 При разборе проверены `sessionOf`, `sessionIdOf` и `foreignSessionOf` в `src/protocol.ts`: положительная привязка участника к сессии хранится в `metadata.session` и `metadata.sessionId`. `foreignSessionOf` сравнивает полный id, затем короткий id, а для записи без обоих возвращает `null`; комментарий протокола прямо называет такую запись неизвестной, а не чужой.
 Поэтому предмет PB-179 — не отсутствие привязки, а сознательный fail-open на непривязанной записи; в PB-179 реализация не вносилась.
+
+## Re-triage, 2026-09-23
+
+Checked on `39316bc2` from the repository root. **Cost `major`**: ownership gating for a Cursor or Codex orchestrator rests on resolver unit tests only. The card's two observables — a non-empty `owner` in `status`, and `claim` refusing a foreign session — are undemonstrated for every harness but Claude Code.
+
+The Context describes the tree before ADR-010. Today's tree:
+
+- The one-line reader is gone. `grep -n "export function sessionIdentity\|bindSessionIdentity" lib/store.js` → exit 0: `:189` calls the resolver bound at `:181`. The resolver is `resolveSessionIdentity` (`lib/drivers.js:162`), bound at import (`:206`). `grep -n "identity" lib/drivers.js` no longer comes back empty.
+- The count moved from 23 calls in 8 modules to 32 calls in 12 modules: `node -e` over `lib/*.js` counting `sessionIdentity(` → exit 0.
+- The decision is ADR-010 (`docs/adr/adr-010-session-identity-is-a-driver-member.md`). ADR-034 does not exist in this tree: `git grep -n ADR-034 -- ':!docs/backlog'` → exit 1. Presumably it was the consumer's number. The Scope line now names ADR-010.
+- `node test/session-identity.test.mjs` → exit 0, 19/19. The section above says 13/13.
+- The MCP-child half has moved as well. Since `f7b9664d` (PB-206.6) a Codex or Cursor MCP child names itself through its session record (`mcpIdentity` in `lib/driver-codex.js` and `lib/driver-cursor.js`), so "identity there is impossible" no longer holds for the record path.
+- The protocol comment calling an unbound record "unknown, not a stranger" was cut in `256e441e` (PB-227). The behaviour stands: `foreignSessionOf` (`src/protocol.ts:230`) returns `null` for a record with neither `sessionId` nor `session`.
+- **The gap is still open.** No test runs a `claim` refusal or a `status` owner line for a lone Cursor or Codex identity. `test/promptobus-owner-gate.test.mjs` binds a stub resolver, and the foreign and claim cases in `test/promptobus-mcp.test.mjs` use `CLAUDE_CODE_SESSION_ID` only.
+- Not tree-checkable and left as the author's records: the 90/106 against 106/106 run of `test/promptobus-mcp.test.mjs`, and the "11 variables" of the Codex MCP child.

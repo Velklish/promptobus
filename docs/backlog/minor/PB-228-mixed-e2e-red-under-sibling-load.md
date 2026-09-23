@@ -1,8 +1,9 @@
 # PB-228 · test/promptobus-mixed.test.mjs went red once under measured sibling-worker load, not reproduced on base
 
-- **Scope:** `test/promptobus-mixed.test.mjs`, `test/home.mjs` (watchdog/serial-group placement)
+- **Scope:** `test/promptobus-mixed.test.mjs`, `test/scenario.mjs` (step 7), `test/home.mjs` (`WATCHDOG_MS`), `test/run.mjs` (the serial group)
 - **Created:** 2026-09-17
 - **Dependencies:** none
+- **Cost:** major (hypothesis)
 
 ## Context
 
@@ -62,3 +63,13 @@ What is missing, and neither number is in the card:
 
 Not rejected: the only red measured under a load this repository actually observed is worth
 keeping, and it is the kind of evidence a flaky-test story is usually written without.
+
+## Evidence
+
+Re-triaged 2026-09-23 on `39316bc2` from the repository root, and moved here from triage as a hypothesis: `major (hypothesis)`. Its premise, a wall-clock margin under sibling load, is unestablished, and the two numbers the 2026-09-22 triage asked for are still missing. If the premise holds, a worker's gate goes red for someone else's load, which is what PB-241 is about.
+
+- **Stale in the triage note:** step 7 has four verdicts, not three. The note lists `test/scenario.mjs:788` (the precondition), `:800` (the snapshot, LOST-SESSION class) and `:805` (the predicate), and omits `:794`, "the worker turn yielded", the TIMED-OUT class — the margin reading. All four are from `e600dd47` except `:805` (`4eb7093e`).
+- **Read against today's cut** — from the code, not run: the quoted red would fail `:794` (`turn yielded: null`), `:800` (the snapshot kind is `stale`, not `unknown`) and `:805` (`predicate true`) at once. So the one red splits into three classes, and load is not shown to be the cause of any of them.
+- The margins hold as quoted: `WATCHDOG_MS` is 240 s (`test/home.mjs:154`), and the file is in the serial group — which lives in `test/run.mjs:296`, not `test/home.mjs`. The Scope line now names both.
+- Nothing has touched the file or the step since: `git log --oneline --since=2026-09-22T00:00:00 -- test/promptobus-mixed.test.mjs test/scenario.mjs test/home.mjs test/run.mjs` → exit 0, empty.
+- Not tree-checkable: the red of 2026-09-16, its load averages, and the standalone and base reruns (shas, loads and exit codes named in the card).
