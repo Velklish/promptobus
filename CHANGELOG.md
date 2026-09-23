@@ -24,6 +24,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PB-13.2, labelled `minor`, went to `minor/`. Two return conditions were reworded to be checkable. The queue is ordered by cost, and
   [ROADMAP](docs/ROADMAP.md) says so. The exception is PB-248, which heads the queue because the owner ordered it for this run. Two
   minor batches were cut for the scopes the top of the queue touches. No runtime behaviour changed.
+- **The closed-task archive is folded into [docs/archive/LOG.md](docs/archive/LOG.md), and the backslop pin is `v0.10.1`**
+  (PB-248). `upgrade` moved the pin in `backslop.json`, `package.json`, the CI workflow and the live markdown, and re-rendered the
+  `AGENTS.md` block: no commit between `archive N` and `fold N`, the fold draft goes under the git directory, and `lint` checks
+  that every journal line's revision is reachable from `HEAD`; the pin in `test/gate-record.test.mjs` moved by hand. `fold`
+  without a number turned all 312 `PB-*` directories into 312 journal lines, each naming the commit that holds the task's
+  definition and result, which `show N` prints; links in seven files (`docs/TRACKS.md`, ADR-013, ADR-015, ADR-016, ADR-017 and the
+  cards PB-234.3 and PB-234.4) moved onto `LOG.md#pb-N` anchors, and so did six evidence citations in cards that named removed
+  archive files in backticks (PB-24.1, PB-24.2, PB-139.1, PB-232, PB-234.1, PB-249.2). 30 lines carry the fold date, 2026-09-23,
+  as their closing date: 27 `result.md` files name no closing date (their revisions are dated 2026-09-06 to 2026-09-12), and
+  PB-245, PB-247 and PB-249 did close that day. One line has the outcome `—`: PB-171's `result.md` names none. Six outcomes `fold`
+  misread are corrected to `completed` by hand, each `result.md` opening with "Completed", "Done" or "Closed on a recorded
+  decision": PB-6, PB-52, PB-131 and PB-169 (read as `rejected`), PB-117 and PB-249 (read as merged). The revision column is the
+  commit the body is read from: `fold` names the last commit that touched `task.md`, and for nine tasks whose `result.md` was
+  edited after that (PB-15.7, PB-37.3, PB-161.2, PB-161.3, PB-161.4, PB-166, PB-167, PB-203, PB-206) `show N` printed the earlier
+  text. Those lines now name the last commit that touched the directory, and all 312 revisions hold `task.md` and `result.md`
+  byte-equal to the files the fold removed. ADR-001 gains a dated amendment, and the archive README and the docs index name the
+  journal line as the closed-task form and a directory as a task not yet folded, and the contributing guide's example of a generic
+  ref points at the PB-94 line. No runtime behaviour changed.
 
 ## [0.14.0] — 2026-09-23
 

@@ -21,7 +21,7 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 const accepts = ajv.compile(schema);
 
 const record = (over = {}) => ({
-  command: 'npx github:Velklish/backslop#v0.10.0 gates',
+  command: 'npx github:Velklish/backslop#v0.10.1 gates',
   exit: 0,
   counts: { gates: 4, green: 4 },
   tree: '93c140dc3c583bb74ec5c1ad8b7f26e6187c45c9',

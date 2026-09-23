@@ -25,7 +25,7 @@
     "pins": "node scripts/check-pins.mjs",
     "probe": "node scripts/mutation-probe.mjs",
     "codex-schema": "node scripts/check-codex-schema.mjs",
-    "lint:backslop": "npx --yes github:Velklish/backslop#v0.10.0 lint"
+    "lint:backslop": "npx --yes github:Velklish/backslop#v0.10.1 lint"
   },
   "engines": {
     "node": ">=20"

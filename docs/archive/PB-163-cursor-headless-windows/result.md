@@ -1,7 +1,0 @@
-# PB-163 · Result
-
-**Closed 2026-09-16 — by boundary, not by implementation.** The owner decided on 2026-09-16 that Windows is outside the participant contract: a Cursor participant is a live tmux pane, Windows has no native tmux, and a headless `agent -p --resume` path would be a second participant model that nobody on the mechanism side can measure. The card's own return condition named this outcome — "the owner decides Windows is out of scope for the participant contract, in which case this card is closed with that boundary written into the reference rather than returned" — and that is what was done. No code was written; the boundary is recorded where a reader looks for the participant's platforms: README § Requirements, [03-cli](../../reference/03-cli.md) § Spawn and § The Codex holder, CHANGELOG. The CLI and host layer remain cross-platform ([02-host](../../reference/02-host.md)); only participant lifts are bounded.
-
-**Verification.** Documentation-only closure: `npx github:Velklish/backslop#v0.8.0 gates` on the closing tree — the four gates (`npm test`, `lint`, `audit`, `pins`) and their exit codes are in the commit's run, see the acceptance report of the 2026-09-16 queue run. No mutation probe: no test changed.
-
-**Documentation in the same pass.** `README.md` § Requirements, `docs/reference/03-cli.md` § Spawn and § The Codex holder, `CHANGELOG.md` (Unreleased → Changed).

@@ -31,6 +31,6 @@ Checked on `39316bc2` from the repository root. **Cost `major`**: a card's own v
 
 - The schema is as measured: `node -e` over `schemas/v1/handover-record.schema.json` → exit 0, `additionalProperties` false at the root and under `checks`, and `checks` has exactly `verdictNames`, `mutationProbe`, `treeState`, `environmentalRed` and `gatesNotRun` (also `HANDOVER_CHECKS`, `lib/handoff.js:29`). `88a336ef` has the same five.
 - The gate record has no `kind`: `grep -n kind schemas/v1/gate-record.schema.json` → exit 1. Its entry is closed on `command`, `exit`, `counts`, `tree`, `dirty`, `at`, `by` and `tail`.
-- The verification line quoted in the Context is PB-159.3's: `docs/archive/PB-159.3-mixed-step7-stall-verdict-races-the-reknock/task.md:116`, and its `result.md:9` and `:17` name this gap.
+- The verification line quoted in the Context is PB-159.3's: [docs/archive/LOG.md#pb-159.3](../../archive/LOG.md#pb-159.3), `task.md:116`, and its `result.md:9` and `:17` name this gap.
 - No slot has been added since: `git log --oneline 242158d7..HEAD -- schemas/v1/` → exit 0, `29504ce4` (PB-234, `mutationProbe.expected`) only.
 - Either home is a new field in a published record schema, so PB-234.2's release seam applies; it is now a dependency.

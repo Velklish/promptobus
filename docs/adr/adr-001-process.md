@@ -19,6 +19,8 @@ Tasks and decisions are managed with backslop:
 - gates are `npx github:Velklish/backslop#v0.3.0 lint` plus `gates` from `backslop.json`;
 - the tool version is pinned in `backslop.json` (`cli` with a tag and the `version` stamp); update with `npx github:Velklish/backslop#v0.3.0 upgrade`, while `migrate` changes file formats between versions.
 
+**Amendment, 2026-09-23 (PB-248).** A closed task is a journal line of `docs/archive/LOG.md`; a directory is a task not yet folded.
+
 ## Consequences
 
 - Changing status is a `git mv` of one file: two branches conflict only on the same task.

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-16
-**Deciders:** the run's orchestrator, on the brief of [PB-223](../archive/PB-223-ownership-gate-fails-open/task.md), which asks for the decision about a task with no owner to be named rather than left silent. **Not reviewed by the owner**: the boundary the card sets is the fork; what is recorded here is which branch of it was taken.
+**Deciders:** the run's orchestrator, on the brief of [PB-223](../archive/LOG.md#pb-223), which asks for the decision about a task with no owner to be named rather than left silent. **Not reviewed by the owner**: the boundary the card sets is the fork; what is recorded here is which branch of it was taken.
 
 ## Context
 
@@ -95,7 +95,7 @@ and refuses every absence of it, and the answer carries the reason by name.
   owner whose daemon died; a task with no recorded owner has no owning session to be sent to,
   so its route is "any session that names itself"; and a call whose environment names two
   harnesses is repaired by removing a variable, so it is told that and carries the resolver's
-  own reason in the head ([PB-218](../archive/PB-218-two-identity-vars-read-as-none/task.md)
+  own reason in the head ([PB-218](../archive/LOG.md#pb-218)
   named those two states apart, and a gate that ignored the distinction would contradict it
   in the same pass).
 - **An address other than `orchestrator` grants no right, and has no refusal text either.**

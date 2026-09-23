@@ -6,7 +6,7 @@
 
 ## Context
 
-[PB-206](../archive/PB-206-approver-is-not-a-participant/task.md) made `approver:<slug>` addressable, but no command created that address. The consumer's acceptance procedure had to stay in the descriptive tense until the package could lift the role.
+[PB-206](../archive/LOG.md#pb-206) made `approver:<slug>` addressable, but no command created that address. The consumer's acceptance procedure had to stay in the descriptive tense until the package could lift the role.
 
 Two shapes were visible: a verb beside `spawn` and `review`, or a flag on an existing lift. [ADR-012](adr-012-stopping-one-participant-is-a-verb-of-its-own.md) refused a flag on `done` and `dismiss` for stopping one participant — that decision must be re-read before reusing a flag here.
 
