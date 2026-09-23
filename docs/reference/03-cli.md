@@ -590,7 +590,11 @@ hide `gpt-5.4`, `gpt-5.4-mini`, `codex-auto-review`); at
 `codex-auto-review`); and at `2026-09-12T19:02:51+03:00`, 8 rows (the first
 list/hide set). The first time is the recorded observation time; its exact
 command timestamp was not captured. Thus `debug models` is unstable between
-calls and cannot serve as a stable inventory.
+calls and cannot serve as a stable inventory. On codex-cli 0.156.1 the listing
+held still: on 2026-09-23 four calls, two with `CODEX_HOME` unset and two in a
+participant home, returned byte-identical nine-row payloads
+([guides/model-routing.md](../guides/model-routing.md) § The catalog file). One
+build's stable answer does not make the listing an inventory.
 
 The resolver consumes the Codex entry at `host.routingPaths().cacheFile`,
 not that debug output. The measured cache path on the host used for this observation was
@@ -610,7 +614,7 @@ participant home to inspect.
 
 No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. An adapter publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's — which is why the snapshot vocabulary has no code for it at all.
 
-**What the rows carry and this package does not.** `model/list` also answers `supportedReasoningEfforts` per row — `ultra` above `max` on the sol and terra families — and `additionalSpeedTiers: ["fast"]` beside `serviceTiers`. PB-28 asked for both to be recorded, and **they are not**: the snapshot's model object is closed to `model`, `rated`, `hidden` and `flags`, and ADR-004 says in as many words that the service tier "is not an effort and is not modelled in v1 at all". Widening the object is an ADR pass rather than a schema edit, and PB-24.2 puts that question to the owner. Nothing is blocked meanwhile: the catalog took the effort ladders from the spike document, not from a snapshot.
+**What the rows carry and this package does not.** `model/list` also answers `supportedReasoningEfforts` per row — `ultra` above `max` on the sol and terra families — and `additionalSpeedTiers: ["fast"]` beside `serviceTiers`. PB-28 asked for both to be recorded, and **they are not**: the snapshot's model object is closed to `model`, `rated`, `hidden` and `flags`, and ADR-004 says in as many words that the service tier "is not an effort and is not modelled in v1 at all". Widening the object is an ADR pass rather than a schema edit, and PB-24.2 puts that question to the owner. Nothing is blocked meanwhile. The catalog took the effort ladders from the spike document, not from a snapshot. The exception is the 17 GPT-6 rows, whose ladders were read from `codex debug models` on codex-cli 0.156.1.
 
 **The budget** is the preflight's whole `timeoutMs`, spent as a deadline rather than divided: each request is capped by the smaller of its own ceiling (`INIT_TIMEOUT_MS`, `LIMIT_READ_TIMEOUT_MS`, `MODEL_LIST_TIMEOUT_MS`) and what is left of it, and the notification fallback by the smaller of `limitWaitMs()` and the same remainder. An app-server that dies is not waited for at all — it answers `probe_failed` at once instead of holding a budget three harnesses are sharing.
 

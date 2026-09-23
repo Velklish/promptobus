@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **GPT-6 Astra, Sol and Luna in the catalog** (PB-246). codex-cli 0.156.1 lists `gpt-6-astra`, `gpt-6-sol` and `gpt-6-luna`,
+  and the catalog now carries the full ladders the listing offers: Astra and Sol `low` … `ultra`, and Luna `low` … `max`. That is 17
+  rows, and the catalog grows from 55 tuples to 72, 35 of them Codex. Before this, a routed pick could not reach these models, and
+  an explicit `--model gpt-6-sol` was refused with `constraint-unknown`. These are the first `low` rungs in the catalog, so
+  `--effort low` is now a known value. `codex-gpt6-astra-max` has quality 9, from Terminal-Bench 2.1 under Codex CLI at 87.4 %.
+  The page names no effort, so the figure sits on `max`, like every GPT-5.6 base row. The ladder then puts `high` at 7 and
+  `xhigh` at 8, although Terminal-Bench 4.0 measures Astra's `high`, `xhigh` and `max` level with each other. That is a
+  re-rating question for the owner. Astra has `speed` 1 and `quotaCost` 10, from $10 / $50. Sol and Luna have no SWE-bench or
+  Terminal-Bench figure. Each is a `quality` hypothesis at its predecessor's band, 8 for Sol and 6 for Luna. Sol has `speed` 4
+  and `quotaCost` 2. Luna has `speed` 4 and `quotaCost` 1. Astra's `max` and `ultra` rungs are offered as reviewers; no Sol
+  rung is. The approver rows stay at 15, all of them Claude. The Codex priority block is renumbered 600…940.
+
 ### Changed
 
 - **The backslop pin is `v0.10.0`** (PB-247). `upgrade` moved it in `backslop.json`, `package.json`, the CI workflow and the live
@@ -42,6 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-equal to the files the fold removed. ADR-001 gains a dated amendment, and the archive README and the docs index name the
   journal line as the closed-task form and a directory as a task not yet folded, and the contributing guide's example of a generic
   ref points at the PB-94 line. No runtime behaviour changed.
+- **Six ratings on three Codex base rows re-banded on the sources re-read on 2026-09-23** (PB-246). This changes routing.
+  - `codex-luna-max` `quality` goes from 7 to 6. It had been a hypothesis. It now cites the Terminal-Bench 2.1 leaderboard, where
+    GPT-5.6 Luna scores 75.7 % ±1.3 under Codex CLI, on the Codex CLI 60 → 90 pair. Its `speed` stays in band 4 at 142.3
+    tokens/s, and its `quotaCost` stays in band 1 at $0.20 / $1.20.
+  - `codex-terra-max` `quotaCost` goes from 3 to 2. The vendor price table lists $2 in / $12 out, blended $7.
+  - `codex-terra-max` `speed` goes from 3 to 2. Artificial Analysis measures 83 tokens/s at max.
+  - `codex-sol-max` `quality` goes from 10 to 8 and stays a hypothesis. Its Terminal-Bench 2.1 figure of 88.8 is no longer on
+    the page. Every measure that covers both neighbours puts it below `codex-gpt6-astra-max`, which is 9, and above
+    `codex-terra-max`, which is 7. On Terminal-Bench 4.0 under Codex that is 58.2 %, 37.3 % and 21.5 %. On Terminal-Bench 3.0
+    Sol scores 34.6 % against Terra's 20.8 %. On the Artificial Analysis index it is 53, 47 and 42.
+  - `codex-sol-max` `speed` goes from 3 to 2, at 72.6 tokens/s.
+  - `codex-sol-max` `quotaCost` goes from 6 to 4 on the vendor promotion of $4 / $20, which runs at least through 2026-11-21. The
+    row records the list price of $5 / $30, which gives band 6.
+
+  The rungs of all three ladders follow their base rows. Every Terra rung is now speed 2, and `codex-luna-high` and
+  `codex-luna-medium` are quality 4 and 3. The GPT-5.6 Sol ladder is no longer offered as a reviewer. With the GPT-6 rows, the
+  reviewer rows go from 16 to 15: Astra's two rungs replace Sol's three. `codex-luna-max` now sits below `codex-terra-max` in
+  the Codex priority block.
 
 ## [0.14.0] — 2026-09-23
 

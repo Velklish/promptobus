@@ -1353,13 +1353,12 @@
       "model": "gpt-5.6-sol",
       "effort": "xhigh",
       "roles": [
-        "worker",
-        "reviewer"
+        "worker"
       ],
       "ratings": {
-        "quality": 9,
-        "speed": 3,
-        "quotaCost": 5
+        "quality": 7,
+        "speed": 2,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -1367,9 +1366,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 630,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 730,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from codex-sol-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
@@ -1381,13 +1380,12 @@
       "model": "gpt-5.6-sol",
       "effort": "max",
       "roles": [
-        "worker",
-        "reviewer"
+        "worker"
       ],
       "ratings": {
-        "quality": 10,
-        "speed": 3,
-        "quotaCost": 6
+        "quality": 8,
+        "speed": 2,
+        "quotaCost": 4
       },
       "prices": {
         "inputPerMTok": null,
@@ -1395,31 +1393,34 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 600,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 680,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
-        "text": "quality is newly assessed as 10 using Terminal-Bench 2.1 single-agent anchors 60→1 / 90→10 as a placement guide: the highest published exact-model figure 88.8 maps to 10; it stays a hypothesis because the page does not identify Codex CLI. speed uses Artificial Analysis 40→1 / 310→10: 90 tokens/s→3; quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality is a hypothesis of 8, placed against the neighbours that carry figures. It had been 10 on a Terminal-Bench 2.1 single-agent figure of 88.8; the Terminal-Bench 2.1 leaderboard read on 2026-09-23 carries no GPT-5.6 Sol row, so that figure is unverified and no longer used. On every measure opened on 2026-09-23 that carries both, GPT-5.6 Sol at max sits below GPT-6 Astra at max (codex-gpt6-astra-max, quality 9, cited) and above GPT-5.6 Terra at max (codex-terra-max, quality 7, Terminal-Bench 2.1 Codex CLI 78.4 % ±1.3 on the same page): Terminal-Bench 4.0 under Codex, Astra 58.2 % ±2.8, Sol 37.3 % ±3.8, Terra 21.5 % ±3.3; Terminal-Bench 3.0 under Codex, Sol 34.6 % ±1.6 above Terra 20.8 % ±1.4 (no Astra row); Artificial Analysis Intelligence Index at max, Astra 53, Sol 47, Terra 42. The one band strictly between 7 and 9 is 8; placed linearly between the two neighbours it is 7.86 on Terminal-Bench 4.0 and 7.91 on the index. None of these has an anchor pair for this harness, so the rating stays a hypothesis. speed uses Artificial Analysis 40→1 / 310→10: 72.6 tokens/s→2 — the model page, which replaces the 90 tokens/s read on 2026-09-06 (band 3). quotaCost uses blended price $2.50→1 / $30→10 on the vendor promotion: $4 in / $20 out, blended $12→4, in force at least through 2026-11-21; the list price $5 in / $30 out, blended $17.50, gives band 6. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
-            "provenance": "primary leaderboard page, opened",
-            "figure": "90 tokens/s (measured at max)",
-            "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06",
-            "version": "leaderboard snapshot 2026-09-06",
-            "agentHarness": "Artificial Analysis serving stack"
+            "version": "model snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary model page, opened",
+            "figure": "72.6 tokens/s (measured at max)",
+            "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+            "date": "2026-09-23"
           },
           {
             "rating": "quotaCost",
-            "basis": "OpenAI list price, blended (input + output) / 2",
-            "figure": "$17.50 per 1M tokens ($5 in / $30 out)",
-            "provenance": "price page, opened",
-            "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06",
-            "version": "price schedule 2026-09-06",
-            "agentHarness": "vendor API"
+            "basis": "OpenAI price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor model page, opened",
+            "figure": "$12.00 per 1M tokens ($4 in / $20 out under the promotion)",
+            "validUntil": "2026-11-21",
+            "listFigure": "$17.50 per 1M tokens ($5 in / $30 out list, the page's 20 % and 33 % reductions undone)",
+            "listBand": 6,
+            "url": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+            "date": "2026-09-23"
           }
         ],
         "hypothesis": [
@@ -1433,13 +1434,12 @@
       "model": "gpt-5.6-sol",
       "effort": "ultra",
       "roles": [
-        "worker",
-        "reviewer"
+        "worker"
       ],
       "ratings": {
-        "quality": 10,
-        "speed": 3,
-        "quotaCost": 7
+        "quality": 9,
+        "speed": 2,
+        "quotaCost": 5
       },
       "prices": {
         "inputPerMTok": null,
@@ -1447,9 +1447,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 610,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 640,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from codex-sol-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
@@ -1474,7 +1474,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 620,
+      "priority": 610,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1491,9 +1491,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 8,
-        "speed": 3,
-        "quotaCost": 4
+        "quality": 6,
+        "speed": 2,
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -1501,9 +1501,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 650,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 770,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -2 effort step(s) from codex-sol-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
@@ -1518,9 +1518,9 @@
         "worker"
       ],
       "ratings": {
-        "quality": 7,
-        "speed": 3,
-        "quotaCost": 3
+        "quality": 5,
+        "speed": 2,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -1528,9 +1528,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 680,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 830,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -3 effort step(s) from codex-sol-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-sol-max"
@@ -1555,7 +1555,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 660,
+      "priority": 690,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1597,7 +1597,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 640,
+      "priority": 650,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1614,7 +1614,7 @@
         "worker"
       ],
       "ratings": {
-        "quality": 7,
+        "quality": 6,
         "speed": 4,
         "quotaCost": 1
       },
@@ -1624,35 +1624,42 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 690,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 790,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
-        "text": "quality is newly assessed as 7 beside Terra: OpenAI Coding Agent Index orders Luna 75 below Terra 77, while a secondary Terminal-Bench report reverses them, so the models remain level rather than claiming unsupported precision. speed uses Artificial Analysis 40→1 / 310→10: 127 tokens/s→4; quotaCost uses blended list price $2.50→1 / $30→10: $3.50→1. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality uses Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 75.7→6. The Terminal-Bench 2.1 leaderboard (archived, 18 rows) lists GPT-5.6 Luna under Codex CLI at 75.7 % ±1.3 and names no effort; the base stays at max, like every GPT-5.6 base row. The figure replaces the earlier hypothesis of 7 beside Terra, which rested on the OpenAI Coding Agent Index and a secondary Terminal-Bench report; the same page lists GPT-5.6 Terra at 78.4 % ±1.3, so Luna now sits one band below it. speed uses Artificial Analysis 40→1 / 310→10: 142.3 tokens/s→4, the model page (the leaderboard's default view no longer lists the model). quotaCost uses blended list price $2.50→1 / $30→10: $0.70→1 — the vendor page lists $0.20 in / $1.20 out, not the $1 / $6 read on 2026-09-06, in the same band. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
+          {
+            "rating": "quality",
+            "basis": "Terminal-Bench",
+            "version": "2.1",
+            "agentHarness": "Codex CLI",
+            "provenance": "public leaderboard page, opened",
+            "figure": "75.7 % ±1.3 (effort not stated by the page)",
+            "url": "https://snorkel.ai/leaderboard/terminal-bench-2-1/",
+            "date": "2026-09-23"
+          },
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
-            "provenance": "primary leaderboard page, opened",
-            "figure": "127 tokens/s (measured at max)",
-            "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06",
-            "version": "leaderboard snapshot 2026-09-06",
-            "agentHarness": "Artificial Analysis serving stack"
+            "version": "model page snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary model page, opened",
+            "figure": "142.3 tokens/s (measured at max)",
+            "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
+            "date": "2026-09-23"
           },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
-            "figure": "$3.50 per 1M tokens ($1 in / $6 out)",
-            "provenance": "price page, opened",
-            "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06",
-            "version": "price schedule 2026-09-06",
-            "agentHarness": "vendor API"
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor model page, opened",
+            "figure": "$0.70 per 1M tokens ($0.20 in / $1.20 out)",
+            "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+            "date": "2026-09-23"
           }
-        ],
-        "hypothesis": [
-          "quality"
         ]
       }
     },
@@ -1666,8 +1673,8 @@
       ],
       "ratings": {
         "quality": 6,
-        "speed": 3,
-        "quotaCost": 2
+        "speed": 2,
+        "quotaCost": 1
       },
       "prices": {
         "inputPerMTok": null,
@@ -1675,9 +1682,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 710,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 800,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from codex-terra-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
@@ -1693,8 +1700,8 @@
       ],
       "ratings": {
         "quality": 7,
-        "speed": 3,
-        "quotaCost": 3
+        "speed": 2,
+        "quotaCost": 2
       },
       "prices": {
         "inputPerMTok": null,
@@ -1702,31 +1709,31 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 700,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 740,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
-        "text": "quality is newly assessed as 7 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 78.4→7, preferred over the harness-free 82.5. speed uses Artificial Analysis 40→1 / 310→10: 114 tokens/s→3; quotaCost uses blended list price $2.50→1 / $30→10: $8.75→3. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality is newly assessed as 7 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 78.4→7, preferred over the harness-free 82.5. speed uses Artificial Analysis 40→1 / 310→10: 83 tokens/s→2 — the leaderboard read 114 tokens/s on 2026-09-06, band 3. quotaCost uses blended list price $2.50→1 / $30→10: $7→2 — the vendor price table lists $2 in / $12 out, not the $2.50 / $15 read on 2026-09-06, band 3. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
             "provenance": "primary leaderboard page, opened",
-            "figure": "114 tokens/s (measured at max)",
+            "figure": "83 tokens/s (measured at max)",
             "url": "https://artificialanalysis.ai/leaderboards/models",
-            "date": "2026-09-06",
-            "version": "leaderboard snapshot 2026-09-06",
-            "agentHarness": "Artificial Analysis serving stack"
+            "date": "2026-09-23"
           },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
-            "figure": "$8.75 per 1M tokens ($2.50 in / $15 out)",
-            "provenance": "price page, opened",
-            "url": "https://artificialanalysis.ai/articles/gpt-5-6-has-landed",
-            "date": "2026-09-06",
-            "version": "price schedule 2026-09-06",
-            "agentHarness": "vendor API"
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor price table, opened",
+            "figure": "$7.00 per 1M tokens ($2 in / $12 out)",
+            "url": "https://developers.openai.com/api/docs/pricing",
+            "date": "2026-09-23"
           }
         ],
         "hypothesis": [
@@ -1744,8 +1751,8 @@
       ],
       "ratings": {
         "quality": 8,
-        "speed": 3,
-        "quotaCost": 4
+        "speed": 2,
+        "quotaCost": 3
       },
       "prices": {
         "inputPerMTok": null,
@@ -1753,9 +1760,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 670,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 700,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from codex-terra-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
@@ -1770,7 +1777,7 @@
         "worker"
       ],
       "ratings": {
-        "quality": 5,
+        "quality": 4,
         "speed": 4,
         "quotaCost": 1
       },
@@ -1780,9 +1787,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 720,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 890,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -2 effort step(s) from codex-luna-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-luna-max"
@@ -1797,7 +1804,7 @@
         "worker"
       ],
       "ratings": {
-        "quality": 4,
+        "quality": 3,
         "speed": 4,
         "quotaCost": 1
       },
@@ -1807,9 +1814,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 750,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 930,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -3 effort step(s) from codex-luna-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-luna-max"
@@ -1825,7 +1832,7 @@
       ],
       "ratings": {
         "quality": 5,
-        "speed": 3,
+        "speed": 2,
         "quotaCost": 1
       },
       "prices": {
@@ -1834,9 +1841,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 730,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 850,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -2 effort step(s) from codex-terra-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
@@ -1852,7 +1859,7 @@
       ],
       "ratings": {
         "quality": 4,
-        "speed": 3,
+        "speed": 2,
         "quotaCost": 1
       },
       "prices": {
@@ -1861,9 +1868,9 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 760,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "priority": 900,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -3 effort step(s) from codex-terra-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
@@ -1888,7 +1895,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 770,
+      "priority": 910,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1930,12 +1937,552 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 740,
+      "priority": 860,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from codex-mini-medium on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-mini-medium"
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-max",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "max",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 8,
+        "speed": 4,
+        "quotaCost": 2
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 670,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "quality has NO published SWE-bench Verified or Terminal-Bench figure for this exact model and is a hypothesis of 8 under the successor rule, at the band of its predecessor's corresponding rung, codex-sol-max: neither the SWE-bench Verified leaderboard this catalog reads nor the Terminal-Bench 2.1 and 4.0 leaderboards carry a row for it (seen 2026-09-23). The vendor launch post, https://openai.com/index/introducing-gpt-6-sol-and-luna/, answered HTTP 403 when opened on 2026-09-23, so no vendor head-to-head is cited. The one common measure opened is the Artificial Analysis Intelligence Index at max, 48 for GPT-6 Sol against 47 for GPT-5.6 Sol, which places the successor level with its predecessor rather than below it; the index has no anchor pair and bands nothing. The predecessor's band is itself a hypothesis, placed between codex-terra-max and codex-gpt6-astra-max, and the two rows move together. speed uses Artificial Analysis 40→1 / 310→10: 122.2 tokens/s→4; quotaCost uses blended list price $2.50→1 / $30→10: $6→2. The id and its effort ladder were read from `codex debug models` on codex-cli 0.156.1, the same payload from the default home and from a participant home. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "model snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary model page, opened",
+            "figure": "122.2 tokens/s (measured at max)",
+            "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+            "date": "2026-09-23"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "OpenAI list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor model page, opened",
+            "figure": "$6.00 per 1M tokens ($2 in / $10 out)",
+            "url": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+            "date": "2026-09-23"
+          }
+        ],
+        "hypothesis": [
+          "quality"
+        ]
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-low",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 4,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 870,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-gpt6-sol-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-medium",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "medium",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 820,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -3 effort step(s) from codex-gpt6-sol-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-high",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 6,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 760,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from codex-gpt6-sol-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-xhigh",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 7,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 720,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from codex-gpt6-sol-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-sol-ultra",
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "effort": "ultra",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 9,
+        "speed": 4,
+        "quotaCost": 3
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 630,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from codex-gpt6-sol-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-sol-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-max",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 6,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 780,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "quality has NO published SWE-bench Verified or Terminal-Bench figure for this exact model and is a hypothesis of 6 under the successor rule, at the band of its predecessor's corresponding rung, codex-luna-max, which cites Terminal-Bench 2.1 Codex CLI 75.7 %: neither the SWE-bench Verified leaderboard this catalog reads nor the Terminal-Bench 2.1 and 4.0 leaderboards carry a row for it (seen 2026-09-23). The vendor launch post, https://openai.com/index/introducing-gpt-6-sol-and-luna/, answered HTTP 403 when opened on 2026-09-23, so no vendor head-to-head is cited. The one common measure opened is the Artificial Analysis Intelligence Index at max, 37 for GPT-6 Luna and 37 for GPT-5.6 Luna, which places the successor level with its predecessor; the index has no anchor pair and bands nothing. speed uses Artificial Analysis 40→1 / 310→10: 132.2 tokens/s→4; quotaCost uses blended list price $2.50→1 / $30→10: $0.30→1. The id and its effort ladder were read from `codex debug models` on codex-cli 0.156.1, the same payload from the default home and from a participant home. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "model snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary model page, opened",
+            "figure": "132.2 tokens/s (measured at max)",
+            "url": "https://artificialanalysis.ai/models/gpt-6-luna",
+            "date": "2026-09-23"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "OpenAI list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor model page, opened",
+            "figure": "$0.30 per 1M tokens ($0.10 in / $0.50 out)",
+            "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+            "date": "2026-09-23"
+          }
+        ],
+        "hypothesis": [
+          "quality"
+        ]
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-low",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 2,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 940,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-gpt6-luna-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-luna-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 3,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 920,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -3 effort step(s) from codex-gpt6-luna-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-luna-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-high",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 4,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 880,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from codex-gpt6-luna-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-luna-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-xhigh",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 840,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from codex-gpt6-luna-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-luna-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-max",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 9,
+        "speed": 1,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 620,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "quality uses Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 87.4→9. The leaderboard this catalog reads for SWE-bench Verified carries no GPT-6 row (seen 2026-09-23), so Terminal-Bench is the first source in ADR-004's order. The Terminal-Bench 2.1 leaderboard (archived, 18 rows) lists GPT-6 Astra under Codex CLI at 87.4 % ±0.9 and names no effort, so the figure sits on max, the base rung of every GPT-5.6 and GPT-6 row. The Terminal-Bench 4.0 leaderboard, whose rows do name the effort, reports Astra under Codex at high 57.9 % ±3.0, xhigh 57.9 % ±2.7 and max 58.2 % ±2.8, level within one interval: the one-band-per-step ladder therefore rates high and xhigh lower than that leaderboard measures them. The 4.0 figures have no Codex anchor pair and band nothing. The model has no predecessor in the catalog, so the successor rule does not apply. speed uses Artificial Analysis 40→1 / 310→10: 52 tokens/s at max→1; quotaCost uses blended list price $2.50→1 / $30→10: $30→10. The id and its effort ladder were read from `codex debug models` on codex-cli 0.156.1, the same payload from the default home and from a participant home. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "quality",
+            "basis": "Terminal-Bench",
+            "version": "2.1",
+            "agentHarness": "Codex CLI",
+            "provenance": "public leaderboard page, opened",
+            "figure": "87.4 % ±0.9 (effort not stated by the page)",
+            "url": "https://snorkel.ai/leaderboard/terminal-bench-2-1/",
+            "date": "2026-09-23"
+          },
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary leaderboard page, opened",
+            "figure": "52 tokens/s (measured at max)",
+            "url": "https://artificialanalysis.ai/leaderboards/models",
+            "date": "2026-09-23"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "OpenAI list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor model page, opened",
+            "figure": "$30.00 per 1M tokens ($10 in / $50 out)",
+            "url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+            "date": "2026-09-23"
+          }
+        ]
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-low",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 1,
+        "quotaCost": 6
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 810,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-astra-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-medium",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 6,
+        "speed": 1,
+        "quotaCost": 7
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 750,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -3 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-astra-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-high",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 7,
+        "speed": 1,
+        "quotaCost": 8
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 710,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-astra-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-xhigh",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 8,
+        "speed": 1,
+        "quotaCost": 9
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 660,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-astra-max"
+      }
+    },
+    {
+      "id": "codex-gpt6-astra-ultra",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "effort": "ultra",
+      "roles": [
+        "worker",
+        "reviewer"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 1,
+        "quotaCost": 10
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 600,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the codex 0.156.1 inventory, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt6-astra-max"
       }
     }
   ]

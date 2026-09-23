@@ -125,6 +125,8 @@ test('ROADMAP catalog figures match shipped routing defaults', () => {
 for (const [name, successorId, predecessorId] of [
   ['Fable 5.1', 'claude-fable-51-xhigh', 'claude-fable-xhigh'],
   ['Opus 5.5', 'claude-opus-55-xhigh', 'claude-opus-xhigh'],
+  ['GPT-6 Sol', 'codex-gpt6-sol-max', 'codex-sol-max'],
+  ['GPT-6 Luna', 'codex-gpt6-luna-max', 'codex-luna-max'],
 ]) {
   test(`${name} keeps its predecessor quality band as a hypothesis`, () => {
     const successor = CATALOG.tuples.find((tuple) => tuple.id === successorId);
@@ -479,7 +481,7 @@ test('a model the harness exposes but the catalog does not rate produces no tupl
     assert.equal(models.has(unrated), false,
       `${unrated} has no maintainer rating and must not appear as a tuple`);
   }
-  for (const rated of ['gpt-5.6-sol', 'gpt-5.5', 'claude-fable-5']) {
+  for (const rated of ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.5', 'claude-fable-5']) {
     assert.equal(models.has(rated), true, `${rated} should be rated`);
   }
 });

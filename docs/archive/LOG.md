@@ -317,3 +317,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-247"></a>`PB-247-backslop-0-10-0-upgrade` · 2026-09-23 · completed · `39316bc290` · backslop pin v0.9.0 → v0.10.0: backlog README from the template, pins outside markdown, rule restatements
 - <a id="pb-249"></a>`PB-249-retriage-by-cost-rule` · 2026-09-23 · completed · `2895973a66` · Open cards re-triaged by the cost rule and the minor evidence rule
 - <a id="pb-248"></a>`PB-248-archive-fold-to-log` · 2026-09-23 · completed · — · The archive folds into docs/archive/LOG.md in full
+- <a id="pb-246"></a>`PB-246-gpt-6-codex-inventory` · 2026-09-24 · completed · — · GPT-6 Astra, Sol and Luna are in the installed Codex inventory and in no catalog row
