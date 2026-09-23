@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The backslop pin is `v0.10.0`** (PB-247). `upgrade` moved it in `backslop.json`, `package.json`, the CI workflow and the live
+  markdown, and created the empty closed-task journal `docs/archive/LOG.md`; the pin in `test/gate-record.test.mjs`, which `upgrade`
+  does not read, moved by hand. `docs/backlog/README.md` and `docs/archive/README.md` are re-rendered from the v0.10.0 templates,
+  which `upgrade` leaves alone: a minor finding requires evidence, placeholders in `triage/` no longer fail `lint`, closure is
+  `archive` then `fold`, and `mv N queue --restore` returns a task to its saved "Previous order". `backslop.json` declares `probe` as
+  `npm run probe`, so step 4 of the generated `AGENTS.md` block now names the command. The contributing guide's approver path gains
+  `fold N`, a minor finding its `--evidence`, and its pin paragraph says that `upgrade` has moved `package.json` and CI pins since
+  v0.8.0 and still reads no other file.
+
 ## [0.14.0] — 2026-09-23
 
 ### Added

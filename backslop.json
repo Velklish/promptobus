@@ -1,15 +1,16 @@
 {
   "prefix": "PB",
   "docs": "docs",
-  "cli": "npx github:Velklish/backslop#v0.9.0",
+  "cli": "npx github:Velklish/backslop#v0.10.0",
   "gates": [
     "npm test",
-    "npx github:Velklish/backslop#v0.9.0 lint",
+    "npx github:Velklish/backslop#v0.10.0 lint",
     "npm run audit",
     "npm run pins",
     "npm run codex-schema"
   ],
-  "version": "0.9.0",
+  "probe": "npm run probe",
+  "version": "0.10.0",
   "lang": "en",
   "tools": [
     "claude",
