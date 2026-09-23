@@ -3,7 +3,7 @@
 - **Order:** 550
 - **Scope:** [reference/03-cli](../../reference/03-cli.md), [reference/05-drivers](../../reference/05-drivers.md), `lib/driver-codex.js`
 - **Created:** 2026-09-23
-- **Dependencies:** consumer BL-705 and BL-706 define the canonical Codex skill source and precedence
+- **Dependencies:** the consumer's measurement of Codex skill and MCP precedence and its workspace plugin change define the canonical Codex skill source and precedence
 
 ## Context
 
@@ -11,14 +11,14 @@ The owner requires a Codex worker and reviewer to receive the workspace skill an
 
 ## Work to do
 
-- Consume the canonical skill source defined by consumer `BL-706`, without requiring a global plugin enablement or modifying the owner's Codex configuration. Carry the same canonical skill names and content to both worker and reviewer, including their worktrees and reviewer sandbox.
-- Apply the measured Codex mechanism from `BL-705` to suppress only colliding personal skill paths in the participant's isolated scope. Keep unrelated personal skills according to the harness contract. If the host cannot express this, expose an explicit blocker rather than report a clean set.
+- Consume the canonical skill source defined by the consumer's workspace plugin change, without requiring a global plugin enablement or modifying the owner's Codex configuration. Carry the same canonical skill names and content to both worker and reviewer, including their worktrees and reviewer sandbox.
+- Apply the measured Codex mechanism from the consumer's precedence measurement to suppress only colliding personal skill paths in the participant's isolated scope. Keep unrelated personal skills according to the harness contract. If the host cannot express this, expose an explicit blocker rather than report a clean set.
 - Preserve the existing isolated MCP set and reviewer `disabled_tools` boundary. Detect or prevent duplicate server names from another source; show what the participant actually receives.
-- Coordinate the source-path transition with consumer `BL-706` so the removal of `.codex/skills` at the workspace root cannot silently leave participants without skills. Update the driver reference and lift diagnostics.
+- Coordinate the source-path transition with the consumer's workspace plugin change so the removal of `.codex/skills` at the workspace root cannot silently leave participants without skills. Update the driver reference and lift diagnostics.
 
 ## Out of scope
 
-- Manual Codex sessions in the workspace; consumer `BL-706` owns those.
+- Manual Codex sessions in the workspace; the consumer's workspace plugin change owns those.
 - Replacing `HOME` for the participant: it also changes git and SSH behavior, as discussed in `docs/adr/adr-007-codex-participant-isolated-home.md`.
 
 ## Verification

@@ -7,7 +7,7 @@
 
 ## Context
 
-The finding cost rule (backslop v0.9.0, ADR-022 in backslop) and the required minor evidence (v0.10.0) are in force, and the open cards were never reviewed under them: on 2026-09-23 no card filed before this run carries a Cost field. The precedent is the aivals backlog review of 2026-09-19.
+The finding cost rule (backslop v0.9.0, ADR-022 in backslop) and the required minor evidence (v0.10.0) are in force, and the open cards were never reviewed under them: on 2026-09-23 no card filed before this run carries a Cost field.
 
 ## Work to do
 
