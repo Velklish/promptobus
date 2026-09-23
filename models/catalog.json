@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-09-09T00:00:00.000Z",
+  "updated": "2026-09-23T00:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-51-high",
@@ -23,7 +23,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 160,
+      "priority": 180,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -52,12 +52,41 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 170,
+      "priority": 190,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from claude-fable-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-fable-xhigh"
+      }
+    },
+    {
+      "id": "claude-opus-55-high",
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "roles": [
+        "worker",
+        "reviewer",
+        "approver"
+      ],
+      "ratings": {
+        "quality": 9,
+        "speed": 3,
+        "quotaCost": 3
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 200,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the binary's baked table, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from claude-opus-55-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-opus-55-xhigh"
       }
     },
     {
@@ -81,7 +110,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 180,
+      "priority": 210,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -203,6 +232,59 @@
       }
     },
     {
+      "id": "claude-opus-55-xhigh",
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "xhigh",
+      "roles": [
+        "worker",
+        "reviewer",
+        "approver"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 4
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 120,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the binary's baked table, 2026-09-23",
+      "evidence": {
+        "text": "quality has NO published SWE-bench Verified figure for this exact model and remains a hypothesis of 10 under the successor rule: the leaderboard this catalog reads lists Claude Opus 5 at 96.0 % and carries no Opus 5.5 row (seen 2026-09-23), and Anthropic's own launch page publishes no SWE-bench figure for it. Every head-to-head figure the vendor publishes puts 5.5 above Opus 5 — Terminal-Bench 4.0 66.4 % against 52.3 %, OSWorld 2.0 (partial) 81.8 % against 74.0 %, GDPval-AA v2.1 1846 against 1708. The vendor's Terminal-Bench 4.0 figure, 66.4 % at xhigh, comes from its own setup, which it says reproduces the public leaderboard's Claude Code figure for Opus 5 (51.8 %) at 52.3 %; that setup names no harness, no anchor pair is keyed to it, and the public leaderboard carries no Opus 5.5 row, so no band is computed from it — it supports the hypothesis rather than citing it. The id was read offline off the claude 2.1.280 baked table, not run: a first-party row of family opus with fallback_3p claude-opus-5, listed among the accepted ids, and the opus alias points at it. speed uses Artificial Analysis 40→1 / 310→10: 93 tokens/s→3, the row \"Claude Opus 5.5 (xhigh with fallback)\" (max not reported). quotaCost uses blended list price $2.50→1 / $30→10: $12→4. Anchors assessed 2026-09-06, the Terminal-Bench 4.0 pair 2026-09-09; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "leaderboard snapshot 2026-09-23",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary leaderboard page, opened",
+            "figure": "93 tokens/s (xhigh with fallback)",
+            "url": "https://artificialanalysis.ai/leaderboards/models",
+            "date": "2026-09-23"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "Anthropic list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-23",
+            "agentHarness": "vendor API",
+            "provenance": "vendor launch page, opened",
+            "figure": "$12.00 per 1M tokens ($4 in / $20 out)",
+            "url": "https://www.anthropic.com/claude-opus-5-5",
+            "date": "2026-09-23"
+          }
+        ],
+        "hypothesis": [
+          "quality"
+        ]
+      }
+    },
+    {
       "id": "claude-opus-xhigh",
       "harness": "claude",
       "model": "claude-opus-5",
@@ -223,7 +305,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 120,
+      "priority": 130,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -282,7 +364,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 130,
+      "priority": 140,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -311,12 +393,41 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 140,
+      "priority": 150,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from claude-fable-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-fable-xhigh"
+      }
+    },
+    {
+      "id": "claude-opus-55-max",
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "max",
+      "roles": [
+        "worker",
+        "reviewer",
+        "approver"
+      ],
+      "ratings": {
+        "quality": 10,
+        "speed": 3,
+        "quotaCost": 5
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 160,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the binary's baked table, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from claude-opus-55-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-opus-55-xhigh"
       }
     },
     {
@@ -340,12 +451,40 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 150,
+      "priority": 170,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from claude-opus-xhigh on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-opus-xhigh"
+      }
+    },
+    {
+      "id": "claude-opus-55-medium",
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "roles": [
+        "worker",
+        "approver"
+      ],
+      "ratings": {
+        "quality": 8,
+        "speed": 3,
+        "quotaCost": 2
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 220,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks and the binary's baked table, 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from claude-opus-55-xhigh on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "claude-opus-55-xhigh"
       }
     },
     {
@@ -368,7 +507,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 190,
+      "priority": 230,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -395,7 +534,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 210,
+      "priority": 250,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -423,7 +562,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 200,
+      "priority": 240,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -480,7 +619,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 220,
+      "priority": 260,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -507,7 +646,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 250,
+      "priority": 290,
       "assessedAt": "2026-09-09T00:00:00.000Z",
       "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
       "evidence": {
@@ -534,7 +673,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 240,
+      "priority": 280,
       "assessedAt": "2026-09-09T00:00:00.000Z",
       "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
       "evidence": {
@@ -592,7 +731,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 230,
+      "priority": 270,
       "assessedAt": "2026-09-09T00:00:00.000Z",
       "source": "Anthropic Haiku 4.5 launch page and Artificial Analysis leaderboard, 2026-09-09",
       "evidence": {

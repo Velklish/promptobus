@@ -332,7 +332,7 @@ test('the inventory is the pinned ids and the alias set the binary publishes, pl
   // Every name is pinned LITERALLY, not computed from `MODEL_IDS` or
   // `MODEL_ALIASES`: an expectation derived from the constant under test passes
   // whatever that constant becomes, and the first mutation probe caught exactly
-  // that. The five ids are the full names the catalog rates — a catalog row and an
+  // that. The six ids are the full names the catalog rates — a catalog row and an
   // inventory that disagreed would exclude every Claude tuple as
   // `model-not-in-inventory` and blame the catalog for it (PB-13.1) — and the four
   // aliases include what `claude --help` prints under `--model` on 2.1.263, measured
@@ -352,8 +352,8 @@ test('the inventory is the pinned ids and the alias set the binary publishes, pl
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const verdict = await probe(box.host);
   assert.deepEqual(verdict.models.map((m) => m.model),
-    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5',
-      'fable', 'opus', 'sonnet', 'haiku']);
+    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5',
+      'claude-haiku-4-5', 'fable', 'opus', 'sonnet', 'haiku']);
   // And the default is in there whatever the alias set says: it is the model every
   // spawn without a `--model` flag asks for.
   assert.ok(verdict.models.some((m) => m.model === DEFAULT_MODEL), DEFAULT_MODEL);
@@ -484,7 +484,7 @@ test('a scope display name resolves to pinned ids, and an unknown one resolves t
   // tuple on the predecessor spends the same weekly window as one on the successor,
   // and a table naming only the current alias target would leave it bound by none.
   assert.deepEqual(scopeModels('Fable', MODEL_SCOPE_IDS), ['claude-fable-5-1', 'claude-fable-5']);
-  assert.deepEqual(scopeModels('opus', MODEL_SCOPE_IDS), ['claude-opus-5']);
+  assert.deepEqual(scopeModels('opus', MODEL_SCOPE_IDS), ['claude-opus-5-5', 'claude-opus-5']);
   assert.deepEqual(scopeModels('Sonnet', MODEL_SCOPE_IDS), ['claude-sonnet-5']);
   assert.deepEqual(scopeModels('Haiku', MODEL_SCOPE_IDS), ['claude-haiku-4-5']);
   assert.equal(scopeModels('Some Model Nobody Pinned', MODEL_SCOPE_IDS), null);
@@ -694,8 +694,8 @@ test('no credential record is quota_unknown, and nothing is claimed about the lo
   assert.equal(verdict.tier, undefined);
   // The inventory is still reported: it is the driver's fact, not the account's.
   assert.deepEqual(verdict.models.map((m) => m.model),
-    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5',
-      'fable', 'opus', 'sonnet', 'haiku']);
+    ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5',
+      'claude-haiku-4-5', 'fable', 'opus', 'sonnet', 'haiku']);
 });
 
 test('a usage endpoint that refuses the token is not_authenticated, not a quota mystery', async () => {

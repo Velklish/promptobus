@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Opus 5.5 in the inventory and the catalog** (PB-245). `claude-opus-5-5` joins `MODEL_IDS` beside `claude-opus-5`, read
+  offline off the claude 2.1.280 baked table, and the `Opus` limit scope names both ids. The catalog gains the `claude-opus-55`
+  ladder — `xhigh` base, `max`, `high` and `medium` interpolated — so a routed pick and an explicit `--model claude-opus-5-5` reach
+  it; before, a routed lift refused the id (`constraint-unknown`). `quality` 10 is a stated hypothesis under the successor rule, `speed`
+  cites Artificial Analysis at 93 tokens/s (band 3) and `quotaCost` the $4 / $20 launch price (band 4). The Claude priority block is
+  renumbered 100…290. The proven binary stays 2.1.263, so the `opus` alias still resolves to `claude-opus-5` until PB-245.1. The
+  inventory is static: on a claude build older than the one read (2.1.263 carries no such id) a routed pick can still land on
+  Opus 5.5, unmeasured — deny it with an overlay, `deny: { models: ["claude-opus-5-5"] }`, on such a build.
 - **A gate on the Codex protocol fixtures** (PB-242). The harness names the fixture directory off `PROVEN_CODEX_VERSION` instead of
   repeating the number, `test/codex-fixtures.test.mjs` fails when the constant names a directory that does not exist, and
   `npm run codex-schema` compares the installed `codex --version` with the version the fixtures were taken from, printing the

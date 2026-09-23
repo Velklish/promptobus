@@ -122,12 +122,17 @@ test('ROADMAP catalog figures match shipped routing defaults', () => {
   );
 });
 
-test('Fable 5.1 keeps its predecessor quality band as a hypothesis', () => {
-  const successor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-51-xhigh');
-  const predecessor = CATALOG.tuples.find((tuple) => tuple.id === 'claude-fable-xhigh');
-  assert.equal(successor.ratings.quality, predecessor.ratings.quality);
-  assert.ok(successor.evidence.hypothesis.includes('quality'));
-});
+for (const [name, successorId, predecessorId] of [
+  ['Fable 5.1', 'claude-fable-51-xhigh', 'claude-fable-xhigh'],
+  ['Opus 5.5', 'claude-opus-55-xhigh', 'claude-opus-xhigh'],
+]) {
+  test(`${name} keeps its predecessor quality band as a hypothesis`, () => {
+    const successor = CATALOG.tuples.find((tuple) => tuple.id === successorId);
+    const predecessor = CATALOG.tuples.find((tuple) => tuple.id === predecessorId);
+    assert.equal(successor.ratings.quality, predecessor.ratings.quality);
+    assert.ok(successor.evidence.hypothesis.includes('quality'));
+  });
+}
 
 test('the entitled Haiku inventory is rated while refused Mythos stays out', () => {
   assert.ok(MODEL_IDS.includes('claude-haiku-4-5'));
@@ -432,9 +437,9 @@ test('reviewer requires both the rung and its assessed base row at the ADR-005 f
     'the reviewer harness set changed — say so in CHANGELOG and the guide, the diversity bonus depends on it');
 });
 
-test('approver is offered only at its assessed floor, on exactly 11 shipped tuples', () => {
+test('approver is offered only at its assessed floor, on exactly 15 shipped tuples', () => {
   const offered = CATALOG.tuples.filter((tuple) => tuple.roles.includes('approver'));
-  assert.equal(offered.length, 11);
+  assert.equal(offered.length, 15);
   for (const tuple of offered) {
     assert.ok(tuple.ratings.quality >= 7,
       `${tuple.id}: offered as an approver at quality ${tuple.ratings.quality}, below the floor of 7`);
