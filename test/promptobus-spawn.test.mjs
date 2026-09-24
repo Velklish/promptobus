@@ -2031,5 +2031,36 @@ check('PB-233: spawn hands the contact point to the task it spawns into AND to t
     other: store.readWake(HOME, SPAWN_LIFT_OTHER, 'orchestrator'),
   }));
 
+// PB-252: the refusal at a live address names the route to restart THAT participant. For Codex
+// it used to be `done`, which closes the whole task and every session in it.
+const RESTART_TASK = 'pb252-t20260924-120000';
+store.createTask(HOME, {
+  id: RESTART_TASK, title: 'restart route', slug: 'pb252', stamp: 't20260924-120000',
+});
+const restartRefusals = {};
+for (const harness of ['codex', 'claude', 'cursor']) {
+  const address = `worker:pb252-${harness}`;
+  store.upsertParticipant(HOME, RESTART_TASK, store.participantRecord(address, {
+    harness, mode: 'managed', sessionRef: `ref-pb252-${harness}`, name: `Worker: pb252 ${harness}`,
+  }));
+  try {
+    await planSpawn(WS, {
+      repo: 'cargos-api', brief: BRIEF, task: RESTART_TASK, worker: `pb252-${harness}`,
+      sessions: { [address]: { state: 'alive', busy: false, stall: null, id: `id-pb252-${harness}` } },
+    });
+    restartRefusals[harness] = 'no refusal';
+  } catch (e) {
+    restartRefusals[harness] = e.message;
+  }
+}
+check('PB-252: the restart route for a live Codex participant stops that one participant, not the task',
+  restartRefusals.codex.includes(`restart — close the session first: promptobus stop worker:pb252-codex --task ${RESTART_TASK}.`)
+  && !/\bdone\b/.test(restartRefusals.codex),
+  restartRefusals.codex);
+check('PB-252: Claude and Cursor print the same one-participant stop, with the address and task filled in',
+  ['claude', 'cursor'].every((h) => restartRefusals[h].includes(
+    `restart — close the session first: promptobus stop worker:pb252-${h} --task ${RESTART_TASK}.`)),
+  JSON.stringify(restartRefusals));
+
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

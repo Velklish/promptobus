@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The restart route a repeat spawn prints for a live participant stops that one participant** (PB-252). For Codex it
+  named `done`, which closes the whole task and every managed session in it, while `promptobus stop <address>` stops one
+  thread through the driver. The refusal now prints `promptobus stop <address> --task <id>`, both filled in, for every
+  driver that declares `stop` — Claude, Cursor and Codex — in place of the driver's phrase, which for Claude and Cursor
+  was a harness command with a literal `<id>`. The Codex stop phrase no longer names `done`. [03-cli](docs/reference/03-cli.md#spawn).
 - **A Claude approver writes to the clone root with its own `Write` and `Edit`** (PB-240). Claude Code refuses those
   tools in a background session's main checkout until the session moves into a worktree, and the approver is seated in
   the clone root on purpose, to merge, run `archive` and fill `result.md` there — so it was left with the shell. The

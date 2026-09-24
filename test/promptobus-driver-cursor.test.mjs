@@ -1158,14 +1158,13 @@ const alienHarness = cli([ 'review', wt, '--task', TASK, '--harness', 'claude'],
 check('step 4: --harness on an already lifted reviewer is refused, not silently ignored',
   alienHarness.status !== 0 && /was started by harness cursor/.test(alienHarness.out), alienHarness.out.slice(-260));
 
-// An "address already working" refusal must name an EXECUTABLE harness route. Under
-// persist it appeared: `agent persist stop <name>` really kills the session, after which
-// a second spawn goes through — under headless there was nothing to kill a single
-// session with at all.
+// An "address already working" refusal names an EXECUTABLE route: the bus stop runs the
+// driver's `agent persist stop <name>` and its reap on this one participant.
 const busyAddr = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cur', '--harness', 'cursor'], { cwd: ws, env });
 check('step 4: spawn on a live address refuses with a route that really kills the session',
-  busyAddr.status !== 0 && /agent persist stop/.test(busyAddr.out) && /--worker/.test(busyAddr.out),
+  busyAddr.status !== 0 && busyAddr.out.includes(`promptobus stop ${WORKER} --task ${TASK}`)
+  && /--worker/.test(busyAddr.out),
   busyAddr.out.slice(-300));
 
 const dirtyAfterReview = spawnSync('git', ['-C', repoAbs, 'status', '--porcelain'], { encoding: 'utf8' });
