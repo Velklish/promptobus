@@ -185,7 +185,8 @@ carried through that round, because its state is unknown rather than the whole s
 
 The other drivers: Codex's `inspect` and `stop` read its registry files and signal pids, and run no
 binary. Cursor's `stop` re-resolves the recorded agent path through `PATH` and its install
-directories (`liveBin`); its `tmux` calls still go through `PATH` (PB-239.2).
+directories (`liveBin`), and its `tmux` calls search the same places and run tmux by absolute
+path ([Cursor: tmux by absolute path](#cursor-tmux-by-absolute-path)).
 
 ## Cursor: the persist session
 
@@ -232,6 +233,40 @@ one level appears on a single family. Asking it costs almost nothing and refusin
 would cost a lift — a bad id comes back in about two seconds with empty stdout and a list of
 the ids that do exist, without opening a chat. So `optionRefusal` refuses on the binary version
 and on `tmux`, and leaves the model-and-level pair to the binary.
+
+### Cursor: tmux by absolute path
+
+Source: `lib/cursor-persist.js` (`tmuxBin`, `tmux`, `readTmuxSessions`, `findSession`).
+
+Every tmux call — the state query behind `inspect`, `activate`, `stop`, the lift's panes — runs
+the binary `tmuxBin` finds: `PATH`, then the install directories the Cursor binary is looked for
+in (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). That is the search the lift's check
+makes, and the check (`resolveTmux` behind `optionRefusal`) now calls the same function, so a lift
+never passes on a tmux that calls from the same environment cannot find. The warden, `stop`,
+`sweep` and `status` run in other processes with their own `PATH` and `HOME`; such a caller may
+still miss it, and then reads `unknown`, not `stale`. The calls used the bare name, so a tmux only
+an install directory held was found by the lift's check and missed by every call. The
+environment goes to tmux unchanged: a `PATH` widened to find it would become the server's
+environment on its first `new-session` and reach every pane started after that.
+
+**Two failures, told apart.** A tmux that could not be run — found in neither list, or refused
+by the system at start — is not an empty server. `readTmuxSessions` returns the reason as
+`missing`, and `findSession` refuses with a `GateError` naming tmux and the session instead of
+answering `null`. `inspect` passes that refusal on, so the snapshot reads the participant
+`unknown` with the reason on its `status` line; `stop` and `sweep` refuse with exit 1 on that
+line; and the driver's own `stop` is `ok: false` and touches neither the record nor the
+session's processes. Before, the unread server read as empty, `inspect` answered `stale`, and
+`liveParticipant` reads `stale` as dead: `stop` said "no live session — nothing to stop" with
+exit 0, and a direct call of the driver's `stop` dropped the record of a session that was still
+running. A server that answers "no server running" still reads as no sessions — a tmux server
+lives while it has sessions — so `stale` keeps its meaning: stopped from outside, or the machine
+rebooted.
+
+`PROMPTOBUS_CURSOR_INSTALL_DIRS` replaces the install-directory list, delimiter-separated, for
+the Cursor binary search and for tmux alike, read from the environment the search is handed. It
+is a suite seam and is unset in life: the absolute entries sit outside any sandboxed `HOME`, so
+the suite's hygiene (`test/hygiene.mjs`) sets it to `~/.local/bin` — the sandbox one — and an
+unstubbed tmux there is not found rather than the machine's.
 
 ### The driver contract
 

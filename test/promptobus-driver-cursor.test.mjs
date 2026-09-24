@@ -293,8 +293,8 @@ const tmuxFound = cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSIO
   util: () => ({ ok: true, version: '3.6' }),
 });
 check(': the Cursor driver asks tmux with -V and accepts the found version',
-  /run\('tmux', \['-V'\]/.test(driverSrc) && tmuxFound === null,
-  `${tmuxFound} · ${/run\('tmux', \['-V'\]/.test(driverSrc)}`);
+  /run\(bin, \['-V'\]/.test(driverSrc) && tmuxFound === null,
+  `${tmuxFound} · ${/run\(bin, \['-V'\]/.test(driverSrc)}`);
 
 // The second refusal of the same gate: tmux. It is asked in exactly the same place,
 // before the first write to disk, otherwise lift would stall on "pty provider pane did
@@ -1397,6 +1397,101 @@ const wakeStale = await cursorDriver.activate({ ref: hangRef }, {
 });
 check(': there is nothing to deliver into a session killed from outside — the refusal names the reason',
   wakeStale?.ok === false && /on the tmux server/.test(String(wakeStale?.error)), JSON.stringify(wakeStale));
+
+// --- PB-239.2: tmux off the caller's PATH -------------------------------------------
+
+// A live persist session read through a tmux only an install directory holds, then through a
+// tmux nobody holds. The second is an unread state: stale would let `stop` and `sweep` treat it dead.
+const OFF_TASK = 'cursoroffpath-t20260924-090000';
+const OFF_WORKER = 'worker:offpath';
+const offRef = 'Worker: tmux off PATH (0924-0900)';
+const offHome = path.join(SB, 'pb2392-home');
+const offNoTmux = path.join(SB, 'pb2392-no-tmux');
+const offEmptyHome = path.join(SB, 'pb2392-empty-home');
+const offCalls = path.join(SB, 'pb2392-tmux-calls.log');
+mkdirSync(offNoTmux, { recursive: true });
+mkdirSync(offEmptyHome, { recursive: true });
+stubCommand(path.join(offHome, '.local', 'bin'), 'tmux', `
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(offCalls)}, JSON.stringify({ args, PATH: process.env.PATH ?? null }) + '\\n');
+if (args.includes('list-sessions')) process.stdout.write('probe-sess|0|${Math.floor(Date.now() / 1000)}|${process.pid}|1|h|chat-offpath||\\n');
+else process.exitCode = 1;
+`);
+store.createTask(home, { id: OFF_TASK, title: 'tmux вне PATH вызывающего', owner: ORCH_SESSION });
+const offParticipant = store.participantRecord(OFF_WORKER, { harness: 'cursor', mode: 'managed', sessionRef: offRef });
+store.upsertParticipant(home, OFF_TASK, offParticipant);
+writeSession({ ref: offRef, sessionName: 'probe-sess', chatId: 'chat-offpath', tmuxServer: 'pb2392', cwd: SB, turns: 0 },
+  process.env);
+const offCallLog = () => (existsSync(offCalls) ? readFileSync(offCalls, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+const OFF_SEAM = 'PROMPTOBUS_CURSOR_INSTALL_DIRS';
+async function withTmuxAt({ HOME, installs }, fn) {
+  const was = { PATH: process.env.PATH, HOME: process.env.HOME, [OFF_SEAM]: process.env[OFF_SEAM] };
+  process.env.PATH = offNoTmux;
+  process.env.HOME = HOME;
+  process.env[OFF_SEAM] = installs;
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+const offThrown = (fn) => {
+  try {
+    return { value: fn(), error: null };
+  } catch (e) {
+    return { value: null, error: e };
+  }
+};
+
+const offAlive = await withTmuxAt({ HOME: offHome, installs: '~/.local/bin' }, () => offThrown(() => cursorDriver.inspect(offRef)));
+check('PB-239.2: tmux off PATH and in an install directory — a live persist session reads alive, not stale',
+  offAlive.value?.state === 'alive' && offAlive.value?.id === 'probe-sess',
+  JSON.stringify(offAlive.value ?? String(offAlive.error)));
+check(': that tmux runs with the caller\'s PATH unchanged — the server\'s environment reaches its panes',
+  offCallLog().length > 0 && offCallLog().every((c) => c.PATH === offNoTmux), JSON.stringify(offCallLog()));
+
+const { GateError: OffGateError, snapshotSessions: offSnapshot, liveParticipant: offLive } = await import(path.join(here, '..', 'dist', 'index.js'));
+const offNowhere = await withTmuxAt({ HOME: offEmptyHome, installs: '' }, () => ({
+  inspected: offThrown(() => cursorDriver.inspect(offRef)),
+  snapshot: offSnapshot([offParticipant], REGISTRY),
+}));
+check('PB-239.2: tmux nowhere — inspect refuses naming tmux instead of answering stale',
+  offNowhere.inspected.error instanceof OffGateError && /tmux could not be run/.test(offNowhere.inspected.error?.message)
+  && /probe-sess/.test(offNowhere.inspected.error?.message),
+  JSON.stringify(offNowhere.inspected.value ?? String(offNowhere.inspected.error)));
+check(': the snapshot reads that participant unknown, with the reason on it — never dead',
+  offLive(offParticipant, offNowhere.snapshot) === 'unknown'
+  && /tmux could not be run/.test(offNowhere.snapshot?.[OFF_WORKER]?.stall?.reason ?? ''),
+  JSON.stringify(offNowhere.snapshot));
+const offWake = offThrown(() => cursorDriver.checkWake({
+  ...process.env, PATH: offNoTmux, HOME: offEmptyHome, [OFF_SEAM]: '', [SESSION_ENV_VAR]: sessionFile(offRef, process.env),
+}));
+check(': the wake probe answers a WakeProbe naming tmux — it does not throw past its contract',
+  offWake.error === null && offWake.value?.ok === false && /tmux could not be run/.test(offWake.value?.error ?? '')
+  && offWake.value?.endpoint === sessionFile(offRef, process.env),
+  JSON.stringify(offWake.value ?? String(offWake.error)));
+const offStopped = await withTmuxAt({ HOME: offEmptyHome, installs: '' }, () => cursorDriver.stop(offRef));
+check(': the driver stop refuses and keeps the session record — a live session is not dropped as gone',
+  offStopped?.ok === false && offStopped?.stopped === false && /tmux could not be run/.test(offStopped?.note ?? '')
+  && existsSync(sessionFile(offRef, process.env)),
+  JSON.stringify(offStopped));
+
+const offEnv = { ...env, PATH: offNoTmux, HOME: offEmptyHome, [OFF_SEAM]: '' };
+const offStopCli = cli(['stop', OFF_WORKER, '--task', OFF_TASK], { cwd: ws, env: offEnv });
+check('PB-239.2: `stop` refuses with exit 1 and names tmux, instead of "nothing to stop" with exit 0',
+  offStopCli.status === 1 && /could not be read — tmux could not be run/.test(offStopCli.out)
+  && !/nothing to stop/.test(offStopCli.out) && existsSync(sessionFile(offRef, process.env)),
+  offStopCli.out.trim());
+const offSweepCli = cli(['sweep', OFF_WORKER, '--task', OFF_TASK], { cwd: ws, env: offEnv });
+check('PB-239.2: `sweep` refuses with exit 1 and names tmux, instead of sweeping a live session as dead',
+  offSweepCli.status === 1 && /could not be read — tmux could not be run/.test(offSweepCli.out)
+  && /Nothing was removed/.test(offSweepCli.out),
+  offSweepCli.out.trim());
+dropSession(offRef, process.env);
 
 cli([ 'done', '--task', HANG_TASK], { cwd: ws, env });
 restore();

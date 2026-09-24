@@ -3,7 +3,7 @@
     "fileOnly": 31,
     "citation": 39,
     "crossFile": 6,
-    "fileLevel": 52,
+    "fileLevel": 53,
     "bound": 50,
     "sameFileCitation": 9
   },
@@ -36,6 +36,7 @@
     ],
     "lib/cursor-persist.js": [
       "../docs/reference/05-drivers.md#cursor-the-persist-session",
+      "../docs/reference/05-drivers.md#cursor-tmux-by-absolute-path",
       "../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session",
       "../docs/reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss"
     ],

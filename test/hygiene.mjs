@@ -145,6 +145,10 @@ export const HARNESS_IDENTITY_VARS = [
 // — an explicit path is visible to a stub suite file, and the verdict
 // checks it against the run home.
 const CONFIG_DIR_VAR = 'CLAUDE_CONFIG_DIR';
+// The Cursor driver's install-directory list, narrowed to the sandbox `~/.local/bin`: its absolute
+// entries (`/opt/homebrew/bin`, `/usr/local/bin`) are a machine's tmux, and no PATH seal covers them.
+const CURSOR_INSTALL_DIRS_VAR = 'PROMPTOBUS_CURSOR_INSTALL_DIRS';
+const CURSOR_INSTALL_DIRS_SEALED = '~/.local/bin';
 // Root of the mechanism under test and a ready workspace. Only the
 // release canary sets them; left in a developer's environment after a
 // manual run, they silently send the whole suite onto a FOREIGN tree
@@ -182,7 +186,8 @@ const E2E_PREFIX = 'PROMPTOBUS_E2E_';
  * Deliberately absent: `claude`, `cursor`, `cursor-agent`, `agent`, `codex`, `tmux`.
  * Those are the harness binaries and the harness utility — the things a run must
  * never touch on a person's machine. A file that needs one stubs it; a file that
- * forgot gets ENOENT, which is the whole point.
+ * forgot gets ENOENT, which is the whole point. The Cursor driver also searches its
+ * install directories, so `applyHygiene` narrows those to the sandbox `~/.local/bin`.
  */
 export const REACHABLE_BINARIES = [
   'ast-grep', 'env', 'git', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
@@ -275,6 +280,7 @@ export function dropSessionLeaks(env) {
 // keeps its `<home>/.claude` value while that home directory exists.
 export function applyHygiene(env, { home, seal } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
+  env[CURSOR_INSTALL_DIRS_VAR] = CURSOR_INSTALL_DIRS_SEALED;
   dropSessionLeaks(env);
   for (const name of HARNESS_IDENTITY_VARS) delete env[name];
   for (const name of Object.keys(env)) {

@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread through the driver. The refusal now prints `promptobus stop <address> --task <id>`, both filled in, for every
   driver that declares `stop` — Claude, Cursor and Codex — in place of the driver's phrase, which for Claude and Cursor
   was a harness command with a literal `<id>`. The Codex stop phrase no longer names `done`. [03-cli](docs/reference/03-cli.md#spawn).
+- **A live Cursor session no longer reads dead when `tmux` is off the caller's `PATH`** (PB-239.2). Every tmux call
+  used the bare name, while the lift's check also searches the Cursor install directories, and a tmux that could not be
+  started read as an empty server: `inspect` answered `stale`, which counts as dead, so `stop` said "nothing to stop"
+  with exit 0, and the driver's own `stop`, called directly, dropped the record of a running session. Every call now
+  runs the tmux that search finds, by absolute path, with the caller's environment unchanged — a widened `PATH` would
+  reach the server's panes — and the lift's check calls the same search. A tmux that cannot be run is an unread state:
+  `inspect` refuses naming tmux and the session, the participant reads `unknown` with that reason on its `status` line,
+  `stop` and `sweep` refuse with exit 1, and the driver's `stop` is `ok: false` and leaves the record.
+  `PROMPTOBUS_CURSOR_INSTALL_DIRS` is a new suite seam that replaces the install-directory list; the suite's hygiene
+  sets it to the sandbox `~/.local/bin`, so an unstubbed tmux is not found rather than the machine's.
+  [05-drivers](docs/reference/05-drivers.md#cursor-tmux-by-absolute-path).
 - **A Claude approver writes to the clone root with its own `Write` and `Edit`** (PB-240). Claude Code refuses those
   tools in a background session's main checkout until the session moves into a worktree, and the approver is seated in
   the clone root on purpose, to merge, run `archive` and fill `result.md` there — so it was left with the shell. The
@@ -37,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference — and `stop` now exits 1 instead of 0 for any harness whose session state is unknown. The driver's own `stop`
   on an unread registry is now `ok: false` rather than "nothing to stop". A binary that is not found
   now marks only the Claude participants unknown, with the reason on their `status` line, instead of blanking the session
-  state of every participant. Cursor's `tmux` calls still go through `PATH` (PB-239.2).
+  state of every participant.
 
 ## [0.16.0] — 2026-09-24
 

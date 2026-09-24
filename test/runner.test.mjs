@@ -273,7 +273,12 @@ writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   + "const hit = (names) => names.filter(resolves).join(',') || '(none)';\n"
   + "console.log(`SEAL: ${process.env.PATH} :: "
   + "${hit(['claude', 'cursor', 'cursor-agent', 'agent', 'codex', 'tmux'])} :: "
-  + "${hit(['git', 'node', 'sh'])}`);\n");
+  + "${hit(['git', 'node', 'sh'])}`);\n"
+  // The Cursor driver finds tmux on PATH and then in its install directories, which
+  // no PATH seal covers: asked through the real module, from inside the sealed file.
+  + `const persist = await import(${JSON.stringify(pathToFileURL(path.join(here, '..', 'lib', 'cursor-persist.js')).href)});\n`
+  + "console.log(`TMUX: ${persist.tmuxBin() ?? '(none)'} :: ${persist.tmux(['-V']).error?.message ?? '(ran)'} :: "
+  + "${persist.searchPath().dirs.join(' ; ')}`);\n");
 
 // Keep the second hygiene apply in its own file. If the broad runner probe above
 // imported home.mjs, that apply would sanitize the neighbouring variables itself
@@ -371,6 +376,13 @@ check(': no harness binary resolves on the sealed PATH — an unstubbed name fai
   harnessSeen === '(none)', `resolved harness binaries: ${harnessSeen || '(unnamed)'}`);
 check(': the binaries the suite may reach are still there — the seal links, it does not empty',
   reachableSeen === 'git,node,sh', `resolved reachable binaries: ${reachableSeen || '(unnamed)'}`);
+const [tmuxSeen = '', tmuxRunSeen = '', searchSeen = ''] = (raised.out.match(/TMUX: (.+)/)?.[1] ?? '').split(' :: ');
+check(': an unstubbed tmux is not found under the seal — the Cursor search does not reach a machine tmux',
+  tmuxSeen === '(none)' && /^not found in PATH or in the known install locations/.test(tmuxRunSeen),
+  `tmux: ${tmuxSeen || '(unnamed)'} · run: ${tmuxRunSeen || '(unnamed)'}`);
+check(': every directory the Cursor binary search walks is inside the run — the install list is sealed too',
+  searchSeen !== '' && searchSeen.split(' ; ').every((dir) => /promptobus-test-run-/.test(dir)),
+  `searched: ${searchSeen || '(unnamed)'}`);
 
 // --- nothing started from outside the run directory -----------------
 //

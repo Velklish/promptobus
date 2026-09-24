@@ -323,3 +323,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-234.1"></a>`PB-234.1-probe-card-leaks-consumer-names` · 2026-09-24 · completed · — · A card writing up a finding from a consumer's run has nowhere to name that consumer
 - <a id="pb-240"></a>`PB-240-approver-cannot-write-the-shared-clone-with-edit-tools` · 2026-09-24 · completed · — · The approver role writes to the shared clone, which the harness forbids a background agent
 - <a id="pb-252"></a>`PB-252-codex-restart-advice-closes-the-task` · 2026-09-24 · completed · — · The restart advice for a Codex participant says to close the whole task, while stop takes one thread
+- <a id="pb-239.2"></a>`PB-239.2-cursor-tmux-off-path-reads-live-session-stale` · 2026-09-24 · completed · — · Cursor state query runs tmux through PATH: a live session reads stale when tmux is off the caller's PATH
