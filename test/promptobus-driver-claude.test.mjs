@@ -34,9 +34,10 @@
 // Nothing here lifts a live session: the subject is the file the driver writes and
 // the predicate the state machine applies to the mark, both pure.
 import { check } from './check.mjs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, resetCliCaches, stubCommand } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-driver-claude-');
@@ -196,3 +197,78 @@ const approverRoute = stallRoute({ kind: 'gone', address: 'approver:api' }, null
 check(': an approver without a session is returned to the review --approver lift, never worker spawn',
   /lift the approver again/.test(approverRoute)
   && !/lift the worker/.test(approverRoute), approverRoute);
+
+// --- the harness binary after a lift: the host's door, not PATH ------------------
+// The operations are called directly; `sweep` and `stop` read the same answers through the snapshot.
+const { bindHarnessBins } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
+bindHarnessBins(null);
+bindHarnessBins({ resolveToolBin: () => ({ ok: false, reason: 'claude: not found in PATH or in ~/.local/bin' }) });
+let refused = null;
+try {
+  claudeDriver.inspect('sess-offpath');
+} catch (e) {
+  refused = e;
+}
+check('PB-239: inspect with no binary to run refuses with the host reason — the snapshot keeps it on that line',
+  refused?.constructor?.name === 'GateError'
+  && /the harness binary was not found: claude: not found in PATH or in ~\/\.local\/bin/.test(refused.message),
+  String(refused));
+const noBinary = await claudeDriver.stop('sess-offpath');
+check(': stop with no binary is a refusal naming it — not "nothing to stop"',
+  noBinary.ok === false && noBinary.stopped === false && /the harness binary was not found/.test(noBinary.note),
+  JSON.stringify(noBinary));
+
+const GARBLED = path.join(SB, 'garbled-bin');
+stubCommand(GARBLED, 'claude', "process.stdout.write('not a list');");
+bindHarnessBins(null);
+bindHarnessBins({ resolveToolBin: () => ({ ok: true, bin: path.join(GARBLED, 'claude') }) });
+resetCliCaches();
+check(': a binary that ran and answered nothing readable leaves inspect at null — unknown, not a refusal',
+  claudeDriver.inspect('sess-offpath') === null);
+const unread = await claudeDriver.stop('sess-offpath');
+check(': and stop on that unread registry refuses too — an unread list says nothing about the session',
+  unread.ok === false && unread.stopped === false && /claude agents --json is unreadable/.test(unread.note),
+  JSON.stringify(unread));
+
+const LISTING = path.join(SB, 'listing-bin');
+stubCommand(LISTING, 'claude',
+  "process.stdout.write(JSON.stringify([{ name: 'sess-offpath', id: 'off-1', pid: 4242, status: 'idle' }]));");
+bindHarnessBins(null);
+bindHarnessBins({
+  resolveToolBin: () => ({ ok: false, bin: path.join(LISTING, 'claude'), reason: 'claude 2.1.100 is below the floor' }),
+});
+resetCliCaches();
+let refusedVersion = null;
+try {
+  refusedVersion = claudeDriver.inspect('sess-offpath');
+} catch (e) {
+  refusedVersion = String(e);
+}
+check(': a host that refuses the version but names the binary still has it read — the version gate is the lift\'s',
+  refusedVersion?.state === 'alive', JSON.stringify(refusedVersion));
+
+bindHarnessBins(null);
+bindHarnessBins({ resolveToolBin: () => ({ ok: true, bin: path.join(LISTING, 'claude') }) });
+bindHarnessBins({ resolveToolBin: () => ({ ok: false, reason: 'a second host, bound later' }) });
+resetCliCaches();
+let movedBy = null;
+let firstHost = null;
+try {
+  firstHost = claudeDriver.inspect('sess-offpath');
+} catch (e) {
+  movedBy = e;
+}
+check(': the first host bound wins — a host bound later does not move the binary',
+  !movedBy && firstHost?.state === 'alive', String(movedBy ?? JSON.stringify(firstHost)));
+
+const LOCKED = path.join(SB, 'locked-bin');
+mkdirSync(LOCKED, { recursive: true });
+writeFileSync(path.join(LOCKED, 'claude'), '#!/bin/sh\n', { mode: 0o644 });
+bindHarnessBins(null);
+bindHarnessBins({ resolveToolBin: () => ({ ok: true, bin: path.join(LOCKED, 'claude') }) });
+resetCliCaches();
+const locked = await claudeDriver.stop('sess-offpath');
+check(': a named binary the system will not start is named with its code — not an unread registry',
+  locked.ok === false && /the harness binary does not start: .*locked-bin\/claude \(EACCES\)/.test(locked.note),
+  JSON.stringify(locked));
+bindHarnessBins(null);

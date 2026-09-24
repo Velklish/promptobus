@@ -105,6 +105,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
       .map((n) => path.join('lib', n)),
     ...readdirSync(path.join(ROOT, 'lib', 'model-routing'))
       .filter((n) => /^adapter-.+\.js$/.test(n)).map((n) => path.join('lib', 'model-routing', n)),
+    path.join('lib', 'harness-home.js'),
   ].sort();
 
   const seen = new Map();
@@ -139,7 +140,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
 
   // This is a reader inventory, not a quota: a changed count needs inspection.
   // The shared driver leaf is not a HostToolBin reader.
-  const expectedToolBinReaders = 6;
+  const expectedToolBinReaders = 7;
   assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${readers.join(' ')}`);
   assert.equal(seen.get('version')?.size, 6, [...seen.get('version') ?? []].join(' '));
   assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,

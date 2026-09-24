@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`sweep` and `stop` from a lifted participant no longer depend on `claude` being on that session's `PATH`** (PB-239).
+  The Claude driver's state query (`claude agents --json`) and `claude stop` called the bare name, while the lift resolves
+  the binary through `host.resolveToolBin`. A background Claude session inherits its daemon's environment, and that `PATH`
+  need not hold the install directory: an approver's `sweep` answered "session is unknown", and `stop` said "no live
+  session — nothing to stop" with exit 0 while the session could still be running. Both calls now run the binary the host
+  names, through the host `hostOf` and `runPromptobus` already bind for the process; the host contract is unchanged. When
+  the state still cannot be read, the refusal says why — the harness binary was not found or does not start (naming what
+  was looked for), the harness registry could not be read, a registry home nobody named, or a record with no session
+  reference — and `stop` now exits 1 instead of 0 for any harness whose session state is unknown. The driver's own `stop`
+  on an unread registry is now `ok: false` rather than "nothing to stop". A binary that is not found
+  now marks only the Claude participants unknown, with the reason on their `status` line, instead of blanking the session
+  state of every participant. Cursor's `tmux` calls still go through `PATH` (PB-239.2).
+
 ## [0.16.0] — 2026-09-24
 
 ### Changed

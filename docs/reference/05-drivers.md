@@ -64,6 +64,58 @@ before the processes the turn started are gone, so the operation returns only on
 harness no longer has the session. That timing, and the reap it earned, are measured in
 [03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune).
 
+## The harness binary after a lift: the lift's door, not PATH
+
+Source: `lib/harness-home.js` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.js` (`runClaude`,
+`readBgSessions`).
+
+A lift finds its binary through the host: `host.resolveToolBin(driver.options.tool)`, which a
+workspace host answers by searching `PATH` and then the tool's install directories. Everything the
+Claude driver runs AFTER the lift — the state query `claude agents --json` behind `inspect`, and
+`claude stop` — used to call the bare name through the `PATH` of whatever process asked. From a
+lifted participant that is the wrong `PATH`: a background Claude session inherits the environment of
+the daemon that pre-created it, not the one `spawn` passed (measured on `claude` 2.1.251, 2026-09-03,
+the note beside `sessionEnv` in `lib/spawn.js`), and that daemon's `PATH` need not hold the install
+directory. Measured 2026-09-24 in a lifted worker session on `claude` 2.1.280: `command -v claude` →
+exit 1, while the binary was `~/.local/bin/claude`. An approver running `sweep` there got "session is
+unknown", and `stop` said "no live session — nothing to stop" with exit 0.
+
+**So the calls after a lift take the lift's door.** `runClaude` asks `harnessBin('claude')`, which
+asks the host bound for the process — `hostOf` and `runPromptobus` bind it next to the registry home,
+and the first binding wins for the reason [02-host](02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says)
+gives. Giving the lifted session a `PATH` instead is not in the lift's power for this harness, for the
+reason above. No host bound means the bare name and `PATH`, as before; the standalone host hands the
+bare name back by design, so under it nothing changes.
+
+**The version gate stays the lift's.** A host may refuse a binary it found for being too old
+(`ok: false` beside a `bin`); the state query and the stop take that `bin` anyway, because reading
+and stopping a session the lift already made needs the binary, not a fresh verdict on it. The
+workspace host's `resolveToolBin` runs `--version`; measured 2026-09-24 on `claude` 2.1.280, that
+answers in 0.01–0.02 s against 0.37–0.43 s for one `claude agents --json`, and the host remembers it
+for the process.
+
+**Two failures, told apart.** Neither is a fact about the session:
+
+- **The binary was not found, or does not start** — the host names none, the one it names does not
+  exist (`ENOENT`), or the system refuses to start it (`EACCES`, `ENOEXEC`). `inspect` refuses with a
+  `GateError` whose words name it: the host's own reason, `looked for claude on this process's PATH`,
+  or `the harness binary does not start: <path> (<code>)`. The snapshot degrades that refusal to
+  `unknown` for THIS participant with the reason attached, as it does for a registry home nobody
+  named, so the other participants keep their state and `status` prints the reason on the line.
+- **The registry could not be read** — the binary ran and `claude agents --json` failed or did not
+  parse. `inspect` answers `null`, and the whole snapshot is `null`, as before.
+
+`stop` on either is `ok: false` — an unread registry says nothing about whether the session still
+runs, so it is not "nothing to stop". `sweep` and `stop` name which of the two happened
+([03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune)).
+One side effect in the warden: with the binary missing, a Claude participant's stall mark is not
+carried through that round, because its state is unknown rather than the whole snapshot being absent
+— the behaviour a Cursor or Codex participant already has when its registry home is not named.
+
+The other drivers: Codex's `inspect` and `stop` read its registry files and signal pids, and run no
+binary. Cursor's `stop` re-resolves the recorded agent path through `PATH` and its install
+directories (`liveBin`); its `tmux` calls still go through `PATH` (PB-239.2).
+
 ## Cursor: the persist session
 
 Source: `lib/cursor-persist.js`.

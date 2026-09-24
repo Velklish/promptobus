@@ -172,7 +172,7 @@ Registry reads propagate that `GateError` rather than answer empty, as do direct
 
 `harnessStateHome()` is a required member of `PromptobusHost`, the second the routing series adds: an existing host implementation must add it, and `tsc` says so. Consumers meet both once, at the release that closes the series.
 
-The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the **first** one wins — a host bound later cannot move the registries out from under a run already going. It is the one exception to "no process-wide singleton", and it is written at the top of `lib/cli.js`.
+The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the **first** one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton", and they are written at the top of `runPromptobus` in `lib/cli.js`.
 
 ## Tool binaries
 
@@ -182,7 +182,7 @@ When a driver supplies an environment to `run`, that same environment governs co
 
 Cursor's stop path re-resolves its binary with the preference `cursor-agent`, then `agent`, then `cursor`, searching `PATH` and the known install directories (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The environment passed to `stop` controls both that resolution and the `persist stop` command, so teardown does not silently resolve against `process.env` while executing with another environment.
 
-`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional and its absence means UNREAD, never "old".** It holds the binary's own version string as the host read it — the raw `--version` line — and a host that does not probe versions returns none. The host suite currently finds six readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment.
+`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional and its absence means UNREAD, never "old".** It holds the binary's own version string as the host read it — the raw `--version` line — and a host that does not probe versions returns none. The host suite scans the three drivers, the three availability adapters and `lib/harness-home.js`, and finds seven readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment. The lift's own reader (`sayTool` and the refusal in `lib/spawn.js`) is outside that scan.
 
 **The standalone host is one of those, deliberately.** It does not search for the binary, so the only way to learn a version would be to start it, and `resolveToolBin` is synchronous: that means `spawnSync` on the lift path and inside the availability preflight, where a blocking resolve stops the single budget timer that caps the whole probe. So under the standalone host the `ultracode` refusal never refuses, the two proven-version warnings (`PROVEN_CURSOR_VERSION`, `PROVEN_CODEX_VERSION`) never warn, and an availability verdict carries no version. The drivers' comments say "version unread — we do not refuse", and this is which host that is: the shipped one, by default, not a rare case. A consumer host that probes fills the field and gets all three back.
 
@@ -286,7 +286,10 @@ write path, none on the read path — would rebuild the very split this fixes. T
 binding is set by whoever builds the host: `hostOf` in [host.js](../../lib/host.js) does it for
 the package's own helper, and `runPromptobus` in [cli.js](../../lib/cli.js) does it for a
 consumer that passes its own. Two hosts in one process share this one binding and the
-FIRST one wins — the cost of not threading, written down where it is paid.
+FIRST one wins — the cost of not threading, written down where it is paid. The same two
+doors bind the host's `resolveToolBin` for the calls a driver makes after a lift, for the
+same reason: `inspect` and `stop` take a ref and nothing else
+([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)).
 
 ### The host contract, in one sentence per member
 

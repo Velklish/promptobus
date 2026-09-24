@@ -319,3 +319,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-248"></a>`PB-248-archive-fold-to-log` · 2026-09-23 · completed · — · The archive folds into docs/archive/LOG.md in full
 - <a id="pb-246"></a>`PB-246-gpt-6-codex-inventory` · 2026-09-24 · completed · — · GPT-6 Astra, Sol and Luna are in the installed Codex inventory and in no catalog row
 - <a id="pb-245.1"></a>`PB-245.1-reprove-claude-2-1-280` · 2026-09-24 · completed · — · The Claude driver is proven on 2.1.263 while the installed binary is 2.1.280, so the opus alias still resolves to Opus 5
+- <a id="pb-239"></a>`PB-239-sweep-says-unknown-session-when-claude-is-off-path` · 2026-09-24 · completed · — · sweep reports session is unknown when claude is simply not on the lifted session's PATH

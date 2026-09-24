@@ -1,11 +1,11 @@
 {
   "classes": {
     "fileOnly": 31,
-    "citation": 38,
-    "crossFile": 5,
+    "citation": 39,
+    "crossFile": 6,
     "fileLevel": 52,
     "bound": 50,
-    "sameFileCitation": 8
+    "sameFileCitation": 9
   },
   "byFile": {
     "lib/answers.js": [
@@ -81,7 +81,8 @@
       "../docs/reference/03-cli.md"
     ],
     "lib/harness-home.js": [
-      "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says"
+      "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says",
+      "../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path"
     ],
     "lib/history.js": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune"
@@ -97,7 +98,8 @@
       "../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight",
       "../docs/reference/03-cli.md#the-session-id-after-a-lift",
       "../docs/reference/03-cli.md#the-session-id-after-a-lift",
-      "../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn"
+      "../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn",
+      "../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path"
     ],
     "lib/model-routing/adapter-claude.js": [
       "../../docs/guides/model-routing.md#claude-code-adapter-what-the-probe-reads",
@@ -189,7 +191,8 @@
       "../src/supervisor.ts",
       "stalls.js",
       "../docs/guides/hooks-and-trust.md#the-three-self-wake-states",
-      "../docs/reference/03-cli.md"
+      "../docs/reference/03-cli.md",
+      "../docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune"
     ],
     "lib/store.js": [
       "../src/mcp/service.ts",

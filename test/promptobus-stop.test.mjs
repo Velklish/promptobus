@@ -9,10 +9,12 @@
 // afterwards, so "the record is retired" is read off the driver's contract rather than off a
 // live harness. Which is where it belongs: `stop` does not retire the record itself — the
 // driver's own `stop` does, and the command's job is to call it instead of a person's `kill`.
+import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { capture, expectFail } from './console.mjs';
 
 const SB = makeSandbox('promptobus-stop-');
@@ -184,3 +186,64 @@ check(': an approver of this task stops the session of the piece it accepted, th
   byApprover.calls.length === 1 && byApprover.calls[0] === 'sess-c' && !live.has('sess-c'), outApprover.trim());
 check(': and the task it cleaned up after is still open',
   store.readTask(HOME, GATED).status === 'active', store.readTask(HOME, GATED).status);
+
+// --- the harness binary is off this process's PATH ------------------------------
+// The real Claude driver behind a `claude` only the host names; one process per host.
+const OFFPATH = 'stop-offpath-t20260924-090000';
+store.createTask(HOME, { id: OFFPATH, title: 'claude вне PATH поднятой сессии', owner: null });
+store.upsertParticipant(HOME, OFFPATH, store.participantRecord('worker:offpath', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-offpath',
+}));
+
+const CLAUDE_CALLS = path.join(SB, 'claude-calls.log');
+const STOPPED = path.join(SB, 'claude-stopped');
+const HIDDEN = path.join(SB, 'hidden-bin');
+stubCommand(HIDDEN, 'claude', `import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+const [cmd, arg] = process.argv.slice(2);
+appendFileSync(${JSON.stringify(CLAUDE_CALLS)}, process.argv.slice(2).join(' ') + '\\n');
+const live = [{ name: 'sess-offpath', id: 'off-1', pid: 4242, status: 'idle' }];
+if (cmd === 'agents') process.stdout.write(JSON.stringify(existsSync(${JSON.stringify(STOPPED)}) ? [] : live));
+else if (cmd === 'stop' && arg === 'off-1') writeFileSync(${JSON.stringify(STOPPED)}, '');
+else process.exit(2);`);
+const GARBLED = path.join(SB, 'garbled-bin');
+stubCommand(GARBLED, 'claude', "process.stdout.write('not a list');");
+const calls = () => (existsSync(CLAUDE_CALLS) ? readFileSync(CLAUDE_CALLS, 'utf8') : '');
+
+const moduleUrl = (...at) => JSON.stringify(pathToFileURL(path.join(here, '..', ...at)).href);
+function stopWithHost(said) {
+  const script = `
+    const { createStandaloneHost } = await import(${moduleUrl('dist', 'host-index.js')});
+    const { stop } = await import(${moduleUrl('lib', 'stop.js')});
+    const said = JSON.parse(process.env.STAND_TOOL_BIN);
+    const base = createStandaloneHost({ cwd: ${JSON.stringify(SB)}, commandName: 'promptobus', home: ${JSON.stringify(HOME)} });
+    const host = said ? { ...base, resolveToolBin: () => said } : base;
+    process.exitCode = await stop(host, { task: ${JSON.stringify(OFFPATH)}, address: 'worker:offpath' });`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8', env: { ...process.env, STAND_TOOL_BIN: JSON.stringify(said) },
+  });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+const notFound = stopWithHost({ ok: false, reason: 'claude (Claude Code): not found in PATH or in ~/.local/bin' });
+check('PB-239: a binary the host cannot find is a refusal naming it and where it looked — not "nothing to stop", not exit 0',
+  notFound.code === 1 && /the harness binary was not found: claude \(Claude Code\): not found in PATH or in ~\/\.local\/bin/.test(notFound.out)
+  && !/nothing to stop/.test(notFound.out), notFound.out.trim());
+check(': and the line says nothing was stopped and the session may still run', /Nothing was stopped/.test(notFound.out),
+  notFound.out.trim());
+
+const bare = stopWithHost(null);
+check(': a host that names the bare binary gets the PATH it was looked for on, named, and exit 1',
+  bare.code === 1 && /looked for claude on this process's PATH/.test(bare.out) && !/nothing to stop/.test(bare.out),
+  bare.out.trim());
+
+const garbled = stopWithHost({ ok: true, bin: path.join(GARBLED, 'claude') });
+check(': an unreadable registry is its own refusal — not a missing binary and not an empty one',
+  garbled.code === 1 && /its harness registry could not be read: claude agents --json is unreadable/.test(garbled.out)
+  && !/was not found/.test(garbled.out) && !/nothing to stop/.test(garbled.out), garbled.out.trim());
+
+const lifted = stopWithHost({ ok: true, bin: path.join(HIDDEN, 'claude') });
+check(': the stop finds claude where the host says — the lift\'s door — and closes the live session',
+  lifted.code === 0 && /session of participant worker:offpath closed/.test(lifted.out) && existsSync(STOPPED),
+  lifted.out.trim());
+check(': through the host\'s binary: it listed the session and ran claude stop on its id',
+  /^agents --json$/m.test(calls()) && /^stop off-1$/m.test(calls()), calls());

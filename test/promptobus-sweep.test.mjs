@@ -15,9 +15,9 @@ import {
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectFail } from './console.mjs';
 
 const SB = makeSandbox('promptobus-sweep-');
@@ -475,6 +475,78 @@ check(': a squash the base has since moved over is proven by patch-id, and the t
   /patch-id/.test(squashedOut), squashedOut.trim());
 check(': and its branch goes with it',
   git(REPO, 'rev-parse', '--verify', '--quiet', 'worktree-promptobus-squashed').status !== 0);
+
+// --- the harness binary is off this process's PATH ---------------------------------
+// The real Claude driver, not the stand-in, behind a `claude` only the host names; one process per host.
+const OFFPATH = 'sweep-offpath-t20260924-090000';
+store.createTask(HOME, { id: OFFPATH, title: 'claude вне PATH поднятой сессии', owner: OWNER });
+const OFF_TREE = worktreeAt('offpath', 'worktree-promptobus-offpath');
+writeFileSync(path.join(OFF_TREE, 'offpath.txt'), 'swept from a lifted session\n');
+git(OFF_TREE, 'add', '.');
+git(OFF_TREE, 'commit', '-qm', 'swept from a lifted session');
+writeFileSync(path.join(REPO, 'offpath.txt'), 'swept from a lifted session\n');
+git(REPO, 'add', '.');
+git(REPO, 'commit', '-qm', 'squash of the off-PATH piece');
+store.upsertParticipant(HOME, OFFPATH, store.participantRecord('worker:offpath', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-offpath', started: ago(60),
+  repoAbs: REPO, worktree: OFF_TREE, branch: 'worktree-promptobus-offpath',
+}));
+store.upsertParticipant(HOME, OFFPATH, store.participantRecord('worker:noref', { harness: 'claude', mode: 'managed' }));
+
+const CLAUDE_CALLS = path.join(SB, 'claude-calls.log');
+const HIDDEN = path.join(SB, 'hidden-bin');
+stubCommand(HIDDEN, 'claude', `import { appendFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(CLAUDE_CALLS)}, process.argv.slice(2).join(' ') + '\\n');
+if (process.argv[2] === 'agents') process.stdout.write('[]');
+else process.exit(2);`);
+const GARBLED = path.join(SB, 'garbled-bin');
+stubCommand(GARBLED, 'claude', "process.stdout.write('not a list');");
+const NOT_FOUND = { ok: false, reason: 'claude (Claude Code): not found in PATH or in ~/.local/bin' };
+
+const moduleUrl = (...at) => JSON.stringify(pathToFileURL(path.join(here, '..', ...at)).href);
+function sweepWithHost(said) {
+  const script = `
+    const store = await import(${moduleUrl('lib', 'store.js')});
+    const { createStandaloneHost } = await import(${moduleUrl('dist', 'host-index.js')});
+    const { sweep } = await import(${moduleUrl('lib', 'sweep.js')});
+    store.bindSessionIdentity(() => ({ id: ${JSON.stringify(OWNER)} }));
+    const said = JSON.parse(process.env.STAND_TOOL_BIN);
+    const base = createStandaloneHost({ cwd: ${JSON.stringify(SB)} });
+    const host = said ? { ...base, resolveToolBin: () => said } : base;
+    process.exitCode = sweep(host, { task: ${JSON.stringify(OFFPATH)}, address: 'worker:offpath' });`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8', env: { ...process.env, STAND_TOOL_BIN: JSON.stringify(said) },
+  });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+const notFound = sweepWithHost(NOT_FOUND);
+check('PB-239: a harness binary the host cannot find is named as that, with where it looked — not as an unknown session',
+  notFound.code === 1 && /the harness binary was not found: claude \(Claude Code\): not found in PATH or in ~\/\.local\/bin/.test(notFound.out)
+  && !/session is unknown/.test(notFound.out), notFound.out.trim());
+check(': and that refusal removed nothing', existsSync(OFF_TREE), notFound.out.trim());
+
+const bare = sweepWithHost(null);
+check(': a host that names the bare binary gets the PATH it was looked for on, named',
+  bare.code === 1 && /the harness binary was not found: looked for claude on this process's PATH/.test(bare.out)
+  && existsSync(OFF_TREE), bare.out.trim());
+
+const garbled = sweepWithHost({ ok: true, bin: path.join(GARBLED, 'claude') });
+check(': a binary that ran and answered nothing readable is an unread registry — not a missing binary',
+  garbled.code === 1 && /its harness registry could not be read: claude agents --json is unreadable/.test(garbled.out)
+  && !/was not found/.test(garbled.out) && existsSync(OFF_TREE), garbled.out.trim());
+
+const noRef = await refuse('worker:noref', OFFPATH);
+check(': a record with no session reference is told the way out — repeating the sweep would never help',
+  noRef.failed && /its record carries no session reference/.test(noRef.out) && /Repeating will not help/.test(noRef.out)
+  && !/Repeat it once/.test(noRef.out), noRef.out.trim());
+
+const lifted = sweepWithHost({ ok: true, bin: path.join(HIDDEN, 'claude') });
+check(': the sweep finds claude where the host says — the lift\'s door — and completes without PATH',
+  lifted.code === 0 && !existsSync(OFF_TREE), lifted.out.trim());
+check(': and the registry it read was the host\'s binary, not a PATH lookup',
+  existsSync(CLAUDE_CALLS) && /^agents --json$/m.test(readFileSync(CLAUDE_CALLS, 'utf8')),
+  existsSync(CLAUDE_CALLS) ? readFileSync(CLAUDE_CALLS, 'utf8') : '(no calls)');
 
 // --- the task and the neighbours ----------------------------------------------------
 const after = store.readTask(HOME, TASK);
