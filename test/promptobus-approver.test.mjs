@@ -217,6 +217,14 @@ const claudePlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, ha
 check(': approver on Claude keeps edit and shell — package deny list is empty',
   (!claudePlan.launch.settings?.permissions?.deny?.length),
   JSON.stringify(claudePlan.launch.settings));
+check(': approver on Claude is lifted with the worktree guard off — it writes to the clone root it sits in',
+  JSON.parse(claudePlan.launch.files.find((f) => f.path === claudePlan.settingsPath).text)
+    .worktree?.bgIsolation === 'none',
+  JSON.stringify(claudePlan.launch.settings));
+// With the guard off the harness drops its own "Never push … force-push" line, so the preamble says it.
+check(': the approver preamble forbids push and force-push and leaves the push to the orchestrator',
+  claudePlan.prompt.includes('You never push, never force-push, and never rewrite commits that are already on the remote: the orchestrator pushes.'),
+  claudePlan.prompt.slice(0, 700));
 
 const cursorPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'cursor' });
 check(': approver on Cursor refuses before launch — project config is read only from the selected workspace',

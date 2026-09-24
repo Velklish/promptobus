@@ -104,6 +104,29 @@ check(': and the rest of the file is untouched by it',
   && JSON.parse(written.text).viewMode === 'focus'
   && Array.isArray(JSON.parse(written.text).hooks?.Stop), written.text);
 
+// --- the participant settings file, per role ---------------------------------
+
+// Measured 2026-09-24 on claude 2.1.280: without the key a lifted session's Write in the
+// clone root is refused; with it in this file the Write lands (05-drivers, the approver's guard).
+const roleFile = (role) => claudeDriver.prepare({
+  ref: 'a2a-probe-t20260911-000000-api',
+  role,
+  mcp: { servers: {} },
+  prompt: 'work',
+  model: 'opus',
+  permissionMode: 'auto',
+  mcpConfigPath: path.join(SB, 'mcp.json'),
+  settingsPath: path.join(SB, 'settings.json'),
+  guardCommand: 'promptobus guard',
+}).files.find((f) => f.path === path.join(SB, 'settings.json'));
+
+check('PB-240: the approver\'s settings file switches off the background-session worktree guard',
+  JSON.parse(roleFile('approver').text).worktree?.bgIsolation === 'none', roleFile('approver').text);
+for (const role of ['worker', 'reviewer', null]) {
+  check(`: a ${role ?? 'role-less'} lift keeps the guard — its file names no worktree key`,
+    JSON.parse(roleFile(role).text).worktree === undefined, roleFile(role).text);
+}
+
 // --- the mark such a session leaves, and what the state machine does with it ---
 
 // The driver still classifies the dialog as `permission`: it sees one field, and

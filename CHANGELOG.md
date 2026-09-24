@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Claude approver writes to the clone root with its own `Write` and `Edit`** (PB-240). Claude Code refuses those
+  tools in a background session's main checkout until the session moves into a worktree, and the approver is seated in
+  the clone root on purpose, to merge, run `archive` and fill `result.md` there — so it was left with the shell. The
+  switch is the harness's settings key `worktree.bgIsolation`; the Claude driver now writes `"none"` into the approver's
+  participant settings file, and into no other role's, so workers keep the guard. Measured on claude 2.1.280: without
+  the key the `Write` is refused, with it in the `--settings` file the `Write` lands, and the key there wins over
+  `"worktree"` in the clone's own `.claude/settings.json`; `CLAUDE_BG_ISOLATION` in the lift's environment does not
+  reach the session. A managed (policy) setting of `"worktree"` presumably still wins and is not measured. Read from the
+  binary: the same key drops the harness's git paragraph from the session's prompt, "Never push to main/master,
+  force-push, or merge." with it, so the approver preamble now says it never pushes, force-pushes or rewrites commits
+  already on the remote, and that the orchestrator pushes. The key reaches a fresh lift only: a repeat `--approver`
+  onto a live session reuses it without rewriting its settings file. [05-drivers](docs/reference/05-drivers.md#the-approver-writes-to-the-shared-clone-the-harness-guard-and-the-key-that-lifts-it).
 - **`sweep` and `stop` from a lifted participant no longer depend on `claude` being on that session's `PATH`** (PB-239).
   The Claude driver's state query (`claude agents --json`) and `claude stop` called the bare name, while the lift resolves
   the binary through `host.resolveToolBin`. A background Claude session inherits its daemon's environment, and that `PATH`

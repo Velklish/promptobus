@@ -24,7 +24,8 @@ would overwrite or delete untracked project content without restoration. The app
 ships on Claude Code only — measured on a live lift. `review --approver --harness cursor`
 and `--harness codex` refuse before start. The role needs
 repository writes and shell commands for merged-tree gates, squash and archive, so its
-package deny list is empty. A host may add its exact external MCP write tools through
+package deny list is empty, and its settings file switches off the harness's own guard on writes
+in the clone root ([§ below](#the-approver-writes-to-the-shared-clone-the-harness-guard-and-the-key-that-lifts-it)). A host may add its exact external MCP write tools through
 `participantDenyTools('approver')`; the completeness gate runs before any harness branch on
 the harness that can lift an approver. The bus is never denied. That classification is
 independent of the reviewer, whose deny lists and read-only sandbox remain unchanged.
@@ -33,6 +34,76 @@ and the worker↔approver routing exception; [ADR-015](../adr/adr-015-approver-l
 records the `--approver` flag and the reviewer-result precondition. A repeat lift reuses an
 alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
 session starts a fresh approver instead of spawning a second session beside the first.
+
+## The approver writes to the shared clone: the harness guard and the key that lifts it
+
+Source: `lib/driver-claude.js` (`settingsFile`), `lib/approver.js` (`buildApproverPrompt`, `planApprover`).
+
+Claude Code refuses `Write`, `Edit` and `NotebookEdit` in a background session when the target
+lies in the session's main checkout, until the session moves into a worktree with `EnterWorktree`.
+The rule is the harness's own: the participant settings file never carried anything that imposes
+it. Read from the binary of `claude` 2.1.280: the check sits in those tools' input validation and
+applies to a session of kind `bg`; it lets through a target outside the session's cwd, any target
+when the cwd is itself a linked worktree, and a target inside a linked worktree. The switch is the
+settings key `worktree.bgIsolation` — `"worktree"`, the default, or `"none"` — and the environment
+variable `CLAUDE_BG_ISOLATION` is consulted before it. What the session is told:
+
+> This background session hasn't isolated its changes yet. Call EnterWorktree first so edits land
+> in a worktree instead of the shared checkout, then retry this edit using the worktree path (a
+> path inside a linked git worktree, including one you create with `git worktree add`, is
+> accepted). (To disable this guard for this repo, set `"worktree": {"bgIsolation": "none"}` in
+> .claude/settings.json.)
+
+For a worker the guard is right, and it stays. The approver is seated in the clone root on
+purpose — it merges, runs `archive` and fills `result.md` there — so the guard left it the shell
+alone, and a participant found that out by hitting it. `archive` passed all along, being a
+command. **So the Claude driver writes `"worktree": {"bgIsolation": "none"}` into the
+approver's participant settings file, and into no other role's.** Measured 2026-09-24 on
+`claude` 2.1.280 in a disposable clone, each session lifted with the driver's own argv (`--bg`,
+`--settings`, `--permission-mode auto`) and asked for one `Write` into the clone root:
+
+| Where the key was | Outcome |
+|---|---|
+| nowhere — run twice, before and after the next row | refused, with the text above |
+| the participant settings file (`--settings`) | written |
+| `CLAUDE_BG_ISOLATION=none` in the environment of `claude --bg` | refused — the variable does not reach the session |
+| `"none"` in the settings file, `"worktree"` in the clone's `.claude/settings.json` | written — the `--settings` layer wins |
+| `"none"` in the clone's `.claude/settings.json` only | written |
+
+The last row is the control for the one above it: the clone's own file is read, so the fourth row
+is the `--settings` layer beating it, not a file nobody read. The environment row agrees with
+[§ The harness binary after a lift](#the-harness-binary-after-a-lift-the-lifts-door-not-path): a
+background session gets the environment of the daemon that pre-created it. The clone's own
+`.claude/settings.json` would lift the guard as well, but for every background session in that
+repository, workers included, and the file is the consumer's; the package does not write it.
+
+**The same key rewrites the session's own instructions.** Read from the binary of `claude`
+2.1.280, not measured live: the `# Background Session` section of the system prompt reads the same
+switch. Under `"none"` its isolation paragraph becomes "Edit files directly in your working
+directory — this session is configured to work in place rather than isolating into a worktree.
+Skip EnterWorktree unless the user explicitly asks to work in a worktree.", and the git paragraph
+after it is dropped whole: commit before finishing and push if the repository has a remote,
+"Never push to main/master, force-push, or merge.", and ask before committing or switching
+branches in the user's own checkout. Most of that paragraph contradicted the approver's role — it
+merges and commits in that checkout — but with it the approver loses the ban on push and
+force-push. So its preamble (`buildApproverPrompt`) states it: the approver never pushes, never
+force-pushes and never rewrites commits already on the remote; the orchestrator pushes. "On the
+remote" rather than "the main branch's history", because an acceptance procedure may squash
+local, unpushed commits on purpose.
+
+**The key reaches a fresh lift only.** A repeat `review --approver` onto a live or unknown
+approver session reuses it and returns before the launch files are written (`planApprover`'s
+`reuse`, checked ahead of `writeLaunchFiles`), so that session's settings file is not rewritten. A
+session lifted by an earlier version keeps the guard until it is stopped and lifted again.
+
+**Not measured.** A managed (policy) tier: the binary lists `worktree.bgIsolation` among the keys
+that tier merges restrictively, with `"worktree"` as the restrictive value, so an organisation
+that sets it there presumably keeps the guard on for the approver too, and the approver is back to
+the shell. `"worktree"` in `~/.claude/settings.json`: the `--settings` layer sits above user
+settings by the harness's precedence, which is an assumption here rather than a run. The worker
+tree attached through `addDirs` is a linked worktree, so writes there were never refused — that is
+read from the binary, not measured. Cursor and Codex cannot lift an approver, so no other driver
+has this key to write.
 
 ## A stop returns after the record is gone, not after the command returns
 
