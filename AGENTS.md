@@ -31,3 +31,7 @@ The mutation rule above names `npm run probe`; this section only governs comment
 The reason is measurable rather than stylistic: this code is read by agents, and a paragraph above a function is paid for in tokens on every read of the file. There is no gate for this — it rests on the author of the change.
 
 **A fresh clone or worktree carries no generated adapter output** — `.claude/skills/backslop-*/SKILL.md` and `CLAUDE.md` are written by `npx github:Velklish/backslop#v0.10.1 init` and are not tracked. Run `init` first in a fresh checkout: without it `backslop lint` is red on "no generated output" and the skill files the lift prompt names do not exist; `git status` does not change from it.
+
+## Public surface
+
+A card, a CHANGELOG line or a comment written up from a consumer's run names that consumer and its tracker in words — whose tracker, what date — never by its CLI name or its task ids. `npm run audit` refuses both in every tracked file, cards included, and `backslop lint` does not see them. The rule and its reasons: [contributing § Public surface](docs/guides/contributing.md#public-surface).
