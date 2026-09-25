@@ -216,6 +216,27 @@ options (`@cursor_managed`, `@cursor_workspace_hash`, `@cursor_session_version`,
 session server of its own — everything the mechanism needs from a “session server”
 is given by tmux: list, input, output, stop.
 
+**The mechanism's own marks, and a lift that refuses when one does not take.**
+After the session is seen, and before the launch pane is stopped, `liftSession` sets
+`@promptobus_task` and `@promptobus_address`. Each `set-option` is checked by its exit
+code and then read back with `show-options -v`. The call is tried twice. A mark that
+still does not match refuses the lift: `ok: false`, and the error names the option
+(`@promptobus_task did not take on persist session <name>: … — the persist session was
+stopped`). The driver prints that inside `persist session did not lift (…)`, so the
+spawn line is where the miss shows, and the persist session is killed rather than left
+unmarked on the shared server. A session list taken after a successful lift is a
+different reading: the lift does not return until the read-back matches, so a list that
+lacks the mark was not how the miss was detected.
+
+Measured on tmux 3.6b, 2026-09-25, on a private server: `set-option` against a target
+that is not a session exits 1 `no such session`; an unset user option under
+`show-options -v` exits 1 `invalid option: @promptobus_task`; a set that applies exits 0
+and the next read is the value. Exit 0 is not the whole check. The suite stand keeps a
+session as one JSON file, and a writer that reads it, changes one field and writes the
+object back drops an option a concurrent `set-option` has already stored — that call has
+exited 0. The read-back is what sees the drop. The stand holds a per-session lock across
+that rewrite; a live tmux server applies one `set-option` at a time and has no such rewrite.
+
 **Hence three things the headless path did not have.** A live process between turns,
 human entry (`agent persist attach`), and programmatic input into a live session: text
 arrives by keypress in the TUI, not by a new process. The mechanism no longer holds

@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The standalone host reads `claude --version` when the Claude driver declares it, so the version floor and the effort refusal see the build.** `resolveToolBin` itself does not start a process. The preflight asks before the probe, and a real lift asks once when the bin still has no version; `--dry-run` does not. A build below 2.1.280 drops `claude-opus-5-5` from the inventory on `promptobus models --refresh`; 2.1.280 keeps it. A timed-out, non-zero, or empty answer hands over no version and is not remembered, so the next probe asks again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent. [02-host](docs/reference/02-host.md#the-standalone-host), [03-cli](docs/reference/03-cli.md#claude-code-what-its-adapter-asks).
 
+- **A Cursor lift refuses when the persist-session task mark does not take** (PB-159.2). `tmux set-option`
+  for `@promptobus_task` and `@promptobus_address` used to ignore its exit code, so a mark that did not
+  land left an unmarked session on the shared server and the lift still reported success. Each call is
+  now checked by its exit code and read back with `show-options -v`, tried twice, and a miss refuses the
+  lift: the spawn line names the option (`@promptobus_task did not take on persist session …`) and the
+  persist session is stopped. A session list taken after a successful lift is a separate reading — the
+  lift does not return until the read-back matches. [03-cli](docs/reference/03-cli.md#spawn),
+  [05-drivers](docs/reference/05-drivers.md#cursor-the-persist-session).
+
 - **A burst of mail to one address is one knock, not one per message** (PB-229). Measured on a run of 2026-09-16:
   a worker's hand-off — records, then `result` — was four sends in eighteen seconds, and the warden knocked four
   times (`unread 1, knock 1` to `unread 4, knock 4`), each one more paid orchestrator turn for one delivery. A knock is

@@ -130,6 +130,32 @@ function writeSess(home, server, sess) {
   return sess;
 }
 
+/** Read-modify-write under a per-session lock. A stale whole-file write drops options. */
+function withSession(home, server, name, mutate) {
+  const lock = `${sessionPath(home, server, name)}.lock`;
+  mkdirSync(path.dirname(lock), { recursive: true });
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  let held = false;
+  for (let i = 0; i < 50 && !held; i += 1) {
+    try {
+      mkdirSync(lock);
+      held = true;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      Atomics.wait(pause, 0, 0, 2);
+    }
+  }
+  if (!held) return false;
+  try {
+    const sess = readSess(home, server, name);
+    if (!sess) return null;
+    mutate(sess);
+    return writeSess(home, server, sess);
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
 function listSess(home, server) {
   const dir = path.join(serverDir(home, server), 'sessions');
   let files = [];
@@ -351,6 +377,7 @@ export async function tmuxMain(argv, env = process.env) {
   if (cmd === 'new-session') return tmuxNewSession(home, server, args, env);
   if (cmd === 'list-sessions') return tmuxList(home, server, args);
   if (cmd === 'set-option') return tmuxSetOption(home, server, args);
+  if (cmd === 'show-options') return tmuxShowOptions(home, server, args);
   if (cmd === 'kill-session') return tmuxKillSession(home, server, args);
   if (cmd === 'capture-pane') return tmuxCapture(home, server, args);
   if (cmd === 'load-buffer') return tmuxLoadBuffer(home, args);
@@ -427,17 +454,46 @@ function tmuxList(home, server, args) {
   process.stdout.write(`${sessions.map((s) => renderFormat(fmt, s)).join('\n')}\n`);
 }
 
+function sessionMiss(name, updated) {
+  if (updated === false) {
+    process.stderr.write('stub tmux: session lock not taken\n');
+    process.exitCode = 1;
+    return true;
+  }
+  if (!updated) {
+    process.stderr.write(`no such session: ${name}\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  return false;
+}
+
 function tmuxSetOption(home, server, args) {
   const name = argValue(args, '-t');
   const tail = args.slice(args.indexOf('-t') + 2);
-  const sess = readSess(home, server, name);
-  if (!sess) {
-    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
+  const updated = withSession(home, server, name, (sess) => {
+    sess.options = { ...sess.options, [tail[0]]: tail.slice(1).join(' ') };
+  });
+  sessionMiss(name, updated);
+}
+
+function tmuxShowOptions(home, server, args) {
+  const name = argValue(args, '-t');
+  const positional = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '-t') { i += 1; continue; }
+    if (String(args[i]).startsWith('-')) continue;
+    positional.push(args[i]);
+  }
+  const opt = positional[0];
+  const updated = withSession(home, server, name, () => {});
+  if (sessionMiss(name, updated)) return;
+  if (!opt || !Object.prototype.hasOwnProperty.call(updated.options ?? {}, opt)) {
+    process.stderr.write(`invalid option: ${opt}\n`);
     process.exitCode = 1;
     return;
   }
-  sess.options = { ...sess.options, [tail[0]]: tail.slice(1).join(' ') };
-  writeSess(home, server, sess);
+  process.stdout.write(`${updated.options[opt]}\n`);
 }
 
 function tmuxKillSession(home, server, args) {
@@ -505,12 +561,6 @@ function tmuxLoadBuffer(home, args) {
 function tmuxPasteBuffer(home, server, args) {
   const buf = argValue(args, '-b') ?? 'default';
   const name = argValue(args, '-t');
-  const sess = readSess(home, server, name);
-  if (!sess) {
-    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
-    process.exitCode = 1;
-    return;
-  }
   let text = '';
   try {
     text = readFileSync(bufferPath(home, buf), 'utf8');
@@ -519,10 +569,21 @@ function tmuxPasteBuffer(home, server, args) {
     process.exitCode = 1;
     return;
   }
+  const updated = withSession(home, server, name, (sess) => {
+    sess.pending = `${sess.pending}${text}`;
+    sess.pastedAt = Date.now();
+  });
+  if (updated === false) {
+    process.stderr.write('stub tmux: session lock not taken\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (!updated) {
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
+    process.exitCode = 1;
+    return;
+  }
   if (args.includes('-d')) rmSync(bufferPath(home, buf), { force: true });
-  sess.pending = `${sess.pending}${text}`;
-  sess.pastedAt = Date.now();
-  writeSess(home, server, sess);
 }
 
 /**
@@ -535,39 +596,38 @@ function tmuxPasteBuffer(home, server, args) {
  */
 function tmuxSendKeys(home, server, args) {
   const name = argValue(args, '-t');
-  const sess = readSess(home, server, name);
-  if (!sess) {
-    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
+  const keys = args.slice(args.indexOf('-t') + 2);
+  const updated = withSession(home, server, name, (sess) => {
+    if (keys.includes('C-u')) {
+      sess.pending = '';
+      return;
+    }
+    if (!keys.includes('Enter')) {
+      // The stand accepts `send-keys -l <text>`, but puts it into the input field as-is:
+      // the driver does not use it, and a silent refusal would hide its appearance.
+      const i = keys.indexOf('-l');
+      if (i >= 0) {
+        sess.pending = `${sess.pending}${keys.slice(i + 1).join(' ')}`;
+        sess.pastedAt = Date.now();
+      }
+      return;
+    }
+    if (Date.now() - Number(sess.pastedAt || 0) < STUB_ENTER_MIN_MS) return;
+    if (!sess.pending) return;
+    const file = queueFile(home, sess.name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    appendFileSync(file, `${JSON.stringify({ text: sess.pending, at: Date.now() })}\n`);
+    sess.pending = '';
+  });
+  if (updated === false) {
+    process.stderr.write('stub tmux: session lock not taken\n');
     process.exitCode = 1;
     return;
   }
-  const keys = args.slice(args.indexOf('-t') + 2);
-  if (keys.includes('C-u')) {
-    sess.pending = '';
-    writeSess(home, server, sess);
-    return;
+  if (!updated) {
+    process.stderr.write(`stub tmux: session ${name} does not exist\n`);
+    process.exitCode = 1;
   }
-  if (!keys.includes('Enter')) {
-    // The stand accepts `send-keys -l <text>`, but puts it into the input field as-is:
-    // the driver does not use it, and a silent refusal would hide its appearance.
-    const i = keys.indexOf('-l');
-    if (i >= 0) {
-      sess.pending = `${sess.pending}${keys.slice(i + 1).join(' ')}`;
-      sess.pastedAt = Date.now();
-      writeSess(home, server, sess);
-    }
-    return;
-  }
-  if (Date.now() - Number(sess.pastedAt || 0) < STUB_ENTER_MIN_MS) {
-    // Enter was lost. The input field keeps the text — exactly as in the live `LAT-8`/`LAT-9` case.
-    return;
-  }
-  if (!sess.pending) return;
-  const file = queueFile(home, sess.name);
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(file, `${JSON.stringify({ text: sess.pending, at: Date.now() })}\n`);
-  sess.pending = '';
-  writeSess(home, server, sess);
 }
 
 // --- stub agent ------------------------------------------------------------------
@@ -833,10 +893,7 @@ async function serveQueue(ctx) {
 }
 
 function setBusy(home, name, busy) {
-  const sess = readSess(home, STUB_SERVER, name);
-  if (!sess) return;
-  sess.busy = busy;
-  writeSess(home, STUB_SERVER, sess);
+  withSession(home, STUB_SERVER, name, (sess) => { sess.busy = busy; });
 }
 
 /** Turn: user message into the transcript, actions from the script, `turn_ended` and the hook. */

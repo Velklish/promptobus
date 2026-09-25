@@ -56,7 +56,7 @@ const {
   PROVEN_HOOK_EVENTS, HOOK_EVENTS_SOURCE_VERSION, skillsNoteOf,
 } = cursorModule;
 const {
-  dropSession, injectText, launchScript, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
+  ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
   turnState,
   workspaceHash, writeSession,
@@ -956,7 +956,12 @@ check('step 1: the participant record carries harness cursor and a snapshot of i
 
 const ref = wp?.sessionRef ?? '';
 const record = readSession(ref, env);
-const rawRecord = JSON.parse(readFileSync(sessionFile(ref, env), 'utf8'));
+let rawRecord = null;
+try {
+  rawRecord = JSON.parse(readFileSync(sessionFile(ref, env), 'utf8'));
+} catch {
+  rawRecord = null;
+}
 check('step 1: the session landed in the mechanism registry — persist-session name, chat and tmux server',
   !!record && typeof record.sessionName === 'string' && record.sessionName.startsWith('cursor-')
   && typeof record.chatId === 'string' && record.chatId.length > 10
@@ -984,14 +989,19 @@ check(': the Cursor holder journal starts with launch provenance',
   && typeof record?.mechanismPath === 'string'
   && Object.keys(rawRecord)[0] === 'provenance'
   && rawRecord.provenance === record.provenance,
-  JSON.stringify({ keys: Object.keys(rawRecord).slice(0, 2), provenance: record?.provenance }));
+  JSON.stringify({ keys: Object.keys(rawRecord ?? {}).slice(0, 2), provenance: record?.provenance }));
 
 const listed = tmuxSessions({ env });
 const mine = listed.find((s) => s.name === record?.sessionName) ?? null;
+const markLine = spawned.out.split('\n').find((l) => l.includes(`${TASK_OPT} did not take`)
+  || l.includes(`${ADDRESS_OPT} did not take`)) ?? '';
 check('step 1: the persist session lives on the shared server and is marked with the mechanism task and address',
-  !!mine && mine.managed === true && mine.chatId === record?.chatId
+  spawned.status === 0 && markLine === ''
+  && !!mine && mine.managed === true && mine.chatId === record?.chatId
   && mine.task === TASK && mine.address === WORKER,
-  JSON.stringify(listed));
+  markLine
+    ? `mark did not take: ${markLine}`
+    : `list read after the lift returned: ${JSON.stringify(mine ?? listed)}`);
 
 // The pty-provider pane is killed right after confirmation: it is lift machinery, not
 // the participant session, and it has no place in the human list.
@@ -1079,10 +1089,10 @@ check('step 3: the turn ended — the session is alive, not busy, and is named w
 }
 
 const pb153Record = readSession(ref, env);
-const pb153TranscriptEnded = turnState(pb153Record, env).ended;
-writeSession({ ...pb153Record, turns: 2 }, env);
+const pb153TranscriptEnded = pb153Record ? turnState(pb153Record, env).ended : null;
+if (pb153Record) writeSession({ ...pb153Record, turns: 2 }, env);
 const pb153Counted = cursorDriver.inspect(ref);
-writeSession(pb153Record, env);
+if (pb153Record) writeSession(pb153Record, env);
 check('PB-153: status uses the recorded Cursor turn count, not transcript markers',
   pb153Counted?.note?.includes('turns in total 2'),
   `${JSON.stringify(pb153Counted)} · transcript ended ${pb153TranscriptEnded}`);
@@ -1135,10 +1145,16 @@ check('step 4: the reviewer got canon skills in the sandbox',
   existsSync(path.join(sandbox, '.cursor', 'skills', 'techdoc-style-ru', 'SKILL.md')),
   existsSync(path.join(sandbox, '.cursor')) ? readdirSync(path.join(sandbox, '.cursor')).join(',') : 'no .cursor');
 
+let reviewerCliText = '';
+try {
+  reviewerCliText = readFileSync(path.join(sandbox, '.cursor', 'cli.json'), 'utf8');
+} catch {
+  reviewerCliText = '';
+}
 check('step 4: reviewer read-only sits in its .cursor/cli.json',
-  JSON.stringify(JSON.parse(readFileSync(path.join(sandbox, '.cursor', 'cli.json'), 'utf8')).permissions.deny)
+  reviewerCliText !== '' && JSON.stringify(JSON.parse(reviewerCliText).permissions.deny)
   === JSON.stringify(['Write(**)', 'Shell(**)']),
-  readFileSync(path.join(sandbox, '.cursor', 'cli.json'), 'utf8'));
+  reviewerCliText);
 
 const reviewSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(REVIEW_MARK)) ?? null, { timeoutMs: 30000 });
@@ -1385,7 +1401,7 @@ check(': the silence really happened — the stand marked it in the participant 
 // the `persist` state lives in `/tmp` and does not survive a reboot. Under headless it
 // was not there on any outcome.
 const hangRecord = readSession(hangRef, env);
-tmux(['kill-session', '-t', hangRecord.sessionName], { env });
+if (hangRecord?.sessionName) tmux(['kill-session', '-t', hangRecord.sessionName], { env });
 const gone = cursorDriver.inspect(hangRef);
 check(': the session is not on the tmux server, and the record is — that is stale, and the route calls the list',
   gone?.state === 'stale' && gone?.stall?.kind === 'stale'

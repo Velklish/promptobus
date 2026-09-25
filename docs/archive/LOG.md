@@ -334,3 +334,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-235"></a>`PB-235-reviewer-harness-cannot-be-changed-when-its-subscription-dies` · 2026-09-25 · completed · — · A reviewer whose harness runs out of quota cannot be re-raised on another tool, and the piece becomes unreviewable
 - <a id="pb-229"></a>`PB-229-warden-knocks-once-per-message` · 2026-09-25 · completed · — · The warden knocks once per message, so a four-message hand-off wakes the orchestrator four times
 - <a id="pb-241"></a>`PB-241-participants-share-one-machine-with-no-mutex` · 2026-09-25 · completed · — · Participants of one task share a machine and the bus offers them no mutex
+- <a id="pb-159.2"></a>`PB-159.2-cursor-persist-task-mark-missing-in-pool` · 2026-09-25 · completed · — · В пуле persist-сессия Cursor осталась без метки задачи, и это не бюджет настенных часов
