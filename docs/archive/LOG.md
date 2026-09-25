@@ -344,3 +344,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-249.1"></a>`PB-249.1-unknown-command-list-omits-stop` · 2026-09-25 · batch PB-251 · — · The unknown-command refusal lists every command but stop
 - <a id="pb-249.2"></a>`PB-249.2-reference-names-closed-pb-192-open` · 2026-09-25 · batch PB-251 · — · 03-cli names PB-192 as open, and PB-192 is closed
 - <a id="pb-249.3"></a>`PB-249.3-reference-identity-reader-present-tense` · 2026-09-25 · batch PB-251 · — · 03-cli describes the pre-ADR-010 identity reader in the present tense
+- <a id="pb-234.4"></a>`PB-234.4-probe-numbers-may-describe-another-run` · 2026-09-25 · completed · — · The probe's numbers and its exit code are never checked against each other, so numbers from a different run pass

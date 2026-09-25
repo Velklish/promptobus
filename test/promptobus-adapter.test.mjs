@@ -572,7 +572,7 @@ check('PB-234: the refusal diagnoses by branch — a partial hit is not "it redd
 
 const hitTarget = path.join(SB, 'handover-target-hit.json');
 // `passed` drops with the second reddened name: 26 − 24 − 2 = 0. The schema takes `unaccounted`
-// as a `const`, so only the author's arithmetic holds it — a fixture is copied as the example.
+// as a `const`; `send` refuses a remainder the counts do not subtract to.
 const hitDoc = handoverDoc({
   expected: ['the bound check'],
   reddened: ['the bound check', 'a neighbour'],
@@ -596,6 +596,91 @@ const noTargetSend = store.sendMessage(home, task.id, {
 });
 check('PB-234: a record that declares no target lands as before — the field is optional',
   noTargetSend.artifact.filename === 'handover-no-target.json', noTargetSend.artifact?.filename);
+
+check('PB-234.4: counts that subtract to the stated remainder are accepted unchanged',
+  noTargetSend.artifact.filename === 'handover-no-target.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-no-target.json'), 'utf8') === JSON.stringify(handoverDoc()),
+  noTargetSend.artifact?.filename);
+
+// A red exit, a non-empty `reddened`, the restored run's counts, `unaccounted: 0`.
+// 26 − 26 − 1 is −1. That surplus is not an interrupted run.
+const restoredCounts = path.join(SB, 'handover-restored-counts.json');
+writeFileSync(restoredCounts, JSON.stringify(handoverDoc({
+  verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 },
+})));
+const restoredRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: restoredCounts,
+}));
+check('PB-234.4: a negative remainder is more verdicts than the base run, named as another invocation',
+  restoredRefusal.threw
+  && /contradicts itself/.test(restoredRefusal.msg)
+  && restoredRefusal.msg.includes('`baseTotal` 26 − `passed` 26 − `reddened.length` 1 is -1')
+  && restoredRefusal.msg.includes('`unaccounted` states 0')
+  && restoredRefusal.msg.includes('more verdicts than the base run has — numbers from another invocation')
+  && !restoredRefusal.msg.includes('never reached')
+  && !existsSync(path.join(store.filesDir(home, task.id), 'handover-restored-counts.json')),
+  restoredRefusal.msg);
+
+// 26 − 20 − 1 is 5. A positive remainder is an interrupted run, not a foreign capture.
+const otherCounts = path.join(SB, 'handover-other-counts.json');
+writeFileSync(otherCounts, JSON.stringify(handoverDoc({
+  verdicts: { baseTotal: 26, passed: 20, unaccounted: 0 },
+})));
+const otherRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: otherCounts,
+}));
+check('PB-234.4: a positive remainder names verdicts the run never reached, not another invocation',
+  otherRefusal.threw
+  && otherRefusal.msg.includes('`baseTotal` 26 − `passed` 20 − `reddened.length` 1 is 5')
+  && otherRefusal.msg.includes('`unaccounted` states 0')
+  && otherRefusal.msg.includes('5 verdicts the mutated run never reached, or names missing from `reddened` — run again or declare `notRun`')
+  && !otherRefusal.msg.includes('numbers from another invocation')
+  && !existsSync(path.join(store.filesDir(home, task.id), 'handover-other-counts.json')),
+  otherRefusal.msg);
+
+// 26 − 24 − 1 is 1. The count agrees in number: one remainder says verdict.
+const oneShort = path.join(SB, 'handover-one-short.json');
+writeFileSync(oneShort, JSON.stringify(handoverDoc({
+  verdicts: { baseTotal: 26, passed: 24, unaccounted: 0 },
+})));
+const oneShortRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: oneShort,
+}));
+check('PB-234.4: a remainder of one says verdict, not verdicts',
+  oneShortRefusal.threw
+  && oneShortRefusal.msg.includes('`baseTotal` 26 − `passed` 24 − `reddened.length` 1 is 1')
+  && oneShortRefusal.msg.includes('1 verdict the mutated run never reached, or names missing from `reddened` — run again or declare `notRun`')
+  && !oneShortRefusal.msg.includes('1 verdicts')
+  && !oneShortRefusal.msg.includes('numbers from another invocation')
+  && !existsSync(path.join(store.filesDir(home, task.id), 'handover-one-short.json')),
+  oneShortRefusal.msg);
+
+// Two listings of one name: 26 − 24 − 2 = 0. A set would subtract 1 and refuse this.
+const duplicateNames = path.join(SB, 'handover-duplicate-reddened.json');
+const duplicateDoc = handoverDoc({
+  reddened: ['the bound check', 'the bound check'],
+  verdicts: { baseTotal: 26, passed: 24, unaccounted: 0 },
+});
+writeFileSync(duplicateNames, JSON.stringify(duplicateDoc));
+const duplicateSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: duplicateNames,
+});
+check('PB-234.4: a repeated name in reddened counts once per listing, not once per distinct name',
+  duplicateSend.artifact.filename === 'handover-duplicate-reddened.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-duplicate-reddened.json'), 'utf8') === JSON.stringify(duplicateDoc),
+  duplicateSend.artifact?.filename);
+
+const notRunProbe = path.join(SB, 'handover-probe-not-run.json');
+const notRunDoc = handoverDoc();
+notRunDoc.checks.mutationProbe = { notRun: 'this repository has no runner that prints verdict names' };
+writeFileSync(notRunProbe, JSON.stringify(notRunDoc));
+const notRunSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: notRunProbe,
+});
+check('PB-234.4: a probe declared not run has no counts to compare and lands as before',
+  notRunSend.artifact.filename === 'handover-probe-not-run.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-probe-not-run.json'), 'utf8') === JSON.stringify(notRunDoc),
+  notRunSend.artifact?.filename);
 
 const neutral = path.join(SB, 'gates-not-a-record.txt');
 writeFileSync(neutral, 'not json, not a record\n');

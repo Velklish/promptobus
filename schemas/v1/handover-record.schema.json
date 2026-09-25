@@ -146,7 +146,7 @@
               "minimum": 0
             },
             "unaccounted": {
-              "description": "`baseTotal − passed − reddened.length`: verdicts the mutated run never reached. Only `0` is a probe. A run that stopped early prints numbers like `0/1` against a base of 26 that read as catastrophe and mean interruption, so the author does this subtraction and states the remainder rather than leaving the reader to infer it. A non-zero remainder is not a failing probe to report — it is an interrupted one, declared through `notRun` or run again.",
+              "description": "`baseTotal − passed − reddened.length`: verdicts the mutated run never reached. Only `0` is a probe. A run that stopped early prints numbers like `0/1` against a base of 26 that read as catastrophe and mean interruption, so the author does this subtraction and states the remainder rather than leaving the reader to infer it. It is checked at `send` against `baseTotal − passed − reddened.length`. A non-zero remainder is not a failing probe to report — it is an interrupted one, declared through `notRun` or run again.",
               "const": 0
             }
           }

@@ -29,7 +29,8 @@ const probe = (over = {}) => ({
   mutated: 'lib/handoff.js:14',
   mutatedRunExit: 1,
   applied: true,
-  verdicts: { baseTotal: 26, passed: 24, unaccounted: 0 },
+  // 26 − 25 − 1 = 0: one name in `reddened`. A copied fixture is what `send` accepts.
+  verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
   reddened: ['PB-201: the bound the schema publishes is the bound lib/handoff.js hands the preambles'],
   ...over,
 });
@@ -125,6 +126,14 @@ check('PB-234: the probe may name what it was made to redden, as one name or as 
 check('PB-234: a record written before the field keeps passing — the field is optional, not a migration',
   accepts(doc()) && doc().checks.mutationProbe.expected === undefined,
   'a record of the previous version was refused by a field it could not have carried');
+
+// The restored run: `passed` equals `baseTotal`, `reddened` is non-empty, `unaccounted` is 0.
+// Schema-valid on purpose — the subtraction is `recordRefusal`'s, asserted at send.
+check('PB-234.4: the schema still accepts counts that do not subtract to the stated remainder',
+  accepts(doc({ checks: checks({ mutationProbe: probe({
+    verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 },
+  }) }) })),
+  'the schema compared two of its own fields');
 
 check('PB-213: the probe names a sha and a `file:line`, not a description of either',
   refuses(doc({ checks: checks({ mutationProbe: probe({ tree: 'HEAD' }) }) }))
@@ -251,6 +260,10 @@ const fixtures = [
   // Schema-valid and self-contradicting: the agreement is about SHAPE, and the two fields
   // are compared one layer up. A fixture here that both readers refused would hide that.
   doc({ checks: checks({ mutationProbe: probe({ expected: ['a verdict that never reddened'] }) }) }),
+  // 26 − 26 − 1 is not the stated 0. Same split: both readers accept it, `send` does not.
+  doc({ checks: checks({ mutationProbe: probe({
+    verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 },
+  }) }) }),
   doc({ checks: checks({ treeState: { beforeProbe: ' M lib/handoff.js', afterRestore: '' } }) }),
   doc({ checks: checks({ treeState: { beforeProbe: '' } }) }),
   doc({ checks: checks({ verdictNames: { removed: [{ name: 'a stale case', reason: 'the contract it asserted was removed' }] } }) }),
