@@ -212,6 +212,24 @@ store.createTask(HOME, {
 
 const opts = { repo: 'cargos-api', brief: BRIEF, task: TASK, effort: 'high' };
 const plan = await planSpawn(WS, opts);
+check('prompt: worker sees its absolute worktree and the session roots',
+  path.isAbsolute(plan.worktreePath)
+  && plan.prompt.includes(`Your working directory is ${plan.worktreePath},`)
+  && plan.prompt.includes(`Allowed roots (session cwd and addDirs): ${[plan.worktreePath, ...plan.ruleDirs].join(', ')}`)
+  && plan.prompt.includes(`branch ${plan.branch}`),
+  plan.prompt.slice(0, 500));
+const preambleHost = hostOf(WS);
+const originalPreamble = preambleHost.workerPreamble;
+let preambleCtx;
+preambleHost.workerPreamble = (ctx) => {
+  preambleCtx = ctx;
+  return originalPreamble(ctx);
+};
+const preamblePlan = await planSpawn(preambleHost, { ...opts, worker: 'preamble-context' });
+check('host API: workerPreamble receives the actual worktree path',
+  preambleCtx?.worktreePath === preamblePlan.worktreePath
+  && preamblePlan.prompt.includes(preamblePlan.worktreePath),
+  JSON.stringify(preambleCtx));
 // The lease reaches the worker by the preamble, addressed to it: no brief carries it.
 check('prompt: the worker is told to measure under the machine lease, with its own address and task',
   plan.prompt.includes(`promptobus lease --as worker:cargos-api --task ${TASK} -- <command…>`)

@@ -320,9 +320,9 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       : [binPath, ...args],
     cloneHint: (nsPath) => `git clone <url> ${nsPath}`,
     syncHint: () => `${commandName} install`,
-    workerPreamble: ({ taskId, nsPath, branch }) => (
-      `You are a worker on task ${taskId}. Your working directory is an isolated git worktree `
-      + `of repository ${nsPath} (branch ${branch}); you edit only that. Do not touch the main `
+    workerPreamble: ({ taskId, nsPath, branch, worktreePath }) => (
+      `You are a worker on task ${taskId}. Your working directory is ${worktreePath}, an isolated `
+      + `git worktree of repository ${nsPath} (branch ${branch}); you edit only that. Do not touch the main `
       + 'repository tree: your result stays on this branch, and the orchestrator collects it.'
     ),
     liveRunNote: () => '',

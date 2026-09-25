@@ -359,3 +359,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-196.2"></a>`PB-196.2-request-user-input-reply-shape` · 2026-09-26 · batch PB-255 · — · The holder answers item/tool/requestUserInput with {response}, while the 0.156.1 schema requires answers
 - <a id="pb-196.3"></a>`PB-196.3-codex-rollout-carries-turn-timing` · 2026-09-26 · batch PB-255 · — · Codex 0.156.1 rollouts carry turn timing that PB-57.1 lacks: task_complete duration_ms and time_to_first_token_ms
 - <a id="pb-246.3"></a>`PB-246.3-codex-gpt56-ladders-lack-low-rung` · 2026-09-26 · batch PB-255 · — · The gpt-5.6-* and gpt-5.5 ladders carry no low rung although the 0.156.1 listing offers one
+- <a id="pb-214"></a>`PB-214-participant-guesses-its-own-worktree-path` · 2026-09-26 · completed · — · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути

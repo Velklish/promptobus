@@ -417,8 +417,16 @@ check(': permissions approvals have no granting reply',
 
 check(': a patch outside cwd — deny',
   (() => {
-    const d = decideApproval('applyPatchApproval', { fileChanges: { '/etc/passwd': { type: 'add' } } }, patchRec);
-    return d.allow === false && /outside cwd/.test(d.why);
+    const target = '/private/tmp/pb214-boundary-breach.txt';
+    const worktreeRoot = path.join(realpathSync('/tmp'), 'wt');
+    const d = decideApproval('applyPatchApproval', { fileChanges: { [target]: { type: 'add' } } },
+      { ...patchRec, addDirs: [patchRec.cwd, '/etc'] });
+    return d.allow === false && d.why.includes(target)
+      && d.why.includes(worktreeRoot)
+      && d.why.includes('/etc') && d.why.includes('allowed roots:')
+      && d.why.split(worktreeRoot).length === 2
+      && d.why.split('/etc').length === 2
+      && !d.why.includes('→');
   })());
 check(': a patch with an unreadable target — deny',
   (() => {
@@ -429,6 +437,12 @@ check(': a relative patch inside cwd — allow',
   decideApproval('applyPatchApproval', { fileChanges: { 'note.md': { type: 'add' } } }, patchRec).allow === true);
 function skipApprovalSymlinkCheck(name, reason) {
   process.stdout.write(`↷ ${name} — skipped: ${reason}\n`);
+}
+function outsideDenial(decision, target, canonical, root) {
+  const shown = target === canonical ? target : `${target} → ${canonical}`;
+  return decision.allow === false
+    && decision.why.startsWith(`action outside cwd/addDirs: ${shown} (allowed roots: `)
+    && decision.why.includes(root);
 }
 
 const approvalSymlinkCheckNames = [
@@ -513,9 +527,8 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [plainParentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a plain parent traversal outside the root — deny',
-    plainParentTraversalApproval.allow === false
-    && plainParentTraversalApproval.why
-      === `action outside cwd/addDirs: ${plainParentTraversalTarget} → ${plainParentTraversalCanonicalTarget}`,
+    outsideDenial(plainParentTraversalApproval, plainParentTraversalTarget,
+      plainParentTraversalCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(plainParentTraversalApproval));
 
   const escapedTarget = path.join(approvalRootLink, 'escape', 'not-yet-created.md');
@@ -524,8 +537,7 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [escapedTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a missing target through an escaping symlink — deny',
-    escapedApproval.allow === false
-    && escapedApproval.why === `action outside cwd/addDirs: ${escapedTarget} → ${escapedCanonicalTarget}`,
+    outsideDenial(escapedApproval, escapedTarget, escapedCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(escapedApproval));
 
   const missingTailTarget = `${approvalRootLink}${path.sep}nope${path.sep}..${path.sep}escape${path.sep}evil.md`;
@@ -534,9 +546,7 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [missingTailTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a missing segment cannot hide a later symlink escape — deny',
-    missingTailApproval.allow === false
-    && missingTailApproval.why
-      === `action outside cwd/addDirs: ${missingTailTarget} → ${missingTailCanonicalTarget}`,
+    outsideDenial(missingTailApproval, missingTailTarget, missingTailCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(missingTailApproval));
 
   const linkContentParentTarget = path.join(approvalLinkWithParent, 'evil.md');
@@ -545,9 +555,8 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [linkContentParentTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a symlink content with parent traversal — deny',
-    linkContentParentApproval.allow === false
-    && linkContentParentApproval.why
-      === `action outside cwd/addDirs: ${linkContentParentTarget} → ${linkContentParentCanonicalTarget}`,
+    outsideDenial(linkContentParentApproval, linkContentParentTarget,
+      linkContentParentCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(linkContentParentApproval));
 
   const relativeLinkTarget = path.join(approvalUpLink, 'relative-link.md');
@@ -556,9 +565,7 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [relativeLinkTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a relative symlink to the parent — deny',
-    relativeLinkApproval.allow === false
-    && relativeLinkApproval.why
-      === `action outside cwd/addDirs: ${relativeLinkTarget} → ${relativeLinkCanonicalTarget}`,
+    outsideDenial(relativeLinkApproval, relativeLinkTarget, relativeLinkCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(relativeLinkApproval));
 
   const chainTarget = path.join(approvalChainA, 'chain-evil.md');
@@ -567,8 +574,7 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [chainTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a symlink chain escaping the root — deny',
-    chainApproval.allow === false
-    && chainApproval.why === `action outside cwd/addDirs: ${chainTarget} → ${chainCanonicalTarget}`,
+    outsideDenial(chainApproval, chainTarget, chainCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(chainApproval));
 
   const parentTraversalTarget = `${approvalRootLink}${path.sep}escape${path.sep}..${path.sep}evil.md`;
@@ -576,9 +582,8 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [parentTraversalTarget]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a target with parent traversal — deny',
-    parentTraversalApproval.allow === false
-    && parentTraversalApproval.why
-      === `action outside cwd/addDirs: ${parentTraversalTarget} → ${path.join(path.dirname(approvalOutsideCanonical), 'evil.md')}`,
+    outsideDenial(parentTraversalApproval, parentTraversalTarget,
+      path.join(path.dirname(approvalOutsideCanonical), 'evil.md'), approvalResolvedRoot),
     JSON.stringify(parentTraversalApproval));
 
   const danglingCanonicalTarget = path.join(approvalOutsideCanonical, 'dangling.md');
@@ -586,8 +591,7 @@ if (approvalSymlinkReason) {
     'applyPatchApproval', { fileChanges: { [approvalDanglingLink]: { type: 'add' } } }, symlinkApprovalRec,
   );
   check(': a dangling symlink target outside cwd — deny',
-    danglingApproval.allow === false
-    && danglingApproval.why === `action outside cwd/addDirs: ${approvalDanglingLink} → ${danglingCanonicalTarget}`,
+    outsideDenial(danglingApproval, approvalDanglingLink, danglingCanonicalTarget, approvalResolvedRoot),
     JSON.stringify(danglingApproval));
 
   const loopApproval = decideApproval(
@@ -615,10 +619,9 @@ if (approvalSymlinkReason) {
     { cwd: approvalRootLink, addDirs: [approvalLoopA], role: 'worker' },
   );
   check(': a partly unresolved root is named on outside denial — deny',
-    partlyUnresolvedRootApproval.allow === false
-    && partlyUnresolvedRootApproval.why
-      === `action outside cwd/addDirs: ${partlyUnresolvedTarget} → ${partlyUnresolvedCanonicalTarget}`
-        + ` (unresolved roots: ${approvalLoopA})`,
+    outsideDenial(partlyUnresolvedRootApproval, partlyUnresolvedTarget,
+      partlyUnresolvedCanonicalTarget, approvalResolvedRoot)
+    && partlyUnresolvedRootApproval.why.includes(`unresolved roots: ${approvalLoopA}`),
     JSON.stringify(partlyUnresolvedRootApproval));
 
   const approvalAllowedCanonical = realpathSync(approvalAllowed);
@@ -645,9 +648,8 @@ if (approvalSymlinkReason) {
     );
     process.stdout.write(`ℹ mixed-case fail-closed reason: ${differentlyCasedApproval.why}\n`);
     check(': a differently-cased target under a case-insensitive root — deny',
-      differentlyCasedApproval.allow === false
-      && differentlyCasedApproval.why
-        === `action outside cwd/addDirs: ${differentlyCasedTarget} → ${differentlyCasedTarget}`,
+      outsideDenial(differentlyCasedApproval, differentlyCasedTarget,
+        differentlyCasedTarget, mixedCaseAllowedCanonical),
       JSON.stringify({ approvalAllowedCanonical, mixedCaseAllowedCanonical, differentlyCasedApproval }));
   } else if (!mixedCaseAllowedCanonical) {
     skipApprovalSymlinkCheck(

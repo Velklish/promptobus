@@ -199,7 +199,7 @@ export interface PromptobusHost {
   guardArgv(args: string[]): string[];
   cloneHint(nsPath: string): string;
   syncHint(): string;
-  workerPreamble(ctx: { taskId: string; nsPath: string; branch: string }): string;
+  workerPreamble(ctx: { taskId: string; nsPath: string; branch: string; worktreePath: string }): string;
   liveRunNote(nsPath: string): string;
 }
 

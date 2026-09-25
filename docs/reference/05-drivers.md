@@ -439,6 +439,12 @@ loaded, and the bypass does not enable them. Remove or move the file, or lift
 the participant on another harness. The end-of-turn channel is
 `turn/completed` only. `exec --json` is a smoke check.
 
+The worker preamble names its absolute worktree path and the session roots (`cwd` and
+`addDirs`) before the assignment. Holder approvals still use those recorded roots.
+An outside refusal logs the resolved allowed roots and prints a requested-to-resolved
+pair only when the target changed during resolution; the reply to Codex remains
+`{ decision: 'decline' }`.
+
 **The participant shell and the holder approval are separate boundaries.** Two independent
 Codex participants on codex-cli 0.146.0 had no successful apply_patch call, and direct
 un-escalated shell writes to each worktree were refused. $TMPDIR and /tmp accepted temporary
@@ -804,4 +810,3 @@ the walk as "not open". A line that does not parse is skipped. Anything
 else — no question in the tail, a file that cannot be read — is "not
 open". The answer is cached by the file's size and mtime, so the
 warden's one-second round costs one `fstat` while nothing is written.
-
