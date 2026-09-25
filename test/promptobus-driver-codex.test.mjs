@@ -63,8 +63,9 @@ check(': Codex diagnosis surfaces scenario errors before the later red verdict',
 
 const {
   codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
-  codexHomeConfig, makeParticipantHome, participantHomesRoot, removeParticipantHome, reviewSandbox,
-  skillsNoteOf, sweepParticipantHomes, trustPath, workspaceSkillsDir,
+  codexHomeConfig, makeParticipantHome, participantHomesRoot, projectHooksDir, removeParticipantHome,
+  writeRedirectedHooks, hooksDocument,
+  reviewSandbox, skillsNoteOf, sweepParticipantHomes, trustPath, workspaceSkillsDir,
 } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const {
   readSession, writeSession, dropSession, approvalReply, decideApproval, readyMs, preambleMs,
@@ -1081,6 +1082,43 @@ check('PB-206 review: the approver hooks file carries the guard for both events'
 check('PB-180: no guard command, no hooks file',
   hooksOf(workerPlan, ctx.cwd) === null && hooksOf(reviewerPlan, reviewSandbox(ctx.settingsPath)) === null,
   JSON.stringify(workerPlan.files.map((f) => f.path)));
+check(': a directory that is not a linked worktree keeps hooks in its own .codex only',
+  !hookedWorker.files.some((f) => f.path === path.join(hookedWorker.codexHome, 'hooks.json'))
+  && !hookedReviewer.files.some((f) => f.path === path.join(hookedReviewer.codexHome, 'hooks.json'))
+  && projectHooksDir(ctx.cwd) === path.join(path.resolve(ctx.cwd), '.codex'),
+  JSON.stringify({
+    worker: hookedWorker.files.map((f) => f.path),
+    lookedUp: projectHooksDir(ctx.cwd),
+  }));
+const hooksRepo = path.join(SB, 'hooks-main');
+const hooksWt = path.join(SB, 'hooks-wt');
+mkdirSync(hooksRepo, { recursive: true });
+const gitOk = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8' }).status === 0;
+check(': a linked worktree reads project hooks from the main checkout',
+  gitOk(['init', '-b', 'main'], hooksRepo)
+  && gitOk(['-c', 'user.email=hooks@example.com', '-c', 'user.name=hooks', 'commit', '--allow-empty', '-m', 'init'], hooksRepo)
+  && gitOk(['worktree', 'add', '--detach', hooksWt], hooksRepo)
+  && projectHooksDir(hooksWt) === path.join(realpathSync(hooksRepo), '.codex'),
+  `hooks dir ${projectHooksDir(hooksWt)}`);
+const linkedPlan = codexDriver.prepare({
+  ...ctx, cwd: hooksWt, guardCommand: GUARD_CMD, task: 'hooks-link', address: 'worker:link',
+});
+const linkedWorktreeFile = linkedPlan.files.find((f) => f.path === path.join(hooksWt, '.codex', 'hooks.json'));
+const linkedWorktreeHooks = hooksOf(linkedPlan, hooksWt);
+check(': a linked worktree writes the working-directory hooks and not a home file in the plan',
+  linkedWorktreeHooks?.hooks?.Stop?.[0]?.hooks?.[0]?.command === GUARD_CMD
+  && !linkedPlan.files.some((f) => f.path === path.join(linkedPlan.codexHome, 'hooks.json')),
+  JSON.stringify(linkedPlan.files.map((f) => f.path)));
+const rebuiltHome = path.join(SB, 'rebuilt-home');
+const plainHome = path.join(SB, 'plain-home');
+mkdirSync(rebuiltHome);
+mkdirSync(plainHome);
+check(': lift writes the home hooks file into a home that was rebuilt empty',
+  writeRedirectedHooks(linkedPlan, hooksWt, rebuiltHome) === path.join(rebuiltHome, 'hooks.json')
+  && readFileSync(path.join(rebuiltHome, 'hooks.json'), 'utf8') === linkedWorktreeFile.text);
+check(': lift does not copy hooks into the home of a directory that is not a linked worktree',
+  writeRedirectedHooks(hookedWorker, ctx.cwd, plainHome) === null
+  && !existsSync(path.join(plainHome, 'hooks.json')));
 // The copy stays out of a worker's diff: `.codex` now always holds a file, so the
 // self-ignoring `.gitignore` is no longer conditional on there being a canon.
 check('PB-180: the .gitignore that hides .codex is written whether or not a canon travels',
@@ -1563,6 +1601,11 @@ check('step 1: the thread landed in the mechanism registry — thread id and hol
   !!record?.threadId && record.state === 'alive' && typeof record.holderPid === 'number',
   JSON.stringify({ threadId: record?.threadId, state: record?.state, holder: record?.holderPid }));
 
+check(': the holder journal names a hook run status',
+  /event hook\/started sessionStart running \/hooks\.json/.test(holderJournal)
+  && /event hook\/completed sessionStart completed \/hooks\.json/.test(holderJournal),
+  holderJournal.slice(-600));
+
 check(': the Codex holder journal starts with launch provenance',
   typeof record?.provenance === 'string'
   && record.provenance.startsWith('promptobus copy: cli=')
@@ -1606,6 +1649,16 @@ check('PB-161: the worktree is trusted by its realpath, and the record is in the
     && homeSeen.config.includes(`[projects."${realpathSync(wp?.metadata?.worktree ?? repoAbs)}"]`)
     && /trust_level = "trusted"/.test(homeSeen.config),
   String(homeSeen?.config).slice(-300));
+
+const liftedWorktree = wp?.metadata?.worktree ?? '';
+const liftedHomeHooks = path.join(record?.codexHome ?? '', 'hooks.json');
+check(': a linked-worktree lift writes the hooks file into the participant home',
+  liftedWorktree !== ''
+  && projectHooksDir(liftedWorktree) !== path.join(realpathSync(liftedWorktree), '.codex')
+  && existsSync(liftedHomeHooks)
+  && readFileSync(liftedHomeHooks, 'utf8').includes('--role')
+  && readFileSync(liftedHomeHooks, 'utf8').includes(WORKER),
+  liftedHomeHooks);
 
 check('PB-161: the owner auth travels as a copy at mode 0600',
   homeSeen?.auth === '0600' && homeSeen.entries.includes('auth.json'),
@@ -2363,6 +2416,9 @@ check('PB-161: in the home config there are no canonical names — the bus is un
 check(': without --effort thread/start does not invent a model_reasoning_effort',
   mcpThread && !('model_reasoning_effort' in (mcpThread.config ?? {})),
   JSON.stringify(mcpThread?.config));
+check(': thread/start config sets bypass_hook_trust',
+  mcpThread?.config?.bypass_hook_trust === true,
+  JSON.stringify(mcpThread?.config));
 if (mcpPart?.sessionRef) await codexDriver.stop(mcpPart.sessionRef);
 
 function harnessThread(part, sessionEnv = env) {
@@ -2408,6 +2464,8 @@ const effortReviewer = store.participantOf(store.readTask(home, TASK), 'reviewer
 const effortReviewerThread = await harnessThread(effortReviewer);
 check(': reviewer thread/start carries the same model_reasoning_effort; first RPC is turn/start with effort',
   effortReviewerThread?.config?.model_reasoning_effort === 'xhigh'
+    && effortReviewerThread?.config?.bypass_hook_trust === true
+    && effortWorkerThread?.config?.bypass_hook_trust === true
     && effortReviewerThread?.firstRpc?.method === 'turn/start'
     && effortReviewerThread?.firstRpc?.params?.effort === 'xhigh',
   JSON.stringify({
@@ -2511,6 +2569,73 @@ check(': a log write under a removed registry does not rebuild the tree',
     /is LISTED, but there is no process behind it/.test(listedLine)
       && /There will be no messages from it/.test(listedLine),
     listedLine ? listedLine.slice(-800) : `no line starting with "${WORKER} \u00b7" in:\n${String(listedOut).slice(-800)}`);
+
+  const fbox = buildWorkspace(path.join(SB, 'foreign-hooks'));
+  writeHostConfig(fbox.ws, { tools: ['claude', 'codex'] });
+  const fhome = path.join(fbox.ws, '.promptobus');
+  const fbrief = path.join(SB, 'foreign-brief.md');
+  writeFileSync(fbrief, '# foreign hooks\n\nSend a status and end the turn.\n');
+  const fenv = { ...env, PROMPTOBUS_HOME: fhome };
+  const FTASK = 'fhooks-t20260925-000000';
+  store.createTask(fhome, { id: FTASK, title: 'foreign hooks', owner: ORCH_SESSION });
+  planParticipant(HARNESS, 'worker:fplain', {
+    turns: [{
+      do: [
+        { write: { path: 'fplain.txt', text: 'plain\n' } },
+        { commit: { message: 'fplain' } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'FPLAIN' } },
+      ],
+    }],
+  });
+  planParticipant(HARNESS, 'reviewer:fplain', {
+    turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: 'FPLAIN-REVIEW' } }] }],
+  });
+  const plainDry = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'fplain', '--harness', 'codex', '--dry-run'], { cwd: fbox.ws, env: fenv });
+  const plainGuard = plainDry.out.split('\n').map((line) => line.trim())
+    .find((line) => line.includes('loop guard: '))?.split('loop guard: ').pop();
+  const mainHooks = path.join(realpathSync(fbox.repoAbs), '.codex', 'hooks.json');
+  mkdirSync(path.dirname(mainHooks), { recursive: true });
+  writeFileSync(mainHooks, hooksDocument(plainGuard));
+  const refusedDry = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'fforeign', '--harness', 'codex', '--dry-run'], { cwd: fbox.ws, env: fenv });
+  const refusedUp = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'fforeign', '--harness', 'codex'], { cwd: fbox.ws, env: fenv });
+  const refusedPart = store.participantOf(store.readTask(fhome, FTASK), 'worker:fforeign');
+  check(': a project hooks file in the main checkout refuses before any write',
+    refusedDry.status !== 0
+    && refusedDry.out.includes(mainHooks)
+    && refusedDry.out.includes('Remove or move that file')
+    && refusedDry.out.includes('another harness')
+    && refusedUp.status !== 0
+    && refusedPart == null
+    && !existsSync(path.join(fbox.repoAbs, '.claude', 'worktrees')),
+    `${refusedDry.out.slice(-400)}\n${refusedUp.out.slice(-400)}`);
+  rmSync(mainHooks);
+  const plainUp = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'fplain', '--harness', 'codex'], { cwd: fbox.ws, env: fenv });
+  check(': no project hooks file lifts a Codex worker',
+    plainUp.status === 0 && /worker worker:fplain lifted/.test(plainUp.out), plainUp.out.slice(-500));
+  const plainSent = await waitFor(() => store.glanceInbox(fhome, FTASK, 'orchestrator')
+    .find((m) => String(m.body ?? '').includes('FPLAIN')) ?? null, { timeoutMs: 20000 });
+  check(': the worker with no project hooks file finished a turn', !!plainSent, JSON.stringify(plainSent));
+  const revSandbox = reviewSandbox(store.participantSettingsPath(realpathSync(fhome), FTASK, 'reviewer:fplain'));
+  const revHooks = path.join(revSandbox, '.codex', 'hooks.json');
+  mkdirSync(path.dirname(revHooks), { recursive: true });
+  writeFileSync(revHooks, hooksDocument('old-guard'));
+  const plainPart = store.participantOf(store.readTask(fhome, FTASK), 'worker:fplain');
+  const revOwn = cli(['review', plainPart?.metadata?.worktree ?? fbox.repoAbs, '--task', FTASK, '--harness', 'codex'],
+    { cwd: fbox.ws, env: fenv });
+  const rewritten = existsSync(revHooks) ? readFileSync(revHooks, 'utf8') : '';
+  check(': the reviewer lifts and rewrites the file',
+    revOwn.status === 0
+    && rewritten.includes('--role reviewer:fplain')
+    && !rewritten.includes('old-guard'),
+    `${revOwn.out.slice(-500)}\n${rewritten.slice(0, 300)}`);
+  for (const addr of ['worker:fplain', 'reviewer:fplain']) {
+    const part = store.participantOf(store.readTask(fhome, FTASK), addr);
+    if (part?.sessionRef) await codexDriver.stop(part.sessionRef);
+  }
 }
 
 // If the reap did not happen the checks above are already red; leaving the processes

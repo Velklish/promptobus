@@ -524,6 +524,14 @@ async function appServer() {
         thread: { id: t.id, status: { type: 'idle' } },
         ...(reasoningEffort ? { reasoningEffort } : {}),
       });
+      notify('hook/started', {
+        threadId: t.id, turnId: null,
+        run: { eventName: 'sessionStart', status: 'running', sourcePath: '/hooks.json' },
+      });
+      notify('hook/completed', {
+        threadId: t.id, turnId: null,
+        run: { eventName: 'sessionStart', status: 'completed', sourcePath: '/hooks.json' },
+      });
       notify('thread/status/changed', { type: 'idle' });
       return;
     }

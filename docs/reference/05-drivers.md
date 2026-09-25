@@ -323,6 +323,13 @@ pin a mutable updater path and probe the version of that same concrete binary. I
 the host's `HostToolBin` passes through unchanged. It is not a capability and is not required
 of drivers whose binaries do not need this normalization.
 
+`refuseForeignProjectHooks?(lookupDir, writtenDir)` is optional. Spawn calls it at plan
+time, before the first write of this lift, when the driver has the operation. It throws
+GateError naming the file, and returns nothing when there is nothing to refuse. A string
+return is not a refusal: spawn does not read one. The Codex driver throws when Codex would
+load a hooks file from a path this lift does not write. A harness with no such file leaves
+the operation absent, and spawn does not ask it.
+
 ### `worktreeTouchedMs` — the third liveness signal, and what the first two miss
 
 Source: `lib/cursor-persist.js`, `worktreeTouchedMs`.
@@ -412,10 +419,25 @@ registry and the process holder are in [codex-session.js](../../lib/codex-sessio
 `codex app-server --stdio` process, and that process runs in a `CODEX_HOME` of its
 own — one per participant, built at lift and removed at `done`. cwd, sandbox and
 instructions go as `thread/start` params; the MCP set goes into that home's
-`config.toml`, because there is no personal set left to merge with. Hook TRUST is no
-longer the blocker — the participant's argv carries the bypass flag (`PARTICIPANT_ARGV`,
-PB-170); whether hooks RUN is unsettled and is PB-185. The end-of-turn
-channel is `turn/completed` only. `exec --json` is a smoke check.
+`config.toml`, because there is no personal set left to merge with. Hook trust for an
+app-server thread is the `thread/start` override `bypass_hook_trust`, not the CLI flag:
+that flag is parsed and then dropped by the app-server subcommand. The feature `hooks`
+is stable and on by default, and a handler is enabled unless its state says otherwise.
+A linked worktree reads project `hooks.json` from the main checkout, so a worker's
+copy is written to the participant home after that home is built, and not among the
+launch files. A reviewer sandbox is not a worktree and keeps the single file in its
+working directory. An approver on Codex is not covered. The measured event is
+SessionStart; Stop was not in those journals. `bypass_hook_trust` trusts every
+project hooks file Codex discovers. A file at a path this lift writes is its own
+and is rewritten, whatever its bytes; the reviewer sandbox is that path. Any file
+in the main checkout refuses, including one with the same bytes, because that
+path is not one this lift writes and Codex would load it beside the home copy.
+The refusal is before the worktree exists, so a dry run refuses too. An ancestor
+`.codex` is disabled unless that folder, the project root, or the repo root is
+trusted. The home trusts only the working directory, so those layers are not
+loaded, and the bypass does not enable them. Remove or move the file, or lift
+the participant on another harness. The end-of-turn channel is
+`turn/completed` only. `exec --json` is a smoke check.
 
 **The participant shell and the holder approval are separate boundaries.** Two independent
 Codex participants on codex-cli 0.146.0 had no successful apply_patch call, and direct

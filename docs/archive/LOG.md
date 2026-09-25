@@ -354,3 +354,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-232"></a>`PB-232-handover-record-has-no-slot-for-card-verification-runs` · 2026-09-26 · completed · — · The handover record has no slot for a card's own verification runs, so they land in the gate record under a tail
 - <a id="pb-187"></a>`PB-187-catalog-names-a-model-the-binary-does-not-have` · 2026-09-26 · completed · — · The catalog and Codex inventory need a home and visibility contract
 - <a id="pb-178"></a>`PB-178-session-identity-is-not-a-driver-member` · 2026-09-26 · completed · — · Контракт идентичности закрыт, живой демонстрации на трёх харнессах нет
+- <a id="pb-185"></a>`PB-185-codex-hooks-enablement-is-a-second-gate` · 2026-09-26 · completed · — · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured

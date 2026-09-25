@@ -410,6 +410,9 @@ export interface Driver {
   /** Refusal by harness version for the requested options, before the first write to disk. `null`
    * means nothing to refuse for: the version is fine, or it was not read and may not be claimed. */
   optionRefusal?(options: { effort?: string | null }, tool: unknown): string | null;
+  /** Throws GateError naming the file, before the first write of this lift, when this harness
+   * would load a project hooks file it does not write. Returns nothing when there is nothing to refuse. */
+  refuseForeignProjectHooks?(lookupDir: string, writtenDir: string): void;
   /** Names of delivered MCP servers shadowed by a person's PERSONAL records. Personal config is a
    * harness property; the output line about shadowing is one for all. */
   shadowedUserServers?(names: string[]): string[];

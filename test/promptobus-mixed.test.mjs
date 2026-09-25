@@ -29,8 +29,8 @@
 //   - `files` — the participant mcp-config as a file on a store path. Cursor reads the
 //     project `.cursor/mcp.json` of its workspace, Codex gets servers as a lift-request
 //     field;
-//   - reviewer `guard` — there are no hooks under `codex app-server` at all, and it will
-//     have no end-of-turn mark on any turn. The Cursor worker has one, and the verdict
+//   - reviewer `guard` — a Codex SessionStart hook is not the end of a turn, and
+//     this lineup does not require that mark. The Cursor worker has one, and the verdict
 //     on it runs.
 //
 // **The file runs in a serial runner group** — for the same reason as its stub-Claude
@@ -129,8 +129,8 @@ const worker = {
 const reviewer = {
   id: codexDriver.id,
   scripted: true,
-  // Hooks under `app-server` do not run at all — the participant has nothing to call the
-  // loop guard with.
+  // A Codex SessionStart hook is not the end of a turn. This lineup does not
+  // require that mark.
   guard: false,
   blocks: false,
   stalls: false,

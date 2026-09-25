@@ -415,8 +415,8 @@ function participantHarness(harness, address, flags) {
     scripted,
     // The loop guard is called by the participant itself: on stub Claude that is
     // [participant.mjs](participant.mjs), on Cursor — the `stop` hook from the project
-    // `.cursor/hooks.json`. Codex has no hooks at all — neither an end-of-turn event nor
-    // a file to put it in — and it will have no end-of-turn mark on any turn.
+    // `.cursor/hooks.json`. A Codex SessionStart hook is not the end of a turn, and
+    // this scenario does not require that mark.
     guard: pick('guard', scripted),
     // A turn that stalls on command exists only on stub `claude`: it is the only one
     // that understands a `block` field on a turn ([participant.mjs](participant.mjs)),
@@ -660,8 +660,8 @@ export async function runScenario({
     // `stop` hook of its project `.cursor/hooks.json`, and both check exactly what the
     // mechanism is responsible for: that the identity is enough for the hook. On live
     // Claude the hook arrives as a `--settings` file, but the canary has not run that
-    // yet, and Codex has no hooks at all — and the scenario does not go red on the
-    // untested and the nonexistent
+    // yet. A Codex Stop hook was not observed, so this scenario does not require
+    // an end-of-turn mark from one
     // ([10], coverage boundary).
     if (wh.guard) {
       const workerTurn = await waitFor(() => store.lastTurnAt(home, TASK, WORKER), { timeoutMs: step });
