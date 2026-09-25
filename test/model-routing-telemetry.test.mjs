@@ -1189,3 +1189,58 @@ const afterPruneStats205 = telemetry.telemetryStats(HOST205);
 check(': the persisted summary survives pruning its source journal',
   beforePrune205 === JSON.stringify(afterPruneStats205?.summary),
   JSON.stringify(afterPruneStats205?.summary));
+
+// A same-harness re-lift moves `started` past samples that still belong to the open row.
+// A re-bound open row starts at the previous generation's `until`, as its round counts do.
+const SB235 = makeSandbox('promptobus-telemetry-relift-timing-');
+writeHostConfig(SB235);
+const HOME235 = path.join(SB235, '.promptobus');
+const HOST235 = hostOf(SB235);
+const TASK235 = 'telemetriya-relift-t20260925-171200';
+const CLOSE235 = Date.now();
+const stamp235 = (offset) => new Date(CLOSE235 + offset).toISOString();
+store.createTask(HOME235, { id: TASK235, title: 'тайминги повторного подъёма', owner: null });
+store.upsertParticipant(HOME235, TASK235, store.participantRecord('reviewer:relift', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-relift',
+  model: 'sonnet', started: stamp235(-10000),
+}));
+store.upsertParticipant(HOME235, TASK235, store.participantRecord('reviewer:rebound', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-rebound',
+  model: 'haiku', started: stamp235(-10000),
+  harnessHistory: [{
+    harness: 'codex', model: 'gpt-5.4',
+    from: stamp235(-120000), until: stamp235(-50000),
+  }],
+}));
+const plant235 = (address, offset) => {
+  const sent = store.sendMessage(HOME235, TASK235, {
+    from: 'orchestrator', to: address, type: 'task', body: `timing ${address}`,
+  });
+  const file = path.join(store.taskDir(HOME235, TASK235), 'messages', `${sent.message.id}.json`);
+  const message = readJson(file);
+  message.ts = stamp235(offset);
+  writeFileSync(file, `${JSON.stringify(message, null, 2)}\n`);
+};
+plant235('reviewer:relift', -30000);
+plant235('reviewer:rebound', -80000);
+plant235('reviewer:rebound', -30000);
+writeFileSync(store.wardenLogFile(HOME235, TASK235), [
+  `${stamp235(-40000)} notification reviewer:relift: unread 1, knock 1`,
+  `${stamp235(-20000)} delivered reviewer:relift: mailbox was taken (had 1, knocks 1)`,
+  `${stamp235(-90000)} notification reviewer:rebound: unread 1, knock 1`,
+  `${stamp235(-70000)} delivered reviewer:rebound: mailbox was taken (had 1, knocks 1)`,
+  `${stamp235(-40000)} notification reviewer:rebound: unread 1, knock 1`,
+  `${stamp235(-20000)} delivered reviewer:rebound: mailbox was taken (had 1, knocks 1)`,
+].join('\n') + '\n');
+const rows235 = telemetry.telemetryRecords(HOST235, HOME235, store.readTask(HOME235, TASK235), { at: CLOSE235 });
+const relift235 = rows235.find((row) => row.model === 'sonnet');
+const reboundOpen235 = rows235.find((row) => row.model === 'haiku');
+check(': a same-harness re-lift that was never re-bound keeps earlier idle and delivery samples',
+  Date.parse(relift235?.spawnedAt ?? '') > Date.parse(stamp235(-40000))
+  && relift235?.idleSamples === 1 && relift235?.idleSec === 20
+  && relift235?.deliverySamples === 1 && relift235?.deliveryLatencySec === 10,
+  JSON.stringify(relift235));
+check(': a re-bound open row times from the previous generation end, not from its last lift',
+  Date.parse(reboundOpen235?.spawnedAt ?? '') > Date.parse(stamp235(-20000))
+  && reboundOpen235?.idleSamples === 1 && reboundOpen235?.deliverySamples === 1,
+  JSON.stringify(reboundOpen235));

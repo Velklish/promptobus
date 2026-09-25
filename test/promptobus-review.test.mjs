@@ -770,6 +770,17 @@ const dryReuseModel = await capture(() => review(WS, { target: REPO, task: task.
 check('dry-run re-review alive: --model is marked not applied, not passed off as applied',
   /model: sonnet \(not applied — the session is already alive\)/.test(dryReuseModel), dryReuseModel);
 
+const liveForeign = expectThrow(() => planReview(WS, { target: REPO, task: task.id, harness: 'codex' }));
+check('live reviewer: --harness of another tool is refused and names stop',
+  liveForeign.threw
+  && /was started by harness claude/.test(liveForeign.msg)
+  && liveForeign.msg.includes('the session is alive')
+  && liveForeign.msg.includes(`stop reviewer:cargos-api --task ${task.id}`)
+  && /--harness codex/.test(liveForeign.msg)
+  && !/open it its own task/.test(liveForeign.msg)
+  && !/--title/.test(liveForeign.msg),
+  liveForeign.msg);
+
 // A record made BEFORE the launch does not count as a reviewer: a failed launch leaves
 // it in place, and there's nothing to confirm liveness with — `claude agents --json`
 // isn't obtainable exactly where there's no binary at all. Without the mark, a repeat
@@ -878,6 +889,200 @@ check(': the hint leads to the warden and the mailbox, not to waiting',
 check('dead session: nothing landed in the dead address\'s inbox',
   store.countInbox(home, task.id, 'reviewer:cargos-api') === 0,
   String(store.countInbox(home, task.id, 'reviewer:cargos-api')));
+
+const unknownTask = store.createTask(home, { id: 't20260925-154800', title: 'reviewer liveness unknown' });
+store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:cargos-api', {
+  harness: 'claude',
+  repo: 'loads_search/cargos-api',
+  repoAbs: REPO,
+  name: 'a2a-unknown-reviewer',
+  model: 'sonnet',
+  started: '2026-09-17T08:00:00.000Z',
+}));
+claudeFails();
+const unknownForeign = expectThrow(() => planReview(WS, {
+  target: REPO, task: unknownTask.id, harness: 'codex',
+}));
+check('unknown reviewer liveness: --harness is refused and says it saw unknown',
+  unknownForeign.threw
+  && /liveness of the session is unknown/.test(unknownForeign.msg)
+  && /This call saw unknown/.test(unknownForeign.msg)
+  && /claude agents --json is unreadable/.test(unknownForeign.msg)
+  && /Check claude agents/.test(unknownForeign.msg)
+  && !/promptobus stop/.test(unknownForeign.msg)
+  && !/open it its own task/.test(unknownForeign.msg)
+  && !/--title/.test(unknownForeign.msg),
+  unknownForeign.msg);
+claudeSays('[]');
+
+const rebindTask = store.createTask(home, { id: 't20260925-154900', title: 'reviewer harness rebind' });
+const rebindFrom = '2026-09-17T08:00:00.000Z';
+store.upsertParticipant(home, rebindTask.id, store.participantRecord('reviewer:cargos-api', {
+  harness: 'codex',
+  repo: 'loads_search/cargos-api',
+  repoAbs: REPO,
+  name: 'a2a-rebind-reviewer-pb235',
+  model: 'gpt-5.4',
+  started: rebindFrom,
+  reviewAssignedAt: rebindFrom,
+}));
+store.sendMessage(home, rebindTask.id, {
+  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'round before rebind',
+});
+let reboundErr = null;
+let reboundOut = '';
+try {
+  reboundOut = await capture(() => review(WS, {
+    tool: TOOL, target: REPO, task: rebindTask.id, harness: 'claude',
+  }));
+} catch (e) {
+  reboundErr = e;
+}
+const rebound = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api');
+const reboundHistory = rebound?.metadata?.harnessHistory ?? [];
+check('re-bind: a gone reviewer session lifts on the harness named by --harness',
+  !reboundErr
+  && rebound?.harness === 'claude'
+  && reboundHistory[0]?.harness === 'codex'
+  && reboundHistory[0]?.from === rebindFrom
+  && typeof reboundHistory[0]?.until === 'string'
+  && /re-bound from harness codex to claude/.test(reboundOut)
+  && bgArgv().includes('## Communication protocol'),
+  reboundErr?.message ?? `${rebound?.harness} ${JSON.stringify(reboundHistory)} ${reboundOut.slice(-400)}`);
+const { reviewerResultSent } = await import(path.join(here, '..', 'lib', 'approver.js'));
+check('re-bind: a result from before the re-bind does not unlock the approver',
+  !!rebound && reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api', rebound) === false,
+  String(reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api', rebound)));
+store.sendMessage(home, rebindTask.id, {
+  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'round after rebind',
+});
+check('re-bind: the re-bound reviewer result counts for the current generation',
+  reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api',
+    store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api')) === true);
+const rebindStatus = await capture(() => status(WS, { task: rebindTask.id, sessions: {} }));
+check('re-bind: status keeps the earlier rounds on the earlier harness',
+  /harness claude/.test(rebindStatus)
+  && /prior harness codex until /.test(rebindStatus)
+  && /results 1/.test(rebindStatus)
+  && !/results 2/.test(rebindStatus),
+  rebindStatus);
+const { telemetryRecords, tallies } = await import(path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
+const rebindRows = telemetryRecords(hostOf(WS), home, store.readTask(home, rebindTask.id))
+  .filter((row) => row.role === 'reviewer');
+const codexRow = rebindRows.find((row) => row.harness === 'codex');
+const claudeRow = rebindRows.find((row) => row.harness === 'claude');
+check('re-bind: telemetry attributes each generation to its own harness',
+  rebindRows.length === 2
+  && codexRow?.resultCount === 1
+  && claudeRow?.resultCount === 1
+  && codexRow?.model === 'gpt-5.4',
+  JSON.stringify(rebindRows.map((row) => ({
+    harness: row.harness, model: row.model, resultCount: row.resultCount,
+  }))));
+
+claudeSays('[]');
+let reliftErr = null;
+try {
+  await capture(() => review(WS, { tool: TOOL, target: REPO, task: rebindTask.id }));
+} catch (e) {
+  reliftErr = e;
+}
+const relifted = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api');
+const reliftHistory = relifted?.metadata?.harnessHistory ?? [];
+const reliftStatus = await capture(() => status(WS, { task: rebindTask.id, sessions: {} }));
+check('re-bind: a later lift of the same harness keeps the earlier harness in the history',
+  !reliftErr
+  && relifted?.harness === 'claude'
+  && reliftHistory.some((row) => row.harness === 'codex')
+  && /prior harness codex until /.test(reliftStatus),
+  reliftErr?.message ?? `${relifted?.harness} ${JSON.stringify(reliftHistory)} ${reliftStatus}`);
+
+const tileTask = store.createTask(home, { id: 't20260925-155100', title: 'reviewer generation windows' });
+const tileStart = '2026-09-17T08:00:00.000Z';
+store.upsertParticipant(home, tileTask.id, store.participantRecord('reviewer:cargos-api', {
+  harness: 'claude',
+  repo: 'loads_search/cargos-api',
+  repoAbs: REPO,
+  name: 'a2a-tile-reviewer-pb235',
+  model: 'sonnet',
+  started: tileStart,
+  reviewAssignedAt: tileStart,
+}));
+claudeSays('[]');
+store.sendMessage(home, tileTask.id, {
+  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation one',
+});
+let tileSameErr = null;
+try {
+  await capture(() => review(WS, { tool: TOOL, target: REPO, task: tileTask.id }));
+} catch (e) {
+  tileSameErr = e;
+}
+const afterSame = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:cargos-api');
+check('re-bind: a same-harness re-lift writes no history entry',
+  !tileSameErr
+  && afterSame?.harness === 'claude'
+  && !(afterSame?.metadata?.harnessHistory ?? []).length
+  && afterSame?.metadata?.started !== tileStart,
+  tileSameErr?.message ?? JSON.stringify(afterSame?.metadata?.harnessHistory));
+store.sendMessage(home, tileTask.id, {
+  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation two',
+});
+claudeSays('[]');
+const beforeRebind = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:cargos-api');
+store.upsertParticipant(home, tileTask.id, {
+  ...beforeRebind,
+  harness: 'codex',
+  metadata: {
+    ...beforeRebind.metadata,
+    model: 'gpt-5.4',
+    routing: { tupleId: 'codex-gpt', strategy: 'quality', strategySource: 'overlay:stand' },
+  },
+});
+let tileRebindErr = null;
+try {
+  await capture(() => review(WS, {
+    tool: TOOL, target: REPO, task: tileTask.id, harness: 'claude',
+  }));
+} catch (e) {
+  tileRebindErr = e;
+}
+const tileRows = telemetryRecords(hostOf(WS), home, store.readTask(home, tileTask.id))
+  .filter((row) => row.role === 'reviewer');
+const tileCodex = tileRows.find((row) => row.harness === 'codex');
+const tileSum = tileRows.reduce((n, row) => n + row.resultCount, 0);
+const tileAll = tallies(home, tileTask.id).get(beforeRebind.id)?.resultCount;
+check('re-bind: a same-harness re-lift then a rebind counts every earlier round',
+  !tileRebindErr
+  && tileSum === tileAll
+  && tileSum === 2
+  && tileCodex?.resultCount === 2
+  && tileCodex?.model === 'gpt-5.4'
+  && tileCodex?.tuple === 'codex-gpt'
+  && tileCodex?.strategy === 'quality'
+  && tileCodex?.strategySource === 'overlay:stand',
+  tileRebindErr?.message ?? JSON.stringify(tileRows.map((row) => ({
+    harness: row.harness, model: row.model, resultCount: row.resultCount, tuple: row.tuple,
+  }))));
+
+const unlabeledTask = store.createTask(home, { id: 't20260925-155200', title: 'closed generation without a model' });
+store.upsertParticipant(home, unlabeledTask.id, store.participantRecord('reviewer:cargos-api', {
+  harness: 'claude',
+  repo: 'loads_search/cargos-api',
+  repoAbs: REPO,
+  name: 'a2a-unlabeled-reviewer-pb235',
+  model: 'sonnet',
+  started: '2026-09-17T10:00:00.000Z',
+  harnessHistory: [{
+    harness: 'codex', from: '2026-09-17T08:00:00.000Z', until: '2026-09-17T09:00:00.000Z',
+  }],
+}));
+const unlabeledRows = telemetryRecords(hostOf(WS), home, store.readTask(home, unlabeledTask.id))
+  .filter((row) => row.role === 'reviewer');
+check('re-bind: a closed generation without its own model is not given the current one',
+  !unlabeledRows.some((row) => row.harness === 'codex')
+  && unlabeledRows.some((row) => row.harness === 'claude' && row.model === 'sonnet'),
+  JSON.stringify(unlabeledRows.map((row) => ({ harness: row.harness, model: row.model }))));
 
 // --- : raising the reviewer is checked against the session registry -----------------------
 //

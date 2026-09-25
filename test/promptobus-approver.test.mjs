@@ -128,6 +128,41 @@ check(': a reviewer result at or after the assignment watermark unlocks the appr
   reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:cargos-api')) === true,
   nextAssignment);
 
+const HARNESS_TASK = 'pb235-approver-harness';
+store.createTask(HOME, {
+  id: HARNESS_TASK,
+  title: 'approver harness stays',
+  status: 'active',
+  adapter: { slug: 'pb235', stamp: 't20260925-154900' },
+  participants: [],
+});
+store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:cargos-api', {
+  harness: 'claude',
+  repo: 'repos/loads_search/cargos-api',
+  repoAbs: REPO,
+  started: assignedAt,
+  reviewAssignedAt: assignedAt,
+}));
+store.sendMessage(HOME, HARNESS_TASK, {
+  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'reviewed',
+});
+store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('approver:cargos-api', {
+  harness: 'claude',
+  repo: 'repos/loads_search/cargos-api',
+  repoAbs: REPO,
+  started: assignedAt,
+}));
+const approverHarness = thrown(() => planApprover(WS, {
+  target: REPO, task: HARNESS_TASK, dryRun: true, harness: 'cursor',
+}));
+check(': an approver harness change names the session state and no separate task',
+  approverHarness.threw
+  && /does not change an approver's harness/.test(approverHarness.msg)
+  && /saw the session as unknown/.test(approverHarness.msg)
+  && !/separate task/.test(approverHarness.msg)
+  && !/--title/.test(approverHarness.msg),
+  approverHarness.msg);
+
 const OTHER_REPO = path.join(WS, 'repos', 'other', 'cargos-api');
 mkdirSync(OTHER_REPO, { recursive: true });
 g(OTHER_REPO, 'init', '-b', 'main');
