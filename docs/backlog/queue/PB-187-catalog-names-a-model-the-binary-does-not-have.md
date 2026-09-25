@@ -95,3 +95,7 @@ Checked on `39316bc2` from the repository root. **Cost `major`**: whether the pa
 - **Stale Verification line:** "the guide and reference state that catalog membership is not a promise". Only the guide says it (`docs/guides/model-routing.md:103`); `grep -n -i "catalog membership" docs/reference/03-cli.md docs/reference/05-drivers.md` → exit 1.
 - **Inconsistency to settle with the measurement:** the guide says the same executable with `CODEX_HOME` unset returned "a different seven-row set" (`docs/guides/model-routing.md:103`), while this card and `docs/reference/03-cli.md:583-593` record 8/7/8 rows for the unset home.
 - **Overlap with PB-246:** its item "re-check the inventory of the participant's own `CODEX_HOME`" is this card's open measurement. Whoever runs first records the owner and participant payloads side by side on 0.156.1 and answers the other card.
+
+## Re-triage, 2026-09-25
+
+PB-196 measured on codex-cli 0.156.1 with no turn: `model/list` answers byte-identically in the owner's home and a participant home — 7 rows, none hidden, default `gpt-6-astra`; with `includeHidden: true` it answers 9, `gpt-reserve` and `codex-auto-review` hidden. The adapter sends `model/list {}`, so hidden rows never reach it. `debug models` answers the same 9 rows in both homes, twice each, byte-identical. `gpt-5.4-mini` is in neither listing.

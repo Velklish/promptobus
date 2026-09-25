@@ -1,5 +1,6 @@
 # PB-214 · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути
 
+- **Order:** 280
 - **Scope:** `lib/codex-session.js` (`containmentPath`, `resolveTarget`, ветка отказа), `lib/spawn.js` и `lib/review.js` — как путь называется участнику в преамбуле; `docs/reference/03-cli.md`
 - **Created:** 2026-09-13
 - **Dependencies:** none
@@ -61,3 +62,7 @@ Checked on `39316bc2` from the repository root. **Cost `major`**: every refused 
 - **Correction, from the tree:** the Context says a participant reads the refusal and learns nothing from it. The participant never receives it — the reply is `{ decision: 'decline' }` (`:403`, via `approvalReply` at `:1056`), and the text reaches only the logs. This is also true at the filing commit `ab83711a`. The Work to do now starts with the delivery question and no longer carries PB-191's subject.
 - The preamble carries no worktree path: `src/host.ts:199` gives `workerPreamble` only `taskId`, `nsPath` and `branch`, and the standalone host prints no absolute path (`sed -n '284,300p' src/standalone.ts`). The last work item stays open as written.
 - **Return condition: not fired** — see the re-triage of PB-196.
+
+## Re-triage, 2026-09-25
+
+**Return condition fired.** PB-196 re-measured on codex-cli 0.156.1: the approval decision response schemas are unchanged and the holder still answers `decline`; the pathless refusals of the third item are answered in PB-191's closure. The live count of guessed paths needs a run with several Codex participants and was not re-taken. The card returns to the queue.

@@ -1,5 +1,6 @@
 # PB-185 · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured
 
+- **Order:** 270
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12
@@ -130,3 +131,7 @@ Checked on `39316bc2` from the repository root. **Cost `major`**: a Codex partic
 - **Correction, from the tree:** "the flag arrived through a different route" does not hold. `lib/codex-hold.js` is a six-line shim that imports `holdMain` from `lib/codex-session.js` (`cat lib/codex-hold.js`), and the flag is that module's constant: `grep -n PARTICIPANT_ARGV lib/codex-session.js` → exit 0, `:24` and the spawn at `:853`. So `grep -c PARTICIPANT_ARGV lib/codex-hold.js` = 0 looked in the shim, and the route is the ordinary one. The same holds at tag `v0.7.0`: `git grep -n PARTICIPANT_ARGV v0.7.0 -- lib/codex-session.js` → exit 0, `:45` and the spawn at `:1046`. That the installed 0.7.0 copy matched the tag is an assumption. `docs/guides/hooks-and-trust.md:31` repeats the wrong inference ("the flag reached argv by another path"); it is in this card's Scope and is corrected with it.
 - Not tree-checkable and left as the author's records of 2026-09-12: the holder journals (`hook/started` = 0), the `codex features list` and `codex plugin list` readouts, and the binary's project-trust refusal text. All of them are on 0.146.0, which is no longer installed (`codex --version` → `codex-cli 0.156.1`).
 - **Return condition: not fired** — see the re-triage of PB-196: no Codex run is recorded, and PB-196 has not re-measured.
+
+## Re-triage, 2026-09-25
+
+**Return condition fired.** PB-196 upgraded and re-measured on codex-cli 0.156.1: a Codex participant lifted by this tree's mechanism, with `.codex/hooks.json` in its trusted worktree and the bypass flag, emitted no `hook/*` notification over its whole JSON-RPC stream; `codex features list` in the participant home shows `hooks` stable true. Unchanged on the new binary, so the card returns to the queue.
