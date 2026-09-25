@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-09-23T00:00:00.000Z",
+  "updated": "2026-09-25T00:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-51-high",
@@ -758,7 +758,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 320,
+      "priority": 330,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -812,12 +812,39 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 360,
+      "priority": 380,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from cursor-gemini-38-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-gemini-38-high"
+      }
+    },
+    {
+      "id": "cursor-grok-47-medium",
+      "harness": "cursor",
+      "model": "grok-4.7-medium",
+      "effort": null,
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 7,
+        "speed": 1,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 390,
+      "assessedAt": "2026-09-25T00:00:00.000Z",
+      "source": "public benchmarks and the cursor-agent 2026.09.23 listing, 2026-09-25",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from cursor-grok-47-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "cursor-grok-47-high"
       }
     },
     {
@@ -839,12 +866,63 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 370,
+      "priority": 400,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from cursor-grok-high on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-grok-high"
+      }
+    },
+    {
+      "id": "cursor-grok-47-high",
+      "harness": "cursor",
+      "model": "grok-4.7-high",
+      "effort": null,
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 8,
+        "speed": 1,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 340,
+      "assessedAt": "2026-09-25T00:00:00.000Z",
+      "source": "public benchmarks and the cursor-agent 2026.09.23 listing, 2026-09-25",
+      "evidence": {
+        "text": "quality has NO published SWE-bench Verified figure for this exact model and remains a hypothesis of 8 under the successor rule, at the band of its predecessor's corresponding rung, cursor-grok-high: the SWE-bench Verified leaderboard this catalog reads carries no Grok 4.7 or Grok 4.6 row (seen 2026-09-25). Terminal-Bench 2.1 under Vals AI, run through the xAI API at xhigh, reports 73.41 %, which the Vals AI pair would band 5 at the xhigh rung. The predecessor's hypothesis was placed by Terminal-Bench 2.1 figures under other harnesses — the vendor's 88.4 for Grok 4.6, Cursor CLI's 79.3 for Grok 4.5 — so this figure differs in harness and cannot demote the successor while every head-to-head the vendor publishes puts Grok 4.7 ahead of Grok 4.6: CursorBench 4.0 46.3 % against 40.4 %, DeepSWE v1.1 71.0 % (high) against 65.2 %, EEBench 64.0 % against 53.0 %, AA Briefcase v1.1 1657 against 1546, Terminal-Bench 4.0 37.6 % against 20.3 %, Harvey Legal Agent Benchmark 19.6 % against 15.8 %, HealthBench Professional 56.7 % against 48.5 %, GDPval 1695 against 1605. The figure and its band are recorded here and not cited. The Terminal-Bench 4.0 leaderboard lists Grok 4.7 at xhigh under Grok Build, 37.6 % ±3.5, and GPT-5.6 Sol at max under Codex, 37.3 % ±3.8; the Terminal-Bench 4.0 pair is keyed to Claude Code, so neither figure is banded. The predecessor's band is itself a hypothesis, and the two rows move together. The id was read from `cursor-agent models` on 2026.09.23-86fc751: the Grok 4.7 ids carry no `cursor-` prefix, and the vendor names Cursor among the places it serves the model. speed uses Artificial Analysis 40→1 / 310→10: 52.4 tokens/s→1, the row \"Grok 4.7 (high)\". quotaCost uses blended list price $2.50→1 / $30→10: $4→1 ($2 in / $6 out below 200k prompt tokens); the predecessor's Cursor row carries 10 as a hypothesis from a local usage spike, and a local correction of this band goes through `models calibrate`. Anchors assessed 2026-09-06, the Terminal-Bench 4.0 pair 2026-09-09; figures seen 2026-09-25; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "sources": [
+          {
+            "rating": "speed",
+            "basis": "Artificial Analysis output speed",
+            "version": "model snapshot 2026-09-25",
+            "agentHarness": "Artificial Analysis serving stack",
+            "provenance": "primary model page, opened",
+            "figure": "52.4 tokens/s (measured at high)",
+            "url": "https://artificialanalysis.ai/models/grok-4-7-high",
+            "date": "2026-09-25"
+          },
+          {
+            "rating": "quotaCost",
+            "basis": "xAI list price, blended (input + output) / 2",
+            "version": "price schedule 2026-09-25",
+            "agentHarness": "vendor API",
+            "provenance": "vendor price page, opened",
+            "figure": "$4.00 per 1M tokens ($2 in / $6 out, prompts under 200k tokens)",
+            "url": "https://docs.x.ai/developers/pricing",
+            "date": "2026-09-25"
+          }
+        ],
+        "hypothesis": [
+          "quality"
+        ]
       }
     },
     {
@@ -866,7 +944,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 330,
+      "priority": 350,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -897,12 +975,39 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 340,
+      "priority": 360,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from cursor-kimi-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "cursor-kimi-max"
+      }
+    },
+    {
+      "id": "cursor-grok-47-xhigh",
+      "harness": "cursor",
+      "model": "grok-4.7-xhigh",
+      "effort": null,
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 9,
+        "speed": 1,
+        "quotaCost": 2
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 300,
+      "assessedAt": "2026-09-25T00:00:00.000Z",
+      "source": "public benchmarks and the cursor-agent 2026.09.23 listing, 2026-09-25",
+      "evidence": {
+        "text": "Interpolated +1 effort step(s) from cursor-grok-47-high on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "cursor-grok-47-high"
       }
     },
     {
@@ -924,7 +1029,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 300,
+      "priority": 310,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -952,7 +1057,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 310,
+      "priority": 320,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1010,7 +1115,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 380,
+      "priority": 410,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1064,7 +1169,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 400,
+      "priority": 430,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1091,7 +1196,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 410,
+      "priority": 440,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1118,7 +1223,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 420,
+      "priority": 450,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1128,6 +1233,33 @@
           "speed",
           "quotaCost"
         ]
+      }
+    },
+    {
+      "id": "cursor-grok-47-low",
+      "harness": "cursor",
+      "model": "grok-4.7-low",
+      "effort": null,
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 6,
+        "speed": 1,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 460,
+      "assessedAt": "2026-09-25T00:00:00.000Z",
+      "source": "public benchmarks and the cursor-agent 2026.09.23 listing, 2026-09-25",
+      "evidence": {
+        "text": "Interpolated -2 effort step(s) from cursor-grok-47-high on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "cursor-grok-47-high"
       }
     },
     {
@@ -1149,7 +1281,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 430,
+      "priority": 470,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1176,7 +1308,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 390,
+      "priority": 420,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1203,7 +1335,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 460,
+      "priority": 500,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1230,7 +1362,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 440,
+      "priority": 480,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1288,7 +1420,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 450,
+      "priority": 490,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
@@ -1339,7 +1471,7 @@
         "outputPerMTok": null
       },
       "billing": "subscription",
-      "priority": 350,
+      "priority": 370,
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {

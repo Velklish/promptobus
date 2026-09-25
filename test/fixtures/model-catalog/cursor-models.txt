@@ -10,7 +10,6 @@ gpt-5.3-codex-high-fast - Codex 5.3 High Fast
 gpt-5.3-codex-xhigh - Codex 5.3 Extra High
 gpt-5.3-codex-xhigh-fast - Codex 5.3 Extra High Fast
 gpt-5.2 - GPT-5.2
-cursor-grok-4.6-high-fast - Cursor Grok 4.6 Fast
 composer-2.5 - Composer 2.5
 claude-opus-5-thinking-high - Claude Opus 5 1M Thinking
 claude-opus-5-thinking-high-fast - Claude Opus 5 1M Thinking Fast
@@ -20,18 +19,39 @@ gpt-5.6-sol-xhigh - GPT-5.6 Sol 1M Extra High
 gpt-5.6-sol-xhigh-fast - GPT-5.6 Sol 1M Extra High Fast
 claude-fable-5-thinking-high - Claude Fable 5 1M Thinking (NO ZDR)
 claude-fable-5-thinking-xhigh - Claude Fable 5 1M Extra High Thinking (NO ZDR)
+cursor-grok-4.5-high - Grok 4.5
+cursor-grok-4.5-high-fast - Grok 4.5 Fast
 gemini-3.7-flash-high - Gemini 3.7 Flash
 claude-sonnet-5-thinking-high - Claude Sonnet 5 1M Thinking
 claude-sonnet-5-thinking-xhigh - Claude Sonnet 5 1M Extra High Thinking
 gpt-5.6-luna-high - GPT-5.6 Luna 1M High
-cursor-grok-4.6-low - Cursor Grok 4.6 Low
-cursor-grok-4.6-low-fast - Cursor Grok 4.6 Low Fast
-cursor-grok-4.6-medium - Cursor Grok 4.6 Medium
-cursor-grok-4.6-medium-fast - Cursor Grok 4.6 Medium Fast
-cursor-grok-4.6-high - Cursor Grok 4.6
-cursor-grok-4.6-xhigh - Cursor Grok 4.6 Extra High
-cursor-grok-4.6-xhigh-fast - Cursor Grok 4.6 Extra High Fast
+grok-4.7-low - Grok 4.7  Low
+grok-4.7-low-fast - Grok 4.7  Low Fast​​
+grok-4.7-medium - Grok 4.7  Medium
+grok-4.7-medium-fast - Grok 4.7  Medium Fast​​
+grok-4.7-high - Grok 4.7  High
+grok-4.7-high-fast - Grok 4.7  High Fast​​
+grok-4.7-xhigh - Grok 4.7  Extra High
+grok-4.7-xhigh-fast - Grok 4.7  Extra High Fast​​
+cursor-grok-4.6-low - Grok 4.6 Low
+cursor-grok-4.6-low-fast - Grok 4.6 Low Fast
+cursor-grok-4.6-medium - Grok 4.6 Medium
+cursor-grok-4.6-medium-fast - Grok 4.6 Medium Fast
+cursor-grok-4.6-high - Grok 4.6
+cursor-grok-4.6-high-fast - Grok 4.6 Fast
+cursor-grok-4.6-xhigh - Grok 4.6 Extra High
+cursor-grok-4.6-xhigh-fast - Grok 4.6 Extra High Fast
 composer-2.5-fast - Composer 2.5 Fast
+claude-opus-5-5-low - Claude Opus 5.5 1M Low
+claude-opus-5-5-low-fast - Claude Opus 5.5 1M Low Fast
+claude-opus-5-5-medium - Claude Opus 5.5 1M
+claude-opus-5-5-medium-fast - Claude Opus 5.5 1M Fast
+claude-opus-5-5-high - Claude Opus 5.5 1M High
+claude-opus-5-5-high-fast - Claude Opus 5.5 1M High Fast
+claude-opus-5-5-xhigh - Claude Opus 5.5 1M Extra High
+claude-opus-5-5-xhigh-fast - Claude Opus 5.5 1M Extra High Fast
+claude-opus-5-5-max - Claude Opus 5.5 1M Max
+claude-opus-5-5-max-fast - Claude Opus 5.5 1M Max Fast
 claude-opus-5-low - Claude Opus 5 1M Low
 claude-opus-5-low-fast - Claude Opus 5 1M Low Fast
 claude-opus-5-medium - Claude Opus 5 1M Medium
@@ -102,11 +122,21 @@ claude-fable-5-max - Claude Fable 5 1M Max (NO ZDR)
 claude-fable-5-thinking-low - Claude Fable 5 1M Low Thinking (NO ZDR)
 claude-fable-5-thinking-medium - Claude Fable 5 1M Medium Thinking (NO ZDR)
 claude-fable-5-thinking-max - Claude Fable 5 1M Max Thinking (NO ZDR)
+cursor-grok-4.5-low - Grok 4.5 Low
+cursor-grok-4.5-low-fast - Grok 4.5 Low Fast
+cursor-grok-4.5-medium - Grok 4.5 Medium
+cursor-grok-4.5-medium-fast - Grok 4.5 Medium Fast
 gemini-3.8-flash-low - Gemini 3.8 Flash Low
 gemini-3.8-flash-medium - Gemini 3.8 Flash Medium
 gemini-3.8-flash-high - Gemini 3.8 Flash High
 gemini-3.7-flash-low - Gemini 3.7 Flash Low
 gemini-3.7-flash-medium - Gemini 3.7 Flash Medium
+muse-spark-1.3-minimal - Muse Spark 1.3 1M Minimal
+muse-spark-1.3-low - Muse Spark 1.3 1M Low
+muse-spark-1.3-medium - Muse Spark 1.3 1M Medium
+muse-spark-1.3-high - Muse Spark 1.3 1M
+muse-spark-1.3-xhigh - Muse Spark 1.3 1M Extra High
+muse-spark-1.3-max - Muse Spark 1.3 1M Max
 gpt-5.6-terra-none - GPT-5.6 Terra 1M None
 gpt-5.6-terra-none-fast - GPT-5.6 Terra 1M None Fast
 gpt-5.6-terra-low - GPT-5.6 Terra 1M Low

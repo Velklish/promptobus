@@ -127,6 +127,7 @@ for (const [name, successorId, predecessorId] of [
   ['Opus 5.5', 'claude-opus-55-xhigh', 'claude-opus-xhigh'],
   ['GPT-6 Sol', 'codex-gpt6-sol-max', 'codex-sol-max'],
   ['GPT-6 Luna', 'codex-gpt6-luna-max', 'codex-luna-max'],
+  ['Grok 4.7', 'cursor-grok-47-high', 'cursor-grok-high'],
 ]) {
   test(`${name} keeps its predecessor quality band as a hypothesis`, () => {
     const successor = CATALOG.tuples.find((tuple) => tuple.id === successorId);

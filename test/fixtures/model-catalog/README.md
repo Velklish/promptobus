@@ -20,7 +20,7 @@ The check runs in one direction only. It asserts that every id the catalog names
 cursor-agent models | sed 's/\x1b\[[0-9;]*m//g' > test/fixtures/model-catalog/cursor-models.txt
 ```
 
-Captured 2026-09-05 from `cursor-agent` 2026.09.02-c22c1a3: 215 lines, `<id> - <Display Name>` after the "Available models" heading, about 210 concrete ids.
+Captured 2026-09-25 from `cursor-agent` 2026.09.23-86fc751: 245 lines, `<id> - <Display Name>` after the "Available models" heading, 241 ids with `auto` first. This version printed no ANSI escape into the pipe. The Grok 4.7 display names carry a double space, and the four `-fast` ones end in two zero-width spaces (U+200B): the binary's own bytes — a raw `cursor-agent models > file` matches this file byte for byte — so they stay.
 
 **Read the id, not the display name.** They differ, and that difference is what the check exists to survive: `claude-opus-5-thinking-high` is displayed as "Claude Opus 5 1M Thinking" with no level word in it at all, while `gpt-5.6-sol-high` is displayed as "GPT-5.6 Sol 1M High". A catalog row copied from a display name would be wrong in the first case and right in the second, and only the binary would ever say so.
 

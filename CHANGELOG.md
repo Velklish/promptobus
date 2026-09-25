@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Grok 4.7 in the catalog** (PB-254). `cursor-agent` 2026.09.23 lists `grok-4.7-low` … `grok-4.7-xhigh`, without the
+  `cursor-` prefix the Grok 4.6 ids carry, and a routed lift refused them (`constraint-unknown`). The catalog gains
+  the `cursor-grok-47` ladder — `high` base, `low`, `medium` and `xhigh` interpolated — and the Cursor priority block is
+  renumbered 300…500. `quality` 8 is a stated hypothesis under the successor rule: Terminal-Bench 2.1 under Vals AI,
+  73.41 % at xhigh, would band 5, and every head-to-head on xAI's launch page puts 4.7 above 4.6. `speed` cites
+  Artificial Analysis at 52.4 tokens/s (band 1) and `quotaCost` the xAI list price of $2 / $6 (band 1), while the Grok 4.6
+  rows keep their `quotaCost` hypothesis of 10 — so under every weight set but `speed` a routed pick now puts 4.7 above
+  4.6. The `-fast` twins stay unrated. The Cursor listing fixture is recaptured from 2026.09.23: 241 ids, 30 new and none
+  gone. [guides/model-routing](docs/guides/model-routing.md#the-catalog-file).
+
 ### Fixed
 
 - **The restart route a repeat spawn prints for a live participant stops that one participant** (PB-252). For Codex it
