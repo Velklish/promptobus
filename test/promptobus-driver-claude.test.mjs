@@ -101,6 +101,7 @@ check(': the key is in the file the lift writes, not only in the plan object',
   JSON.parse(written.text).crossSessionInbound === 'accept', written.text);
 check(': and the rest of the file is untouched by it',
   JSON.parse(written.text).enableAllProjectMcpServers === true
+  && JSON.parse(written.text).disableRemoteControl === true
   && JSON.parse(written.text).viewMode === 'focus'
   && Array.isArray(JSON.parse(written.text).hooks?.Stop), written.text);
 
@@ -125,6 +126,12 @@ check('PB-240: the approver\'s settings file switches off the background-session
 for (const role of ['worker', 'reviewer', null]) {
   check(`: a ${role ?? 'role-less'} lift keeps the guard — its file names no worktree key`,
     JSON.parse(roleFile(role).text).worktree === undefined, roleFile(role).text);
+}
+
+for (const role of ['worker', 'reviewer', 'approver']) {
+  const article = role === 'approver' ? 'an' : 'a';
+  check(`: ${article} ${role} lift carries disableRemoteControl: true`,
+    JSON.parse(roleFile(role).text).disableRemoteControl === true, roleFile(role).text);
 }
 
 // --- the mark such a session leaves, and what the state machine does with it ---

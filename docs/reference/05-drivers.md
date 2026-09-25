@@ -135,6 +135,17 @@ before the processes the turn started are gone, so the operation returns only on
 harness no longer has the session. That timing, and the reap it earned, are measured in
 [03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune).
 
+**The Remote Control entry on claude.ai and the desktop app.** A session lifted by Claude Code
+with `--bg` registers a Remote Control session under the user's account by default (`bridgeSessionId`
+in `~/.claude/jobs/<id>/state.json`), measured 2026-09-24 on `claude` 2.1.280 and 2026-09-25. Process
+teardown at exit is what removes it (read from the binary's strings, not documented behavior); on a killed or
+abruptly stopped process that teardown may never complete, leaving an entry listed as "Remote Control ·
+offline" indefinitely (the cause of the residual entry remains a hypothesis). A participant is driven over
+the bus and never needs Remote Control, so its participant settings file carries `"disableRemoteControl": true`
+([03-cli § Spawn](03-cli.md#spawn)) and never registers one. Entries left behind by sessions lifted without
+this key — earlier lifts and the orchestrator's own session — are not archived by the bus; they are archived
+by hand from the session menu on claude.ai or in the desktop app.
+
 ## The harness binary after a lift: the lift's door, not PATH
 
 Source: `lib/harness-home.js` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.js` (`runClaude`,

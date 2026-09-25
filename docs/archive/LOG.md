@@ -328,3 +328,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-196"></a>`PB-196-codex-cli-upgrade-remeasure` · 2026-09-25 · completed · — · Eight minor versions behind: the upgrade is a measurable event, not a background chore
 - <a id="pb-194"></a>`PB-194-worktree-drops-out-of-sandbox-writable-roots` · 2026-09-25 · merged into PB-196 · — · The participant shell worktree is closed; escalated exec_command is the measured write route
 - <a id="pb-191"></a>`PB-191-apply-patch-never-passes-containment` · 2026-09-25 · merged into PB-196 · — · `apply_patch` never passes the measured Codex participant boundary
+- <a id="pb-253"></a>`PB-253-participant-remote-control-session-outlives-stop` · 2026-09-25 · completed · — · A participant lifted with --bg registers a Remote Control session on claude.ai, and a stopped one can stay listed there as offline for good

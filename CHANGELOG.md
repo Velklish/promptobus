@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A Claude Code participant no longer registers a Remote Control session on claude.ai** (PB-253). A `--bg`
+  session registers an account Remote Control session by default, and an abrupt stop can leave it listed
+  indefinitely as "Remote Control · offline". A participant is driven over the bus and has no need for the entry.
+  The participant settings file now carries `"disableRemoteControl": true` for every role.
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn), [05-drivers](docs/reference/05-drivers.md#a-stop-returns-after-the-record-is-gone-not-after-the-command-returns).
+
 ## [0.17.0] — 2026-09-25
 
 ### Added
