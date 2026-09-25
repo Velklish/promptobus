@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden),
   [05-drivers § A refusal that names a reset](docs/reference/05-drivers.md#a-refusal-that-names-a-reset).
 
+- **The standalone host reads `claude --version` when the Claude driver declares it, so the version floor and the effort refusal see the build.** `resolveToolBin` itself does not start a process. The preflight asks before the probe, and a real lift asks once when the bin still has no version; `--dry-run` does not. A build below 2.1.280 drops `claude-opus-5-5` from the inventory on `promptobus models --refresh`; 2.1.280 keeps it. A timed-out, non-zero, or empty answer hands over no version and is not remembered, so the next probe asks again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent. [02-host](docs/reference/02-host.md#the-standalone-host), [03-cli](docs/reference/03-cli.md#claude-code-what-its-adapter-asks).
+
 ## [0.17.0] — 2026-09-25
 
 ### Added

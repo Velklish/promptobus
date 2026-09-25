@@ -3,7 +3,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -353,4 +353,103 @@ test('the built host declaration carries the writable layer flag a consumer comp
   const block = dts.slice(dts.indexOf('interface HostRoutingOverlay'));
   assert.ok(block, 'dist/host.d.ts declares no HostRoutingOverlay');
   assert.match(block.slice(0, block.indexOf('}')), /writable\?: boolean/);
+});
+
+const AUTH_OK = JSON.stringify({ loggedIn: true });
+
+test('standalone models --refresh drops claude-opus-5-5 below 2.1.280 and keeps it on 2.1.280', async () => {
+  // Mutation probe: `readToolVersion` returns null — the 2.1.263 rows stay ranked.
+  const { createStandaloneHost } = await import('../dist/host-index.js');
+  const { models } = await import('../lib/models.js');
+  const { claudeAvailability } = await import('../lib/model-routing/adapter-claude.js');
+  const { inventoryFor, MODEL_SCOPE_IDS, claudeDriver } = await import('../lib/driver-claude.js');
+  const { stubCommand, writeHostConfig, withStubPath } = await import('./sandbox.mjs');
+  const adapterFor = () => claudeAvailability(inventoryFor, MODEL_SCOPE_IDS, {
+    readCredential: async () => null,
+    getJson: async () => { throw new Error('the suite does not call the usage endpoint'); },
+  });
+
+  const ask = async (versionLine, { failVersion = false, empty = false, versionReadMs = 0 } = {}) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-host-ver-'));
+    const bin = path.join(dir, 'bin');
+    const log = path.join(dir, 'calls.log');
+    const versionBody = versionReadMs
+      ? 'setTimeout(() => process.exit(0), 30_000);'
+      : failVersion
+        ? 'process.exit(1);'
+        : empty
+          ? 'process.stdout.write("\\n"); process.exit(0);'
+          : `process.stdout.write(${JSON.stringify(`${versionLine}\n`)}); process.exit(0);`;
+    stubCommand(bin, 'claude', `import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, args.join(' ') + '\\n');
+if (args[0] === '--version') { ${versionBody} }
+if (args[0] === 'auth') { process.stdout.write(${JSON.stringify(AUTH_OK)}); process.exit(0); }
+process.exit(2);
+`);
+    writeHostConfig(dir, { tools: ['claude'] });
+    const restore = withStubPath(bin);
+    try {
+      const host = createStandaloneHost({
+        cwd: dir, commandName: 'promptobus', home: path.join(dir, 'home'),
+        ...(versionReadMs ? { versionReadMs } : {}),
+      });
+      assert.equal(host.resolveToolBin('claude').version, undefined);
+      assert.equal(existsSync(log), false, 'resolveToolBin must not start claude');
+      const first = [];
+      await models(host, {
+        refresh: true, json: true, adapterFor, output: { write: (chunk) => first.push(String(chunk)) },
+      });
+      const decision = JSON.parse(first.join(''));
+      await models(host, {
+        refresh: true, json: true, adapterFor, output: { write: () => {} },
+      });
+      const opus = decision.candidates.filter((row) => row.model === 'claude-opus-5-5');
+      const calls = readFileSync(log, 'utf8');
+      const tool = host.resolveToolBin('claude');
+      const versionReads = (calls.match(/^--version$/gm) ?? []).length;
+      assert.equal(versionReads, failVersion || empty || versionReadMs ? 2 : 1, calls);
+      return {
+        opus,
+        version: tool.version,
+        refusal: claudeDriver.optionRefusal({ effort: 'ultracode', statusCommand: 'status' }, tool),
+        calls,
+      };
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const old = await ask('2.1.263 (Claude Code)');
+  assert.equal(old.version, '2.1.263 (Claude Code)');
+  assert.ok(old.opus.length > 0, 'the catalog has no claude-opus-5-5 rows');
+  assert.ok(old.opus.every((row) => row.excluded?.code === 'model-not-in-inventory'),
+    JSON.stringify(old.opus.map((row) => row.excluded)));
+  assert.equal(old.refusal, null);
+
+  const current = await ask('2.1.280 (Claude Code)');
+  assert.equal(current.version, '2.1.280 (Claude Code)');
+  assert.ok(current.opus.length > 0, 'the catalog has no claude-opus-5-5 rows');
+  assert.ok(current.opus.every((row) => row.excluded?.code !== 'model-not-in-inventory'),
+    JSON.stringify(current.opus.map((row) => row.excluded)));
+  assert.ok(current.opus.some((row) => row.score || row.chosen), '2.1.280 kept no Opus 5.5 row in the ranking');
+
+  const below = await ask('2.1.100 (Claude Code)');
+  assert.match(below.refusal, /2\.1\.100/);
+
+  const unread = await ask(null, { failVersion: true });
+  assert.equal(unread.version, undefined);
+  assert.ok(unread.opus.every((row) => row.excluded?.code !== 'model-not-in-inventory'),
+    JSON.stringify(unread.opus.map((row) => row.excluded)));
+
+  const blank = await ask(null, { empty: true });
+  assert.equal(blank.version, undefined);
+  assert.ok(blank.opus.every((row) => row.excluded?.code !== 'model-not-in-inventory'),
+    JSON.stringify(blank.opus.map((row) => row.excluded)));
+
+  const slow = await ask(null, { versionReadMs: 1500 });
+  assert.equal(slow.version, undefined);
+  assert.ok(slow.opus.every((row) => row.excluded?.code !== 'model-not-in-inventory'),
+    JSON.stringify(slow.opus.map((row) => row.excluded)));
 });

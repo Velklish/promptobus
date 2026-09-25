@@ -400,8 +400,8 @@ test('an id below its version floor leaves the inventory, and an unreadable vers
   assert.equal((await listed('a build that names no version')).includes('claude-opus-5-5'), true);
 });
 
-test('a host that hands over no version field at all — the standalone host — keeps claude-opus-5-5 in the inventory', async () => {
-  // The floor needs the version; `src/standalone.ts` resolves the name alone, so there it drops nothing (PB-245.3).
+test('a host that hands over no version field at all keeps claude-opus-5-5 in the inventory', async () => {
+  // Absence means unread: the floor drops nothing until a host hands a version over.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const host = { ...box.host, resolveToolBin: (name) => ({ ok: true, bin: path.join(box.dir, name) }) };
   const verdict = await probe(host);

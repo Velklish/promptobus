@@ -96,7 +96,7 @@ The Mythos refusal is account-dependent: that message is the only evidence separ
 
 **Neither Fable id was run.** Both were read out of the binary instead — `claude-fable-5` in PB-29 off 2.1.251, `claude-fable-5-1` in PB-34 off 2.1.263 — and that was judged sufficient because the read answers a strictly stronger question than the turn does. A successful turn proves the binary accepted the string; the binary's own baked model catalog is where that acceptance comes FROM. On 2.1.263 it names both ids as first-party rows of `family:"fable"` and lists both in its array of accepted ids, and `alias_migration` is empty. A turn could not have distinguished either id from a near neighbour the binary also takes; the catalog read names the exact strings. It also costs nothing against the plan, which matters more for the top-tier family than for the other two.
 
-That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it. An id that an older build does not carry also gets an entry in `MODEL_MIN_VERSION` beside it — `claude-opus-5-5` → 2.1.280, the version 2.1.263's own refusal names — and the inventory of a binary below that floor leaves the id out — on a host that hands over the binary's version; the standalone host does not, and there the floor drops nothing ([03-cli](../reference/03-cli.md#claude-code-what-its-adapter-asks)).
+That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it. An id that an older build does not carry also gets an entry in `MODEL_MIN_VERSION` beside it — `claude-opus-5-5` → 2.1.280, the version 2.1.263's own refusal names — and the inventory of a binary below that floor leaves the id out. The standalone host reads `claude --version` when the Claude adapter declares it, during the preflight and again on a real lift whose bin has no version, so a build below the floor leaves the id out; a version it could not read drops nothing, and that failure is asked again on the next probe ([03-cli](../reference/03-cli.md#claude-code-what-its-adapter-asks)).
 
 The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
 
@@ -1139,6 +1139,15 @@ so the run may outlive its budget by that one resolve and by no more.
 The answer is memoised by tool NAME: two harnesses that name one binary cost one
 resolve. A host that throws is not a verdict here — `null` travels to the adapter,
 which says what a missing resolve means in its own words.
+
+When that answer carries no `version` and the adapter declares `readsVersion`,
+`resolveBins` calls the optional `readToolVersion(name, bin)` once for the
+binary. Claude's adapter declares it; Cursor's and Codex's do not. The
+standalone host does not switch on the name: one `<bin> --version`, a 5 s
+ceiling, and the raw line or nothing. A timeout, a non-zero exit, or empty
+stdout leaves `version` absent and is not remembered. A usable line is
+remembered, so a later resolve in the same process does not ask again. A host
+that already filled `version` is not called.
 
 ### `routingMetadata` — the decision as it is kept on the participant
 

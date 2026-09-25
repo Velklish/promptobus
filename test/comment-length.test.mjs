@@ -103,7 +103,7 @@ test('the walk says how much it read, because an empty one gives the same green 
   // Measured before this floor existed: emptying the walk outright left 11 of 11 verdicts green,
   // since every list it fills is asserted EMPTY and an empty walk fills them all with nothing.
   assert.equal(walk.judged, tracked.length, `the walk judged ${walk.judged} of ${tracked.length} tracked files`);
-  assert.equal(walk.seen, 189, `the walk saw ${walk.seen} long runs, and the tree is known to carry 189`);
+  assert.equal(walk.seen, 188, `the walk saw ${walk.seen} long runs, and the tree is known to carry 188`);
 });
 
 test('the walk refuses each of the four shapes it exists to catch', () => {

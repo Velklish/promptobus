@@ -366,6 +366,63 @@ test('a host that throws while resolving is not a crash: the adapter is asked wi
   assert.ok(!snapshot.harnesses.alpha.message.includes('blew up'), 'the host text must not travel');
 });
 
+test('a host that already filled version is not asked to read it', async () => {
+  // Mutation probe: `const unread = typeof found?.version !== 'string'` → `const unread = true`.
+  let calls = 0;
+  const host = {
+    ...sandboxHost(),
+    resolveToolBin: () => ({ ok: true, bin: 'claude', version: '2.1.280' }),
+    readToolVersion: () => { calls += 1; throw new Error('already filled'); },
+  };
+  const seen = [];
+  const snapshot = await preflight({
+    host,
+    harnesses: ['claude'],
+    adapterFor: adapterMap({ claude: { ...toolStub('claude', { seen }), readsVersion: true } }),
+    refresh: true,
+    budgetMs: 5_000,
+  });
+  assert.equal(calls, 0);
+  assert.equal(seen[0].toolBin.version, '2.1.280');
+  assert.equal(snapshot.harnesses.claude.reason, 'quota_unknown');
+});
+
+test('a tool that does not declare a version read is not asked, and one that does is asked once', async () => {
+  let cursorCalls = 0;
+  const cursorHost = {
+    ...sandboxHost(),
+    resolveToolBin: () => ({ ok: true, bin: 'cursor-agent' }),
+    readToolVersion: () => { cursorCalls += 1; return '2026.09.02'; },
+  };
+  const cursorSeen = [];
+  await preflight({
+    host: cursorHost,
+    harnesses: ['cursor'],
+    adapterFor: adapterMap({ cursor: toolStub('cursor-agent', { seen: cursorSeen }) }),
+    refresh: true,
+    budgetMs: 5_000,
+  });
+  assert.equal(cursorCalls, 0);
+  assert.equal(cursorSeen[0].toolBin.version, undefined);
+
+  let claudeCalls = 0;
+  const claudeHost = {
+    ...sandboxHost(),
+    resolveToolBin: () => ({ ok: true, bin: 'claude' }),
+    readToolVersion: () => { claudeCalls += 1; return '2.1.263 (Claude Code)'; },
+  };
+  const claudeSeen = [];
+  await preflight({
+    host: claudeHost,
+    harnesses: ['claude'],
+    adapterFor: adapterMap({ claude: { ...toolStub('claude', { seen: claudeSeen }), readsVersion: true } }),
+    refresh: true,
+    budgetMs: 5_000,
+  });
+  assert.equal(claudeCalls, 1);
+  assert.equal(claudeSeen[0].toolBin.version, '2.1.263 (Claude Code)');
+});
+
 test('an adapter that throws, and one that answers outside the contract, are both probe_failed', async () => {
   const host = sandboxHost();
   const snapshot = await preflight({

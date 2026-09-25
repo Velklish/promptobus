@@ -2237,6 +2237,28 @@ check(`: a version refusal for the reviewer does not write to the journal`,
   !store.readTask(home, oldTask.id).participants.some((p) => String(store.addressOf(p)).startsWith('reviewer:')),
   JSON.stringify(store.readTask(home, oldTask.id).participants));
 
+// The same refusal when review resolves the binary itself. A `tool` seam that already
+// carries the version would pass with the read deleted.
+const ULTRA_REVIEW_BIN = path.join(SB, 'ultra-review-bin');
+stubCommand(ULTRA_REVIEW_BIN, 'claude', `const args = process.argv.slice(2);
+if (args[0] === '--version') { process.stdout.write('2.0.0 (Claude Code)\\n'); process.exit(0); }
+process.stdout.write('[]');
+process.exit(0);`);
+const ultraReviewTask = store.createTask(home, { id: 't20260828-170100', title: 'ревью ultracode без шва' });
+const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
+  `const m = await import(${JSON.stringify(reviewUrl)});\n`
+  + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({
+    target: REPO, task: ultraReviewTask.id, effort: 'ultracode',
+  })});`,
+], {
+  encoding: 'utf8', cwd: SB,
+  env: { ...process.env, PATH: `${ULTRA_REVIEW_BIN}${path.delimiter}${PATH0}` },
+});
+const ultraReviewText = `${ultraReview.stdout}${ultraReview.stderr}`;
+check(': a review with no tool seam still reads the binary and refuses ultracode',
+  ultraReview.status === 1 && ultraReviewText.includes('2.0.0') && /DEFAULT effort/.test(ultraReviewText),
+  `status=${ultraReview.status} ${ultraReviewText}`);
+
 // --- : on a re-review the MCP set isn't announced -----------------------------
 //
 // The line describes what GOES to a participant. On a re-review no new session is

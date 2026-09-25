@@ -50,7 +50,7 @@ const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
 const {
   liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
-  runRepoGenerator, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings,
+  runRepoGenerator, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings, withToolVersion,
 } = await import(spawnUrl);
 const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const spawnWorker = (root, opts = {}) => spawnRaw(root, {
@@ -221,9 +221,10 @@ const lifted = await capture(() => spawnWorker(WS, opts));
 const record = store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api');
 const written = record?.metadata;
 check(': spawn wrote the participant into the task journal', !!written, JSON.stringify(written));
+const STUB_VERSION = '2.1.237 (Claude Code)';
 const liftProvenance = 'promptobus copy: cli=' + plan.host.binPath()
   + ' package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=' + plan.host.version
-  + ' participant=' + stubClaude() + ' version=unknown';
+  + ' participant=' + stubClaude() + ' version=' + STUB_VERSION;
 check(': launch provenance is recorded without changing the host writer version',
   lifted.includes(liftProvenance)
   && written?.mechanismPath === plan.host.binPath()
@@ -231,7 +232,7 @@ check(': launch provenance is recorded without changing the host writer version'
   && written?.packagePath === PACKAGE_PATH
   && written?.packageVersion === PACKAGE_VERSION
   && written?.hostVersion === plan.host.version
-  && written?.binaryVersion === null,
+  && written?.binaryVersion === STUB_VERSION,
   liftProvenance + ' :: ' + JSON.stringify({
     mechanismPath: written?.mechanismPath,
     mechanismVersion: written?.mechanismVersion,
@@ -813,6 +814,24 @@ check(': the refusal leaves nothing on disk — neither a participant nor a work
   !store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra')
   && worktreesWithStamp('t20260828-170000').length === 0,
   `${JSON.stringify(store.readTask(HOME, ULTRA_TASK).participants)} · ${worktreesWithStamp('t20260828-170000')}`);
+{
+  let calls = 0;
+  const host = { readToolVersion() { calls += 1; return '2.1.100 (Claude Code)'; } };
+  const filled = withToolVersion(claudeDriver, host, { ok: true, bin: 'claude' });
+  const kept = withToolVersion(claudeDriver, host, filled);
+  const quiet = withToolVersion({ options: { tool: 'cursor-agent' } }, host, { ok: true, bin: 'cursor-agent' });
+  check(': a declared driver is read once, and a driver that does not declare it is not',
+    filled.version === '2.1.100 (Claude Code)' && calls === 1 && kept === filled
+    && quiet.version === undefined && calls === 1,
+    `calls=${calls} filled=${filled.version} quiet=${quiet.version}`);
+}
+const fromHost = spawnRun({
+  repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'from-host', effort: 'ultracode',
+});
+const fromHostText = `${fromHost.stdout}${fromHost.stderr}`;
+check(': a lift with no tool seam still reads the binary and refuses ultracode',
+  fromHost.status === 1 && fromHostText.includes(CLAUDE_MIN) && /DEFAULT effort/.test(fromHostText),
+  `status=${fromHost.status} ${fromHostText}`);
 // The same binary and the same spawn without `ultracode` — the gate is not a
 // shared lift of the minimum version.
 const xhighPlan = await planSpawn(WS, {
@@ -997,13 +1016,12 @@ check(': the session name in the --dry-run command is quoted whole',
 check(': the directory in `cd` is quoted — the sandbox path has a space',
   dryPlan.cwd.includes(' ') && dryCmd.includes(`cd '${dryPlan.cwd}' && claude `), dryCmd);
 
-// Dest HostToolBin does not probe `--version`. Real spawn still launches the
-// bin (agents / --bg); the dry-run early return is what keeps PROBE_MARK empty
-// until this call.
+// A real lift of a driver that declares readsVersion asks once. Dry-run already
+// returned with the mark absent; this call is what writes it.
 await quiet(() => spawnWorker(WS, { repo: 'cargos-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' }));
 const probeLog = existsSync(PROBE_MARK) ? readFileSync(PROBE_MARK, 'utf8') : '';
-check(': dest host does not probe --version; real spawn still launches the bin',
-  probeLog.length > 0 && !/--version/.test(probeLog),
+check(': a real spawn reads --version once and still launches the bin',
+  (probeLog.match(/^--version$/gm) ?? []).length === 1 && /agents/.test(probeLog),
   probeLog || 'no mark');
 
 // --- : lift of a worker and a reviewer goes through one helper ---------------------

@@ -30,6 +30,9 @@ const ROUTING_OVERLAY = 'model-routing.json';
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_OUTPUT = 32 * 1024 * 1024;
 
+// One `--version` per ask, from the preflight or a lift, never from `resolveToolBin`. Ceiling: 02-host.
+const VERSION_READ_MS = 5_000;
+
 export interface StandaloneHostOptions {
   cwd?: string;
   home?: string;
@@ -41,6 +44,8 @@ export interface StandaloneHostOptions {
   binPath?: string;
   extraEnv?: Record<string, string>;
   config?: Record<string, unknown>;
+  /** Ceiling for one `--version`, milliseconds. Default 5 s. Not a config-file field. */
+  versionReadMs?: number;
 }
 
 interface HostFile {
@@ -74,6 +79,18 @@ function findConfig(start: string): { root: string; config: HostFile } {
     if (parent === dir) return { root: path.resolve(start), config: {} };
     dir = parent;
   }
+}
+
+function readBinVersion(bin: string, timeoutMs: number): string | null {
+  const r = spawnSync(bin, ['--version'], {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 64 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (r.error || r.status !== 0) return null;
+  const line = String(r.stdout ?? '').split(/\r?\n/).find((row) => row.trim());
+  return line ? line.trim() : null;
 }
 
 function git(repo: string, args: string[]): string | null {
@@ -131,6 +148,11 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
   const ruleFiles = Array.isArray(config.rules) ? config.rules.map(String) : [];
   const mcp = config.mcp && typeof config.mcp === 'object' ? config.mcp : {};
   const skills = typeof config.skills === 'string' ? config.skills : null;
+  const versionReadMs = typeof options.versionReadMs === 'number' && options.versionReadMs > 0
+    ? options.versionReadMs
+    : VERSION_READ_MS;
+  // A usable line stays for this host. A failed read is not stored.
+  const readLines = new Map<string, string>();
 
   const host: PromptobusHost = {
     kind: HOST_KIND,
@@ -266,9 +288,24 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     },
 
     extraEnv: () => ({ ...extra }),
-    // No `version`, deliberately: this host does not search for the binary, and `resolveToolBin` is
-    // synchronous — see [02-host.md § The standalone host](../docs/reference/02-host.md#the-standalone-host).
-    resolveToolBin: (name): HostToolBin => ({ ok: true, bin: name }),
+    // No spawn here: this member stays synchronous. The caller reads the version — see
+    // [02-host.md § The standalone host](../docs/reference/02-host.md#the-standalone-host).
+    resolveToolBin: (name): HostToolBin => {
+      const answered: HostToolBin = { ok: true, bin: name };
+      const known = readLines.get(name);
+      if (known) answered.version = known;
+      return answered;
+    },
+    readToolVersion: (name, bin): string | null => {
+      const known = readLines.get(bin) ?? readLines.get(name);
+      if (known) return known;
+      const line = readBinVersion(bin, versionReadMs);
+      if (line) {
+        readLines.set(bin, line);
+        readLines.set(name, line);
+      }
+      return line;
+    },
     substituteVars: (value) => value,
     legacyLayout: () => null,
 

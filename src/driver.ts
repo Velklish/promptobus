@@ -284,6 +284,9 @@ export interface DriverOptions {
   denyTools: string[];
   /** Harness version on which the wake channel was proven. Not a gate — evidence. */
   provenVersion: string;
+  /** The floor and the effort refusal need the binary's version. The preflight and a real lift
+   * ask `readToolVersion` only when this is set. */
+  readsVersion?: boolean;
   /** How the driver wakes the session: `socket`, `turn`, or `inject`. Not cosmetic — the suite's
    * stand-in channel substitutes delivery only where it truly is a socket. */
   knockChannel: string;

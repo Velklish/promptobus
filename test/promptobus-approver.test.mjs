@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { check } from './check.mjs';
@@ -661,3 +661,47 @@ check(': spawn --worker approver- still refuses with the reserved prefix words',
   spawnReserved.status !== 0
   && spawnReserved.stderr.includes('prefix is taken by the approver'),
   `status=${spawnReserved.status} ${spawnReserved.stderr}`);
+
+// A lift that resolves the binary itself, on a build below the ultracode floor.
+// Passing `tool` with a version would stay green if the read were deleted.
+const ULTRA_TASK = 'pb2065-ultra';
+store.createTask(HOME, {
+  id: ULTRA_TASK,
+  title: 'approver ultracode',
+  status: 'active',
+  adapter: { slug: 'pb2065', stamp: 't20260913-170100' },
+  participants: [],
+});
+store.upsertParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:cargos-api', {
+  harness: 'claude',
+  repo: 'repos/loads_search/cargos-api',
+  repoAbs: REPO,
+  started: assignedAt,
+  reviewAssignedAt: assignedAt,
+}));
+store.sendMessage(HOME, ULTRA_TASK, {
+  from: 'reviewer:cargos-api',
+  to: store.ORCHESTRATOR,
+  type: 'result',
+  body: 'review done',
+});
+const ULTRA_BIN = path.join(SB, 'ultra-bin');
+stubCommand(ULTRA_BIN, 'claude', `const args = process.argv.slice(2);
+if (args[0] === '--version') { process.stdout.write('2.0.0 (Claude Code)\\n'); process.exit(0); }
+process.stdout.write('[]');
+process.exit(0);`);
+const approverUrl = pathToFileURL(path.join(here, '..', 'lib', 'approver.js')).href;
+const ultraApprover = spawnSync(process.execPath, ['--input-type=module', '-e',
+  `const m = await import(${JSON.stringify(approverUrl)});\n`
+  + `await m.approverLift(${JSON.stringify(WS)}, ${JSON.stringify({
+    target: REPO, task: ULTRA_TASK, effort: 'ultracode',
+  })});`,
+], {
+  encoding: 'utf8',
+  cwd: WS,
+  env: { ...process.env, PROMPTOBUS_HOME: HOME, PATH: `${ULTRA_BIN}${path.delimiter}${PATH0}` },
+});
+const ultraApproverText = `${ultraApprover.stdout}${ultraApprover.stderr}`;
+check(': an approver with no tool seam still reads the binary and refuses ultracode',
+  ultraApprover.status === 1 && ultraApproverText.includes('2.0.0') && /DEFAULT effort/.test(ultraApproverText),
+  `status=${ultraApprover.status} ${ultraApproverText}`);

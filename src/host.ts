@@ -180,6 +180,9 @@ export interface PromptobusHost {
 
   extraEnv(): Record<string, string>;
   resolveToolBin(name: string): HostToolBin;
+  /** Optional. Asked when a declared tool's `resolveToolBin` returned no version.
+   * See 02-host, section The standalone host. */
+  readToolVersion?(name: string, bin: string): string | null;
   substituteVars(value: unknown): unknown;
   /** Where to migrate from and how to close former tasks. `null` — nothing to migrate from, which is
    * how standalone and any host without a former-store history look. */

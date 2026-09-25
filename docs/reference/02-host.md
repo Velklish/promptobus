@@ -184,7 +184,7 @@ Cursor's stop path re-resolves its binary with the preference `cursor-agent`, th
 
 `HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional and its absence means UNREAD, never "old".** It holds the binary's own version string as the host read it — the raw `--version` line — and a host that does not probe versions returns none. The host suite scans the three drivers, the three availability adapters and `lib/harness-home.js`, and finds seven readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment. The lift's own reader (`sayTool` and the refusal in `lib/spawn.js`) is outside that scan.
 
-**The standalone host is one of those, deliberately.** It does not search for the binary, so the only way to learn a version would be to start it, and `resolveToolBin` is synchronous: that means `spawnSync` on the lift path and inside the availability preflight, where a blocking resolve stops the single budget timer that caps the whole probe. So under the standalone host the `ultracode` refusal never refuses, the two proven-version warnings (`PROVEN_CURSOR_VERSION`, `PROVEN_CODEX_VERSION`) never warn, and an availability verdict carries no version. The drivers' comments say "version unread — we do not refuse", and this is which host that is: the shipped one, by default, not a rare case. A consumer host that probes fills the field and gets all three back.
+**The standalone host does not start a binary inside `resolveToolBin`.** That member stays synchronous and returns the name at once. A `spawnSync` there would block every caller — a lift, a review, a stop, a state query — and, if an adapter called it during the race, it would stop the single budget timer that caps the whole probe. The version read is the optional `readToolVersion(name, bin)`, and it does not switch on the name: it runs `<bin> --version` with a 5 s ceiling and returns the raw stdout line, or nothing. The package asks it only for a tool whose driver and adapter declare `readsVersion`. Claude declares it. The preflight asks before the probe race, and a real lift asks once when the resolved bin still has no version, before the effort refusal and the provenance line. `--dry-run` does not ask. A usable line is remembered for that host; a timeout, a non-zero exit, or an empty answer is not, so the next ask tries again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent under this host — the boundary of the decision that named `claude --version`. A consumer host that fills `version` from its own `resolveToolBin` is not asked.
 
 ## Launching a process
 
@@ -311,6 +311,22 @@ Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
 foreign-mechanism layout, no remote namespaces, and no memory servers here —
 that is a consumer implementation's business.
 
+`resolveToolBin` does not start a process. `readToolVersion(name, bin)` does,
+and it does not switch on the name: one `<bin> --version`, a 5 s ceiling, the
+raw stdout line. `createStandaloneHost` takes `versionReadMs` for that ceiling;
+the default is 5 s, and it is not an environment variable and not a field of
+`promptobus.json`. The Claude driver and its adapter declare `readsVersion`,
+and they are the only ones, so the preflight and a real lift ask only for that
+binary. A timeout, a non-zero exit, or an empty answer leaves `version` absent,
+which means unread, and a failed read is not remembered. A usable line is
+remembered, so a later `resolveToolBin` of that name returns it and does not
+start the binary again. A real lift whose bin has no version reads once before
+the effort refusal, including a lift that skipped the preflight. `--dry-run`
+does not read. Cursor and Codex do not declare the read, so their
+proven-version warnings stay silent here — the boundary of the decision that
+named `claude --version`. A host that already fills `version` from
+`resolveToolBin` is not called; a consumer may omit `readToolVersion`.
+
 ### The layer the tool writes
 
 Source: `src/host.ts`.
@@ -392,11 +408,17 @@ line, not something normalised. Optional, and its absence means UNREAD: a
 host that does not probe versions returns none, and a consumer may never
 read that as "old".
 
-The shipped standalone host is such a host. It hands the name back without
-searching (`src/standalone.ts`), so under it the `ultracode` refusal never
-refuses, the two proven-version warnings never warn, the Claude inventory's
-version floor (`MODEL_MIN_VERSION`) drops nothing, and an availability
-verdict carries no version at all — that is the DEFAULT, not a rare case.
+The shipped standalone host reads a declared binary's `--version` through
+`readToolVersion` (`src/standalone.ts`). Claude's driver and adapter are the
+ones that declare it. The preflight asks before the probe, and spawn, review
+and approver each ask once on a real lift when the bin still has no version.
+`--dry-run` does not. The raw line is what the Claude floor and the Claude
+effort refusal read. A timeout, a non-zero exit, or empty stdout leaves
+`version` absent — unread, not old — and that failure is not remembered, so
+the next probe asks again. A usable line is remembered for the host. Cursor
+and Codex do not declare the read, so their proven-version warnings stay
+silent under this host. That silence is the boundary of the decision that
+named `claude --version`.
 
 Declared here because four readers already exist and none of them could
 name the field they read: the three drivers' `optionRefusal` and the three
