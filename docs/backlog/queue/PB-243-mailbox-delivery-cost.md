@@ -16,7 +16,7 @@ Three findings, each from the transcripts rather than from reasoning:
 - **The warden's postcard is mostly boilerplate.** 287 postcards, 363k characters, 84M token-turns. A fixed 712-character tail sits on every one of them (the "fetch the mailbox" line plus the harness paragraph about peer messages), and the median postcard carries 976 characters of which 264 are new. The rest repeats 287 times.
 - **Short bodies are delivered twice.** 145 of those postcards carried the message body in full, and the protocol still requires a mailbox fetch to mark it read — so the same 122k characters arrive a second time. The stub form ("text N characters — fetch the mailbox") already exists and is used for long messages.
 
-Postcards arrive in bursts: 143 of 287 landed within 90 seconds of the previous one, the median gap is 89 seconds, the shortest 8. That they are not folded is [PB-229](PB-229-warden-knocks-once-per-message.md)'s subject, and the measurement above is evidence for it; this card makes each postcard smaller, PB-229 makes them fewer.
+Postcards arrive in bursts: 143 of 287 landed within 90 seconds of the previous one, the median gap is 89 seconds, the shortest 8. That they are not folded is [PB-229](../active/PB-229-warden-knocks-once-per-message.md)'s subject, and the measurement above is evidence for it; this card makes each postcard smaller, PB-229 makes them fewer.
 
 ## Work to do
 
@@ -26,7 +26,7 @@ Postcards arrive in bursts: 143 of 287 landed within 90 seconds of the previous 
 ## Out of scope
 
 - The routing policy that keeps reviewers on the orchestrator-only route. A direct reviewer-to-worker channel was considered and measured as roughly equal in tokens to this card together with PB-229, while it costs the isolation of review, the arbiter of a disagreement and the visibility of a silent pair. It stays a separate question, and its own reason is latency, not tokens.
-- Coalescing the warden's knocks — that is [PB-229](PB-229-warden-knocks-once-per-message.md). The two meet: fewer postcards times a smaller postcard.
+- Coalescing the warden's knocks — that is [PB-229](../active/PB-229-warden-knocks-once-per-message.md). The two meet: fewer postcards times a smaller postcard.
 - The harness paragraph about peer messages, which is 560 of the 712 fixed characters. This package does not control it; only sending fewer postcards reduces how often it is paid, which is PB-229's half.
 
 ## Verification
