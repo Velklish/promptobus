@@ -326,3 +326,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-239.2"></a>`PB-239.2-cursor-tmux-off-path-reads-live-session-stale` · 2026-09-24 · completed · — · Cursor state query runs tmux through PATH: a live session reads stale when tmux is off the caller's PATH
 - <a id="pb-254"></a>`PB-254-grok-4-7-joins-catalog` · 2026-09-25 · completed · — · Grok 4.7 joins the Cursor rows of the catalog
 - <a id="pb-196"></a>`PB-196-codex-cli-upgrade-remeasure` · 2026-09-25 · completed · — · Eight minor versions behind: the upgrade is a measurable event, not a background chore
+- <a id="pb-194"></a>`PB-194-worktree-drops-out-of-sandbox-writable-roots` · 2026-09-25 · merged into PB-196 · — · The participant shell worktree is closed; escalated exec_command is the measured write route
