@@ -682,6 +682,66 @@ check('PB-234.4: a probe declared not run has no counts to compare and lands as 
   && readFileSync(path.join(store.filesDir(home, task.id), 'handover-probe-not-run.json'), 'utf8') === JSON.stringify(notRunDoc),
   notRunSend.artifact?.filename);
 
+// The probe sha and the tree being handed over. Equal is nothing to say; a difference
+// with no reason is a refusal that names both; the same record with the reason passes unchanged.
+const EARLIER = 'c'.repeat(40);
+const LAG = 'the commits since the probe did not touch the mutated file or the reddened tests';
+
+const lagged = path.join(SB, 'handover-lagged-tree.json');
+writeFileSync(lagged, JSON.stringify(handoverDoc({ tree: EARLIER })));
+const lagRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: lagged,
+}));
+check('PB-234.3: a probe recorded on another tree, with no reason, is refused and both shas are named',
+  lagRefusal.threw
+  && /contradicts itself/.test(lagRefusal.msg)
+  && lagRefusal.msg.includes('a'.repeat(40))
+  && lagRefusal.msg.includes(EARLIER)
+  && /`treeLag`/.test(lagRefusal.msg)
+  && /re-run the probe on `tree`/.test(lagRefusal.msg)
+  && lagRefusal.msg.includes(`commits since \`${EARLIER}\``)
+  && /mutated line nor its verdicts/.test(lagRefusal.msg),
+  lagRefusal.msg);
+check('PB-234.3: the refusal left nothing of the unexplained record in the task',
+  !existsSync(path.join(store.filesDir(home, task.id), 'handover-lagged-tree.json')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+const explainedPath = path.join(SB, 'handover-lagged-explained.json');
+const explainedDoc = handoverDoc({ tree: EARLIER, treeLag: LAG });
+writeFileSync(explainedPath, JSON.stringify(explainedDoc));
+const explainedSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: explainedPath,
+});
+check('PB-234.3: the same record with a reason for the other tree is accepted unchanged',
+  explainedSend.artifact.filename === 'handover-lagged-explained.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-lagged-explained.json'), 'utf8')
+    === JSON.stringify(explainedDoc),
+  explainedSend.artifact?.filename);
+
+const agreedPath = path.join(SB, 'handover-agreed-tree.json');
+const agreedDoc = handoverDoc();
+writeFileSync(agreedPath, JSON.stringify(agreedDoc));
+const agreedSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: agreedPath,
+});
+check('PB-234.3: a record whose probe sha is its tree sha is unaffected',
+  agreedSend.artifact.filename === 'handover-agreed-tree.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-agreed-tree.json'), 'utf8')
+    === JSON.stringify(agreedDoc),
+  agreedSend.artifact?.filename);
+
+const agreedReasonPath = path.join(SB, 'handover-agreed-reason.json');
+const agreedReasonDoc = handoverDoc({ treeLag: LAG });
+writeFileSync(agreedReasonPath, JSON.stringify(agreedReasonDoc));
+const agreedReasonSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: agreedReasonPath,
+});
+check('PB-234.3: a reason beside shas that already agree is not a refusal',
+  agreedReasonSend.artifact.filename === 'handover-agreed-reason.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'handover-agreed-reason.json'), 'utf8')
+    === JSON.stringify(agreedReasonDoc),
+  agreedReasonSend.artifact?.filename);
+
 const neutral = path.join(SB, 'gates-not-a-record.txt');
 writeFileSync(neutral, 'not json, not a record\n');
 const neutralSend = store.sendMessage(home, task.id, {

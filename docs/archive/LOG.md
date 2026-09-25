@@ -350,3 +350,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-237"></a>`PB-237-approver-lift-refusal-does-not-name-the-subject` · 2026-09-25 · batch PB-250 · — · The --approver refusal names a reviewer but not the subject it must have lifted from
 - <a id="pb-238"></a>`PB-238-review-has-no-brief-flag` · 2026-09-25 · batch PB-250 · — · review takes no --brief, so an approver's assignment has to travel as a separate message
 - <a id="pb-65.4"></a>`PB-65.4-canonical-mkdir-enoent-reported-as-lost` · 2026-09-25 · completed · — · A canonical-directory mkdir ENOENT is reported as intent-lost while the intent remains
+- <a id="pb-234.3"></a>`PB-234.3-probe-tree-may-lag-record-tree` · 2026-09-25 · completed · — · Nothing notices a probe recorded against a tree the hand-off has already left

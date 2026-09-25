@@ -2779,6 +2779,14 @@ check('PB-234: a probe that names no target is named too — an absent `expected
   && /Name its absence too/.test(gatePlan.prompt)
   && /leaves no trace anywhere else/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /no `expected`/.test(l)) ?? gatePlan.prompt);
+check('PB-234.3: a present treeLag is named with both shas and is not a probe of HEAD',
+  /A present `treeLag` is named together with both shas/.test(gatePlan.prompt)
+  && /checks\.mutationProbe\.tree/.test(gatePlan.prompt)
+  && /not a probe of HEAD/.test(gatePlan.prompt)
+  && /do not take the record as covering the tree being accepted/.test(gatePlan.prompt)
+  && /Hand the orchestrator the command `git log --oneline <probe\.tree>\.\.<tree> -- <mutated file> <files of the tests in reddened>`/.test(gatePlan.prompt)
+  && /whose empty output is what supports the reason/.test(gatePlan.prompt),
+  gatePlan.prompt.split('\n').find((l) => /treeLag/.test(l)) ?? gatePlan.prompt);
 
 // PB-233: a session BOUND to task A lifts a review that opens task B. One binding stays, so B
 // gets none — and the contact point used to be written only by the first bus call FOR THAT TASK,

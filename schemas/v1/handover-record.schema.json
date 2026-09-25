@@ -114,6 +114,10 @@
           "description": "The sha the probe ran on. The probe comes after the commit: on an uncommitted tree the restore would take the fix with the mutation.",
           "$ref": "#/$defs/sha"
         },
+        "treeLag": {
+          "description": "Why this sha is not the handover record's tree. A reason, the same shape as every other reason here. Not needed when the two shas agree: a record written before this field exists has none, and it still passes, so there is no migration. Present when they differ — the usual case is a probe kept on an earlier sha because the commits since then did not touch the mutated file or the tests whose verdicts are in `reddened`. The door refuses a difference that carries no reason and names both shas. It does not read the prose against git and does not require the reason to name those commits. The running bus validates the installed package's schema, so this field can first be sent in the release after the one that adds it.",
+          "$ref": "#/$defs/reason"
+        },
         "mutated": {
           "description": "Where the mutation was made, as `file:line`. Not a description of it.",
           "type": "string",

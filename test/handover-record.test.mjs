@@ -135,6 +135,20 @@ check('PB-234.4: the schema still accepts counts that do not subtract to the sta
   }) }) })),
   'the schema compared two of its own fields');
 
+// The two shas may differ only when the record says why. The SHAPE of `treeLag` is
+// the schema's; whether the shas agree is `recordRefusal`'s, asserted at send in the adapter file.
+const EARLIER = 'c'.repeat(40);
+const LAG = 'the commits since the probe did not touch the mutated file or the reddened tests';
+
+check('PB-234.3: the probe may say why its sha is not the tree being handed over',
+  accepts(doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER, treeLag: LAG }) }) }))
+  && accepts(doc({ checks: checks({ mutationProbe: probe({ treeLag: LAG }) }) }))
+  && accepts(doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ treeLag: 'short' }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ treeLag: '' }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ treeLag: true }) }) })),
+  'a reason for another tree was refused, or a reason that is not a reason was accepted');
+
 check('PB-213: the probe names a sha and a `file:line`, not a description of either',
   refuses(doc({ checks: checks({ mutationProbe: probe({ tree: 'HEAD' }) }) }))
   && refuses(doc({ checks: checks({ mutationProbe: probe({ tree: '1966ace' }) }) }))
@@ -264,6 +278,11 @@ const fixtures = [
   doc({ checks: checks({ mutationProbe: probe({
     verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 },
   }) }) }),
+  // Schema-valid either way: agreeing shas, a stated difference, and a silent difference.
+  // The silent one is refused one layer up, so both readers must still accept the shape.
+  doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER, treeLag: LAG }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER }) }) }),
+  doc({ checks: checks({ mutationProbe: probe({ treeLag: 'short' }) }) }),
   doc({ checks: checks({ treeState: { beforeProbe: ' M lib/handoff.js', afterRestore: '' } }) }),
   doc({ checks: checks({ treeState: { beforeProbe: '' } }) }),
   doc({ checks: checks({ verdictNames: { removed: [{ name: 'a stale case', reason: 'the contract it asserted was removed' }] } }) }),
