@@ -14,7 +14,8 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
+  symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
@@ -584,6 +585,132 @@ test('the FS refused a recipient inbox mkdir — recovery keeps the intent open'
   } finally {
     if (existsSync(inbox)) chmodSync(inbox, 0o700);
   }
+});
+
+test('a stray file at a recipient path does not take status, history, or prune down', async (t) => {
+  const cases = [
+    {
+      name: 'EEXIST',
+      place: (home, id) => {
+        const stray = path.join(home, 'tasks', id, 'inbox', 'w-api');
+        mkdirSync(path.dirname(stray), { recursive: true });
+        writeFileSync(stray, 'not a directory\n');
+        return stray;
+      },
+    },
+    {
+      name: 'ENOTDIR',
+      place: (home, id) => {
+        const stray = path.join(home, 'tasks', id, 'inbox');
+        writeFileSync(stray, 'inbox is a file\n');
+        return stray;
+      },
+    },
+    {
+      name: 'ENOENT',
+      place: (home, id) => {
+        const stray = path.join(home, 'tasks', id, 'inbox', 'w-api');
+        mkdirSync(path.dirname(stray), { recursive: true });
+        symlinkSync('missing', stray);
+        return stray;
+      },
+    },
+    {
+      name: 'ELOOP',
+      place: (home, id) => {
+        const stray = path.join(home, 'tasks', id, 'inbox', 'w-api');
+        mkdirSync(path.dirname(stray), { recursive: true });
+        symlinkSync('w-api', stray);
+        return stray;
+      },
+    },
+  ];
+  for (const { name, place } of cases) {
+    await t.test(`stray file ${name}: status, history and prune exit 0 and keep the intent`, async () => {
+      const root = sandbox();
+      const engine = open(root);
+      const id = taskWith(engine, `mkdir-stray-${name.toLowerCase()}-t20260925-160000`);
+      const stray = place(engine.home, id);
+      let refused = null;
+      try {
+        await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: `stray ${name}` });
+      } catch (e) {
+        refused = e;
+      }
+      assert.equal(refused?.code, 'dir-occupied', String(refused));
+      assert.equal(refused.context.errno, name);
+      assert.equal(refused.context.target, stray);
+      const intents = path.join(engine.home, 'tasks', id, 'intents');
+      const [intentName] = openIntents(intents);
+      assert.ok(intentName, 'the refused fan-out left no intent');
+      const message = intentName.slice(0, -'.json'.length);
+      writeFileSync(path.join(intents, `${message}.owner`),
+        `${JSON.stringify({ pid: 2_147_483_647, host: os.hostname() })}\n`);
+      const commands = [
+        ['status', `const { status } = await import(${J(STATUS)});\nstatus(${J(root)}, { task: ${J(id)}, sessions: {} });\n`],
+        ['history', `const { history } = await import(${J(HISTORY)});\nhistory(${J(root)}, { task: ${J(id)} });\n`],
+        ['prune', `const { prune } = await import(${J(PRUNE)});\nprune(${J(root)}, { olderThan: 0 });\n`],
+      ];
+      const runs = await Promise.all(commands.map(([, body]) => child(body)));
+      exitedZero(runs, (i) => `${name} ${commands[i][0]}`);
+      const warning = `remains unfinished (dir-occupied)`;
+      for (const [i, run] of runs.entries()) {
+        assert.ok(run.err.includes(warning), `${commands[i][0]} stderr: ${run.err || 'empty'}`);
+        assert.ok(run.err.includes(stray), `${commands[i][0]} did not name the stray path: ${run.err}`);
+      }
+      assert.deepEqual(openIntents(intents), [intentName], 'the stray-file intent was not retained');
+      // rmSync reports success and leaves a dangling symlink in place.
+      if (lstatSync(stray).isSymbolicLink()) unlinkSync(stray);
+      else rmSync(stray);
+      const delivered = await child(commands[0][1]);
+      assert.equal(delivered.code, 0, `${name} status after clear: ${delivered.err}`);
+      assert.deepEqual(openIntents(intents), [], `${name}: the intent stayed after the path was cleared`);
+      assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'inbox', 'w-api', `${message}.json`)),
+        `${name}: status did not deliver once the path was clear`);
+    });
+  }
+});
+
+test('a symlink loop at the canonical messages directory does not take status, history, or prune down', async () => {
+  const root = sandbox();
+  const engine = open(root);
+  const id = taskWith(engine, 'mkdir-canon-eloop-t20260925-160000');
+  const stray = path.join(engine.home, 'tasks', id, 'messages');
+  symlinkSync('messages', stray);
+  let refused = null;
+  try {
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'canonical loop' });
+  } catch (e) {
+    refused = e;
+  }
+  assert.equal(refused?.code, 'dir-occupied', String(refused));
+  assert.equal(refused.context.errno, 'ELOOP');
+  assert.equal(refused.context.target, stray);
+  assert.match(refused.message, /do not resend/);
+  const intents = path.join(engine.home, 'tasks', id, 'intents');
+  const [intentName] = openIntents(intents);
+  assert.ok(intentName, 'the refused fan-out left no intent');
+  const message = intentName.slice(0, -'.json'.length);
+  writeFileSync(path.join(intents, `${message}.owner`),
+    `${JSON.stringify({ pid: 2_147_483_647, host: os.hostname() })}\n`);
+  const commands = [
+    ['status', `const { status } = await import(${J(STATUS)});\nstatus(${J(root)}, { task: ${J(id)}, sessions: {} });\n`],
+    ['history', `const { history } = await import(${J(HISTORY)});\nhistory(${J(root)}, { task: ${J(id)} });\n`],
+    ['prune', `const { prune } = await import(${J(PRUNE)});\nprune(${J(root)}, { olderThan: 0 });\n`],
+  ];
+  const runs = await Promise.all(commands.map(([, body]) => child(body)));
+  exitedZero(runs, (i) => commands[i][0]);
+  for (const [i, run] of runs.entries()) {
+    assert.ok(run.err.includes('remains unfinished (dir-occupied)'), `${commands[i][0]} stderr: ${run.err || 'empty'}`);
+    assert.ok(run.err.includes(stray), `${commands[i][0]} did not name the loop: ${run.err}`);
+  }
+  assert.deepEqual(openIntents(intents), [intentName], 'the loop intent was not retained');
+  unlinkSync(stray);
+  const delivered = await child(commands[0][1]);
+  assert.equal(delivered.code, 0, `status after clear: ${delivered.err}`);
+  assert.deepEqual(openIntents(intents), [], 'the intent stayed after the loop was removed');
+  assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'inbox', 'w-api', `${message}.json`)),
+    'status did not deliver once the canonical directory was clear');
 });
 
 // --- a sweep meets a sender between its payload and its record ----------------------

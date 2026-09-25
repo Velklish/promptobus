@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import {
   createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, readFileSync, readdirSync,
-  renameSync, rmSync, statSync, writeFileSync,
+  lstatSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -126,6 +126,59 @@ export function linkFailure(e: unknown, target: string): Error {
   if (LINK_REFUSALS.includes(code)) {
     return new PromptobusError('link-refused',
       `hard link was not created (${code}): ${target}`, { target, errno: code });
+  }
+  return e as Error;
+}
+
+// Directory-half refusals. They stay off LINK_REFUSALS: a link EEXIST is idempotent success.
+const DIR_BLOCKED = ['EROFS', 'ENOSPC'];
+const DIR_OCCUPIED = ['EEXIST', 'ENOTDIR'];
+// ENOENT is recipient-only: materialize reads a canonical one. ELOOP is occupied either way.
+const DIR_BROKEN_LINK = ['ENOENT', 'ELOOP'];
+
+// A file or a symlink at the path, or a file or symlink among its ancestors.
+// A fault injection has no such node, so the attempted directory is named.
+function occupiedPath(target: string): string {
+  let cur = target;
+  for (;;) {
+    try {
+      const node = lstatSync(cur);
+      if (node.isFile()) return cur;
+      // A directory symlink is an ordinary path. A dangling link or a loop is the stray.
+      if (node.isSymbolicLink()) {
+        try {
+          if (statSync(cur).isFile()) return cur;
+        } catch {
+          return cur;
+        }
+      }
+    } catch {
+      // Missing or unreadable: the stray node may be an ancestor.
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) return target;
+    cur = parent;
+  }
+}
+
+/** Mkdir refusal as its own typed code. A volume that may return is `dir-blocked`. A stray file is
+ * `dir-occupied`, and so is `ELOOP`, or a recipient `ENOENT`. Any other errno stays raw. */
+export function dirFailure(e: unknown, target: string, recipient = false): Error {
+  const errno = (e as NodeJS.ErrnoException).code ?? '';
+  if (DIR_BLOCKED.includes(errno)) {
+    const when = errno === 'ENOSPC' ? 'the volume has space' : 'the volume is writable again';
+    return new PromptobusError('dir-blocked',
+      `directory was not created (${errno}) at ${target}. The message is committed; it is delivered once ${when} — do not resend`,
+      { target, errno });
+  }
+  if (DIR_OCCUPIED.includes(errno) || errno === 'ELOOP' || (recipient && errno === 'ENOENT')) {
+    const where = occupiedPath(target);
+    const lead = DIR_BROKEN_LINK.includes(errno)
+      ? `a stray or broken link at ${where} (${errno}): remove or move it`
+      : `a file occupies ${where} (${errno}): remove or move that file`;
+    return new PromptobusError('dir-occupied',
+      `${lead}. The message is committed; it is delivered once the path is clear — do not resend`,
+      { target: where, errno });
   }
   return e as Error;
 }

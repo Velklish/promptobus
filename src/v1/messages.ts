@@ -9,7 +9,7 @@ import process from 'node:process';
 import { randomBytes } from 'node:crypto';
 import type { NotificationMessage } from '../driver.js';
 import { pidAlive } from '../fs/proc.js';
-import { linkFailure } from './artifacts.js';
+import { dirFailure, linkFailure } from './artifacts.js';
 import { fail, PromptobusError } from './errors.js';
 import {
   brokenInboxDir, brokenMessagesDir, historyDir, historyRef, historyRoot, inboxDir, inboxRef, intentFile,
@@ -19,13 +19,13 @@ import { compactStamp, MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import { validate } from './validate.js';
 
-/** Fan-out steps, after each of which the suite can crash the process. */
+/** Fan-out steps the suite can crash after. `mkdir` fires before the directory is created. */
 export type FanoutStep =
-  | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'ref' | 'close' | 'read'
+  | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'mkdir' | 'ref' | 'close' | 'read'
   | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
 
-/** Fault-injection seam: fan-out points fire AFTER each durable step, read points immediately
- * BEFORE their named filesystem operation. Not supplied in production at all. */
+/** Fault seam. Durable steps fire after the write; reads and `mkdir` fire immediately before
+ * their filesystem call. Not supplied in production. */
 export type FaultHook = (step: FanoutStep, info: Record<string, unknown>) => void;
 
 const NO_FAULT: FaultHook = () => {};
@@ -64,13 +64,17 @@ export function newRecordId(now: Date): string {
   return `${stamp}-${String(seq).padStart(4, '0')}-${randomBytes(3).toString('hex')}`;
 }
 
-// Idempotent hard link. `EEXIST` from the LINK is the whole point of the step — recovery writes
-// what is missing; from the `mkdir` it is a refusal, and goes out classified like any mkdir errno.
-function linkOnce(from: string, to: string): boolean {
+// Idempotent hard link. Link `EEXIST` means the ref is already placed.
+// Mkdir errno is classified by `dirFailure`, not by `linkFailure`.
+function linkOnce(from: string, to: string, fault: FaultHook = NO_FAULT, recipient = false): boolean {
+  const dir = path.dirname(to);
   try {
-    mkdirSync(path.dirname(to), { recursive: true });
+    fault('mkdir', { target: dir, to });
+    mkdirSync(dir, { recursive: true });
   } catch (e) {
-    throw linkFailure(e, path.dirname(to));
+    const directory = dirFailure(e, dir, recipient);
+    if (directory !== e) throw directory;
+    throw linkFailure(e, dir);
   }
   try {
     linkSync(from, to);
@@ -142,10 +146,10 @@ function openIntent(home: string, task: string, message: MessageV1): void {
 
 /** Step 3: link the canon to the intent, idempotent. There is no "already there" check before the
  * link — `EEXIST` says it; `ENOENT` on the source means another took the fan-out to the end. */
-function materialize(home: string, task: string, message: string): boolean {
+function materialize(home: string, task: string, message: string, fault: FaultHook = NO_FAULT): boolean {
   const canonical = messageFile(home, task, message);
   try {
-    return linkOnce(intentFile(home, task, message), canonical);
+    return linkOnce(intentFile(home, task, message), canonical, fault);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     if (existsSync(canonical)) return false;
@@ -157,14 +161,14 @@ function materialize(home: string, task: string, message: string): boolean {
 /** Steps 3–5 in one pass: the canon, refs for recipients, drop the intent. Called by both send and
  * recovery — exactly one code, or recovery would repair something other than what broke. */
 export function completeFanout(home: string, task: string, message: MessageV1, fault: FaultHook = NO_FAULT): string[] {
-  materialize(home, task, message.id);
+  materialize(home, task, message.id, fault);
   fault('canonical', { task, message: message.id });
   const fresh: string[] = [];
   for (const [index, recipient] of message.recipients.entries()) {
     // Fresh — those who must be woken: a recipient is counted for the process whose ref landed, or
     // two recoverers would both name it fresh and send two activation events for one message.
     if (!delivered(home, task, recipient, message.id)
-      && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id))) {
+      && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id), fault, true)) {
       fresh.push(recipient);
     }
     fault('ref', { task, message: message.id, recipient, index });
@@ -441,7 +445,7 @@ export interface Repair {
 export interface RecoverFailure {
   task: string;
   message: string;
-  code: 'link-refused' | 'intent-lost';
+  code: 'link-refused' | 'intent-lost' | 'dir-blocked' | 'dir-occupied';
   note: string;
 }
 
@@ -511,10 +515,11 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
       fault('intent-materialize', { task, message: message.id });
       fresh = completeFanout(home, task, message, fault);
     } catch (e) {
-      // A classified environmental refusal leaves the intent for a later pass; ENOENT at
-      // materialization means both sources are gone. Everything else still escapes.
-      if (!(e instanceof PromptobusError) || e.code !== 'link-refused') throw e;
-      const failureCode = e.context.errno === 'ENOENT' ? 'intent-lost' : e.code;
+      // Classified refusals leave the intent. Link ENOENT is intent-lost; a directory
+      // refusal is not — the intent is still the only copy. Anything else escapes.
+      if (!(e instanceof PromptobusError)) throw e;
+      if (e.code !== 'link-refused' && e.code !== 'dir-blocked' && e.code !== 'dir-occupied') throw e;
+      const failureCode = e.code === 'link-refused' && e.context.errno === 'ENOENT' ? 'intent-lost' : e.code;
       failed.push({ task, message: message.id, code: failureCode, note: e.message });
       continue;
     }

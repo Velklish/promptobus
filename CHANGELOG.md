@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A stray file, a broken link, or a read-only or full volume on a fan-out mkdir no longer takes `status`, `history` and `prune` down with a raw errno** (PB-65.2). `EROFS` and `ENOSPC` are `dir-blocked` (delivered once the volume is writable again, or has space). `EEXIST` and `ENOTDIR`, a recipient `ENOENT`, and `ELOOP` on either the canonical directory or a recipient directory are `dir-occupied`. Both refusals tell the sender the message is already committed, so it must not be resent: a blocked volume once it is writable or has space, an occupied path once that path is clear. The intent stays open. Any other mkdir errno still escapes raw, and a canonical-directory `ENOENT` stays raw. The hard-link refusal list is unchanged, so a link that is already in place stays an idempotent success. [04-protocol § Engine](docs/reference/04-protocol.md#engine).
 - **A Claude Code participant no longer registers a Remote Control session on claude.ai** (PB-253). A `--bg`
   session registers an account Remote Control session by default, and an abrupt stop can leave it listed
   indefinitely as "Remote Control · offline". A participant is driven over the bus and has no need for the entry.

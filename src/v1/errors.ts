@@ -34,6 +34,9 @@ export const ERROR_CODES = [
   // that one says "wait and retry", and here the wait is the hang.
   'lock-self-async',
   'link-refused',
+  // Directory half of a fan-out link. Off the hard-link list on purpose.
+  'dir-blocked',
+  'dir-occupied',
   // model routing. The adapter raises these, not the core, and they live here because the consumer
   // branch on one list; the prose half is [04-protocol.md § Typed protocol errors](../../docs/reference/04-protocol.md#typed-protocol-errors).
   'strategy-unknown',

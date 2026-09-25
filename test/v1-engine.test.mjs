@@ -1021,6 +1021,139 @@ test('open-time recovery returns when one intent is unreadable and recovers anot
   assert.equal(healed.unread(secondTask, 'w-api'), 1, 'open-time recovery stopped before the next task');
 });
 
+test('a recipient-directory mkdir refusal is classified and leaves the intent', async (t) => {
+  const cases = [
+    ['EROFS', 'dir-blocked', 'delivered once the volume is writable again', 'aaaaa1'],
+    ['ENOSPC', 'dir-blocked', 'delivered once the volume has space', 'aaaaa2'],
+    ['EEXIST', 'dir-occupied', 'remove or move that file', 'aaaaa3'],
+    ['ENOTDIR', 'dir-occupied', 'remove or move that file', 'aaaaa4'],
+    ['ENOENT', 'dir-occupied', 'remove or move it', 'aaaaa5'],
+    ['ELOOP', 'dir-occupied', 'remove or move it', 'aaaaa6'],
+  ];
+  for (const [errno, code, action, tail] of cases) {
+    await t.test(`mkdir ${errno} is ${code} and the intent stays`, () => {
+      const root = sandbox();
+      const seed = open(root, { recover: false });
+      const id = taskWith(seed, `mkdir-${errno.toLowerCase()}-t20260925-160000`);
+      const stuck = leaveIntent(seed, id, `20260902T120000000-0001-${tail}`, `mkdir ${errno}`);
+      const inbox = path.join(seed.home, 'tasks', id, 'inbox', 'w-api');
+      const healed = open(root, {
+        recover: false,
+        faults: (step, info) => {
+          if (step !== 'mkdir' || info.target !== inbox) return;
+          throw Object.assign(new Error(`${errno}: injected mkdir refusal`), { code: errno });
+        },
+      });
+      const report = healed.recover(id);
+      assert.equal(report.repairs.length, 0, `${errno}: the refused fan-out was reported repaired`);
+      assert.equal(report.failed.length, 1, `${errno}: the refusal escaped or was dropped`);
+      assert.equal(report.failed[0].code, code);
+      assert.match(report.failed[0].note, new RegExp(`${errno}[\\s\\S]*${action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+      assert.ok(report.failed[0].note.includes(inbox), report.failed[0].note);
+      assert.match(report.failed[0].note, /do not resend/);
+      if (code === 'dir-blocked') {
+        assert.doesNotMatch(report.failed[0].note, /retry when/);
+        assert.doesNotMatch(report.failed[0].note, /path is clear/);
+      }
+      assert.ok(existsSync(stuck.file), `${errno}: the intent was dropped`);
+      assert.ok(ERROR_CODES.includes(code), code);
+      const clear = open(root, { recover: false });
+      const delivered = clear.recover(id);
+      assert.equal(delivered.repairs.length, 1, `${errno}: clearing the fault did not deliver`);
+      assert.equal(delivered.failed.length, 0, `${errno}: the cleared path was still a refusal`);
+      assert.ok(!existsSync(stuck.file), `${errno}: the intent stayed after the cause was gone`);
+      assert.equal(clear.unread(id, 'w-api'), 1, `${errno}: the recipient did not receive the message`);
+    });
+  }
+
+  await t.test('mkdir ELOOP on the canonical directory is dir-occupied and the intent stays', () => {
+    const root = sandbox();
+    const seed = open(root, { recover: false });
+    const id = taskWith(seed, 'mkdir-canon-eloop-t20260925-160000');
+    const stuck = leaveIntent(seed, id, '20260902T120000000-0001-aaaaa7', 'mkdir canonical ELOOP');
+    const messages = path.join(seed.home, 'tasks', id, 'messages');
+    const healed = open(root, {
+      recover: false,
+      faults: (step, info) => {
+        if (step !== 'mkdir' || info.target !== messages) return;
+        throw Object.assign(new Error('ELOOP: injected mkdir refusal'), { code: 'ELOOP' });
+      },
+    });
+    const report = healed.recover(id);
+    assert.equal(report.repairs.length, 0, 'the refused fan-out was reported repaired');
+    assert.equal(report.failed.length, 1, 'the canonical ELOOP escaped or was dropped');
+    assert.equal(report.failed[0].code, 'dir-occupied');
+    assert.match(report.failed[0].note, /ELOOP[\s\S]*do not resend/);
+    assert.ok(report.failed[0].note.includes(messages), report.failed[0].note);
+    assert.ok(existsSync(stuck.file), 'the intent was dropped');
+    const clear = open(root, { recover: false });
+    const delivered = clear.recover(id);
+    assert.equal(delivered.repairs.length, 1, 'clearing the fault did not deliver');
+    assert.equal(delivered.failed.length, 0, 'the cleared path was still a refusal');
+    assert.ok(!existsSync(stuck.file), 'the intent stayed after the cause was gone');
+    assert.equal(clear.unread(id, 'w-api'), 1, 'the recipient did not receive the message');
+  });
+
+  await t.test('a send surfaces dir-occupied with the errno and the path', async () => {
+    const root = sandbox();
+    const inboxOf = (home, id) => path.join(home, 'tasks', id, 'inbox', 'w-api');
+    let id = null;
+    const engine = open(root, {
+      recover: false,
+      faults: (step, info) => {
+        if (step !== 'mkdir' || !id || info.target !== inboxOf(engine.home, id)) return;
+        throw Object.assign(new Error('EEXIST: injected mkdir refusal'), { code: 'EEXIST' });
+      },
+    });
+    id = taskWith(engine, 'mkdir-send-t20260925-160000');
+    const refused = await refusalAsync(() => engine.send(id, {
+      from: 'owner', to: ['w-api'], type: 'task', body: 'mkdir refused',
+    }));
+    assert.ok(refused instanceof PromptobusError, String(refused));
+    assert.equal(refused.code, 'dir-occupied');
+    assert.equal(refused.context.errno, 'EEXIST');
+    assert.equal(refused.context.target, inboxOf(engine.home, id));
+    assert.match(refused.message, /committed/);
+    assert.match(refused.message, /do not resend/);
+    assert.equal(openIntents(path.join(engine.home, 'tasks', id, 'intents')).length, 1);
+  });
+
+  await t.test('one directory refusal does not stop a neighbouring intent', () => {
+    const root = sandbox();
+    const seed = open(root, { recover: false });
+    const blocked = taskWith(seed, 'mkdir-block-t20260925-160000');
+    const next = taskWith(seed, 'mkdir-next-t20260925-160000');
+    const stuck = leaveIntent(seed, blocked, '20260902T120100000-0002-aaaaaa', 'blocked');
+    const other = leaveIntent(seed, next, '20260902T120200000-0003-bbbbbb', 'neighbour');
+    const inbox = path.join(seed.home, 'tasks', blocked, 'inbox', 'w-api');
+    const healed = open(root, {
+      recover: false,
+      faults: (step, info) => {
+        if (step !== 'mkdir' || info.target !== inbox) return;
+        throw Object.assign(new Error('EROFS: injected mkdir refusal'), { code: 'EROFS' });
+      },
+    });
+    const report = healed.recover();
+    assert.deepEqual(report.failed.map((f) => f.code), ['dir-blocked']);
+    assert.deepEqual(report.repairs.map((r) => r.message), [other.id]);
+    assert.ok(existsSync(stuck.file), 'the blocked intent was dropped');
+    assert.ok(!existsSync(other.file), 'the neighbour stayed open');
+  });
+
+  await t.test('a mkdir hook throw without an errno still escapes', () => {
+    const root = sandbox();
+    const seed = open(root, { recover: false });
+    const id = taskWith(seed, 'mkdir-programmer-t20260925-160000');
+    leaveIntent(seed, id, '20260902T120300000-0004-cccccc', 'programmer');
+    const programmer = new Error('programmer failure at mkdir');
+    const healed = open(root, {
+      recover: false,
+      faults: (step) => { if (step === 'mkdir') throw programmer; },
+    });
+    assert.throws(() => healed.recover(id), (e) => e === programmer);
+  });
+});
+
 // ── Mailbox and history ─────────────────────────────────────────────────────────────────
 
 test('a read moves the link to history and does not return what was already read', async () => {
