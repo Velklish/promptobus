@@ -1,10 +1,11 @@
 # PB-251 · Minor batch: text that drifted from the tree — README gates, 03-cli, the command list
 
-- **Order:** 250
 - **Scope:** `README.md`, `README.ru.md`, [03-cli](../../reference/03-cli.md), `lib/cli.js`
 - **Created:** 2026-09-23
 - **Dependencies:** none
 - **Cost:** minor
+- **Previous order:** 250
+- **Taken:** 2026-09-25
 
 ## Context
 

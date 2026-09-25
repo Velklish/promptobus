@@ -1,11 +1,12 @@
 # PB-185 · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured
 
-- **Order:** 270
 - **Scope:** `lib/driver-codex.js`, `lib/codex-session.js` (the participant's home),
   [hooks-and-trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-09-12
 - **Dependencies:** `PB-189` (a lift does not record the copy that ran, which is what blocks the firing measurement) — closed 2026-09-17
 - **Cost:** major
+- **Previous order:** 270
+- **Taken:** 2026-09-25
 
 ## Context
 
@@ -40,6 +41,7 @@ all** — `auth.json`, `config.toml`, `plugins/`, `skills/` and caches, nothing 
 
 ## Work to do
 
+- **The owner, 2026-09-25:** live Codex turns are allowed for this measurement.
 - Establish what enables a hook for a Codex session, and whether a participant can be given it
   without a person. Read what is readable first — `codex plugin`, the feature flags, the home's
   `plugins/` — and spend a live turn only on what reading cannot settle.
