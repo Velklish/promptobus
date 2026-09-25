@@ -345,3 +345,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-249.2"></a>`PB-249.2-reference-names-closed-pb-192-open` · 2026-09-25 · batch PB-251 · — · 03-cli names PB-192 as open, and PB-192 is closed
 - <a id="pb-249.3"></a>`PB-249.3-reference-identity-reader-present-tense` · 2026-09-25 · batch PB-251 · — · 03-cli describes the pre-ADR-010 identity reader in the present tense
 - <a id="pb-234.4"></a>`PB-234.4-probe-numbers-may-describe-another-run` · 2026-09-25 · completed · — · The probe's numbers and its exit code are never checked against each other, so numbers from a different run pass
+- <a id="pb-250"></a>`PB-250-approver-lift-minor-batch` · 2026-09-25 · completed · — · Minor batch: the approver lift — refusal paths, the brief, attachments
+- <a id="pb-225.1"></a>`PB-225.1-approver-attachments-outside-the-contract` · 2026-09-25 · batch PB-250 · — · The approver is outside the attachment contract on both sides
+- <a id="pb-237"></a>`PB-237-approver-lift-refusal-does-not-name-the-subject` · 2026-09-25 · batch PB-250 · — · The --approver refusal names a reviewer but not the subject it must have lifted from
+- <a id="pb-238"></a>`PB-238-review-has-no-brief-flag` · 2026-09-25 · batch PB-250 · — · review takes no --brief, so an approver's assignment has to travel as a separate message

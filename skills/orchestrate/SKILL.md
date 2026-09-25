@@ -46,7 +46,7 @@ promptobus done [--task <id>] [--keep-sessions]
 promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
-promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver] [--dry-run]
+promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver [--brief <file>]] [--dry-run]
 promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <commandâ€¦>
 ```
@@ -55,7 +55,7 @@ promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <commandâ€
 
 `--strategy` is one of `quality`, `balanced`, `speed`, `economy`, `balance`. Without it the command takes the recorded default if there is one, and otherwise routes nothing and takes the defaults. See [Model routing](#model-routing).
 
-`--repo` is a path on disk. `--brief` is required.
+`--repo` is a path on disk. `spawn`'s `--brief` is required. `review --approver` takes `--brief <file>` for the approver's assignment: the lift prompt carries it, and after the lift the bus keeps `brief-approver-<slug>.md` in the task files, beside the worker's `brief-<slug>.md` rather than under that name. Do not send that assignment as a separate message for the approver to race its first turn. A later message to the approver stays legal. `--brief` without `--approver` is refused, because a reviewer's subject is the diff.
 
 Read the worker branch from `promptobus status` or `promptobus_task`. Do not rebuild it from a name template. The worker may have switched branches. Publish the branch git reports.
 

@@ -2200,6 +2200,164 @@ check('PB-225: a subject that is no participant worktree is told why there is no
   && !/attached nothing as of/.test(String(noOwnerPlan.prompt)),
   String(noOwnerPlan.attachments));
 
+const SEAT_WT = path.join(REPO, '.claude', 'worktrees', 'a2a-seat');
+g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-seat', SEAT_WT, 'main');
+const seatTask = store.createTask(home, { id: 'pb250-seat', title: 'approver seat' });
+store.upsertParticipant(home, seatTask.id, store.participantRecord('worker:seat', {
+  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+}));
+store.upsertParticipant(home, seatTask.id, store.participantRecord('approver:seat', {
+  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+}));
+const seatEvidence = path.join(SB, 'approver-evidence.md');
+writeFileSync(seatEvidence, 'approver probe\n');
+store.sendMessage(home, seatTask.id, {
+  from: 'approver:seat', to: 'orchestrator', type: 'artifact', body: 'probe', artifactPath: seatEvidence,
+});
+const workerSeatFile = path.join(SB, 'worker-seat.md');
+writeFileSync(workerSeatFile, 'worker probe\n');
+store.sendMessage(home, seatTask.id, {
+  from: 'worker:seat', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: workerSeatFile,
+});
+const seatPlan = planReview(WS, { target: REPO, task: seatTask.id });
+check('PB-250: a clone-root subject lists the one approver attachments by name, type and time',
+  seatPlan.reviewedAddress === 'approver:seat'
+  && seatPlan.attachmentSeat?.kind === 'one'
+  && /one approver whose recorded repository belongs to that clone/.test(String(seatPlan.prompt))
+  && /approver:seat attached these as of/.test(String(seatPlan.prompt))
+  && /approver-evidence\.md — other — /.test(String(seatPlan.prompt))
+  && String(seatPlan.reReview).includes('approver-evidence.md')
+  && !/worker-seat\.md/.test(String(seatPlan.prompt)),
+  String(seatPlan.prompt).split('\n').find((line) => line.includes('approver-evidence')) ?? String(seatPlan.reviewedAddress));
+const workerSeatPlan = planReview(WS, { target: SEAT_WT, task: seatTask.id });
+check('PB-250: a worker worktree stays that worker list when an approver recorded the same path',
+  workerSeatPlan.reviewedAddress === 'worker:seat'
+  && workerSeatPlan.attachmentSeat === null
+  && /worker:seat attached these as of/.test(String(workerSeatPlan.prompt))
+  && /The approver approver:seat recorded this worktree/.test(String(workerSeatPlan.prompt))
+  && /approver:seat attached these as of/.test(String(workerSeatPlan.prompt))
+  && /approver-evidence\.md — other — /.test(String(workerSeatPlan.prompt))
+  && String(workerSeatPlan.prompt).indexOf('worker:seat attached these')
+    < String(workerSeatPlan.prompt).indexOf('The approver approver:seat recorded this worktree')
+  && !/one approver whose recorded repository/.test(String(workerSeatPlan.prompt)),
+  String(workerSeatPlan.prompt).split('\n').find((line) => line.includes('recorded this worktree')) ?? String(workerSeatPlan.reviewedAddress));
+store.upsertParticipant(home, seatTask.id, store.participantRecord('approver:later', {
+  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T18:00:00.000Z',
+}));
+const laterEvidence = path.join(SB, 'later-evidence.md');
+writeFileSync(laterEvidence, 'later probe\n');
+store.sendMessage(home, seatTask.id, {
+  from: 'approver:later', to: 'orchestrator', type: 'artifact', body: 'later', artifactPath: laterEvidence,
+});
+const latestPlan = planReview(WS, { target: REPO, task: seatTask.id });
+check('PB-250: several approvers at one clone root take the latest lift and name the others',
+  latestPlan.reviewedAddress === 'approver:later'
+  && latestPlan.attachmentSeat?.kind === 'latest'
+  && /the latest lifted/.test(String(latestPlan.prompt))
+  && /approver:seat \(started 2026-09-25T12:00:00.000Z\)/.test(String(latestPlan.prompt))
+  && /later-evidence\.md — other — /.test(String(latestPlan.prompt))
+  && !/approver-evidence\.md/.test(String(latestPlan.prompt)),
+  String(latestPlan.attachmentSeat?.detail));
+const besideLatest = planReview(WS, { target: SEAT_WT, task: seatTask.id });
+check('PB-250: a worktree subject lists the latest approver after the worker list',
+  besideLatest.reviewedAddress === 'worker:seat'
+  && besideLatest.approverBeside?.kind === 'latest'
+  && /worker:seat attached these as of/.test(String(besideLatest.prompt))
+  && /The approver list is approver:later, the latest lifted/.test(String(besideLatest.prompt))
+  && /later-evidence\.md — other — /.test(String(besideLatest.prompt))
+  && !/approver-evidence\.md/.test(String(besideLatest.prompt))
+  && String(besideLatest.prompt).indexOf('worker:seat attached these')
+    < String(besideLatest.prompt).indexOf('The approver list is approver:later'),
+  String(besideLatest.approverBeside?.detail));
+const tieTask = store.createTask(home, { id: 'pb250-tie', title: 'approver tie' });
+store.upsertParticipant(home, tieTask.id, store.participantRecord('worker:tie', {
+  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+}));
+const tieWorkerFile = path.join(SB, 'tie-worker.md');
+writeFileSync(tieWorkerFile, 'worker tie\n');
+store.sendMessage(home, tieTask.id, {
+  from: 'worker:tie', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: tieWorkerFile,
+});
+for (const slug of ['one', 'two']) {
+  store.upsertParticipant(home, tieTask.id, store.participantRecord(`approver:${slug}`, {
+    repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+  }));
+}
+const tiePlan = planReview(WS, { target: REPO, task: tieTask.id });
+check('PB-250: a tie between approvers at one clone root does not pick a reviewed address',
+  tiePlan.attachmentSeat?.kind === 'several'
+  && tiePlan.attachments === null
+  && tiePlan.reviewedAddress === null
+  && /does not pick a reviewed address/.test(String(tiePlan.prompt))
+  && /approver:one \(started/.test(String(tiePlan.prompt))
+  && /approver:two \(started/.test(String(tiePlan.prompt))
+  && !/This subject is not a participant worktree/.test(String(tiePlan.prompt)),
+  String(tiePlan.prompt).split('\n').find((line) => /approvers lifted/.test(line)) ?? '');
+const tieWt = planReview(WS, { target: SEAT_WT, task: tieTask.id });
+check('PB-250: a tie at the worktree builds no approver list and keeps the worker\'s',
+  tieWt.reviewedAddress === 'worker:tie'
+  && tieWt.approverBeside?.kind === 'several'
+  && tieWt.approverFiles === null
+  && /no approver attachment list is built/.test(String(tieWt.prompt))
+  && /worker:tie attached these as of/.test(String(tieWt.prompt))
+  && /tie-worker\.md — other — /.test(String(tieWt.prompt)),
+  String(tieWt.approverBeside?.detail));
+const bareTask = store.createTask(home, { id: 'pb250-bare', title: 'approver without started' });
+store.upsertParticipant(home, bareTask.id, store.participantRecord('worker:bare', {
+  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+}));
+const bareWorkerFile = path.join(SB, 'bare-worker.md');
+writeFileSync(bareWorkerFile, 'worker bare\n');
+store.sendMessage(home, bareTask.id, {
+  from: 'worker:bare', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: bareWorkerFile,
+});
+store.upsertParticipant(home, bareTask.id, store.participantRecord('approver:stamped', {
+  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+}));
+store.upsertParticipant(home, bareTask.id, store.participantRecord('approver:bare', {
+  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT,
+}));
+const barePlan = planReview(WS, { target: REPO, task: bareTask.id });
+check('PB-250: an approver with no started stamp does not take the seat',
+  barePlan.attachmentSeat?.kind === 'several'
+  && barePlan.attachments === null
+  && barePlan.reviewedAddress === null
+  && /approver:bare/.test(String(barePlan.prompt))
+  && /approver:stamped \(started/.test(String(barePlan.prompt))
+  && /does not pick a reviewed address/.test(String(barePlan.prompt)),
+  String(barePlan.attachmentSeat?.detail));
+const bareWt = planReview(WS, { target: SEAT_WT, task: bareTask.id });
+check('PB-250: a missing started stamp at the worktree builds no approver list',
+  bareWt.reviewedAddress === 'worker:bare'
+  && bareWt.approverBeside?.kind === 'several'
+  && bareWt.approverFiles === null
+  && /no approver attachment list is built/.test(String(bareWt.prompt))
+  && /worker:bare attached these as of/.test(String(bareWt.prompt))
+  && /bare-worker\.md — other — /.test(String(bareWt.prompt)),
+  String(bareWt.approverBeside?.detail));
+const quietTask = store.createTask(home, { id: 'pb250-quiet', title: 'approver attached nothing' });
+store.upsertParticipant(home, quietTask.id, store.participantRecord('worker:quiet', {
+  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+}));
+const quietWorkerFile = path.join(SB, 'quiet-worker.md');
+writeFileSync(quietWorkerFile, 'worker quiet\n');
+store.sendMessage(home, quietTask.id, {
+  from: 'worker:quiet', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: quietWorkerFile,
+});
+store.upsertParticipant(home, quietTask.id, store.participantRecord('approver:quiet', {
+  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+}));
+const quietPlan = planReview(WS, { target: SEAT_WT, task: quietTask.id });
+check('PB-250: a worktree approver that attached nothing says so',
+  quietPlan.reviewedAddress === 'worker:quiet'
+  && quietPlan.approverBeside?.kind === 'one'
+  && /worker:quiet attached these as of/.test(String(quietPlan.prompt))
+  && /approver:quiet attached nothing as of/.test(String(quietPlan.prompt))
+  && /whole approver list/.test(String(quietPlan.prompt))
+  && String(quietPlan.prompt).indexOf('worker:quiet attached these')
+    < String(quietPlan.prompt).indexOf('approver:quiet attached nothing'),
+  String(quietPlan.prompt).split('\n').find((line) => line.includes('whole approver list')) ?? '');
+
 // An artifact record that cannot be read drops its file out of the list. Silently is the one way
 // it must not go: the message is in the journal, the file may be on disk, and a short list that
 // says nothing is the defect PB-225 exists against, one layer down.
