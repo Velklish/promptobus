@@ -321,6 +321,9 @@ check(': a task just closed remains — cleanup runs by threshold, not by the fa
 check(': journal cleanup runs after the worktree walk, not before it',
   swept.includes('left in place') && swept.indexOf('left in place') < swept.indexOf('journals removed'),
   swept.trim());
+check(': an unknown session left in place names why',
+  /participant session is unknown — its record carries no session reference, so there is no session to ask about/.test(swept),
+  swept.trim());
 
 // A portable deletion refusal comes through the remove seam: permissions and busy-file
 // behavior differ by platform, while the branch must report only directories actually gone.

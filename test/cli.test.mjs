@@ -278,6 +278,17 @@ test('the gate above reads a command list that is not empty and holds the real c
   assert.ok(walked.some((f) => f.includes(path.sep)), `no subdirectory was walked: ${walked.join(', ')}`);
 });
 
+test('the reference command list is the dispatcher, aliases aside', () => {
+  const doc = readFileSync(path.join(LIB, '..', 'docs', 'reference', '03-cli.md'), 'utf8');
+  const line = doc.split('\n').find((row) => row.includes('Commands:') && row.includes('whole vocabulary'));
+  assert.ok(line, '03-cli Commands line was not found');
+  const head = line.slice(line.indexOf('Commands:'), line.indexOf('That list'));
+  const listed = [...head.matchAll(/`([a-z][a-z-]*)`/g)].map((match) => match[1]).sort();
+  const aliases = new Set(['help', '--help', '-h', '--version', '-v']);
+  const dispatcherCommands = [...subcommands()].filter((cmd) => !aliases.has(cmd)).sort();
+  assert.deepEqual(listed, dispatcherCommands);
+});
+
 test('the unknown-command refusal names every command the dispatcher knows', () => {
   // SUBCOMMANDS is a hand copy of the dispatcher's case labels; held equal here.
   const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');

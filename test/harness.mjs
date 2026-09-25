@@ -99,6 +99,12 @@ export function writeSession(home, record) {
   return record;
 }
 
+/** Epoch milliseconds sort oldest first. A non-number sorts last, not by its spelling. */
+function startedAtOrder(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
 /** The registry as a whole — the same thing `agents --json` prints. */
 export function harnessSessions(home) {
   let names;
@@ -108,7 +114,7 @@ export function harnessSessions(home) {
     return [];
   }
   return names.map((n) => readSession(home, n.slice(0, -'.json'.length))).filter(Boolean)
-    .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+    .sort((a, b) => startedAtOrder(a.startedAt) - startedAtOrder(b.startedAt));
 }
 
 /** Participant records by session name — the same field `findSession` searches by. */
@@ -439,7 +445,7 @@ export async function claudeMain(argv, env = process.env) {
     pid: child.pid,
     cwd: process.cwd(),
     kind: 'background',
-    startedAt: new Date().toISOString(),
+    startedAt: Date.now(),
     sessionId,
     name,
     id,

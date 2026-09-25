@@ -360,3 +360,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-196.3"></a>`PB-196.3-codex-rollout-carries-turn-timing` · 2026-09-26 · batch PB-255 · — · Codex 0.156.1 rollouts carry turn timing that PB-57.1 lacks: task_complete duration_ms and time_to_first_token_ms
 - <a id="pb-246.3"></a>`PB-246.3-codex-gpt56-ladders-lack-low-rung` · 2026-09-26 · batch PB-255 · — · The gpt-5.6-* and gpt-5.5 ladders carry no low rung although the 0.156.1 listing offers one
 - <a id="pb-214"></a>`PB-214-participant-guesses-its-own-worktree-path` · 2026-09-26 · completed · — · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути
+- <a id="pb-257"></a>`PB-257-reference-stub-drift-minor-batch` · 2026-09-26 · completed · — · Minor batch: reference and stub drift — stop in the command list, done's unknown reason, the doubled version read, the stub's startedAt
+- <a id="pb-239.3"></a>`PB-239.3-done-leaves-worktree-unknown-without-reason` · 2026-09-26 · batch PB-257 · — · done leaves a worktree saying the session is unknown without naming why
+- <a id="pb-245.2"></a>`PB-245.2-claude-stub-startedat-iso-vs-live-epoch` · 2026-09-26 · batch PB-257 · — · The stub claude writes startedAt as an ISO string while claude 2.1.280 writes epoch milliseconds
+- <a id="pb-245.4"></a>`PB-245.4-doubled-version-read-bound` · 2026-09-26 · batch PB-257 · — · 02-host names each Claude version read and the 5 s ceiling, but not that a routed lift can block up to twice that
+- <a id="pb-251.1"></a>`PB-251.1-reference-cli-commands-list-omits-stop` · 2026-09-26 · batch PB-257 · — · 03-cli names every command but stop

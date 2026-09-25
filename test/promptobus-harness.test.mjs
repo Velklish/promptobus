@@ -114,6 +114,9 @@ const REQUIRED = ['pid', 'cwd', 'kind', 'startedAt', 'sessionId', 'name', 'id', 
 check('agents --json prints the lifted one — a bare array and the 2.1.280 form fields',
   Array.isArray(listed) && listed.length === 1 && REQUIRED.every((f) => listed[0][f] !== undefined),
   JSON.stringify(listed));
+check('the stub writes startedAt as epoch milliseconds',
+  typeof record?.startedAt === 'number' && Number.isFinite(record.startedAt),
+  JSON.stringify(record?.startedAt));
 check('the record is found by the same findSession the mechanism uses, and is judged alive',
   findSession(listed, NAME)?.id === record?.id && sessionLiveness(findSession(listed, NAME), listed) === 'alive',
   JSON.stringify(record));

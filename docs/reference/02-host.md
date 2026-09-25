@@ -323,8 +323,12 @@ binary. A timeout, a non-zero exit, or an empty answer leaves `version` absent,
 which means unread, and a failed read is not remembered. A usable line is
 remembered, so a later `resolveToolBin` of that name returns it and does not
 start the binary again. A real lift whose bin has no version reads once before
-the effort refusal, including a lift that skipped the preflight. `--dry-run`
-does not read. Cursor and Codex do not declare the read, so their
+the effort refusal, including a lift that skipped the preflight. A hung
+`claude --version` can hold a routed lift up to 2 × 5 s: the preflight
+read and the lift-time read each wait out the ceiling, and a timed-out
+read is not remembered, so the second wait is not skipped. That figure is
+the bound of those two calls, not a measurement of a hung binary.
+`--dry-run` does not read. Cursor and Codex do not declare the read, so their
 proven-version warnings stay silent here — the boundary of the decision that
 named `claude --version`. A host that already fills `version` from
 `resolveToolBin` is not called; a consumer may omit `readToolVersion`.
