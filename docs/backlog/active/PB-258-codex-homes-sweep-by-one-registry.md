@@ -1,10 +1,11 @@
 # PB-258 · A Codex lift sweeps the machine-wide participant homes root by its own registry — a scratch run or a standalone driver suite deletes the homes of live participants
 
-- **Order:** 270
 - **Scope:** `lib/driver-codex.js` (`sweepParticipantHomes`), `test/promptobus-driver-codex.test.mjs`, `test/promptobus-spawn.test.mjs`, [05-drivers](../../reference/05-drivers.md) § sweepParticipantHomes
 - **Created:** 2026-09-26
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 270
+- **Taken:** 2026-09-26
 
 ## Context
 
