@@ -713,6 +713,59 @@ test('a symlink loop at the canonical messages directory does not take status, h
     'status did not deliver once the canonical directory was clear');
 });
 
+test('a dangling symlink at the canonical messages directory is retried, not reported lost', async () => {
+  const root = sandbox();
+  const engine = open(root);
+  const id = taskWith(engine, 'mkdir-canon-enoent-t20260925-160000');
+  const stray = path.join(engine.home, 'tasks', id, 'messages');
+  symlinkSync('missing', stray);
+  let refused = null;
+  try {
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'canonical dangling' });
+  } catch (e) {
+    refused = e;
+  }
+  assert.equal(refused?.code, 'dir-occupied', String(refused));
+  assert.equal(refused.context.errno, 'ENOENT');
+  assert.equal(refused.context.target, stray);
+  assert.match(refused.message, /do not resend/);
+  assert.doesNotMatch(refused.message, /intent is gone/);
+  const intents = path.join(engine.home, 'tasks', id, 'intents');
+  const [intentName] = openIntents(intents);
+  assert.ok(intentName, 'the refused fan-out left no intent');
+  const message = intentName.slice(0, -'.json'.length);
+  const intent = path.join(intents, intentName);
+  assert.ok(existsSync(intent), 'the intent file was removed while the symlink was still there');
+  writeFileSync(path.join(intents, `${message}.owner`),
+    `${JSON.stringify({ pid: 2_147_483_647, host: os.hostname() })}\n`);
+  const held = open(root, { recover: false }).recover(id);
+  assert.equal(held.repairs.length, 0, 'recovery delivered through the dangling symlink');
+  assert.equal(held.failed.length, 1, 'recovery dropped the dangling-symlink refusal');
+  assert.equal(held.failed[0].code, 'dir-occupied');
+  assert.notEqual(held.failed[0].code, 'intent-lost');
+  assert.ok(existsSync(intent), 'recovery removed the intent it could not deliver');
+  const commands = [
+    ['status', `const { status } = await import(${J(STATUS)});\nstatus(${J(root)}, { task: ${J(id)}, sessions: {} });\n`],
+    ['history', `const { history } = await import(${J(HISTORY)});\nhistory(${J(root)}, { task: ${J(id)} });\n`],
+    ['prune', `const { prune } = await import(${J(PRUNE)});\nprune(${J(root)}, { olderThan: 0 });\n`],
+  ];
+  const runs = await Promise.all(commands.map(([, body]) => child(body)));
+  exitedZero(runs, (i) => commands[i][0]);
+  for (const [i, run] of runs.entries()) {
+    assert.ok(run.err.includes('remains unfinished (dir-occupied)'), `${commands[i][0]} stderr: ${run.err || 'empty'}`);
+    assert.ok(!run.err.includes('will not be retried'), `${commands[i][0]} reported a live intent as lost: ${run.err}`);
+    assert.ok(run.err.includes(stray), `${commands[i][0]} did not name the dangling link: ${run.err}`);
+  }
+  assert.deepEqual(openIntents(intents), [intentName], 'the dangling-symlink intent was not retained');
+  unlinkSync(stray);
+  const delivered = open(root, { recover: false }).recover(id);
+  assert.equal(delivered.repairs.length, 1, 'the next recover did not deliver once the symlink was gone');
+  assert.equal(delivered.failed.length, 0, 'the cleared path was still a refusal');
+  assert.deepEqual(openIntents(intents), [], 'the intent stayed after the symlink was removed');
+  assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'inbox', 'w-api', `${message}.json`)),
+    'recover did not deliver once the canonical directory was clear');
+});
+
 // --- a sweep meets a sender between its payload and its record ----------------------
 //
 // The window the publication lock exists for: a neighbour's `stashBlob` finds the payload

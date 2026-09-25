@@ -66,13 +66,13 @@ export function newRecordId(now: Date): string {
 
 // Idempotent hard link. Link `EEXIST` means the ref is already placed.
 // Mkdir errno is classified by `dirFailure`, not by `linkFailure`.
-function linkOnce(from: string, to: string, fault: FaultHook = NO_FAULT, recipient = false): boolean {
+function linkOnce(from: string, to: string, fault: FaultHook = NO_FAULT): boolean {
   const dir = path.dirname(to);
   try {
     fault('mkdir', { target: dir, to });
     mkdirSync(dir, { recursive: true });
   } catch (e) {
-    const directory = dirFailure(e, dir, recipient);
+    const directory = dirFailure(e, dir);
     if (directory !== e) throw directory;
     throw linkFailure(e, dir);
   }
@@ -168,7 +168,7 @@ export function completeFanout(home: string, task: string, message: MessageV1, f
     // Fresh — those who must be woken: a recipient is counted for the process whose ref landed, or
     // two recoverers would both name it fresh and send two activation events for one message.
     if (!delivered(home, task, recipient, message.id)
-      && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id), fault, true)) {
+      && linkOnce(messageFile(home, task, message.id), inboxRef(home, task, recipient, message.id), fault)) {
       fresh.push(recipient);
     }
     fault('ref', { task, message: message.id, recipient, index });

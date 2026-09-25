@@ -133,7 +133,8 @@ export function linkFailure(e: unknown, target: string): Error {
 // Directory-half refusals. They stay off LINK_REFUSALS: a link EEXIST is idempotent success.
 const DIR_BLOCKED = ['EROFS', 'ENOSPC'];
 const DIR_OCCUPIED = ['EEXIST', 'ENOTDIR'];
-// ENOENT is recipient-only: materialize reads a canonical one. ELOOP is occupied either way.
+// Both are occupied on the canonical directory and on a recipient one.
+// A link ENOENT is the intent file gone; it is not a mkdir errno.
 const DIR_BROKEN_LINK = ['ENOENT', 'ELOOP'];
 
 // A file or a symlink at the path, or a file or symlink among its ancestors.
@@ -161,9 +162,9 @@ function occupiedPath(target: string): string {
   }
 }
 
-/** Mkdir refusal as its own typed code. A volume that may return is `dir-blocked`. A stray file is
- * `dir-occupied`, and so is `ELOOP`, or a recipient `ENOENT`. Any other errno stays raw. */
-export function dirFailure(e: unknown, target: string, recipient = false): Error {
+/** Mkdir refusal as its own typed code. A volume that may return is `dir-blocked`. A stray file,
+ * a broken link (`ENOENT`), or a symlink loop (`ELOOP`) is `dir-occupied`. Any other errno stays raw. */
+export function dirFailure(e: unknown, target: string): Error {
   const errno = (e as NodeJS.ErrnoException).code ?? '';
   if (DIR_BLOCKED.includes(errno)) {
     const when = errno === 'ENOSPC' ? 'the volume has space' : 'the volume is writable again';
@@ -171,7 +172,7 @@ export function dirFailure(e: unknown, target: string, recipient = false): Error
       `directory was not created (${errno}) at ${target}. The message is committed; it is delivered once ${when} — do not resend`,
       { target, errno });
   }
-  if (DIR_OCCUPIED.includes(errno) || errno === 'ELOOP' || (recipient && errno === 'ENOENT')) {
+  if (DIR_OCCUPIED.includes(errno) || DIR_BROKEN_LINK.includes(errno)) {
     const where = occupiedPath(target);
     const lead = DIR_BROKEN_LINK.includes(errno)
       ? `a stray or broken link at ${where} (${errno}): remove or move it`

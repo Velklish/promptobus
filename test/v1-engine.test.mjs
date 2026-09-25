@@ -1094,6 +1094,36 @@ test('a recipient-directory mkdir refusal is classified and leaves the intent', 
     assert.equal(clear.unread(id, 'w-api'), 1, 'the recipient did not receive the message');
   });
 
+  await t.test('mkdir ENOENT on the canonical directory is dir-occupied and the intent stays', () => {
+    const root = sandbox();
+    const seed = open(root, { recover: false });
+    const id = taskWith(seed, 'mkdir-canon-enoent-t20260925-160000');
+    const stuck = leaveIntent(seed, id, '20260902T120000000-0001-aaaaa8', 'mkdir canonical ENOENT');
+    const messages = path.join(seed.home, 'tasks', id, 'messages');
+    const healed = open(root, {
+      recover: false,
+      faults: (step, info) => {
+        if (step !== 'mkdir' || info.target !== messages) return;
+        throw Object.assign(new Error('ENOENT: injected mkdir refusal'), { code: 'ENOENT' });
+      },
+    });
+    const report = healed.recover(id);
+    assert.equal(report.repairs.length, 0, 'the refused fan-out was reported repaired');
+    assert.equal(report.failed.length, 1, 'the canonical ENOENT escaped or was dropped');
+    assert.equal(report.failed[0].code, 'dir-occupied');
+    assert.notEqual(report.failed[0].code, 'intent-lost');
+    assert.match(report.failed[0].note, /ENOENT[\s\S]*do not resend/);
+    assert.doesNotMatch(report.failed[0].note, /intent is gone/);
+    assert.ok(report.failed[0].note.includes(messages), report.failed[0].note);
+    assert.ok(existsSync(stuck.file), 'the intent was dropped');
+    const clear = open(root, { recover: false });
+    const delivered = clear.recover(id);
+    assert.equal(delivered.repairs.length, 1, 'clearing the fault did not deliver');
+    assert.equal(delivered.failed.length, 0, 'the cleared path was still a refusal');
+    assert.ok(!existsSync(stuck.file), 'the intent stayed after the cause was gone');
+    assert.equal(clear.unread(id, 'w-api'), 1, 'the recipient did not receive the message');
+  });
+
   await t.test('a send surfaces dir-occupied with the errno and the path', async () => {
     const root = sandbox();
     const inboxOf = (home, id) => path.join(home, 'tasks', id, 'inbox', 'w-api');
