@@ -75,6 +75,16 @@ const withSession = (id, fn) => {
   check('PB-223: no session identity on an owned task proves no right — and is not called foreign either',
     none.allowed === false && none.right === 'no-identity' && none.gated === false && none.owner === OWNER,
     JSON.stringify(none));
+  const said = withSession(null, () => store.noIdentityMailboxLine(HOME, OWNED, none));
+  const head = withSession(null, () => store.unprovenOwnerLine(HOME, store.readTask(HOME, OWNED), none));
+  const route = withSession(null, () => store.ownerRoute(
+    HOME, store.readTask(HOME, OWNED), none, 'the promptobus_mailbox tool',
+  ));
+  check('a mailbox call that names no session is told the owner gate\'s own sentence',
+    said.startsWith(head) && /carries no session identity/.test(said) && !/FOREIGN MAILBOX/.test(said), said);
+  check('the no-identity mailbox reply says a copy is below and the originals stayed',
+    said.includes('A copy is below; the originals stayed in the mailbox.') && said.includes(route)
+    && !/owner's mailbox/.test(said), said);
   const foreign = withSession(FOREIGN, () => store.ownership(HOME, OWNED, store.ORCHESTRATOR, store.sessionIdentity()));
   check('PB-223: a named foreign session is the one case that was already proved — it stays proved',
     foreign.allowed === false && foreign.right === 'foreign' && foreign.gated === true,
@@ -92,6 +102,11 @@ const withSession = (id, fn) => {
   const unnamed = withSession(null, () => store.ownership(HOME, OWNERLESS, store.ORCHESTRATOR, store.sessionIdentity()));
   check('PB-223: and refuses one that names nothing — "nobody owns it" is not "anybody may"',
     unnamed.allowed === false && unnamed.right === 'no-identity', JSON.stringify(unnamed));
+  const ownerlessLine = withSession(null, () => store.noIdentityMailboxLine(HOME, OWNERLESS, unnamed));
+  check('a task with no owner is not told the originals stayed in the owner\'s mailbox',
+    /records no mailbox owner/.test(ownerlessLine)
+    && /A copy is below; the originals stayed in the mailbox/.test(ownerlessLine)
+    && !/owner's mailbox/.test(ownerlessLine), ownerlessLine);
 }
 {
   const other = store.ownership(HOME, OWNED, WORKER, OWNER);
@@ -108,6 +123,8 @@ const withSession = (id, fn) => {
     && /owner gate only/.test(head.said) && /owner gate only/.test(route.said)
     && !/records no mailbox owner/.test(head.said) && !/records no mailbox owner/.test(route.said),
     JSON.stringify({ head, route }));
+  check('the mailbox line is not built for an address this gate does not judge',
+    store.noIdentityMailboxLine(HOME, OWNED, other) === null, 'a participant address has no no-identity line');
 }
 
 // --- the three commands that read it ----------------------------------------------
@@ -266,6 +283,14 @@ for (const [name, call] of CONSUMERS.slice(1)) {
     && !/from the session that owns the task/.test(refused.out), refused.out);
   check('PB-223/PB-218: the contested refusal left the task tree byte for byte as it was',
     treeOf(CONTESTED) === before, `${before}\n---\n${treeOf(CONTESTED)}`);
+  const contestedOwn = store.ownership(HOME, CONTESTED, store.ORCHESTRATOR, store.sessionIdentity());
+  const contestedLine = store.noIdentityMailboxLine(HOME, CONTESTED, contestedOwn);
+  check('the mailbox line for two identity variables names both, and does not call it none',
+    contestedOwn.right === 'no-identity'
+    && /CLAUDE_CODE_SESSION_ID/.test(contestedLine) && /CODEX_THREAD_ID/.test(contestedLine)
+    && /A copy is below; the originals stayed/.test(contestedLine)
+    && /Clear the environment down to one identity variable/.test(contestedLine)
+    && !/carries no session identity/.test(contestedLine), contestedLine);
   store.bindSessionIdentity(() => ({ id: SESSION }));
   for (const [name, value] of [['CLAUDE_CODE_SESSION_ID', was.claude], ['CODEX_THREAD_ID', was.codex]]) {
     if (value === undefined) delete process.env[name];

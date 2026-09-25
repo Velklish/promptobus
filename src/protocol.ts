@@ -131,6 +131,7 @@ export const TASK_TITLE_SEP = ' · ';
 // Own mailbox or someone else's — the only condition on the whole bus. With nothing to compare the
 // mechanism stays silent: backward compatibility outranks the guard.
 export const FOREIGN_MARK = 'FOREIGN MAILBOX';
+export const MAILBOX_COPY = 'A copy is below; the originals stayed in the mailbox.';
 export const FOREIGN_ROUTE = 'This correspondence is not yours — name your own task with the task argument. '
   + 'If it is yours and this is a new session (the previous daemon died) — claim the mailbox: mailbox {claim: true}.';
 

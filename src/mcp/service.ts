@@ -52,6 +52,8 @@ export interface PromptobusService {
   identityLabel(home: string, task: string, addr: string, session?: string | null): string;
   /** Mailbox ownership: `allowed` is the right, proven; `gated` is the narrower "proved foreign". */
   ownership(home: string, task: string, addr: string, session: string | null): Ownership;
+  /** Owner-gate line, the copy sentence, and `ownerRoute`; `null` for every other `right`. */
+  noIdentityMailboxLine(home: string, task: string, own: Ownership): string | null;
   /** Read without taking: the originals stay with the owner. */
   peekInbox(home: string, task: string, addr: string): MailboxRead;
   /** Take incoming mail: read items move to history. */

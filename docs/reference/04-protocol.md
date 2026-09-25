@@ -203,7 +203,7 @@ The gate record says WHAT was run. It does not say why that run means anything, 
 
 ## Claim
 
-The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. `promptobus_mailbox` with `claim: true` takes ownership when the previous session is gone. `src/protocol.ts` names the header constants.
+The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. A call that names no session gets a copy, the owner gate's no-identity line, the sentence that the originals stayed, and that gate's route ([03-cli § ownership](03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss)); it does not take the originals and it does not get the foreign-mailbox header. `promptobus_mailbox` with `claim: true` takes ownership when the previous session is gone. `src/protocol.ts` names the header constants.
 
 ### Messages: names, order and what a read marks
 

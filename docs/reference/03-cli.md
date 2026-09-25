@@ -1185,10 +1185,20 @@ The answer carries two fields, and they are not each other's negation. **`allowe
 right**, and it is granted only by evidence: the call names a session and that session is
 the recorded owner of the `orchestrator` address. **`gated` is the narrower "proved
 foreign"** — the call names a session, the task names an owner, and the two differ. The
-advisory readers take `gated` and only `gated`: the foreign-mailbox heading of
-`promptobus_mailbox`, the unread tail, the `status` warning, the attach gate of `spawn` and
-`review`, the restamp door of `retitleTask`, and the guard's successor hint. None of them
-may call a mailbox somebody else's on an absence of evidence.
+advisory readers that decide "this is somebody else's" take `gated` and only `gated`: the
+foreign-mailbox heading of `promptobus_mailbox`, the unread tail, the `status` warning, the
+attach gate of `spawn` and `review`, the restamp door of `retitleTask`, and the guard's
+successor hint. None of them may call a mailbox somebody else's on an absence of evidence.
+
+**The fetch is the exception, and only on the `orchestrator` address.** `promptobus_mailbox`
+without `claim`, when `right` is `no-identity`, does not fetch. It peeks (`peekInbox`), the
+originals stay, and the reply is `unprovenOwnerLine` — the sentence this gate
+already says, including the contested reason from `sessionIdentityReport` (`identitySaid`) —
+then the same copy sentence the foreign heading uses, then `ownerRoute` for repeating
+the mailbox tool. It is not the foreign-mailbox heading: nothing was proved foreign, and `claim` from a call
+that names no session is refused as before. An address this gate does not judge (`other-address`:
+`worker:…`, `reviewer:…`, `approver:…`) keeps fetching, whether or not the call names a
+session. That address's mailbox is the participant's, and this gate has nothing to say about it.
 
 `right` names which of five answers it is, so a refusal can say what could not be proven
 rather than what was missing:

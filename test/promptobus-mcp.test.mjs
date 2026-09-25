@@ -75,6 +75,12 @@ const canonicalPromptobus = {
 const strays = [];
 
 function startServer(role, { config = null, cwd = SB, task = TASK, baseEnv = process.env, env = {} } = {}) {
+  // These orchestrators are the owner path. A runner with no harness variable is no-identity
+  // and would receive a copy; a call that means that passes an empty identity itself.
+  const named = HARNESS_IDENTITY_NAMES.some((name) => Object.hasOwn(env, name) || String(baseEnv[name] ?? '').trim());
+  const sessionDefault = role === 'orchestrator' && !named
+    ? { CLAUDE_CODE_SESSION_ID: 'mcp-suite-orchestrator' }
+    : {};
   const child = spawn(config?.command ?? process.execPath, config?.args ?? [BIN, 'mcp'], {
     cwd,
     env: {
@@ -83,6 +89,7 @@ function startServer(role, { config = null, cwd = SB, task = TASK, baseEnv = pro
       PROMPTOBUS_ROLE: role,
       PROMPTOBUS_TASK: task,
       ...(config ? {} : { PROMPTOBUS_HOME: HOME }),
+      ...sessionDefault,
       // Per-server additions model either command identity or a generated MCP entry.
       ...env,
     },
@@ -771,9 +778,26 @@ check(': reading the foreign mailbox did not carry off the original',
   String(store.countInbox(HOME, OWNED, 'orchestrator')));
 
 const anonInbox = await anon.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
-check(': the environment gave no identity — the mechanism stays silent, reading behaves as before',
-  !/FOREIGN MAILBOX/.test(text(anonInbox)) && text(anonInbox).includes('оригинал владельца')
-  && store.countInbox(HOME, OWNED, 'orchestrator') === 0, text(anonInbox));
+check(': no session identity gets a copy and the owner-gate line, and the originals stay',
+  !/FOREIGN MAILBOX/.test(text(anonInbox)) && /carries no session identity/.test(text(anonInbox))
+  && /A copy is below; the originals stayed in the mailbox/.test(text(anonInbox))
+  && !/owner's mailbox/.test(text(anonInbox))
+  && /from the session that owns the task/.test(text(anonInbox))
+  && text(anonInbox).includes('оригинал владельца')
+  && store.countInbox(HOME, OWNED, 'orchestrator') === 1, text(anonInbox));
+store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { repo: 'cargos-api' }));
+const namelessWorker = await boot(startServer('worker:cargos-api', {
+  task: OWNED, env: { CLAUDE_CODE_SESSION_ID: '' },
+}));
+store.sendMessage(HOME, OWNED, {
+  from: 'orchestrator', to: 'worker:cargos-api', type: 'task', body: 'свой ящик без сессии',
+});
+const namelessWorkerInbox = await namelessWorker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
+check(': a participant address with no session identity still fetches its own mailbox',
+  text(namelessWorkerInbox).includes('свой ящик без сессии')
+  && !/carries no session identity/.test(text(namelessWorkerInbox))
+  && store.countInbox(HOME, OWNED, 'worker:cargos-api') === 0, text(namelessWorkerInbox));
+namelessWorker.stop();
 
 putOwned('второй оригинал');
 const ownerInbox = await owns.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });

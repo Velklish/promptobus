@@ -60,7 +60,9 @@ export const MCP_TOOLS: McpTool[] = [
       + 'the truth stays in the mailbox, and a lost postcard loses nothing. '
       + 'The reply names PROMPTOBUS_HOME, the address, and the task — by id and by name; check them if you are waiting '
       + 'for a message that is not there. The orchestrator mailbox is bound to the session that started the task: '
-      + 'a foreign session gets a copy, the originals stay with the owner. If the correspondence is yours '
+      + 'a foreign session gets a copy, the originals stay with the owner. '
+      + 'A call that names no session, on the orchestrator address, gets a copy and the originals stay; '
+      + 'claim from that call is refused. If the correspondence is yours '
       + 'and this is a new session (the previous daemon died) — claim the mailbox with the claim argument.',
     inputSchema: {
       type: 'object',

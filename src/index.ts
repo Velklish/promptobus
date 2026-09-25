@@ -12,7 +12,7 @@ export const PACKAGE_NAME = 'promptobus';
 // gate wording, and accessors for adapter fields on the participant record.
 export {
   addressOf, addrDir, approverAddress, brokenNote, claimRoute, dismissedOf, foreignTaskLine, FOREIGN_MARK,
-  FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MECHANISM_VERSION_FIELD,
+  FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MAILBOX_COPY, MECHANISM_VERSION_FIELD,
   mechanismVersionOf, MESSAGE_TYPES, nameOf,
   newTaskIdentity, ORCHESTRATOR, ownerOf, participantFileStem, repoAbsOf, requireTaskId,
   foreignSessionOf,

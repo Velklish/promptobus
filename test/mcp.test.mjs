@@ -97,11 +97,16 @@ const busService = {
   countInbox: (home, task, addr) => at(home).unread(task, addrDir(addr)),
   identityLabel: (home, task, addr) => `PROMPTOBUS_HOME=${home} · task=${task} · address=${addr}`,
   ownership: (home, task, addr, session) => {
-    if (addr !== ORCHESTRATOR) return { gated: false, owner: null, session };
+    if (addr !== ORCHESTRATOR) return { gated: false, allowed: false, right: 'other-address', owner: null, session };
     const owner = ownerOfTask(home, task);
-    if (!owner || !session) return { gated: false, owner, session };
-    return { gated: owner !== session, owner, session };
+    if (!session) return { gated: false, allowed: false, right: 'no-identity', owner, session };
+    if (!owner) return { gated: false, allowed: true, right: 'ownerless', owner, session };
+    const mine = owner === session;
+    return { gated: !mine, allowed: mine, right: mine ? 'owner' : 'foreign', owner, session };
   },
+  noIdentityMailboxLine: (_home, _task, own) => (own?.right === 'no-identity'
+    ? 'this call carries no session identity — the right here is proven, never assumed'
+    : null),
   peekInbox: (home, task, addr) => {
     const { messages, broken } = at(home).peek(task, addrDir(addr));
     return { messages, broken: brokenLines(broken) };
@@ -400,6 +405,49 @@ test('tools/call: mailbox returns what arrived and glues on the stalled diagnost
   assert.match(said, /^messages 1: status from worker:cargos-api/);
   assert.ok(said.endsWith('STALLED worker:cargos-api'));
   assert.deepEqual(calls.stalls, [{ home, task: TASK, address: 'orchestrator' }]);
+});
+
+test('tools/call: an orchestrator mailbox with no session identity is a copy, and the originals stay', async () => {
+  await talk([
+    rpc(1, 'tools/call', {
+      name: 'promptobus_send',
+      arguments: { to: 'orchestrator', type: 'status', body: 'left for the owner' },
+    }),
+  ], { role: 'worker:cargos-api', session: 'session-worker' });
+  const before = at(home).unread(TASK, addrDir('orchestrator'));
+  const { responses, calls } = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
+  ], { session: null });
+  const said = textOf(responses[0]);
+  assert.match(said, /carries no session identity/);
+  assert.equal(said.includes('FOREIGN MAILBOX'), false);
+  assert.equal(said.includes('left for the owner'), true);
+  assert.equal(at(home).unread(TASK, addrDir('orchestrator')), before);
+  assert.deepEqual(calls.stalls, []);
+  assert.deepEqual(calls.joins.map((join) => ({ task: join.task, address: join.address })), [
+    { task: TASK, address: 'orchestrator' },
+  ]);
+  await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
+});
+
+test('tools/call: a participant address with no session identity still fetches its own mailbox', async () => {
+  upsertParticipant(home, SECOND, {
+    address: 'worker:cargos-api', repo: 'loads_search/cargos-api', session: 'bg-42',
+  });
+  await talk([
+    rpc(1, 'tools/call', {
+      name: 'promptobus_send',
+      arguments: { to: 'worker:cargos-api', type: 'task', body: 'the participant\'s own mail', task: SECOND },
+    }),
+  ], { declaredTask: SECOND });
+  const { responses, calls } = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } }),
+  ], { role: 'worker:cargos-api', session: null, declaredTask: SECOND });
+  const said = textOf(responses[0]);
+  assert.equal(said.includes('the participant\'s own mail'), true);
+  assert.equal(/carries no session identity/.test(said), false);
+  assert.equal(at(home).unread(SECOND, addrDir('worker:cargos-api')), 0);
+  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:cargos-api', gated: false }]);
 });
 
 test('tools/call: a foreign session mailbox is a copy with a loud heading, originals stay with the owner', async () => {

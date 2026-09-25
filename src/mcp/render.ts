@@ -2,7 +2,7 @@
 // [reference/01-overview.md#rendering-a-reply-for-a-participant](../../docs/reference/01-overview.md#rendering-a-reply-for-a-participant)
 import path from 'node:path';
 import {
-  addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, nameOf, ORCHESTRATOR, ownerOf,
+  addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, MAILBOX_COPY, nameOf, ORCHESTRATOR, ownerOf,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from '../v1/model.js';
@@ -114,7 +114,7 @@ export function renderMessages(
 // A foreign session gets a copy and a path: name your own task, or claim the mailbox with claim.
 export function foreignNote(task: string, { owner, session }: Ownership): string {
   return `${FOREIGN_MARK}: the orchestrator address of task ${task} is bound to session ${owner}, this one is ${session}. `
-    + `A copy is below; the originals stayed in the owner's mailbox.\n`
+    + `${MAILBOX_COPY}\n`
     + FOREIGN_ROUTE;
 }
 

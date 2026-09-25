@@ -150,7 +150,7 @@ promptobus done
 | Tool | Input | Does |
 |---|---|---|
 | `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>` or `approver:<slug>` |
-| `promptobus_mailbox` | `{ claim?, task? }` | Read unread mail and mark it read; `claim: true` takes over a mailbox from a previous session |
+| `promptobus_mailbox` | `{ claim?, task? }` | Read unread mail and mark it read. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 
 The full names a session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other two. Without `task` the server uses `PROMPTOBUS_TASK`, then the session's binding, then the only active task.

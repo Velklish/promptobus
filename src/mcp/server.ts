@@ -160,7 +160,9 @@ export function createMcpServer(options: McpOptions): {
       case 'promptobus_mailbox': {
         const own = service.ownership(home, task, role, session);
         if (args?.claim === true) return claim(home, task, role, session, own);
-        const { messages, broken } = own.gated
+        // No session is not proved foreign, and this fetch still must not take the mail.
+        const peek = own.gated || own.right === 'no-identity';
+        const { messages, broken } = peek
           ? service.peekInbox(home, task, role)
           : service.readInbox(home, task, role);
         const alarm = service.brokenNote(broken);
@@ -170,6 +172,10 @@ export function createMcpServer(options: McpOptions): {
         // it the session would read emptiness as "no messages". `mailbox` is
         // called once per turn, not in a poll loop.
         if (own.gated) return `${head}${foreignNote(task, own)}${messages.length ? `\n\n${body}` : ''}`;
+        if (own.right === 'no-identity') {
+          const why = service.noIdentityMailboxLine(home, task, own);
+          return `${head}${why ?? ''}${messages.length ? `\n\n${body}` : ''}`;
+        }
         // Stall routes are asked exactly on wake: `mailbox` is called first
         // thing, and it has no other place where the report would arrive in time.
         const stalled = stalls({ home, task, address: role });
