@@ -1,5 +1,6 @@
 // The warden state machine: what is here and what is not.
 // [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
+import { existsSync } from 'node:fs';
 import {
   beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readWake, writeHealth, writeStalls,
 } from './sidecar.js';
@@ -8,6 +9,7 @@ import {
   addressOf, dismissedOf, foreignSessionOf, ORCHESTRATOR, repoAbsOf, sessionIdOf, sessionOf, startedOf,
 } from './protocol.js';
 import { readArtifact } from './v1/artifacts.js';
+import { inboxRef } from './v1/layout.js';
 import { countInbox, glanceInbox, lastSentAt } from './v1/messages.js';
 import type { BrokenNote, FaultHook } from './v1/messages.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './v1/model.js';
@@ -23,6 +25,10 @@ export const TICK_MS = 1000;
 // Knock retry: the mailbox is still not taken — knock again. Two minutes are measured to the
 // participant's turn, not the network: a long turn is allowed to stay silent for minutes.
 export const KNOCK_RETRY_SEC = 120;
+
+// Coalescing window: new mail under a knock whose mailbox is not yet taken waits this long for the
+// take. A hand-off burst spans under 20 s; half the postcards of a measured run came within 90 s.
+export const KNOCK_COALESCE_SEC = 90;
 
 // Silence threshold: unread must not sit longer than this. Fifteen minutes means "not answering",
 // not "thinking" — the mailbox is taken BEFORE the turn is inspected, not after.
@@ -55,7 +61,11 @@ interface HealthMark {
   triedAt?: string | null;
   deliveredAt?: string | null;
   knocks?: number;
+  // Messages that landed under an outstanding knock and are not yet in a postcard.
+  coalesced?: number;
   knockedTo?: string | null;
+  // The oldest message the last knock found: only a take moves it out of the inbox.
+  knockedFirst?: string | null;
   escalatedAt?: string | null;
   channel?: string | null;
   knockError?: string | null;
@@ -446,11 +456,15 @@ export async function supervisorRound(home: string, task: string, {
     const was = marksOf(health, addr);
     const h: HealthMark = { ...was };
 
+    // The mailbox was taken — that is the delivery confirmation; a mailbox that was always empty is
+    // not written. A take is the knocked mail gone, not a count drop: a peek sets broken refs aside too.
+    const took = Boolean(was.unread) && (!unread || leftInbox(home, task, p.id, was.knockedFirst ?? null));
+    if (took) {
+      events.push(`delivered ${addr}: mailbox was taken (had ${was.unread}, knocks ${was.knocks ?? 0}`
+        + `${was.coalesced ? `, coalesced ${was.coalesced}` : ''})`);
+    }
     if (!unread) {
-      // The mailbox was taken — that is the delivery confirmation; a mailbox
-      // that was always empty is not written.
-      if (was.unread) {
-        events.push(`delivered ${addr}: mailbox was taken (had ${was.unread}, knocks ${was.knocks ?? 0})`);
+      if (took) {
         health[addr] = {
           ...was,
           unread: 0,
@@ -462,6 +476,8 @@ export async function supervisorRound(home: string, task: string, {
           escalatedAt: null,
           unreadableRefs: [],
           hold: undefined,
+          coalesced: undefined,
+          knockedFirst: null,
         };
         changed = true;
       }
@@ -470,13 +486,16 @@ export async function supervisorRound(home: string, task: string, {
 
     // `since` — when the mailbox stopped being empty: silence is counted from it, and a new message
     // on top of an old one does not reset it, or silence would never be seen.
-    if (!was.unread) {
+    if (!was.unread || took) {
       h.since = new Date(now).toISOString();
       h.knocks = 0;
       h.knockedAt = null;
       h.triedAt = null;
       h.escalatedAt = null;
+      h.knockedFirst = null;
+      delete h.coalesced;
     }
+    if (took) h.deliveredAt = new Date(now).toISOString();
     h.unread = unread;
 
     // The driver is taken from the registry by harness, and one participant's failure may not take
@@ -508,9 +527,14 @@ export async function supervisorRound(home: string, task: string, {
     // an attempt every second. `knockedAt` stays the last SUCCESSFUL delivery.
     const triedAt = Date.parse(h.triedAt ?? '');
     const grew = unread > (was.unread ?? 0);
+    // A knock is outstanding from its success until the take, bounded both ways as a clock may step back.
+    const knockedAt = Date.parse(h.knockedAt ?? '');
+    const outstanding = Number.isFinite(knockedAt) && Math.abs(now - knockedAt) < KNOCK_COALESCE_SEC * 1000;
+    // Carried mail knocks once at the window's end; after a failed attempt it waits for the retry.
+    const pending = grew || ((h.coalesced ?? 0) > 0 && h.triedAt === h.knockedAt);
     const stale = Number.isFinite(triedAt) && now - triedAt >= KNOCK_RETRY_SEC * 1000;
     // A retry on the SAME unread waits until the session gives the turn back — it will see the
-    // notification at the end of it anyway. The first knock on a new message does not wait.
+    // notification at the end of it anyway. A fresh mailbox's first knock does not wait.
     const since = Date.parse(h.since ?? '');
     const waited = Number.isFinite(since) ? now - since : 0;
     // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
@@ -564,7 +588,8 @@ export async function supervisorRound(home: string, task: string, {
       h.selfWake = 'taken';
       h.selfWakeChannel = null;
       h.wake = null;
-    } else if (!Number.isFinite(triedAt) || grew || moved || (stale && !busy)) {
+    } else if (!Number.isFinite(triedAt) || (pending && !outstanding) || moved || (stale && !busy)) {
+      const carried = h.coalesced ?? 0;
       h.triedAt = new Date(now).toISOString();
       h.wake = print;
       // The mailbox is read exactly here, not every round. `glanceInbox`, not `peekInbox`: the
@@ -594,6 +619,8 @@ export async function supervisorRound(home: string, task: string, {
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
         h.wakeSession = wakeSession;
+        h.knockedFirst = box[0]?.id ?? null;
+        delete h.coalesced;
         knocked.push(addr);
         // How far we knocked: not only what was shown, but also what went into the "and N more"
         // tail — the postcard said it, and there is no need to repeat it.
@@ -601,7 +628,8 @@ export async function supervisorRound(home: string, task: string, {
         const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
         events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
           + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`
-          + `${moved ? ' (contact point rewritten)' : ''}`);
+          + `${moved ? ' (contact point rewritten)' : ''}`
+          + `${carried ? ` (${carried} coalesced under the previous knock)` : ''}`);
       } else {
         // Once per reason: a dead channel returns the same error every two minutes. The phrase names
         // the driver's channel — the `socket` literal sent inspection at a transport inject/rpc lack.
@@ -618,6 +646,8 @@ export async function supervisorRound(home: string, task: string, {
         h.selfWakeChannel = label;
       }
       // There is no write here: the state comparison below decides that.
+    } else if (grew) {
+      h.coalesced = (h.coalesced ?? 0) + unread - (was.unread ?? 0);
     }
 
     // Silence longer than the threshold — escalation, and once: otherwise
@@ -636,6 +666,15 @@ export async function supervisorRound(home: string, task: string, {
   if (changed) writeHealth(home, task, health);
   for (const line of events) logWarden(home, task, line);
   return { stop: null, events, knocked };
+}
+
+function leftInbox(home: string, task: string, participant: string, id: string | null): boolean {
+  if (!id) return false;
+  try {
+    return !existsSync(inboxRef(home, task, participant, id));
+  } catch {
+    return false;
+  }
 }
 
 // Activation of one participant. A driver refusal is an outcome, not an exception: delivery to the

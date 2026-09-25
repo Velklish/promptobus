@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, snapshotOfList, stubCommand, withStubPath } from './sandbox.mjs';
-import { capture } from './console.mjs';
+import { capture, quiet } from './console.mjs';
 
 const SB = makeSandbox('promptobus-promptobus-warden-');
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -252,18 +252,28 @@ const again = stubKnock();
 await wdn.wardenRound(HOME, TASK, { knock: again });
 check('a repeat loop on the same state does not knock', again.calls.length === 0);
 
+const RETRY_AT = Date.now() + wdn.KNOCK_RETRY_SEC * 1000 + 1000;
 const retry = stubKnock();
-await wdn.wardenRound(HOME, TASK, { knock: retry, now: Date.now() + wdn.KNOCK_RETRY_SEC * 1000 + 1000 });
+await wdn.wardenRound(HOME, TASK, { knock: retry, now: RETRY_AT });
 check('past the re-knock threshold the notification repeats', retry.calls.length === 1);
 check('the knock counter grows', health()['worker:api'].knocks === 2);
 
-// A new message on top of the old one is a different state: it can't wait for the re-knock
-// threshold, the participant may not have received the first notification at all.
+// A new message on top of a knock whose mailbox is not taken waits under it: the take returns
+// both. It cannot wait forever — the knock may have been dropped — so the window bounds it.
 send('worker:api', 'уточнение');
+const underKnock = stubKnock();
+await wdn.wardenRound(HOME, TASK, { knock: underKnock, now: RETRY_AT + 5000 });
+check('a new message under an outstanding knock does not knock again',
+  underKnock.calls.length === 0 && health()['worker:api'].coalesced === 1
+  && health()['worker:api'].unread === 2, JSON.stringify(health()['worker:api']));
 const grew = stubKnock();
-await wdn.wardenRound(HOME, TASK, { knock: grew });
-check('a new message wakes immediately, without waiting for the threshold', grew.calls.length === 1);
-check(`the notification body carries the new unread count`, /has unread: 2/.test(grew.calls[0].body));
+const grewRound = await wdn.wardenRound(HOME, TASK, { knock: grew, now: RETRY_AT + wdn.KNOCK_COALESCE_SEC * 1000 + 1000 });
+check('past the coalescing window the new message knocks, without waiting for the re-knock threshold',
+  grew.calls.length === 1);
+check(`the notification body carries the new unread count`, /has unread: 2/.test(grew.calls[0]?.body ?? ''));
+check('the knock line names what it carried from under the previous knock',
+  grewRound.events.some((e) => e === 'notification worker:api: unread 2, knock 3 (1 coalesced under the previous knock)')
+  && health()['worker:api'].coalesced === undefined, JSON.stringify(grewRound.events));
 
 // --- delivery confirmation: an observable reaction ------------------------------
 
@@ -1709,26 +1719,31 @@ check(': a repeat does not list what was already knocked, it names the overall c
   !kIdle.calls[0].body.includes('первое') && /has unread: 1/.test(kIdle.calls[0].body),
   kIdle.calls[0].body);
 
-// A new message arrived on top of the old one — it rides out alone, without its neighbor from
-// the previous knock.
+// A new message arrived on top of the old one — it waits under the unanswered knock, then rides
+// out alone, without its neighbor from the previous knock.
 knockSend('второе');
+const kUnder = stubKnock();
+await knockRound(kUnder, busyList, T418 + 1000);
+check(': a new message under an outstanding knock waits for the take',
+  kUnder.calls.length === 0, String(kUnder.calls.length));
+const T418G = T418 + wdn.KNOCK_COALESCE_SEC * 1000 + 1000;
 const kGrew = stubKnock();
-await knockRound(kGrew, busyList, T418 + 1000);
-check(': a new message wakes it immediately, even a busy session',
+await knockRound(kGrew, busyList, T418G);
+check(': past the coalescing window a new message wakes it, even a busy session',
   kGrew.calls.length === 1, String(kGrew.calls.length));
 check(': the repeat carries only the new one, while the counter is still the overall one',
-  kGrew.calls[0].body.includes('второе') && !kGrew.calls[0].body.includes('первое')
-  && /has unread: 2/.test(kGrew.calls[0].body), kGrew.calls[0].body);
+  (kGrew.calls[0]?.body ?? '').includes('второе') && !kGrew.calls[0].body.includes('первое')
+  && /has unread: 2/.test(kGrew.calls[0].body), kGrew.calls[0]?.body);
 
 // Session state is unknown — that is not "busy": no list, no record, no field. The re-knock
 // goes out, as it did before this fix.
 const kUnknown = stubKnock();
-await knockRound(kUnknown, null, T418 + wdn.KNOCK_RETRY_SEC * 1000 + 2000);
+await knockRound(kUnknown, null, T418G + wdn.KNOCK_RETRY_SEC * 1000 + 2000);
 check(': an unparsed session list is not counted as busy — the re-knock goes out',
   kUnknown.calls.length === 1, String(kUnknown.calls.length));
 const kNoField = stubKnock();
 await knockRound(kNoField, [{ id: 'k1', name: KNOCK_NAME, pid: 4242, state: 'blocked' }],
-  T418 + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 3000);
+  T418G + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 3000);
 check(': a record with no status field is not attributed busyness',
   kNoField.calls.length === 1, String(kNoField.calls.length));
 
@@ -1742,7 +1757,7 @@ registerWake(HOME, KNOCK_TASK, 'worker:api',
     CLAUDE_CODE_SESSION_ID: 'knock-session-2',
   });
 const kMoved = stubKnock();
-await knockRound(kMoved, idleList, T418 + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 4000);
+await knockRound(kMoved, idleList, T418G + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 4000);
 check(': a rewritten contact point returns the full list — the session never saw it',
   kMoved.calls.length === 1 && kMoved.calls[0].body.includes('первое')
   && kMoved.calls[0].body.includes('второе'), kMoved.calls[0].body);
@@ -1762,6 +1777,96 @@ const pidOnlyNow = Date.parse(knockHealth().triedAt) + 1000;
 await knockRound(pidOnly, idleList, pidOnlyNow);
 check(': a pid-only rewrite of the same contact point waits for the retry threshold',
   pidOnly.calls.length === 0, JSON.stringify(pidOnly.calls));
+
+// A hand-off is several sends within seconds: records, then `result`. One knock covers them —
+// the take returns all four — and the next message after the take knocks again.
+const BURST_TASK = 'burst-t20260925-000000';
+const BURST_ADDR = 'orchestrator';
+store.createTask(HOME, { id: BURST_TASK, title: 'hand-off burst' });
+registerWake(HOME, BURST_TASK, BURST_ADDR, { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('burst'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+store.upsertParticipant(HOME, BURST_TASK, store.participantRecord('worker:t10'));
+const burstSend = (body) => store.sendMessage(HOME, BURST_TASK,
+  { from: 'worker:t10', to: BURST_ADDR, type: 'status', body });
+const burstKnock = stubKnock();
+const burstLines = [];
+const B0 = Date.now();
+for (const [at, body] of [[0, 'evidence'], [3000, 'gate record'], [5000, 'handover record'], [18000, 'result']]) {
+  burstSend(body);
+  burstLines.push(...(await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + at })).events);
+}
+const burstHealth = () => store.readHealth(HOME, BURST_TASK)[BURST_ADDR];
+check('four sends to one address within the window make one knock, and unread counts all four',
+  burstKnock.calls.length === 1 && burstHealth().knocks === 1 && burstHealth().unread === 4
+  && burstHealth().coalesced === 3, JSON.stringify({ calls: burstKnock.calls.length, h: burstHealth() }));
+check('the coalesced sends write no knock line of their own',
+  burstLines.filter((l) => l.startsWith(`notification ${BURST_ADDR}`)).length === 1, JSON.stringify(burstLines));
+const burstOut = capture(() => status(SB, { task: BURST_TASK, sessions: snap(BURST_TASK, []) }));
+check('`status` shows the true unread count under a coalesced knock',
+  /unread 4/.test(burstOut), burstOut);
+store.readInbox(HOME, BURST_TASK, BURST_ADDR);
+const burstTaken = await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 23000 });
+check('the take is one line with the count of what waited under the knock',
+  burstTaken.events.includes(`delivered ${BURST_ADDR}: mailbox was taken (had 4, knocks 1, coalesced 3)`)
+  && burstHealth().coalesced === undefined, JSON.stringify(burstTaken.events));
+burstSend('review');
+await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 25000 });
+check('after the take a fifth send knocks again',
+  burstKnock.calls.length === 2 && /has unread: 1/.test(burstKnock.calls[1].body)
+  && burstKnock.calls[1].body.includes('review'), String(burstKnock.calls.length));
+// A take and a new message inside one round leave the count where it was; the knocked message
+// is gone all the same, and the new one must not wait out the window under a knock already answered.
+store.readInbox(HOME, BURST_TASK, BURST_ADDR);
+burstSend('second review');
+const burstRace = await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 27000 });
+check('a take hidden by a new message in the same round is still a take, and the new message knocks',
+  burstRace.events.includes(`delivered ${BURST_ADDR}: mailbox was taken (had 1, knocks 1)`)
+  && burstKnock.calls.length === 3 && burstKnock.calls[2].body.includes('second review'),
+  JSON.stringify(burstRace.events));
+// A peek sets a broken ref aside: the count drops, yet nobody took the knocked mail.
+store.readInbox(HOME, BURST_TASK, BURST_ADDR);
+await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 28000 });
+burstSend('third review');
+await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 29000 });
+writeFileSync(path.join(store.inboxDir(HOME, BURST_TASK, BURST_ADDR), '29991231T000000000-9999-orchestrator.json'), '{broken');
+await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 30000 });
+const sinceBeforePeek = burstHealth().since;
+quiet(() => store.peekInbox(HOME, BURST_TASK, BURST_ADDR));
+const afterPeek = await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 31000 });
+check('a broken ref set aside by a peek is not a take: no delivery line, no second knock, the wait keeps its start',
+  !afterPeek.events.some((e) => e.startsWith(`delivered ${BURST_ADDR}`)) && burstKnock.calls.length === 4
+  && burstHealth().unread === 1 && burstHealth().since === sinceBeforePeek && burstHealth().knocks === 1,
+  JSON.stringify({ events: afterPeek.events, calls: burstKnock.calls.length, h: burstHealth() }));
+store.closeTask(HOME, BURST_TASK);
+
+// A refused knock at the window's end is the dropped-postcard case: the carried count survives it
+// for the knock that does get through, and the refusal is not retried every round.
+const CARRY_TASK = 'carry-t20260925-000000';
+store.createTask(HOME, { id: CARRY_TASK, title: 'refused window knock' });
+registerWake(HOME, CARRY_TASK, BURST_ADDR, { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('carry'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+store.upsertParticipant(HOME, CARRY_TASK, store.participantRecord('worker:t10'));
+const carrySend = (body) => store.sendMessage(HOME, CARRY_TASK,
+  { from: 'worker:t10', to: BURST_ADDR, type: 'status', body });
+const carryRound = (knock, at) => wdn.wardenRound(HOME, CARRY_TASK, { knock, now: C0 + at });
+const carryHealth = () => store.readHealth(HOME, CARRY_TASK)[BURST_ADDR];
+const C0 = Date.now();
+const carryOk = stubKnock();
+for (const [at, body] of [[0, 'records'], [3000, 'gate record'], [5000, 'result']]) {
+  carrySend(body);
+  await carryRound(carryOk, at);
+}
+const carryRefused = stubKnock({ ok: false, error: 'EAGAIN' });
+const windowEnd = wdn.KNOCK_COALESCE_SEC * 1000 + 1000;
+await carryRound(carryRefused, windowEnd);
+await carryRound(carryRefused, windowEnd + 1000);
+check('a refused knock at the window end keeps the carried count and is tried once, not every round',
+  carryOk.calls.length === 1 && carryRefused.calls.length === 1 && carryHealth().coalesced === 2,
+  JSON.stringify({ ok: carryOk.calls.length, refused: carryRefused.calls.length, h: carryHealth() }));
+const carryRetry = await carryRound(carryOk, windowEnd + wdn.KNOCK_RETRY_SEC * 1000 + 1000);
+check('the knock that gets through names the count the refused one carried',
+  carryOk.calls.length === 2
+  && carryRetry.events.includes(`notification ${BURST_ADDR}: unread 3, knock 2 (2 coalesced under the previous knock)`)
+  && carryHealth().coalesced === undefined, JSON.stringify(carryRetry.events));
+store.closeTask(HOME, CARRY_TASK);
 
 // Cursor and Codex encode an ended-turn counter in the contact point. That is an immediate
 // wake signal, but it is still the same session, so only messages after the previous cutoff

@@ -181,7 +181,7 @@ loop live at the consumer, because a process death costs nothing by
 construction — the entire state sits in the task store.
 
 The intervals this machine runs on are not in this guide: `TICK_MS`,
-`KNOCK_RETRY_SEC`, `SILENCE_SEC`, `WARDEN_TOTAL_SEC`, `WARDEN_ABSOLUTE_SEC`,
+`KNOCK_RETRY_SEC`, `KNOCK_COALESCE_SEC`, `SILENCE_SEC`, `WARDEN_TOTAL_SEC`, `WARDEN_ABSOLUTE_SEC`,
 `ROUND_FAIL_LIMIT` and `SPAWN_GRACE_SEC` stand together at the top of
 `src/supervisor.ts`, each
 above the line that states what it was measured by. They are measured and

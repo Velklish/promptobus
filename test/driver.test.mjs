@@ -739,9 +739,10 @@ test('the warden fell and came back — the state is in place, there is no secon
     assert.equal(bus.readHealth(home, task)['worker:a'].knocks, 1);
   });
 
+  // Past the coalescing window: under it the new message waits for the take instead.
   send(task, 'worker:a', 'status', 'второе');
   const third = fakeDriver('fake');
-  await bus.supervisorRound(home, task, { registry: registry(third) });
+  await bus.supervisorRound(home, task, { registry: registry(third), now: Date.now() + bus.KNOCK_COALESCE_SEC * 1000 + 1000 });
   await t.test('the repeat cutoff survived too: the notification has only the new', () => {
     assert.equal(third.calls.activate.length, 1);
     const msgs = third.calls.activate[0].notification.messages;

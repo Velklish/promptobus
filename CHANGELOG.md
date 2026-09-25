@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The standalone host reads `claude --version` when the Claude driver declares it, so the version floor and the effort refusal see the build.** `resolveToolBin` itself does not start a process. The preflight asks before the probe, and a real lift asks once when the bin still has no version; `--dry-run` does not. A build below 2.1.280 drops `claude-opus-5-5` from the inventory on `promptobus models --refresh`; 2.1.280 keeps it. A timed-out, non-zero, or empty answer hands over no version and is not remembered, so the next probe asks again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent. [02-host](docs/reference/02-host.md#the-standalone-host), [03-cli](docs/reference/03-cli.md#claude-code-what-its-adapter-asks).
 
+- **A burst of mail to one address is one knock, not one per message** (PB-229). Measured on a run of 2026-09-16:
+  a worker's hand-off — records, then `result` — was four sends in eighteen seconds, and the warden knocked four
+  times (`unread 1, knock 1` to `unread 4, knock 4`), each one more paid orchestrator turn for one delivery. A knock is
+  now outstanding until the mailbox is taken; mail landing under it counts in `unread` and in `health`'s `coalesced`
+  without knocking again. The next knock goes out after the take, or once `KNOCK_COALESCE_SEC` (90 s, beside
+  `KNOCK_RETRY_SEC`) has passed since the knock, and says `(C coalesced under the previous knock)`; the take line says
+  `(had N, knocks K, coalesced C)`. A take is seen by the knocked message leaving the inbox, so mail landing in the same
+  round as the take is knocked at once. A hold stays a hold; the first knock and a rewritten contact point do not wait.
+  [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden).
+
 ## [0.17.0] — 2026-09-25
 
 ### Added
