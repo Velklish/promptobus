@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { check } from './check.mjs';
-import { GATE_RECORD_SCHEMA, GATE_RECORD_STEM, GATE_TAIL_MAX, RESULT_BODY_MAX } from '../lib/handoff.js';
+import {
+  GATE_LINE_COUNTS, GATE_LINE_VERIFICATION, GATE_RECORD_SCHEMA, GATE_RECORD_STEM, GATE_TAIL_MAX, RESULT_BODY_MAX,
+} from '../lib/handoff.js';
 import { schemaErrors, unsupportedKeywords } from '../lib/schema.js';
 import { validate } from '../dist/index.js';
 
@@ -32,6 +34,37 @@ const record = (over = {}) => ({
   ...over,
 });
 const doc = (...records) => ({ schemaVersion: 1, records });
+const ABOUT = { tree: '93c140dc3c583bb74ec5c1ad8b7f26e6187c45c9', dirty: false };
+
+// The line a reviewer reads. docs/reference/04-protocol.md § The result hand-off.
+function gateAggregate(records, about) {
+  const commands = new Map();
+  let runner = null;
+  for (const entry of records ?? []) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (entry.kind === 'verification') continue;
+    if (entry.tree !== about.tree || entry.dirty !== about.dirty) continue;
+    const counts = entry.counts;
+    if (counts && typeof counts === 'object'
+      && Object.hasOwn(counts, 'gates') && Object.hasOwn(counts, 'green')) {
+      if (!runner || String(entry.at) >= String(runner.at)) runner = entry;
+      continue;
+    }
+    const prev = commands.get(entry.command);
+    if (!prev || String(entry.at) >= String(prev.at)) commands.set(entry.command, entry);
+  }
+  if (commands.size === 0) {
+    return {
+      gates: runner ? runner.counts.gates : 0,
+      green: runner ? runner.counts.green : 0,
+      agrees: true,
+    };
+  }
+  let green = 0;
+  for (const entry of commands.values()) if (entry.exit === 0) green += 1;
+  const agrees = !runner || (runner.counts.gates === commands.size && runner.counts.green === green);
+  return { gates: commands.size, green, agrees };
+}
 
 const refuses = (value) => !accepts(value);
 
@@ -95,6 +128,93 @@ check('PB-201: an unfamiliar field is refused rather than carried — the record
   && refuses({ records: [record()] })
   && refuses(doc()),
   'the document took a field it does not define');
+
+// Absent means gate: a record written before the field is the same document the check above
+// already accepts. `verification` is the card's own run; anything else is not a kind.
+check('PB-232: kind is optional, gate or verification, and an entry without it still passes',
+  !schema.$defs.record.required.includes('kind')
+  && accepts(doc(record()))
+  && accepts(doc(record({ kind: 'gate' })))
+  && accepts(doc(record({ kind: 'verification' })))
+  && refuses(doc(record({ kind: 'card' })))
+  && refuses({ ...doc(record()), kind: 'verification' }),
+  JSON.stringify(accepts.errors));
+const kindFaults = (value) => schemaErrors(schema, value).map((e) => e.at).join(' ');
+check('PB-232: a kind the schema does not define is refused by field name, and so is kind at the root',
+  /\/records\/0\/kind/.test(kindFaults(doc(record({ kind: 'card' }))))
+  && /\/kind/.test(kindFaults({ ...doc(record()), kind: 'verification' }))
+  && !/\/records\/0\/kind/.test(kindFaults({ ...doc(record()), kind: 'verification' })),
+  kindFaults(doc(record({ kind: 'card' }))));
+
+// A repeat of one command, a runner entry that prints the aggregate, and a card run.
+// Counting entries would say 6 or 7; the line says 5, which is what the runner printed.
+const withoutCounts = (over) => { const one = record(over); delete one.counts; return one; };
+const counted = doc(
+  record({ command: 'npm test', exit: 1, at: '2026-09-25T20:04:26.811Z', counts: { files: 72, passed: 70 }, tail: '70/72' }),
+  record({ command: 'npm test', exit: 0, at: '2026-09-25T20:08:31.463Z', counts: { files: 72, passed: 72 }, tail: '72/72' }),
+  withoutCounts({ command: 'npx github:Velklish/backslop#v0.10.1 lint', at: '2026-09-25T20:11:36.492Z', tail: 'lint: no errors' }),
+  record({ command: 'npm run audit', at: '2026-09-25T20:11:39.344Z', counts: { files: 416, packed: 137 } }),
+  record({ command: 'npm run pins', at: '2026-09-25T20:11:41.010Z', counts: { files: 416 } }),
+  record({ command: 'npm run codex-schema', at: '2026-09-25T20:11:41.346Z', counts: { files: 15 } }),
+  record({ command: 'npx github:Velklish/backslop#v0.10.1 gates', at: '2026-09-25T20:11:41.866Z', counts: { gates: 5, green: 5 }, tail: 'gates 5, green 5' }),
+  withoutCounts({ command: 'node test/gate-record.test.mjs', exit: 1, kind: 'verification', at: '2026-09-25T20:12:00.000Z' }),
+);
+const runner = counted.records.find((r) => r.counts && Object.hasOwn(r.counts, 'gates'));
+const redLater = {
+  ...counted,
+  records: counted.records.map((r) => (r.command === 'npm test' && r.exit === 0 ? { ...r, exit: 1 } : r)),
+};
+const line = gateAggregate(counted.records, ABOUT);
+const later = gateAggregate(redLater.records, ABOUT);
+check('PB-232: a repeated command and a runner entry recompute to the runner\'s own gates 5, green 5',
+  accepts(counted)
+  && schemaErrors(schema, counted).length === 0
+  && counted.records.length === 8
+  && line.gates === runner.counts.gates
+  && line.green === runner.counts.green
+  && line.agrees
+  && later.gates === 5
+  && later.green === 4
+  && later.agrees === false,
+  JSON.stringify({ line, later }));
+
+const runnerOnly = gateAggregate(doc(record()).records, ABOUT);
+check('PB-232: a record whose only gate entry is the runner uses that entry\'s own gates and green',
+  accepts(doc(record()))
+  && runnerOnly.gates === 4
+  && runnerOnly.green === 4
+  && runnerOnly.agrees,
+  JSON.stringify(runnerOnly));
+
+const otherTree = 'b'.repeat(40);
+const scoped = doc(
+  withoutCounts({ command: 'npm test', exit: 1, at: '2026-09-25T20:00:00.000Z' }),
+  withoutCounts({ command: 'npm test', exit: 0, tree: otherTree, at: '2026-09-25T20:01:00.000Z' }),
+  withoutCounts({ command: 'npm test', exit: 0, dirty: true, at: '2026-09-25T20:02:00.000Z' }),
+  withoutCounts({ command: 'npm run lint', exit: 0, at: '2026-09-25T20:03:00.000Z' }),
+  record({ at: '2026-09-25T20:04:00.000Z', counts: { gates: 2, green: 1 }, tail: 'gates 2, green 1' }),
+);
+const scopedLine = gateAggregate(scoped.records, ABOUT);
+check('PB-232: entries on another tree are history, and the line counts the tree it is about',
+  accepts(scoped)
+  && scopedLine.gates === 2
+  && scopedLine.green === 1
+  && scopedLine.agrees,
+  JSON.stringify(scopedLine));
+
+const protocol = readFileSync(path.join(ROOT, 'docs/reference/04-protocol.md'), 'utf8');
+const glossary = readFileSync(path.join(ROOT, 'docs/GLOSSARY.md'), 'utf8');
+const handoffDoc = readFileSync(path.join(ROOT, 'docs/reference/03-cli.md'), 'utf8');
+check('PB-232: the protocol, the glossary and the hand-off section state the count in the preamble\'s words',
+  protocol.split(GATE_LINE_COUNTS).length - 1 === 2
+  && protocol.split(GATE_LINE_VERIFICATION).length - 1 === 2
+  && glossary.includes(GATE_LINE_COUNTS)
+  && glossary.includes(GATE_LINE_VERIFICATION)
+  && handoffDoc.includes(GATE_LINE_COUNTS)
+  && handoffDoc.includes(GATE_LINE_VERIFICATION)
+  && schema.$defs.record.properties.kind.description.includes(GATE_LINE_COUNTS)
+  && schema.$defs.record.properties.kind.description.includes(GATE_LINE_VERIFICATION),
+  `protocol ${protocol.split(GATE_LINE_COUNTS).length - 1}`);
 
 // The size bound is the whole answer to "small enough to read", and nothing else in the
 // package bounds an artifact — so it has to hold here or it holds nowhere.
@@ -192,6 +312,10 @@ const fixtures = [
   doc(record({ tail: 'x'.repeat(GATE_TAIL_MAX) })),
   doc(record({ tail: 'x'.repeat(GATE_TAIL_MAX + 1) })),
   doc(record({ note: 'trust me' })),
+  doc(record({ kind: 'gate' })),
+  doc(record({ kind: 'verification' })),
+  doc(record({ kind: 'card' })),
+  { ...doc(record()), kind: 'verification' },
   { schemaVersion: 1, records: [record()], note: 'trust me' },
   { records: [record()] },
   { schemaVersion: 2, records: [record()] },

@@ -62,6 +62,10 @@
           "type": "string",
           "pattern": "^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$"
         },
+        "kind": {
+          "description": "gate or verification. Absent means gate, so a record written before the field still passes and nothing is migrated. verification is a run a card asked for beside the project gates. The line \"gates N, green M\" counts by command, and only the entries whose `tree` and `dirty` match the tree the line is about — a worker's clean HEAD, an approver's merged tree. Entries on other trees are history and are not counted. N is the number of distinct `command` values among those gate entries — an entry with no `kind`, or `kind` `gate`. Different spellings of one command are different commands; keep one spelling. M is how many of those have a latest entry that exits 0. An entry whose `counts` carry `gates` and `green` is the aggregate itself, not a gate, and is not counted in N. When the record has no per-command gate entries, the runner entry's own `gates` and `green` are the line. When per-command entries exist, they are counted by command and must agree with the runner entry when the record has one. An entry with `kind` `verification` is a card's own run and is left out of both. After the aggregate, the Gate line names each verification run with its exit code, or says \"verification K, green L\". The field can first be sent in the release after the one that adds it: send reads the installed copy.",
+          "oneOf": [{ "const": "gate" }, { "const": "verification" }]
+        },
         "tail": {
           "description": "The tail of the combined output — the summary line, and for a non-zero exit the failing assertion in full. Bounded so the record stays readable; the whole log belongs in the log.",
           "type": "string",

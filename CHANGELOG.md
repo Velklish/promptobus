@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A gate-record entry can say whether it is a project gate or a card's own verification run** (PB-232).
+  Optional `kind` on an entry is `gate` or `verification`. Absent means `gate`, so a record written before the
+  field still passes and nothing is migrated. `verification` is one run a card asked for beside the project
+  gates, in the same `command` field, and nothing else is required of it. The line "gates N, green M"
+  counts by command, and only entries whose `tree` and `dirty` match the tree the line is about.
+  A runner entry's own `gates` and `green` are the line when the record has no per-command entries;
+  when those entries exist they are counted by command and must agree with the runner.
+  After the aggregate, the Gate line names each verification run with its exit code, or says
+  "verification K, green L". The handover record keeps its five checks. The field can first be sent in the
+  release after the one that adds it; until then `npm run schema-skew` names it, and the run that adds it
+  writes its own record without the field.
+  [04-protocol § The gate record](docs/reference/04-protocol.md#the-gate-record),
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn).
+
 - **An approver's assignment, the lift refusals, and the approver's attachments** (PB-250). `review --approver` takes optional `--brief <file>`: the text is the assignment in the lift prompt, and after a lift that started the bus keeps it as `brief-approver-<slug>.md`, the same occupancy `spawn` uses for the worker's `brief-<slug>.md` and not that file. `--brief` without `--approver` is refused, because a reviewer's subject is the diff. A later message to the approver stays legal. The refusal that finds no reviewer for the subject names the path it was given and every subject this task's reviewers lifted from, and states that an approver is lifted for a piece a reviewer already read; the neighbouring path refusals say the same. A review of the clone root lists that approver's attachments — name, type and time — and the approver preamble carries the same attachment-contract sentence as the worker. A review of a worker worktree keeps that worker's list and, after it, lists the approver whose recorded repository is that worktree. Several approvers share a path; the subject names them and takes the latest lift, and a tie — the same stamp, or a record with none — builds no list. [03-cli § Review](docs/reference/03-cli.md#review).
 - **The machine lease** (PB-241, [ADR-018](docs/adr/adr-018-the-bus-leases-the-machine-for-measurements.md)). `promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>` runs one measuring command at a time per machine, across tasks and workspaces: the lease is a directory lock under `/tmp/promptobus-<uid>/` held by the wrapper's own pid and refused when that directory is a symlink or another user's, a lease holder that dies is dropped by liveness, a waiter prints who holds the machine and gives up at the bound (default 1800 s) without running anything. `status` opens with the lease holder and the waiters. The worker and approver preambles carry the command, addressed, with the rule for what counts as a measurement; the reviewer preamble says the lease is not its own. The orchestration skill drops orchestrator-issued slots for it.
 

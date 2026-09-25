@@ -18,7 +18,8 @@ import { check } from './check.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
 import {
-  ATTACHMENT_CONTRACT, GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX,
+  ATTACHMENT_CONTRACT, GATE_LINE_COUNTS, GATE_LINE_VERIFICATION,
+  GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX,
 } from '../lib/handoff.js';
 
 function rulesBlock(text, role, expectedFiles) {
@@ -345,6 +346,9 @@ check('PB-201: the reviewer is told to read the gate record and compare its sha 
   && /Another sha, a dirty tree, a non-zero exit, or no record at all/.test(plan.prompt)
   && /do not refuse over it/.test(plan.prompt),
   plan.prompt.split('\n').find((l) => l.includes(GATE_RECORD_SCHEMA)) ?? plan.prompt);
+check('PB-232: the reviewer recomputes gates by command, and a verification run is named after the aggregate',
+  plan.prompt.includes(GATE_LINE_COUNTS) && plan.prompt.includes(GATE_LINE_VERIFICATION),
+  plan.prompt.split('\n').find((l) => /counts by command/.test(l)) ?? plan.prompt);
 // The claim a matching sha supports is about the COMMIT. Uncommitted and untracked
 // content of the subject is outside it, and HEAD does not move when either appears.
 check('PB-201: a matching sha is evidence about the commit, not about whatever else the subject holds',

@@ -33,6 +33,7 @@ import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
 import {
   ATTACHMENT_CONTRACT,
+  GATE_LINE_COUNTS, GATE_LINE_VERIFICATION,
   GATE_RECORD_SCHEMA, GATE_RECORD_STEM, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM, RESULT_BODY_MAX,
 } from '../lib/handoff.js';
 import { provenanceFromRecord, provenanceLine } from '../lib/provenance.js';
@@ -1644,6 +1645,12 @@ check('PB-201: the worker preamble names the gate record and the schema that exi
   && existsSync(path.join(here, '..', GATE_RECORD_SCHEMA))
   && /type=artifact/.test(handoff) && /git rev-parse HEAD/.test(handoff),
   handoff.slice(-900));
+check('PB-232: the worker preamble counts gates by command, and names each verification run after the aggregate',
+  /card's own verification run is an entry of this same record/.test(handoff)
+  && handoff.includes(GATE_LINE_COUNTS)
+  && handoff.includes(GATE_LINE_VERIFICATION)
+  && /handover record does not gain a check for it/.test(handoff),
+  handoff.slice(-1800));
 // The reviewer resolves the record by stem, while the bus reply supplies the landed name.
 check('PB-204: the worker quotes its own send reply, including a numbered collision',
   handoff.includes(`\`${GATE_RECORD_STEM}-<your worker slug>.json\``)

@@ -22,7 +22,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const NODE_BIN = path.join(here, '..', 'node_modules', '.bin');
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { planApprover, reviewerResultSent, approverLift } = await import(path.join(here, '..', 'lib', 'approver.js'));
-const { ATTACHMENT_CONTRACT } = await import(path.join(here, '..', 'lib', 'handoff.js'));
+const { ATTACHMENT_CONTRACT, GATE_LINE_COUNTS, GATE_LINE_VERIFICATION } = await import(path.join(here, '..', 'lib', 'handoff.js'));
 const { review } = await import(path.join(here, '..', 'lib', 'review.js'));
 const { helpText } = await import(path.join(here, '..', 'lib', 'cli.js'));
 const { routingContext, models } = await import(path.join(here, '..', 'lib', 'models.js'));
@@ -411,6 +411,9 @@ check(': approver hand-off may cite another participant landed artifact by name'
   && plan.prompt.includes('worker\'s gate record in the **Gate** line')
   && plan.prompt.includes('binds only to your own send'),
   plan.prompt.slice(plan.prompt.indexOf('Hand-off form'), plan.prompt.indexOf('Hand-off form') + 900));
+check('PB-232: the approver preamble counts gates by command, and names each verification run after the aggregate',
+  plan.prompt.includes(GATE_LINE_COUNTS) && plan.prompt.includes(GATE_LINE_VERIFICATION),
+  plan.prompt.slice(plan.prompt.indexOf('Hand-off form')));
 
 const codexPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'codex' });
 check(': approver on Codex refuses before launch — launch files must not land in the shared clone root',

@@ -490,6 +490,45 @@ check('gate record: a valid one passes through byte for byte',
   && readFileSync(path.join(store.filesDir(home, task.id), 'gates-adapter.json'), 'utf8') === JSON.stringify(goodGate),
   goodSend.artifact.filename);
 
+const CARD_RUN = 'node test/gate-record.test.mjs';
+const verificationDoc = {
+  schemaVersion: 1,
+  records: [{ ...goodGate.records[0], command: CARD_RUN, kind: 'verification' }],
+};
+const verificationSrc = path.join(SB, 'gates-kind.json');
+writeFileSync(verificationSrc, JSON.stringify(verificationDoc));
+const verificationSend = store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: verificationSrc,
+});
+check('PB-232: a gate record carrying one card verification run validates on send',
+  verificationSend.artifact.filename === 'gates-kind.json'
+  && readFileSync(path.join(store.filesDir(home, task.id), 'gates-kind.json'), 'utf8') === JSON.stringify(verificationDoc),
+  verificationSend.artifact?.filename);
+
+const kindAtRoot = path.join(SB, 'gates-kind-root.json');
+writeFileSync(kindAtRoot, JSON.stringify({ ...goodGate, kind: 'verification', records: [{ ...goodGate.records[0], command: CARD_RUN }] }));
+const rootRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: kindAtRoot,
+}));
+check('PB-232: kind at the document root is refused by field name',
+  rootRefusal.threw && /\/kind: field the schema does not define/.test(rootRefusal.msg),
+  rootRefusal.msg);
+check('PB-232: the root refusal left nothing of the record in the task',
+  !existsSync(path.join(store.filesDir(home, task.id), 'gates-kind-root.json')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+const unknownKind = path.join(SB, 'gates-kind-unknown.json');
+writeFileSync(unknownKind, JSON.stringify({
+  schemaVersion: 1,
+  records: [{ ...goodGate.records[0], command: CARD_RUN, kind: 'card' }],
+}));
+const unknownRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: unknownKind,
+}));
+check('PB-232: an unknown kind is refused by field name',
+  unknownRefusal.threw && /\/records\/0\/kind/.test(unknownRefusal.msg),
+  unknownRefusal.msg);
+
 const brokenJson = path.join(SB, 'gates-unparsed.json');
 writeFileSync(brokenJson, 'gates 4, green 4\n');
 const parseRefusal = thrown(() => store.sendMessage(home, task.id, {
@@ -741,6 +780,31 @@ check('PB-234.3: a reason beside shas that already agree is not a refusal',
   && readFileSync(path.join(store.filesDir(home, task.id), 'handover-agreed-reason.json'), 'utf8')
     === JSON.stringify(agreedReasonDoc),
   agreedReasonSend.artifact?.filename);
+
+const cardCheck = handoverDoc();
+cardCheck.checks.cardVerification = { command: CARD_RUN };
+const cardPath = path.join(SB, 'handover-card-verification.json');
+writeFileSync(cardPath, JSON.stringify(cardCheck));
+const cardRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: cardPath,
+}));
+check('PB-232: a cardVerification check in the handover record is refused by field name',
+  cardRefusal.threw && /\/checks\/cardVerification: field the schema does not define/.test(cardRefusal.msg),
+  cardRefusal.msg);
+
+const cardRoot = handoverDoc();
+cardRoot.cardVerification = { command: CARD_RUN };
+const cardRootPath = path.join(SB, 'handover-card-verification-root.json');
+writeFileSync(cardRootPath, JSON.stringify(cardRoot));
+const cardRootRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: cardRootPath,
+}));
+check('PB-232: cardVerification at the handover root is refused by field name',
+  cardRootRefusal.threw
+  && /\/cardVerification: field the schema does not define/.test(cardRootRefusal.msg)
+  && !/\/checks\/cardVerification/.test(cardRootRefusal.msg)
+  && !existsSync(path.join(store.filesDir(home, task.id), 'handover-card-verification-root.json')),
+  cardRootRefusal.msg);
 
 const neutral = path.join(SB, 'gates-not-a-record.txt');
 writeFileSync(neutral, 'not json, not a record\n');
