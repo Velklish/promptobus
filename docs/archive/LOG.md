@@ -336,3 +336,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-241"></a>`PB-241-participants-share-one-machine-with-no-mutex` · 2026-09-25 · completed · — · Participants of one task share a machine and the bus offers them no mutex
 - <a id="pb-159.2"></a>`PB-159.2-cursor-persist-task-mark-missing-in-pool` · 2026-09-25 · completed · — · В пуле persist-сессия Cursor осталась без метки задачи, и это не бюджет настенных часов
 - <a id="pb-65.2"></a>`PB-65.2-mkdir-errnos-outside-link-refusals` · 2026-09-25 · completed · — · A stray file at a store directory path (EEXIST, ENOTDIR) or a read-only or full volume (EROFS, ENOSPC) on the recipient-directory mkdir still escapes classification, and EEXIST cannot simply join LINK_REFUSALS
+- <a id="pb-196.1"></a>`PB-196.1-holder-approves-any-mcp-server` · 2026-09-25 · completed · — · The Codex holder accepts a tool-call elicitation from any MCP server, not only the ones the mechanism configured

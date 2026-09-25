@@ -16,7 +16,7 @@ import Ajv from 'ajv';
 import { listenTestSocket, makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
+  APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_TOOL_LATE, ELICIT_TOOL_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
   HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, parseHomeToml, pidAlive, planParticipant, readTrace, traceFile,
 } from './harness-codex.mjs';
@@ -2106,6 +2106,34 @@ check(': resolving the first of two overlapping server requests leaves the other
     && overlapRec.pendingRequests[0].server === 'probe-b',
   JSON.stringify({ pending: overlapRec?.pendingRequest, all: overlapRec?.pendingRequests }));
 if (overlapWp?.sessionRef) await codexDriver.stop(overlapWp.sessionRef);
+
+planParticipant(HARNESS, 'worker:toolcall', {
+  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-TOOLCALL' } }] }],
+});
+const toolEnv = { ...env, [ELICIT_TOOL_VAR]: '1' };
+const toolW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
+  '--worker', 'toolcall', '--harness', 'codex'], { cwd: ws, env: toolEnv });
+const toolWp = store.participantOf(store.readTask(home, TASK), 'worker:toolcall');
+const toolSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  .find((m) => m.sender === store.addrDir('worker:toolcall') && m.type === 'status'
+    && String(m.body ?? '').includes('CODEX-TOOLCALL')) ?? null, { timeoutMs: 20000 });
+const toolRec = readSession(toolWp?.sessionRef ?? '', env);
+let toolLog = '';
+try { toolLog = readFileSync(holderLogFile(toolWp?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+let toolHome = '';
+try { toolHome = readFileSync(path.join(toolRec?.codexHome ?? '', 'config.toml'), 'utf8'); } catch { /* none */ }
+const mechanismServer = codexMcpName('promptobus', PREFIX);
+const mechanismAllow = toolLog.indexOf(`approval allow mcpServer/elicitation/request server=${mechanismServer} mode=form kind=mcp_tool_call`);
+const appsDeny = toolLog.indexOf('an mcp_tool_call elicitation names server «codex_apps», which this participant\'s home does not configure');
+const lateDeny = toolLog.indexOf(`an mcp_tool_call elicitation names server «${ELICIT_TOOL_LATE}», which this participant's home does not configure`);
+check(': the holder stand allows the mechanism server and denies codex_apps and a server appended after start',
+  toolW.status === 0 && !!toolSent
+    && mechanismAllow >= 0 && appsDeny > mechanismAllow && lateDeny > appsDeny
+    && toolHome.includes(`[mcp_servers.${ELICIT_TOOL_LATE}]`)
+    && !toolLog.includes(`approval allow mcpServer/elicitation/request server=codex_apps`)
+    && !toolLog.includes(`approval allow mcpServer/elicitation/request server=${ELICIT_TOOL_LATE}`),
+  `${toolW.status} · home has late=${toolHome.includes(`[mcp_servers.${ELICIT_TOOL_LATE}]`)} · ${toolLog.slice(-700)}`);
+if (toolWp?.sessionRef) await codexDriver.stop(toolWp.sessionRef);
 
 // The wake's socket wait has to outlast the turn budget it declares. `activate` sends
 // `turn/start` with an inner `timeoutMs` of `turnWaitMs()`, and the outer `holderAsk`

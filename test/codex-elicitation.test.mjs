@@ -1,7 +1,13 @@
 // Codex elicitation: one method, several questions — 03-cli § The Codex holder. Run: npm test
 // Asserts the REPLY on the wire, not the decision: PB-161.4 is where the two disagree.
+import { appendFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { check } from './check.mjs';
-import { approvalReply, decideApproval, serverRequestSummary } from '../lib/codex-session.js';
+import { makeSandbox } from './sandbox.mjs';
+import { codexHomeConfig } from '../lib/driver-codex.js';
+import {
+  approvalReply, codexMcpServers, configuredMcpServers, decideApproval, serverRequestSummary,
+} from '../lib/codex-session.js';
 
 const SECRET = 'SECRET-PROMPT-DO-NOT-LOG';
 
@@ -28,23 +34,44 @@ const approval = {
   _meta: { codex_approval_kind: 'mcp_tool_call' },
 };
 
-const worker = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
-const reviewer = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer' };
-const approver = { cwd: '/tmp/wt', addDirs: [], role: 'approver' };
+function homeWith(servers) {
+  const dir = makeSandbox('promptobus-codex-elicit-');
+  writeFileSync(path.join(dir, 'config.toml'), codexHomeConfig({ servers }));
+  return dir;
+}
 
-const reply = (p, record) => {
-  const d = decideApproval('mcpServer/elicitation/request', p, record);
+const mechanismServers = codexMcpServers({
+  promptobus: { type: 'stdio', command: 'node', args: ['mcp.js'], env: { BUS: '1' } },
+}, 'promptobus-').servers;
+const otherServers = codexMcpServers({
+  'bus.tools': { type: 'stdio', command: 'node', args: [], env: {} },
+}, 'promptobus-').servers;
+const MECHANISM_SERVER = 'promptobus-promptobus';
+const OTHER_SERVER = 'promptobus-bus.tools';
+const configuredHome = homeWith(mechanismServers);
+const otherHome = homeWith(otherServers);
+
+const worker = { cwd: '/tmp/wt', addDirs: [], role: 'worker', codexHome: configuredHome };
+const reviewer = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer', codexHome: configuredHome };
+const approver = { cwd: '/tmp/wt', addDirs: [], role: 'approver', codexHome: configuredHome };
+const otherParticipant = { cwd: '/tmp/wt', addDirs: [], role: 'reviewer', codexHome: otherHome };
+
+const elicit = (p, record, configured = configuredMcpServers(record)) =>
+  decideApproval('mcpServer/elicitation/request', p, record, configured);
+
+const reply = (p, record, configured) => {
+  const d = elicit(p, record, configured);
   return approvalReply('mcpServer/elicitation/request', d.allow);
 };
 
 {
-  const d = decideApproval('mcpServer/elicitation/request', params, worker);
+  const d = elicit(params, worker);
   check(': a worker elicitation from a server is declined — the participant has no person to answer',
     d.allow === false && /no person/.test(d.why), JSON.stringify(d));
 }
 
 {
-  const d = decideApproval('mcpServer/elicitation/request', params, reviewer);
+  const d = elicit(params, reviewer);
   check(': a reviewer elicitation from a server is declined the same way',
     d.allow === false && /no person/.test(d.why), JSON.stringify(d));
 }
@@ -64,12 +91,88 @@ for (const [role, record] of [['worker', worker], ['reviewer', reviewer], ['appr
     r.action === 'accept' && JSON.stringify(r.content) === '{}', JSON.stringify(r));
 }
 
+for (const [role, record] of [['worker', worker], ['reviewer', reviewer], ['approver', approver]]) {
+  const foreign = { ...approval, serverName: 'codex_apps' };
+  const d = elicit(foreign, record);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(`: a tool-call elicitation from an unconfigured server is refused for role ${role}`,
+    d.allow === false && r.action === 'decline' && /does not configure/.test(d.why)
+      && /codex_apps/.test(d.why),
+    JSON.stringify({ d, r }));
+}
+
+{
+  const d = elicit(approval, worker);
+  const r = reply(approval, worker);
+  check(': a tool-call elicitation from the mechanism server is allowed',
+    approval.serverName === MECHANISM_SERVER && d.allow === true && r.action === 'accept',
+    JSON.stringify(d));
+}
+
+{
+  const named = { ...approval, serverName: OTHER_SERVER };
+  const allowed = elicit(named, otherParticipant);
+  const refused = elicit(approval, otherParticipant);
+  check(': a tool-call elicitation is allowed only for the server that participant\'s home configures',
+    allowed.allow === true && refused.allow === false && /does not configure/.test(refused.why)
+      && /promptobus-promptobus/.test(refused.why),
+    JSON.stringify({ allowed, refused }));
+}
+
+{
+  const nested = { ...approval, serverName: `${MECHANISM_SERVER}.env` };
+  const d = elicit(nested, worker);
+  check(': a nested mcp_servers table is not a server the holder may approve',
+    d.allow === false && /does not configure/.test(d.why), JSON.stringify(d));
+}
+
+{
+  const bare = { ...approval };
+  delete bare.serverName;
+  const d = elicit(bare, worker);
+  const r = approvalReply('mcpServer/elicitation/request', d.allow);
+  check(': a tool-call elicitation with no serverName is refused',
+    d.allow === false && r.action === 'decline' && /«absent»/.test(d.why), JSON.stringify(d));
+}
+
+{
+  const { codexHome, ...noHome } = worker;
+  void codexHome;
+  const d = elicit(approval, noHome);
+  check(': a tool-call elicitation with no participant home on the record is refused',
+    d.allow === false && /no Codex home/.test(d.why), JSON.stringify(d));
+}
+
+{
+  const missing = { ...worker, codexHome: path.join(configuredHome, 'no-such-home') };
+  const d = elicit(approval, missing);
+  check(': a tool-call elicitation whose home config cannot be read is refused',
+    d.allow === false && /could not be read/.test(d.why), JSON.stringify(d));
+}
+
+{
+  const dir = homeWith(mechanismServers);
+  const record = { cwd: '/tmp/wt', addDirs: [], role: 'worker', codexHome: dir };
+  const snapshot = configuredMcpServers(record);
+  appendFileSync(path.join(dir, 'config.toml'), '\n[mcp_servers.codex_apps]\ncommand = "x"\n');
+  const live = configuredMcpServers(record);
+  const appended = { ...approval, serverName: 'codex_apps' };
+  const d = elicit(appended, record, snapshot);
+  const still = elicit(approval, record, snapshot);
+  check(': a config.toml appended after the holder snapshot does not widen the approved set',
+    live.ok === true && live.names.has('codex_apps')
+      && elicit(appended, record, live).allow === true
+      && d.allow === false && /does not configure/.test(d.why)
+      && still.allow === true,
+    JSON.stringify({ d, still, live: live.ok ? [...live.names] : live.why }));
+}
+
 // The discriminator is a STRING MATCH, not a truthiness test. `tool_suggestion` is a real
 // second value of the same `_meta` key — it asks to install or enable a tool, which is a
 // question to a person, and accepting it would let one through with nobody there.
 for (const kind of ['tool_suggestion', 'something_new', 'MCP_TOOL_CALL', 'mcp_tool_call ']) {
   const p = { ...approval, _meta: { codex_approval_kind: kind } };
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(`: kind «${kind}» is NOT a tool-call approval and is declined`,
     d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
@@ -87,7 +190,7 @@ for (const [name, kind] of [
   ['null', null],
 ]) {
   const p = { ...approval, _meta: { codex_approval_kind: kind } };
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(`: ${name} where the kind should be is declined, not coerced`,
     d.allow === false && r.action === 'decline', JSON.stringify({ kind, d, r }));
@@ -96,7 +199,7 @@ for (const [name, kind] of [
 {
   const { _meta, ...noMarker } = approval;
   void _meta;
-  const d = decideApproval('mcpServer/elicitation/request', noMarker, reviewer);
+  const d = elicit(noMarker, reviewer);
   check(': the same request without the marker falls back to the decline PB-41 decided on',
     d.allow === false && /no person/.test(d.why), JSON.stringify(d));
 }
@@ -139,7 +242,7 @@ for (const [name, requestedSchema] of [
   ['a schema that is not an object', 'string'],
 ]) {
   const p = { ...approval, requestedSchema };
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(`: the marker with ${name} is declined — an approval has nothing to fill`,
     d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));
@@ -159,7 +262,7 @@ for (const [name, requestedSchema] of [
   ['an empty object schema', { type: 'object', properties: {} }],
 ]) {
   const p = { ...approval, requestedSchema };
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   check(`: the marker with ${name} is accepted — nothing to fill is the approval's shape`,
     d.allow === true, JSON.stringify({ requestedSchema, d }));
 }
@@ -177,7 +280,7 @@ for (const [name, requestedSchema] of [
 {
   const url = { ...approval, mode: 'url', elicitationId: 'e-1', url: 'https://example.invalid/approve' };
   delete url.requestedSchema;
-  const d = decideApproval('mcpServer/elicitation/request', url, reviewer);
+  const d = elicit(url, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(': a URL elicitation carrying the marker is DECLINED — it is a different variant',
     d.allow === false && r.action === 'decline', JSON.stringify({ d, r }));
@@ -191,7 +294,7 @@ for (const [name, mutate] of [
 ]) {
   const p = { ...approval };
   mutate(p);
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(`: the marker with ${name} is DECLINED — the whitelist proves every field it needs`,
     d.allow === false && r.action === 'decline', JSON.stringify({ p, d, r }));
@@ -207,7 +310,7 @@ for (const [name, requestedSchema] of [
   ['properties that are null', { type: 'object', properties: null }],
 ]) {
   const p = { ...approval, requestedSchema };
-  const d = decideApproval('mcpServer/elicitation/request', p, reviewer);
+  const d = elicit(p, reviewer);
   const r = approvalReply('mcpServer/elicitation/request', d.allow);
   check(`: the marker with ${name} is DECLINED — upstream does not call that message-only`,
     d.allow === false && r.action === 'decline', JSON.stringify({ requestedSchema, d, r }));

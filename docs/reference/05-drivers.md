@@ -597,8 +597,26 @@ boolean, and the home's table writer produces only strings, so it goes in as a f
 Whether 0.146.0 ran the same server is not known. That binary is no longer installed, and its
 records name only the probe server.
 
-The holder still accepts an `mcp_tool_call` elicitation from any server name. That approval
-stays within the mechanism's servers only because the home holds no other server.
+The holder accepts an `mcp_tool_call` elicitation only when its `serverName` is a
+`[mcp_servers]` key of that participant's home. The elicitation carries the name as
+`serverName`, required on `McpServerElicitationRequestParams` in the 0.156.1
+[`ServerRequest` schema](../../test/fixtures/codex-app-server/0.156.1/ServerRequest.json).
+The keys are the set the lift wrote, read once at holder start: whatever `codexMcpServers`
+produced for that participant and `codexHomeConfig` wrote into `config.toml` before the
+holder process began. The holder keeps that set for the life of the process and does not
+read the file again. There is no second list on the session record. A workspace-write
+participant can append a table under `$TMPDIR`, where the home lives, and a later read
+would approve the server it had just named. A reviewer and a worker are different
+participants, so each snapshot is that participant's own home at the moment its holder
+started. A name the snapshot does not contain is declined — a built-in server, a server
+a later feature adds, a missing `serverName`, a record that names no home, or a
+`config.toml` that cannot be read at start — and the reason is written to the holder log
+and the warden log with the other refusals. The match is the string as sent against the
+table key as written, including a key the writer had to quote. A nested table such as
+`[mcp_servers.<name>.env]` is not itself a server. Turning `apps` off still keeps
+`codex_apps` out of the thread; this check is what refuses the elicitation if a server
+arrives that the lift did not configure. Whether app-server reloads `config.toml` during
+a session was not measured.
 
 ## `sessionStall` — sessionStall answers null for no stall, otherwise { kind, reason }. kind is permission
 

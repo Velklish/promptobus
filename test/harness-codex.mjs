@@ -55,6 +55,8 @@ export const CURRENT_TIME_VAR = 'CODEX_STUB_CURRENT_TIME';
 export const ELICIT_VAR = 'CODEX_STUB_ELICIT';
 export const ELICIT_HANG_VAR = 'CODEX_STUB_ELICIT_HANG';
 export const ELICIT_OVERLAP_VAR = 'CODEX_STUB_ELICIT_OVERLAP';
+export const ELICIT_TOOL_VAR = 'CODEX_STUB_ELICIT_TOOL';
+export const ELICIT_TOOL_LATE = 'late_server';
 export const FAIL_TURN_VAR = 'CODEX_STUB_FAIL_TURN';
 export const ORPHAN_VAR = 'CODEX_STUB_ORPHAN';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
@@ -678,6 +680,20 @@ export function parseHomeToml(text) {
   return out;
 }
 
+function mechanismServerKey(configText) {
+  let servers;
+  try {
+    servers = parseHomeToml(configText).mcp_servers ?? {};
+  } catch {
+    return '';
+  }
+  for (const [name, cfg] of Object.entries(servers)) {
+    const env = cfg?.env;
+    if (env && typeof env === 'object' && (env.PROMPTOBUS_ROLE || env.PROMPTOBUS_ADDRESS)) return name;
+  }
+  return '';
+}
+
 function busServer(thread) {
   let servers = null;
   try {
@@ -855,6 +871,29 @@ async function playTurn(home, started, turnId, params, ask, notify) {
     notify('serverRequest/resolved', { requestId: first.requestId, threadId: t.id });
     await new Promise(() => {});
     return;
+  }
+  if (process.env[ELICIT_TOOL_VAR] === '1') {
+    // The holder already snapshotted this file. The third name is written after
+    // that, so a holder that re-reads config.toml would allow it.
+    const mechanism = mechanismServerKey(t.codexHome?.config);
+    const toolCall = {
+      mode: 'form',
+      message: 'SECRET-PROMPT-DO-NOT-LOG',
+      requestedSchema: { type: 'object', properties: {} },
+      _meta: { codex_approval_kind: 'mcp_tool_call' },
+    };
+    const asked = [];
+    for (const serverName of [mechanism, 'codex_apps']) {
+      const pending = ask('mcpServer/elicitation/request', { ...toolCall, serverName, threadId: t.id });
+      asked.push(await pending);
+      notify('serverRequest/resolved', { requestId: pending.requestId, threadId: t.id });
+    }
+    appendFileSync(path.join(process.env.CODEX_HOME, 'config.toml'), `\n[mcp_servers.${ELICIT_TOOL_LATE}]\ncommand = "x"\n`);
+    const late = ask('mcpServer/elicitation/request', { ...toolCall, serverName: ELICIT_TOOL_LATE, threadId: t.id });
+    asked.push(await late);
+    notify('serverRequest/resolved', { requestId: late.requestId, threadId: t.id });
+    t.toolCallApprovals = asked;
+    writeThread(home, t);
   }
   const input = params.input?.[0]?.text
     ?? params.target?.instructions
