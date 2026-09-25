@@ -277,3 +277,12 @@ test('the gate above reads a command list that is not empty and holds the real c
   assert.ok(walked.includes('cli.js'), walked.join(', '));
   assert.ok(walked.some((f) => f.includes(path.sep)), `no subdirectory was walked: ${walked.join(', ')}`);
 });
+
+test('the unknown-command refusal names every command the dispatcher knows', () => {
+  // SUBCOMMANDS is a hand copy of the dispatcher's case labels; held equal here.
+  const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
+  const aliases = new Set(['help', '--help', '-h', '--version', '-v']);
+  const dispatcherCommands = [...subcommands()].filter((cmd) => !aliases.has(cmd)).sort();
+  const listed = cli.match(/const SUBCOMMANDS = '([^']+)';/)[1].split(', ').sort();
+  assert.deepEqual(listed, dispatcherCommands);
+});

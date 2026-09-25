@@ -339,3 +339,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-196.1"></a>`PB-196.1-holder-approves-any-mcp-server` · 2026-09-25 · completed · — · The Codex holder accepts a tool-call elicitation from any MCP server, not only the ones the mechanism configured
 - <a id="pb-234.2"></a>`PB-234.2-new-record-field-unsendable-until-released` · 2026-09-25 · completed · — · A field added to a record schema cannot be sent until the package is released, so the run that adds it cannot exercise it
 - <a id="pb-243.1"></a>`PB-243.1-warden-reknocks-an-orchestrator-waiting-on-its-user` · 2026-09-25 · completed · — · The warden re-knocks every two minutes an orchestrator whose turn is waiting on its user, and each knock lands in its context
+- <a id="pb-251"></a>`PB-251-reference-drift-minor-batch` · 2026-09-25 · completed · — · Minor batch: text that drifted from the tree — README gates, 03-cli, the command list
+- <a id="pb-247.1"></a>`PB-247.1-readme-gates-list-short` · 2026-09-25 · batch PB-251 · — · README names three of the five gates
+- <a id="pb-249.1"></a>`PB-249.1-unknown-command-list-omits-stop` · 2026-09-25 · batch PB-251 · — · The unknown-command refusal lists every command but stop
+- <a id="pb-249.2"></a>`PB-249.2-reference-names-closed-pb-192-open` · 2026-09-25 · batch PB-251 · — · 03-cli names PB-192 as open, and PB-192 is closed
+- <a id="pb-249.3"></a>`PB-249.3-reference-identity-reader-present-tense` · 2026-09-25 · batch PB-251 · — · 03-cli describes the pre-ADR-010 identity reader in the present tense

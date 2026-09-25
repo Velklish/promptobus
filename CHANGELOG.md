@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Four sentences that had drifted from the tree now match it** (PB-251). `README.md` and `README.ru.md` point at `backslop.json`'s `gates` key instead of a copy of the gate list, so a new gate does not leave the README behind. The unknown-command refusal in `lib/cli.js` names `stop` again; `test/cli.test.mjs` now holds the refusal's list equal to the dispatcher's own `case` labels. [03-cli](docs/reference/03-cli.md) no longer names the closed PB-192 as an open question, and its pre-ADR-010 measurement of `sessionIdentity()` is in the past tense.
 - **The warden no longer re-knocks an orchestrator whose turn is waiting on its user** (PB-243.1). Measured on
   2026-09-25 on this repository's own run: an orchestrator's question to its user stayed open from 17:46Z to 18:20Z
   with 13 messages unread. From the silence bound at 18:01Z the warden knocked ten times, one every two minutes, and
