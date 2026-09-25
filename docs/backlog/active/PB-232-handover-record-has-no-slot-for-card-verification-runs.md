@@ -1,10 +1,11 @@
 # PB-232 · The handover record has no slot for a card's own verification runs, so they land in the gate record under a tail
 
-- **Order:** 180
 - **Scope:** `schemas/v1/handover-record.schema.json`, `schemas/v1/gate-record.schema.json`, [03-cli](../../reference/03-cli.md) § the hand-off form
 - **Created:** 2026-09-17, consumer run
 - **Dependencies:** PB-234.2 — either home is a new field in a published record schema
 - **Cost:** major
+- **Previous order:** 180
+- **Taken:** 2026-09-25
 
 ## Context
 
