@@ -1,11 +1,12 @@
 # PB-187 · The catalog and Codex inventory need a home and visibility contract
 
-- **Order:** 220
 - **Scope:** `models/catalog.json` (`codex-mini-*`), `lib/model-routing/validate.js` (`models validate`),
   [reference/03-cli](../../reference/03-cli.md) § Codex availability, [guides/model-routing](../../guides/model-routing.md)
 - **Created:** 2026-09-12, release run
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 220
+- **Taken:** 2026-09-25
 
 ## The measurement was misattributed
 

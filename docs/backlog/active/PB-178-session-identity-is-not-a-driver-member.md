@@ -1,11 +1,12 @@
 # PB-178 · Контракт идентичности закрыт, живой демонстрации на трёх харнессах нет
 
-- **Order:** 190
 - **Scope:** `lib/store.js` (`sessionIdentity`), `lib/drivers.js` (the driver contract),
   the three drivers, [02-host](../../reference/02-host.md), ADR-010
 - **Created:** 2026-09-12
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 190
+- **Taken:** 2026-09-25
 
 ## Context
 
