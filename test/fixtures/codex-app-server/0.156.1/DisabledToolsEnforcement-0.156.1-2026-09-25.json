@@ -1,0 +1,134 @@
+{
+  "codexCli": "0.156.1",
+  "capturedOn": "2026-09-25",
+  "purpose": "Whether codex-cli withholds a tool listed in disabled_tools, on the shipped form: the entries live in the participant home config.toml, not in a thread/start override. Re-taken from the 0.146.0 record of 2026-09-11.",
+  "normalization": "Participant home and stand paths are omitted. Tool and server names are as configured; the codex_apps tool names are as the thread inventory reported them.",
+  "form": {
+    "mcpEntriesFrom": "CODEX_HOME/config.toml",
+    "threadStartCarriedMcpServers": false,
+    "server": "promptobus-probe",
+    "offeredByTheServer": [
+      "read_tool",
+      "write_tool"
+    ],
+    "model": "gpt-5.6-sol",
+    "sandbox": "read-only"
+  },
+  "decisive": {
+    "method": "mcpServerStatus/list",
+    "turnStarted": false,
+    "note": "Thread-scoped, asked ~8 s after thread/start and given 8 s to answer, as on 2026-09-11. The server was initialized twice per thread: once at thread start and again when the status list was asked.",
+    "withDisabledTools": {
+      "disabled_tools": [
+        "write_tool"
+      ],
+      "serverAskedForItsTools": true,
+      "serverInitializedTimes": 2,
+      "serverAnsweredWith": [
+        "read_tool",
+        "write_tool"
+      ],
+      "threadInventory": [
+        "read_tool"
+      ],
+      "statusListAskedAfterThreadStartMs": 8850,
+      "statusListAnsweredAfterAskMs": 1271,
+      "alsoInThreadInventory": {
+        "codex_apps": {
+          "runtimeStatus": "connected",
+          "tools": 52
+        }
+      }
+    },
+    "withoutDisabledTools": {
+      "disabled_tools": null,
+      "serverAskedForItsTools": true,
+      "serverInitializedTimes": 2,
+      "serverAnsweredWith": [
+        "read_tool",
+        "write_tool"
+      ],
+      "threadInventory": [
+        "read_tool",
+        "write_tool"
+      ],
+      "statusListAskedAfterThreadStartMs": 8745,
+      "statusListAnsweredAfterAskMs": 1232,
+      "alsoInThreadInventory": {
+        "codex_apps": {
+          "runtimeStatus": "connected",
+          "tools": 52
+        }
+      }
+    },
+    "verdict": "A tool named in disabled_tools is absent from the thread tool inventory app-server reports, while the MCP server itself was asked for its tools and answered with both. The filtering is app-server's, above the server — the same answer as on 0.146.0. What this does not state: the exact tool payload of the model request, which no client-visible method returns."
+  },
+  "builtInServer": {
+    "name": "codex_apps",
+    "source": "the apps feature, stable and on by default: codex features list in the participant home prints apps stable true",
+    "inBothBranches": true,
+    "removedBy": "[features] apps = false in the participant home config.toml: the thread inventory then held no server at all",
+    "tools": [
+      "codex_document_control.execute_document_command",
+      "codex_document_control.get_document_tool_schemas",
+      "codex_document_control.list_document_sessions",
+      "hotline.get_local_hotline",
+      "plugin_management.get_app_permissions",
+      "plugin_management.get_plugin_dependencies",
+      "plugin_management.search_plugins",
+      "plugin_management.suggest_plugins",
+      "plugin_management.uninstall_app",
+      "plugin_management.update_app_permissions",
+      "safety_settings.get_family_info",
+      "safety_settings.get_parental_controls",
+      "safety_settings.get_trusted_contact",
+      "safety_settings.prepare_parental_control_update",
+      "safety_settings.update_parental_control",
+      "sites.add_custom_domain",
+      "sites.change_site_slug",
+      "sites.check_slug_availability",
+      "sites.create_site",
+      "sites.create_source_repository_write_credential",
+      "sites.delete_site",
+      "sites.deploy_private_site_version",
+      "sites.deploy_site_version",
+      "sites.generate_siwc_bypass_token",
+      "sites.get_database_overview",
+      "sites.get_database_table_rows",
+      "sites.get_deployment_status",
+      "sites.get_environment",
+      "sites.get_environment_variables",
+      "sites.get_project",
+      "sites.get_site",
+      "sites.get_site_analytics_overview",
+      "sites.get_site_version",
+      "sites.get_site_worker_logs",
+      "sites.list_custom_domains",
+      "sites.list_projects",
+      "sites.list_site_analytics_events",
+      "sites.list_site_versions",
+      "sites.list_sites",
+      "sites.list_sites_creator_control_panel_projects",
+      "sites.query_site_analytics_event",
+      "sites.read_database_overview",
+      "sites.read_database_table_rows",
+      "sites.refresh_custom_domain_status",
+      "sites.remove_custom_domain",
+      "sites.save_site_version",
+      "sites.save_version_and_deploy_private",
+      "sites.update_access",
+      "sites.update_environment",
+      "sites.update_environment_variables",
+      "sites.update_site_access",
+      "sites.update_site_metadata"
+    ]
+  },
+  "paidTurns": [],
+  "paidTurnsNote": "None were spent on 0.156.1. The two of 2026-09-11 answered nothing about the tools offered and stay in the 0.146.0 record.",
+  "observed": {
+    "enforcementObserved": true,
+    "enforcementLevel": "thread tool inventory reported by app-server",
+    "modelRequestPayloadObserved": false,
+    "turnAnswerUsable": false
+  }
+}

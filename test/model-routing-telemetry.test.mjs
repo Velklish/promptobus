@@ -43,6 +43,7 @@ const { models, routingContext, routingMetadata } = await import(path.join(ROOT,
 const { hostOf } = await import(path.join(ROOT, 'lib', 'host.js'));
 const telemetry = await import(path.join(ROOT, 'lib', 'model-routing', 'telemetry.js'));
 const { ROUTED_ROLES } = await import(path.join(ROOT, 'lib', 'model-routing', 'catalog.js'));
+const { PROVEN_CODEX_VERSION } = await import(path.join(ROOT, 'lib', 'driver-codex.js'));
 const publicTelemetry = await import(path.join(ROOT, 'dist', 'telemetry.js'));
 
 // PB-212: telemetrySummary has one implementation, re-exported, not two that could agree by
@@ -75,8 +76,8 @@ const CODEX_USAGE_FIELDS = [
   'output_tokens', 'reasoning_output_tokens', 'total_tokens',
 ];
 const codexRolloutFixture = readJson(path.join(
-  here, 'fixtures', 'codex-app-server', '0.146.0',
-  'TokenUsage-0.146.0-2026-09-12.json',
+  here, 'fixtures', 'codex-app-server', PROVEN_CODEX_VERSION,
+  'TokenUsage-0.156.1-2026-09-25.json',
 ));
 const codexUsage = [
   codexRolloutFixture.event?.payload?.info?.last_token_usage,

@@ -168,7 +168,7 @@ check(': default readyMs = preamble + turn/started, independent of the full-turn
 
 const patchRec = { cwd: '/tmp/wt', addDirs: [], role: 'worker' };
 const policyRec = { ...patchRec, sandbox: 'workspace-write', approvalPolicy: 'on-failure' };
-const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', '0.146.0');
+const codexFixtureDir = path.join(here, 'fixtures', 'codex-app-server', PROVEN_CODEX_VERSION);
 const codexFixtureAjv = new Ajv({
   strict: false,
   allErrors: true,
@@ -178,11 +178,13 @@ const codexServerRequest = codexFixtureAjv.compile(
   JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8')),
 );
 const mcpDenyCapture = JSON.parse(readFileSync(
-  path.join(codexFixtureDir, 'McpServerStatusList-0.146.0-2026-09-10.json'), 'utf8',
+  path.join(codexFixtureDir, 'McpServerStatusList-0.156.1-2026-09-25.json'), 'utf8',
 ));
 const mcpCaptureMessages = mcpDenyCapture.exchange.map(({ message }) => message);
 const mcpThreadStart = mcpCaptureMessages.find((message) => message.method === 'thread/start');
 const mcpStatusRequest = mcpCaptureMessages.find((message) => message.method === 'mcpServerStatus/list');
+const mcpStatusReply = mcpDenyCapture.exchange
+  .find(({ direction, message }) => direction === 'reply' && message.id === mcpStatusRequest?.id)?.message;
 check('PB-87.1: the Codex MCP capture accepts disabled_tools without a model turn',
   mcpDenyCapture.turnStarted === false
   && mcpThreadStart?.params?.config?.mcp_servers?.['promptobus-probe']?.disabled_tools?.join(',') === 'write_tool'
@@ -190,14 +192,14 @@ check('PB-87.1: the Codex MCP capture accepts disabled_tools without a model tur
   && mcpDenyCapture.observed?.serverStartupStatus === 'ready'
   && mcpStatusRequest?.id === 3
   && !mcpCaptureMessages.some((message) => message.method === 'turn/start')
-  && !mcpDenyCapture.exchange.some(({ direction, message }) => direction === 'reply' && message.id === mcpStatusRequest?.id),
+  && mcpStatusReply?.result?.data?.['promptobus-probe']?.tools?.join(',') === 'read_tool',
   JSON.stringify(mcpDenyCapture.observed));
 // PB-87.3: the enforcement capture. The two branches differ only in `disabled_tools`,
 // so the check is that they differ in exactly one tool and in the right direction —
 // and that the MCP server itself was told to hand over both, which is what makes the
 // filtering app-server's rather than the server's.
 const enforcement = JSON.parse(readFileSync(
-  path.join(codexFixtureDir, 'DisabledToolsEnforcement-0.146.0-2026-09-11.json'), 'utf8',
+  path.join(codexFixtureDir, 'DisabledToolsEnforcement-0.156.1-2026-09-25.json'), 'utf8',
 ));
 check('PB-87.3: a disabled tool is absent from the thread inventory and present without the key',
   enforcement.decisive.turnStarted === false
@@ -211,10 +213,7 @@ check('PB-87.3: a disabled tool is absent from the thread inventory and present 
 check('PB-87.3: the capture names its ceiling and does not lean on the turns that answered nothing',
   enforcement.observed.modelRequestPayloadObserved === false
   && enforcement.observed.turnAnswerUsable === false
-  && enforcement.paidTurns.length === 2
-  && enforcement.paidTurns.every((t) => t.turnStatus === 'completed')
-  && enforcement.paidTurns[1].captured === true
-  && enforcement.paidTurns[1].rolloutAssistantMessage === ''
+  && enforcement.paidTurns.length === 0
   && enforcement.form.threadStartCarriedMcpServers === false
   && enforcement.form.mcpEntriesFrom === 'CODEX_HOME/config.toml',
   JSON.stringify({ observed: enforcement.observed, turns: enforcement.paidTurns.map((t) => t.captured) }));
@@ -812,6 +811,18 @@ check('PB-88.3: the refusal reply is the measured decline — no amendment arm i
   && !JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)).includes('NetworkPolicyAmendment'),
   JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)));
 
+// The kinds are read from the fixture, so a re-capture that adds a third fails here instead of
+// being decided by containment nobody chose for it.
+const commandKinds = commandApprovalParams.definitions?.CommandExecutionApprovalKind?.enum ?? [];
+check('PB-196: a writeStdin command approval is decided by the same containment as a command',
+  commandKinds.slice().sort().join(',') === 'command,writeStdin'
+  && commandKinds.every((kind) => decideApproval('item/commandExecution/requestApproval',
+    { cwd: '/tmp/wt', kind }, patchRec).allow === true
+    && decideApproval('item/commandExecution/requestApproval', { cwd: '/tmp/outside', kind }, patchRec).allow === false
+    && decideApproval('item/commandExecution/requestApproval', { cwd: '/tmp/wt', kind },
+      { ...patchRec, role: 'reviewer' }).allow === false),
+  JSON.stringify(commandKinds));
+
 check(': mixed-case dangerous sandbox mode is denied',
   (() => {
     const d = decideApproval('item/permissions/requestApproval', { sandbox: 'DANGER-FULL-ACCESS' }, patchRec);
@@ -872,14 +883,14 @@ check(': a binary older than the proven version — refuse before lift',
   && codexDriver.optionRefusal({}, { version: null }) === null,
   String(codexDriver.optionRefusal({}, { version: '0.140.0' })).slice(0, 90));
 check(': a raw Codex version with the product prefix at the proven release passes',
-  codexDriver.optionRefusal({}, { version: 'codex-cli 0.146.0' }) === null,
-  String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.146.0' })));
+  codexDriver.optionRefusal({}, { version: `codex-cli ${PROVEN_CODEX_VERSION}` }) === null,
+  String(codexDriver.optionRefusal({}, { version: `codex-cli ${PROVEN_CODEX_VERSION}` })));
 check(': a raw Codex version with the product prefix below the proven release refuses',
   /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' }))),
   String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' })));
 check(': a v-prefixed Codex version at the proven release passes',
-  codexDriver.optionRefusal({}, { version: 'v0.146.0' }) === null,
-  String(codexDriver.optionRefusal({}, { version: 'v0.146.0' })));
+  codexDriver.optionRefusal({}, { version: `v${PROVEN_CODEX_VERSION}` }) === null,
+  String(codexDriver.optionRefusal({}, { version: `v${PROVEN_CODEX_VERSION}` })));
 check(': a v-prefixed Codex version below the proven release refuses',
   /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'v0.9.0' }))),
   String(codexDriver.optionRefusal({}, { version: 'v0.9.0' })));
@@ -1204,9 +1215,10 @@ check('PB-161: the home config carries quoted keys for a prefixed server and an 
   })(),
   codexHomeConfig({ servers: { 'promptobus-bus': { command: 'node', args: ['a b'], env: { K: 'v"q' } } }, trusted: ['/private/var/a b/wt'] }));
 
-check('PB-161: an empty set writes an empty config rather than an empty table',
-  codexHomeConfig({}) === '' && codexHomeConfig({ servers: { a: { command: 'x', args: [], env: {} } } })
-    === '[mcp_servers.a]\ncommand = "x"\nargs = []\n',
+check('PB-161: an empty set writes no empty table',
+  codexHomeConfig({}) === '[features]\napps = false\n'
+    && codexHomeConfig({ servers: { a: { command: 'x', args: [], env: {} } } })
+    === '[features]\napps = false\n\n[mcp_servers.a]\ncommand = "x"\nargs = []\n',
   JSON.stringify(codexHomeConfig({ servers: { a: { command: 'x', args: [], env: {} } } })));
 
 const skillsRoot = path.join(SB, 'skills-root');
@@ -1866,6 +1878,13 @@ check('PB-161.2: the trust record names the reviewer directory, never the tree u
     && !revThread.codexHome.config.includes(realpathSync(wt))
     && /trust_level = "trusted"/.test(revThread.codexHome.config),
   JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300), timedOut: revThread?.__timedOut }));
+
+// Read the way the binary reads it: without the key, codex_apps and its account write tools
+// join the thread inventory of either role.
+check('PB-196: the worker and reviewer homes both turn the built-in apps server off',
+  [homeSeen?.config, revThread?.codexHome?.config]
+    .every((config) => typeof config === 'string' && parseHomeToml(config).features?.apps === false),
+  JSON.stringify({ worker: String(homeSeen?.config).slice(0, 80), reviewer: String(revThread?.codexHome?.config).slice(0, 80) }));
 
 check('PB-161.2: the workspace canon reached the reviewer directory, and the reviewed tree kept its own',
   existsSync(path.join(reviewerSandboxDir, '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'))

@@ -74,8 +74,13 @@ participant's working directory, the way the Cursor driver copies `.cursor/skill
 
 **1B.** One `CODEX_HOME` per participant, built before the lift and removed with the
 session. It is a directory under `$TMPDIR` at mode 0700, named by task and address, and
-it holds exactly three things: a copy of the owner's `auth.json` at mode 0600, the
-mechanism's `[mcp_servers]` entries, and the trust record of decision 3. The owner's
+it holds exactly four things: a copy of the owner's `auth.json` at mode 0600, the
+mechanism's `[mcp_servers]` entries, the trust record of decision 3, and
+`[features] apps = false`. The last one was added on codex-cli 0.156.1, whose `apps`
+feature is on by default and lifts a built-in `codex_apps` MCP server into an otherwise
+empty home — 52 tools, some of them account writes. With the key the thread lists the
+mechanism's servers and nothing else (measured 2026-09-25, no turn;
+[05-drivers](../reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home)). The owner's
 home is opened for exactly one read — that credentials file — and is never written.
 `sessionEnv` drops an inherited `CODEX_HOME` from the base environment and then honours
 the one the lift names, so an ancestor's value can never put a participant back in the
@@ -115,7 +120,8 @@ always, trusted or not, so the copy alone is enough. Where a reviewer's copy lan
 
 - A Codex participant no longer sees the owner's personal MCP servers. The reviewer's
   mechanical deny now covers every server the participant has, because the mechanism
-  supplies all of them.
+  supplies all of them — on codex-cli 0.156.1 only with `apps` off, since the binary's
+  built-in `codex_apps` server is otherwise one more.
 - The participant path does not write the owner's `~/.codex`: `[projects]` records and
   session rollouts land in the participant's own home. The claim stops there. The
   availability probe of the routing gate still starts `codex app-server --stdio` in

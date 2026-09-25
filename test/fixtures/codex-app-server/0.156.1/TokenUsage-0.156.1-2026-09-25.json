@@ -1,0 +1,50 @@
+{
+  "codexCli": "0.156.1",
+  "capturedOn": "2026-09-25",
+  "purpose": "Normalized Codex rollout token-count event used by PB-202, re-taken from a one-word codex exec turn",
+  "normalization": "Thread id, timestamp, ordinal and the plan type are omitted or replaced; the six token fields, model_context_window and the rate-limit shape are as measured. The rollout also carried a token_usage_record line with the same six fields; it is not part of this record.",
+  "event": {
+    "type": "event_msg",
+    "payload": {
+      "type": "token_count",
+      "info": {
+        "total_token_usage": {
+          "input_tokens": 17824,
+          "cached_input_tokens": 11776,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 17829
+        },
+        "last_token_usage": {
+          "input_tokens": 17824,
+          "cached_input_tokens": 11776,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 17829
+        },
+        "model_context_window": 258400
+      },
+      "rate_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 87,
+          "window_minutes": 10080,
+          "resets_at": 1790444613
+        },
+        "secondary": null,
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "<plan-type>",
+        "rate_limit_reached_type": null
+      }
+    }
+  }
+}

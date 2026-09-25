@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 31,
-    "citation": 39,
+    "citation": 40,
     "crossFile": 6,
     "fileLevel": 53,
     "bound": 50,
@@ -60,6 +60,7 @@
     "lib/driver-codex.js": [
       "../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver",
       "../docs/reference/02-host.md#consumer-identity-inside-a-harness",
+      "../docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home",
       "../docs/reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by",
       "../docs/reference/05-drivers.md#sweepparticipanthomes--remove-every-home-under-the-root-that-no-session-record-names",
       "../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review",

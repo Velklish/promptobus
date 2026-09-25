@@ -394,6 +394,16 @@ exec_command route, including an independent generated git apply that exited 0 a
 empty-commit/reset probe, which returned rc=0 for both operations. The result is measured for those
 participants and version, not universal (PB-191, PB-194).
 
+**On codex-cli 0.156.1 the plain shell writes the worktree.** Measured 2026-09-25 on one worker
+lifted by this mechanism with `workspace-write`, in one paid turn, with no escalation: `test -w .`
+returned 0, `touch` in the worktree root returned 0, `mkdir` under `$TMPDIR` returned 0, and
+`git commit --allow-empty` returned 0 and made the commit. `listen` on 127.0.0.1 was still refused
+with `EPERM`. An `apply_patch` inside the worktree was applied with no approval request at all. An
+`apply_patch` into the worktree's parent raised `item/fileChange/requestApproval`, still with no
+path, and the holder refused it as `carries no path to contain`; the file was not written. The
+escalated route was not exercised, because no write failed. The 0.146.0 boundary above did not
+recur on this binary; the new one is claimed for this one participant and no further.
+
 A real lift prints a provenance line with the resolved CLI entry path, the executing Promptobus
 package path and version from `import.meta.url`, the host version, the participant binary path, and
 its version when known. The Codex session record keeps the same line as its first JSON field, and
@@ -523,15 +533,40 @@ owner's: an empty home lifts no personal MCP server, and the `[projects]` record
 the marketplace snapshot a run writes land in it instead of in `~/.codex` (measured on
 codex-cli 0.146.0 by the consumer, with no paid turn).
 
-Three things go in, and nothing else. A copy of the owner's `auth.json` at mode 0600 —
+Four things go in, and nothing else. A copy of the owner's `auth.json` at mode 0600 —
 the account is the owner's, and an isolated home holding that copy answers
 `codex login status` with `Logged in using ChatGPT` without a turn. The mechanism's own
-MCP entries under `[mcp_servers]`. And, for a worker, the trust record for its worktree.
+MCP entries under `[mcp_servers]`. The trust record for the participant's own working
+directory. And `[features] apps = false`, for every role.
 
 One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical skill
 roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the
 participant anyway. The owner accepted that as the boundary — those are the skills the
 participant is meant to have.
+
+#### The built-in `codex_apps` server stays off in the participant home
+
+codex-cli 0.156.1 runs an MCP server of its own in any home whose `apps` feature is on, and
+`codex features list` prints that feature as `stable` and `true` by default. Measured
+2026-09-25 with no turn: a home built the way the lift builds it — a copy of `auth.json`, the
+trust record and one MCP entry — reported a second server in the thread-scoped
+`mcpServerStatus/list`: `codex_apps`, connected, with 52 tools. Some of them act on the
+owner's account: `sites.delete_site`, `sites.deploy_site_version`,
+`sites.update_environment_variables`, `plugin_management.uninstall_app` and more. That made
+two statements false: that the participant has no MCP server but the mechanism's, and that
+the reviewer's `disabled_tools` covers every server the reviewer has. The server list is in
+the [enforcement record](../../test/fixtures/codex-app-server/0.156.1/DisabledToolsEnforcement-0.156.1-2026-09-25.json).
+
+So `codexHomeConfig` writes `[features] apps = false` into every participant home, for every
+role. With the key, the same probe got `apps stable false` from `codex features list`, and the
+thread listed the mechanism's server and nothing else. That server came up, so the config
+loaded, and the missing `codex_apps` is the key's doing rather than a failed load. The key is a
+boolean, and the home's table writer produces only strings, so it goes in as a fixed block.
+Whether 0.146.0 ran the same server is not known. That binary is no longer installed, and its
+records name only the probe server.
+
+The holder still accepts an `mcp_tool_call` elicitation from any server name. That approval
+stays within the mechanism's servers only because the home holds no other server.
 
 ## `sessionStall` — sessionStall answers null for no stall, otherwise { kind, reason }. kind is permission
 

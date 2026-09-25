@@ -1,5 +1,8 @@
 # Codex app-server 0.146.0 fixtures
 
+The proven version is [0.156.1](../0.156.1/README.md) since 2026-09-25, and no test reads this
+directory. It stays as the record of what was measured on 0.146.0.
+
 Generated on 2026-09-10 with:
 
 ```text

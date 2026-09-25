@@ -19,7 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   4.6. The `-fast` twins stay unrated. The Cursor listing fixture is recaptured from 2026.09.23: 241 ids, 30 new and none
   gone. [guides/model-routing](docs/guides/model-routing.md#the-catalog-file).
 
+### Changed
+
+- **Codex 0.156.1 is the proven version** (PB-196). `PROVEN_CODEX_VERSION` moves from 0.146.0, so the lift now refuses
+  an older binary, and `npm run codex-schema` is green again on a machine with 0.156.1. The protocol fixtures under
+  `test/fixtures/codex-app-server/0.156.1/` are the same selection as before, generated on 2026-09-25. The three dated
+  records were re-taken on that binary: the override-form MCP probe, the `disabled_tools` enforcement probe and the
+  token-count record. The suite reads the directory off the constant, and the 0.146.0 directory stays as a record that
+  no test reads. The holder's answers are unchanged. `ReviewDecision` gained an arm that the holder never sends. A
+  command approval's new `kind` (`command` or `writeStdin`) gets one decision for both kinds. The new `openaiForm`
+  elicitation mode is declined. The 0.146.0 facts were re-measured in two paid turns and a series of no-turn probes. A
+  worker's plain shell now writes its worktree and commits. An in-worktree `apply_patch` applies with no approval
+  request, while `item/fileChange/requestApproval` still carries no path. `listen` is still refused, and no hook event
+  fired. `debug models` and `model/list` answer alike in the owner's home and a participant home. The owner's default
+  model, `gpt-6-sol` today, drove a one-shot turn with exit 0. [03-cli § The Codex holder](docs/reference/03-cli.md#the-codex-holder),
+  [05-drivers](docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
+
 ### Fixed
+
+- **A Codex participant home no longer runs codex-cli's built-in `codex_apps` MCP server** (PB-196). On 0.156.1 the
+  `apps` feature is on by default. A home holding only a copy of `auth.json`, the trust record and the mechanism's MCP
+  entries reported `codex_apps` in the thread inventory: connected, 52 tools, some of them account writes such as
+  `sites.delete_site` and `plugin_management.uninstall_app`. The reviewer's `disabled_tools` did not cover it, and the
+  reviewer prompt said the session had no server but the mechanism's. Every participant home now carries
+  `[features] apps = false`, for every role. Measured with no turn, the thread then lists the mechanism's server and
+  nothing else. [05-drivers](docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home).
 
 - **The restart route a repeat spawn prints for a live participant stops that one participant** (PB-252). For Codex it
   named `done`, which closes the whole task and every managed session in it, while `promptobus stop <address>` stops one

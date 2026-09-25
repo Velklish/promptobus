@@ -44,7 +44,7 @@ const validateApprovalResponse = new Map(Object.entries(approvalResponseNames).m
 
 function validateCodexFixture(label, validate, value) {
   if (validate(value)) return;
-  throw new Error(`${label} does not match the codex-cli 0.146.0 fixture: ${codexFixtureAjv.errorsText(validate.errors)}`);
+  throw new Error(`${label} does not match the codex-cli ${PROVEN_CODEX_VERSION} fixture: ${codexFixtureAjv.errorsText(validate.errors)}`);
 }
 
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';

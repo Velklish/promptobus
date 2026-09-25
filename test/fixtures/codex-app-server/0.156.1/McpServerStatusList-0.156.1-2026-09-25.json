@@ -1,0 +1,302 @@
+{
+  "codexCli": "0.156.1",
+  "capturedOn": "2026-09-25",
+  "purpose": "No-turn probe of a thread-scoped MCP server with one disabled tool, on the thread/start override form re-taken from the 0.146.0 capture of 2026-09-10",
+  "normalization": "The thread id and filesystem paths are placeholders. Omitted: remoteControl/status/changed and account/updated (host name, installation id, plan), and every field of the mcpServerStatus/list reply but runtimeStatus and the tool names.",
+  "turnStarted": false,
+  "exchange": [
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "clientInfo": {
+            "name": "promptobus",
+            "version": "0.16.0"
+          },
+          "capabilities": {
+            "experimentalApi": true
+          }
+        }
+      }
+    },
+    {
+      "direction": "reply",
+      "message": {
+        "id": 1,
+        "result": {
+          "userAgent": "promptobus/0.156.1 (Mac OS 27.0.0; arm64) xterm-256color (promptobus; 0.16.0)",
+          "codexHome": "<codex-home>",
+          "platformFamily": "unix",
+          "platformOs": "macos"
+        }
+      }
+    },
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "thread/start",
+        "params": {
+          "cwd": "<worktree>",
+          "sandbox": "read-only",
+          "approvalPolicy": "on-request",
+          "model": "gpt-5.6-sol",
+          "config": {
+            "mcp_servers": {
+              "promptobus-probe": {
+                "command": "node",
+                "args": [
+                  "<fixture MCP server>",
+                  "<server log>"
+                ],
+                "disabled_tools": [
+                  "write_tool"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "direction": "reply",
+      "message": {
+        "id": 2,
+        "result": {
+          "thread": {
+            "id": "<thread-id>",
+            "status": {
+              "type": "idle"
+            }
+          },
+          "model": "gpt-5.6-sol",
+          "cwd": "<worktree>",
+          "approvalPolicy": "on-request",
+          "sandbox": {
+            "type": "readOnly",
+            "networkAccess": false
+          }
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "thread/started",
+        "params": {
+          "thread": {
+            "id": "<thread-id>",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "promptobus-probe",
+          "status": "starting",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "codex_apps",
+          "status": "starting",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "promptobus-probe",
+          "status": "ready",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "request",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "mcpServerStatus/list",
+        "params": {
+          "threadId": "<thread-id>",
+          "detail": "full"
+        }
+      }
+    },
+    {
+      "direction": "notification",
+      "message": {
+        "method": "mcpServer/startupStatus/updated",
+        "params": {
+          "threadId": "<thread-id>",
+          "name": "codex_apps",
+          "status": "ready",
+          "error": null,
+          "failureReason": null
+        }
+      }
+    },
+    {
+      "direction": "reply",
+      "message": {
+        "id": 3,
+        "result": {
+          "data": {
+            "codex_apps": {
+              "runtimeStatus": "connected",
+              "tools": [
+                "codex_document_control.execute_document_command",
+                "codex_document_control.get_document_tool_schemas",
+                "codex_document_control.list_document_sessions",
+                "hotline.get_local_hotline",
+                "plugin_management.get_app_permissions",
+                "plugin_management.get_plugin_dependencies",
+                "plugin_management.search_plugins",
+                "plugin_management.suggest_plugins",
+                "plugin_management.uninstall_app",
+                "plugin_management.update_app_permissions",
+                "safety_settings.get_family_info",
+                "safety_settings.get_parental_controls",
+                "safety_settings.get_trusted_contact",
+                "safety_settings.prepare_parental_control_update",
+                "safety_settings.update_parental_control",
+                "sites.add_custom_domain",
+                "sites.change_site_slug",
+                "sites.check_slug_availability",
+                "sites.create_site",
+                "sites.create_source_repository_write_credential",
+                "sites.delete_site",
+                "sites.deploy_private_site_version",
+                "sites.deploy_site_version",
+                "sites.generate_siwc_bypass_token",
+                "sites.get_database_overview",
+                "sites.get_database_table_rows",
+                "sites.get_deployment_status",
+                "sites.get_environment",
+                "sites.get_environment_variables",
+                "sites.get_project",
+                "sites.get_site",
+                "sites.get_site_analytics_overview",
+                "sites.get_site_version",
+                "sites.get_site_worker_logs",
+                "sites.list_custom_domains",
+                "sites.list_projects",
+                "sites.list_site_analytics_events",
+                "sites.list_site_versions",
+                "sites.list_sites",
+                "sites.list_sites_creator_control_panel_projects",
+                "sites.query_site_analytics_event",
+                "sites.read_database_overview",
+                "sites.read_database_table_rows",
+                "sites.refresh_custom_domain_status",
+                "sites.remove_custom_domain",
+                "sites.save_site_version",
+                "sites.save_version_and_deploy_private",
+                "sites.update_access",
+                "sites.update_environment",
+                "sites.update_environment_variables",
+                "sites.update_site_access",
+                "sites.update_site_metadata"
+              ]
+            },
+            "promptobus-probe": {
+              "runtimeStatus": "connected",
+              "tools": [
+                "read_tool"
+              ]
+            }
+          },
+          "nextCursor": null
+        }
+      }
+    }
+  ],
+  "unanswered": [],
+  "timingMs": {
+    "threadStartSent": 312,
+    "probeReady": 1254,
+    "statusListAsked": 1254,
+    "statusListAnswered": 2402
+  },
+  "serverLog": [
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "notifications/initialized"
+    },
+    {
+      "method": "tools/list"
+    },
+    {
+      "answeredWith": [
+        "read_tool",
+        "write_tool"
+      ]
+    },
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "notifications/initialized"
+    },
+    {
+      "method": "tools/list"
+    },
+    {
+      "answeredWith": [
+        "read_tool",
+        "write_tool"
+      ]
+    },
+    {
+      "method": "resources/templates/list"
+    },
+    {
+      "method": "resources/list"
+    }
+  ],
+  "observed": {
+    "threadStartAccepted": true,
+    "serverStartupStatus": "ready",
+    "classifiedTool": "write_tool",
+    "disabledTools": {
+      "server": "promptobus-probe",
+      "tools": [
+        "write_tool"
+      ]
+    },
+    "statusListAnswered": true,
+    "toolListProvedAbsent": true,
+    "alsoInThreadInventory": {
+      "server": "codex_apps",
+      "runtimeStatus": "connected",
+      "tools": 52
+    }
+  }
+}
