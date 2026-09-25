@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The machine lease** (PB-241, [ADR-018](docs/adr/adr-018-the-bus-leases-the-machine-for-measurements.md)). `promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>` runs one measuring command at a time per machine, across tasks and workspaces: the lease is a directory lock under `/tmp/promptobus-<uid>/` held by the wrapper's own pid and refused when that directory is a symlink or another user's, a lease holder that dies is dropped by liveness, a waiter prints who holds the machine and gives up at the bound (default 1800 s) without running anything. `status` opens with the lease holder and the waiters. The worker and approver preambles carry the command, addressed, with the rule for what counts as a measurement; the reviewer preamble says the lease is not its own. The orchestration skill drops orchestrator-issued slots for it.
 
+- **A field added to a published record schema can first be sent in the release after the one that adds it** (PB-234.2).
+  `send` reads the schema from the package it runs, so a checkout that has already added the field is refused until that
+  package is released. `npm run schema-skew` compares the checkout's record schemas with the installed package's by the
+  faults the bus's reader raises, and names every path the running bus would refuse, including a new field whose
+  neighbours fail a pattern. An unmatched oneOf branch is a refusal only when every installed branch, judged
+  alone, has a fault that branch does not; a shared pattern fault is not one, and the count of branches is not the
+  comparison. A node with no oneOf is that one branch, so a checkout oneOf it accepts is not a refusal.
+  The default is the copy Node finds from the checkout, which is the running bus only when
+  that package is hoisted; `--resolve-from` names the directory of the running bus when it is not. It is run before
+  the records are sent and is not a project gate.
+  [04-protocol § The handover record](docs/reference/04-protocol.md#the-handover-record),
+  [§ The gate record](docs/reference/04-protocol.md#the-gate-record).
+
 ### Fixed
 
 - **A Codex holder accepts an `mcp_tool_call` elicitation only from a server that participant's home configures** (PB-196.1).

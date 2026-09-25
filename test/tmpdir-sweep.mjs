@@ -105,6 +105,8 @@ export const SUITE_PREFIXES = [
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
   'mutation-probe-',
+  // schema-skew.test.mjs writes `schema-skew-` and `schema-skew-missing-`; one entry covers both.
+  'schema-skew-',
   'promptobus-ambient-', 'promptobus-codex-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-driver-',
   'promptobus-e2e-', 'promptobus-harness-', 'promptobus-home-',

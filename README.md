@@ -214,6 +214,7 @@ npm ci               # builds dist/ through prepare
 npm run build        # tsc -p tsconfig.json
 npm test             # test/run.mjs runs every test/*.test.mjs
 npm run audit        # publicity audit over tracked files and the packed tarball
+npm run schema-skew  # record schemas against the installed package; not a project gate
 npm run lint:backslop
 ```
 
