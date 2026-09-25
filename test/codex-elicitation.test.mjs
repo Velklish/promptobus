@@ -1,8 +1,11 @@
 // Codex elicitation: one method, several questions — 03-cli § The Codex holder. Run: npm test
 // Asserts the REPLY on the wire, not the decision: PB-161.4 is where the two disagree.
-import { appendFileSync, writeFileSync } from 'node:fs';
+import './home.mjs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import Ajv from 'ajv';
 import { check } from './check.mjs';
+import { codexFixtureDir } from './harness-codex.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { codexHomeConfig } from '../lib/driver-codex.js';
 import {
@@ -212,6 +215,24 @@ for (const [name, kind] of [
 {
   const d = decideApproval('item/tool/requestUserInput', { questions: [] }, reviewer);
   check(': requestUserInput stays allowed', d.allow === true, JSON.stringify(d));
+}
+
+{
+  const schema = JSON.parse(readFileSync(path.join(codexFixtureDir, 'ToolRequestUserInputResponse.json'), 'utf8'));
+  const validates = new Ajv({ strict: false }).compile(schema);
+  const questions = [
+    { id: 'choice', options: [{ label: 'Approve', description: 'Proceed' }] },
+    { id: 'freeform', options: null },
+  ];
+  const accepted = approvalReply('item/tool/requestUserInput', true, { questions });
+  const declined = approvalReply('item/tool/requestUserInput', false, { questions });
+  check(': requestUserInput replies use the proven schema and invent no human answer',
+    validates(accepted) && validates(declined)
+      && JSON.stringify(accepted) === JSON.stringify({ answers: {
+        choice: { answers: [] }, freeform: { answers: [] },
+      } })
+      && JSON.stringify(declined) === '{"answers":{}}',
+    JSON.stringify({ accepted, declined, errors: validates.errors }));
 }
 
 {

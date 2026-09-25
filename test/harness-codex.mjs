@@ -35,6 +35,7 @@ const approvalResponseNames = {
   'item/commandExecution/requestApproval': 'CommandExecutionRequestApproval',
   'item/fileChange/requestApproval': 'FileChangeRequestApproval',
   'item/permissions/requestApproval': 'PermissionsRequestApproval',
+  'item/tool/requestUserInput': 'ToolRequestUserInput',
   execCommandApproval: 'ExecCommandApproval',
 };
 const validateApprovalResponse = new Map(Object.entries(approvalResponseNames).map(([method, name]) => [
@@ -843,6 +844,22 @@ async function playTurn(home, started, turnId, params, ask, notify) {
       threadId: t.id,
       turnId,
     });
+    t.userInputResponse = await ask('item/tool/requestUserInput', {
+      isBlocking: true,
+      itemId: randomUUID(),
+      questions: [
+        {
+          header: 'Choice',
+          id: 'choice',
+          question: 'Choose an option',
+          options: [{ label: 'Continue', description: 'Proceed with the turn' }],
+        },
+        { header: 'Freeform', id: 'freeform', question: 'Enter details', options: null },
+      ],
+      threadId: t.id,
+      turnId,
+    });
+    writeThread(home, t);
   }
   if (process.env[CURRENT_TIME_VAR] === '1') {
     const first = await ask('currentTime/read', {});

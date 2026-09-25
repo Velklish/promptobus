@@ -640,6 +640,14 @@ table key as written, including a key the writer had to quote. A nested table su
 arrives that the lift did not configure. Whether app-server reloads `config.toml` during
 a session was not measured.
 
+For `item/tool/requestUserInput`, the holder answers with the 0.156.1
+`ToolRequestUserInputResponse` shape: `answers` maps each received question id to
+`{ "answers": [] }`. It has no person to supply a choice or free text, so it records no
+selection. A denied request gets an empty `answers` map. The reply is checked against the
+[generated response schema](../../test/fixtures/codex-app-server/0.156.1/ToolRequestUserInputResponse.json);
+whether app-server accepts an empty answer for every question at runtime has not been
+measured.
+
 ## `sessionStall` — sessionStall answers null for no stall, otherwise { kind, reason }. kind is permission
 
 Source: `lib/driver-claude.js`, `sessionStall`.

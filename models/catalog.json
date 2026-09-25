@@ -1669,6 +1669,33 @@
       }
     },
     {
+      "id": "codex-sol-low",
+      "harness": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 4,
+        "speed": 2,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 875,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-sol-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-sol-max"
+      }
+    },
+    {
       "id": "codex-gpt55-medium",
       "harness": "codex",
       "model": "gpt-5.5",
@@ -1708,6 +1735,33 @@
           "quality",
           "speed"
         ]
+      }
+    },
+    {
+      "id": "codex-gpt55-low",
+      "harness": "codex",
+      "model": "gpt-5.5",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 7,
+        "speed": 3,
+        "quotaCost": 5
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 745,
+      "assessedAt": "2026-09-06T00:00:00.000Z",
+      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-gpt55-medium"
       }
     },
     {
@@ -1793,6 +1847,33 @@
             "date": "2026-09-23"
           }
         ]
+      }
+    },
+    {
+      "id": "codex-luna-xhigh",
+      "harness": "codex",
+      "model": "gpt-5.6-luna",
+      "effort": "xhigh",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 5,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 845,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -1 effort step(s) from codex-luna-max on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-luna-max"
       }
     },
     {
@@ -1955,6 +2036,33 @@
       }
     },
     {
+      "id": "codex-luna-low",
+      "harness": "codex",
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 2,
+        "speed": 4,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 945,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-luna-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-luna-max"
+      }
+    },
+    {
       "id": "codex-terra-high",
       "harness": "codex",
       "model": "gpt-5.6-terra",
@@ -2005,6 +2113,33 @@
       "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
         "text": "Interpolated -3 effort step(s) from codex-terra-max on the 1–10 scale: quality -3, speed unchanged because throughput belongs to the model and serving stack, quotaCost -3; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
+        "interpolatedFrom": "codex-terra-max"
+      }
+    },
+    {
+      "id": "codex-terra-low",
+      "harness": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "low",
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 3,
+        "speed": 2,
+        "quotaCost": 1
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 925,
+      "assessedAt": "2026-09-23T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-23",
+      "evidence": {
+        "text": "Interpolated -4 effort step(s) from codex-terra-max on the 1–10 scale: quality -4, speed unchanged because throughput belongs to the model and serving stack, quotaCost -4; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-terra-max"
       }
     },

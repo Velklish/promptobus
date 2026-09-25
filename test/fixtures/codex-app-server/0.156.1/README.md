@@ -7,11 +7,15 @@ codex app-server generate-json-schema --out <dir>
 ```
 
 The command was run with `codex --version` reporting `codex-cli 0.156.1`, and exited 0
-with 39 entries. This directory keeps the same selection as the
-[0.146.0 directory](../0.146.0/README.md): the approval request and response schemas and the
-`ServerRequest` method list used by the Codex stand, copied byte for byte. It
+with 39 entries. This directory keeps the approval request and response schemas and the
+`ServerRequest` method list from the [0.146.0 directory](../0.146.0/README.md),
+plus the `requestUserInput` response schema used by the Codex stand, copied byte for byte. It
 intentionally does not include the generated `ClientRequest` schema or unrelated protocol
 schemas.
+
+`ToolRequestUserInputResponse.json` was added from the same 0.156.1 generator on
+2026-09-25. The stand compiles it with the approval replies so the holder's answer stays
+schema-valid.
 
 What changed against 0.146.0, compared as parsed JSON with the `description` fields left out:
 

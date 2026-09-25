@@ -355,3 +355,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-187"></a>`PB-187-catalog-names-a-model-the-binary-does-not-have` · 2026-09-26 · completed · — · The catalog and Codex inventory need a home and visibility contract
 - <a id="pb-178"></a>`PB-178-session-identity-is-not-a-driver-member` · 2026-09-26 · completed · — · Контракт идентичности закрыт, живой демонстрации на трёх харнессах нет
 - <a id="pb-185"></a>`PB-185-codex-hooks-enablement-is-a-second-gate` · 2026-09-26 · completed · — · Trust is not the only gate on a Codex hook: the flag speaks of *enabled* hooks, and enablement is unmeasured
+- <a id="pb-255"></a>`PB-255-codex-0156-facts-minor-batch` · 2026-09-26 · completed · — · Minor batch: Codex 0.156.1 facts — the requestUserInput reply, rollout turn timing, the GPT-5.6 and GPT-5.5 low rungs
+- <a id="pb-196.2"></a>`PB-196.2-request-user-input-reply-shape` · 2026-09-26 · batch PB-255 · — · The holder answers item/tool/requestUserInput with {response}, while the 0.156.1 schema requires answers
+- <a id="pb-196.3"></a>`PB-196.3-codex-rollout-carries-turn-timing` · 2026-09-26 · batch PB-255 · — · Codex 0.156.1 rollouts carry turn timing that PB-57.1 lacks: task_complete duration_ms and time_to_first_token_ms
+- <a id="pb-246.3"></a>`PB-246.3-codex-gpt56-ladders-lack-low-rung` · 2026-09-26 · batch PB-255 · — · The gpt-5.6-* and gpt-5.5 ladders carry no low rung although the 0.156.1 listing offers one

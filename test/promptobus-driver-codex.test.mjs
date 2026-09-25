@@ -2031,6 +2031,10 @@ const aprSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator'
 const aprThread = await harnessThread(apr, env);
 let aprLog = '';
 try { aprLog = readFileSync(holderLogFile(apr?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
+check(': the holder answers every user-input question on the wire without inventing an answer',
+  !!aprSent && JSON.stringify(aprThread?.userInputResponse) === JSON.stringify({
+    answers: { choice: { answers: [] }, freeform: { answers: [] } },
+  }), JSON.stringify(aprThread?.userInputResponse));
 check('PB-88.3: the live network escalation is declined and the same command without it is accepted',
   !!aprSent
   && JSON.stringify(aprThread?.networkApproval) === '{"decision":"decline"}'

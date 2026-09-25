@@ -106,6 +106,20 @@ test('the shipped catalog validates against its own schema', () => {
   assert.ok(CATALOG.tuples.length >= 1);
 });
 
+test('the Codex GPT-5.6 and GPT-5.5 families rate every listed effort', () => {
+  const ladders = {
+    'gpt-5.6-sol': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    'gpt-5.6-terra': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    'gpt-5.6-luna': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-5.5': ['low', 'medium', 'high', 'xhigh'],
+  };
+  for (const [model, expected] of Object.entries(ladders)) {
+    const actual = CATALOG.tuples.filter((t) => t.harness === 'codex' && t.model === model)
+      .map((t) => t.effort);
+    assert.deepEqual(actual.sort(), [...expected].sort(), model);
+  }
+});
+
 test('ROADMAP catalog figures match shipped routing defaults', () => {
   const roadmap = readFileSync(path.join(ROOT, 'docs', 'ROADMAP.md'), 'utf8');
   const tupleCount = roadmap.match(/`models\/catalog\.json` \((\d+) rated tuples\)/);
