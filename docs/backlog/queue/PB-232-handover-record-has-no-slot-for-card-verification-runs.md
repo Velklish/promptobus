@@ -14,6 +14,7 @@ The runs went into the gate record instead, as two extra entries whose `tail` sa
 
 ## Work to do
 
+- **The owner's decision, 2026-09-25:** the home is a typed marker on gate-record entries, `kind: gate | verification`; the aggregate ("gates N, green M") counts `gate` entries only. The handover record keeps its five checks; a sixth check is not taken.
 - Decide where a card's own verification belongs: a sixth optional check in the handover record (`cardVerification`: command, runs with exit codes, what the card asked), or a typed marker on a gate-record entry (`kind: gate | verification`) so an aggregate can be recomputed from the record. One place, not both.
 - Whichever home is chosen, the reviewer's subject and the approver's brief in the consumer should be able to point at it by name.
 

@@ -1,10 +1,11 @@
 # PB-253 · A participant lifted with --bg registers a Remote Control session on claude.ai, and a stopped one can stay listed there as offline for good
 
-- **Order:** 35
 - **Scope:** [03-cli](../../reference/03-cli.md) § Spawn (the participant settings file), [05-drivers](../../reference/05-drivers.md) § A stop returns after the record is gone, `lib/driver-claude.js`
 - **Created:** 2026-09-24
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 35
+- **Taken:** 2026-09-25
 
 ## Context
 

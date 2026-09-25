@@ -33,6 +33,7 @@ entry. It held, and its weaknesses are the ones an empty directory has:
 
 ## Work to do
 
+- **The owner's decision, 2026-09-25:** the bus owns it. A machine-wide lease with a holder and a timestamp, kept by the bus; `status` names who holds the machine and since when; a lease whose holder is gone is released by liveness, not by waiting forever; participants learn about the lease from the preamble the bus gives them, not from prose in their brief. The convention-only route is not taken.
 - Decide whether the bus owns this. The participants are its own, it knows
   which of them are alive, and it already has a place to keep per-task state;
   a machine-wide lease with a holder and a timestamp is a small thing next to

@@ -1,10 +1,11 @@
 # PB-236 · The warden keeps knocking a session whose harness reported a hard quota limit with a reset date days away
 
-- **Order:** 80
 - **Scope:** [03-cli § Guard and warden](../../reference/03-cli.md#guard-and-warden)
 - **Created:** 2026-09-17
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 80
+- **Taken:** 2026-09-25
 
 ## Context
 

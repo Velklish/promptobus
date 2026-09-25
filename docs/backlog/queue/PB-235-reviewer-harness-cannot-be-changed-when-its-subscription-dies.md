@@ -47,6 +47,7 @@ prevent.
 
 ## Work to do
 
+- **The owner's decision, 2026-09-25:** an address whose session is gone may be re-bound to another harness by `review --harness <h>`; the invariant becomes one live session per address. A live session still refuses a harness change. `review --new-task` and "lost for the run" are not taken.
 - Decide what a dead harness means for a reviewer address and make the decision reachable from
   the command. The options are not equal and the owner should pick: let `review` open its own
   task the way its refusal already advises (`--new-task`, mirroring `spawn`); or allow the
