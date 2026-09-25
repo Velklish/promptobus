@@ -1,10 +1,11 @@
 # PB-214 · Участник Codex промахивается мимо своего рабочего каталога и тратит ходы на угадывание пути
 
-- **Order:** 280
 - **Scope:** `lib/codex-session.js` (`containmentPath`, `resolveTarget`, ветка отказа), `lib/spawn.js` и `lib/review.js` — как путь называется участнику в преамбуле; `docs/reference/03-cli.md`
 - **Created:** 2026-09-13
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 280
+- **Taken:** 2026-09-26
 
 ## Context
 
@@ -30,6 +31,7 @@
 
 ## Work to do
 
+- **The owner's decision, 2026-09-26:** prevention, not delivery — the Codex participant's preamble names its worktree path and its allowed roots (the host API changes: `workerPreamble` gets the path, 02-host); the refusal in the log lists the roots and prints `abs → canonical` only when resolution changed something. No out-of-band channel carries a refusal reason to the participant.
 - В отказ добавить разрешённые корни: сообщение обязано печатать, **куда можно**, а не только что цель мимо. Сейчас `unresolvedRootsNote` печатает только нерезолвящиеся корни, то есть в обычном случае молчит.
 - Убрать бесполезную половину сообщения: при несуществующей цели `abs` и `canonical` совпадают, и печатать их парой через стрелку — обман чтения. Печатать пару только когда резолв действительно что-то изменил.
 - The second class, 96 refusals `carries no path to contain`, is PB-191's subject (the same `item/fileChange/requestApproval` branch, `lib/codex-session.js:723-729`); the count and the fixture's answer are carried there.
