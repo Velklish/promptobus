@@ -1112,7 +1112,10 @@ check(': a dialog — permission, the reason comes from waitingFor',
   === JSON.stringify({ kind: 'permission', reason: 'permission prompt' }));
 check(': a limit is recognized by the harness\'s line, not by the fact of the stall',
   JSON.stringify(sessionStall({ state: 'blocked' }, LIMIT))
-  === JSON.stringify({ kind: 'limit', reason: LIMIT }));
+  === JSON.stringify({ kind: 'limit', reason: LIMIT, reset: { said: '6:20am (Europe/Moscow)', at: null } }));
+check(': a limit line naming no reset time carries no reset',
+  JSON.stringify(sessionStall({ state: 'blocked' }, "You've hit your weekly limit"))
+  === JSON.stringify({ kind: 'limit', reason: "You've hit your weekly limit" }));
 check(': a reason written in its own words stays the reason, but no route is derived from it',
   JSON.stringify(sessionStall({ state: 'blocked' }, 'awaiting reviewer'))
   === JSON.stringify({ kind: 'unknown', reason: 'awaiting reviewer' }));
@@ -2287,3 +2290,249 @@ const emptyClaimOut = capture(() => status(SB, { task: CLAIM_EMPTY, sessions: sn
 check('successor: a claim with an empty mailbox and no knock does not have status call the owner dead',
   !/is dead since/.test(emptyClaimOut) && store.countInbox(HOME, CLAIM_EMPTY, 'orchestrator') === 0,
   emptyClaimOut);
+
+// --- a refusal that names a reset holds the knocks -----------------------------------------
+//
+// Measured 2026-09-17 on another consumer's run: a participant whose harness answered every turn
+// with a usage limit and a reset date two days out was knocked 102 times in six minutes — each
+// failed turn rewrote the contact point, and a rewritten point asks for a knock — while `status`
+// printed "the turn is running". The view here is harness-neutral: the state belongs to the warden.
+const RESET_TASK = 'reset-t20260925-160000';
+store.createTask(HOME, { id: RESET_TASK, title: 'квота с датой сброса', owner: SESSION });
+store.upsertParticipant(HOME, RESET_TASK, store.participantRecord('orchestrator', { owner: SESSION }));
+store.upsertParticipant(HOME, RESET_TASK, store.participantRecord('worker:api', { name: `a2a-${RESET_TASK}-api` }));
+const RESET_ORCH_SOCK = sockPath('rso');
+registerWake(HOME, RESET_TASK, 'orchestrator', {
+  CLAUDE_CODE_MESSAGING_SOCKET: RESET_ORCH_SOCK, CLAUDE_CODE_MESSAGING_TOKEN: 't',
+});
+const rewriteResetWake = (n) => registerWake(HOME, RESET_TASK, 'worker:api', {
+  CLAUDE_CODE_MESSAGING_SOCKET: sockPath(`rs${n}`),
+  CLAUDE_CODE_MESSAGING_TOKEN: 't',
+  CLAUDE_CODE_SESSION_ID: 'reset-session',
+});
+const resetSend = (body) => store.sendMessage(HOME, RESET_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body });
+const resetHealth = () => store.readHealth(HOME, RESET_TASK)['worker:api'];
+const R0 = Date.now();
+const RESET_AT = new Date(R0 + 2 * 86_400_000).toISOString();
+const QUOTA_STALL = {
+  kind: 'limit',
+  reason: "the last turn was refused: You've hit your usage limit. Try again at Sep 19th, 2026 12:15 PM.",
+  reset: { said: 'Sep 19th, 2026 12:15 PM', at: RESET_AT },
+};
+const resetView = (stall, busy = false) => ({ 'worker:api': { state: 'alive', busy, stall, id: 'rs1' } });
+const resetRound = (knock, sessions, now) => wdn.wardenRound(HOME, RESET_TASK, { knock, sessions, now });
+
+rewriteResetWake(1);
+resetSend('ревью');
+const rFirst = stubKnock();
+await resetRound(rFirst, resetView(null), R0);
+check('reset: before any refusal the first knock goes out as always',
+  rFirst.calls.length === 1, String(rFirst.calls.length));
+
+rewriteResetWake(2);
+const rHeld = stubKnock();
+const heldTick = await resetRound(rHeld, resetView(QUOTA_STALL), R0 + 2000);
+check('reset: a refusal naming a reset holds the knock a rewritten contact point asks for',
+  rHeld.calls.length === 0 && heldTick.knocked.length === 0, String(rHeld.calls.length));
+check('reset: the hold is journalled once with the named time, and kept in health',
+  heldTick.events.filter((e) => e.startsWith('knocks held worker:api')).length === 1
+    && heldTick.events.some((e) => e.includes(`unreachable until ${RESET_AT}`))
+    && resetHealth().hold?.at === RESET_AT,
+  JSON.stringify({ events: heldTick.events, health: resetHealth() }));
+
+rewriteResetWake(3);
+resetSend('ещё одно');
+const rGrew = stubKnock();
+const grewTick = await resetRound(rGrew, resetView(QUOTA_STALL, true), R0 + 4000);
+const rThreshold = stubKnock();
+await resetRound(rThreshold, resetView(QUOTA_STALL), R0 + wdn.KNOCK_RETRY_SEC * 1000 + 5000);
+check('reset: neither a new message, a rewritten point, nor the retry threshold knocks before the time',
+  rGrew.calls.length === 0 && rThreshold.calls.length === 0,
+  `${rGrew.calls.length} · ${rThreshold.calls.length}`);
+check('reset: the same sighting is not journalled again',
+  !grewTick.events.some((e) => e.startsWith('knocks held')), JSON.stringify(grewTick.events));
+
+const heldOut = capture(() => status(SB, { task: RESET_TASK, sessions: resetView(QUOTA_STALL, true) }));
+const heldLine = heldOut.split('\n').find((l) => l.includes('worker:api ·')) ?? '';
+check('reset: status shows the participant unreachable until the named time, not a running turn',
+  heldLine.includes(`UNREACHABLE until ${RESET_AT}`) && heldLine.includes(`knocks held: the harness named a reset — ${RESET_AT}`)
+    && !/the turn is running|STALLED/.test(heldLine),
+  heldLine || heldOut);
+
+const rAfter = stubKnock();
+await resetRound(rAfter, resetView(QUOTA_STALL), Date.parse(RESET_AT) + 1000);
+check('reset: past the named time the knocks resume and the hold is dropped',
+  rAfter.calls.length === 1 && resetHealth().hold === undefined,
+  `${rAfter.calls.length} · ${JSON.stringify(resetHealth())}`);
+
+const UNREAD_TIME = { ...QUOTA_STALL, reset: { said: '6:20am (Europe/Moscow)', at: null } };
+const T_UNREAD = Date.parse(RESET_AT) + 1000;
+rewriteResetWake(4);
+const rUnread = stubKnock();
+const unreadTick = await resetRound(rUnread, resetView(UNREAD_TIME), T_UNREAD + 2000);
+const rProbe = stubKnock();
+await resetRound(rProbe, resetView(UNREAD_TIME), T_UNREAD + wdn.KNOCK_RETRY_SEC * 1000 + 1000);
+check('reset: a time that does not parse is said as such, and probed only at the retry pace',
+  rUnread.calls.length === 0 && rProbe.calls.length === 1
+    && unreadTick.events.some((e) => e.includes('«6:20am (Europe/Moscow)», which does not parse')
+      && e.includes(`probed every ${wdn.KNOCK_RETRY_SEC} s`)),
+  JSON.stringify({ unread: rUnread.calls.length, probe: rProbe.calls.length, events: unreadTick.events }));
+
+const PLAIN_FAIL = { kind: 'failed', reason: 'the last turn ended failed: invalid_request_error: probe' };
+rewriteResetWake(5);
+const rPlain = stubKnock();
+await resetRound(rPlain, resetView(PLAIN_FAIL), T_UNREAD + wdn.KNOCK_RETRY_SEC * 1000 + 3000);
+check('reset: a failure with no named reset still retries on a rewritten point',
+  rPlain.calls.length === 1 && resetHealth().hold === undefined, String(rPlain.calls.length));
+
+// One report to the orchestrator per sighting, naming the time; a plain failure sends none.
+const rReport = stubKnock();
+const reported = await wdn.reportStalls(HOME, RESET_TASK, { sessions: resetView(QUOTA_STALL), knock: rReport, now: R0 });
+check('reset: the orchestrator gets one postcard naming the address and the time',
+  rReport.calls.length === 1 && rReport.calls[0].endpoint?.socket === RESET_ORCH_SOCK
+    && rReport.calls[0].body.includes('unreachable from promptobus')
+    && rReport.calls[0].body.includes(`worker:api is unreachable until ${RESET_AT}`)
+    && reported.some((l) => l.startsWith(`reported to orchestrator: worker:api is unreachable until ${RESET_AT}`))
+    && reported.some((l) => l.includes(`worker:api UNREACHABLE until ${RESET_AT}`)),
+  JSON.stringify({ calls: rReport.calls, reported }));
+await wdn.reportStalls(HOME, RESET_TASK, { sessions: resetView(QUOTA_STALL), knock: rReport, now: R0 + 30_000 });
+await wdn.reportStalls(HOME, RESET_TASK, { sessions: resetView(PLAIN_FAIL), knock: rReport, now: R0 + 60_000 });
+check('reset: the same sighting is not reported twice, and a plain failure sends no postcard',
+  rReport.calls.length === 1, String(rReport.calls.length));
+
+// Driven the way the watch loop drives it: a round, then the knocked addresses looked at again.
+// The session answers the first knock with a refusal naming a reset and rewrites its contact point,
+// as every ended turn does — without the second look the stale snapshot knocks it round after round.
+const LOOP_TASK = 'reset-loop-t20260925-170000';
+store.createTask(HOME, { id: LOOP_TASK, title: 'квота в цикле', owner: SESSION });
+store.upsertParticipant(HOME, LOOP_TASK, store.participantRecord('worker:api', { name: `a2a-${LOOP_TASK}-api` }));
+let loopTurns = 0;
+const loopWake = () => registerWake(HOME, LOOP_TASK, 'worker:api', {
+  CLAUDE_CODE_MESSAGING_SOCKET: sockPath(`lp${loopTurns}`), CLAUDE_CODE_MESSAGING_TOKEN: 't',
+  CLAUDE_CODE_SESSION_ID: 'loop-session',
+});
+let loopState = null;
+const loopSnapshot = () => ({ 'worker:api': { state: 'alive', busy: false, stall: loopState, id: 'lp1' } });
+const loopKnock = stubKnock(() => {
+  loopTurns += 1;
+  loopState = QUOTA_STALL;
+  loopWake();
+  return { ok: true };
+});
+loopWake();
+store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ревью' });
+let loopSessions = loopSnapshot();
+for (let i = 0; i < 12; i += 1) {
+  if (i === 5) store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ещё' });
+  const tick = await wdn.wardenRound(HOME, LOOP_TASK, { knock: loopKnock, sessions: loopSessions, now: R0 + i * 2000 });
+  loopSessions = wdn.reinspectKnocked(HOME, LOOP_TASK, loopSessions, tick.knocked, loopSnapshot);
+}
+const heldLines = store.tailWardenLog(HOME, LOOP_TASK, 200).filter((l) => l.includes('knocks held worker:api'));
+check('reset loop: the knock that met the refusal is the last one before the named time',
+  loopKnock.calls.length === 1, String(loopKnock.calls.length));
+check('reset loop: the journal says "knocks held" once',
+  heldLines.length === 1 && heldLines[0].includes(`unreachable until ${RESET_AT}`), JSON.stringify(heldLines));
+
+// Claude names its reset as a wall time in a zone; it means the next such moment after the line was
+// written, and the daemon's timeline says when that was. Measured lines, 2026-08-27 and 2026-08-25.
+const MSK_LIMIT = "You've hit your session limit · resets 6:20am (Europe/Moscow)";
+const { namedReset } = await import(path.join(here, '..', 'dist', 'index.js'));
+check('wall time: seen before 6:20 Moscow, the reset is that same morning',
+  namedReset(MSK_LIMIT, Date.parse('2026-08-27T00:50:09.606Z'))?.at === '2026-08-27T03:20:00.000Z');
+check('wall time: seen after 6:20 Moscow, the reset is the next morning',
+  namedReset(MSK_LIMIT, Date.parse('2026-08-27T04:00:00.000Z'))?.at === '2026-08-28T03:20:00.000Z');
+check('wall time: a pm hour and a hour without minutes',
+  namedReset("You've hit your session limit · resets 7pm (Europe/Moscow)", Date.parse('2026-08-25T12:36:26.387Z'))?.at
+    === '2026-08-25T16:00:00.000Z');
+check('wall time: the offset is the one in force at the reset, across a daylight-saving change',
+  namedReset('limit · resets 6:20am (America/New_York)', Date.parse('2026-11-01T03:00:00.000Z'))?.at
+    === '2026-11-01T11:20:00.000Z');
+check('wall time: an unknown zone, no zone, or no moment the line was seen leaves the time unread',
+  namedReset('limit · resets 6:20am (Mars/Olympus)', Date.now())?.at === null
+    && namedReset('limit · resets 3pm', Date.now())?.at === null
+    && JSON.stringify(namedReset(MSK_LIMIT)) === JSON.stringify({ said: '6:20am (Europe/Moscow)', at: null }));
+
+const { sessionDetailAt } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+mkdirSync(path.join(CLAUDE_HOME, 'jobs', 'lim1'), { recursive: true });
+writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'lim1', 'state.json'), JSON.stringify({ state: 'blocked', detail: MSK_LIMIT }));
+writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'lim1', 'timeline.jsonl'), [
+  { at: '2026-08-27T00:50:02.318Z', state: 'working', detail: 'Listing tests' },
+  { at: '2026-08-27T00:50:09.606Z', state: 'blocked', detail: MSK_LIMIT },
+  { at: '2026-08-27T00:51:10.000Z', state: 'blocked', detail: MSK_LIMIT },
+].map((r) => JSON.stringify(r)).join('\n') + '\n');
+check('sessionDetailAt: the latest timeline entry carrying the line, or null',
+  sessionDetailAt('lim1', MSK_LIMIT, CLAUDE_HOME) === Date.parse('2026-08-27T00:51:10.000Z')
+    && sessionDetailAt('lim1', 'other', CLAUDE_HOME) === null && sessionDetailAt('abc123', MSK_LIMIT, CLAUDE_HOME) === null);
+const wasConfig = process.env.CLAUDE_CONFIG_DIR;
+process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
+const limStall = sessionStall({ id: 'lim1', state: 'blocked' });
+if (wasConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+else process.env.CLAUDE_CONFIG_DIR = wasConfig;
+check('sessionStall: a Claude limit line is held to the wall time after the line was written',
+  limStall?.kind === 'limit' && limStall.reset?.at === '2026-08-27T03:20:00.000Z', JSON.stringify(limStall));
+
+// An unparsed reset already standing when the mail arrives: the address was never knocked on it,
+// so the probe goes out at once — holding it would leave the mail undelivered after the limit lifts.
+const NEVER_TASK = 'reset-never-t20260925-180000';
+store.createTask(HOME, { id: NEVER_TASK, title: 'квота до первого стука', owner: SESSION });
+store.upsertParticipant(HOME, NEVER_TASK, store.participantRecord('worker:api', { name: `a2a-${NEVER_TASK}-api` }));
+const neverWake = (n) => registerWake(HOME, NEVER_TASK, 'worker:api', {
+  CLAUDE_CODE_MESSAGING_SOCKET: sockPath(`nv${n}`), CLAUDE_CODE_MESSAGING_TOKEN: 't', CLAUDE_CODE_SESSION_ID: 'never-session',
+});
+neverWake(1);
+store.sendMessage(HOME, NEVER_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ревью' });
+const neverView = { 'worker:api': { state: 'alive', busy: false, stall: UNREAD_TIME, id: 'nv1' } };
+const nFirst = stubKnock();
+await wdn.wardenRound(HOME, NEVER_TASK, { knock: nFirst, sessions: neverView, now: R0 });
+neverWake(2);
+const nMoved = stubKnock();
+await wdn.wardenRound(HOME, NEVER_TASK, { knock: nMoved, sessions: neverView, now: R0 + 2000 });
+check('reset: an unparsed time on a never-knocked address is probed at once, and not again on a rewritten point',
+  nFirst.calls.length === 1 && nMoved.calls.length === 0, `${nFirst.calls.length} · ${nMoved.calls.length}`);
+
+// The orchestrator's own refusal has nobody to be reported to, and the journal says so.
+const SELF_TASK = 'reset-self-t20260925-180500';
+store.createTask(HOME, { id: SELF_TASK, title: 'квота у оркестратора', owner: SESSION });
+store.upsertParticipant(HOME, SELF_TASK, store.participantRecord('orchestrator', { owner: SESSION, name: 'Orchestrator: квота' }));
+const selfKnock = stubKnock();
+const selfLines = await wdn.reportStalls(HOME, SELF_TASK, {
+  sessions: { orchestrator: { state: 'alive', busy: false, stall: QUOTA_STALL, id: 'os1' } }, knock: selfKnock, now: R0,
+});
+check('reset: the orchestrator\'s own named reset sends no postcard and journals why',
+  selfKnock.calls.length === 0
+    && selfLines.some((l) => l === `could not report to orchestrator (the refusal is its own): orchestrator is unreachable until ${RESET_AT}`),
+  JSON.stringify(selfLines));
+
+// The re-inspection after a knock goes past the session-list cache the heartbeat fills: through
+// the real Claude reader the refusal of the knocked turn shows at once, not a beat later.
+const CACHE_TASK = 'reset-cache-t20260925-181000';
+const CACHE_NAME = 'Worker: квота в кеше';
+store.createTask(HOME, { id: CACHE_TASK, title: 'квота и кеш списка', owner: SESSION });
+store.upsertParticipant(HOME, CACHE_TASK, store.participantRecord('worker:api', { name: CACHE_NAME }));
+const CACHE_BIN = path.join(SB, 'cache-bin');
+const CACHE_LIST = path.join(SB, 'cache-list.json');
+stubCommand(CACHE_BIN, 'claude', [
+  "import { readFileSync } from 'node:fs';",
+  `process.stdout.write(readFileSync(${JSON.stringify(CACHE_LIST)}, 'utf8'));`,
+].join('\n'));
+mkdirSync(path.join(CLAUDE_HOME, 'jobs', 'cq1'), { recursive: true });
+writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'cq1', 'state.json'), JSON.stringify({ state: 'blocked', detail: MSK_LIMIT }));
+writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'cq1', 'timeline.jsonl'),
+  `${JSON.stringify({ at: '2026-08-27T00:50:09.606Z', state: 'blocked', detail: MSK_LIMIT })}\n`);
+const cacheBack = withStubPath(CACHE_BIN);
+const cacheConfig = process.env.CLAUDE_CONFIG_DIR;
+process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
+let cacheView;
+try {
+  writeFileSync(CACHE_LIST, JSON.stringify([{ id: 'cq1', name: CACHE_NAME, pid: process.pid, state: 'working', status: 'busy' }]));
+  const primed = snapshotOf(store.readTask(HOME, CACHE_TASK).participants);
+  writeFileSync(CACHE_LIST, JSON.stringify([{ id: 'cq1', name: CACHE_NAME, pid: process.pid, state: 'blocked', status: 'idle' }]));
+  cacheView = wdn.reinspectKnocked(HOME, CACHE_TASK, primed, ['worker:api'])?.['worker:api'];
+} finally {
+  cacheBack();
+  if (cacheConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+  else process.env.CLAUDE_CONFIG_DIR = cacheConfig;
+}
+check('reset: the re-inspection after a knock reads the Claude list afresh and sees the named reset',
+  cacheView?.stall?.kind === 'limit' && cacheView.stall.reset?.at === '2026-08-27T03:20:00.000Z',
+  JSON.stringify(cacheView));

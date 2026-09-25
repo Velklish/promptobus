@@ -240,3 +240,55 @@ function live(ref, extra) {
     JSON.stringify(view));
   dropSession('watch-recovered', process.env);
 }
+
+// A quota refusal naming a reset is a state: the view says unreachable until that time, even while
+// a turn a knock just started is running. The text is the one measured on 2026-09-17, time moved ahead.
+{
+  const { namedReset } = await import(path.join(here, '..', 'dist', 'index.js'));
+  const year = new Date().getFullYear() + 1;
+  const QUOTA = `You've hit your usage limit. Upgrade to Pro or try again at Sep 19th, ${year} 12:15 PM.`;
+  const failed = (error) => ({ id: 'turn-q', status: 'failed', at: new Date().toISOString(), error });
+  const at = new Date(`Sep 19, ${year} 12:15 PM`).toISOString();
+
+  check('namedReset: the Codex refusal names its time, and the ordinal date parses in local time',
+    JSON.stringify(namedReset(QUOTA)) === JSON.stringify({ said: `Sep 19th, ${year} 12:15 PM`, at }),
+    JSON.stringify(namedReset(QUOTA)));
+  check('namedReset: a time with no year is still a named reset, with no instant invented',
+    JSON.stringify(namedReset("You've hit your session limit · resets 6:20am (Europe/Moscow)"))
+    === JSON.stringify({ said: '6:20am (Europe/Moscow)', at: null }));
+  check('namedReset: a refusal naming no time, or no limit, is not a named reset',
+    namedReset("You've hit your usage limit. Try again later.") === null
+      && namedReset('stream disconnected; try again at the next turn') === null
+      && namedReset(null) === null);
+
+  live('quota-idle', { busy: false, lastTurn: failed(QUOTA) });
+  const idle = codexDriver.inspect('quota-idle');
+  check(': a failed turn that named a reset is a limit stall carrying that reset',
+    idle.stall?.kind === 'limit' && idle.stall.reset?.at === at && idle.busy === false
+      && idle.stall.reason.includes(QUOTA),
+    JSON.stringify(idle));
+  const route = codexDriver.stallRoute({ ...idle.stall, address: 'reviewer:x', reviewCommand: 'promptobus review "/r"' }, 't-live');
+  check(': its route names the hold and a relift, not "a later turn may succeed"',
+    /holds its knocks until the time named here/.test(route) && /lift the reviewer again/.test(route)
+      && !/a later turn may succeed/.test(route), route);
+
+  live('quota-busy', { lastTurn: failed(QUOTA) });
+  const busy = codexDriver.inspect('quota-busy');
+  check(': the reset outranks a running turn — no "the turn is running"',
+    busy.busy === true && busy.stall?.kind === 'limit' && busy.stall.reset?.at === at
+      && !/the turn is running/.test(String(busy.note)),
+    JSON.stringify(busy));
+
+  live('quota-past', { busy: false, lastTurn: failed(QUOTA.replace(String(year), '2020')) });
+  const past = codexDriver.inspect('quota-past');
+  check(': once the named time has passed it is an ordinary failed turn again',
+    past.stall?.kind === 'failed' && past.stall.reset === undefined, JSON.stringify(past));
+
+  live('plain-fail', { busy: false, lastTurn: failed('invalid_request_error: probe') });
+  const plain = codexDriver.inspect('plain-fail');
+  check(': a failure with no named reset keeps its failed stall and its retry hint',
+    plain.stall?.kind === 'failed' && plain.stall.reset === undefined
+      && /a later turn may succeed/.test(codexDriver.stallRoute({ ...plain.stall, address: 'worker:x' }, 't-live')),
+    JSON.stringify(plain));
+  for (const ref of ['quota-idle', 'quota-busy', 'quota-past', 'plain-fail']) dropSession(ref, process.env);
+}

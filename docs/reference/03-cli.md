@@ -940,6 +940,12 @@ If a knock is refused and that contact point then disappears, the next round rep
 
 No driver call on the warden beat path may block without a ceiling. Every launch through `run` carries the shared 60-second timeout and 32 MiB output budget; a call site may override either value.
 
+**A refusal that names a reset holds the knocks.** When a session's stall carries a named reset that is still ahead ([05-drivers § A refusal that names a reset](05-drivers.md#a-refusal-that-names-a-reset)), the round does not knock that address — not on a new message, not on a rewritten contact point, not on the retry threshold — until the named time. Measured on 2026-09-17 on another consumer's run: a Codex participant whose harness answered every turn with `You've hit your usage limit. … try again at Sep 19th, 2026 12:15 PM.` was knocked 102 times (knocks 54 to 155) in about six minutes, because each failed turn rewrote the contact point and so asked for the next knock, while `status` printed `the turn is running` for the turn that was about to fail. Now the journal says `knocks held <address>: … unreachable until <time>` once per sighting, `health` keeps the reset as `hold`, and `status` prints the session as `UNREACHABLE until <time>` with `knocks held` beside its alarm. Claude's wall time in a named zone parses to its next occurrence after the line was written. A time that did not parse is still a named reset: the lines say so and quote the harness's words, and since there is no time to wait for, the warden probes that address — at once when it has never been knocked on this mail, then at the ordinary `KNOCK_RETRY_SEC` pace, one knock per 120 s on an idle session, never on a rewritten point. A polling participant is never knocked, so nothing is held for it. A failure with no named reset is untouched and retried as before.
+
+**A knocked address is looked at again right away.** The round works off the heartbeat's session snapshot; the loop re-inspects the sessions it has just knocked (`reinspectKnocked` in `lib/warden.js`), past the session-list cache the heartbeat fills — for Claude that is one `claude agents --json` per knocking round, so the refusal the knocked turn — or the turn before it — ends on holds the next knock without waiting out `WARDEN_BEAT_SEC`. A participant is knocked at most once more after its refusal is on record; the suite drives rounds and that re-inspection the way the loop does and counts the knocks.
+
+**The orchestrator gets one postcard per sighting.** Stall reports stay journal lines with no postcard, except this one: the warden knocks the orchestrator once, with a preview of type `unreachable` from `promptobus` naming the address and the time, so the run decides — replace the participant, split the work, or stop — instead of finding the state in the journal. The sighting is the stall report's own mark (`stalls.json`): the same refusal is not reported twice, while a different one, or the same one after the participant recovered, is. An orchestrator with no contact point, one held by a foreign session, or one on a polling driver gets no postcard, and neither does an orchestrator whose own harness refused with a named reset — there is nobody to tell; the journal line names why, and the stall line still stands in its `mailbox` reply and in `status`.
+
 ### Cursor hook events
 
 Source: `lib/driver-cursor.js`, `KNOWN_HOOK_EVENTS`, `PROVEN_HOOK_EVENTS`, `HOOK_EVENTS_SOURCE_VERSION`,
@@ -1082,7 +1088,7 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 Source: `lib/stalls.js`.
 
 Words about a stalled participant — the ones shared by every harness. "Stalled",
-"LISTED", "GONE", and "DEAF" describe a state, not a tool, and therefore live here;
+"UNREACHABLE", "LISTED", "GONE", and "DEAF" describe a state, not a tool, and therefore live here;
 the ROUTE after a stall — a command of a specific harness — arrives here as a ready
 string from that harness's driver.
 

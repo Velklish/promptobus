@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The participant settings file now carries `"disableRemoteControl": true` for every role.
   [03-cli § Spawn](docs/reference/03-cli.md#spawn), [05-drivers](docs/reference/05-drivers.md#a-stop-returns-after-the-record-is-gone-not-after-the-command-returns).
 
+- **The warden stops knocking a session whose harness named a reset time** (PB-236). Measured on 2026-09-17 on
+  another consumer's run: a Codex participant whose every turn was refused with `You've hit your usage limit. … try again
+  at Sep 19th, 2026 12:15 PM.` was knocked 102 times in about six minutes, because each failed turn rewrote the contact
+  point, while `status` printed `the turn is running`. A refusal that names a time to retry after is now a state: the
+  stall carries `reset: { said, at }` (`namedReset` in the package — a `limit` word plus `try again at` or
+  `resets [at]`; `at` is a dated time, or Claude's `6:20am (Europe/Moscow)` as its next occurrence after the line was
+  written — read from the daemon's timeline — and `null` otherwise), attached by the Codex `inspect` from a failed
+  turn's error and by the Claude `sessionStall` from a limit line. The round holds every knock on that address
+  until the named time, journals `knocks held` once per sighting and keeps it as `hold` in `health`; a time that does
+  not parse is said as such and probed at once, then only at the `KNOCK_RETRY_SEC` pace. A knocked address is
+  re-inspected at once, past the heartbeat's session-list cache, so it is knocked at most once more after its refusal is
+  on record. `status` and the stall line print
+  `UNREACHABLE until <time>`, and the Codex view puts that above a running turn. The orchestrator gets one postcard per
+  sighting (a preview of type `unreachable` from `promptobus`), the only stall report that knocks; its own refusal is
+  journalled instead. A failure with no
+  named reset retries as before, with its "a later turn may succeed" hint.
+  [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden),
+  [05-drivers § A refusal that names a reset](docs/reference/05-drivers.md#a-refusal-that-names-a-reset).
+
 ## [0.17.0] — 2026-09-25
 
 ### Added

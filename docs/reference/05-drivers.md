@@ -621,6 +621,58 @@ field, one answer. Which of them it was is decided a layer up, on the bus's own 
 `stallStands`; the lift closes the second case at the source with `crossSessionInbound` in the
 participant settings file; and the route printed for a person names all three and asserts none.
 
+## A refusal that names a reset
+
+Source: `src/driver.ts`, `namedReset`, `resetAhead`, `resetText`; `lib/driver-codex.js`, `inspect`;
+`lib/driver-claude.js`, `sessionStall`, `sessionDetailAt`.
+
+A stall may carry `reset: { said, at }`: the harness refused a turn and named a time to retry
+after. `said` is the harness's words for that time; `at` is the ISO instant they parse to, or
+`null` when they do not. The warden holds its knocks on it
+([03-cli § Guard and warden](03-cli.md#guard-and-warden)).
+
+**One fact, not a taxonomy.** `namedReset` asks only whether the refusal names a time: a `limit`
+word, then `try again at <time>` or `resets [at] <time>`, read to the end of that line. Any other
+refusal gets no `reset` — a failure with no named time is retried as before, and "a later turn may
+succeed" stays its hint.
+
+**Two forms of time parse, and nothing else does.** A date with a year: `Date.parse` fills a
+missing year with 2001, so no year means no date, and a date without a zone is read in the local
+time of the machine that runs it. The Codex refusal measured on 2026-09-17 names
+`Sep 19th, 2026 12:15 PM`: the ordinal suffix is dropped and it parses in local time. The holder and
+the warden run on one machine; that Codex prints the time in that machine's zone is assumed, not
+measured. And a 12-hour wall time in a named IANA zone, which is how Claude says it —
+`resets 6:20am (Europe/Moscow)`. That one means the next such moment after the harness wrote the
+line, with the zone's offset read back through `Intl.DateTimeFormat` at the reset itself, so a
+daylight-saving change in between is counted. Measured on 2026-09-25 over one machine's Claude
+timelines: 17 entries carrying such a line, 2026-08-25 to 2026-09-09, six distinct times, the
+weekly limit among them — each resolves to a moment 1.1 minutes to 4.5 hours after its entry. A zone `Intl` does not know, a wall
+time with no zone (`resets 3pm`), or no moment the line was written: `at` stays `null`. A time
+that does not parse is still a named reset, only an unknown one, and every line that prints it
+quotes the harness's words instead of a date.
+
+**The moment the line was written is the harness's, not the reader's.** Taken as the moment
+`inspect` reads it, a line read after its wall time would name the same time a day later, and
+the hold would roll forward each heartbeat. Claude's `sessionDetailAt` reads it from the daemon's
+`jobs/<id>/timeline.jsonl`: the `at` of the latest entry carrying this `detail`, from the last
+64 KiB of the file. The daemon re-logs the line while the session stays blocked, and each re-log
+is a new refusal naming the next such moment, so the latest one is the right anchor. The file is
+not a contract either: when it is missing or holds no entry with the line, the time stays unread.
+
+**Who attaches it.** Codex: `inspect` reads the error of a failed `lastTurn`. While that reset is
+still ahead the view is a `limit` stall carrying it, and it outranks a running turn: the turn a
+knock just started fails the same way, and "the turn is running" would read an unreachable
+participant as a busy one. Once the named time passes, the same record is an ordinary `failed`
+stall again. Claude: `sessionStall` attaches it to a `limit` stall whose detail names a time, anchored by `sessionDetailAt`. Each
+driver's `limit` route then names the hold, and the relift for a run that cannot wait. `turnErrorText`
+keeps the first 400 characters of the error, so a refusal whose time sits past them is read as an
+ordinary failure.
+
+**The Codex `activate` gate did not catch the measured case.** `activate` refuses a turn when the
+holder's `rateLimits` snapshot says a window is reached. The refusal of 2026-09-17 came back as a
+turn error instead; the snapshot of that run is not on record, so why the gate stayed open — a
+window below 100 %, or a limit the snapshot does not carry — is not known.
+
 ## A lift that fails on a spent limit
 
 Source: `lib/driver-claude.js`. The symbol is not named here: the

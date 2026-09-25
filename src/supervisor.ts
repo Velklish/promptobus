@@ -4,15 +4,17 @@ import {
   beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readWake, writeHealth, writeStalls,
 } from './sidecar.js';
 import type { Stalls, Wake } from './sidecar.js';
-import { addressOf, dismissedOf, foreignSessionOf, repoAbsOf, sessionIdOf, sessionOf, startedOf } from './protocol.js';
+import {
+  addressOf, dismissedOf, foreignSessionOf, ORCHESTRATOR, repoAbsOf, sessionIdOf, sessionOf, startedOf,
+} from './protocol.js';
 import { readArtifact } from './v1/artifacts.js';
 import { countInbox, glanceInbox, lastSentAt } from './v1/messages.js';
 import type { BrokenNote, FaultHook } from './v1/messages.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './v1/model.js';
 import { readTask } from './v1/store.js';
-import { driverFor, harnessOf, pushes, sessionRefOf } from './driver.js';
+import { driverFor, harnessOf, pushes, resetAhead, resetText, sessionRefOf } from './driver.js';
 import type {
-  ActivateResult, ActivationTarget, Driver, Notification, NotificationMessage, Registry,
+  ActivateResult, ActivationTarget, Driver, NamedReset, Notification, NotificationMessage, Registry,
   SessionSnapshot, SessionStall, SessionView, StalledParticipant,
 } from './driver.js';
 // Polling mailboxes — a safety net for `fs.watch`, which loses events.
@@ -64,6 +66,8 @@ interface HealthMark {
   wake?: string | null;
   wakeSession?: string | null;
   unreadableRefs?: string[];
+  // The named reset the knocks are held on; absent while nothing holds them.
+  hold?: NamedReset;
   [key: string]: unknown;
 }
 
@@ -111,6 +115,13 @@ function viewOf(participant: ParticipantV1 | null | undefined, sessions: Session
   // There is a ref, but no record in the snapshot: the participant appeared
   // after the snapshot, or the session is gone.
   return sessions[String(addressOf(participant) ?? '')] ?? { state: 'gone', busy: false, stall: null, id: null };
+}
+
+/** The named reset that holds the address's knocks at `now`, or null: the harness refused the turn
+ * and said when to retry. [03-cli.md § Guard and warden](../docs/reference/03-cli.md#guard-and-warden) */
+export function heldReset(participant: ParticipantV1 | null | undefined, sessions: SessionSnapshot, now: number = Date.now()): NamedReset | null {
+  const reset = viewOf(participant, sessions)?.stall?.reset ?? null;
+  return resetAhead(reset, now) ? reset : null;
 }
 
 /** Participant session state: `alive` | `dead` | `unknown`. An unparsed snapshot, a record with no
@@ -252,6 +263,7 @@ export function blockedParticipants(home: string, task: string, participants: Pa
         harness: harnessOfRecord(p),
         kind: view.stall!.kind,
         reason: view.stall!.reason,
+        ...(view.stall!.reset ? { reset: view.stall!.reset } : {}),
       });
       continue;
     }
@@ -407,17 +419,18 @@ export async function supervisorRound(home: string, task: string, {
   now = Date.now(), registry, sessions = null as SessionSnapshot, faults = NO_FAULT,
 }: {
   now?: number; registry: Registry; sessions?: SessionSnapshot; faults?: FaultHook;
-}): Promise<{ stop: string | null; events: string[] }> {
+}): Promise<{ stop: string | null; events: string[]; knocked: string[] }> {
   let meta;
   try {
     meta = readTask(home, task);
   } catch (e) {
-    return { stop: `task journal does not read: ${(e as Error).message}`, events: [] };
+    return { stop: `task journal does not read: ${(e as Error).message}`, events: [], knocked: [] };
   }
-  if (meta.status !== 'active') return { stop: 'task is closed', events: [] };
+  if (meta.status !== 'active') return { stop: 'task is closed', events: [], knocked: [] };
 
   const health = readHealth(home, task);
   const events: string[] = [];
+  const knocked: string[] = [];
   let changed = false;
 
   for (const p of meta.participants ?? []) {
@@ -448,6 +461,7 @@ export async function supervisorRound(home: string, task: string, {
           knocks: 0,
           escalatedAt: null,
           unreadableRefs: [],
+          hold: undefined,
         };
         changed = true;
       }
@@ -502,6 +516,17 @@ export async function supervisorRound(home: string, task: string, {
     // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
     // dropped by a queue limit never starts a turn — so past the threshold we knock regardless.
     const busy = stale && waited < SILENCE_SEC * 1000 && sessionBusy(home, task, p, sessions);
+    // A refusal with a named reset is a state, not one more failed turn: no knock before that time.
+    // A time that did not parse is probed at once, then at the ordinary retry pace — never on a rewritten point.
+    const hold = pushes(driver) ? heldReset(p, sessions, now) : null;
+    const probe = hold !== null && hold.at === null && !busy && (!Number.isFinite(triedAt) || stale);
+    if (hold) {
+      if (JSON.stringify(hold) !== JSON.stringify(was.hold ?? null)) {
+        events.push(`knocks held ${addr}: the harness refused the turn and named a reset — unreachable until `
+          + `${resetText(hold)}${hold.at === null ? `, probed every ${KNOCK_RETRY_SEC} s` : ''}`);
+      }
+      h.hold = hold;
+    } else delete h.hold;
     if (!pushes(driver)) {
       // A pull-driver does not wake the session at all — it polls. Health is kept like everyone
       // else's, so such a participant's silence is visible by the same threshold.
@@ -513,6 +538,8 @@ export async function supervisorRound(home: string, task: string, {
         h.selfWake = null;
         h.selfWakeChannel = null;
       }
+    } else if (hold && !probe) {
+      // Held: the mark above says why, and the round neither knocks nor falls back to self-wake.
     } else if (!endpoint?.socket) {
       // No contact point — nothing to knock with, and the threshold does not hold this back: the
       // participant may hand over the channel after the message has already landed.
@@ -567,6 +594,7 @@ export async function supervisorRound(home: string, task: string, {
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
         h.wakeSession = wakeSession;
+        knocked.push(addr);
         // How far we knocked: not only what was shown, but also what went into the "and N more"
         // tail — the postcard said it, and there is no need to repeat it.
         if (box.length && !broken.length) h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
@@ -607,7 +635,7 @@ export async function supervisorRound(home: string, task: string, {
 
   if (changed) writeHealth(home, task, health);
   for (const line of events) logWarden(home, task, line);
-  return { stop: null, events };
+  return { stop: null, events, knocked };
 }
 
 // Activation of one participant. A driver refusal is an outcome, not an exception: delivery to the
@@ -635,4 +663,46 @@ export async function stallRound(home: string, task: string, { sessions = null a
   // their next stall with the same reason would not be counted fresh.
   commitStalls(home, task, current);
   return fresh;
+}
+
+/** One report per sighting of a named reset: the orchestrator is knocked once with the time, so the run
+ * decides instead of reading the journal. `fresh` is `stallRound`'s, whose mark makes a sighting once. */
+export async function reportResets(home: string, task: string, fresh: StalledParticipant[], { registry, now = Date.now() }: {
+  registry: Registry; now?: number;
+}): Promise<string[]> {
+  const own = fresh.filter((s) => s.address === ORCHESTRATOR && resetAhead(s.reset, now))
+    .map((s) => `could not report to ${ORCHESTRATOR} (the refusal is its own): ${ORCHESTRATOR} is unreachable until ${resetText(s.reset!)}`);
+  const held = fresh.filter((s) => s.address !== ORCHESTRATOR && resetAhead(s.reset, now));
+  if (!held.length) return own;
+  const lines = held.map((s) => `${s.address} is unreachable until ${resetText(s.reset!)}: ${s.reason}`);
+  const orchestrator = readTask(home, task).participants.find((p) => addressOf(p) === ORCHESTRATOR);
+  const why = orchestrator ? await reportTo(home, task, orchestrator, lines, { registry, now }) : 'the task has no orchestrator';
+  return [...own, ...lines.map((line) => (why ? `could not report to ${ORCHESTRATOR} (${why}): ${line}` : `reported to ${ORCHESTRATOR}: ${line}`))];
+}
+
+// The report rides the ordinary postcard as a preview of its own type, like an unreadable ref does.
+async function reportTo(home: string, task: string, orchestrator: ParticipantV1, lines: string[], { registry, now }: {
+  registry: Registry; now: number;
+}): Promise<string | null> {
+  let driver;
+  try {
+    driver = driverFor(registry, harnessOf(orchestrator, registry));
+  } catch (e) {
+    return (e as Error).message;
+  }
+  if (!pushes(driver)) return 'its driver polls, and the stall line waits in its mailbox reply';
+  const endpoint = readWake(home, task, ORCHESTRATOR);
+  if (!endpoint?.socket) return 'no contact point';
+  const taken = wakeTakenBy(home, task, orchestrator, endpoint);
+  if (taken) return `contact point is held by session ${taken}`;
+  const r = await activate(driver, { ref: sessionRefOf(orchestrator), endpoint }, {
+    kind: 'unread',
+    task,
+    address: ORCHESTRATOR,
+    unread: countInbox(home, task, orchestrator.id),
+    messages: lines.map((body) => ({
+      id: null, type: 'unreachable', from: 'promptobus', ts: new Date(now).toISOString(), body, artifact: null,
+    })),
+  });
+  return r.ok ? null : r.error ?? 'unknown';
 }

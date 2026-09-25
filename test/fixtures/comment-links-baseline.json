@@ -1,11 +1,11 @@
 {
   "classes": {
     "fileOnly": 31,
-    "citation": 40,
+    "citation": 41,
     "crossFile": 6,
     "fileLevel": 53,
     "bound": 50,
-    "sameFileCitation": 9
+    "sameFileCitation": 10
   },
   "byFile": {
     "lib/answers.js": [
@@ -220,7 +220,8 @@
     ],
     "src/driver.ts": [
       "../docs/reference/05-drivers.md#the-driver-contract",
-      "../docs/reference/05-drivers.md#launch-directories-a-driver-claims"
+      "../docs/reference/05-drivers.md#launch-directories-a-driver-claims",
+      "../docs/reference/05-drivers.md#a-refusal-that-names-a-reset"
     ],
     "src/fs/atomic.ts": [
       "../../docs/reference/01-overview.md#atomic-writes"
@@ -287,7 +288,8 @@
       "../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not",
       "../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken",
       "../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if",
-      "../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn"
+      "../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn",
+      "../docs/reference/03-cli.md#guard-and-warden"
     ],
     "src/telemetry.ts": [
       "../docs/reference/03-cli.md#participant-telemetry"

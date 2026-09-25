@@ -329,3 +329,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-194"></a>`PB-194-worktree-drops-out-of-sandbox-writable-roots` · 2026-09-25 · merged into PB-196 · — · The participant shell worktree is closed; escalated exec_command is the measured write route
 - <a id="pb-191"></a>`PB-191-apply-patch-never-passes-containment` · 2026-09-25 · merged into PB-196 · — · `apply_patch` never passes the measured Codex participant boundary
 - <a id="pb-253"></a>`PB-253-participant-remote-control-session-outlives-stop` · 2026-09-25 · completed · — · A participant lifted with --bg registers a Remote Control session on claude.ai, and a stopped one can stay listed there as offline for good
+- <a id="pb-236"></a>`PB-236-warden-knocks-a-session-whose-harness-named-a-hard-quota-reset` · 2026-09-25 · completed · — · The warden keeps knocking a session whose harness reported a hard quota limit with a reset date days away

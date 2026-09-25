@@ -50,10 +50,83 @@ export type { ParticipantMode } from './v1/model.js';
  * OBSERVER, not the session. No consumer treats unknown as death. */
 export type SessionState = 'alive' | 'stale' | 'gone' | 'unknown';
 
+/** A harness refusal that names a time to retry after: the harness's words for that time, and the
+ * instant they parse to — `null` when they do not. [05-drivers.md § A refusal that names a reset](../docs/reference/05-drivers.md#a-refusal-that-names-a-reset) */
+export interface NamedReset {
+  said: string;
+  at: string | null;
+}
+
 /** Session stall as the driver named it: `kind` chooses the route, `reason` — words for a person. */
 export interface SessionStall {
   kind: string;
   reason: string;
+  /** Present only when the refusal named a time to retry after; the warden holds its knocks on it. */
+  reset?: NamedReset;
+}
+
+// A limit word plus a retry phrase. A year is required to parse: `Date.parse` fills a missing one with 2001.
+const RESET_PHRASE = /\b(?:try again at|resets(?:\s+at)?)\s+([^\n]+)/i;
+
+/** The retry time a refusal names, or `null` when it names none. Harness-neutral: one fact, not a taxonomy.
+ * `seen` is when the harness wrote the line: a wall time in a named zone means its next occurrence after that. */
+export function namedReset(text: unknown, seen: number | null = null): NamedReset | null {
+  const s = typeof text === 'string' ? text : '';
+  if (!/\blimit\b/i.test(s)) return null;
+  const said = RESET_PHRASE.exec(s)?.[1]?.trim().replace(/\.$/, '').trim();
+  if (!said) return null;
+  const plain = said.replace(/(\d)(?:st|nd|rd|th)\b/gi, '$1');
+  const ms = /\b\d{4}\b/.test(plain) ? Date.parse(plain) : wallTimeAfter(plain, seen);
+  return { said, at: Number.isFinite(ms) ? new Date(ms).toISOString() : null };
+}
+
+// `6:20am (Europe/Moscow)`: a 12-hour wall time and an IANA zone, nothing else. No zone, no time.
+const WALL_TIME = /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\s*\(([A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)*)\)$/i;
+
+function wallTimeAfter(said: string, seen: number | null): number {
+  const m = WALL_TIME.exec(said);
+  if (!m || seen === null || !Number.isFinite(seen)) return NaN;
+  const [hour, minute] = [Number(m[1]), Number(m[2] ?? 0)];
+  if (hour < 1 || hour > 12 || minute > 59) return NaN;
+  const zone = m[4]!;
+  let offset: (utc: number) => number;
+  try {
+    offset = zoneOffset(zone);
+  } catch {
+    return NaN;
+  }
+  const local = new Date(seen + offset(seen));
+  const hh = (hour % 12) + (m[3]!.toLowerCase() === 'p' ? 12 : 0);
+  for (let day = 0; day <= 1; day += 1) {
+    const wall = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + day, hh, minute);
+    const at = wall - offset(wall - offset(seen));
+    if (at > seen) return at;
+  }
+  return NaN;
+}
+
+// The zone's offset from UTC at an instant, read back through `Intl`; an unknown zone throws RangeError.
+function zoneOffset(zone: string): (utc: number) => number {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  });
+  return (utc: number) => {
+    const part = (type: string) => Number(fmt.formatToParts(utc).find((p) => p.type === type)?.value);
+    const floor = utc - (((utc % 1000) + 1000) % 1000);
+    return Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')) - floor;
+  };
+}
+
+/** Whether a named reset still stands at `now`. A time that did not parse stands until the refusal clears. */
+export function resetAhead(reset: NamedReset | null | undefined, now: number = Date.now()): boolean {
+  if (!reset) return false;
+  return reset.at === null || Date.parse(reset.at) > now;
+}
+
+/** The reset time for a person: the instant, or the harness's words marked as unread. */
+export function resetText(reset: NamedReset): string {
+  return reset.at ?? `a time the harness named as «${reset.said}», which does not parse`;
 }
 
 /** What the driver knows about one session right now. */
@@ -259,6 +332,7 @@ export interface StalledParticipant {
   repoAbs: string | null;
   kind: string;
   reason: string;
+  reset?: NamedReset;
   /** The record harness as it named it: the consumer needs it to ask the ROUTE of the same driver
    * that parsed the state. Absent from the record — `null`, and the registry `fallback` is taken. */
   harness: string | null;
