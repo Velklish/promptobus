@@ -1,10 +1,11 @@
 # PB-235 · A reviewer whose harness runs out of quota cannot be re-raised on another tool, and the piece becomes unreviewable
 
-- **Order:** 90
 - **Scope:** [03-cli § Review](../../reference/03-cli.md#review)
 - **Created:** 2026-09-17
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 90
+- **Taken:** 2026-09-25
 
 ## Context
 
