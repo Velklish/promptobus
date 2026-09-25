@@ -589,7 +589,7 @@ The reset-credit count is in the verdict message as well as in the field, and th
 
 All four are read from **whatever carried the snapshot**, and on the notification fallback that is less: the shape the suite's stand-in models carries a `planType` and neither a `credits` block nor `rateLimitResetCredits`, so a field the notification omits is simply absent there. What a real notification payload contains was not measured by the spike of 2026-09-06 and is the open question PB-24.1 asks — the same question it asks about the window duration, and this is a second reason to answer it.
 
-**Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **kept, with `hidden: true` on them** (ADR-004, PB-28) — they used to be dropped. The reasoning for dropping them is applied one floor down: the resolver's inventory is the rows *without* the mark, so a tuple naming a hidden model still comes out as `model-not-in-inventory` and needs no code of its own. This preserves snapshot fidelity — the cache records what the harness lists while the resolver filters hidden rows before candidate and runtime projections; `promptobus models` does not show the whole model inventory, and `models validate` does not inspect availability snapshots or model rows.
+**Models** come from `model/list`, which answers after `initialize` alone. The ones app-server marks `hidden` are **kept, with `hidden: true` on them** (ADR-004, PB-28) — they used to be dropped. The reasoning for dropping them is applied one floor down: the resolver's inventory is the rows *without* the mark, so a tuple naming a hidden model still comes out as `model-not-in-inventory` and needs no code of its own. This preserves snapshot fidelity — the cache records what the harness lists while the resolver filters hidden rows before candidate and runtime projections; `promptobus models` does not show the whole model inventory, and `models validate` does not inspect availability snapshots or model rows. Catalog membership is therefore not a promise that every home exposes the model: a tuple absent from a home's inventory, or present but hidden, still renders as `model-not-in-inventory` ([guides/model-routing.md](../guides/model-routing.md#the-catalog-file) § The catalog file).
 
 A separate binary measurement is not the resolver inventory. Three observations
 from `env -u CODEX_HOME /opt/homebrew/bin/codex debug models` on codex-cli 0.146.0
@@ -615,7 +615,7 @@ not that debug output. The measured cache path on the host used for this observa
 (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`,
 `gpt-5.3-codex-spark`), no `hidden` field, and no `gpt-5.4-mini`. The latter is
 therefore excluded as `model-not-in-inventory` because it is absent from the
-snapshot, not because it is hidden. `model/list` and `debug models` differ in
+snapshot, not because it is hidden. On 0.146.0, `model/list` and `debug models` differ in
 content, not only format; because this live cache has no hidden row, hidden-row
 retention is not live-verified. The side-by-side `model/list` under the owner's and a
 participant's `CODEX_HOME` was taken on codex-cli 0.156.1 on 2026-09-25, with no turn: the

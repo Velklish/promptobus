@@ -352,3 +352,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-65.4"></a>`PB-65.4-canonical-mkdir-enoent-reported-as-lost` · 2026-09-25 · completed · — · A canonical-directory mkdir ENOENT is reported as intent-lost while the intent remains
 - <a id="pb-234.3"></a>`PB-234.3-probe-tree-may-lag-record-tree` · 2026-09-25 · completed · — · Nothing notices a probe recorded against a tree the hand-off has already left
 - <a id="pb-232"></a>`PB-232-handover-record-has-no-slot-for-card-verification-runs` · 2026-09-26 · completed · — · The handover record has no slot for a card's own verification runs, so they land in the gate record under a tail
+- <a id="pb-187"></a>`PB-187-catalog-names-a-model-the-binary-does-not-have` · 2026-09-26 · completed · — · The catalog and Codex inventory need a home and visibility contract
