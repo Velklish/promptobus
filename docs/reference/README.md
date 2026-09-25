@@ -5,7 +5,7 @@ How promptobus works today — from the code, not intention. Intent and rational
 | Section | About |
 |---|---|
 | [01-overview.md](01-overview.md) | Package surface, store home, MCP tools, entry points |
-| [02-host.md](02-host.md) | `PromptobusHost`, standalone host, `legacyLayout()` |
+| [02-host.md](02-host.md) | `PromptobusHost`, standalone host, session identity, `legacyLayout()` |
 | [03-cli.md](03-cli.md) | Commands, harness flags, warden and guard |
 | [04-protocol.md](04-protocol.md) | Addresses, message types, engine, artifacts, when a new record field can be sent, and what `send` refuses in a handover record |
 | [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |

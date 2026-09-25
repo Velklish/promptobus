@@ -1249,6 +1249,17 @@ hunting for what was present twice over. **`other-address` has no branch and thr
 "records no mailbox owner" about a task that has one. Nothing true is available to print
 there, and a wrong line is worse than a stack.
 
+**The same gate is what a process hits when its environment carries only its own variable.**
+That process is a shell command, or `promptobus mcp` started from one.
+`CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID` and `CODEX_THREAD_ID` are the three
+answers. `status` prints the lone id as `owner`. `done`, `stop` and `dismiss` from a
+different id in that variable take the `foreign` branch above. The mailbox tool in that
+same process, asked without `claim`, gives that session a copy and leaves the originals.
+`claim` is the rebind [Claim](04-protocol.md#claim) describes: the foreign route of this
+gate tells the session to claim and then repeat the command, and the claim call writes
+the calling session as the owner. A harness MCP server that does not receive the
+variable is not this process — [02-host § Session identity](02-host.md#session-identity).
+
 ### `dismiss` — stop watching a finished participant
 
 Source: `lib/dismiss.js`, `dismiss`.

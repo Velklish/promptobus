@@ -122,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round as the take is knocked at once. A hold stays a hold; the first knock and a rewritten contact point do not wait.
   [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden).
 
+### Documentation
+
+- The suite shows each declared harness's identity on `status` and on the owner gate, and a shell of codex-cli 0.156.1 carries `CODEX_THREAD_ID` (PB-178). [02-host § Session identity](docs/reference/02-host.md#session-identity), [03-cli § ownership](docs/reference/03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss).
+
 ## [0.17.0] — 2026-09-25
 
 ### Added
