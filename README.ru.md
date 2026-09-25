@@ -129,7 +129,7 @@ promptobus done
 | `promptobus spawn --repo <path> --brief <file>` | Поднять worker'а в изолированном git worktree. `--new-task` или `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus review <path>` | Поднять read-only ревьюера на снимке диффа. `--title` или `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта. Подкоманды `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
-| `promptobus status` | Активные задачи: участники, непрочитанная почта, состояние сессий, диагностика отсутствующей ссылки на сессию, маршрут и счёт проходов ревью |
+| `promptobus status` | Аренда машины, затем активные задачи: участники, непрочитанная почта, состояние сессий, диагностика отсутствующей ссылки на сессию, маршрут и счёт проходов ревью |
 | `promptobus done` | Закрыть задачу; погасить поднятые шиной сессии, если не задан `--keep-sessions` |
 | `promptobus stop <address>` | Погасить сессию ОДНОГО участника, оставив задачу открытой; запись сессии уходит вместе с процессом |
 | `promptobus sweep <address>` | Убрать за ОДНИМ принятым куском, оставив задачу активной: worktree и ветку при доказуемом слиянии, присланные им блобы и файлы, его файлы в `workers/` |
@@ -138,6 +138,7 @@ promptobus done
 | `promptobus prune` | Показать журналы задач, закрытых больше 14 дней назад; удалить — `--yes` |
 | `promptobus guard` | Сторож цикла для хука Stop: exit 2 возвращает ход, пока почта не прочитана — в этой задаче или в другой, которой сессия оркестратор, — или пока не отправлен ожидаемый ответ |
 | `promptobus warden` | Слушатель задачи. Поднимает его любая команда шины; `PROMPTOBUS_WARDEN=off` выключает авто-подъём |
+| `promptobus lease -- <command…>` | Пустить один замер на машину за раз; ожидающий называет держателя аренды и сдаётся на `--wait` (по умолчанию 1800 с); `status` называет держателя |
 | `promptobus mcp` | MCP-сервер по stdio |
 | `promptobus install` / `uninstall` | Поставить или снять project-level хуки |
 

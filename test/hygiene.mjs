@@ -145,6 +145,8 @@ export const HARNESS_IDENTITY_VARS = [
 // — an explicit path is visible to a stub suite file, and the verdict
 // checks it against the run home.
 const CONFIG_DIR_VAR = 'CLAUDE_CONFIG_DIR';
+// The lease's place override ([lease.js](../lib/lease.js)); set beside the diverted home.
+const LEASE_DIR_VAR = 'PROMPTOBUS_LEASE_DIR';
 // The Cursor driver's install-directory list, narrowed to the sandbox `~/.local/bin`: its absolute
 // entries (`/opt/homebrew/bin`, `/usr/local/bin`) are a machine's tmux, and no PATH seal covers them.
 const CURSOR_INSTALL_DIRS_VAR = 'PROMPTOBUS_CURSOR_INSTALL_DIRS';
@@ -289,6 +291,8 @@ export function applyHygiene(env, { home, seal } = {}) {
   if (home) {
     for (const name of HOME_VARS) env[name] = home;
     env[CONFIG_DIR_VAR] = path.join(home, '.claude');
+    // The machine lease is shared by design; a suite run under it must not wait on itself.
+    env[LEASE_DIR_VAR] = path.join(home, '.promptobus-lease');
   } else if (!HOME_VARS.some((name) =>
     env[name] && existsSync(env[name]) && env[CONFIG_DIR_VAR] === path.join(env[name], '.claude'))) {
     delete env[CONFIG_DIR_VAR];

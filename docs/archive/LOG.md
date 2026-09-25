@@ -333,3 +333,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-245.3"></a>`PB-245.3-standalone-host-drops-no-claude-floor` · 2026-09-25 · completed · — · Under the standalone host the Claude version floor drops nothing: the host hands over no binary version, so a build older than 2.1.280 is still routed to Opus 5.5
 - <a id="pb-235"></a>`PB-235-reviewer-harness-cannot-be-changed-when-its-subscription-dies` · 2026-09-25 · completed · — · A reviewer whose harness runs out of quota cannot be re-raised on another tool, and the piece becomes unreviewable
 - <a id="pb-229"></a>`PB-229-warden-knocks-once-per-message` · 2026-09-25 · completed · — · The warden knocks once per message, so a four-message hand-off wakes the orchestrator four times
+- <a id="pb-241"></a>`PB-241-participants-share-one-machine-with-no-mutex` · 2026-09-25 · completed · — · Participants of one task share a machine and the bus offers them no mutex

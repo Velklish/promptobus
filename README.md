@@ -130,7 +130,7 @@ promptobus done
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
-| `promptobus status` | Active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
+| `promptobus status` | The machine lease, then active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
 | `promptobus sweep <address>` | Clean up after ONE accepted piece and leave the task active: its worktree and branch when the merge is provable, the blobs and files it sent, its files in `workers/` |
@@ -139,6 +139,7 @@ promptobus done
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
 | `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread — in this task or in another task this session orchestrates — or while an owed answer has not been sent |
 | `promptobus warden` | Task listener. Any bus command starts it; `PROMPTOBUS_WARDEN=off` disables auto-start |
+| `promptobus lease -- <command…>` | Run one measuring command per machine at a time; a waiter names the lease holder and gives up at `--wait` (default 1800 s); `status` names the holder |
 | `promptobus mcp` | MCP server over stdio |
 | `promptobus install` / `uninstall` | Write or remove the project-level hooks |
 

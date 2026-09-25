@@ -48,6 +48,7 @@ promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
 promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver] [--dry-run]
 promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
+promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
 
 `--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
@@ -173,6 +174,12 @@ A worker that cannot continue sends `question` and ends the turn. You answer wit
 When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). You review. Findings go back as `review`. The worker fixes and sends `result` again.
 
 You do not merge the worker branch until you accept the result. The worker does not push and does not edit the main tree.
+
+## Machine lease
+
+Participants share the machine, and runs of other tasks and workspaces load it too. The bus keeps one machine lease: `promptobus lease -- <command…>` holds it for the length of one measuring run, a waiter names the lease holder and gives up at a bound, and a lease holder that dies releases it by liveness. `promptobus status` names the lease holder, since when, and the waiters.
+
+It replaces orchestrator-issued slots. Do not hand out "the test slot" and do not teach a lock in the brief: the worker and approver preambles already carry the command, addressed, and the rule for what is a measurement — the repository's full test suite and its gate command. How many participants run at once is still yours to decide.
 
 ## Stops
 

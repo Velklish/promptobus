@@ -3,7 +3,7 @@
     "fileOnly": 31,
     "citation": 41,
     "crossFile": 6,
-    "fileLevel": 53,
+    "fileLevel": 54,
     "bound": 50,
     "sameFileCitation": 10
   },
@@ -95,6 +95,9 @@
     "lib/install.js": [
       "../docs/guides/install.md#what-the-installer-knows-and-never-writes",
       "../docs/guides/install.md#2-workspace-file"
+    ],
+    "lib/lease.js": [
+      "../docs/reference/01-overview.md#machine-lease"
     ],
     "lib/liftoff.js": [
       "../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight",

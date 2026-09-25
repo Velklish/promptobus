@@ -285,6 +285,8 @@ check('plan: the standalone host does not resolve a module review skill',
   plan.skill == null, JSON.stringify(plan.skill));
 check('prompt: the repository is named, there is no foreign module layout',
   plan.prompt.includes(path.join(REPO, 'AGENTS.md')));
+check('prompt: a reviewer is told the machine lease is not its own and is not taught the command',
+  plan.prompt.includes('machine lease is not yours to take') && !plan.prompt.includes(' lease --as '));
 check('prompt: the standalone host does not add team-memory tools',
   !plan.prompt.includes('search_facts'));
 // The reviewer gets the whole canon, and every name is pre-approved: there will be no

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The machine lease** (PB-241, [ADR-018](docs/adr/adr-018-the-bus-leases-the-machine-for-measurements.md)). `promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>` runs one measuring command at a time per machine, across tasks and workspaces: the lease is a directory lock under `/tmp/promptobus-<uid>/` held by the wrapper's own pid and refused when that directory is a symlink or another user's, a lease holder that dies is dropped by liveness, a waiter prints who holds the machine and gives up at the bound (default 1800 s) without running anything. `status` opens with the lease holder and the waiters. The worker and approver preambles carry the command, addressed, with the rule for what counts as a measurement; the reviewer preamble says the lease is not its own. The orchestration skill drops orchestrator-issued slots for it.
+
 ### Fixed
 
 - **A Claude Code participant no longer registers a Remote Control session on claude.ai** (PB-253). A `--bg`

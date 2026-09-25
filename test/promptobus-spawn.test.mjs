@@ -211,6 +211,11 @@ store.createTask(HOME, {
 
 const opts = { repo: 'cargos-api', brief: BRIEF, task: TASK, effort: 'high' };
 const plan = await planSpawn(WS, opts);
+// The lease reaches the worker by the preamble, addressed to it: no brief carries it.
+check('prompt: the worker is told to measure under the machine lease, with its own address and task',
+  plan.prompt.includes(`promptobus lease --as worker:cargos-api --task ${TASK} -- <command…>`)
+  && !readFileSync(BRIEF, 'utf8').includes('lease'),
+  plan.prompt.slice(plan.prompt.indexOf('## Machine lease'), plan.prompt.indexOf('## Machine lease') + 400));
 const SESSION_ID = 'sess-0001';
 claudeSays([{ id: SESSION_ID, name: plan.name, state: 'working', pid: 4242 }]);
 

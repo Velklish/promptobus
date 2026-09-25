@@ -261,6 +261,10 @@ check(': the approver preamble forbids push and force-push and leaves the push t
   claudePlan.prompt.includes('You never push, never force-push, and never rewrite commits that are already on the remote: the orchestrator pushes.'),
   claudePlan.prompt.slice(0, 700));
 
+check(': the approver runs the gates, so its preamble puts them under the machine lease at its own address',
+  claudePlan.prompt.includes(`promptobus lease --as approver:cargos-api --task ${TASK} -- <command…>`),
+  claudePlan.prompt.slice(claudePlan.prompt.indexOf('## Machine lease'), claudePlan.prompt.indexOf('## Machine lease') + 300));
+
 const cursorPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'cursor' });
 check(': approver on Cursor refuses before launch — project config is read only from the selected workspace',
   typeof cursorPlan.refusal === 'string'

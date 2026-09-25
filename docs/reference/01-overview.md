@@ -64,6 +64,31 @@ Sidecar files the CLI writes (warden, wake, health, worker catalogs) sit in the 
 
 One file sits at the **root** of the store rather than under `tasks/`: `model-routing.json`, the `workspace` overlay layer, which under the standalone host is the writable one — the file `promptobus models strategy --set` records `defaults.strategy` in, mode `0600` ([02-host](02-host.md) § The writable layer). It is state the tool writes, which is why it is here and not in the repository root, and it is per-workspace exactly as the store is. The availability cache and the participant telemetry are NOT here: they are account-scoped and live at the paths `routingPaths()` names, off the user home under standalone.
 
+## Machine lease
+
+Source: `lib/lease.js`. Decision and the options it was chosen over: [ADR-018](../adr/adr-018-the-bus-leases-the-machine-for-measurements.md).
+
+Participants of one task share a machine, and so do participants of different tasks and different workspaces. A **machine lease** lets one measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
+
+The lease is not in the store home: that home is per workspace, and the lease must be seen by every workspace of the machine. It lives in one directory per user of the machine:
+
+```
+/tmp/promptobus-<uid>/          (Windows: %TEMP%\promptobus-lease\)
+  machine.lock/
+    owner                       pid and since — written by the lock primitive
+    holder.json                 address, task, command, cwd — for display only
+  waiters/
+    <pid>.json                  one per process waiting, removed when it stops waiting
+```
+
+The directory is trusted only when it is this user's own: a symbolic link, a non-directory or another uid's directory is refused before anything is created in it ([03-cli](03-cli.md) § Lease). `PROMPTOBUS_LEASE_DIR` replaces that path. It exists so a test run does not wait on the lease a real run holds around it; the suite's hygiene sets it beside each file's diverted home.
+
+`machine.lock/` is the directory lock of § The lock: what it guards and what it cannot, taken with the wrapper's own pid. A lock whose pid no longer answers `kill 0` is dropped by the next taker; nothing is dropped by age. `holder.json` never decides liveness. A waiter's record whose pid is gone is not listed and is harmless to delete.
+
+`status` opens with the lease, before the tasks and even when none is active: `free`, `held by …`, or `left by a dead process …`, then one `waiting — …` line per live waiter ([03-cli](03-cli.md) § Status, done, sweep, dismiss, history, prune).
+
+Who is told: the worker preamble of `spawn` and the approver preamble of `review --approver` carry a `## Machine lease` section with the command already addressed to that participant and task, and the rule for what counts as measuring — the repository's full test suite and its gate command, as the repository's own AGENTS.md, README or contributing guide names them. The reviewer preamble says only that the lease is not the reviewer's: a reviewer runs nothing.
+
 ## MCP tools
 
 Declared in `src/mcp/tools.ts` and listed in `lib/contract.js` as `PROMPTOBUS_TOOLS`:
