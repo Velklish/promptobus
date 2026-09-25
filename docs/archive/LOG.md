@@ -365,3 +365,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-245.2"></a>`PB-245.2-claude-stub-startedat-iso-vs-live-epoch` · 2026-09-26 · batch PB-257 · — · The stub claude writes startedAt as an ISO string while claude 2.1.280 writes epoch milliseconds
 - <a id="pb-245.4"></a>`PB-245.4-doubled-version-read-bound` · 2026-09-26 · batch PB-257 · — · 02-host names each Claude version read and the 5 s ceiling, but not that a routed lift can block up to twice that
 - <a id="pb-251.1"></a>`PB-251.1-reference-cli-commands-list-omits-stop` · 2026-09-26 · batch PB-257 · — · 03-cli names every command but stop
+- <a id="pb-256"></a>`PB-256-probe-minor-batch` · 2026-09-26 · completed · — · Minor batch: the mutation probe — the replacement half of --mutate, and a red run that never reached the suite
+- <a id="pb-188.2"></a>`PB-188.2-probe-replacement-side` · 2026-09-26 · batch PB-256 · — · `--mutate` warns about the pattern and says nothing about the replacement, where three probes died
+- <a id="pb-241.1"></a>`PB-241.1-probe-reads-a-compile-error-as-red` · 2026-09-26 · batch PB-256 · — · npm run probe --run with a build step reads a compile error of the mutation as red

@@ -47,6 +47,21 @@ writeFileSync(path.join(REPO, 'check.mjs'), [
   "console.log('✔ the marker is there');",
 ].join('\n'));
 writeFileSync(path.join(REPO, 'other.txt'), 'nothing here is read by the check\n');
+// Red without a line the probe treats as a named check: a build step, a module that fails to load.
+writeFileSync(path.join(REPO, 'quiet-fail.mjs'), [
+  "import { readFileSync } from 'node:fs';",
+  "const text = readFileSync(new URL('subject.txt', import.meta.url), 'utf8');",
+  `if (!text.includes(${JSON.stringify(MARKER)})) { console.log('tsc refused the build'); process.exit(1); }`,
+  "console.log('build ok');",
+].join('\n'));
+// Green on one line, red once a real newline has landed inside the subject.
+writeFileSync(path.join(REPO, 'lines.mjs'), [
+  "import { readFileSync } from 'node:fs';",
+  "const text = readFileSync(new URL('subject.txt', import.meta.url), 'utf8');",
+  "const body = text.endsWith('\\n') ? text.slice(0, -1) : text;",
+  "if (body.includes('\\n')) { console.log('✖ a real newline landed'); process.exit(1); }",
+  "console.log('✔ one line');",
+].join('\n'));
 git('init', '-q');
 git('config', 'user.email', 'probe@example.invalid');
 git('config', 'user.name', 'probe');
@@ -66,6 +81,9 @@ const good = probe('subject.txt', '--mutate', `s/${MARKER}/broken/`, ...RUN);
 check(': a check that sees its subject is red with the mutation and green without it',
   good.code === 0 && /✔ probe: red with the mutation \(exit 1\), green without it/.test(good.out),
   `exit ${good.code} · ${good.out}`);
+check(': a red run that names a failing check does not warn that none was named',
+  !/no failing check was named/.test(good.out),
+  good.out);
 check(': and the red run\'s own line is quoted, so the report says WHAT fired',
   /✖ the marker is gone/.test(good.out), good.out);
 check(': the subject is put back — from the snapshot, which is the whole point of the script',
@@ -88,6 +106,65 @@ check(': a check that stays green WITH the mutation in place is reported as not 
   `exit ${blind.code} · ${blind.out}`);
 check(': and that file is restored too — a failed probe still puts the tree back',
   readFileSync(path.join(REPO, 'other.txt'), 'utf8') === 'nothing here is read by the check\n');
+
+// --- the replacement half of --mutate ---------------------------------------
+
+const escaped = probe('subject.txt', '--mutate', `s/${MARKER}/bro\\nken/`, ...RUN);
+check(': a replacement containing the \\n escape is refused by name, and the message names --stdin-patch',
+  escaped.code === 2 && /the \\n escape/.test(escaped.out) && /--stdin-patch/.test(escaped.out),
+  `exit ${escaped.code} · ${escaped.out}`);
+check(': the refusal leaves the subject untouched and runs no check',
+  subject() === `${MARKER}\n` && !/mutated →/.test(escaped.out), escaped.out);
+
+const piped = probe('subject.txt', '--mutate', `s|${MARKER}|broken|`, ...RUN);
+check(': the separator is arbitrary — s|…|…| reddens the check the same way',
+  piped.code === 0 && /✔ probe: red with the mutation \(exit 1\), green without it/.test(piped.out),
+  `exit ${piped.code} · ${piped.out}`);
+check(': and the subject is put back after a pipe-separated mutation',
+  subject() === `${MARKER}\n`, subject());
+
+const realNl = probe('subject.txt', '--mutate', `s|${MARKER}|two\nlines|`, '--run', `${JSON.stringify(process.execPath)} lines.mjs`);
+check(': a replacement that already holds a real newline is applied, and the line break is real',
+  realNl.code === 0 && /✖ a real newline landed/.test(realNl.out) && !/the \\n escape/.test(realNl.out),
+  `exit ${realNl.code} · ${realNl.out}`);
+check(': the subject is put back after a real-newline mutation',
+  subject() === `${MARKER}\n`, subject());
+
+// A whole-marker `$&` writes the marker back, so the pattern is a piece in the middle.
+const dollars = [
+  ['$&XX', '$&'],
+  ['$1XX', '$1'],
+  ['$`XX', '$`'],
+  ["$'XX", "$'"],
+];
+for (const [repl, label] of dollars) {
+  const r = probe('subject.txt', '--mutate', `s/check-looks/${repl}/`, ...RUN);
+  check(`: a replacement containing ${label} warns and the pass verdict stays`,
+    r.code === 0 && /String\.replace replacement/.test(r.out) && /✔ probe: red with the mutation \(exit 1\), green without it/.test(r.out),
+    `exit ${r.code} · ${r.out}`);
+  check(`: the subject is put back after a ${label} mutation`,
+    subject() === `${MARKER}\n`, subject());
+}
+
+const literalDollar = probe('subject.txt', '--mutate', `s/${MARKER}/$$&/`, ...RUN);
+check(': $$& is a literal dollar, not a substitution, so it draws no warning',
+  literalDollar.code === 0 && !/--mutate: warning:/.test(literalDollar.out) && /✔ probe: red with the mutation \(exit 1\)/.test(literalDollar.out),
+  `exit ${literalDollar.code} · ${literalDollar.out}`);
+check(': the subject is put back after a literal-dollar mutation',
+  subject() === `${MARKER}\n`, subject());
+
+// --- a red run that never named a check --------------------------------------
+
+const quiet = probe('subject.txt', '--mutate', `s/${MARKER}/broken/`, '--run', `${JSON.stringify(process.execPath)} quiet-fail.mjs`);
+check(': a red run that names no failing check warns before the pass verdict',
+  quiet.code === 0
+    && /no failing check was named/.test(quiet.out)
+    && /stops before the suite/.test(quiet.out)
+    && /✔ probe: red with the mutation \(exit 1\), green without it/.test(quiet.out)
+    && quiet.out.indexOf('no failing check was named') < quiet.out.indexOf('✔ probe: red with the mutation'),
+  `exit ${quiet.code} · ${quiet.out}`);
+check(': the subject is put back after a run that named no check',
+  subject() === `${MARKER}\n`, subject());
 
 // --- commit first ------------------------------------------------------------
 

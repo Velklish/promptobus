@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`npm run probe` refuses a `--mutate` replacement that contains the `\n` escape, and warns when a red mutated run names no failing check** (PB-256).
+  The escape is the two characters backslash and `n`: `String.replace` writes them that way, the refusal names `--stdin-patch`, and the file is left untouched. A replacement that already holds a real newline still applies. `$&`, `$1`, `` $` `` and `$'` warn and are not refused — a person may mean them; `$$` stays a literal dollar. The separator is arbitrary (`s|…|…|`). The regexp error names only the pattern half, never the separator. When the mutated run is red and no line names a failing check, the tool warns before the verdict that a run which stops before the suite — a build step, a module that fails to load — reads as red. The four outcomes and their exit codes are unchanged.
+  [contributing](docs/guides/contributing.md).
+
 - **The command list, an unknown worktree left by `done`, the version-read bound, and the stub's `startedAt` now match the tree** (PB-257). [03-cli](docs/reference/03-cli.md) names `stop` in the command list, and that list is held equal to the dispatcher's cases. `done` names why a worktree stays when the session is unknown, the same reason `stop` and `sweep` print. [02-host § The standalone host](docs/reference/02-host.md#the-standalone-host) states the code's bound: a hung `claude --version` can hold a routed lift up to 2 × 5 s, read from the two calls, not timed on a hung binary. The Claude stub writes `startedAt` as epoch milliseconds and orders registry records by that number.
 
 - **Codex outside-root refusal logs list the resolved allowed roots.** They show `requested → resolved` only when resolution changed the path, and name unresolved roots separately. The approval reply remains `decline`. (PB-214)

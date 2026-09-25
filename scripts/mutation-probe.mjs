@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const say = (s) => process.stdout.write(`${s}\n`);
 const die = (s) => { say(`✖ ${s}`); process.exit(2); };
 
-const USAGE = 'usage: npm run probe -- <file> (--mutate s/<js-regexp>/<replacement>/[gi] | --stdin-patch) [--run <command>]';
+const USAGE = 'usage: npm run probe -- <file> (--mutate s<sep><js-regexp><sep><replacement><sep>[gi] | --stdin-patch) [--run <command>]; the separator is arbitrary (s|…|…|)';
 
 function parse(argv) {
   const out = { file: null, sed: null, patch: false, run: null };
@@ -85,6 +85,15 @@ function mutate() {
   } catch (e) {
     die(`--mutate: ${e.message} — the pattern is a JavaScript regexp, so ( ) | { } are operators; escape them or use --stdin-patch`);
   }
+  // Two characters, not a newline: a real newline already passed the `s` flag on the parse.
+  if (repl.includes('\\n')) {
+    die('--mutate: the replacement contains the \\n escape, which String.replace writes as a backslash and an n — use --stdin-patch');
+  }
+  // `$$` is a literal dollar. The other `$` forms substitute, and a person may mean them.
+  const bare = repl.replaceAll('$$', '');
+  if (/\$[&'`]|\$0?[1-9]/.test(bare)) {
+    say("--mutate: warning: the replacement is a String.replace replacement, so $&, $1, $` and $' substitute — a person may mean them");
+  }
   writeFileSync(abs, before.replace(pattern, repl));
 }
 
@@ -106,6 +115,9 @@ say(`probe: ${rel} · ${command}`);
 say(`  mutated → exit ${red.code}`);
 for (const l of fired) say(`    ${l.trim()}`);
 say(`  restored → exit ${green.code}`);
+if (red.code !== 0 && fired.length === 0) {
+  say('warning: no failing check was named, and a run that stops before the suite — a build step, a module that fails to load — reads as red');
+}
 
 if (red.code === 0) {
   say(`✖ probe: the check passed WITH the mutation in place — it does not see ${rel}`);
