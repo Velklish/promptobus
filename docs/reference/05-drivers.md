@@ -745,3 +745,33 @@ one door into the cache.
 **A cache failure does not replace the lift's own refusal.** The person is about to be told why
 their participant did not start, and a write error on the way there would take that diagnosis
 with it.
+
+## `awaitsUser` — whether a Claude transcript holds an open question
+
+Source: `lib/driver-claude.js`, `awaitsUser`.
+
+The warden asks this before it retries a knock on unchanged mail
+([hooks-and-trust § `awaitingUser`](../guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user)).
+The transcript is Claude Code's own JSONL, and its shape is not a
+contract. The reader relies on what was measured on 2.1.280 on
+2026-09-25, in three probe sessions and in a live orchestrator
+transcript:
+
+- The question is an `assistant` row whose `message.content` holds a
+  `tool_use` block with `name: "AskUserQuestion"` and an `id`. It is
+  written when the question opens, before `PreToolUse` fires.
+- While the question is open, the only rows written after it are
+  `queue-operation` rows, one per knock the session queued.
+- The answer is a `user` row with a `tool_result` block whose
+  `tool_use_id` names the question. A decline is the same row with
+  `is_error: true`, followed by a user text row.
+
+The reader takes the last `TRANSCRIPT_TAIL` (1 MiB) and walks it from
+the end. It remembers every `tool_result` id. The newest
+`AskUserQuestion` decides: open if its id has no result, closed if it
+does. A `user` row that is not a tool result is a human prompt and ends
+the walk as "not open". A line that does not parse is skipped. Anything
+else — no question in the tail, a file that cannot be read — is "not
+open". The answer is cached by the file's size and mtime, so the
+warden's one-second round costs one `fstat` while nothing is written.
+

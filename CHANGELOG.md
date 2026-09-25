@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The warden no longer re-knocks an orchestrator whose turn is waiting on its user** (PB-243.1). Measured on
+  2026-09-25 on this repository's own run: an orchestrator's question to its user stayed open from 17:46Z to 18:20Z
+  with 13 messages unread. From the silence bound at 18:01Z the warden knocked ten times, one every two minutes, and
+  every postcard landed in the waiting session. Past `SILENCE_SEC` the retry ignores the end-of-turn mark, because
+  that mark cannot tell a running turn from a dropped postcard. The guard's Stop path now keeps the hook input's
+  `transcript_path` for its address. While the Claude driver's `awaitsUser` finds an `AskUserQuestion` with no
+  answer in that transcript's tail, the retry is withheld. The journal says `knocks held <address>: the turn waits on
+  its user` once per wait, and `health` keeps `asking`. The first knock for new mail is unchanged. After the answer
+  or a decline, the ordinary retry goes out once. Anything unread or unrecognised in the transcript counts as "not
+  open". No workspace hook setting changes.
+  [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden),
+  [hooks-and-trust § `awaitingUser`](docs/guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user),
+  [05-drivers § `awaitsUser`](docs/reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question).
 - **A Codex holder accepts an `mcp_tool_call` elicitation only from a server that participant's home configures** (PB-196.1).
   The name is `serverName` on the elicitation params. The approved set is the `[mcp_servers]` keys the lift
   wrote, read once at holder start. A later write to that file does not widen it. Any other name is declined,

@@ -290,6 +290,55 @@ Neither source is a contract: no snapshot, no record, the watchman mark
 has never been laid — that is UNKNOWN, not busy, and the caller does
 what they would have done without the predicate.
 
+**The watchman signal is bounded, and one state outlives the bound.**
+Past `SILENCE_SEC` of unread mail the warden stops asking `sessionBusy`:
+a knock dropped by a queue limit never starts a turn, so the mark never
+moves, and "busy" would hold the retry for ever. A turn held on a
+question to its user looks exactly the same from here, so the retry
+asks `awaitingUser` below instead.
+
+### `awaitingUser` — whether the turn waits on its user
+
+Source: `src/supervisor.ts`, `awaitingUser`; `lib/guard.js`; the Claude
+driver's `awaitsUser` ([05-drivers.md](../reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question)).
+
+The guard's Stop path keeps the hook input's `transcript_path` for its
+address, together with the session that sent it
+(`waits/<address>.transcript.json`). The payload field is documented in
+the Claude Code hooks reference
+(<https://code.claude.com/docs/en/hooks>, common input fields); the Stop
+hook is already installed, so no workspace setting changes. The retry
+asks the address's driver whether that transcript holds a question to
+the user that has no answer yet. While it does, the `KNOCK_RETRY_SEC`
+retry is withheld (03-cli § Guard and warden). The first knock for new
+mail is not.
+
+**Why the transcript and not a hook.** Measured on Claude Code 2.1.280,
+three interactive sessions with logging hooks on every event:
+`PreToolUse` fires with `tool_name: AskUserQuestion`, then `Notification`
+`permission_prompt` about six seconds later, and nothing else while the
+question is open. An answer brings `PostToolUse` for the tool and then
+`Stop`. A question declined with Esc brings NO hook at all — no
+`PostToolUse`, no failure event, no `Stop` — so a mark laid by
+`PreToolUse` would stay up over an idle session. The transcript does
+record the decline: a `tool_result` with `is_error` and a user line.
+
+**Withholding needs positive evidence.** The answer is "open" only when
+the transcript tail holds an `AskUserQuestion` `tool_use` with no
+`tool_result` after it. Every doubt is "not open", and the retry goes
+out as it would without the predicate:
+
+- no recorded path;
+- a path recorded by a session other than the one behind the contact point;
+- an unreadable file, or lines that do not parse;
+- a record shape the reader does not know;
+- a tail that does not reach the question;
+- a driver without the operation.
+
+A session that died with its question open keeps its transcript open.
+The hold then stays, but there is nobody to knock: the contact point is
+dead, and `SILENT` has already been written once.
+
 ### `lastActivation` — when the participant was last REACHED
 
 Source: `src/supervisor.ts`, `lastActivation`.

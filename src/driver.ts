@@ -397,6 +397,9 @@ export interface Driver {
   stallRoute?(stall: StalledParticipant & { task?: string | null }, id: string | null, ref: string | null): string;
   /** Hand the contact point of ITS OWN session into the task store: only the harness knows the socket address. */
   registerWake?(home: string, task: string, address: string, env?: unknown, session?: string | null): unknown;
+  /** Whether the session transcript at this path holds a question to the user still unanswered.
+   * Positive evidence only: anything unread or unrecognised is `false`. */
+  awaitsUser?(transcript: string): boolean;
   /** Tell the supervisor journal that a write for a foreign address did not go through. */
   sayForeignWrite?(home: string, task: string, address: string, held: string, session: string | null, what: string): void;
   /** Wake-channel smoke for diagnostics: whether a socket was handed over and whether it accepts a connection. */

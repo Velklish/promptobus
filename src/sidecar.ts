@@ -269,6 +269,38 @@ export function lastTurnAt(home: string, id: string, addr: string): number | nul
   }
 }
 
+// --- session transcript -------------------------------------------------------
+
+// Where the address's session keeps its transcript, as the guard's hook input named it. The warden
+// asks the driver whether that transcript holds an open question to the user.
+export interface Transcript {
+  path: string;
+  session: string | null;
+  at: string;
+}
+
+function transcriptFile(home: string, id: string, addr: string): string {
+  return path.join(taskDir(home, id), 'waits', `${addrDir(addr)}.transcript.json`);
+}
+
+export function markTranscript(home: string, id: string, addr: string, file: string, session: string | null = null): Transcript {
+  const was = readTranscript(home, id, addr);
+  if (was && was.path === file && was.session === session) return was;
+  const next: Transcript = { path: file, session, at: new Date().toISOString() };
+  writeJsonAtomic(transcriptFile(home, id, addr), next);
+  return next;
+}
+
+export function readTranscript(home: string, id: string, addr: string): Transcript | null {
+  try {
+    const raw = JSON.parse(readFileSync(transcriptFile(home, id, addr), 'utf8')) as Partial<Transcript>;
+    if (typeof raw?.path !== 'string' || !raw.path) return null;
+    return { path: raw.path, session: typeof raw.session === 'string' ? raw.session : null, at: String(raw.at ?? '') };
+  } catch {
+    return null;
+  }
+}
+
 // --- session-to-task bindings: a file per session, without which the task was inferred by "the only
 // active one" and a foreign session took it. Where there is no identity, resolve falls back to that guess.
 export function sessionFile(home: string, session: string | null): string | null {

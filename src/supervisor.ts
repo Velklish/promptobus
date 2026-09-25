@@ -2,7 +2,7 @@
 // [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
 import { existsSync } from 'node:fs';
 import {
-  beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readWake, writeHealth, writeStalls,
+  beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readTranscript, readWake, writeHealth, writeStalls,
 } from './sidecar.js';
 import type { Stalls, Wake } from './sidecar.js';
 import {
@@ -78,6 +78,8 @@ interface HealthMark {
   unreadableRefs?: string[];
   // The named reset the knocks are held on; absent while nothing holds them.
   hold?: NamedReset;
+  // Since when the retry is held on an open question to the user; absent otherwise.
+  asking?: string;
   [key: string]: unknown;
 }
 
@@ -199,6 +201,20 @@ export function sessionBusy(home: string, task: string, participant: Participant
   if (turn === null) return false;
   const since = lastActivation(home, task, participant);
   return since !== null && since > turn;
+}
+
+/** Whether the address's session holds an open question to its user — positive evidence only.
+ * [guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user](../docs/guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user) */
+function awaitingUser(home: string, task: string, addr: string, driver: Driver, endpoint: Wake | null): boolean {
+  if (typeof driver.awaitsUser !== 'function') return false;
+  const transcript = readTranscript(home, task, addr);
+  if (!transcript) return false;
+  if (transcript.session && endpoint?.session && transcript.session !== endpoint.session) return false;
+  try {
+    return driver.awaitsUser(transcript.path) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Task participants from whom no messages are to be expected; `null` means the state is unknown,
@@ -476,6 +492,7 @@ export async function supervisorRound(home: string, task: string, {
           escalatedAt: null,
           unreadableRefs: [],
           hold: undefined,
+          asking: undefined,
           coalesced: undefined,
           knockedFirst: null,
         };
@@ -540,6 +557,12 @@ export async function supervisorRound(home: string, task: string, {
     // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
     // dropped by a queue limit never starts a turn — so past the threshold we knock regardless.
     const busy = stale && waited < SILENCE_SEC * 1000 && sessionBusy(home, task, p, sessions);
+    // A turn held on a question to its user is not a dropped knock: the retry waits for the answer.
+    const asking = stale && !busy && pushes(driver) && awaitingUser(home, task, addr, driver, endpoint);
+    if (asking && !h.asking) {
+      h.asking = new Date(now).toISOString();
+      events.push(`knocks held ${addr}: the turn waits on its user — a question is open, no re-knock until it is answered`);
+    } else if (!asking && stale && !busy) delete h.asking;
     // A refusal with a named reset is a state, not one more failed turn: no knock before that time.
     // A time that did not parse is probed at once, then at the ordinary retry pace — never on a rewritten point.
     const hold = pushes(driver) ? heldReset(p, sessions, now) : null;
@@ -588,7 +611,7 @@ export async function supervisorRound(home: string, task: string, {
       h.selfWake = 'taken';
       h.selfWakeChannel = null;
       h.wake = null;
-    } else if (!Number.isFinite(triedAt) || (pending && !outstanding) || moved || (stale && !busy)) {
+    } else if (!Number.isFinite(triedAt) || (pending && !outstanding) || moved || (stale && !busy && !asking)) {
       const carried = h.coalesced ?? 0;
       h.triedAt = new Date(now).toISOString();
       h.wake = print;

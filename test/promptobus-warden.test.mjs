@@ -45,7 +45,7 @@ const { wardenLine, status, WARDEN_MARK, stallLine, blockedParticipants, orchest
 // from home.
 const {
   claudeDriver, KNOCK_FROM, knockSocket, orderBody, probeWake, registerWake, sayForeignWrite,
-  sessionDetail, sessionStall, renderNotification, stallRoute,
+  sessionDetail, sessionStall, renderNotification, stallRoute, TRANSCRIPT_TAIL,
 } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 // A live snapshot is used only by the guard for check : it proves that the watch loop's
 // zero calls come from the loop itself, not from records with no session name.
@@ -1986,6 +1986,87 @@ const oStuck = stubKnock();
 await orchRound(oStuck, Date.parse(orchHealth().knockedAt) + wdn.SILENCE_SEC * 1000 + 1000);
 check(', review note: unread mail has been sitting past the silence threshold — we knock regardless of busyness',
   oStuck.calls.length === 1, String(oStuck.calls.length));
+
+// A turn held on a question to its user, past the silence bound. The rows are the shapes Claude
+// Code 2.1.280 wrote in a live run: the question's tool_use, then only queue records.
+const ASK_TASK = 'orkestr-ask-t20260925-184500';
+const ASK_SESSION = 'sess-ask-orchestrator';
+store.createTask(HOME, { id: ASK_TASK, title: 'a turn waiting on its user' });
+registerWake(HOME, ASK_TASK, 'orchestrator',
+  { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('ask243'), CLAUDE_CODE_MESSAGING_TOKEN: 't' }, ASK_SESSION);
+const ASK_FILE = path.join(SB, 'ask-transcript.jsonl');
+const row = (o) => `${JSON.stringify(o)}\n`;
+const ASK_ROWS = [
+  row({ type: 'user', message: { role: 'user', content: 'decide the next card' } }),
+  row({ type: 'assistant', message: { content: [{ type: 'thinking', thinking: '' }] } }),
+  row({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_ask', name: 'AskUserQuestion', input: {} }] } }),
+  row({ type: 'queue-operation', operation: 'enqueue' }),
+].join('');
+writeFileSync(ASK_FILE, ASK_ROWS);
+store.markTranscript(HOME, ASK_TASK, 'orchestrator', ASK_FILE, ASK_SESSION);
+store.sendMessage(HOME, ASK_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'a piece is done' });
+const askHealth = () => store.readHealth(HOME, ASK_TASK).orchestrator;
+const askRound = (knock, now) => wdn.wardenRound(HOME, ASK_TASK, { knock, sessions: [], now });
+const aFirst = stubKnock();
+await askRound(aFirst);
+check(': the first knock for new mail goes out while a question is open — it is not held',
+  aFirst.calls.length === 1, String(aFirst.calls.length));
+const askKnocked = Date.parse(askHealth().knockedAt);
+store.markTurn(HOME, ASK_TASK, 'orchestrator', new Date(askKnocked - 60000).toISOString());
+const aHeld = stubKnock();
+const heldEvents = [];
+for (let k = 0; k < 6; k += 1) {
+  const r = await askRound(aHeld, askKnocked + wdn.SILENCE_SEC * 1000 + k * (wdn.KNOCK_RETRY_SEC * 1000 + 1000));
+  heldEvents.push(...r.events);
+}
+check(': past the silence bound, six warden periods with a question open give no re-knock',
+  aHeld.calls.length === 0, String(aHeld.calls.length));
+check(': the hold is said once in the journal, not once per period',
+  heldEvents.filter((e) => e.startsWith('knocks held orchestrator: the turn waits on its user')).length === 1,
+  JSON.stringify(heldEvents));
+const afterHeld = askKnocked + wdn.SILENCE_SEC * 1000 + 7 * (wdn.KNOCK_RETRY_SEC * 1000 + 1000);
+
+// Degraded cases: withholding needs positive evidence, and every doubt lets the retry through.
+const askDegraded = async (name, rows, session = ASK_SESSION) => {
+  writeFileSync(ASK_FILE, rows);
+  store.markTranscript(HOME, ASK_TASK, 'orchestrator', ASK_FILE, session);
+  const k = stubKnock();
+  const at = Date.parse(askHealth().triedAt) + wdn.KNOCK_RETRY_SEC * 1000 + 1000;
+  await askRound(k, Math.max(at, afterHeld));
+  check(`: ${name} — the retry goes out`, k.calls.length === 1, String(k.calls.length));
+};
+await askDegraded('the transcript is not JSON', 'not a transcript\n');
+await askDegraded('the question is past the tail the reader takes',
+  ASK_ROWS + row({ type: 'queue-operation', pad: 'x'.repeat(TRANSCRIPT_TAIL) }));
+await askDegraded('the transcript belongs to another session than the contact point', ASK_ROWS, 'sess-other');
+await askDegraded('the question was declined: its tool_result is in and a prompt follows', ASK_ROWS
+  + row({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask', is_error: true, content: 'declined' }] } })
+  + row({ type: 'user', message: { content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } }));
+
+writeFileSync(ASK_FILE, ASK_ROWS);
+store.markTranscript(HOME, ASK_TASK, 'orchestrator', ASK_FILE, ASK_SESSION);
+const reheld = stubKnock();
+await askRound(reheld, Date.parse(askHealth().triedAt) + wdn.KNOCK_RETRY_SEC * 1000 + 1000);
+check(': the question is open again — held again', reheld.calls.length === 0, String(reheld.calls.length));
+const askStatus = capture(() => status(SB, { task: ASK_TASK, sessions: [] }));
+check(': status says the retries are held on purpose while the question is open',
+  askStatus.includes(`knocks held: the turn waits on its user since ${askHealth().asking}`), askStatus);
+writeFileSync(ASK_FILE, ASK_ROWS
+  + row({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask', content: 'A' }] } }));
+const answered = stubKnock();
+const answeredAt = Date.parse(askHealth().triedAt) + wdn.KNOCK_RETRY_SEC * 1000 + 2000;
+await askRound(answered, answeredAt);
+await askRound(answered, answeredAt + 1000);
+check(': the question is answered — exactly one knock after the wait ends, and the hold mark is gone',
+  answered.calls.length === 1 && askHealth().asking === undefined,
+  `${answered.calls.length} ${JSON.stringify(askHealth())}`);
+writeFileSync(ASK_FILE, ASK_ROWS);
+await askRound(stubKnock(), answeredAt + wdn.KNOCK_RETRY_SEC * 1000 + 2000);
+const heldBeforeTake = askHealth().asking;
+store.readInbox(HOME, ASK_TASK, 'orchestrator');
+await askRound(stubKnock(), answeredAt + wdn.KNOCK_RETRY_SEC * 1000 + 3000);
+check(': a take of the mailbox clears the hold mark with the rest of the knock state',
+  typeof heldBeforeTake === 'string' && askHealth().asking === undefined, JSON.stringify(askHealth()));
 
 // --- : a participant dismissed from watch, and health -------------------------------------
 //

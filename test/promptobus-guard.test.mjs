@@ -12,7 +12,7 @@
 // it isn't), the reason in stderr, and silence on a clean pass. Plus loop protection: the same
 // state is returned no more than twice in a row.
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
@@ -284,6 +284,29 @@ check('protection: a clean pass resets the counter and removes the file',
 check(': a clean pass sets the turn-end mark — the warden judges busy-ness by it',
   store.lastTurnAt(HOME, TASK, 'orchestrator') > Date.parse(turnWas),
   `${store.lastTurnAt(HOME, TASK, 'orchestrator')} vs ${Date.parse(turnWas)}`);
+// The warden reads an open question to the user from this transcript, so the Stop payload's path
+// is kept for the address together with the session it belongs to.
+asHook(stopEvent());
+const seenTranscript = store.readTranscript(HOME, TASK, 'orchestrator');
+check(': the Stop payload\'s transcript_path is recorded for the address, with its session',
+  seenTranscript?.path === path.join(ROOT, 'transcript.jsonl') && seenTranscript?.session === SESSION,
+  JSON.stringify(seenTranscript));
+// A refused transcript write is additive evidence lost, not a lost turn end: the wake and the mark still land.
+const transcriptSlot = path.join(store.taskDir(HOME, TASK), 'waits', `${store.addrDir('orchestrator')}.transcript.json`);
+rmSync(transcriptSlot, { force: true });
+mkdirSync(transcriptSlot, { recursive: true });
+const refusedTurnWas = store.markTurn(HOME, TASK, 'orchestrator', '2020-01-01T00:00:00.000Z');
+const wakeSlot = store.wakeFile(HOME, TASK, 'orchestrator');
+const wakeWas = existsSync(wakeSlot) ? readFileSync(wakeSlot, 'utf8') : null;
+const refusedSocket = path.join(ROOT, 'refused-transcript.sock');
+const refused = asHook(stopEvent(), { CLAUDE_CODE_MESSAGING_SOCKET: refusedSocket, CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+check(': a refused transcript write still hands over the contact point and lays the turn-end mark',
+  refused.status === 0 && store.readWake(HOME, TASK, 'orchestrator')?.socket === refusedSocket
+    && store.lastTurnAt(HOME, TASK, 'orchestrator') > Date.parse(refusedTurnWas),
+  `status=${refused.status} ${refused.stderr} wake=${JSON.stringify(store.readWake(HOME, TASK, 'orchestrator'))}`);
+rmSync(transcriptSlot, { recursive: true, force: true });
+if (wakeWas === null) rmSync(wakeSlot, { force: true });
+else writeFileSync(wakeSlot, wakeWas);
 send('status', 'после чистого прохода');
 check('protection: after a reset the turn is returned again with a full count', cli().status === 2);
 store.readInbox(HOME, TASK, 'orchestrator');

@@ -4,7 +4,7 @@
     "citation": 42,
     "crossFile": 6,
     "fileLevel": 54,
-    "bound": 50,
+    "bound": 52,
     "sameFileCitation": 10
   },
   "byFile": {
@@ -52,6 +52,7 @@
     "lib/driver-claude.js": [
       "drivers.js",
       "../docs/reference/05-drivers.md#a-lift-that-fails-on-a-spent-limit",
+      "../docs/reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question",
       "../docs/reference/05-drivers.md#sessionstall--sessionstall-answers-null-for-no-stall-otherwise--kind-reason--kind-is-permission",
       "../docs/reference/03-cli.md#spawn",
       "liftoff.js",
@@ -292,6 +293,7 @@
       "../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken",
       "../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if",
       "../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn",
+      "../docs/guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user",
       "../docs/reference/03-cli.md#guard-and-warden"
     ],
     "src/telemetry.ts": [
