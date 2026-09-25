@@ -1,10 +1,11 @@
 # PB-241 · Participants of one task share a machine and the bus offers them no mutex
 
-- **Order:** 70
 - **Scope:** [01-overview](../../reference/01-overview.md)
 - **Created:** 2026-09-22
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 70
+- **Taken:** 2026-09-25
 
 ## Context
 
