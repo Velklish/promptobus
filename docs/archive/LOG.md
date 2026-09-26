@@ -378,3 +378,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-261"></a>`PB-261-no-identity-tail-cursor-seal-minor-batch` · 2026-09-26 · completed · — · Minor batch: the no-identity unread tail, and the Cursor binary search inside the suite seal
 - <a id="pb-178.4"></a>`PB-178.4-no-identity-unread-tail-says-fetch` · 2026-09-26 · batch PB-261 · — · The unread tail still tells a call with no session to fetch its own mailbox
 - <a id="pb-239.4"></a>`PB-239.4-suite-seal-misses-cursor-install-dirs` · 2026-09-26 · batch PB-261 · — · A Cursor binary search handed an environment without the suite's install-directory seal still reaches /usr/local/bin, where `cursor` is the Cursor app CLI
+- <a id="pb-262"></a>`PB-262-guard-no-identity-owner-paths-minor-batch` · 2026-09-26 · completed · — · Minor batch: the guard acts as the orchestrator's owner only on a proven right
+- <a id="pb-178.5"></a>`PB-178.5-guard-stop-hook-no-identity-registers-wake` · 2026-09-26 · batch PB-262 · — · guard-stop-hook-no-identity-registers-wake

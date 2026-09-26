@@ -973,6 +973,10 @@ No driver call on the warden beat path may block without a ceiling. Every launch
 
 **The orchestrator gets one postcard per sighting.** Stall reports stay journal lines with no postcard, except this one: the warden knocks the orchestrator once, with a preview of type `unreachable` from `promptobus` naming the address and the time, so the run decides — replace the participant, split the work, or stop — instead of finding the state in the journal. The sighting is the stall report's own mark (`stalls.json`): the same refusal is not reported twice, while a different one, or the same one after the participant recovered, is. An orchestrator with no contact point, one held by a foreign session, or one on a polling driver gets no postcard, and neither does an orchestrator whose own harness refused with a named reset — there is nobody to tell; the journal line names why, and the stall line still stands in its `mailbox` reply and in `status`.
 
+**The Stop path's registration and turn-end mark, and the SessionStart transcript mark, treat a
+no-identity session as a proved-foreign one, not as the owner** ([01-overview](01-overview.md) §
+Warden) — the same owner gate `join()` reads for the `orchestrator` contact point.
+
 ### Cursor hook events
 
 Source: `lib/driver-cursor.js`, `KNOWN_HOOK_EVENTS`, `PROVEN_HOOK_EVENTS`, `HOOK_EVENTS_SOURCE_VERSION`,

@@ -291,6 +291,47 @@ const seenTranscript = store.readTranscript(HOME, TASK, 'orchestrator');
 check(': the Stop payload\'s transcript_path is recorded for the address, with its session',
   seenTranscript?.path === path.join(ROOT, 'transcript.jsonl') && seenTranscript?.session === SESSION,
   JSON.stringify(seenTranscript));
+
+// --- a session with no identity is not the orchestrator's owner either -----------
+//
+// Same rule as join(): a call with no session identity proves nothing either way
+// on the `orchestrator` address, so it takes the no-identity/foreign route, not the owner's.
+const NOID_STOP_TASK = 'noid-stop-t20260926-040000';
+const NOID_STOP_SOCK = path.join(ROOT, 'noid-stop.sock');
+store.createTask(HOME, { id: NOID_STOP_TASK, title: 'без личности на Stop', owner: 'sess-noid-owner-1' });
+store.upsertParticipant(HOME, NOID_STOP_TASK, store.participantRecord('worker:api', { name: 'w-noid-stop' }));
+store.sendMessage(HOME, NOID_STOP_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное' });
+store.writeWake(HOME, NOID_STOP_TASK, 'orchestrator', {
+  socket: NOID_STOP_SOCK, token: 't', session: 'sess-noid-owner-1',
+});
+const noidStopTurnWas = store.markTurn(HOME, NOID_STOP_TASK, 'orchestrator', '2020-01-01T00:00:00.000Z');
+// A real socket in the environment: without one, registerWake's own writeWake refuses on
+// `!socket` regardless of the gate, and the contact-point half of the check proves nothing.
+const noidStopEnv = {
+  PROMPTOBUS_TASK: NOID_STOP_TASK,
+  CLAUDE_CODE_MESSAGING_SOCKET: path.join(ROOT, 'noid-thief.sock'),
+  CLAUDE_CODE_MESSAGING_TOKEN: 't',
+};
+const noidStop = asHook(stopEvent(null), noidStopEnv);
+check(': a Stop hook with no session identity on the orchestrator address does not return the turn — a silent pass, like a proved-foreign session',
+  noidStop.status === 0 && noidStop.stdout === '' && noidStop.stderr === '',
+  `status=${noidStop.status} out=${JSON.stringify(noidStop.stdout)} err=${JSON.stringify(noidStop.stderr)}`);
+check(': …and does not register the contact point',
+  store.readWake(HOME, NOID_STOP_TASK, 'orchestrator')?.socket === NOID_STOP_SOCK,
+  JSON.stringify(store.readWake(HOME, NOID_STOP_TASK, 'orchestrator')));
+check(': …and does not mark the transcript',
+  store.readTranscript(HOME, NOID_STOP_TASK, 'orchestrator') === null,
+  JSON.stringify(store.readTranscript(HOME, NOID_STOP_TASK, 'orchestrator')));
+// The mailbox is unread above, so even a bypassed gate would return the turn before ever
+// reaching markTurn — draining it first is what lets a clean pass reach that call at all.
+store.readInbox(HOME, NOID_STOP_TASK, 'orchestrator');
+const noidStopClean = asHook(stopEvent(null), noidStopEnv);
+check(': …and a drained mailbox does not move the turn-end mark either',
+  noidStopClean.status === 0 && noidStopClean.stdout === '' && noidStopClean.stderr === ''
+  && store.lastTurnAt(HOME, NOID_STOP_TASK, 'orchestrator') === Date.parse(noidStopTurnWas),
+  `status=${noidStopClean.status} mark ${store.lastTurnAt(HOME, NOID_STOP_TASK, 'orchestrator')} vs ${Date.parse(noidStopTurnWas)}`);
+store.closeTask(HOME, NOID_STOP_TASK);
+
 send('status', 'до старта сессии');
 const startPath = path.join(ROOT, 'session-start.jsonl');
 const sessionStart = asHook(JSON.stringify({
@@ -319,6 +360,22 @@ check(': a SessionStart from a non-owner session leaves the owner transcript rec
   && stillOwner?.path === ownerTranscript?.path && stillOwner?.session === ownerTranscript?.session
   && stillOwner?.at === ownerTranscript?.at,
   `status=${foreignStart.status} err=${JSON.stringify(foreignStart.stderr)} ${JSON.stringify(stillOwner)}`);
+
+// the SessionStart transcript mark reads the same gate the Stop path does (`own.right`,
+// not `gated` alone) — a no-identity session leaves the owner's transcript record untouched too.
+const noidStart = asHook(JSON.stringify({
+  session_id: null,
+  transcript_path: path.join(ROOT, 'noid-start.jsonl'),
+  cwd: SB,
+  hook_event_name: 'SessionStart',
+}));
+const stillOwnerAfterNoid = store.readTranscript(HOME, TASK, 'orchestrator');
+check(': a SessionStart with no session identity leaves the owner transcript record unchanged and does not return the turn',
+  noidStart.status === 0 && noidStart.stdout === '' && noidStart.stderr === ''
+  && stillOwnerAfterNoid?.path === ownerTranscript?.path && stillOwnerAfterNoid?.session === ownerTranscript?.session
+  && stillOwnerAfterNoid?.at === ownerTranscript?.at,
+  `status=${noidStart.status} out=${JSON.stringify(noidStart.stdout)} err=${JSON.stringify(noidStart.stderr)} ${JSON.stringify(stillOwnerAfterNoid)}`);
+
 const slotTask = 'guard-slot-t20260926-010000';
 const hintTask = 'guard-hint-t20260926-010001';
 const slotSession = 'sess-slot-ownerless-1';

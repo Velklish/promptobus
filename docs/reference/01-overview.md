@@ -298,6 +298,10 @@ turn. The two costs are not comparable: one is a line of text, the other takes
 a person's move away in their own work because somebody else's mailbox is
 unread.
 
+**A session with no identity is not the owner either.** On the `orchestrator` address, both the
+Stop path and the SessionStart transcript mark take the proved-foreign route — nothing
+registered or marked, the turn not returned — same as `join()` (03-cli § The owner gate).
+
 ### Migration: reading an older store
 
 Source: `src/migrate.ts`.
