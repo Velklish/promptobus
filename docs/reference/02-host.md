@@ -8,7 +8,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 ## What the host must answer
 
-The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 46 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
+The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 48 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
 
 | Member | Signature | Meaning of `null` or an absent answer |
 |---|---|---|
@@ -38,7 +38,8 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
-| `participantDenyTools` | `participantDenyTools?(role: 'reviewer' \| 'approver'): HostMcpToolClassification` | Optional member; `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
+| `participantDenyTools` | `participantDenyTools?(role: HostDenyRole): HostMcpToolClassification` | Optional member; `HostDenyRole` is `'reviewer' \| 'approver'`, declared in `src/registry.ts`. `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
+| `pipeline` | `pipeline?(): readonly DeclaredStep[]` | Optional member, answered by no host yet: the pipeline-declaration card fills it for the standalone host. Absent, `registryOf(host)` is the shipped role registry ([04-protocol § The role registry](04-protocol.md#the-role-registry)). |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
 | `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
@@ -52,6 +53,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `reportFresh` | `reportFresh(result: HostFreshness, label: string): void` | No answer is expected; the host reports or deliberately ignores freshness. |
 | `extraEnv` | `extraEnv(): Record<string, string>` | Never `null`; an empty object means no host environment overrides. |
 | `resolveToolBin` | `resolveToolBin(name: string): HostToolBin` | The result is required; `bin` may be absent when no launch path is available, and `version` absent means unread, not old. |
+| `readToolVersion` | `readToolVersion?(name: string, bin: string): string \| null` | Optional member, asked only when `resolveToolBin` returned no version for a tool that declares the read; `null` means nothing was read and the version stays unread ([§ Tool binaries](#tool-binaries)). Absent, no version is read. |
 | `substituteVars` | `substituteVars(value: unknown): unknown` | `null` may be a legitimate transformed value, not an absent host answer. |
 | `legacyLayout` | `legacyLayout(): HostLegacyLayout \| null` | `null` means this workspace has no former store and migration does not run. |
 | `formatCommand` | `formatCommand(args: string[]): string` | Never absent; it formats a command for a person. |
@@ -108,7 +110,8 @@ implementations must provide this member before calling `install`, `spawn`, or
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.
 
-`participantDenyTools(role)` is an optional member for `reviewer` and `approver`.
+`participantDenyTools(role: HostDenyRole)` is an optional member for `reviewer` and `approver`; `HostDenyRole`
+is declared with the role registry in `src/registry.ts`.
 It returns `{ tools, complete }`, where `tools` contains the exact `{ server, tool }`
 pairs that the host knows are write tools of its canonical external MCP servers; it
 must not infer them from names and must not return the Promptobus bus. The answer is

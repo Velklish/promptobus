@@ -11,6 +11,7 @@ import {
   participantFileStem, requireTaskId, stampOfId, TASK_ID_RE, TASK_TITLE_SEP, taskDir, tasksDir,
 } from './protocol.js';
 import type { Ownership } from './protocol.js';
+import { addressList, SHIPPED_REGISTRY, WORKER } from './registry.js';
 import {
   onTaskLock, sessionFile, sessionsDir, withTaskLock, workersDir,
 } from './sidecar.js';
@@ -326,7 +327,7 @@ export function identityLabel(home: string, task: string, addr: string, session:
 function applyParticipant(meta: TaskMeta, participant: Participant): TaskMeta {
   if (!isAddress(participant?.address)) {
     throw new GateError(`invalid participant address «${participant?.address}» — `
-      + 'expected orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>');
+      + `expected ${addressList(SHIPPED_REGISTRY)}`);
   }
   const rest = (meta.participants ?? []).filter((p) => p.address !== participant.address);
   meta.participants = [...rest, participant];
@@ -372,7 +373,7 @@ export function watchParticipant(home: string, id: string, address: string): { f
 // WHOLE journal and AFTER the participant write, or two spawns would lose a foreign track.
 export function titleFromLines(meta?: TaskMeta | null): string | null {
   const lines = [...new Set((meta?.participants ?? [])
-    .filter((p) => String(p.address ?? '').startsWith('worker:') && p.title)
+    .filter((p) => String(p.address ?? '').startsWith(`${WORKER}:`) && p.title)
     .map((p) => p.title as string))];
   return lines.length ? lines.join(TASK_TITLE_SEP) : null;
 }
@@ -456,7 +457,7 @@ export interface Outgoing {
 
 export function sendMessage(home: string, id: string, { from, to, type, body, artifactPath }: Outgoing): Message {
   if (!isAddress(from)) throw new Error(`unknown sender address «${from}»`);
-  if (!isAddress(to)) throw new Error(`unknown recipient address «${to}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
+  if (!isAddress(to)) throw new Error(`unknown recipient address «${to}» — ${addressList(SHIPPED_REGISTRY)}`);
   if (!MESSAGE_TYPES.includes(type)) {
     throw new Error(`type «${type}» is not a v1 protocol type: ${MESSAGE_TYPES.join(', ')}`);
   }

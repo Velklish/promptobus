@@ -3,7 +3,7 @@
     "fileOnly": 32,
     "citation": 43,
     "crossFile": 6,
-    "fileLevel": 54,
+    "fileLevel": 55,
     "bound": 52,
     "sameFileCitation": 10
   },
@@ -276,6 +276,9 @@
     "src/protocol.ts": [
       "../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals",
       "../docs/reference/04-protocol.md#samesession--whether-these-are-the-same-session-identifier--a-fallback-rule-for-records"
+    ],
+    "src/registry.ts": [
+      "../docs/reference/04-protocol.md#the-role-registry"
     ],
     "src/sidecar.ts": [
       "../docs/reference/01-overview.md#the-sidecar-state-beside-the-journal",

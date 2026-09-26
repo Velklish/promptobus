@@ -1,6 +1,9 @@
 // Addresses: the spelling, the transliteration and the refusals.
 // [reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals](../docs/reference/04-protocol.md#addresses-the-spelling-the-transliteration-and-the-refusals)
 import path from 'node:path';
+import {
+  ADDRESS_RE, addressList, APPROVER, ORCHESTRATOR, REVIEWER, roleEntry, SHIPPED_REGISTRY, WORKER,
+} from './registry.js';
 
 // Protocol v1 message types. **The value lives here**: send validates the list and must compile and
 // be tested without the CLI. There is never a second list — the literal-copy gate keeps one home.
@@ -8,7 +11,7 @@ export const MESSAGE_TYPES = Object.freeze([
   'task', 'status', 'question', 'answer', 'artifact', 'result', 'review',
 ]);
 
-export const ORCHESTRATOR = 'orchestrator';
+export { ORCHESTRATOR };
 
 /** Harness of a record that neither the journal nor the adapter named. Deliberately neutral: harness
  * names live with the drivers, and this is the admission that the field was never declared. */
@@ -17,7 +20,6 @@ export const UNDECLARED_HARNESS = 'undeclared';
 /** Role of a record whose address does not parse: a hand edit, a journal after a crash. */
 export const UNDECLARED_ROLE = 'undeclared';
 
-const ADDRESS_RE = /^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$/;
 export const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 // A gate refusal is addressed to a person, not to a crash dump: a stack would dress the most common
@@ -31,7 +33,7 @@ export function isAddress(addr: unknown): boolean {
 // Address to directory name: `:` is not legal on a Windows filesystem, and this is also the store v1
 // participant id. The throw stays bare and READERS hold it — one broken line must not cost the rest.
 export function addrDir(addr: unknown): string {
-  if (!isAddress(addr)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
+  if (!isAddress(addr)) throw new Error(`unknown address «${addr}» — ${addressList(SHIPPED_REGISTRY)}`);
   return (addr as string).replace(':', '-');
 }
 
@@ -39,19 +41,20 @@ export function addrDir(addr: unknown): string {
  * not derive it from the id: it is computed ONCE, when the participant is written. */
 export function roleOf(addr: unknown): string {
   const address = addr as string;
-  if (!isAddress(address)) throw new Error(`unknown address «${addr}» — orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`);
-  return address === ORCHESTRATOR ? ORCHESTRATOR : address.slice(0, address.indexOf(':'));
+  if (!isAddress(address)) throw new Error(`unknown address «${addr}» — ${addressList(SHIPPED_REGISTRY)}`);
+  const at = address.indexOf(':');
+  return at < 0 ? address : address.slice(0, at);
 }
 
 export function workerAddress(slug: string): string {
-  return `worker:${slug}`;
+  return `${WORKER}:${slug}`;
 }
 
 export function reviewerAddress(slug: string): string {
-  return `reviewer:${slug}`;
+  return `${REVIEWER}:${slug}`;
 }
 export function approverAddress(slug: string): string {
-  return `approver:${slug}`;
+  return `${APPROVER}:${slug}`;
 }
 
 export function requireTaskId(id: unknown): string {
@@ -74,7 +77,7 @@ export function participantFileStem(address: string): string {
   // An address with no slug yields no file name, and that must not be silent: the glue used to
   // return `undefined` and write `undefined.mcp.json`. Bare, like its neighbours: a caller error.
   if (!slug) throw new Error(`address «${address}» does not yield a participant file name — it has no slug`);
-  return kind === 'worker' ? slug : `${kind}-${slug}`;
+  return roleEntry(SHIPPED_REGISTRY, kind)?.stem === 'slug' ? slug : `${kind}-${slug}`;
 }
 
 // The slug goes into the task id, the worktree directory and the branch name — into a filesystem and
@@ -159,8 +162,8 @@ function field(p: WithMetadata | null | undefined, name: string): string | null 
   return typeof v === 'string' && v ? v : null;
 }
 
-/** Participant address — `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, `approver:<slug>`. It is
- * not assembled from the id: `addrDir` is injective, but a record with no field has no role to ask. */
+/** Participant address, in the grammar of `isAddress`. Not assembled from the id: `addrDir` is injective
+ * only over addresses a registry admits, and a record with no field has no role to ask. */
 export function addressOf(p: WithMetadata | null | undefined): string | null {
   return field(p, 'address');
 }

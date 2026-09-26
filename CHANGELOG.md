@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [04-protocol § The handover record](docs/reference/04-protocol.md#the-handover-record),
   [§ The gate record](docs/reference/04-protocol.md#the-gate-record).
 
+### Changed
+
+- **One role registry declares every address, stem, deny list, floor and route** (PB-266). `src/registry.ts` holds the
+  governance roles `orchestrator`, `teamlead`, `peer`, `reporter`, `user` and the step kinds `edits-tree`, `reads-diff`,
+  `writes-main-tree` with today's pipeline (floors 5, 9, 7) as an immutable value; `withSteps` admits declared steps and
+  `registryOf(host)` reads the new optional host member `pipeline()`, which no host answers yet. Visible changes:
+  `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are addresses — `PROMPTOBUS_ROLE`, `send`, `history
+  --participant`, a participant record and a foreign sender's registration accept them, and routing keeps them on the
+  orchestrator route; the parser takes any `<name>:<slug>`, and an undeclared name is refused at those doors instead;
+  `spawn` refuses a worker name starting with `teamlead-` or `peer-`, or equal to `orchestrator`, `reporter` or `user`.
+  [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
+
 ### Fixed
 
 - **A tmux `list-sessions` failure other than no server is no longer read as an empty server** (PB-264, PB-239.5).

@@ -22,6 +22,17 @@ export {
 } from './protocol.js';
 export type { Clock as TaskClock, Ownership, OwnershipRight } from './protocol.js';
 
+// Role registry: governance roles, step kinds and the default pipeline as an immutable value, and
+// `withSteps`, the door a declared step name comes in through. Every closed role list reads it.
+export {
+  ADDRESS_RE, addressList, admitsAddress, APPROVER, defaultFloor, EDITS_TREE, liftWords, packageDenyTools,
+  pipelineAddressNames, READS_DIFF, registryOf, REVIEWER, roleEntry, routedCatalogRoles, SHIPPED_REGISTRY,
+  STEP_KINDS, stemOwner, withoutStep, withSteps, WORKER, WRITES_MAIN_TREE,
+} from './registry.js';
+export type {
+  CatalogRole, DeclaredStep, HostDenyRole, PackageDeny, RoleEntry, RoleRegistry, StemShape, StepKind,
+} from './registry.js';
+
 // Protocol and store v1 — flat, not a namespace: the `v1` namespace existed because the flat names
 // were taken by the compatibility layer, and with that gone there is no second set here.
 export * from './v1/index.js';

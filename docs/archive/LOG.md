@@ -388,3 +388,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-239.5"></a>`PB-239.5-tmux-nonzero-list-reads-empty-server` · 2026-09-26 · batch PB-264 · — · A tmux list-sessions that fails for a reason other than no server still reads as an empty server
 - <a id="pb-243"></a>`PB-243-mailbox-delivery-cost` · 2026-09-26 · merged into PB-278 · — · Mail delivery to the orchestrator costs more than it carries
 - <a id="pb-179"></a>`PB-179-no-door-to-write-to-another-task` · 2026-09-26 · merged into PB-265 · — · A session cannot write to a participant of another task: its own address is nailed by its MCP config, and there is no `send` command
+- <a id="pb-266.1"></a>`PB-266.1-record-by-pattern-default-pipeline` · 2026-09-26 · merged into PB-277 · — · Gate and handover records refuse a declared step's address: their by pattern names the default pipeline only
+- <a id="pb-266"></a>`PB-266-role-registry` · 2026-09-26 · completed · — · One registry declares every role and step: parser, stems, denies, floors, schemas, routes

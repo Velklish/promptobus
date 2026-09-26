@@ -1,7 +1,7 @@
 # PB-277 · status, sweep, dismiss and stop address step:slug
 
 - **Order:** 140
-- **Scope:** [03-cli](../../reference/03-cli.md), `lib/status.js`, `lib/sweep.js`, `lib/dismiss.js`, `lib/stop.js`, `lib/spawn.js` (`refuseParticipantPrefix`)
+- **Scope:** [03-cli](../../reference/03-cli.md), `lib/status.js`, `lib/sweep.js`, `lib/dismiss.js`, `lib/stop.js`, `lib/spawn.js` (`refuseParticipantPrefix`), `schemas/v1/gate-record.schema.json`, `schemas/v1/handover-record.schema.json`
 - **Created:** 2026-09-26
 - **Dependencies:** PB-273, PB-274
 - **Cost:** major
@@ -15,6 +15,7 @@ Participant files in `workers/` are named by `participantFileStem`: the worker's
 - `status`, `sweep`, `dismiss` and `stop` accept any address the registry admits; `status` prints steps in declaration order per piece.
 - File stems for gate steps are `<name>-<slug>`; `refuseParticipantPrefix` reads the declared names.
 - `sweep <step>:<slug>` removes that participant's files, blobs and refs and never the owner's worktree; the keep list of [ADR-016](../../adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) is derived per kind.
+- The `by` field of the gate and handover records admits a declared step's address. Both schemas pin it to `^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$`, so a record by `security:x` is refused at `send` while `worker:x` passes (measured with `recordRefusal` from `lib/handoff.js`), and `test/registry.test.mjs` pins both patterns to the shipped pipeline. Decide between a pattern generic over step names and a check against the registry at `send` beside the schema ([PB-266.1](../../archive/LOG.md#pb-266.1)).
 
 ## Out of scope
 
@@ -25,3 +26,4 @@ Participant files in `workers/` are named by `participantFileStem`: the worker's
 - `sweep security:x` removes `workers/security-x.*` and the blobs it sent, and leaves the owner's worktree and branch.
 - `spawn --worker security-x` is refused naming the declared step, as `reviewer-x` is refused today.
 - `status` on a task with a four-step pipeline prints each piece's steps in declaration order with the usual session state.
+- A gate record and a handover record sent by an admitted step's address pass at `send`; one by an address the registry does not admit is refused.

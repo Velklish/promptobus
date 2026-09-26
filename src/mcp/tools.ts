@@ -1,6 +1,7 @@
 // The tool declarations.
 // [reference/01-overview.md#the-tool-declarations](../../docs/reference/01-overview.md#the-tool-declarations)
 import { MESSAGE_TYPES } from '../protocol.js';
+import { addressList, SHIPPED_REGISTRY } from '../registry.js';
 
 /** One tool declaration, as `tools/list` returns it. */
 export interface McpTool {
@@ -32,14 +33,14 @@ const TASK_ARG = {
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'promptobus_send',
-    description: 'Send a message to a task participant. Address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>. '
+    description: `Send a message to a task participant. Address: ${addressList(SHIPPED_REGISTRY)}. `
       + 'Workers and approvers in the same task may write directly; other participant traffic goes through the orchestrator. '
       + 'The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, '
       + 'and if your mailbox has unread mail — its count.',
     inputSchema: {
       type: 'object',
       properties: {
-        to: { type: 'string', description: 'recipient address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>' },
+        to: { type: 'string', description: `recipient address: ${addressList(SHIPPED_REGISTRY)}` },
         type: { type: 'string', enum: MESSAGE_TYPES, description: 'v1 protocol message type' },
         body: { type: 'string', description: 'text: assignment, status, question, answer, result, or review remarks' },
         artifactPath: {

@@ -2,6 +2,7 @@
 // [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
+import type { DeclaredStep, HostDenyRole } from './registry.js';
 import { ROOT_DIR } from './v1/layout.js';
 
 /** Host object marker: the suite uses it to tell a host from a root string. */
@@ -156,7 +157,9 @@ export interface PromptobusHost {
 
   participantServers(): HostServers;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
-  participantDenyTools?(role: 'reviewer' | 'approver'): HostMcpToolClassification;
+  participantDenyTools?(role: HostDenyRole): HostMcpToolClassification;
+  /** Optional declared pipeline steps; absent, the role registry is the shipped one. */
+  pipeline?(): readonly DeclaredStep[];
   memorySection(toolName: (server: string, name: string) => string): string | null;
 
   resolveRepo(query: string): Promise<HostRepo>;

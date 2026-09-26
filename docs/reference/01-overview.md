@@ -197,7 +197,8 @@ Source: `src/index.ts`.
 
 Public Promptobus surface, the "." entry point. It is **one** — protocol and store v1:
 tasks, participants, messages, artifacts, recoverable fan-out, and history.
-Alongside it go out the bus vocabulary, task-directory files the store does not
+Alongside it go out the bus vocabulary, the role registry ([04-protocol § The role
+registry](04-protocol.md#the-role-registry)), task-directory files the store does not
 hold, former-root migration, the MCP factory, the driver contract, and the
 warden state machine.
 

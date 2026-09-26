@@ -11,7 +11,16 @@ reviewer:<slug>
 approver:<slug>
 ```
 
-`slug` is `[a-z0-9][a-z0-9-]*`. See `src/protocol.ts` `isAddress`. The
+`slug` is `[a-z0-9][a-z0-9-]*`. See `src/protocol.ts` `isAddress`. The list above is
+the orchestrator and the shipped pipeline of the role registry ([§ The role
+registry](#the-role-registry)). The grammar admits the slugless `orchestrator`, `reporter`
+and `user` and `<name>:<slug>` under any other step-shaped name; which of those names exist
+is the registry's answer, asked where a participant is written or addressed. The governance
+addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it; nothing
+lifts them yet, the texts that list addresses do not print them, and routing keeps them on
+the orchestrator route. `addrDir` is injective only over admitted addresses — `reviewer-two:x` and
+`reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
+refuses an overlapping declaration and the registry doors refuse an unknown role. The
 default routing rule keeps participant traffic with the orchestrator. One deliberate
 exception opens direct worker↔approver traffic for a piece once a reviewer result is on record;
 worker↔worker and every reviewer↔participant route remain refused. A direct sender must
@@ -58,8 +67,10 @@ During a consuming mailbox read, a filesystem refusal while reading or moving on
 The engine receives either a workspace `root`, which resolves to `<root>/.promptobus`, or the store `home` itself. It never searches for a root or reads an environment variable. Under `tasks/<task-id>/`, `task.json` is the journal; `messages/` holds canonical messages; `intents/` holds open fan-outs; `inbox/<participant>/` is unread mail; `history/<participant>/` is mail that was read; `blobs/` holds immutable SHA-256 payloads; and `artifacts/` holds their metadata. A task journal lock is `.lock/`. An open intent has a neighbouring `<id>.owner` lease. `broken/inbox/<participant>/`, `broken/artifacts/`, and `broken/messages/` isolate malformed records without taking the rest of the task down. The adapter's `files/` directory is a human-facing sidecar, not an engine v1 path.
 
 Participant settings and launch sidecars use `participantFileStem`: a worker keeps
-`<slug>`, while reviewer and approver use `reviewer-<slug>` and
-`approver-<slug>`. Worker names beginning with either reserved prefix are refused,
+`<slug>`, while every other slugged address of the registry uses `<name>-<slug>` —
+`reviewer-<slug>`, `approver-<slug>`, `teamlead-<slug>`, `peer-<slug>` and a declared
+step's. A worker name that begins with one of those prefixes, or that equals a slugless
+address — `orchestrator`, `reporter`, `user` — is refused and the refusal names the role,
 so two addresses cannot name the same sidecar.
 
 Canonical messages, intent records and inbox or history references are hard links to one inode. The blob is also immutable: multiple artifact metadata records may name one content-addressed payload, and `prune` removes the task and its blobs together.
@@ -363,6 +374,74 @@ The home is here, not in either store, because the package has two: production v
 (`store.ts`) and legacy, kept so migration can still read
 ([legacy-store.ts](../../src/legacy-store.ts)). A value that lived in one of them would be
 imported by the other across a version boundary — and they would drift in silence.
+
+### The role registry
+
+Source: `src/registry.ts`.
+
+One table declares every addressed role and what each carries. It has two layers: the
+governance roles the package fixes ([ADR-021](../adr/adr-021-task-tree-and-governance-routes.md),
+[ADR-022](../adr/adr-022-user-addressee-and-orchestrator-debt.md)) and the pipeline steps, each an
+instance of one of three step kinds ([ADR-020](../adr/adr-020-role-registry-and-declared-pipeline.md)).
+
+| Entry | Layer, kind | Address | File stem | Package deny list | Floor | Catalog role | Routed | Lift text |
+|---|---|---|---|---|---|---|---|---|
+| `orchestrator` | governance | `orchestrator` | none; the name is reserved | none | — | — | no | — |
+| `teamlead` | governance | `teamlead:<slug>` | `teamlead-<slug>` | none | — | — | no | — |
+| `peer` | governance | `peer:<slug>` | `peer-<slug>` | none | — | — | no | — |
+| `reporter` | governance | `reporter` | none; the name is reserved | none | — | — | no | — |
+| `user` | governance | `user` | none; the name is reserved | none | — | — | no | — |
+| `worker` | step, `edits-tree` | `worker:<slug>` | `<slug>` | none | 5 | `worker` | yes | `worker` |
+| `reviewer` | step, `reads-diff` | `reviewer:<slug>` | `reviewer-<slug>` | the harness's write tools; the host classifies MCP writes as `reviewer` | 9 | `reviewer` | yes | `reviewer` |
+| `approver` | step, `writes-main-tree` | `approver:<slug>` | `approver-<slug>` | none; the host classifies MCP writes as `approver` | 7 | `approver` | yes | `approver` |
+
+The deny list, floor, catalog role, routing and lift text of a step are its kind's. The
+catalog stays rated per kind, so `ROUTED_ROLES` is the catalog roles of the three kinds and
+a step adds none.
+
+**The registry is a value, and the host hands it over.** `SHIPPED_REGISTRY` is the table above,
+frozen. `withSteps(registry, declared)` returns a new registry with each declared step admitted:
+a name in `[a-z][a-z0-9-]{0,31}` and one of the three kinds, refused when it is a governance
+name, when it is already admitted as another kind, or when it overlaps the name of any slugged
+entry, `worker` included, in the `<name>-` shape — `reviewer-two:x` and `reviewer:two-x`, or
+`worker-foo:x` and `worker:foo-x`, would share one participant id (`addrDir`), one mailbox and one
+file stem. An admitted step's stem is
+`<name>-<slug>` and its fields are its kind's. `registryOf(host)` is `withSteps` over the host's
+optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)), which no host answers
+yet, so today it is the shipped registry; it is computed per call, and the package keeps no table
+of its own that anything writes into.
+
+**The grammar needs no registry.** `isAddress`, `roleOf`, `addrDir` and `participantFileStem`
+admit the slugless names (`orchestrator`, `reporter`, `user`) and `<name>:<slug>` under any other
+step-shaped name, so no regular expression is edited for a step. Which names are known is the
+registry's answer (`admitsAddress`), asked by the doors that hold one: the participant record write
+(`participantRecord`, the shipped registry unless the caller hands another), the session identity
+behind the MCP join and every command (`resolveIdentity`), `promptobus send`, the MCP
+`promptobus_send`, and `history --participant`. An undeclared `boss:x` parses and is refused there.
+
+**Who reads which registry.** The host's, through `registryOf(host)`: the package deny list and
+the role `participantDenyTools` is asked with (`lib/review.js`, `lib/approver.js`), the reserved
+worker names (`refuseParticipantPrefix`), the participant records the three lifts write, the lift
+words — a step is announced with its kind's words, `the reviewer` for a `reads-diff` step —
+(`lib/liftoff.js` and the Cursor and Codex drivers), the `models --role` help, and the doors
+above with their address lists. The shipped one, for what no declaration changes: `ROUTED_ROLES`,
+the default floors and `DEFAULT_ROLE`, the grammar, the `promptobus_send` description, and the
+address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
+
+**What a kind does not carry yet.** The behaviour that differs by role compares the shipped step
+names, so a declared step inherits the fields above and none of these rights: the routing policy
+and its worker–approver exception (`lib/store.js`), the approver and title lookups over the task
+record (`approverHere`, `unprovenApproverLine`, `titleFromLines`, and the approver seat in
+`lib/review.js`), `readableName` (it drops a shipped step's prefix and prints any other address
+whole), the guard's participant prefixes (`lib/guard.js`), the Codex
+holder's approval split (`lib/codex-session.js`), the resolver's live workers and reviewer bonus,
+the drivers' sandbox and cwd choices, their re-lift routes and `status`'s. The `by` pattern of the
+gate and handover records names the shipped pipeline only.
+
+**The parity test.** The schemas are static JSON, so `test/registry.test.mjs` fails when a
+model-routing role enum, the overlay example's floors or the records' `by` pattern disagree with the
+shipped registry, and when a role word is spelled as a literal anywhere in `lib/` or `src/` outside
+it. It walks every entry, two declared steps included, through each surface above.
 
 ### The bus contract constants
 

@@ -5,6 +5,7 @@ import {
   addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, MAILBOX_COPY, nameOf, ORCHESTRATOR, ownerOf,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
+import { SHIPPED_REGISTRY, withoutStep } from '../registry.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from '../v1/model.js';
 import type { PromptobusService } from './service.js';
 
@@ -62,25 +63,18 @@ export function summarizeMessages(msgs: MessageV1[], from: (m: MessageV1) => str
 // whole: a title with parentheses will survive.
 const NAME_STAMP = /\s*\(\d{4}-\d{4}(?:,[^()]*)?\)$/;
 
-// Readable participant name — the journal record's `name` field, the one the
-// session is shown under in the harness session list. No name — the address
-// without the role prefix. `orchestrator` has no name at all: we call it by
-// the word; the `of` flag used to pick a genitive in Russian and is kept so
-// callers do not change.
+// Readable participant name: the record's `name`; no name — the address without its step prefix, a
+// governance address whole. `orchestrator` is called by the word; `of` is kept so callers do not change.
 export function readableName(meta: TaskV1 | null | undefined, addr: string, of = false): string {
   if (addr === ORCHESTRATOR) return of ? 'the orchestrator' : 'orchestrator';
   const rec = (meta?.participants ?? []).find((p) => addressOf(p) === addr);
   const name = String(nameOf(rec) ?? '').replace(NAME_STAMP, '').trim();
-  return name || String(addr ?? '').replace(/^(?:worker|reviewer|approver):/, '');
+  // Keyed on the shipped step names, not on step kinds: 04-protocol § The role registry.
+  return name || withoutStep(SHIPPED_REGISTRY, String(addr ?? ''));
 }
 
-/**
- * Message sender address. The canon carries the participant record ID; a
- * person reads the address — the translation is taken from the task journal
- * and only from there: `addrDir` is injective, but a record that is already
- * gone from the journal has no one to ask for its role, and then the id
- * itself is printed.
- */
+/** Sender address, translated from the journal only: `addrDir` is injective over admitted addresses alone,
+ * and a record already gone from the journal has no role to ask, so the id itself is printed. */
 export function senderAddress(meta: TaskV1 | null | undefined, m: MessageV1): string {
   const rec = (meta?.participants ?? []).find((p) => p.id === m.sender);
   return addressOf(rec) ?? String(m.sender ?? '');
