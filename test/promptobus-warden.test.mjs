@@ -34,6 +34,7 @@ const TASK = 'sup-t20260829-150000';
 const SESSION = 'sess-sup-0001';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+const { glanceInbox } = await import(path.join(here, '..', 'dist', 'v1', 'messages.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const HOST = hostOf(SB);
 const wdn = await import(path.join(here, '..', 'lib', 'warden.js'));
@@ -560,19 +561,23 @@ check(': headers count against the budget — with short bodies there is still a
 check(': a batch of short lines also fits inside the budget in full',
   tinyCard.length - frame <= KNOCK_TEXT_MAX, `${tinyCard.length - frame} at a budget of ${KNOCK_TEXT_MAX}`);
 
-// The warden does not parse a broken message and does not set it aside: that report is
-// addressed to the mailbox reader, and its `warn` goes to stdio: 'ignore'.
+// A record that does not parse is named (`schema-invalid` and the ref) and left in place.
 const GLANCE = 'sup-glance-t20260829-160003';
 store.createTask(HOME, { id: GLANCE, title: 'заглянуть в ящик', owner: SESSION });
 store.upsertParticipant(HOME, GLANCE, store.participantRecord('worker:api'));
 store.sendMessage(HOME, GLANCE, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'целое' });
 const inbox = store.inboxDir(HOME, GLANCE, 'worker:api');
-writeFileSync(path.join(inbox, '20260829T000000000-9999-orchestrator.json'), '{битое');
-const glanced = store.glanceInbox(HOME, GLANCE, 'worker:api');
-check(': glanceInbox returns the intact messages and stays quiet about the broken one',
-  glanced.length === 1 && glanced[0].body === 'целое', JSON.stringify(glanced));
-check(`: the broken one stays in the mailbox — its own reader will parse it, not the warden`,
-  existsSync(path.join(inbox, '20260829T000000000-9999-orchestrator.json')));
+const brokenName = '20260829T000000000-9999-orchestrator.json';
+writeFileSync(path.join(inbox, brokenName), '{битое');
+const glanced = glanceInbox(HOME, GLANCE, store.addrDir('worker:api'));
+check(': glanceInbox returns the intact messages and names the one that does not parse',
+  glanced.messages.length === 1 && glanced.messages[0].body === 'целое'
+  && glanced.broken.length === 1 && glanced.broken[0].name === brokenName
+  && glanced.broken[0].code === 'schema-invalid' && /did not parse/.test(glanced.broken[0].note)
+  && glanced.broken[0].attic === null,
+  JSON.stringify(glanced));
+check(': the broken one stays in the mailbox — its own reader will parse it, not the warden',
+  existsSync(path.join(inbox, brokenName)));
 
 // --- raising the warden with any command ----------------------------------------
 

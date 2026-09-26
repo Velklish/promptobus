@@ -427,7 +427,7 @@ function previewOf(home: string, meta: TaskV1, m: MessageV1): NotificationMessag
   };
 }
 
-/** Keep a filesystem refusal visible in the same preview budget as a message. */
+/** Keep a refused or unparsable ref visible in the same preview budget as a message. */
 function brokenPreview(note: BrokenNote, now: number): NotificationMessage {
   return {
     id: null,
@@ -616,7 +616,7 @@ export async function supervisorRound(home: string, task: string, {
       h.triedAt = new Date(now).toISOString();
       h.wake = print;
       // The mailbox is read exactly here, not every round. `glanceInbox`, not `peekInbox`: the
-      // warden does not set a broken ref aside, but carries its refusal in the postcard.
+      // warden does not set a broken ref aside, but names its refusal or parse error in the postcard.
       const { messages: box, broken } = glanceInbox(home, task, p.id, faults);
       h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
       // A retry carries only what arrived after the last knock; the full list goes where the session
@@ -645,9 +645,11 @@ export async function supervisorRound(home: string, task: string, {
         h.knockedFirst = box[0]?.id ?? null;
         delete h.coalesced;
         knocked.push(addr);
-        // How far we knocked: not only what was shown, but also what went into the "and N more"
-        // tail — the postcard said it, and there is no need to repeat it.
-        if (box.length && !broken.length) h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
+        // Cutoff is the last id the postcard covered, including its "and N more" tail.
+        // A schema-invalid note does not hold it; a refused ref does, until a later glance reads it.
+        if (box.length && !broken.some((note) => note.code !== 'schema-invalid')) {
+          h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
+        }
         const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
         events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
           + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`

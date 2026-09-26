@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A malformed mailbox ref is named, and the transcript path is recorded from the session's start** (PB-260).
+  `glanceInbox` reports a record that does not parse as `schema-invalid` with the ref name, on the same postcard
+  line and health mark a filesystem refusal already uses, and still does not move the ref. A `schema-invalid`
+  note does not hold the knock cutoff, so a later retry carries only mail that arrived after that knock; a
+  refused ref still holds it. The guard records `transcript_path` on SessionStart the same way it does on Stop,
+  so a question in the first turn is visible before any Stop. The artifact-read seam covers the direct reads
+  only; the bulk listing — every caller of the exported `listArtifacts` — takes no fault hook.
+  [04-protocol § Message types](docs/reference/04-protocol.md#message-types),
+  [§ Fault injection](docs/reference/04-protocol.md#fault-injection),
+  [hooks-and-trust § `awaitingUser`](docs/guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user).
+
 - **A Codex lift sweeps only the homes of its own registry** (PB-258). Participant homes stay direct children of `$TMPDIR/promptobus-codex-homes`. The directory name ends with `_` and the sha1 of `path.resolve` of `harnessStateHome('codex', env)`, and `sweepParticipantHomes` removes a child only when that suffix is its own and no session record names the path. When that function refuses, the sweep removes nothing. A second registry under the same root is left in place, including by a single suite file run on its own. A home an older version left, with no such suffix, is not removed by a sweep; it stays until an operator deletes it. `--dry-run` prints the path a real lift will use, and the removal guard still allows only a direct child of that root. The lift plan names that home from the environment the lift passes — the process environment overlaid with the host's extra environment — rather than from `process.env` alone.
   [05-drivers § sweepParticipantHomes](docs/reference/05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names),
   [03-cli § Spawn](docs/reference/03-cli.md#spawn).

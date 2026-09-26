@@ -580,8 +580,8 @@ export function peekInbox(home: string, task: string, participant: string, fault
   return { messages, broken };
 }
 
-/** Glance into the mailbox in silence: no refs touched and nothing set aside. Needed by the
- * supervisor — its diagnostics go nowhere anyone would read, and what was set aside would vanish. */
+/** Glance without consuming: no refs moved. A refusal or a record that does not parse is named
+ * in `broken` and left in place — setting it aside would vanish into ignored supervisor diagnostics. */
 export function glanceInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
@@ -603,8 +603,12 @@ export function glanceInbox(home: string, task: string, participant: string, fau
     }
     try {
       messages.push(JSON.parse(raw) as MessageV1);
-    } catch {
-      // Malformed records remain for the consuming reader to classify and set aside.
+    } catch (e) {
+      // Named, not set aside: the consuming read is what isolates it.
+      broken.push({
+        name, code: 'schema-invalid', note: `did not parse (${(e as Error).message})`,
+        attic: null, failure: null,
+      });
     }
   }
   return { messages, broken };

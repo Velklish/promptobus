@@ -322,12 +322,13 @@ asks `awaitingUser` below instead.
 Source: `src/supervisor.ts`, `awaitingUser`; `lib/guard.js`; the Claude
 driver's `awaitsUser` ([05-drivers.md](../reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question)).
 
-The guard's Stop path keeps the hook input's `transcript_path` for its
-address, together with the session that sent it
-(`waits/<address>.transcript.json`). The payload field is documented in
+The guard records the hook input's `transcript_path` from the session's
+start and again on Stop, for its address, together with the session that
+sent it (`waits/<address>.transcript.json`). The payload field is documented in
 the Claude Code hooks reference
 (<https://code.claude.com/docs/en/hooks>, common input fields); the Stop
-hook is already installed, so no workspace setting changes. The retry
+and SessionStart hooks are already installed — install writes both — so
+no workspace setting changes. The retry
 asks the address's driver whether that transcript holds a question to
 the user that has no answer yet. While it does, the `KNOCK_RETRY_SEC`
 retry is withheld (03-cli § Guard and warden). The first knock for new

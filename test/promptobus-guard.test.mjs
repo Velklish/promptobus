@@ -291,6 +291,58 @@ const seenTranscript = store.readTranscript(HOME, TASK, 'orchestrator');
 check(': the Stop payload\'s transcript_path is recorded for the address, with its session',
   seenTranscript?.path === path.join(ROOT, 'transcript.jsonl') && seenTranscript?.session === SESSION,
   JSON.stringify(seenTranscript));
+send('status', 'до старта сессии');
+const startPath = path.join(ROOT, 'session-start.jsonl');
+const sessionStart = asHook(JSON.stringify({
+  session_id: SESSION,
+  transcript_path: startPath,
+  cwd: SB,
+  hook_event_name: 'SessionStart',
+}));
+const fromStart = store.readTranscript(HOME, TASK, 'orchestrator');
+check(': a SessionStart payload records transcript_path for the address, and does not return the turn',
+  sessionStart.status === 0 && sessionStart.stdout === '' && sessionStart.stderr === ''
+  && fromStart?.path === startPath && fromStart?.session === SESSION
+  && !existsSync(MARK_FILE),
+  `status=${sessionStart.status} out=${JSON.stringify(sessionStart.stdout)} err=${JSON.stringify(sessionStart.stderr)} ${JSON.stringify(fromStart)}`);
+store.readInbox(HOME, TASK, 'orchestrator');
+const ownerTranscript = store.readTranscript(HOME, TASK, 'orchestrator');
+const foreignStart = asHook(JSON.stringify({
+  session_id: 'sess-not-the-owner-7777',
+  transcript_path: path.join(ROOT, 'foreign-start.jsonl'),
+  cwd: SB,
+  hook_event_name: 'SessionStart',
+}));
+const stillOwner = store.readTranscript(HOME, TASK, 'orchestrator');
+check(': a SessionStart from a non-owner session leaves the owner transcript record unchanged',
+  foreignStart.status === 0 && foreignStart.stderr === ''
+  && stillOwner?.path === ownerTranscript?.path && stillOwner?.session === ownerTranscript?.session
+  && stillOwner?.at === ownerTranscript?.at,
+  `status=${foreignStart.status} err=${JSON.stringify(foreignStart.stderr)} ${JSON.stringify(stillOwner)}`);
+const slotTask = 'guard-slot-t20260926-010000';
+const hintTask = 'guard-hint-t20260926-010001';
+const slotSession = 'sess-slot-ownerless-1';
+store.createTask(HOME, { id: slotTask, title: 'слот транскрипта' });
+store.createTask(HOME, { id: hintTask, title: 'намёк преемнику', owner: 'sess-hint-owner-dead' });
+store.upsertParticipant(HOME, hintTask, store.participantRecord('worker:api'));
+store.sendMessage(HOME, hintTask, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'для намёка' });
+store.writeWake(HOME, hintTask, 'orchestrator', {
+  socket: path.join(ROOT, 'slot-dead.sock'), token: 't', session: 'sess-hint-owner-dead',
+});
+const slotFile = path.join(store.taskDir(HOME, slotTask), 'waits', `${store.addrDir('orchestrator')}.transcript.json`);
+mkdirSync(path.dirname(slotFile), { recursive: true });
+mkdirSync(slotFile);
+const slotStart = asHook(JSON.stringify({
+  session_id: slotSession,
+  transcript_path: path.join(ROOT, 'slot-refused.jsonl'),
+  cwd: SB,
+  hook_event_name: 'SessionStart',
+}), { PROMPTOBUS_TASK: slotTask });
+check(': a SessionStart with a refused transcript slot stays status 0 with empty stderr and still returns the successor hint',
+  slotStart.status === 0 && slotStart.stderr === '' && slotStart.stdout.includes(hintTask),
+  `status=${slotStart.status} out=${JSON.stringify(slotStart.stdout)} err=${JSON.stringify(slotStart.stderr)}`);
+store.closeTask(HOME, slotTask);
+store.closeTask(HOME, hintTask);
 // A refused transcript write is additive evidence lost, not a lost turn end: the wake and the mark still land.
 const transcriptSlot = path.join(store.taskDir(HOME, TASK), 'waits', `${store.addrDir('orchestrator')}.transcript.json`);
 rmSync(transcriptSlot, { force: true });

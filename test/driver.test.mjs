@@ -13,7 +13,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -592,6 +592,60 @@ test('an unreadable inbox ref is named in the postcard and clears on a later gla
   // A miss would make the negative check vacuously true, so the line is required first.
   assert.ok(secondStatusLine, secondStatus);
   assert.ok(!secondStatusLine.includes('unreadable refs:'), secondStatus);
+});
+
+test('a malformed inbox ref is named in the postcard and stays in the mailbox', async () => {
+  const task = newTask();
+  const driver = fakeDriver('fake');
+  const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
+  put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
+  bus.writeWake(home, task, 'worker:a', { socket: path.join(SB, 'malformed-ref.sock') });
+  send(task, 'worker:a', 'task', 'the intact message');
+  const box = engine.inboxPath(task, 'worker-a');
+  const malformedRef = '20260926T000000000-0001-malformed.json';
+  writeFileSync(path.join(box, malformedRef), '{not json');
+
+  const round = await bus.supervisorRound(home, task, { registry });
+  const note = driver.calls.activate[0].notification;
+  const postcard = previewBlock(note.messages);
+  assert.equal(note.unread, 2);
+  assert.ok(postcard.includes('the intact message'), postcard);
+  assert.ok(postcard.includes('schema-invalid'), postcard);
+  assert.ok(postcard.includes(malformedRef), postcard);
+  assert.ok(note.messages.some((message) => message.type === 'mailbox-broken'
+    && message.body === `unreadable ref ${malformedRef}: schema-invalid`), postcard);
+  assert.ok(round.events.some((event) => event.includes(`schema-invalid ${malformedRef}`)), round.events.join('\n'));
+  const statusText = capture(() => status(path.dirname(home), { task, sessions: {} }));
+  const statusLine = statusText.split('\n')
+    .find((line) => line.trimStart().startsWith('worker:a \u00b7')) ?? '';
+  assert.ok(statusLine.includes(`unreadable refs: schema-invalid ${malformedRef}`), statusText);
+  assert.ok(existsSync(path.join(box, malformedRef)), 'the glance does not move the ref');
+
+  const knockedTo = bus.readHealth(home, task)['worker:a'].knockedTo;
+  assert.equal(typeof knockedTo, 'string');
+  const triedAt = Date.parse(bus.readHealth(home, task)['worker:a'].triedAt);
+  await bus.supervisorRound(home, task, {
+    registry,
+    now: triedAt + bus.KNOCK_RETRY_SEC * 1000 + 1,
+  });
+  const second = driver.calls.activate[1].notification;
+  const secondCard = previewBlock(second.messages);
+  assert.ok(!secondCard.includes('the intact message'), secondCard);
+  assert.ok(secondCard.includes(malformedRef), secondCard);
+
+  const read = store.readInbox(home, task, 'worker:a');
+  assert.ok(read.broken.some((line) => line.includes(malformedRef)), read.broken.join('\n'));
+  assert.ok(!existsSync(path.join(box, malformedRef)));
+  assert.ok(existsSync(path.join(store.brokenDir(home, task, 'worker:a'), malformedRef)));
+  await bus.supervisorRound(home, task, {
+    registry,
+    now: triedAt + bus.KNOCK_RETRY_SEC * 1000 + 2,
+  });
+  const cleared = capture(() => status(path.dirname(home), { task, sessions: {} }));
+  const clearedLine = cleared.split('\n')
+    .find((line) => line.trimStart().startsWith('worker:a \u00b7')) ?? '';
+  assert.ok(clearedLine, cleared);
+  assert.ok(!clearedLine.includes('unreadable refs:'), cleared);
 });
 
 test('a pull-driver does not wake at all, but its unread is visible', async () => {
