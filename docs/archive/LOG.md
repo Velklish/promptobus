@@ -392,3 +392,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-266"></a>`PB-266-role-registry` · 2026-09-26 · completed · — · One registry declares every role and step: parser, stems, denies, floors, schemas, routes
 - <a id="pb-268"></a>`PB-268-install-lays-out-skills` · 2026-09-26 · completed · — · promptobus install lays out the package's process skills and owns them
 - <a id="pb-278"></a>`PB-278-mailbox-headers` · 2026-09-26 · completed · — · The mailbox returns headers and the postcard carries the stub
+- <a id="pb-282"></a>`PB-282-near-limit-exclusion` · 2026-09-26 · completed · — · A tuple whose binding window is 90 % spent leaves automatic selection, and the lift names its near-limit windows
+- <a id="pb-283"></a>`PB-283-near-limit-without-its-line` · 2026-09-26 · merged into PB-282 · — · spawn prints near-limit three times per participant while models prints no near-limit line

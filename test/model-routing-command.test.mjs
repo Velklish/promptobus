@@ -42,13 +42,17 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import Ajv2020 from 'ajv/dist/2020.js';
 
 import { captureSplit, quiet } from './console.mjs';
 import { adapterMap, answeringStub, counter, unauthenticatedStub } from './routing-stubs.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const { models, routingContext, routingLine } = await import(path.join(here, '..', 'lib', 'models.js'));
+const {
+  models, routingContext, routingLine, routingMetadata,
+} = await import(path.join(here, '..', 'lib', 'models.js'));
+const SCHEMAS = path.join(here, '..', 'schemas', 'model-routing');
 const { planSpawn, spawn: spawnRaw } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { planReview, review } = await import(path.join(here, '..', 'lib', 'review.js'));
 const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
@@ -968,4 +972,205 @@ test('a repeat spawn at a routed address does not re-route, and says why', async
   assert.equal(plan.routing, null, 'a repeat lift routes nothing');
   assert.match(plan.routingSkipped, /--strategy routes a lift/);
   assert.match(plan.routingSkipped, /lifted by harness /);
+});
+
+// --- a nearly spent window leaves automatic selection -----------------------
+
+const HOURS = 3600_000;
+const CODEX_RESET = new Date(Date.now() + 4 * HOURS).toISOString();
+
+/**
+ * The morning the owner measured: Codex's session window at `codexUsed` %,
+ * Claude well inside its week, Cursor logged out. The models are the ones the
+ * catalog rates for a reviewer on each harness, so the reviewer rows reach the
+ * window step rather than falling at the inventory one. `codexResetAt: null`
+ * leaves the session window with no reset stamp at all.
+ */
+const nearlySpent = (codexUsed, {
+  codexCheckedAt = new Date().toISOString(), codexResetAt = CODEX_RESET, claudeUsed = 30,
+  weeklyUsed = 40, weeklyResetAt = new Date(Date.now() + 72 * HOURS).toISOString(),
+} = {}) => ({
+  claude: entry('available', null, {
+    models: [{ model: 'claude-opus-5', rated: true }],
+    windows: [{
+      id: 'weekly', kind: 'weekly', usedPercent: claudeUsed, lengthSec: 604800,
+      resetAt: new Date(Date.now() + 96 * HOURS).toISOString(), scope: null,
+    }],
+  }),
+  cursor: entry('unavailable', 'not_authenticated'),
+  codex: entry('available', null, {
+    checkedAt: codexCheckedAt,
+    models: [{ model: 'gpt-6-astra', rated: true }],
+    windows: [
+      {
+        id: 'primary', kind: 'session', usedPercent: codexUsed, lengthSec: 18000,
+        ...(codexResetAt === null ? {} : { resetAt: codexResetAt }), scope: null,
+      },
+      {
+        id: 'secondary', kind: 'weekly', usedPercent: weeklyUsed, lengthSec: 604800,
+        resetAt: weeklyResetAt, scope: null,
+      },
+    ],
+  }),
+});
+
+/** `models --strategy quality --role reviewer --json` on that cache, as the document it prints. */
+async function reviewerDecision(codexUsed, { now = Date.now(), ...fixture } = {}) {
+  seedCache(nearlySpent(codexUsed, fixture));
+  const out = sink();
+  await models(WS, {
+    strategy: 'quality', role: 'reviewer', json: true, adapterFor: probeSet(counter()), output: out, now,
+  });
+  return JSON.parse(out.text);
+}
+
+/** The same cache through the routed-lift path, which is where `--harness` and `--model` arrive. */
+async function constrainedDecision(codexUsed, constraint = {}) {
+  seedCache(nearlySpent(codexUsed));
+  const ctx = await routingContext(WS, {
+    strategy: 'quality', role: 'reviewer', dryRun: true, adapterFor: probeSet(counter()), ...constraint,
+  });
+  return { decision: ctx.decide(), snapshot: ctx.snapshot };
+}
+
+const codexRows = (decision) => decision.candidates.filter((c) => c.harness === 'codex');
+
+test('at 96 % used every codex tuple that would have been scored leaves selection, and a claude tuple is picked', async () => {
+  const room = await reviewerDecision(89);
+  const scoredAt89 = codexRows(room).filter((c) => c.score).map((c) => c.tupleId);
+  assert.ok(scoredAt89.length > 0, 'at 89 % some codex reviewer tuple must reach scoring, or this check proves nothing');
+
+  const decision = await reviewerDecision(96);
+  assert.equal(decision.chosen?.harness, 'claude', JSON.stringify(decision.chosen));
+  assert.deepEqual(codexRows(decision).filter((c) => c.score).map((c) => c.tupleId), [],
+    'no codex tuple may be scored past the threshold');
+  for (const id of scoredAt89) {
+    const row = decision.candidates.find((c) => c.tupleId === id);
+    assert.equal(row.excluded?.code, 'window-nearly-spent', `${id}: ${JSON.stringify(row.excluded)}`);
+    assert.match(row.excluded.detail, /codex session window "primary" is 96 % used/);
+    assert.ok(row.excluded.detail.includes(`resets at ${CODEX_RESET}`), row.excluded.detail);
+  }
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  for (const name of readdirSync(SCHEMAS).filter((n) => n.endsWith('.schema.json'))) {
+    ajv.addSchema(JSON.parse(readFileSync(path.join(SCHEMAS, name), 'utf8')));
+  }
+  const valid = ajv.getSchema('urn:promptobus:model-routing:decision');
+  assert.equal(valid(decision), true, ajv.errorsText(valid.errors));
+});
+
+test('at 89 % used the codex tuples are scored and near-limit says so, with nothing excluded for it', async () => {
+  const decision = await reviewerDecision(89);
+  assert.equal(decision.candidates.some((c) => c.excluded?.code === 'window-nearly-spent'), false);
+  const near = decision.warnings.filter((w) => w.code === 'near-limit' && w.harness === 'codex');
+  assert.equal(near.length, 1, decision.warnings.map((w) => w.code).join(' | '));
+  assert.equal(near[0].usedPercent, 89);
+});
+
+test('--harness codex spends the nearly spent window with a warning, and --model of a claude tuple is unaffected', async () => {
+  const { decision: named } = await constrainedDecision(96, { harness: 'codex' });
+  assert.equal(named.chosen?.harness, 'codex', JSON.stringify(named.chosen));
+  const waived = named.warnings.find((w) => w.code === 'window-nearly-spent-named');
+  assert.ok(waived, named.warnings.map((w) => w.code).join(' | '));
+  assert.match(waived.message, /only because --harness codex named it/);
+
+  const room = (await constrainedDecision(89, { model: 'claude-opus-5' })).decision;
+  const spent = (await constrainedDecision(96, { model: 'claude-opus-5' })).decision;
+  assert.equal(spent.chosen?.tupleId, room.chosen?.tupleId);
+  assert.equal(spent.chosen?.model, 'claude-opus-5');
+  assert.equal(spent.warnings.some((w) => w.code === 'window-nearly-spent-named'), false);
+  for (const row of codexRows(spent)) assert.equal(row.excluded?.code, 'constraint-mismatch', row.tupleId);
+});
+
+test('windows the cache let expire read as expired, not as no limit source, and still cost the penalty', async () => {
+  const t0 = Date.now();
+  seedCache(nearlySpent(40, { codexCheckedAt: new Date(t0 - 150_000).toISOString() }));
+  const out = sink();
+  await models(WS, {
+    strategy: 'quality', role: 'reviewer', json: true, adapterFor: probeSet(counter()), output: out, now: t0,
+  });
+  const decision = JSON.parse(out.text);
+  const unknown = decision.warnings.filter((w) => w.code === 'unknown-remaining');
+  assert.deepEqual(unknown.map((w) => w.message.split(' ')[0]), ['codex'], JSON.stringify(unknown));
+  assert.match(unknown[0].message, /^codex window entries expired 90 s ago; refresh with --refresh — /);
+  assert.equal(/exposes no limit source/.test(unknown[0].message), false);
+  for (const row of codexRows(decision).filter((c) => c.score)) {
+    assert.deepEqual(row.score.adjustments.find((a) => a.code === 'unknown-availability'),
+      { code: 'unknown-availability', points: -10 }, row.tupleId);
+  }
+  assert.ok(codexRows(decision).some((c) => c.score), 'a codex tuple must be scored for the penalty to be read');
+});
+
+test('the lift line names the nearly spent window once, by harness and percentage', async () => {
+  const { decision, snapshot } = await constrainedDecision(96, { harness: 'codex' });
+  const line = routingLine(routingMetadata(decision, snapshot));
+  assert.equal(line.split('near-limit codex 96 %').length - 1, 1, line);
+  assert.equal(/near-limit(,|$)/.test(line), false, `a bare near-limit code is left on the line: ${line}`);
+});
+
+test('an unconstrained lift at 96 % names codex as having left selection, once', async () => {
+  // The exclusion is not a warning, and codex has no scored row to raise near-limit on:
+  // without this label the line read `no warnings` over an account with 4 % left.
+  const { decision, snapshot } = await constrainedDecision(96);
+  assert.equal(decision.chosen?.harness, 'claude');
+  const line = routingLine(routingMetadata(decision, snapshot));
+  assert.equal(line.split('window-nearly-spent codex 96 %').length - 1, 1, line);
+  assert.equal(/window-nearly-spent claude/.test(line), false, line);
+});
+
+test('a reset that has passed is an expired figure and excludes nothing; a window with no reset still excludes', async () => {
+  const t0 = Date.now();
+  const reset = await reviewerDecision(96, { now: t0, codexResetAt: new Date(t0 - 12_000).toISOString() });
+  const scored = codexRows(reset).filter((c) => c.score);
+  assert.ok(scored.length > 0, JSON.stringify(codexRows(reset).map((c) => [c.tupleId, c.excluded?.code])));
+  assert.equal(codexRows(reset).some((c) => c.excluded?.code === 'window-nearly-spent'), false);
+  for (const row of scored) {
+    assert.equal(row.score.components.remaining, Math.round(4 * reset.weights.remaining) / 100,
+      `${row.tupleId}: penalised through remaining, not excluded`);
+  }
+
+  const stampless = await reviewerDecision(96, { now: t0, codexResetAt: null });
+  assert.equal(codexRows(stampless).some((c) => c.score), false);
+  const row = codexRows(stampless).find((c) => c.excluded?.code === 'window-nearly-spent');
+  assert.ok(row, JSON.stringify(codexRows(stampless).map((c) => [c.tupleId, c.excluded?.code])));
+  assert.match(row.excluded.detail, /\(reset time unknown\)/);
+});
+
+test('every account past the threshold refuses the lift, and the refusal names the waiver', async () => {
+  // A soft fallback would spend what the owner said not to spend; naming a tuple is the way through.
+  seedCache(nearlySpent(96, { claudeUsed: 95 }));
+  const before = treeOf(HOME);
+  await assert.rejects(() => quiet(() => spawnRaw(WS, routedOpts({ newTask: true, worker: 'spent-all' }))), (e) => {
+    assert.equal(e.code, 'candidates-empty');
+    assert.match(e.message, /window-nearly-spent: codex session window "primary" is 96 % used/);
+    assert.match(e.message, /--harness codex or --model gpt-6-astra spends it anyway/);
+    assert.match(e.message, /--harness claude or --model claude-opus-5 spends it anyway/);
+    return true;
+  });
+  assert.deepEqual(treeOf(HOME), before, 'a refused lift writes nothing');
+});
+
+test('a session reset does not hide a weekly window past the threshold, and an all-expired account excludes nothing', async () => {
+  // The owner's Codex shape ten seconds after a session reset: the session figure has expired,
+  // the weekly one has not, and it is the weekly one that must decide.
+  const t0 = Date.now();
+  const weekly = await reviewerDecision(96, {
+    now: t0, codexResetAt: new Date(t0 - 10_000).toISOString(), weeklyUsed: 92,
+  });
+  assert.equal(codexRows(weekly).some((c) => c.score), false,
+    JSON.stringify(codexRows(weekly).map((c) => [c.tupleId, c.excluded?.code])));
+  const row = codexRows(weekly).find((c) => c.excluded?.code === 'window-nearly-spent');
+  assert.ok(row);
+  assert.match(row.excluded.detail, /^codex weekly window "secondary" is 92 % used/);
+  assert.equal(row.excluded.usedPercent, 92);
+  const line = routingLine(routingMetadata(weekly));
+  assert.equal(line.split('window-nearly-spent codex 92 %').length - 1, 1, line);
+
+  const expired = await reviewerDecision(96, {
+    now: t0,
+    codexResetAt: new Date(t0 - 10_000).toISOString(),
+    weeklyUsed: 92,
+    weeklyResetAt: new Date(t0 - 5_000).toISOString(),
+  });
+  assert.equal(codexRows(expired).some((c) => c.excluded?.code === 'window-nearly-spent'), false);
+  assert.ok(codexRows(expired).some((c) => c.score), 'every figure expired: the tuple is scored, not excluded');
 });

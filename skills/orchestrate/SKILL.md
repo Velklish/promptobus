@@ -87,6 +87,8 @@ Classify each track on its own. One run may spawn `quality` and `economy` side b
 
 A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its level threshold, or which is spending faster than the window refills past its rate threshold, and it names the strategy it would switch to — `economy` when every paced harness is short by either test, `balance` when at least one paced harness is not short.
 
+A `window-nearly-spent` row means that harness left automatic selection at 90 % or more of its binding window used; it returns once a `--refresh` shows the window refilled, or when the person names it with `--harness` or `--model`. A `candidates-empty` refusal carrying that detail means every account is past the threshold, and whether to name one and spend it is the person's decision, not yours.
+
 **Propose that switch to the person. Never make it.** The strategy envelope is what they approved, and a mechanism that quietly left it would make the envelope unauditable. Show them the line and the tuple it would change, and when they agree:
 
 ```text

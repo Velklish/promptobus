@@ -953,7 +953,8 @@ test('balance gives the quality floor precedence over a better-paced below-floor
 
 test('balance names a scored floor candidate whose window is not paced when a below-floor representative is taken', () => {
   const snapshot = clone(BALANCE_FLOOR_SNAPSHOT);
-  snapshot.harnesses.claude.windows.find((window) => window.id === '7d').usedPercent = 100;
+  // A reset that has passed, not a spent window: a spent one would leave selection as window-nearly-spent.
+  snapshot.harnesses.claude.windows.find((window) => window.id === '7d').resetAt = '2026-09-05T09:00:00.000Z';
   const decision = decide({
     catalog: BALANCE_FLOOR_CATALOG,
     snapshot,
@@ -966,7 +967,7 @@ test('balance names a scored floor candidate whose window is not paced when a be
   assert.equal(decision.chosen.tupleId, 'codex-sol');
   assert.equal(claude.score.components.quality, 40);
   assert.equal(claude.pace.eligible, false);
-  assert.equal(claude.pace.note, 'window-spent');
+  assert.equal(claude.pace.note, 'no-pace');
   assert.ok(warning, decision.warnings.map((w) => w.code).join(' | '));
   assert.match(warning.message, /"codex-sol".*codex.*"claude-opus".*claude.*not paced/);
   validDecision(decision, 'a balance decision with an unpaced floor-meeting candidate');
@@ -1088,13 +1089,17 @@ test('a harness with no window has no pace and does not take part', () => {
 test('a window at or past its limit is spent for that tuple', () => {
   const snapshot = clone(BALANCE_SNAPSHOT);
   snapshot.harnesses.codex.windows.find((w) => w.id === 'secondary').usedPercent = 100;
+  // Unnamed, a spent window takes the tuple out of selection before any pace is read.
   const decision = paced({ strategy: 'balance', snapshot });
-  const pace = paceOf(decision, 'codex-sol');
+  assert.equal(excludedOf(decision, 'codex-sol').code, 'window-nearly-spent');
+  assert.notEqual(decision.chosen.harness, 'codex');
+  // Named by the person, it is scored, and its pace says the window is spent.
+  const named = paced({ strategy: 'balance', snapshot, constraints: { harness: 'codex' } });
+  const pace = paceOf(named, 'codex-sol');
   assert.equal(pace.eligible, false);
   assert.equal(pace.note, 'window-spent');
   assert.equal(pace.window.id, 'secondary');
   assert.equal(pace.usedShare, 1);
-  assert.notEqual(decision.chosen.harness, 'codex');
 });
 
 test('a window whose reset has passed is not paced — the fact has expired', () => {
@@ -1606,11 +1611,12 @@ test('the thresholds are policy values, and the defaults are ADR-004\'s', () => 
 
 // --- PB-216: one snapshot, one set of names, whichever output prints it -------
 
-/** The warning codes of the SHORT line — what `spawn`, `review` and `status` print. */
+/** The warning codes of the SHORT line — what `spawn`, `review` and `status` print. A label
+ * opens with its code, and `near-limit` adds its harness and percentage after it. */
 function shortCodes(decision, snapshot = BALANCE_SNAPSHOT) {
   const line = routingLine(routingMetadata(decision, snapshot));
   const at = line.indexOf('warnings: ');
-  return at === -1 ? [] : line.slice(at + 'warnings: '.length).split(', ');
+  return at === -1 ? [] : line.slice(at + 'warnings: '.length).split(', ').map((label) => label.split(' ')[0]);
 }
 
 /** The warning codes of the DETAILED section — what `models` prints. */
@@ -1618,22 +1624,36 @@ const detailedCodes = (decision) => render(decision).split('\n')
   .filter((l) => l.startsWith('  ! '))
   .map((l) => l.slice(4, l.indexOf(':', 4)));
 
+/** The harnesses — or pools — that left selection as `window-nearly-spent`, one name each. */
+const leftSelection = (decision) => [...new Set(decision.candidates
+  .filter((c) => c.excluded?.code === 'window-nearly-spent')
+  .map((c) => `${c.harness} ${c.excluded.pool ?? ''}`))].map(() => 'window-nearly-spent');
+
 test('the short line and the detailed section name one decision with one set of names', () => {
   // Measured against the card: a short line reading `unknown-remaining, near-limit,
   // near-limit` beside a detailed section without `near-limit` sent a reader hunting
-  // for an exhausted window that did not exist.
+  // for an exhausted window that did not exist. The rule: the short line is the warnings,
+  // then one `window-nearly-spent` per harness or pool that left selection.
+  const poolOut = paced({ workspace: overlay({ nearLimit: { usedPercent: 25, excludeAtUsedPercent: 70 } }) });
   for (const [what, decision] of [
     ['the golden pair', decide({})],
     ['the balance pair', paced({ strategy: 'balance', workspace: overlay({ nearLimit: { usedPercent: 25 } }) })],
     ['a harness with no paceable window', paced({ strategy: 'balance', snapshot: windowless('cursor') })],
     ['every harness short by rate', decide({ catalog: BALANCE_CATALOG, snapshot: NEAR_LIMIT_RATE_SNAPSHOT, strategy: 'balance' })],
+    ['a pool that left selection', poolOut],
   ]) {
-    assert.deepEqual(shortCodes(decision), detailedCodes(decision),
+    assert.deepEqual(shortCodes(decision), [...detailedCodes(decision), ...leftSelection(decision)],
       `${what}: the two outputs of one decision disagree on names`);
-    for (const code of shortCodes(decision)) {
+    const warnings = shortCodes(decision).slice(0, detailedCodes(decision).length);
+    for (const code of warnings) {
       assert.ok(DECISION_WARNINGS.includes(code), `${what}: "${code}" is outside the declared dictionary`);
     }
+    for (const code of shortCodes(decision).slice(warnings.length)) {
+      assert.ok(render(decision).includes(`${code}: `), `${what}: "${code}" is on no rendered exclusion row`);
+    }
   }
+  assert.equal(leftSelection(poolOut).length, 1,
+    'the fixture must carry an exclusion, or the rule above is checked on nothing');
 });
 
 test('a snapshot with no warnings gives an empty set in both outputs, not an empty tail', () => {
@@ -1669,6 +1689,84 @@ test('near-limit is a pace measurement and says so, and says when it falls silen
   assert.deepEqual(shortCodes(quiet), detailedCodes(quiet));
   assert.equal(/near-limit is measured from pace/.test(render(quiet)), false,
     'a note about a signal this document does not carry explains nothing');
+});
+
+// --- the nearly spent window: an exclusion, and the constraint that waives it ---
+
+test('the exclusion threshold is a policy number, read on each tuple\'s own binding window', () => {
+  // Cursor's two pools bind two different windows: the api pool at 72 and the
+  // auto pool at 62. A threshold between them takes one tuple and leaves the other.
+  assert.equal(paced({}).candidates.some((c) => c.excluded?.code === 'window-nearly-spent'), false,
+    'the default of 90 excludes nothing on this fixture');
+  const decision = paced({ workspace: overlay({ nearLimit: { excludeAtUsedPercent: 70 } }) });
+  const api = excludedOf(decision, 'cursor-api');
+  assert.equal(api?.code, 'window-nearly-spent');
+  assert.match(api.detail, /^cursor monthly window "cycle-api" is 72 % used, at or past the 70 % threshold \(resets at 2026-09-21T00:00:00\.000Z\)/);
+  assert.match(api.detail, /--harness cursor or --model gpt-5\.6-via-cursor spends it anyway$/);
+  assert.equal(excludedOf(decision, 'cursor-composer'), null, 'the auto pool at 62 stays in');
+  validDecision(decision, 'a decision with a nearly spent window');
+});
+
+test('--harness and --model that name the tuple waive the exclusion and say so; --effort names nothing', () => {
+  const spent = overlay({ nearLimit: { excludeAtUsedPercent: 40 } });
+  assert.equal(excludedOf(paced({ workspace: spent }), 'codex-sol')?.code, 'window-nearly-spent');
+
+  for (const [constraints, flag] of [
+    [{ harness: 'codex' }, '--harness codex'],
+    [{ model: 'gpt-5.6-sol' }, '--model gpt-5.6-sol'],
+  ]) {
+    const decision = paced({ workspace: spent, constraints });
+    assert.equal(excludedOf(decision, 'codex-sol'), null, flag);
+    const waived = decision.warnings.filter((w) => w.code === 'window-nearly-spent-named');
+    assert.equal(waived.length, 1, `${flag}: ${decision.warnings.map((w) => w.code).join(' | ')}`);
+    assert.match(waived[0].message, /^codex weekly window "secondary" is 46 % used, at or past the 40 % threshold/);
+    assert.ok(waived[0].message.endsWith(`only because ${flag} named it`), waived[0].message);
+    validDecision(decision, `a waived exclusion under ${flag}`);
+  }
+
+  const effort = paced({ workspace: spent, constraints: { effort: 'high' } });
+  assert.equal(excludedOf(effort, 'codex-sol')?.code, 'window-nearly-spent', 'an effort names no account');
+  assert.equal(effort.warnings.some((w) => w.code === 'window-nearly-spent-named'), false);
+});
+
+test('the lift line names the pool that left selection, not the whole harness', () => {
+  // Cursor's api pool is past 70 % and its auto pool is not: a cursor tuple can still be taken.
+  const decision = paced({ workspace: overlay({ nearLimit: { excludeAtUsedPercent: 70 } }) });
+  assert.equal(excludedOf(decision, 'cursor-api')?.pool, 'api');
+  assert.equal(excludedOf(decision, 'cursor-composer'), null);
+  const meta = routingMetadata(decision, BALANCE_SNAPSHOT);
+  assert.deepEqual(meta.nearlySpent, [{ harness: 'cursor', pool: 'api', usedPercent: 72 }]);
+  assert.match(routingLine(meta), /warnings: window-nearly-spent cursor api 72 %$/);
+});
+
+test('an unknown harness is penalised, not excluded, however spent its window reads', () => {
+  // The same reading as `remaining`: an `unknown` state has no level to measure.
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  Object.assign(snapshot.harnesses.codex, { state: 'unknown', reason: 'quota_unknown' });
+  snapshot.harnesses.codex.windows.find((w) => w.id === 'secondary').usedPercent = 99;
+  const decision = paced({ snapshot });
+  assert.equal(excludedOf(decision, 'codex-sol'), null);
+  assert.deepEqual(byId(decision, 'codex-sol').score.adjustments, [{ code: 'unknown-availability', points: -10 }]);
+});
+
+test('the lift line names each near-limit harness once, with its percentage', () => {
+  // Measured before this: `warnings: near-limit, near-limit, near-limit` on every
+  // lift of a run, the code three times and never the harness or the number.
+  const decision = paced({ workspace: overlay({ nearLimit: { usedPercent: 25 } }) });
+  const near = nearLimits(decision);
+  assert.equal(near.length, 3, 'the fixture must raise one per harness');
+  const line = routingLine(routingMetadata(decision, BALANCE_SNAPSHOT));
+  for (const w of near) {
+    assert.equal(typeof w.usedPercent, 'number', w.message);
+    assert.equal(line.split(`near-limit ${w.harness} ${w.usedPercent} %`).length - 1, 1, line);
+  }
+  assert.deepEqual(near.map((w) => w.harness).sort(), ['claude', 'codex', 'cursor']);
+  assert.equal(/near-limit(,|$)/.test(line), false, `a bare near-limit code is left on the line: ${line}`);
+
+  // A record written before the field prints the code as it always did.
+  const { nearLimit, ...older } = routingMetadata(decision, BALANCE_SNAPSHOT);
+  assert.equal(nearLimit.length, 3);
+  assert.match(routingLine(older), /warnings: near-limit, near-limit, near-limit$/);
 });
 
 // --- ADR-004: the two new selectors ------------------------------------------

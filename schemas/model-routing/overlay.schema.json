@@ -112,7 +112,7 @@
       }
     },
     "nearLimit": {
-      "description": "When models says an account is running short (ADR-004). Two readings of the same binding window, and either one on its own raises the line.",
+      "description": "When models says an account is running short (ADR-004). Two readings of the same binding window, and either one on its own raises the line; a third level takes the tuple out of automatic selection.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -126,6 +126,12 @@
         "underspend": {
           "description": "A RATE, in percentage points of the window: how far the account is AHEAD of its own pace. Default -15 — fifteen points more of the window spent than has elapsed of it. Negative on purpose and unbounded below; a positive value would fire on every harness that is behind pace, which is every harness the balance strategy is happy about.",
           "type": "number"
+        },
+        "excludeAtUsedPercent": {
+          "description": "A LEVEL at which a tuple leaves automatic selection: its binding window at or past this percentage is the window-nearly-spent exclusion. Default 90. A --harness or --model that names the tuple passes it with the window-nearly-spent-named warning instead.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
         }
       }
     },

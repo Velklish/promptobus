@@ -66,7 +66,18 @@
         "required": ["code", "message"],
         "properties": {
           "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/warningCode" },
-          "message": { "type": "string", "minLength": 1 }
+          "message": { "type": "string", "minLength": 1 },
+          "harness": {
+            "description": "Present on `near-limit`: the harness the line is about, so a one-line summary can name it without reading the message.",
+            "type": "string",
+            "minLength": 1
+          },
+          "usedPercent": {
+            "description": "Present on `near-limit`: the used percentage of that harness's binding window, as the snapshot carried it.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
     },
@@ -204,7 +215,18 @@
               "required": ["code", "detail"],
               "properties": {
                 "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/exclusionCode" },
-                "detail": { "type": "string", "minLength": 1 }
+                "detail": { "type": "string", "minLength": 1 },
+                "usedPercent": {
+                  "description": "Present on `window-nearly-spent`: the used percentage of the window that took the tuple out — the most spent applicable window whose reset has not passed — so a one-line summary can name it without reading the detail.",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "pool": {
+                  "description": "Present on `window-nearly-spent` when that window's scope names a pool, so the summary names the pool that left selection rather than the whole harness.",
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             },
             { "type": "null" }
@@ -331,7 +353,8 @@
         "denied-by-policy",
         "payg-not-allowed",
         "harness-unavailable",
-        "harness-exhausted"
+        "harness-exhausted",
+        "window-nearly-spent"
       ]
     },
     "adjustmentCode": {
@@ -355,7 +378,8 @@
         "worker-floor-not-met",
         "balance-fallback",
         "near-limit",
-        "live-participant-cap"
+        "live-participant-cap",
+        "window-nearly-spent-named"
       ]
     }
   }

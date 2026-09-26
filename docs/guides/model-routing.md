@@ -187,7 +187,7 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
   "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
   "qualityFloor": { "worker": 5, "reviewer": 9, "approver": 7 },
   "balance": { "band": 5, "spendUnit": 5 },
-  "nearLimit": { "usedPercent": 80, "underspend": -15 },
+  "nearLimit": { "usedPercent": 80, "underspend": -15, "excludeAtUsedPercent": 90 },
   "caps": { "liveParticipants": { "codex": 2 } },
   "defaults": { "strategy": "balance" },
   "account": { "cursor": { "plan": "example-ultra" } },
@@ -203,7 +203,7 @@ Line by line:
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
 - `qualityFloor` raises or lowers the bar per role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. All three are soft floors and choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
-- `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line;
+- `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line. `excludeAtUsedPercent` (90) is the level at which a tuple stops being a candidate at all: its binding window at or past it is the `window-nearly-spent` exclusion, so a `--strategy quality` run no longer lands on an account with 4 % left because the quality weight outran `remaining`. Naming the tuple with `--harness` or `--model` still spends it, with a `window-nearly-spent-named` warning;
 - `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
 - `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
 - `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the **user** file. **Nothing writes it**: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
@@ -756,6 +756,16 @@ harness (ADR-003), so there is nothing to tell apart; the snapshot schema keeps
 a `fingerprint` slot for the day that changes, and the rule that comes with it
 is that the key must be opaque and one-way.
 
+**An expired entry is read once more, for one fact.** The preflight answers a
+harness whose entry outlived its TTL as `stale_cache` and carries nothing of
+the entry but its `checkedAt`, so the resolver alone cannot tell "its windows
+expired a minute ago" from "it never had any". `windowsExpiry` answers that
+from the stored entry — the moment its windows ran out, or `null` when the
+cascade aged it by another line — and `routingContext` hands the answer to the
+resolver, whose `unknown-remaining` then reads `window entries expired <N> s
+ago; refresh with --refresh` instead of `exposes no limit source`. The penalty
+is unchanged: an expired window is still not a measurement.
+
 ### Validate: what a catalog or an overlay is refused for
 
 Source: `lib/model-routing/validate.js`.
@@ -1163,6 +1173,23 @@ anything. Warnings keep their codes and not their prose: the vocabulary is
 closed ([03-cli](../reference/03-cli.md)), and the sentences behind the
 codes belong to the run that produced them.
 
+`nearLimit` is the one warning that keeps more than its code, and only when a
+`near-limit` was raised: the harness and its binding window's used percentage,
+copied from the warning's own fields. `routingLine` prints each as
+`near-limit codex 96 %`, because the bare code three times over — measured on a
+run of 2026-09-26 — names none of the three accounts it was about. A record
+written before the field prints the bare code as it always did.
+
+`nearlySpent` is its counterpart for an exclusion: one entry per harness — or
+per pool, where the excluded window's scope names one — whose tuples left
+selection as `window-nearly-spent`, at the highest `usedPercent` the exclusions
+carry, printed as `window-nearly-spent codex 96 %` or
+`window-nearly-spent cursor api 72 %`. The pool is named because a Cursor tuple
+from the other pool may be the one chosen. It exists
+because such a harness has no scored row, so it raises no `near-limit`, and an
+unconstrained lift would otherwise read `no warnings` over an account with 4 %
+left.
+
 `windows` is the exception to "compact", and it earns its place: it is the
 applicable windows of the CHOSEN tuple as the snapshot had them at this
 moment, and it is the starting value a later reader needs to say what this run
@@ -1279,7 +1306,13 @@ strategy: read as shares, every harness would fall inside one band and
 `balance` would quietly be `balanced`.
 
 The binding window is the applicable one with the highest `usedPercent`, and
-the id settles a tie so that two runs on one snapshot agree. A window whose
+the id settles a tie so that two runs on one snapshot agree. `mostSpent` is the
+one ordering: `bindingWindowOf` applies it to every applicable window, and the
+`window-nearly-spent` exclusion applies it to the applicable windows whose
+reset has not passed. So the window that excluded a tuple is the pace table's
+binding window, except when that window's reset has passed — then it is the
+most spent of the others, and a session reset does not hide a weekly window at
+92 %. A window whose
 `resetAt` is absent or is not in the future **is not paced**: the fact has
 expired, and the sixty-second TTL is what repairs it — a pace computed from a
 window that has already reset would be a number about a period that is over.

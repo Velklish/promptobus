@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Routing names a nearly spent window as a fact, not only in prose** (PB-282). `nearLimit.excludeAtUsedPercent` (default 90) in the catalog policy and the overlay schema; the exclusion `window-nearly-spent` with `usedPercent` and the warning `window-nearly-spent-named` in the decision schema, whose `near-limit` warning gains `harness` and `usedPercent`; `metadata.routing.nearLimit` and `metadata.routing.nearlySpent`; and `resolve()`'s `expiredWindows` input. What they fix is the `Fixed` entry of the same number. [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
+
 - **`promptobus install` lays out and owns the package's process skills** (PB-268, [ADR-023](docs/adr/adr-023-install-owns-process-skills.md)).
   `promptobus install --harnesses <list>` copies bundled process skills (`skills/orchestrate` and `skills/solo-review`) into each selected harness's project skill directory (`.claude/skills/`, `.cursor/skills/`, `.codex/skills/`).
   Delivered skill content is byte-identical to the package source, and ownership is tracked in `.promptobus/manifest.json` under `ownedSkills`.
@@ -76,6 +78,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden).
 
 ### Fixed
+
+- **A tuple whose binding window is 90 % spent leaves automatic selection, and the lift line names its near-limit windows** (PB-282).
+  Under `--strategy quality` the quality weight outran `remaining`, and a reviewer was routed to an account with
+  about 4 % of its window left. Such a tuple is now the `window-nearly-spent` exclusion, at `nearLimit.excludeAtUsedPercent`
+  (default 90, overridable by an overlay); a `--harness` or `--model` that names it still spends it, with the
+  `window-nearly-spent-named` warning. The `near-limit` warning from 80 % is unchanged, and the routing line of
+  `spawn`, `review` and `status` prints each as `near-limit codex 96 %` rather than the bare code repeated, and names a
+  harness — or pool — that left selection as `window-nearly-spent codex 96 %`. A window whose reset has already passed is left out
+  of the test — its figure has expired — and the most spent of the other windows decides, so a session reset
+  neither refuses a lift on a stale figure nor hides a weekly window that is itself past the threshold. When every
+  account is past the threshold the lift refuses as `candidates-empty` and names the waiver.
+  `unknown-remaining` on a harness whose cached windows expired now says `window entries expired <N> s ago` instead of
+  `exposes no limit source`, with the same penalty.
+  [03-cli § Model routing](docs/reference/03-cli.md#model-routing), [ADR-004](docs/adr/adr-004-subscription-balance.md).
 
 - **A tmux `list-sessions` failure other than no server is no longer read as an empty server** (PB-264, PB-239.5).
   `readTmuxSessions` matched every non-zero exit to a missing tmux server; only the two wordings measured on

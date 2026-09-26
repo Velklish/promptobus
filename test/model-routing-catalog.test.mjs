@@ -1809,6 +1809,8 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, balance: { band: 'wide' } },
     { schemaVersion: 1, nearLimit: { usedPercent: 80, underspend: -15 } },
     { schemaVersion: 1, nearLimit: { usedPercent: 101 } },
+    { schemaVersion: 1, nearLimit: { excludeAtUsedPercent: 95 } },
+    { schemaVersion: 1, nearLimit: { excludeAtUsedPercent: -1 } },
     { schemaVersion: 1, defaults: { strategy: 'balance' } },
     { schemaVersion: 1, defaults: { strategy: 'auto' } },
     { schemaVersion: 1, account: { cursor: { plan: 'example-ultra' } } },
