@@ -408,3 +408,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-274"></a>`PB-274-step-lift` · 2026-09-27 · completed · — · promptobus step lifts a gate step by name on a machine precondition; review and review --approver become its aliases
 - <a id="pb-273.1"></a>`PB-273.1-declared-step-undiscoverable` · 2026-09-27 · batch PB-274 · — · A declared step parses and routes, but no tool description or refusal list names it
 - <a id="pb-263.2"></a>`PB-263.2-no-max-quality-citations` · 2026-09-27 · completed · — · Reconcile quality citations on ladders without max
+- <a id="pb-277"></a>`PB-277-step-addresses-in-commands` · 2026-09-27 · completed · — · status, sweep, dismiss and stop address step:slug

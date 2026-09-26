@@ -22,6 +22,8 @@ Declaring a harness is a hand edit of the tool manifest — under the standalone
 
 `--new-task` and `--task` conflict. Without `--task`, spawn joins the only active task, or opens a new one when several actives exist and this session has no binding. A task owned by another session refuses a silent join.
 
+An owner slug cannot start with the name of an active declared gate followed by `-`, because the two addresses would name the same files in `workers/`. A name from a gate that is no longer declared is allowed only when no participant already in the task owns those files. The refusal names that participant before any launch file is written; an unoccupied name remains available.
+
 `--title` names the worker slice. `--task-title` names the task on create. `--dry-run` prints the plan. A real lift prints the `worker rules:` block too, listing the rule files handed to the participant; the dry-run and real-lift lists are the same. For Codex, its command line is descriptive: `codex app-server --stdio` receives the prompt through a `turn/start` request, so the prompt is not a positional `<prompt>` argument; other drivers print their runnable argv with the placeholder.
 
 The worker gets an isolated git worktree. The main tree is not edited. Read the branch from `promptobus status` or `promptobus_task`, not from the worktree name.
@@ -877,6 +879,8 @@ each active child or unfinished child link. Close each child explicitly first;
 there is no cascade. `done` on a child closes that task alone and keeps the
 parent's teamlead record and mail.
 
+Participant lines for each piece follow the declaration: owner step, then gate steps in order. Pieces follow their first participant's journal position; governance participants retain their order relative to one another. A later re-lift may move a participant record in the journal without moving its line out of its piece. Each line still shows that participant's own session state.
+
 `status` opens with the machine lease — `free`, the holder with address, task, command, since when and pid, or a lock left by a dead process — and one line per live waiter, before any task and also when none is active (§ Lease). Then it lists active roots and their children — each task header ends with the pipeline steps in order, `pipeline worker → reviewer → approver` without a declaration ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)) — participants, unread counts, review-round/question/result counts, and warden health. A participant line includes `rounds N · questions N · results N` beside `unread N` whenever at least one of those counts is non-zero; the counts come from canonical message records, so they remain visible before any mailbox is fetched. A re-bound reviewer also names `harness <current>` and, for each closed generation, `prior harness <h> until <stamp>: rounds N · questions N · results N` — or `re-bound from <h> at <stamp>` when that generation sent none of those. The current line's counts start when the previous harness ended; the earlier counts stay on the prior clause, from the previous generation's end back to the one before it, or to the start of the address for the first. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. That record also keeps `windows`: the applicable windows of the chosen tuple with the `usedPercent` they had at the lift, which is the starting value a later reader needs to say what the run spent. It is the resolver's own applicable set, and it is empty when the harness reported no window. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
 
 A Cursor participant's liveness is judged by **three** signals, and a stall verdict needs all three quiet: the chat transcript growing, an instrumental process under the session's tmux pane, and a write in the participant's own worktree — the newest mtime among `git ls-files -mo --exclude-standard` plus its HEAD commit time (`lib/cursor-persist.js`). The third exists because the agent edits files inside one long call and spawns nothing, so the first two see a session that is working as one that is silent. It is **positive only**: a recent write lifts the verdict, its absence never raises one, and a session nothing writes for still stalls once the threshold passes. The verdict names each measurement and its span, so a silent transcript can be told from a dead session without opening the panel.
@@ -1441,6 +1445,8 @@ before the lock is a refusal point, in this order: resolve the task, refuse a cl
 prove the right, the address, the liveness of the session. Only then is the journal lock
 taken, and the destructive stretch runs inside it.
 
+The target of `sweep`, `stop` and `dismiss` may be any participant address admitted by the declared registry, including a gate step such as `security:<slug>`. They act on the named participant's record. The owner step's files and tree are outside a gate step's cleanup.
+
 The list of what is going is named BEFORE the first removal, the same move `done` and
 `stop` make with theirs: the command is irreversible, and a person reading the output
 should see what is leaving rather than what left.
@@ -1571,6 +1577,8 @@ Source: `lib/sweep.js`, `sweepTree`.
 The worktree directory of one participant and the `worktree-` branch behind it, decided by
 `inspectWorktree` and `worktreeDisposition` — the same pair `done` uses, so there is no
 second opinion about what "merged" means.
+
+The role registry decides which tree can be taken. An `edits-tree` step may sweep its own worktree; a `writes-main-tree` step may sweep its own accepted worktree but never a path the owner step names, including an alias of the same physical directory. In that case the gate's artifacts and sidecars can still go. A `reads-diff` step and governance participants have no worktree to remove, even if a stale record carries one. Their artifacts and sidecars can still go.
 
 It answers one of four states, and the artifacts of the piece follow it: `removed` and
 `none` let them go, `kept` and `vanished` hold them.

@@ -27,7 +27,7 @@
     "by": {
       "description": "The bus address that made the checks, in address spelling rather than participant id.",
       "type": "string",
-      "pattern": "^(orchestrator|(?:worker|reviewer|approver):[a-z0-9][a-z0-9-]*)$"
+      "pattern": "^(orchestrator|[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)$"
     },
     "checks": {
       "description": "The five checks. Each is either performed — and then the fields that prove it are required and bounded to their passing values — or declared `notRun` with a reason. There is no third branch: a check that was performed and failed is not handed over, it is fixed.",

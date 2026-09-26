@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
+  declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;
+  sweep removes their files and blobs while protecting the owner tree, including a physical-path
+  alias. Spawn reserves active step prefixes and refuses an occupied former prefix. Both record
+  schemas admit step-shaped `by`; send checks it against the registry.
+  [03-cli § Status, done, sweep, dismiss, history, prune](docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune), [04-protocol § The gate record](docs/reference/04-protocol.md#the-gate-record).
+
 - **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
   when the preceding participant's result is recorded for that subject and current assignment; a
   `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the

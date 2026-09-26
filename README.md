@@ -135,16 +135,16 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 
 | Command | What it does |
 |---|---|
-| `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
+| `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. A worker name that shares files with an existing task participant is refused. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Lift the named declared gate when the preceding participant's result is on record for this subject; a main-tree writer also needs the owner's result. `--base <ref>`, `--brief <file>` for a writer, routing flags, `--dry-run` |
 | `promptobus review <path>` | Lift the first `reads-diff` gate on a snapshot of the diff; `--approver` selects the first `writes-main-tree` gate. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
-| `promptobus status` | The machine lease, then active roots with their child tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
+| `promptobus status` | The machine lease, then active roots with their child tasks: participants by piece and declared step order, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus send <address>` | Write one message as the address this session holds in the task; `--body` or `--file`, `--type`, `--task`, `--artifact`. There is no `--from` |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
-| `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
-| `promptobus sweep <address>` | Clean up after ONE accepted piece and leave the task active: its worktree and branch when the merge is provable, the blobs and files it sent, its files in `workers/` |
-| `promptobus dismiss <address>` | Stop watching a finished participant — the watch only, the process is not touched |
+| `promptobus stop <address>` | Close ONE participant's session, including a declared step, and leave the task open; the session record goes with the process |
+| `promptobus sweep <address>` | Clean up after ONE accepted piece, including a declared step, and leave the task active: its own worktree and branch when the merge is provable, the blobs and files it sent, its files in `workers/`. A main-tree gate cannot remove the owner's worktree |
+| `promptobus dismiss <address>` | Stop watching a finished participant, including a declared step — the watch only, the process is not touched |
 | `promptobus history` | Journal of read mail, oldest first; `--limit <n>` or `--all` |
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
 | `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread — in this task or in another task this session orchestrates — or while an owed answer has not been sent |
