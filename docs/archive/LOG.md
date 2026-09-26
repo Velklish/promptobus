@@ -384,3 +384,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-246.2"></a>`PB-246.2-codex-tb21-figures-citable` · 2026-09-26 · batch PB-263 · — · codex-terra-max and codex-gpt55-medium can cite their Terminal-Bench 2.1 Codex CLI figures instead of stating them as hypotheses
 - <a id="pb-254.1"></a>`PB-254.1-grok-4-6-rows-list-price` · 2026-09-26 · batch PB-263 · — · The Grok 4.6 rows say no list price exists, and xAI now lists grok-4.6 at $2 / $6
 - <a id="pb-187.2"></a>`PB-187.2-codex-holder-refuses-a-named-hidden-model` · 2026-09-26 · completed · — · The holder's start-path model check refuses a named hidden model, and hidden-row retention has no live check
+- <a id="pb-264"></a>`PB-264-tmux-list-failure-minor-batch` · 2026-09-26 · completed · — · Minor batch: a tmux list-sessions failure other than no server is not an empty server
+- <a id="pb-239.5"></a>`PB-239.5-tmux-nonzero-list-reads-empty-server` · 2026-09-26 · batch PB-264 · — · A tmux list-sessions that fails for a reason other than no server still reads as an empty server

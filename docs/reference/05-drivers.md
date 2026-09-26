@@ -294,6 +294,13 @@ running. A server that answers "no server running" still reads as no sessions �
 lives while it has sessions — so `stale` keeps its meaning: stopped from outside, or the machine
 rebooted.
 
+**Only a measured no-server line reads that way.** `readTmuxSessions` matches a non-zero exit
+against the two wordings measured on tmux 3.6b — "no server running on …" and "error connecting
+to … (No such file or directory)" — by stable substring, not by the socket path they carry. Any
+other non-zero exit takes the tmux-could-not-be-run refusal instead, naming tmux's own exit code
+and stderr line (`tmux list-sessions exited <n>: <line>`), through the same readers: a live
+participant is never read as gone on a server that answered something else.
+
 `PROMPTOBUS_CURSOR_INSTALL_DIRS` replaces the install-directory list, delimiter-separated, for
 the Cursor binary search and for tmux alike, read from the environment the search is handed. It
 is a suite seam and is unset in life: the absolute entries sit outside any sandboxed `HOME`, so

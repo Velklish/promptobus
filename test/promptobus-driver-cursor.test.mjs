@@ -57,7 +57,7 @@ const {
   PROVEN_HOOK_EVENTS, HOOK_EVENTS_SOURCE_VERSION, skillsNoteOf,
 } = cursorModule;
 const {
-  ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
+  ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTmuxSessions, readTranscript, sessionFile, SESSION_ENV_VAR,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
   turnState,
   workspaceHash, writeSession, searchPath,
@@ -1551,6 +1551,106 @@ check('PB-239.2: `sweep` refuses with exit 1 and names tmux, instead of sweeping
   && /Nothing was removed/.test(offSweepCli.out),
   offSweepCli.out.trim());
 dropSession(offRef, process.env);
+
+// --- PB-239.5: a tmux list-sessions failure other than no server is not an empty server ------
+
+// A live persist session read through a tmux that answers list-sessions with a non-zero exit.
+// The two measured no-server lines still read as an empty server (today's behaviour); any other
+// line refuses instead, naming tmux's own words and exit code, through the same readers PB-239.2 used.
+const NOSRV_TASK = 'cursornosrv-t20260926-000000';
+const NOSRV_WORKER = 'worker:nosrv';
+const nosrvRef = 'Worker: tmux list-sessions other failure (0926-0000)';
+const nosrvBinDir = path.join(SB, 'pb2395-tmux-bin');
+function stubListSessions(stderrLine, status = 1) {
+  stubCommand(nosrvBinDir, 'tmux', `
+if (process.argv.slice(2).includes('list-sessions')) {
+  process.stderr.write(${JSON.stringify(`${stderrLine}\n`)});
+  process.exitCode = ${status};
+} else {
+  process.exitCode = 1;
+}
+`);
+}
+async function withStubTmux(fn) {
+  const was = process.env.PATH;
+  process.env.PATH = nosrvBinDir;
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = was;
+  }
+}
+store.createTask(home, { id: NOSRV_TASK, title: 'tmux list-sessions с другим отказом', owner: ORCH_SESSION });
+const nosrvParticipant = store.participantRecord(NOSRV_WORKER, { harness: 'cursor', mode: 'managed', sessionRef: nosrvRef });
+store.upsertParticipant(home, NOSRV_TASK, nosrvParticipant);
+writeSession({ ref: nosrvRef, sessionName: 'nosrv-sess', chatId: 'chat-nosrv', tmuxServer: 'pb2395', cwd: SB, turns: 0 },
+  process.env);
+
+for (const line of [
+  'error connecting to /tmp/tmux-501/pb2395 (No such file or directory)',
+  'no server running on /tmp/tmux-501/pb2395',
+]) {
+  stubListSessions(line);
+  const read = await withStubTmux(() => readTmuxSessions({ server: 'pb2395' }));
+  check(`PB-239.5: a measured no-server line ("${line}") reads as an empty server`,
+    Array.isArray(read.sessions) && read.sessions.length === 0 && read.missing === null, JSON.stringify(read));
+  const seenGone = await withStubTmux(() => offThrown(() => cursorDriver.inspect(nosrvRef)));
+  check(`PB-239.5: and on "${line}" the live participant reads gone the way it does today — stale, not a refusal`,
+    seenGone.error === null && seenGone.value?.state === 'stale' && seenGone.value?.id === 'nosrv-sess',
+    JSON.stringify(seenGone.value ?? String(seenGone.error)));
+}
+
+const OTHER_LINE = 'protocol version mismatch (client 8, server 7)';
+stubListSessions(OTHER_LINE, 2);
+const nosrvRead = await withStubTmux(() => readTmuxSessions({ server: 'pb2395' }));
+check("PB-239.5: an unrecognized non-zero exit refuses, naming tmux's exit code and its own line",
+  nosrvRead.sessions === null && nosrvRead.missing === `tmux list-sessions exited 2: ${OTHER_LINE}`,
+  JSON.stringify(nosrvRead));
+
+const nosrvInspect = await withStubTmux(() => offThrown(() => cursorDriver.inspect(nosrvRef)));
+check(': inspect refuses naming that line instead of answering stale',
+  nosrvInspect.error instanceof OffGateError && nosrvInspect.error.message.includes(nosrvRead.missing)
+  && /nosrv-sess/.test(nosrvInspect.error.message),
+  JSON.stringify(nosrvInspect.value ?? String(nosrvInspect.error)));
+
+const nosrvSnapshot = await withStubTmux(() => offSnapshot([nosrvParticipant], REGISTRY));
+check(': the snapshot reads that participant unknown, with tmux\'s line on it — never dead',
+  offLive(nosrvParticipant, nosrvSnapshot) === 'unknown'
+  && nosrvSnapshot?.[NOSRV_WORKER]?.stall?.reason?.includes(nosrvRead.missing),
+  JSON.stringify(nosrvSnapshot));
+
+const nosrvWake = offThrown(() => cursorDriver.checkWake({
+  ...process.env, PATH: nosrvBinDir, [SESSION_ENV_VAR]: sessionFile(nosrvRef, process.env),
+}));
+check(': the wake probe answers a WakeProbe naming that line — it does not throw past its contract',
+  nosrvWake.error === null && nosrvWake.value?.ok === false && nosrvWake.value?.error?.includes(nosrvRead.missing)
+  && nosrvWake.value?.endpoint === sessionFile(nosrvRef, process.env),
+  JSON.stringify(nosrvWake.value ?? String(nosrvWake.error)));
+
+const nosrvStopped = await withStubTmux(() => cursorDriver.stop(nosrvRef));
+check(': the driver stop refuses and keeps the session record — a live session is not dropped as gone',
+  nosrvStopped?.ok === false && nosrvStopped?.stopped === false && nosrvStopped?.note?.includes(nosrvRead.missing)
+  && existsSync(sessionFile(nosrvRef, process.env)),
+  JSON.stringify(nosrvStopped));
+
+const nosrvEnv = { ...env, PATH: nosrvBinDir };
+const nosrvStopCli = cli(['stop', NOSRV_WORKER, '--task', NOSRV_TASK], { cwd: ws, env: nosrvEnv });
+check("PB-239.5: `stop` refuses with exit 1 and names tmux's line, instead of \"nothing to stop\" with exit 0",
+  nosrvStopCli.status === 1 && nosrvStopCli.out.includes(nosrvRead.missing) && !/nothing to stop/.test(nosrvStopCli.out)
+  && existsSync(sessionFile(nosrvRef, process.env)),
+  nosrvStopCli.out.trim());
+const nosrvSweepCli = cli(['sweep', NOSRV_WORKER, '--task', NOSRV_TASK], { cwd: ws, env: nosrvEnv });
+check("PB-239.5: `sweep` refuses with exit 1 and names tmux's line, instead of sweeping a live session as dead",
+  nosrvSweepCli.status === 1 && nosrvSweepCli.out.includes(nosrvRead.missing) && /Nothing was removed/.test(nosrvSweepCli.out),
+  nosrvSweepCli.out.trim());
+
+stubListSessions('', 3);
+const nosrvEmptyRead = await withStubTmux(() => readTmuxSessions({ server: 'pb2395' }));
+check('PB-239.5: an unrecognized exit with no stderr names the exit code and a stderr fallback, not a bare colon',
+  nosrvEmptyRead.sessions === null && nosrvEmptyRead.missing === 'tmux list-sessions exited 3: (no stderr)',
+  JSON.stringify(nosrvEmptyRead));
+
+dropSession(nosrvRef, process.env);
 
 cli([ 'done', '--task', HANG_TASK], { cwd: ws, env });
 restore();

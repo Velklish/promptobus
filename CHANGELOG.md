@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tmux `list-sessions` failure other than no server is no longer read as an empty server** (PB-264, PB-239.5).
+  `readTmuxSessions` matched every non-zero exit to a missing tmux server; only the two wordings measured on
+  tmux 3.6b — "no server running on …" and "error connecting to … (No such file or directory)" — now read that
+  way, matched by stable substring rather than by the socket path they carry. Any other non-zero exit takes the
+  existing "tmux could not be run" refusal instead, naming tmux's own exit code and stderr line
+  (`tmux list-sessions exited <n>: <line>`); `findSession`, `inspect`, the warden snapshot, `checkWake`, `stop`
+  and `sweep` (driver and CLI) already handle that refusal and needed no change. `tmuxSessions`, the lift's own
+  list, is unaffected — it still fails its `new-session` on an unreadable tmux with the reason.
+  [05-drivers § Cursor: tmux by absolute path](docs/reference/05-drivers.md#cursor-tmux-by-absolute-path).
+
 - **The Codex holder's start-path model check recognises a named hidden model, and the adapter's
   hidden-row retention is exercised through the real request** (PB-187.2). Both `model/list` call
   sites — the holder's start-path check in `lib/codex-session.js` and the adapter's preflight in
