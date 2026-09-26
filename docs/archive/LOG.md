@@ -404,3 +404,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-267"></a>`PB-267-task-parent-link` · 2026-09-26 · completed · — · A task can have a parent: teamlead in the parent, a tree in status, done refuses over active children
 - <a id="pb-263.1"></a>`PB-263.1-no-effort-figure-on-ladder-without-max` · 2026-09-27 · completed · — · A no-effort figure has no landing rung on a ladder without `max`
 - <a id="pb-178.1"></a>`PB-178.1-mcp-child-has-no-session-identity` · 2026-09-27 · completed · — · A Cursor or Codex MCP child has no harness identity, so the mailbox copy is not what that session receives.
+- <a id="pb-185.2"></a>`PB-185.2-codex-stop-hook-unobserved` · 2026-09-27 · completed · — · Observe the Codex Stop hook on a turn that needs no follow-up

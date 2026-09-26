@@ -425,8 +425,13 @@ is stable and on by default, and a handler is enabled unless its state says othe
 A linked worktree reads project `hooks.json` from the main checkout, so a worker's
 copy is written to the participant home after that home is built, and not among the
 launch files. A reviewer sandbox is not a worktree and keeps the single file in its
-working directory. The approver uses the same redirected participant-home hook document; its live evidence is in the approver section above. The measured event is
-SessionStart; Stop was not in those journals. `bypass_hook_trust` trusts every
+working directory. The approver uses the same redirected participant-home hook
+document; its live evidence is in the approver section above. The 2026-09-25
+journals recorded SessionStart but ended before `turn/completed`. On 2026-09-26,
+codex-cli 0.156.1 recorded `hook/started stop` and `hook/completed stop` before
+`turn/completed` for a worker and a reviewer on turns needing no follow-up; the
+journal and hooks-file evidence is in [hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces).
+`bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own
 and is rewritten, whatever its bytes; the reviewer sandbox is that path. Any file
 in the main checkout refuses, including one with the same bytes, because that

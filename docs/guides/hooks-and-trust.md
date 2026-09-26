@@ -60,7 +60,18 @@ A worker in a linked worktree, on a turn taken before the home copy was rewritte
 
 The same worker shape, after that rewrite, recorded `hook/started` and `hook/completed` for `sessionStart`. The path on those lines is the participant home's `hooks.json`, and the command in that file contains `--role` for the worker. The main checkout had no `hooks.json`, so the journal names one source. A file at the main checkout would be a second project source (`root_checkout_hooks_folder_for_dir` in the loader cited above); that case was not live-fired.
 
-`Stop` runs at the end of a turn that needs no follow-up (`codex-rs/core/src/session/turn.rs`, `run_turn_stop_hooks`). The journals were read when the status arrived, which is before that step. A later read of the same saved journals still has no `turn/completed` and no `Stop`. The measured event is SessionStart, for a worker and a reviewer.
+`Stop` runs at the end of a turn that needs no follow-up (`codex-rs/core/src/session/turn.rs`, `run_turn_stop_hooks`). The 2026-09-25 journals above had no `turn/completed`, so their absence of `Stop` did not test that path.
+
+**Measured 2026-09-26 on macOS with codex-cli 0.156.1.** A worker and a reviewer on
+`gpt-6-sol` at low effort each ended a turn after sending a result. Both holder journals were read
+after `turn/completed` and contain `hook/started stop` followed by `hook/completed stop` with
+status `completed`, then `turn/completed completed`. The worker's two Stop lines name its isolated
+Codex home's `hooks.json`; the reviewer's name its sandbox's `.codex/hooks.json`. Each file was read
+before its session was stopped and contains a `Stop` guard command with that participant's `--role`.
+The worker Stop lines are at 21:05:53.154Z and 21:05:53.307Z; the reviewer's are at 21:07:22.989Z
+and 21:07:23.146Z. The full command exits, hook paths and journal lines are in the task's
+`codex-stop-live-evidence.json` artifact. This proves the hook fires for these two finished turns;
+it does not measure a turn that the guard returns for follow-up or a Codex approver.
 
 ## What is never touched
 

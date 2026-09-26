@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Codex Stop hook is observed on completed worker and reviewer turns** (PB-185.2). On
+  codex-cli 0.156.1, each holder journal records the participant's own `Stop` hook starting and
+  completing before `turn/completed`; the worker uses its isolated home file and the reviewer uses
+  its sandbox file. No runtime change was needed.
+  [Hooks and trust](docs/guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces).
+
 - **Model routing accepts declared step names** (PB-276). `models --role security` and the routed lift function use
   the step kind's catalog role and an explicit declared quality floor when present. Decisions, participant routing
   metadata and telemetry carry the step beside that role; `status` and `calibrate` show the step. Overlay `byRole`
