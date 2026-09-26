@@ -627,9 +627,11 @@ none of them `hidden`. No model is hidden in one home and visible in the other, 
 holder attempt such a model would call for has no candidate on this build. The two rows
 `debug models` marks `hide` — `gpt-reserve` and `codex-auto-review` — come back from
 `model/list` only when it is asked with `includeHidden: true`, and then with `hidden: true`.
-The adapter asks with no parameters, so on this build no hidden row reaches the snapshot,
-and hidden-row retention stays unexercised live. `models validate` stays offline because it
-has no participant home to inspect.
+The adapter's preflight and the holder's start-path check both now ask with `includeHidden:
+true` (PB-187.2), so on this build a hidden row reaches the snapshot and a lift naming
+`gpt-reserve` or `codex-auto-review` is no longer refused for being absent from an unhidden
+listing; whether a turn then runs on a hidden model is not measured (PB-187.3). `models
+validate` stays offline because it has no participant home to inspect.
 
 
 No `flags` are attached — Codex prints no mark on a listed model that means anything to a policy. A `model/list` that refuses costs the inventory and nothing else; the limit verdict still stands. An adapter publishes what the account exposes, and matching that against a named model is the resolver's question and the lift's refusal, not the preflight's — which is why the snapshot vocabulary has no code for it at all.

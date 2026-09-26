@@ -1814,6 +1814,80 @@ check(': an old Codex record without a name uses the machine-name fallback',
 await reapHolder(legacyRef, env);
 dropSession(legacyRef, env);
 
+// The start path asks `model/list` with `includeHidden: true`: a named hidden
+// model is still named (ADR-004).
+const hiddenModelRef = 'hidden-model-recognised-at-start';
+const hiddenModelEnv = { ...env, [PROBE_VAR]: 'hidden' };
+writeSession({
+  ref: hiddenModelRef,
+  cwd: ws,
+  bin: path.join(SB, 'bin', 'codex'),
+  role: 'worker',
+  startedAt: new Date().toISOString(),
+  threadId: null,
+  holderPid: null,
+  appPid: null,
+  rpcSocket: null,
+  state: 'starting',
+  sandbox: 'workspace-write',
+  approvalPolicy: 'on-request',
+  model: 'gpt-5.6-internal',
+  effort: null,
+  addDirs: [],
+  mcpServers: {},
+  mcpPrefix: PREFIX,
+  prompt: 'hidden model prompt',
+  home,
+  task: TASK,
+  address: 'worker:hidden-model',
+  argv: ['app-server', '--stdio'],
+  turns: 0,
+}, hiddenModelEnv);
+startHolder(hiddenModelRef, hiddenModelEnv);
+const hiddenModelReady = await waitReady(hiddenModelRef, hiddenModelEnv, 20000);
+check('PB-187.2: a lift naming a model the stand hides is not refused at the start path',
+  hiddenModelReady.ok === true,
+  JSON.stringify({ ready: hiddenModelReady }));
+await reapHolder(hiddenModelRef, hiddenModelEnv);
+dropSession(hiddenModelRef, hiddenModelEnv);
+
+// The other half of the same check: a model the stand does not list AT ALL — hidden
+// or not — is still refused, and with the measured reason.
+const unknownModelRef = 'unknown-model-refused-at-start';
+writeSession({
+  ref: unknownModelRef,
+  cwd: ws,
+  bin: path.join(SB, 'bin', 'codex'),
+  role: 'worker',
+  startedAt: new Date().toISOString(),
+  threadId: null,
+  holderPid: null,
+  appPid: null,
+  rpcSocket: null,
+  state: 'starting',
+  sandbox: 'workspace-write',
+  approvalPolicy: 'on-request',
+  model: 'ghost-model-not-on-account',
+  effort: null,
+  addDirs: [],
+  mcpServers: {},
+  mcpPrefix: PREFIX,
+  prompt: 'unknown model prompt',
+  home,
+  task: TASK,
+  address: 'worker:unknown-model',
+  argv: ['app-server', '--stdio'],
+  turns: 0,
+}, env);
+startHolder(unknownModelRef, env);
+const unknownModelReady = await waitReady(unknownModelRef, env, 20000);
+check('PB-187.2: a lift naming a model the stand does not list at all is still refused',
+  unknownModelReady.ok === false
+    && /model «ghost-model-not-on-account» is unknown to app-server \(model\/list\)/.test(unknownModelReady.error ?? ''),
+  JSON.stringify({ ready: unknownModelReady }));
+await reapHolder(unknownModelRef, env);
+dropSession(unknownModelRef, env);
+
 const SECOND_TITLE = 'Second Codex named slice';
 planParticipant(HARNESS, SECOND_WORKER, { turns: [{ do: [] }] });
 const secondSpawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,

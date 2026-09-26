@@ -80,7 +80,8 @@ export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 //   flat            — the notification carries the limit at its own top level,
 //                     naming no window, which is the shape `rateLimitReached`
 //                     and `rateLimitNote` have always also accepted
-//   hidden          — `model/list` also lists a model app-server hides
+//   hidden          — `model/list` also lists a model app-server hides, only
+//                     when asked with `includeHidden: true`
 //   credits         — the account holds spendable credits (the flag and a balance)
 //   spend-control   — the account's own spend control is at its ceiling
 //   no-models       — `model/list` refuses; the limit is still known
@@ -481,7 +482,7 @@ async function appServer() {
         },
         { id: 'gpt-5.4-mini', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
       ];
-      if (probe.has('hidden')) {
+      if (probe.has('hidden') && params.includeHidden === true) {
         data.push({
           id: 'gpt-5.6-internal',
           hidden: true,
