@@ -226,10 +226,11 @@
         "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
         "byRole": {
-          "description": "The same rule block, scoped to one role. A role is a condition on when a rule applies rather than a thing that can be banned, so it nests instead of standing beside the selectors above. When routing role R the effective deny of a kind is the unscoped list unioned with byRole.R's, and the effective allow is the intersection of the two where both are stated.",
+          "description": "The same rule block scoped to a catalog role or a step declared by the host. The schema checks step-name shape; models validate checks names against the declaration. When routing a step, unscoped, catalog-role and step rules all apply: denies union and allows intersect.",
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
           "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
           "properties": {
             "worker": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
             "reviewer": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },

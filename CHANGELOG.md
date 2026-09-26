@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Model routing accepts declared step names** (PB-276). `models --role security` and the routed lift function use
+  the step kind's catalog role and an explicit declared quality floor when present. Decisions, participant routing
+  metadata and telemetry carry the step beside that role; `status` and `calibrate` show the step. Overlay `byRole`
+  accepts declared steps and validation names unknown keys. Catalog rows remain rated by role.
+  [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
+
 ## [0.18.0] — 2026-09-26
 
 ### Added

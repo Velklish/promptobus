@@ -2,6 +2,8 @@
   "schemaVersion": 2,
   "strategy": "balanced",
   "role": "worker",
+  "step": "worker",
+  "qualityFloor": 5,
   "weights": {
     "quality": 40,
     "speed": 25,

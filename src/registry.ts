@@ -63,6 +63,8 @@ export interface RoleRegistry {
 export interface DeclaredStep {
   readonly name: string;
   readonly kind: StepKind;
+  /** Present only when the host's declaration sets a floor for this step. */
+  readonly qualityFloor?: number;
 }
 
 const UNLIFTED = {

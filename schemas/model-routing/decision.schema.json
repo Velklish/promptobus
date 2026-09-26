@@ -13,6 +13,17 @@
       "enum": ["quality", "balanced", "speed", "economy", "balance"]
     },
     "role": { "enum": ["worker", "reviewer", "approver"] },
+    "step": {
+      "description": "The pipeline step being routed. The role is the catalog role of its kind; older decisions may omit this additive field, and then the step is the role.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "qualityFloor": {
+      "description": "The effective soft floor used for this pick: an explicit value of the step declaration, otherwise the merged catalog-role floor. Older decisions may omit this additive field.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
     "weights": {
       "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating. Under `balance` these are the merged `balanced` weights, which is what that strategy orders tuples inside one harness by.",
       "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet"

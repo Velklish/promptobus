@@ -104,7 +104,7 @@ test('the shipped texts print the shipped list, byte for byte', () => {
   const send = MCP_TOOLS.find((t) => t.name === 'promptobus_send');
   assert.ok(send.description.includes(`Address: ${list}.`), send.description);
   assert.equal(send.inputSchema.properties.to.description, `recipient address: ${list}`);
-  assert.ok(helpText(PLAIN).includes('[--role <worker|reviewer|approver>]'));
+  assert.ok(helpText(PLAIN).includes('[--role <worker|reviewer|approver|step-name>]'));
   assert.deepEqual([...catalog.ROUTED_ROLES], bus.routedCatalogRoles(SHIPPED));
   assert.deepEqual({ ...catalog.DEFAULT_POLICY.qualityFloor }, { worker: 5, reviewer: 9, approver: 7 });
   assert.throws(() => bus.addrDir('boss'), (e) => e.message.endsWith(list));

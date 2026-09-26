@@ -61,7 +61,7 @@ For a consumer policy layer that is the intended behaviour: its bans hold whatev
 **Two more selectors**, and they work in `allow` and `deny` alike:
 
 - `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. **A harness that lists no models has no flag to match**, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
-- `byRole` scopes a rule to one role: `deny: { byRole: { reviewer: { harnesses: ["cursor"] } } }` is "the reviewer never runs there", and leaves the other roles alone. Routing a role, its block is unioned into the deny and intersected into the allow.
+- `byRole` scopes a rule to a catalog role or a declared step. `deny: { byRole: { security: { harnesses: ["cursor"] } } }` applies only to `security`; a `reads-diff` step also takes `byRole.reviewer`. Their denies union and their allows intersect. `models validate` refuses an unknown step name against the host's declaration.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
@@ -203,9 +203,9 @@ Save it as `~/.promptobus/model-routing.json` (yours everywhere) or `<promptobus
 Line by line:
 
 - `deny.models` takes one model out of automatic selection everywhere it appears. A denied candidate is still reported, with `denied-by-policy` and the rule and every layer that wrote it, so the pick stays explainable;
-- `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.<role>` applies its block only when that worker, reviewer or approver is being routed;
+- `deny.flags` takes out every model the snapshot marks that way, and `deny.byRole.<name>` applies its block when that catalog role or declared step is being routed;
 - `weights.balanced` re-weights one strategy. All four numbers are required and they must sum to 100 — `validate` refuses the file otherwise;
-- `qualityFloor` raises or lowers the bar per role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. All three are soft floors and choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
+- `qualityFloor` raises or lowers the bar per catalog role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. An explicit floor on a declared step takes precedence; otherwise that step uses its kind's merged catalog-role floor. All are soft choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line. `excludeAtUsedPercent` (90) is the level at which a tuple stops being a candidate at all: its binding window at or past it is the `window-nearly-spent` exclusion, so a `--strategy quality` run no longer lands on an account with 4 % left because the quality weight outran `remaining`. Naming the tuple with `--harness` or `--model` still spends it, with a `window-nearly-spent-named` warning;
 - `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
@@ -477,6 +477,8 @@ The Codex rollout is not a sidecar producer. `event_msg.token_count.info` in the
 
 At close, `telemetryRecords` projects the journal-only timing before cleanup: `idleSec` covers mailbox wait intervals and `deliveryLatencySec` covers canonical message timestamp to mailbox-taken delivery. The typed `promptobus/telemetry` entry exposes `telemetryStats(host).summary`, which groups persisted rows by opaque task key and role, reports wall-clock time and bus traffic as `busMessages`, and names the role with the largest wall-clock total as `bottleneckRole`. Run-wide quota deltas stay in `quotaEvidence` with harness/window coverage; `quotaCostPercent` remains null for every role, with `ambiguous`/`unavailable` state when overlap or incomplete evidence prevents attribution, and `ambiguous` is derived only from validated measured quota coverage; a same-harness record without a matching window counts as unavailable, malformed windows contribute no quota evidence, and an absent or invalid scope is never treated as account-wide. Per-role numeric fields require complete record coverage, and an incomplete wall-clock field leaves `bottleneckRole` null.
 
+Each new record names the step beside its catalog role. A saved routed role survives a later change to the step's kind. `models calibrate` shows run and accepted-piece counts by step and catalog role within each tuple key, separating equal step names from different installations; older records without `step` use their role. Proposals continue to rate the tuple rather than adding step-specific catalog rows.
+
 These fields are descriptive run evidence, not model-active time or money. Missing timing or quota evidence is `null`/`unavailable`, and the summary does not invent a model-turn count or attached-session spend; rows survive task-journal pruning.
 
 The only identifier is `task`: an opaque local key, not the id. It exists so
@@ -568,10 +570,9 @@ wires nothing: PB-21 gives it a command line.
 
 Three rules shape the file.
 
-**Every number comes from the merged policy.** A weight, a penalty, a bonus,
-all three quality floors and the two numbers of the pace layer are read from
-`policy.policy`, never from a literal —
-that is what makes an overlay able to change them at all. The two constants
+**Every policy number comes from the merged policy.** A weight, a penalty, a bonus,
+the three catalog-role quality floors and the two numbers of the pace layer are read from
+`policy.policy`, never from a literal. An explicit step floor is handed over by the host and takes precedence over its kind's merged floor. The two constants
 below are formula constants of ADR-005, not policy: the 1–10 normalisation and
 the neutral 50 % an unknown remaining limit counts as. The overlay schema has
 no key for either, so an overlay cannot move them and neither can this file.
@@ -1171,7 +1172,7 @@ The decision as it is kept on the participant.
 
 Compact on purpose: the record travels into `task.json` and is read by a
 person through `promptobus status`, not replayed. What is kept is what the
-ADR names — the strategy, the tuple, the score, the age of the snapshot the
+ADR names — the step, its catalog role, the strategy, the tuple, the score, the age of the snapshot the
 pick was made on, the warnings, and whether the constraints narrowed
 anything. Warnings keep their codes and not their prose: the vocabulary is
 closed ([03-cli](../reference/03-cli.md)), and the sentences behind the

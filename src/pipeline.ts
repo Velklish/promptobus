@@ -24,6 +24,8 @@ export interface PipelineStep extends DeclaredStep {
   /** Absolute path of the file whose text joins the step's lift prompt; `null` — none. */
   readonly instructions: string | null;
   readonly qualityFloor: number;
+  /** The declared value, before the kind's default fills an absent floor. */
+  readonly declaredQualityFloor?: number;
 }
 
 export interface Pipeline {
@@ -54,7 +56,9 @@ export const DEFAULT_PIPELINE: Pipeline = Object.freeze({
 
 /** The steps a host answers: the owner first, then the gates, `{ name, kind }` each. */
 export function pipelineSteps(pipeline: Pipeline): readonly DeclaredStep[] {
-  return Object.freeze([pipeline.owner, ...pipeline.gates].map(({ name, kind }) => Object.freeze({ name, kind })));
+  return Object.freeze([pipeline.owner, ...pipeline.gates].map(({ name, kind, declaredQualityFloor }) => Object.freeze({
+    name, kind, ...(declaredQualityFloor === undefined ? {} : { qualityFloor: declaredQualityFloor }),
+  })));
 }
 
 /** The steps of a host's pipeline in order; the default ones while it declares none, or with no host. */
@@ -142,6 +146,7 @@ export function readPipeline(raw: unknown, { root, file }: { root: string; file:
     }
     steps.push(Object.freeze({
       ...step, qualityFloor: step.qualityFloor ?? defaultFloor(registry, step.name) as number,
+      ...(step.qualityFloor === null ? {} : { declaredQualityFloor: step.qualityFloor }),
     }));
   }
   if (findings.length) return { pipeline: null, findings };
