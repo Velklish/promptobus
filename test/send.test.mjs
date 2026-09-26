@@ -412,11 +412,11 @@ const mcpSend = async (env, args) => {
   }
   const unnamed = await refuse(['send', 'orchestrator', '--body', 'which one', '--task', TWO],
     { CLAUDE_CODE_SESSION_ID: LEAD });
-  const r = await run(['send', 'orchestrator', '--body', 'as the peer', '--task', TWO],
-    { CLAUDE_CODE_SESSION_ID: LEAD, PROMPTOBUS_ROLE: 'peer:y', PROMPTOBUS_TASK: CHILD });
+  const r = await run(['send', 'orchestrator', '--body', 'as the teamlead', '--task', TWO],
+    { CLAUDE_CODE_SESSION_ID: LEAD, PROMPTOBUS_ROLE: 'teamlead:y', PROMPTOBUS_TASK: CHILD });
   check(': a session holding two addresses in one task sends as the one its declared role names',
     unnamed.failed === true && /holds teamlead:y and peer:y in task/.test(unnamed.out)
-      && lastIn(TWO, 'orchestrator')?.sender === addrDir('peer:y') && /from peer:y/.test(r),
+      && lastIn(TWO, 'orchestrator')?.sender === addrDir('teamlead:y') && /from teamlead:y/.test(r),
     `${unnamed.out} · ${JSON.stringify(lastIn(TWO, 'orchestrator')?.sender)} · ${r}`);
 }
 

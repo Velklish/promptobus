@@ -410,3 +410,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-263.2"></a>`PB-263.2-no-max-quality-citations` · 2026-09-27 · completed · — · Reconcile quality citations on ladders without max
 - <a id="pb-277"></a>`PB-277-step-addresses-in-commands` · 2026-09-27 · completed · — · status, sweep, dismiss and stop address step:slug
 - <a id="pb-274.1"></a>`PB-274.1-owner-step-address` · 2026-09-27 · completed · — · spawn lifts the owner step under its declared name
+- <a id="pb-270"></a>`PB-270-governance-routes` · 2026-09-27 · completed · — · Governance routes: teamleads exchange only question, answer, status, artifact; user asks; reporter never sends

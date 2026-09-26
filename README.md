@@ -17,6 +17,7 @@ English is canonical. The Russian README is the only other language in this repo
 ## Features
 
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. A task may have a root parent; `status` shows its children and `done` waits for each child to close. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
+- **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. Linked peer roots use those types; `user` asks by `question`, receives `answer` or `status`, and `reporter` only reads. Other traffic follows the root orchestrator. The [route table](docs/reference/04-protocol.md#addresses) gives each decision; registration and lifts for these addresses are separate steps.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
 - **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate after the required earlier results are on record. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
 - **Addressed acceptance.** `review <path> --task <id> --approver` lifts the first `writes-main-tree` gate after the preceding participant and owner have reported. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to workers in that task only while the calling session holds it, and the canonical exchange stays in the task journal.
@@ -159,7 +160,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 
 | Tool | Input | Does |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message to an address in the declared pipeline or `orchestrator`. The tool description lists the installation's active steps. The sender is the address this session holds in that task |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message to a registered participant. The tool description lists the installation's active pipeline steps; the [route table](docs/reference/04-protocol.md#addresses) decides which pair and type are allowed. The sender is the address this session holds in that task |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Without `message` it lists headers and marks them read; with `message` it returns that one body and marks nothing. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 

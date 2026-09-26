@@ -309,27 +309,41 @@ test('the record-bearing surfaces stay on the shipped step names until rights ar
   assert.equal(bus.readableName(null, 'security:x-1'), 'security:x-1');
 });
 
-test('routing: a reads-diff step and every governance role stay on the orchestrator route', () => {
+test('routing: declared steps use the vertical route; governance exceptions stay closed without links', () => {
   const home = path.join(SB, 'routes', '.promptobus');
   store.bus(home, { cli: '0.5.1' });
   const task = store.createTask(home, { id: 'registry-t20260926-120000', title: 'registry', owner: null });
   for (const address of ['worker:x', 'security:x', 'teamlead:x', 'peer:x', 'reporter', 'user']) {
-    store.upsertParticipant(home, task.id, store.participantRecord(address, { repo: 'ns/repo' }, REG));
+    store.upsertParticipant(home, task.id, store.participantRecord(address, {
+      repo: 'ns/repo', ...(address === 'peer:x' ? { sessionId: 'peer-session', peerTask: 'other-root' } : {}),
+    }, REG));
   }
-  const send = (from, to) => {
+  const send = (from, to, type = 'status') => {
     try {
-      store.sendMessage(home, task.id, { from, to, type: 'status', body: `${from} → ${to}` });
+      store.sendMessage(home, task.id, {
+        from, to, type, body: `${from} → ${to}`,
+        ...(from === 'peer:x' ? { session: 'peer-session' } : {}),
+      });
       return 'sent';
     } catch (e) {
-      return /do not write to each other/.test(e.message) ? 'refused' : e.message;
+      return e.message.includes('root orchestrator') || e.message.includes('do not write to each other')
+        ? 'refused' : e.message;
     }
   };
-  for (const address of ['security:x', 'teamlead:x', 'peer:x', 'reporter', 'user']) {
+  for (const address of ['security:x', 'teamlead:x']) {
     assert.equal(send(address, store.ORCHESTRATOR), 'sent', `${address} → orchestrator`);
     assert.equal(send(store.ORCHESTRATOR, address), 'sent', `orchestrator → ${address}`);
     assert.equal(send(address, 'worker:x'), 'refused', `${address} → worker`);
     assert.equal(send('worker:x', address), 'refused', `worker → ${address}`);
   }
+  assert.equal(send('peer:x', store.ORCHESTRATOR), 'refused', 'an unlinked peer cannot write to the orchestrator');
+  assert.equal(send(store.ORCHESTRATOR, 'peer:x'), 'refused', 'the orchestrator cannot write to an unlinked peer');
+  assert.equal(send('reporter', store.ORCHESTRATOR), 'refused', 'reporter sends nothing');
+  assert.equal(send(store.ORCHESTRATOR, 'reporter'), 'sent', 'reporter can receive');
+  assert.equal(send('user', store.ORCHESTRATOR, 'question'), 'sent', 'user asks');
+  assert.equal(send('user', store.ORCHESTRATOR), 'refused', 'user cannot send status');
+  assert.equal(send(store.ORCHESTRATOR, 'user'), 'sent', 'user receives status');
+  assert.equal(send(store.ORCHESTRATOR, 'user', 'question'), 'refused', 'user does not receive question');
 });
 
 test('status groups each piece and prints four declared steps in pipeline order with session state', () => {

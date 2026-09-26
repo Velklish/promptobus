@@ -37,7 +37,9 @@ export function mcpTools(registry: RoleRegistry): McpTool[] {
     {
       name: 'promptobus_send',
       description: `Send a message to a task participant. Address: ${addresses}. `
-        + 'Workers and approvers in the same task may write directly; other participant traffic goes through the orchestrator. '
+        + 'Workers and approvers in one task may write directly. Registered sibling teamleads and linked peers '
+        + 'exchange question, answer, status or artifact; user asks the orchestrator by question, and reporter only reads. '
+        + 'Other participant traffic goes through the root orchestrator. '
         + 'The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, '
         + 'and if your mailbox has unread mail — its count.',
       inputSchema: {

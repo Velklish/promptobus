@@ -17,13 +17,30 @@ registry](#the-role-registry)). The grammar admits the slugless `orchestrator`, 
 and `user` and `<name>:<slug>` under any other step-shaped name; which of those names exist
 is the registry's answer, asked where a participant is written or addressed. The governance
 addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it; nothing
-lifts them yet, the texts that list addresses do not print them, and routing keeps them on
-the orchestrator route. `addrDir` is injective only over admitted addresses — `reviewer-two:x` and
-`reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
+lifts them yet, and the texts that list addresses do not print them. Once registered, their
+routes are the closed table below. `addrDir` is injective only over admitted addresses —
+`reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
-default routing rule keeps participant traffic with the orchestrator. One deliberate
-exception opens direct worker↔approver traffic for a piece once a reviewer result is on record;
-worker↔worker and every reviewer↔participant route remain refused. A direct sender must
+default routing rule keeps participant traffic with the orchestrator. The existing direct
+worker↔approver route stays open; worker↔worker and reviewer↔participant routes remain refused.
+
+| Sender | Recipient | Types | Decision |
+|---|---|---|---|
+| `orchestrator` | any participant of its task | all seven | unchanged |
+| any participant | `orchestrator` of its task | all seven | unchanged |
+| `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
+| `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign |
+| `user` | `orchestrator` | `question` | the person asks the top of the tree |
+| `orchestrator` | `user` | `answer`, `status` | the answer and progress lines |
+| `reporter` | nobody | none | the reporter reads |
+
+The specific `peer:<slug>` rule takes priority over the generic participant-to-orchestrator row:
+peer-to-orchestrator sends also need a reciprocal link and use only the four types in the peer row.
+The `user` and `reporter` rows take the same priority over generic vertical traffic. A teamlead
+pair is a sibling pair only when both records in the root point to child tasks whose `parent`
+names that root and whose owner sessions match the teamlead bindings. A peer route needs a
+`peerTask` link in both roots, with each peer record bound to the other root's owner session.
+Other pairs are refused with the root orchestrator as the route. A direct sender must
 already be registered in that task and its recorded session must match the calling
 harness session. Direct messages
 bypass the orchestrator's unread mailbox but remain canonical in the task's
@@ -492,8 +509,8 @@ above with their address lists. The MCP `promptobus_send` description and its `t
 the default floors and `DEFAULT_ROLE`, the grammar, and the address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
 
 **What a kind does not carry yet.** The behaviour that differs by role compares the shipped step
-names, so a declared step inherits the fields above and none of these rights: the routing policy
-and its worker–approver exception (`lib/store.js`), the approver and title lookups over the task
+names, so a declared step inherits the fields above and none of these rights: the routing policy's
+direct worker–approver exception (`lib/store.js`), the approver and title lookups over the task
 record (`approverHere`, `unprovenApproverLine`, `titleFromLines`, and the approver seat in
 `lib/review.js`), `readableName` (it drops a shipped step's prefix and prints any other address
 whole), the guard's participant prefixes (`lib/guard.js`), the Codex

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline still records `worker:<slug>`. [03-cli § Spawn](docs/reference/03-cli.md#spawn),
   [03-cli § Review](docs/reference/03-cli.md#review).
 
+- **Governance routes are decided by task tree and message type** (PB-270). Sibling teamleads exchange
+  question, answer, status and artifact directly; reciprocal peer links allow the same four types.
+  The person asks the orchestrator by question and receives answer or status, while a reporter
+  sends nothing. Disallowed pairs and assignment types name the root orchestrator route.
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
 - **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
   when the preceding participant's result is recorded for that subject and current assignment; a
   `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the

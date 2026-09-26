@@ -38,7 +38,7 @@ export type RoutingDecision = { allow: true } | { deny: true; reason: string };
  * own. Roles are taken from participant RECORDS: role is never derived from
  * the id anywhere.
  */
-export type RoutingPolicy = (sender: ParticipantV1, recipient: ParticipantV1, task: TaskV1) => RoutingDecision;
+export type RoutingPolicy = (sender: ParticipantV1, recipient: ParticipantV1, task: TaskV1, type: string) => RoutingDecision;
 
 /** What is passed to the engine at open. */
 export interface EngineOptions {
@@ -199,8 +199,8 @@ export function openEngine({
   }
   const home = at ?? homeOf(root as string);
 
-  function decide(sender: ParticipantV1, recipient: ParticipantV1, meta: TaskV1): void {
-    const decision = policy(sender, recipient, meta);
+  function decide(sender: ParticipantV1, recipient: ParticipantV1, meta: TaskV1, type: string): void {
+    const decision = policy(sender, recipient, meta, type);
     if (decision && (decision as { allow?: unknown }).allow === true) return;
     // Not a decision at all is also a refusal: a policy that returned garbage
     // must not be read as permission. A silent pass here would cost exactly
@@ -246,7 +246,7 @@ export function openEngine({
       fail('artifact-not-found', `artifact ${input.linkArtifact} is not in task ${task}`,
         { task, artifact: input.linkArtifact, file: artifactFile(home, task, input.linkArtifact) });
     }
-    for (const recipient of recipients) decide(sender, recipient, meta);
+    for (const recipient of recipients) decide(sender, recipient, meta, input.type);
     faults('validate', { task, message: null });
     return { meta, sender, recipients };
   }

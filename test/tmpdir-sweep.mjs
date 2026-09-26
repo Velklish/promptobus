@@ -109,7 +109,7 @@ export const SUITE_PREFIXES = [
   'schema-skew-',
   'promptobus-ambient-', 'promptobus-codex-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-driver-',
-  'promptobus-e2e-', 'promptobus-harness-', 'promptobus-home-',
+  'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-',
   'promptobus-mcp-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',
   'promptobus-promptobus', 'promptobus-races-',

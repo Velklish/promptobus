@@ -555,6 +555,25 @@ test('a closed task is not written to, and reading it is lawful', async () => {
 
 // ── Routing policy ────────────────────────────────────────────────────────────────────
 
+test('both send paths pass the message type to the policy before writing', async () => {
+  const seen = [];
+  const engine = open(sandbox(), { policy: (sender, recipient, task, type) => {
+    seen.push([sender.id, recipient.id, task.id, type]);
+    return type === 'task' ? { deny: true, reason: 'task uses the vertical route' } : { allow: true };
+  } });
+  const id = taskWith(engine);
+  assert.equal((await engine.send(id, {
+    from: 'w-api', to: ['w-docs'], type: 'question', body: 'small question',
+  })).message.type, 'question');
+  assert.equal(refusal(() => engine.sendSync(id, {
+    from: 'w-api', to: ['w-docs'], type: 'task', body: 'an assignment',
+  })).code, 'policy-denied');
+  assert.deepEqual(seen, [
+    ['w-api', 'w-docs', id, 'question'], ['w-api', 'w-docs', id, 'task'],
+  ]);
+  assert.equal(engine.unread(id, 'w-docs'), 1);
+});
+
 test('a routing denial fires BEFORE artifacts and messages', async (t) => {
   const root = sandbox();
   const engine = openEngine({ root, policy: noWorkerToWorker, now: clock() });
