@@ -49,6 +49,28 @@ Adding a harness to that list is a hand edit of this file. There is no `tools` s
 
 So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched, and the very next `promptobus review … --harness codex` refuses with `declared: none` until you add `"codex"` to `tools` yourself. `install` says so when it finishes, and the refusal says it again. They stay two fields on purpose: writing a hook file into a project must not by itself grant that project permission to spawn participants.
 
+### The pipeline
+
+`pipeline` declares the steps a piece passes after the hand-over to a worker, one declaration per installation. Without it the pipeline is `worker`, then `reviewer` and `approver`, and nothing changes. To add a read-only security review between the reviewer and the approver:
+
+```json
+{
+  "tools": ["claude", "cursor", "codex"],
+  "pipeline": {
+    "owner": { "name": "worker", "kind": "edits-tree" },
+    "gates": [
+      { "name": "reviewer", "kind": "reads-diff" },
+      { "name": "security", "kind": "reads-diff", "instructions": "docs/security-review.md" },
+      { "name": "approver", "kind": "writes-main-tree" }
+    ]
+  }
+}
+```
+
+`owner` is the one step that edits the worktree. `gates` run in the order listed, and each is `reads-diff` (reads the diff, writes nothing) or `writes-main-tree` (accepts the piece at the clone root). `instructions` is a file inside this directory, named relative to it, and `qualityFloor` (1–10) a floor for the step; both are checked now and carried for the lift of a declared step, which is not there yet — today no lift prompt reads the file and no routing reads the floor. `promptobus status` then names `worker → reviewer → security → approver` in its task header, and `security:<slug>` parses and routes; no lift and no tool description names it yet. Lifting a declared step by name is not there yet: `spawn` still lifts `worker`, whatever `owner.name` says, and `review` and `review --approver` still lift `reviewer` and `approver`.
+
+`promptobus models validate` names every field it refuses: a second `edits-tree` step, a name declared twice, a name outside `[a-z][a-z0-9-]{0,31}`, the name of a governance role (`orchestrator`, `teamlead`, `peer`, `reporter`, `user`), and an `instructions` path outside this directory or not a file there. A declaration it refuses is refused by every command that reads the pipeline, with the same lines. The rules and the schema: [reference/02-host § The pipeline declaration](../reference/02-host.md#the-pipeline-declaration).
+
 ### A repository that generates its process skills
 
 A worker repository may have its own `promptobus.json` — separate from the workspace one — with an optional `generate` field: the argv of a command that restores the process skills the repository does not keep in git.

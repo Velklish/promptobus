@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:pipeline",
+  "title": "Pipeline declaration",
+  "description": "The `pipeline` key of an installation's `promptobus.json`: the one owner step of kind `edits-tree`, then the gate steps in order. Absent, the pipeline is `worker`, then `reviewer` and `approver`. This schema refuses the shape: an unknown field, a step name outside the grammar or equal to a governance role, a kind outside the three, an owner of another kind, a gate of kind `edits-tree` (a second editor) and a floor outside 1–10. It cannot refuse what JSON Schema does not express, and the loader and `models validate` refuse it instead: one name declared twice, an `instructions` path outside the install root or not a file there, a name the role registry already holds as another kind, and a name that overlaps a step name in the `<name>-` shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["owner", "gates"],
+  "properties": {
+    "owner": {
+      "description": "The step that edits the worktree, lifted by `spawn`. Exactly one per pipeline.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "kind": { "const": "edits-tree" }
+      }
+    },
+    "gates": {
+      "description": "The steps after the owner, in the order a piece passes them. May be empty.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/gate" }
+    }
+  },
+  "$defs": {
+    "name": {
+      "description": "The step's address prefix: `<name>:<slug>`. A governance role's name is never a step's.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$",
+      "not": { "enum": ["orchestrator", "teamlead", "peer", "reporter", "user"] }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "kind": {
+          "description": "The kind of right. `edits-tree` belongs to the owner alone: two writers in one worktree are refused.",
+          "enum": ["reads-diff", "writes-main-tree"]
+        },
+        "instructions": {
+          "description": "A file inside the install root, named relative to it, whose text is meant for the step's lift prompt.",
+          "type": "string",
+          "minLength": 1
+        },
+        "qualityFloor": {
+          "description": "The step's quality floor on the ten-point scale. Absent, the floor of its kind: 9 for `reads-diff`, 7 for `writes-main-tree`.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "owner": { "name": "worker", "kind": "edits-tree" },
+      "gates": [
+        { "name": "reviewer", "kind": "reads-diff" },
+        { "name": "security", "kind": "reads-diff", "instructions": "docs/security-review.md", "qualityFloor": 9 },
+        { "name": "approver", "kind": "writes-main-tree" }
+      ]
+    }
+  ]
+}

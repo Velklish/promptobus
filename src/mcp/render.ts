@@ -5,7 +5,9 @@ import {
   addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, MAILBOX_COPY, nameOf, ORCHESTRATOR, ownerOf,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
+import { pipelineText } from '../pipeline.js';
 import { SHIPPED_REGISTRY, withoutStep } from '../registry.js';
+import type { DeclaredStep } from '../registry.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from '../v1/model.js';
 import type { PromptobusService } from './service.js';
 
@@ -162,6 +164,7 @@ export function renderTask(
   addr: string,
   session: string | null,
   decorate: DecorateParticipant,
+  steps: readonly DeclaredStep[],
 ): string {
   const meta = service.readTask(home, id);
   // Own mailbox — in the heading, before the participant list: the list
@@ -171,6 +174,7 @@ export function renderTask(
   const lines = [
     `task ${meta.id} · ${meta.title}`,
     `status: ${meta.status} · created: ${meta.created}`,
+    `pipeline: ${pipelineText(steps)}`,
     `artifacts: ${service.artifactsDir(home, id)}`,
     ...(mine ? [mine] : []),
     'participants:',

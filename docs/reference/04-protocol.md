@@ -409,9 +409,13 @@ entry, `worker` included, in the `<name>-` shape — `reviewer-two:x` and `revie
 `worker-foo:x` and `worker:foo-x`, would share one participant id (`addrDir`), one mailbox and one
 file stem. An admitted step's stem is
 `<name>-<slug>` and its fields are its kind's. `registryOf(host)` is `withSteps` over the host's
-optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)), which no host answers
-yet, so today it is the shipped registry; it is computed per call, and the package keeps no table
-of its own that anything writes into.
+optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)). The standalone host
+answers it from the `pipeline` key of `promptobus.json` and omits it when the key is absent, so a
+host without a declaration hands over the shipped registry
+([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)). It is computed per call,
+and the package keeps no table of its own that anything writes into. A declared step is listed after
+the shipped ones, and a shipped step the declaration leaves out stays: the order of a pipeline is
+`pipelineOf(host)`, not the registry's.
 
 **The grammar needs no registry.** `isAddress`, `roleOf`, `addrDir` and `participantFileStem`
 admit the slugless names (`orchestrator`, `reporter`, `user`) and `<name>:<slug>` under any other

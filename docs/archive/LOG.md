@@ -394,3 +394,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-278"></a>`PB-278-mailbox-headers` · 2026-09-26 · completed · — · The mailbox returns headers and the postcard carries the stub
 - <a id="pb-282"></a>`PB-282-near-limit-exclusion` · 2026-09-26 · completed · — · A tuple whose binding window is 90 % spent leaves automatic selection, and the lift names its near-limit windows
 - <a id="pb-283"></a>`PB-283-near-limit-without-its-line` · 2026-09-26 · merged into PB-282 · — · spawn prints near-limit three times per participant while models prints no near-limit line
+- <a id="pb-273"></a>`PB-273-pipeline-declaration` · 2026-09-26 · completed · — · pipeline in promptobus.json declares the owner step and the gate steps; validate refuses a second editor and a governance name
+- <a id="pb-266.3"></a>`PB-266.3-glossary-registry-row-symbol` · 2026-09-26 · merged into PB-273 · — · The glossary registry row cites a symbol the module does not export

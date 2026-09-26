@@ -9,6 +9,7 @@ import process from 'node:process';
 import {
   HOST_KIND, HostResolveError, homeOfRoot,
 } from './host.js';
+import { pipelineRefusal, pipelineSteps, readPipeline } from './pipeline.js';
 import { ROOT_DIR } from './v1/layout.js';
 import type {
   HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate, HostRepoModule,
@@ -59,6 +60,8 @@ interface HostFile {
   /** Argv of the command that restores process skills a repository does not keep in git, never a
    * shell line. Read from the SPAWNED REPOSITORY's own file ([03-cli.md § Spawn](../docs/reference/03-cli.md#spawn)). */
   generate?: string[];
+  /** The owner step and the gate steps: 02-host § The pipeline declaration. */
+  pipeline?: unknown;
 }
 
 function readConfig(file: string): HostFile {
@@ -148,6 +151,10 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
   const ruleFiles = Array.isArray(config.rules) ? config.rules.map(String) : [];
   const mcp = config.mcp && typeof config.mcp === 'object' ? config.mcp : {};
   const skills = typeof config.skills === 'string' ? config.skills : null;
+  // The verdict is taken here; a refusal is spoken at the first ask. Absent key — no member.
+  const declared = config.pipeline === undefined ? null
+    : readPipeline(config.pipeline, { root, file: path.join(root, HOST_CONFIG) });
+  const steps = declared?.pipeline ? pipelineSteps(declared.pipeline) : null;
   const versionReadMs = typeof options.versionReadMs === 'number' && options.versionReadMs > 0
     ? options.versionReadMs
     : VERSION_READ_MS;
@@ -220,6 +227,12 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       external: [],
     }),
     participantDenyTools: (): HostMcpToolClassification => ({ tools: [], complete: true }),
+    ...(declared ? {
+      pipeline: () => {
+        if (!steps) throw pipelineRefusal(declared.findings);
+        return steps;
+      },
+    } : {}),
     memorySection: () => null,
 
     resolveRepo: async (query: string): Promise<HostRepo> => {

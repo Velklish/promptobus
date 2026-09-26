@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`pipeline` in `promptobus.json` declares the owner step and the gate steps** (PB-273). `owner` is the one
+  `edits-tree` step; `gates` run in order, each `reads-diff` or `writes-main-tree` with optional `instructions` and
+  `qualityFloor`. The standalone host answers `pipeline()` owner first and omits it without the key, so the default
+  `worker`, `reviewer`, `approver` is unchanged. `models validate` and every surface that reads the registry refuse,
+  with the field named and code `pipeline-invalid`: a second editor, a name declared twice or outside the grammar,
+  a governance name and an `instructions` path outside the install root or missing. `status` and `promptobus_task` print the steps in order; no
+  command lifts a declared step yet. [02-host § The pipeline declaration](docs/reference/02-host.md#the-pipeline-declaration).
+
 - **Routing names a nearly spent window as a fact, not only in prose** (PB-282). `nearLimit.excludeAtUsedPercent` (default 90) in the catalog policy and the overlay schema; the exclusion `window-nearly-spent` with `usedPercent` and the warning `window-nearly-spent-named` in the decision schema, whose `near-limit` warning gains `harness` and `usedPercent`; `metadata.routing.nearLimit` and `metadata.routing.nearlySpent`; and `resolve()`'s `expiredWindows` input. What they fix is the `Fixed` entry of the same number. [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
 
 - **`promptobus install` lays out and owns the package's process skills** (PB-268, [ADR-023](docs/adr/adr-023-install-owns-process-skills.md)).

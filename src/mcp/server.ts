@@ -5,6 +5,8 @@ import {
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
 import { MCP_TOOLS } from './tools.js';
+import { pipelineOf } from '../pipeline.js';
+import type { DeclaredStep } from '../registry.js';
 import type { PromptobusService } from './service.js';
 import {
   ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessage, renderMessages, renderTask,
@@ -73,6 +75,8 @@ export interface McpOptions {
   onJoin: (join: McpJoin) => void;
   /** Participant lines the store does not know: repository, worktree, background session. */
   decorateParticipant: DecorateParticipant;
+  /** The host's pipeline steps in order, for the `task` reply; absent — the default pipeline. */
+  pipeline?: () => readonly DeclaredStep[];
   /** Stall routes in the `mailbox` reply; `null` — nothing to say. */
   stalls: (ctx: McpStalls) => string | null;
   /** Human text of the event. */
@@ -108,7 +112,7 @@ export function createMcpServer(options: McpOptions): {
 } {
   const {
     service, protocolVersions, resolveIdentity, serverInfo,
-    onJoin, decorateParticipant, stalls, errorText,
+    onJoin, decorateParticipant, pipeline, stalls, errorText,
   } = options;
   // An empty version list is a refusal here, at create, not `undefined` in the
   // reply to the first `initialize`: `negotiateProtocol` takes `versions[0]`
@@ -235,7 +239,7 @@ export function createMcpServer(options: McpOptions): {
           + (unread ? `\n${unread}` : '');
       }
       case 'promptobus_task':
-        return renderTask(service, home, task, role, session, decorateParticipant);
+        return renderTask(service, home, task, role, session, decorateParticipant, pipeline?.() ?? pipelineOf(null));
       default:
         throw new UnknownToolError(name);
     }

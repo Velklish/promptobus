@@ -39,7 +39,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
 | `participantDenyTools` | `participantDenyTools?(role: HostDenyRole): HostMcpToolClassification` | Optional member; `HostDenyRole` is `'reviewer' \| 'approver'`, declared in `src/registry.ts`. `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
-| `pipeline` | `pipeline?(): readonly DeclaredStep[]` | Optional member, answered by no host yet: the pipeline-declaration card fills it for the standalone host. Absent, `registryOf(host)` is the shipped role registry ([04-protocol § The role registry](04-protocol.md#the-role-registry)). |
+| `pipeline` | `pipeline?(): readonly DeclaredStep[]` | Optional member: the owner step, then the gates in order, `{ name, kind }` each. The standalone host answers it when `promptobus.json` declares `pipeline` and omits it when the key is absent; a declaration that does not hold makes it throw `PromptobusError` `pipeline-invalid` ([§ The pipeline declaration](#the-pipeline-declaration)). Absent, `registryOf(host)` is the shipped role registry ([04-protocol § The role registry](04-protocol.md#the-role-registry)) and the pipeline is the default `worker`, `reviewer`, `approver`. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
 | `repoAbsPath` | `repoAbsPath(nsPath: string): string` | Never absent; the host returns the absolute path for the namespace. |
@@ -82,7 +82,7 @@ Migration also refuses before mutation if the former `tasks/` contains a non-emp
 
 `createStandaloneHost` (`src/standalone.ts`) walks up from `cwd` looking for `promptobus.json` (`HOST_CONFIG`). If the file is missing, the root is the resolved `cwd` and the config is empty.
 
-It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`.
+It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`, `pipeline` ([§ The pipeline declaration](#the-pipeline-declaration)).
 
 The shipped `bin/promptobus.js` always supplies `commandName: 'promptobus'` and the
 package version to `createStandaloneHost`. Therefore `commandName` and `version` in
@@ -140,6 +140,29 @@ so a host and package release must advance together. When a participant journal 
 the newer release contains that capability and an older reader sees the unknown key,
 the mechanism marker makes the diagnosis `schema-version-unsupported`: start a new
 session rather than repairing a valid journal.
+
+## The pipeline declaration
+
+`pipeline` in the installation's `promptobus.json` declares its steps ([ADR-020](../adr/adr-020-role-registry-and-declared-pipeline.md)): `owner`, the one step of kind `edits-tree`, as `{ name, kind }`, and `gates`, the steps after it in the order a piece passes them, each `{ name, kind, instructions?, qualityFloor? }` of kind `reads-diff` or `writes-main-tree`. `instructions` is a file inside the install root, the directory that holds `promptobus.json`, named relative to it; its text is meant for the step's lift prompt. `qualityFloor` is an integer from 1 through 10; absent, it is the floor of the step's kind in the role registry, 9 for `reads-diff` and 7 for `writes-main-tree`. Both are checked at load and carried in the model for the lift of a declared step; no lift reads either yet. The shape is `schemas/v1/pipeline.schema.json`; the model, the default and the rules are `src/pipeline.ts`. The install guide carries an example ([§ 2](../guides/install.md#2-workspace-file)).
+
+**Absent, nothing changes.** Without the key the standalone host omits `pipeline()`, so `registryOf(host)` is the shipped registry and the pipeline is `DEFAULT_PIPELINE`: the shipped registry's steps in order, `worker`, then `reviewer` and `approver`. The member is omitted rather than answering those steps because `registryOf` treats both alike, and an omitted member leaves a host without a declaration the host it was.
+
+**Declared, the member answers the steps in order**: the owner first, then the gates, `{ name, kind }` each. `DeclaredStep` is not widened; `instructions` and `qualityFloor` stay in the model `readPipeline` returns. `registryOf(host)` admits each declared name through `withSteps`, so `security:<slug>` becomes an address. The registry lists a declared step after the shipped ones and keeps a shipped step the declaration leaves out, so the order of a pipeline is read from `pipelineOf(host)`, never from the registry: `status` prints it in its task header, `promptobus_task` on its `pipeline:` line, `models validate` on its own line. No lift reads the declaration yet: `spawn`, `review` and `review --approver` lift `worker`, `reviewer` and `approver` whatever it names, and no command lifts a declared step. `acceptsBrief(step)` is the kind fact the step lift will read: only a `writes-main-tree` step takes a `--brief`, as `review --approver` does today.
+
+**What is refused**, each finding naming its field (`pipeline.gates[1].name`):
+
+- a second `edits-tree` step: a gate of that kind, because two writers in one worktree are refused;
+- a name declared twice;
+- a name outside `[a-z][a-z0-9-]{0,31}`;
+- the name of a governance role — `orchestrator`, `teamlead`, `peer`, `reporter`, `user`, read from the registry;
+- an `instructions` path outside the install root, or not a file there;
+- a kind outside the three, an owner of another kind, a floor outside 1–10, and a field the shape does not name.
+
+A step that passes these goes through the registry door in declaration order, and the door's own refusals come out on the step's `name`: a shipped name under another kind (`worker` as `reads-diff`), and a name that overlaps a step name in the `<name>-` shape (`reviewer-two`). The schema refuses the shape. JSON Schema cannot say "declared twice", "no such file" or what the registry already holds, so those are refused by the loader and `models validate` alone.
+
+**The verdict is taken at load, and the refusal is spoken at the first use of the registry.** `createStandaloneHost` reads and checks the declaration when it builds the host and keeps the verdict. A refused declaration makes `pipeline()` throw `PromptobusError` with code `pipeline-invalid` and one line per finding, `pipeline-invalid · <path of promptobus.json> · <field>: <why>`. Every surface that derives `registryOf(host)` — the lifts, `send`, the MCP join and send, the guard, `history --participant`, `status` — is refused with that text through the CLI catch, without a stack. `models validate` prints the same lines, which are built in one place, and a command that never asks for the registry, such as `install` or `prune`, still runs. The host does not throw from its constructor, because `bin/promptobus.js` builds the host before its catch: every command would then die with a stack, and `models validate`, the command a person runs to read the findings, could not print them.
+
+A consumer host that answers `pipeline()` from a source of its own is checked by `models validate` through the registry door, as a finding on the layer `host` at `pipeline()`. The package entry exports what such a host needs to run the same check on its own source and refuse the same way: `readPipeline`, `DEFAULT_PIPELINE`, `pipelineFinding` and `pipelineRefusal`.
 
 ## Model-routing paths
 

@@ -62,7 +62,7 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 }
 ```
 
-`tools` is the spawn allow-list: `--harness` must name one of them, and without the flag `spawn` and `review` use `claude`. Optional keys the host reads: `commandName`, `locale`, `version`, `rules` (extra rule files for participants), `mcp` (servers copied to a participant), `skills` (a directory of process skills). A repository that generates its own process skills declares the command in its own `promptobus.json` under `generate`, as an argv array.
+`tools` is the spawn allow-list: `--harness` must name one of them, and without the flag `spawn` and `review` use `claude`. Optional keys the host reads: `commandName`, `locale`, `version`, `rules` (extra rule files for participants), `mcp` (servers copied to a participant), `skills` (a directory of process skills), `pipeline` (the owner step and the gates a piece passes after it — [install § 2](docs/guides/install.md#the-pipeline)). A repository that generates its own process skills declares the command in its own `promptobus.json` under `generate`, as an argv array.
 
 ### 2. Give the orchestrator the MCP server
 

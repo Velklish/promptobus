@@ -158,7 +158,8 @@ export interface PromptobusHost {
   participantServers(): HostServers;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
   participantDenyTools?(role: HostDenyRole): HostMcpToolClassification;
-  /** Optional declared pipeline steps; absent, the role registry is the shipped one. */
+  /** Optional declared pipeline: the owner step, then the gates in order. Absent, the pipeline is the default
+   * and the role registry the shipped one; a declaration that does not hold throws `pipeline-invalid`. */
   pipeline?(): readonly DeclaredStep[];
   memorySection(toolName: (server: string, name: string) => string): string | null;
 

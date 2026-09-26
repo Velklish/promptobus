@@ -23,6 +23,7 @@ export const ERROR_CODES = [
   // validation
   'schema-invalid',
   'schema-version-unsupported',
+  'pipeline-invalid',
   // artifacts
   'artifact-source',
   'artifact-not-found',

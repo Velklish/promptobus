@@ -15,7 +15,7 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `src/hooks.ts` → `./hooks` | Hook planner |
 | `src/driver.ts` → `./driver` | Driver contract |
 | `lib/cli.js` → `./cli` | Command parser |
-| `schemas/v1/*.json` → `./schemas/*` | Task, participant, message, artifact schemas |
+| `schemas/v1/*.json` → `./schemas/*` | Record and declaration schemas |
 
 The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass.
 
@@ -204,6 +204,10 @@ whoever knows the store can assemble them. Everything that knows about the
 workspace arrives here through one `decorate` hook: participant lines about
 the repository, worktree, and background session are assembled by the
 adapter and handed over ready.
+The `task` reply's `pipeline:` line prints the steps in order from the
+optional `pipeline` member of `McpOptions`, which the adapter answers with the
+host's `pipelineOf(host)`; a server raised without it prints the default
+pipeline ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)).
 
 A mailbox read is rendered as headers (`renderMessages`): the heading line
 stays as it was — a feed hook lifts the sender name from it — and under it one
