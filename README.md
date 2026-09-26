@@ -16,7 +16,7 @@ English is canonical. The Russian README is the only other language in this repo
 
 ## Features
 
-- **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
+- **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. A task may have a root parent; `status` shows its children and `done` waits for each child to close. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
 - **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
 - **Addressed acceptance.** `approver:<slug>` is a fourth participant, lifted with `promptobus review <path> --task <id> --approver` once a reviewer result is on record. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to workers in that task only while the calling session holds it, and the canonical exchange stays in the task journal.
@@ -132,7 +132,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
-| `promptobus status` | The machine lease, then active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
+| `promptobus status` | The machine lease, then active roots with their child tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus send <address>` | Write one message as the address this session holds in the task; `--body` or `--file`, `--type`, `--task`, `--artifact`. There is no `--from` |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |

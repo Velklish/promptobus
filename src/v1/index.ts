@@ -19,7 +19,7 @@ export type {
 } from './engine.js';
 export { blobNamed, listArtifacts } from './artifacts.js';
 export type { ArtifactSource } from './artifacts.js';
-export type { BrokenTask, Clock, NewTask, ParticipantPatch, ReaderVersion } from './store.js';
+export type { BrokenTask, Clock, NewTask, ParticipantPatch, ReaderVersion, TaskLinkFailure, TaskLinkRepair } from './store.js';
 export type {
   ActivationEvent, BrokenNote, FanoutStep, FaultHook, HistoryEntry, HistoryPage, HistoryQuery,
   RecoverFailure, Repair,

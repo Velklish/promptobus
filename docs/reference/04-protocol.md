@@ -80,6 +80,14 @@ During a consuming mailbox read, a filesystem refusal while reading or moving on
 
 ## Store layout
 
+A task may carry `parent`, the id of a root task. The root's `links/<child-id>.json`
+is a creation intent: it stores the child journal and the `teamlead:<slug>`
+participant that belongs in the root. The child's `orchestrator` stores the
+session in `metadata.owner`; the root's teamlead stores the same full session
+in `metadata.sessionId`, so either address can pass the sender gate in its own
+task. A child cannot name another child as parent. A task without `parent` is
+a root and needs no teamlead.
+
 The engine receives either a workspace `root`, which resolves to `<root>/.promptobus`, or the store `home` itself. It never searches for a root or reads an environment variable. Under `tasks/<task-id>/`, `task.json` is the journal; `messages/` holds canonical messages; `intents/` holds open fan-outs; `inbox/<participant>/` is unread mail; `history/<participant>/` is mail that was read; `blobs/` holds immutable SHA-256 payloads; and `artifacts/` holds their metadata. A task journal lock is `.lock/`. An open intent has a neighbouring `<id>.owner` lease. `broken/inbox/<participant>/`, `broken/artifacts/`, and `broken/messages/` isolate malformed records without taking the rest of the task down. The adapter's `files/` directory is a human-facing sidecar, not an engine v1 path.
 
 Participant settings and launch sidecars use `participantFileStem`: a worker keeps
@@ -109,11 +117,31 @@ The engine returns `ActivationEvent` values after the fan-out is on disk. It doe
 
 ## Recovery
 
+Task-link recovery runs before message fan-out recovery. Under the root journal
+lock it reads each `links/` intent, creates a missing child journal, registers
+a missing teamlead participant, and removes the intent after both exist. The
+`links` result names each repaired parent and child and which half was missing;
+`linkFailures` names an intent that remains for another pass. A child link
+fault hook fires after the child journal write and before the parent journal
+write, so the suite can prove this recovery path.
+
 `recoverTask` walks unclosed `.json` intents and repairs the missing canonical link or recipient references. It checks both `inbox/` and `history/` before adding a reference, so a message already read during a crash is not delivered a second time. A lease from the same host can identify a dead owner; an intent older than `INTENT_STALE_MS = 30_000` milliseconds is abandoned regardless of its lease.
 
 The recovery result separates repaired fan-outs, activation events, unreadable records and failed materializations. A filesystem refusal such as `link-refused`, `dir-blocked` or `dir-occupied` leaves the intent for a later pass; if both the intent and canonical message have disappeared at materialization, the failure is `intent-lost` and is not retried. A canonical-directory mkdir `ENOENT` is not that disappearance: the intent file is still there, the refusal is `dir-occupied`, and the next pass delivers once the dangling symlink is gone. A malformed intent is isolated in `broken/messages/`, while a newer schema stays in place as `schema-version-unsupported`. Recovery continues through neighbouring intents and tasks; unrelated exceptions escape. Orphaned `.owner` files are swept after the same directory listing. The stable contract marker for `consumer-cli` lint is `intent-stale-ms: 30` (seconds).
 
 ## Validation
+
+The optional `parent` is a task id string, not an embedded task. The schema
+and runtime validator reject a child journal carrying a `teamlead` role or a
+`teamlead:` address. The runtime also rejects self-parenting; JSON Schema
+cannot compare the values of `id` and `parent` in one record. Creation checks
+the named journal under its lock: a child cannot become a parent, a closed
+root cannot take a child, and the full teamlead session must equal the child
+owner session. A task's parent is immutable after creation. An unfinished
+link blocks another child creation until recovery, reserving its teamlead
+address. Closing a root refuses while a child is active or a link intent is
+unfinished, naming the child. Closing a child leaves the root's teamlead
+participant and correspondence intact.
 
 Runtime validation is implemented in `src/v1/validate.ts`, not by reading the JSON Schema files. The four models are `task`, `participant`, `message` and `artifact`. The validator checks the version first, rejects unfamiliar fields, then checks required fields and their grammars; a newer record returns `schema-version-unsupported`, while malformed data returns `schema-invalid`. `requireValid` turns the verdict into a typed `PromptobusError` before a write, so invalid task, participant, message or artifact data never enters the store.
 
@@ -122,6 +150,17 @@ The task and artifact records use schema version `1`, messages use protocol vers
 **A rule about what may be WRITTEN does not belong here.** Record validation runs on every read — `readInbox`, `peekInbox` and `history` alike — and a schema-invalid record is moved to `broken/inbox`, so a constraint added to this list reaches backwards over every journal already on disk and stops delivering records an earlier release wrote lawfully. The `type=artifact` invariant is the worked example: it is enforced at the write, in the engine's `prepare` and at the tool boundary, and record validation stays silent about it, so a `type=artifact` record written before that refusal existed still reads as written. Tightening this list is a protocol-version change, not a patch.
 
 ## Fault injection
+
+Child creation writes a complete temporary journal, then publishes it with an
+exclusive hard link. A crash before publication leaves the root's link intent
+but no partial child journal. Recovery creates the child from that intent and
+then registers the teamlead; a malformed intent is named in `linkFailures`
+without stopping recovery of other links.
+
+`task-link-publish` fires after the temporary child journal is complete and
+before exclusive publication; `task-link` fires after publication and before
+the root journal write. Their contexts name the child, and a throw leaves the
+creation intent for `recover()`.
 
 `EngineOptions.faults` accepts the test-only `FaultHook`; production does not supply it. Fan-out hooks run after durable `validate`, `blob`, `artifact`, `intent`, `canonical`, `ref` and `close` steps. The `read` hook marks the completed mailbox read. Read hooks run immediately before their named filesystem operation: `task-read`, `artifact-read`, `intent-read`, `inbox-read` (with `mode: "read"` for consuming reads, `mode: "peek"` for a foreign session's copy and `mode: "glance"` for warden glances) and `history-ref` — `artifact-read` fires before both the metadata read and the blob read of an artifact, and its `file` context says which; `intent-materialize` runs after intent validation and immediately before recovery materializes the message. The `mkdir` hook runs immediately before the directory create inside a fan-out link, for the canonical message and for each recipient reference; `target` is that directory and `to` is the link, and a throw there is classified as the directory refusal. A hook throw models a crash or filesystem refusal at that boundary so the suite can prove recovery without changing production behaviour. The warden's `supervisorRound` supplies its own `faults` option for the glance because `engine.glance` does not pass the engine hook. The artifact seam covers the direct reads only. The bulk listing — every caller of the exported `listArtifacts` — takes no fault hook.
 

@@ -69,6 +69,8 @@ export interface PromptobusService {
   /** Take incoming mail: read items move to history. */
   readInbox(home: string, task: string, addr: string): MailboxRead;
   readTask(home: string, task: string): TaskV1;
+  /** Readable task journals, including closed children. */
+  listTasks(home: string): TaskV1[];
   /** Active task of the process: declared → session binding → the only active one. */
   resolveTaskId(home: string, declared: string | null | undefined, session: string | null): string;
   send(home: string, task: string, outgoing: OutgoingMessage): SentMessage;

@@ -19,10 +19,11 @@ import { compactStamp, MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import { validate } from './validate.js';
 
-/** Fan-out steps the suite can crash after. `mkdir` fires before the directory is created. */
+/** Durable steps the suite can crash after. `mkdir` fires before the directory is created. */
 export type FanoutStep =
   | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'mkdir' | 'ref' | 'close' | 'read'
-  | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref';
+  | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref'
+  | 'task-link' | 'task-link-publish';
 
 /** Fault seam. Durable steps fire after the write; reads and `mkdir` fire immediately before
  * their filesystem call. Not supplied in production. */

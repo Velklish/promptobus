@@ -60,7 +60,7 @@ const CAPABILITY_KEYS = [
 ] as const;
 const CAPABILITY_OPTIONAL = ['denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter', 'approverLift'] as const;
 const PARTICIPANT_KEYS = ['id', 'role', 'harness', 'mode', 'sessionRef', 'capabilities', 'metadata'] as const;
-const TASK_KEYS = ['schemaVersion', 'id', 'title', 'status', 'owner', 'created', 'updated', 'participants', 'adapter'] as const;
+const TASK_KEYS = ['schemaVersion', 'id', 'title', 'status', 'parent', 'owner', 'created', 'updated', 'participants', 'adapter'] as const;
 const MESSAGE_KEYS = ['protocolVersion', 'id', 'task', 'sender', 'recipients', 'type', 'body', 'artifact', 'ts'] as const;
 const ARTIFACT_KEYS = ['schemaVersion', 'id', 'sha256', 'filename', 'size', 'blob'] as const;
 
@@ -119,6 +119,7 @@ function task(value: unknown): Verdict {
   const extra = extras(value, TASK_KEYS);
   if (extra.length) return bad('', `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of TASK_KEYS) {
+    if (key === 'parent') continue;
     if (!Object.hasOwn(value, key)) return bad(key, 'field is required');
   }
   const id = text(value.id, 'id', TASK_ID_RE);
@@ -127,6 +128,11 @@ function task(value: unknown): Verdict {
     return bad('title', 'expected a non-empty string no longer than 512');
   }
   if (value.status !== 'active' && value.status !== 'done') return bad('status', 'expected active or done');
+  if (Object.hasOwn(value, 'parent')) {
+    const parent = text(value.parent, 'parent', TASK_ID_RE);
+    if (parent) return parent;
+    if (value.parent === value.id) return bad('parent', 'a task cannot be its own parent');
+  }
   const owner = text(value.owner, 'owner', PARTICIPANT_ID_RE);
   if (owner) return owner;
   for (const key of ['created', 'updated'] as const) {
@@ -139,6 +145,11 @@ function task(value: unknown): Verdict {
   for (let i = 0; i < value.participants.length; i += 1) {
     const p = participant(value.participants[i], `participants[${i}]`);
     if (p) return p;
+  }
+  if (Object.hasOwn(value, 'parent')) {
+    const teamlead = value.participants.findIndex((p) => p.role === 'teamlead'
+      || (typeof p.metadata.address === 'string' && p.metadata.address.startsWith('teamlead:')));
+    if (teamlead !== -1) return bad(`participants[${teamlead}]`, 'a child task cannot carry a teamlead participant');
   }
   if (!isObject(value.adapter)) return bad('adapter', 'expected an object');
   return OK;

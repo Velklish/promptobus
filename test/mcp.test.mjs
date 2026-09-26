@@ -118,6 +118,7 @@ const busService = {
     return { messages, broken: brokenLines(broken) };
   },
   readTask,
+  listTasks: (home) => at(home).listTasks().tasks,
   resolveTaskId: (home, declared) => {
     if (declared) return declared;
     const active = at(home).listTasks().tasks.filter((t) => t.status === 'active');
@@ -586,6 +587,26 @@ test('tools/call: task prints the participants, and the workspace lines are give
   assert.ok(said.includes(`- orchestrator · owner ${OWNER} · unread 0`));
   assert.ok(said.includes('- worker:cargos-api · repository loads_search/cargos-api · unread 1'));
   assert.deepEqual(calls.decorated, ['orchestrator', 'worker:cargos-api']);
+});
+
+test('promptobus_task reports the parent and children of a two-level task tree', async () => {
+  const treeHome = path.join(SB, 'task-tree');
+  const root = 'mcp-root-t20260926-130000';
+  const child = 'mcp-child-t20260926-130001';
+  createTask(treeHome, { id: root, title: 'root task', owner: OWNER });
+  at(treeHome).createTask({
+    id: child, title: 'child task', parent: root,
+    owner: rec(ORCHESTRATOR, { owner: 'lead-session' }),
+    teamlead: rec('teamlead:api', { sessionId: 'lead-session' }),
+  });
+  const rootReply = await talk([rpc(1, 'tools/call', { name: 'promptobus_task', arguments: {} })], {
+    options: { resolveIdentity: () => ({ role: ORCHESTRATOR, home: treeHome, declaredTask: root, session: OWNER }) },
+  });
+  const childReply = await talk([rpc(2, 'tools/call', { name: 'promptobus_task', arguments: {} })], {
+    options: { resolveIdentity: () => ({ role: ORCHESTRATOR, home: treeHome, declaredTask: child, session: 'lead-session' }) },
+  });
+  assert.match(textOf(rootReply.responses[0]), new RegExp(`parent: none\\nchildren: ${child} \\(active\\)`));
+  assert.match(textOf(childReply.responses[0]), new RegExp(`parent: ${root}\\nchildren: none`));
 });
 
 test('a bad participant record is a finding in the reply, not the death of the tool', async () => {

@@ -86,7 +86,7 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'promptobus_task',
-    description: 'Metadata of the current task: id, title, status, participants with repositories '
+    description: 'Metadata of the current task: id, title, status, parent, children, participants with repositories '
       + 'and bg-sessions, unread counts, path to the artifacts folder.',
     inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
   },

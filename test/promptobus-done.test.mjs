@@ -7,9 +7,9 @@
 // subject under test is who the walk stops and who it doesn't, not the behavior of
 // `claude stop`. The suite does not touch the live binary.
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { check } from './check.mjs';
 import { makeSandbox, snapshotOfList, writeHostConfig } from './sandbox.mjs';
 import { capture, captureSplit } from './console.mjs';
@@ -443,6 +443,73 @@ check(': the settings file leaves with the mcp-config and the contact point, not
   !Object.values(secretFiles).some(existsSync),
   Object.entries(secretFiles).filter(([, at]) => existsSync(at)).map(([k]) => k).join(', '));
 
+const TREE = path.join(SB, 'tree-ws');
+const treeHome = path.join(TREE, '.promptobus');
+mkdirSync(treeHome, { recursive: true });
+writeFileSync(path.join(TREE, 'AGENTS.md'), 'sandbox\n');
+writeHostConfig(TREE);
+const rootTask = 'tree-root-t20260926-120000';
+const childTask = 'tree-child-t20260926-120001';
+store.createTask(treeHome, { id: rootTask, title: 'root task', owner: 'sess-done-stand' });
+store.createTask(treeHome, {
+  id: childTask, title: 'child task', parent: rootTask, teamlead: 'teamlead:api', owner: 'sess-teamlead',
+});
+const parentLead = store.participantOf(store.readTask(treeHome, rootTask), 'teamlead:api');
+const childOwner = store.participantOf(store.readTask(treeHome, childTask), 'orchestrator');
+check('the parent teamlead and child orchestrator are bound to the same full session',
+  parentLead?.metadata.sessionId === 'sess-teamlead'
+    && bus.holdsSession(parentLead, 'sess-teamlead') && bus.holdsSession(childOwner, 'sess-teamlead')
+    && !bus.holdsSession(parentLead, 'sess-foreign') && !bus.holdsSession(childOwner, 'sess-foreign'),
+  JSON.stringify({ parentLead, childOwner }));
+check('sender resolution lets one session speak under its address in each task',
+  store.senderFor(treeHome, rootTask, {
+    session: 'sess-teamlead', hint: 'teamlead:api', declaredTask: rootTask,
+  }) === 'teamlead:api'
+    && store.senderFor(treeHome, childTask, {
+      session: 'sess-teamlead', hint: 'orchestrator', declaredTask: childTask,
+    }) === 'orchestrator');
+const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
+const treeStatus = await capture(() => status(TREE, { task: rootTask, sessions: {} }));
+check('a root status prints its child and the child participant under it',
+  treeStatus.indexOf(rootTask) < treeStatus.indexOf(`  ${childTask}`)
+    && /\n      orchestrator · owner sess-teamlead/.test(treeStatus), treeStatus);
+const cli = path.join(here, '..', 'bin', 'promptobus.js');
+const refusedRoot = spawnSync(process.execPath, [cli, 'done', '--task', rootTask], {
+  cwd: TREE, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'sess-done-stand' },
+});
+check('done on a root exits non-zero naming its active child',
+  refusedRoot.status !== 0 && `${refusedRoot.stdout}${refusedRoot.stderr}`.includes(childTask)
+    && store.readTask(treeHome, rootTask).status === 'active',
+  `${refusedRoot.status}: ${refusedRoot.stdout}${refusedRoot.stderr}`);
+bus.openEngine({ home: treeHome, policy: () => ({ allow: true }) }).sendSync(rootTask, {
+  from: bus.addrDir('teamlead:api'), to: [bus.addrDir('orchestrator')],
+  type: 'result', body: 'child finished',
+});
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-teamlead';
+await capture(async () => done(TREE, { task: childTask, 'keep-sessions': true, snapshot: noSessions }));
+process.env.CLAUDE_CODE_SESSION_ID = 'sess-done-stand';
+check('closing the child keeps the parent and its teamlead record',
+  store.readTask(treeHome, rootTask).status === 'active'
+    && store.participantOf(store.readTask(treeHome, rootTask), 'teamlead:api')?.metadata.childTask === childTask
+    && store.peekInbox(treeHome, rootTask, 'orchestrator').messages.some((m) => m.body === 'child finished'),
+  JSON.stringify(store.readTask(treeHome, rootTask)));
+const closedChildStatus = await capture(() => status(TREE, { task: rootTask, sessions: {} }));
+check('status keeps a done child under its active root',
+  closedChildStatus.includes(`  ${childTask} · child task · done`), closedChildStatus);
+await capture(async () => done(TREE, { task: rootTask, 'keep-sessions': true, snapshot: noSessions }));
+check('the root closes after its child is done', store.readTask(treeHome, rootTask).status === 'done',
+  JSON.stringify(store.readTask(treeHome, rootTask)));
+const malformedHome = path.join(SB, 'malformed-link-init', '.promptobus');
+const malformedRoot = 'malformed-root-t20260926-120002';
+bus.openEngine({ home: malformedHome, policy: () => ({ allow: true }), recover: false }).createTask({
+  id: malformedRoot, title: 'root beside malformed link',
+  owner: store.participantRecord('orchestrator', { owner: 'sess-done-stand' }),
+});
+const malformedLinks = path.join(malformedHome, 'tasks', malformedRoot, 'links');
+mkdirSync(malformedLinks, { recursive: true });
+writeFileSync(path.join(malformedLinks, 'null-child.json'), 'null\n');
+check('a malformed child-link intent does not disable adapter startup',
+  store.readTask(malformedHome, malformedRoot).id === malformedRoot);
 // --- an edited squash, named by the acceptance commit's trailer ---------------------
 // A conflict resolved at the squash hides the branch from both measurements; `Squash-of` is the third proof.
 const TRAILER = path.join(SB, 'trailer-ws');

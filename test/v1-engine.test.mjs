@@ -32,6 +32,7 @@ import {
 // itself with a random tail. The package does not export this module —
 // it has three entry points, and the check does not extend them.
 import { commitIntent } from '../dist/v1/messages.js';
+import { writeTask } from '../dist/v1/store.js';
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-v1-'));
 process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
@@ -227,6 +228,145 @@ test('exactly one creates a task with the same id', () => {
   const e = refusal(() => engine.createTask({ id, title: 'вторая', owner: person('owner', 'orchestrator') }));
   assert.equal(e.code, 'task-exists');
   assert.equal(engine.readTask(id).title, 'демо');
+});
+
+test('a child has one root, one teamlead session, and blocks closing the root while active', () => {
+  const engine = open(sandbox());
+  const root = 'tree-root-t20260926-100000';
+  const child = 'tree-child-t20260926-100001';
+  engine.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  const owner = person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } });
+  const teamlead = person('teamlead-api', 'teamlead', { metadata: { sessionId: 'lead-session' } });
+  const created = engine.createTask({ id: child, title: 'child', parent: root, owner, teamlead });
+  assert.equal(created.parent, root);
+  assert.equal(engine.readTask(root).participants.find((p) => p.id === teamlead.id)?.metadata.childTask, child);
+  assert.equal(engine.readTask(root).participants.find((p) => p.id === teamlead.id)?.metadata.sessionId, 'lead-session');
+  assert.equal(engine.readTask(child).participants[0].metadata.owner, 'lead-session');
+  assert.equal(refusal(() => engine.closeTask(root)).code, 'task-active');
+  assert.match(refusal(() => engine.closeTask(root)).message, new RegExp(child));
+  assert.equal(refusal(() => engine.createTask({
+    id: 'third-level', title: 'third', parent: child, owner, teamlead: person('teamlead-next', 'teamlead',
+      { metadata: { sessionId: 'lead-session' } }),
+  })).code, 'schema-invalid');
+  assert.equal(refusal(() => engine.createTask({
+    id: 'wrong-session', title: 'wrong', parent: root, owner,
+    teamlead: person('teamlead-wrong', 'teamlead', { metadata: { owner: 'lead-session', sessionId: 'another-session' } }),
+  })).code, 'schema-invalid');
+  assert.equal(validate('task', { ...created, parent: child }).ok, false);
+  engine.closeTask(child);
+  assert.equal(engine.readTask(root).participants.find((p) => p.id === teamlead.id)?.metadata.childTask, child);
+  assert.equal(engine.closeTask(root).status, 'done');
+});
+
+test('recovery names and completes a child link interrupted between journal writes', () => {
+  const rootDir = sandbox();
+  const seed = open(rootDir, { recover: false });
+  const root = 'link-root-t20260926-110000';
+  const child = 'link-child-t20260926-110001';
+  seed.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  const interrupted = open(rootDir, {
+    recover: false,
+    faults: (step) => { if (step === 'task-link') throw new Error('injected crash between journals'); },
+  });
+  assert.throws(() => interrupted.createTask({
+    id: child, title: 'child', parent: root,
+    owner: person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } }),
+    teamlead: person('teamlead-link', 'teamlead', { metadata: { sessionId: 'lead-session' } }),
+  }), /injected crash/);
+  assert.equal(seed.readTask(child).parent, root);
+  assert.equal(seed.readTask(root).participants.length, 1);
+  const healed = open(rootDir, { recover: false });
+  const report = healed.recover();
+  assert.deepEqual(report.links, [{ parent: root, child, childCreated: false, teamleadRegistered: true }]);
+  assert.deepEqual(report.linkFailures, []);
+  assert.equal(healed.readTask(root).participants[1].metadata.childTask, child);
+  assert.deepEqual(healed.recover().links, []);
+});
+
+test('recovery publishes a complete child journal after interruption before first publication', () => {
+  const rootDir = sandbox();
+  const seed = open(rootDir, { recover: false });
+  const root = 'publish-root-t20260926-110000';
+  const child = 'publish-child-t20260926-110001';
+  seed.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  const interrupted = open(rootDir, {
+    recover: false,
+    faults: (step) => { if (step === 'task-link-publish') throw new Error('interrupted before child publish'); },
+  });
+  assert.throws(() => interrupted.createTask({
+    id: child, title: 'child', parent: root,
+    owner: person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } }),
+    teamlead: person('teamlead-publish', 'teamlead', { metadata: { sessionId: 'lead-session' } }),
+  }), /interrupted before child publish/);
+  assert.equal(existsSync(seed.taskFile(child)), false);
+  const report = seed.recover();
+  assert.deepEqual(report.links, [{ parent: root, child, childCreated: true, teamleadRegistered: true }]);
+  assert.equal(seed.readTask(child).parent, root);
+});
+
+test('an unfinished child link reserves its teamlead address until recovery', () => {
+  const rootDir = sandbox();
+  const engine = open(rootDir, { recover: false });
+  const root = 'reserve-root-t20260926-110000';
+  const first = 'reserve-first-t20260926-110001';
+  const second = 'reserve-second-t20260926-110002';
+  engine.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  const owner = person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } });
+  const teamlead = person('teamlead-reserve', 'teamlead', { metadata: { sessionId: 'lead-session' } });
+  const interrupted = open(rootDir, {
+    recover: false,
+    faults: (step) => { if (step === 'task-link') throw new Error('interrupted link'); },
+  });
+  assert.throws(() => interrupted.createTask({ id: first, title: 'first', parent: root, owner, teamlead }),
+    /interrupted link/);
+  const denied = refusal(() => engine.createTask({ id: second, title: 'second', parent: root, owner, teamlead }));
+  assert.equal(denied.code, 'task-active');
+  assert.match(denied.message, new RegExp(first));
+  assert.deepEqual(engine.recover().links, [{
+    parent: root, child: first, childCreated: false, teamleadRegistered: true,
+  }]);
+  assert.equal(refusal(() => engine.createTask({ id: second, title: 'second', parent: root, owner, teamlead })).code,
+    'participant-exists');
+});
+
+test('a malformed child-link envelope is isolated while a healthy link recovers', () => {
+  const rootDir = sandbox();
+  const engine = open(rootDir, { recover: false });
+  const root = 'broken-link-root-t20260926-110000';
+  const child = 'z-healthy-link-t20260926-110001';
+  engine.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  const interrupted = open(rootDir, {
+    recover: false,
+    faults: (step) => { if (step === 'task-link') throw new Error('interrupted link'); },
+  });
+  assert.throws(() => interrupted.createTask({
+    id: child, title: 'child', parent: root,
+    owner: person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } }),
+    teamlead: person('teamlead-healthy', 'teamlead', { metadata: { sessionId: 'lead-session' } }),
+  }), /interrupted link/);
+  writeFileSync(path.join(engine.home, 'tasks', root, 'links', 'a-null.json'), 'null\n');
+  const report = engine.recover();
+  assert.deepEqual(report.linkFailures.map((entry) => entry.child), ['a-null']);
+  assert.match(report.linkFailures[0].note, /not an object/);
+  assert.deepEqual(report.links.map((entry) => entry.child), [child]);
+  assert.equal(engine.readTask(child).parent, root);
+  assert.equal(engine.readTask(root).participants.length, 2);
+});
+
+test('a root with children cannot gain a parent after creation', () => {
+  const engine = open(sandbox(), { recover: false });
+  const root = 'immutable-root-t20260926-110000';
+  engine.createTask({ id: root, title: 'root', owner: person('owner', 'orchestrator') });
+  engine.createTask({
+    id: 'immutable-child-t20260926-110001', title: 'child', parent: root,
+    owner: person('owner', 'orchestrator', { metadata: { owner: 'lead-session' } }),
+    teamlead: person('teamlead-immutable', 'teamlead', { metadata: { sessionId: 'lead-session' } }),
+  });
+  const stored = engine.readTask(root);
+  const proposed = { ...stored, parent: 'another-root', participants: [stored.participants[0]] };
+  assert.equal(refusal(() => writeTask(engine.home, proposed, () => new Date())).code, 'schema-invalid');
+  assert.equal(engine.readTask(root).parent, undefined);
+  assert.equal(engine.readTask(root).participants.length, 2);
 });
 
 // ── Fan-out prevalidation ─────────────────────────────────────────────────────────────

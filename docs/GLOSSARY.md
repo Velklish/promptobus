@@ -11,6 +11,9 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | host | host | Declared workspace interface. The caller passes it into the bus on every call that needs a workspace. | `src/host.ts` (`PromptobusHost`) |
 | standalone host | standalone host | Host built from the current directory, Git, and `promptobus.json`. It does not know another product's layout. | `src/standalone.ts` (`createStandaloneHost`) |
 | task | task | On-disk unit of work: title, status, participants, mail, and artifacts. | `schemas/v1/task.schema.json`, `src/v1/model.ts` |
+| root task | root task | Task without `parent`; it may own child tasks and holds one teamlead participant for each. | `src/v1/store.ts` (`createTask`), [ADR-021](adr/adr-021-task-tree-and-governance-routes.md) |
+| child task | child task | Task whose `parent` names a root task. Its orchestrator is owned by the same session as the root's teamlead participant. | `schemas/v1/task.schema.json`, `src/v1/store.ts` (`createTask`) |
+| task link | task link | Creation intent under a root that lets recovery complete the child journal and the root's teamlead record after a crash. | `src/v1/store.ts` (`recoverTaskLinks`) |
 | mailbox | mailbox | Unread messages for one participant. Reading moves them to history. | `src/mcp/tools.ts` (`promptobus_mailbox`) |
 | message header | header | What a mailbox read lists for one message instead of its body: type, sender, time, message id, size in characters and the first line. Reading the headers marks the messages read; a body is asked by its id. | `src/mcp/render.ts` (`renderMessages`), [reference/04-protocol.md](reference/04-protocol.md) § Messages: names, order and what a read marks |
 | stub | stub | A postcard's line for one message: type, sender, time and size, never the body. | `lib/notification.js` (`previewLine`) |

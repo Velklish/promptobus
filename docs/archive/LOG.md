@@ -401,3 +401,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-222"></a>`PB-222-approver-project-layer-has-no-safe-home` · 2026-09-26 · completed · — · Проектный слой приёмщика негде разместить безопасно ни на одном харнессе, кроме Claude
 - <a id="pb-185.1"></a>`PB-185.1-codex-approver-hooks-unread` · 2026-09-26 · completed · — · A Codex approver does not get the hooks file Codex reads
 - <a id="pb-276"></a>`PB-276-routing-by-step` · 2026-09-26 · completed · — · Model routing answers for a step name: floor from the declaration or from the kind
+- <a id="pb-267"></a>`PB-267-task-parent-link` · 2026-09-26 · completed · — · A task can have a parent: teamlead in the parent, a tree in status, done refuses over active children

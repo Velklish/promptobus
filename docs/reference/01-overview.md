@@ -34,6 +34,7 @@ Layout of one task:
 .promptobus/tasks/<task-id>/
   task.json
   .lock/
+  links/<child-task-id>.json
   messages/
   intents/
     <id>.owner
@@ -49,6 +50,7 @@ Layout of one task:
 ```
 
 - `.lock/` is created while a read-modify-write is in progress; delete it only after the writing process is gone, following the refusal's `ps` or manual-cleanup guidance.
+- `links/<child-task-id>.json` is a creation intent under a root task. It carries the child journal and its parent teamlead record until both journals are written. Recovery completes either missing half and removes the intent; keep an unfinished file for the next recovery pass.
 - `intents/<id>.owner` is written beside an open intent; remove it only with an intent that is no longer open, while recovery sweeps orphaned leases.
 - `broken/inbox/<participant-id>/` is written by mailbox readers when they isolate malformed refs; it is safe to delete after retaining its diagnostic and any record needed for repair.
 - `broken/artifacts/` is written by artifact readers when they isolate malformed metadata; it is safe to delete after retaining its diagnostic and any record needed for repair.
@@ -211,6 +213,9 @@ The `task` reply's `pipeline:` line prints the steps in order from the
 optional `pipeline` member of `McpOptions`, which the adapter answers with the
 host's `pipelineOf(host)`; a server raised without it prints the default
 pipeline ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)).
+The reply also prints `parent:` and `children:`. The latter is read from child
+journals, including children already done; each child has its own participants
+and mailboxes. The service supplies the readable task list to the renderer.
 
 A mailbox read is rendered as headers (`renderMessages`): the heading line
 stays as it was — a feed hook lifts the sender name from it — and under it one

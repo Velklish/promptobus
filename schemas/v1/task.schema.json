@@ -21,6 +21,11 @@
       "maxLength": 512
     },
     "status": { "enum": ["active", "done"] },
+    "parent": {
+      "description": "The root task id for a child task. A parent is an id, never an embedded task; the store checks that it names a root.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
     "owner": {
       "description": "The owning participant's ID. There is always exactly one; changing it takes an explicit claim.",
       "type": "string",
@@ -38,6 +43,33 @@
       "type": "object"
     }
   },
+  "allOf": [
+    {
+      "if": { "required": ["parent"] },
+      "then": {
+        "properties": {
+          "participants": {
+            "items": {
+              "not": {
+                "anyOf": [
+                  { "properties": { "role": { "const": "teamlead" } }, "required": ["role"] },
+                  {
+                    "properties": {
+                      "metadata": {
+                        "properties": { "address": { "type": "string", "pattern": "^teamlead:" } },
+                        "required": ["address"]
+                      }
+                    },
+                    "required": ["metadata"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "timestamp": {
       "description": "Exactly what Date#toISOString prints: the date-time format alone is not enough — it allows offsets.",

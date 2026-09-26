@@ -1,15 +1,17 @@
 // The v1 store: what is written and in what order.
 // [reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order](../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order)
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { writeJsonAtomic } from '../fs/atomic.js';
-import { addressOf, mechanismVersionOf } from '../protocol.js';
+import { addressOf, mechanismVersionOf, sessionIdOf } from '../protocol.js';
 import { withDirLock, withDirLockAsync } from '../fs/lock.js';
 import type { DirLockOptions } from '../fs/lock.js';
 import { fail, PromptobusError } from './errors.js';
 import type { ErrorCode } from './errors.js';
 import { blobLockDir, lockDir, taskDir, taskFile, tasksDir } from './layout.js';
 import type { FaultHook } from './messages.js';
-import { SCHEMA_VERSION } from './model.js';
+import { SCHEMA_VERSION, TASK_ID_RE } from './model.js';
 import type { ParticipantV1, TaskV1 } from './model.js';
 import { requireValid, validate } from './validate.js';
 
@@ -22,6 +24,64 @@ export interface NewTask {
   title: string;
   owner: ParticipantV1;
   adapter?: Record<string, unknown>;
+  parent?: string;
+  teamlead?: ParticipantV1;
+}
+
+interface TaskLinkIntent {
+  parent: string;
+  child: TaskV1;
+  teamlead: ParticipantV1;
+}
+
+export interface TaskLinkRepair {
+  parent: string;
+  child: string;
+  childCreated: boolean;
+  teamleadRegistered: boolean;
+}
+
+export interface TaskLinkFailure {
+  parent: string;
+  child: string;
+  note: string;
+}
+
+function linksDir(home: string, parent: string): string {
+  return path.join(taskDir(home, parent), 'links');
+}
+
+function linkIntentFile(home: string, parent: string, child: string): string {
+  return path.join(linksDir(home, parent), `${child}.json`);
+}
+
+function pendingLinks(home: string, parent: string): string[] {
+  try {
+    return readdirSync(linksDir(home, parent)).filter((name) => name.endsWith('.json')).sort();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw e;
+  }
+}
+
+function ownerSession(p: ParticipantV1): string | null {
+  const value = p.metadata.owner;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function validTaskLink(value: unknown, parent: string): asserts value is TaskLinkIntent {
+  if (!isObject(value)) fail('schema-invalid', `task link in ${parent} is not an object`, { parent });
+  const intent = value as unknown as TaskLinkIntent;
+  requireValid('task', intent.child, { task: intent.child?.id });
+  requireValid('participant', intent.teamlead, { task: parent, participant: intent.teamlead?.id });
+  const owner = intent.child.participants.find((p) => p.id === intent.child.owner);
+  const session = owner && ownerSession(owner);
+  if (intent.parent !== parent || intent.child.parent !== parent || !owner || owner.role !== 'orchestrator'
+    || intent.teamlead.role !== 'teamlead' || !session || sessionIdOf(intent.teamlead) !== session
+    || intent.teamlead.metadata.childTask !== intent.child.id) {
+    fail('schema-invalid', `task ${intent.child.id} has an invalid parent link to ${parent}`,
+      { task: intent.child.id, parent });
+  }
 }
 
 /**
@@ -191,15 +251,35 @@ export function readTask(home: string, task: string, cli: ReaderVersion = null, 
 export function writeTask(home: string, meta: TaskV1, now: Clock): TaskV1 {
   const next: TaskV1 = { ...meta, updated: now().toISOString() };
   requireValid('task', next, { task: next.id });
+  const current = readTask(home, next.id);
+  if (current.parent !== next.parent) {
+    fail('schema-invalid', `task ${next.id} cannot change its parent after creation`, { task: next.id });
+  }
   writeJsonAtomic(taskFile(home, next.id), next);
   return next;
 }
 
-/**
- * Create a task. First writer wins: the journal is laid down with the `wx`
- * flag, and a latecomer gets a refusal, not a quiet theft of foreign participants.
- */
-export function createTask(home: string, { id, title, owner, adapter = {} }: NewTask, now: Clock): TaskV1 {
+/** Publish a complete first journal without replacing an earlier writer. */
+function writeNewTask(home: string, meta: TaskV1, fault: FaultHook = NO_FAULT): TaskV1 {
+  const file = taskFile(home, meta.id);
+  mkdirSync(taskDir(home, meta.id), { recursive: true });
+  const temp = path.join(taskDir(home, meta.id), `.tmp-task-${randomUUID()}`);
+  try {
+    writeFileSync(temp, `${JSON.stringify(meta, null, 2)}\n`, { flag: 'wx' });
+    fault('task-link-publish', { task: meta.id, file });
+    linkSync(temp, file);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') fail('task-exists', `task ${meta.id} already exists`, { task: meta.id });
+    throw e;
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp);
+  }
+  return meta;
+}
+
+export function createTask(home: string, {
+  id, title, owner, adapter = {}, parent, teamlead,
+}: NewTask, now: Clock, fault: FaultHook = NO_FAULT, cli: ReaderVersion = null): TaskV1 {
   requireValid('participant', owner, { task: id, participant: (owner as ParticipantV1)?.id });
   const at = now().toISOString();
   const meta: TaskV1 = {
@@ -207,6 +287,7 @@ export function createTask(home: string, { id, title, owner, adapter = {} }: New
     id,
     title,
     status: 'active',
+    ...(parent === undefined ? {} : { parent }),
     owner: owner.id,
     created: at,
     updated: at,
@@ -214,19 +295,47 @@ export function createTask(home: string, { id, title, owner, adapter = {} }: New
     adapter,
   };
   requireValid('task', meta, { task: id });
-  const file = taskFile(home, id);
-  mkdirSync(taskDir(home, id), { recursive: true });
-  try {
-    // The `wx` flag, not an atomic replace: the record itself takes the name,
-    // and a second pass with the same id gets a refusal instead of a quiet
-    // overwrite. An `existsSync` check before the write would be the same
-    // window, only wider — a neighbour fits between the check and the write.
-    writeFileSync(file, `${JSON.stringify(meta, null, 2)}\n`, { flag: 'wx' });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') fail('task-exists', `task ${id} already exists`, { task: id });
-    throw e;
+  if (parent === undefined) {
+    if (teamlead !== undefined) fail('schema-invalid', `task ${id} has a teamlead without a parent`, { task: id });
+    return writeNewTask(home, meta);
   }
-  return meta;
+  if (!teamlead) fail('schema-invalid', `child task ${id} needs a teamlead participant in parent ${parent}`,
+    { task: id, parent });
+  const linked: ParticipantV1 = { ...teamlead, metadata: { ...teamlead.metadata, childTask: id } };
+  const intent: TaskLinkIntent = { parent, child: meta, teamlead: linked };
+  validTaskLink(intent, parent);
+  return withTaskLock(home, parent, () => {
+    const root = requireActive(readTask(home, parent, cli));
+    if (root.parent !== undefined) {
+      fail('schema-invalid', `task ${parent} is a child and cannot be the parent of ${id}`,
+        { task: id, parent });
+    }
+    const unfinished = pendingLinks(home, parent).map((name) => name.slice(0, -'.json'.length));
+    if (unfinished.length) {
+      fail('task-active', `task ${parent} has unfinished child link ${unfinished.join(', ')}; recover it first`,
+        { task: parent, children: unfinished });
+    }
+    if (root.participants.some((p) => p.id === linked.id)) {
+      fail('participant-exists', `task ${parent} already has teamlead ${linked.id}`, { task: parent, participant: linked.id });
+    }
+    if (taskExists(home, id)) fail('task-exists', `task ${id} already exists`, { task: id });
+    mkdirSync(linksDir(home, parent), { recursive: true });
+    const file = linkIntentFile(home, parent, id);
+    if (existsSync(file)) fail('task-exists', `task ${id} has an unfinished parent link in ${parent}`,
+      { task: id, parent, file });
+    writeJsonAtomic(file, intent);
+    let child: TaskV1;
+    try {
+      child = writeNewTask(home, meta, fault);
+    } catch (e) {
+      if (e instanceof PromptobusError && e.code === 'task-exists') unlinkSync(file);
+      throw e;
+    }
+    fault('task-link', { parent, child: id });
+    writeTask(home, { ...root, participants: [...root.participants, linked] }, now);
+    unlinkSync(file);
+    return child;
+  });
 }
 
 /** A task that cannot be read: its id, refusal code, and reason. The adapter assembles the text for a person. */
@@ -259,6 +368,67 @@ export function listTasks(home: string, cli: ReaderVersion = null, fault: FaultH
     }
   }
   return { tasks, broken };
+}
+
+/** Complete child creation whose intent survived a crash between the two journals. */
+export function recoverTaskLinks(home: string, now: Clock, task?: string, cli: ReaderVersion = null): {
+  links: TaskLinkRepair[]; linkFailures: TaskLinkFailure[];
+} {
+  const links: TaskLinkRepair[] = [];
+  const linkFailures: TaskLinkFailure[] = [];
+  const all = listTasks(home, cli).tasks;
+  const named = task ? all.find((meta) => meta.id === task) : null;
+  const parents = task ? [named?.parent ?? task] : all.map((meta) => meta.id);
+  for (const parent of parents) {
+    for (const name of pendingLinks(home, parent)) {
+      const childId = name.slice(0, -'.json'.length);
+      if (!TASK_ID_RE.test(childId)) {
+        linkFailures.push({ parent, child: childId, note: `invalid child task id in ${name}` });
+        continue;
+      }
+      try {
+        withTaskLock(home, parent, () => {
+          const file = linkIntentFile(home, parent, childId);
+          if (!existsSync(file)) return;
+          const intent: unknown = JSON.parse(readFileSync(file, 'utf8'));
+          validTaskLink(intent, parent);
+          if (intent.child.id !== childId) {
+            fail('schema-invalid', `task link ${file} names child ${intent.child.id}, expected ${childId}`,
+              { task: childId, parent, file });
+          }
+          const root = readTask(home, parent, cli);
+          if (root.parent !== undefined) {
+            fail('schema-invalid', `task ${parent} is a child and cannot own task link ${childId}`,
+              { task: childId, parent });
+          }
+          const was = root.participants.find((p) => p.id === intent.teamlead.id);
+          if (was && (was.metadata.childTask !== childId || sessionIdOf(was) !== sessionIdOf(intent.teamlead))) {
+            fail('participant-exists', `task ${parent} teamlead ${was.id} belongs to another child or session`,
+              { task: parent, participant: was.id });
+          }
+          let childCreated = false;
+          if (taskExists(home, childId)) {
+            const child = readTask(home, childId, cli);
+            if (child.parent !== parent) {
+              fail('task-exists', `task ${childId} belongs to parent ${child.parent ?? 'none'}, not ${parent}`,
+                { task: childId, parent });
+            }
+          } else {
+            writeNewTask(home, intent.child);
+            childCreated = true;
+          }
+          if (!was) writeTask(home, { ...root, participants: [...root.participants, intent.teamlead] }, now);
+          unlinkSync(file);
+          links.push({ parent, child: childId, childCreated, teamleadRegistered: !was });
+        });
+      } catch (e) {
+        if (!(e instanceof PromptobusError) && !(e instanceof SyntaxError)
+          && typeof (e as NodeJS.ErrnoException).code !== 'string') throw e;
+        linkFailures.push({ parent, child: childId, note: (e as Error).message });
+      }
+    }
+  }
+  return { links, linkFailures };
 }
 
 export function participantOf(meta: TaskV1, id: string): ParticipantV1 | null {
@@ -360,6 +530,20 @@ export function closeTask(home: string, task: string, now: Clock, adapter?: Reco
   cli: ReaderVersion = null): TaskV1 {
   return withTaskLock(home, task, () => {
     const meta = readTask(home, task, cli);
+    if (meta.parent === undefined) {
+      const listed = listTasks(home, cli);
+      const active = listed.tasks.filter((child) => child.parent === task && child.status === 'active')
+        .map((child) => child.id);
+      const broken = new Set(listed.broken.map((child) => child.id));
+      const linkedBroken = meta.participants.map((p) => p.metadata.childTask)
+        .filter((id): id is string => typeof id === 'string' && broken.has(id) && taskExists(home, id));
+      const pending = pendingLinks(home, task).map((name) => name.slice(0, -'.json'.length));
+      const children = [...new Set([...active, ...linkedBroken, ...pending])];
+      if (children.length) {
+        fail('task-active', `task ${task} cannot close while child task ${children.join(', ')} is active or unfinished`,
+          { task, children });
+      }
+    }
     return writeTask(home, {
       ...meta,
       status: 'done',

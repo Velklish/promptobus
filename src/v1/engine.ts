@@ -22,10 +22,11 @@ import { MESSAGE_TYPES_V1 } from './model.js';
 import type { ArtifactV1, MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import {
   addParticipant, claimOwner, closeTask, createTask, listTasks, patchParticipant, putParticipant,
+  recoverTaskLinks,
   readTask, requireActive, requireParticipant, taskExists, withBlobLock, withBlobLockAsync,
   withTaskLock, writeTask,
 } from './store.js';
-import type { BrokenTask, Clock, NewTask, ParticipantPatch } from './store.js';
+import type { BrokenTask, Clock, NewTask, ParticipantPatch, TaskLinkFailure, TaskLinkRepair } from './store.js';
 import { requireValid } from './validate.js';
 
 /** Routing-policy decision: allow, or refuse with a reason. */
@@ -104,6 +105,8 @@ export interface SendResult {
 /** Recovery outcome: completed work, wake events, unreadable records, and fan-out failures. */
 export interface RecoverResult {
   repairs: Repair[];
+  links: TaskLinkRepair[];
+  linkFailures: TaskLinkFailure[];
   events: ActivationEvent[];
   broken: BrokenNote[];
   failed: RecoverFailure[];
@@ -266,7 +269,7 @@ export function openEngine({
   const engine: Engine = {
     home,
 
-    createTask: (input) => createTask(home, input, now),
+    createTask: (input) => createTask(home, input, now, faults, cli),
     readTask: (task) => readTask(home, task, cli, faults),
     listTasks: () => listTasks(home, cli, faults),
     taskExists: (task) => taskExists(home, task),
@@ -370,8 +373,9 @@ export function openEngine({
     },
 
     recover(task) {
+      const taskLinks = recoverTaskLinks(home, now, task, cli);
       const metas = task ? [readTask(home, task, cli)] : listTasks(home, cli).tasks;
-      const out: RecoverResult = { repairs: [], events: [], broken: [], failed: [] };
+      const out: RecoverResult = { repairs: [], ...taskLinks, events: [], broken: [], failed: [] };
       for (const meta of metas) {
         const one = recoverTask(home, meta.id, meta, faults);
         out.repairs.push(...one.repairs);

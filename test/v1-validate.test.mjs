@@ -113,6 +113,13 @@ test('parity: invalid fixtures are rejected by both validators', () => {
   }
 });
 
+test('a self-parent is the documented runtime-only task validation rule', () => {
+  const child = JSON.parse(readFileSync(path.join(FIXTURES, 'valid', 'task', 'child-with-parent.json'), 'utf8'));
+  child.parent = child.id;
+  assert.equal(reference.task(child), true);
+  assert.equal(validate('task', child).ok, false);
+});
+
 test('a type=artifact record written before the send refused one still READS as written', () => {
   // The invariant is held at the WRITE. Held here too it would be retroactive: `readRecord`
   // isolates a schema-invalid record into `broken/inbox`, so records of this shape sitting in

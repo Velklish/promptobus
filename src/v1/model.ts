@@ -76,6 +76,8 @@ export interface TaskV1 {
   id: string;
   title: string;
   status: 'active' | 'done';
+  /** The root task id. Absent on a root task. */
+  parent?: string;
   /** Owner participant ID. There is always one; a change is an explicit claim. */
   owner: string;
   created: string;

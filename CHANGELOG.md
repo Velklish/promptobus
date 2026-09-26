@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accepts declared steps and validation names unknown keys. Catalog rows remain rated by role.
   [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
 
+- **A task can have one root parent** (PB-267). Child creation records a teamlead in the root and binds the child's
+  orchestrator to the same session; a durable link intent lets recovery name and complete an interrupted pair.
+  `status` prints children under their root, `promptobus_task` reports `parent` and `children`, and `done` refuses
+  a root until its active children close. Closing a child preserves the parent's teamlead record.
+  [01-overview § Store home](docs/reference/01-overview.md#store-home), [04-protocol § Store layout](docs/reference/04-protocol.md#store-layout).
+
 ## [0.18.0] — 2026-09-26
 
 ### Added

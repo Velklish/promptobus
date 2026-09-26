@@ -167,6 +167,7 @@ export function renderTask(
   steps: readonly DeclaredStep[],
 ): string {
   const meta = service.readTask(home, id);
+  const children = service.listTasks(home).filter((child) => child.parent === id);
   // Own mailbox — in the heading, before the participant list: the list
   // answers "who has what piling up", and here the addressee is the session
   // that is sure right now that it is waiting.
@@ -174,6 +175,8 @@ export function renderTask(
   const lines = [
     `task ${meta.id} · ${meta.title}`,
     `status: ${meta.status} · created: ${meta.created}`,
+    `parent: ${meta.parent ?? 'none'}`,
+    `children: ${children.length ? children.map((child) => `${child.id} (${child.status})`).join(', ') : 'none'}`,
     `pipeline: ${pipelineText(steps)}`,
     `artifacts: ${service.artifactsDir(home, id)}`,
     ...(mine ? [mine] : []),
