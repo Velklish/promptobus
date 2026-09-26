@@ -10,8 +10,8 @@ import { capture, captureSplit } from './console.mjs';
 import { hostOf } from '../lib/host.js';
 import * as store from '../lib/store.js';
 import { planApprover } from '../lib/approver.js';
-import { planReview, review, step } from '../lib/review.js';
-import { admitsAddress, registryOf } from '../dist/index.js';
+import { planReview, review, step, worktreeOwner } from '../lib/review.js';
+import { addressList, admitsAddress, registryOf } from '../dist/index.js';
 
 const box = realpathSync(makeSandbox('promptobus-test-registry-'));
 const ws = path.join(box, 'ws');
@@ -138,22 +138,41 @@ test('an approver-only declaration has no review alias and waits for the owner r
     /type=result message from worker:piece/);
 });
 
-test('a renamed owner still uses the worker address created by spawn', () => {
+test('a renamed owner is the recorded worktree owner and its result opens the main-tree gate', () => {
   const renamedHost = { ...host, pipeline: () => [
     { name: 'builder', kind: 'edits-tree' },
     { name: 'approver', kind: 'writes-main-tree' },
   ] };
-  assert.ok(admitsAddress(registryOf(renamedHost), 'worker:piece'));
+  assert.ok(!admitsAddress(registryOf(renamedHost), 'worker:piece'));
   assert.ok(admitsAddress(registryOf(renamedHost), 'builder:piece'));
-  const planned = planApprover(renamedHost, { target: subject, task, stepName: 'approver', dryRun: true });
-  assert.equal(planned.address, 'approver:piece');
+  assert.equal(registryOf(renamedHost).activeSteps.join(','), 'builder,approver');
+  assert.equal(addressList(registryOf(renamedHost)), 'orchestrator, builder:<slug> or approver:<slug>');
   const noOwnerTask = 'step-renamed-owner-t20260927-000002';
   store.createTask(home, { id: noOwnerTask, title: 'renamed owner without result', status: 'active', participants: [] });
-  store.upsertParticipant(home, noOwnerTask, store.participantRecord('worker:piece', {
+  store.upsertParticipant(home, noOwnerTask, store.participantRecord('security:piece', {
+    harness: 'claude', worktree: subject, started: assignedAt,
+  }, registry));
+  store.upsertParticipant(home, noOwnerTask, store.participantRecord('builder:piece', {
     harness: 'claude', worktree: subject, started: assignedAt,
   }, registryOf(renamedHost)));
   assert.throws(() => planApprover(renamedHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true }),
-    /type=result message from worker:piece/);
+    /type=result message from builder:piece/);
+  store.sendMessage(home, noOwnerTask, {
+    from: 'builder:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported',
+  });
+  const planned = planApprover(renamedHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true });
+  assert.equal(planned.address, 'approver:piece');
+  assert.equal(planned.workerAddress, 'builder:piece');
+});
+
+test('only the declared edits-tree owner is selected from matching worktrees', () => {
+  const nonOwner = { role: 'security', metadata: { worktree: subject } };
+  const worker = { role: 'worker', metadata: { worktree: subject } };
+  const builder = { role: 'builder', metadata: { worktree: subject } };
+  const builderStep = { name: 'builder', kind: 'edits-tree' };
+  assert.equal(worktreeOwner(pipeline.owner, { participants: [nonOwner, worker] }, subject), worker);
+  assert.equal(worktreeOwner(builderStep, { participants: [nonOwner, builder] }, subject), builder);
+  assert.equal(worktreeOwner(builderStep, { participants: [nonOwner] }, subject), null);
 });
 
 test('a renamed first review gate keeps solo review pickup on repeat', async () => {

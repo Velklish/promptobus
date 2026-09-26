@@ -2117,5 +2117,24 @@ check('PB-252: Claude and Cursor print the same one-participant stop, with the a
     `restart — close the session first: promptobus stop worker:pb252-${h} --task ${RESTART_TASK}.`)),
   JSON.stringify(restartRefusals));
 
+const OWNER_TASK = 'owner-step-t20260927-120000';
+const ownerHost = { ...hostOf(WS), pipeline: () => [
+  { name: 'builder', kind: 'edits-tree' },
+  { name: 'approver', kind: 'writes-main-tree' },
+] };
+store.createTask(HOME, { id: OWNER_TASK, title: 'declared owner', status: 'active', participants: [] });
+const ownerOpts = { repo: 'cargos-api', brief: BRIEF, task: OWNER_TASK, worker: 'named-owner' };
+const ownerPlan = await planSpawn(ownerHost, ownerOpts);
+claudeSays([{ id: 'sess-named-owner', name: ownerPlan.name, state: 'working', pid: 4242 }]);
+await quiet(() => spawnWorker(ownerHost, ownerOpts));
+const ownerRecord = store.participantOf(store.readTask(HOME, OWNER_TASK), 'builder:named-owner');
+check('spawn lifts the declared edits-tree owner under its name and keeps the worktree rights',
+  ownerPlan.address === 'builder:named-owner'
+  && ownerPlan.prompt.includes(`promptobus lease --as builder:named-owner --task ${OWNER_TASK}`)
+  && ownerRecord?.role === 'builder'
+  && ownerRecord?.metadata.worktree === ownerPlan.worktreePath
+  && !store.participantOf(store.readTask(HOME, OWNER_TASK), 'worker:named-owner'),
+  JSON.stringify({ plan: ownerPlan.address, record: ownerRecord }));
+
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

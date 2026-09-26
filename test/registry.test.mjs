@@ -268,6 +268,16 @@ test('spawn refuses a departed step prefix while its participant still owns the 
   }), /owner step name "reviewer-2" shares workers\/reviewer-2\.mcp\.json with existing participant reviewer:2/);
 });
 
+test('a renamed owner checks the file stem of its declared address', () => {
+  const registry = bus.registryOf({ ...PLAIN, pipeline: () => [
+    { name: 'builder', kind: bus.EDITS_TREE }, ...FOUR_STEPS.slice(1),
+  ] });
+  const participants = [store.participantRecord('worker:builder-x', {}, SHIPPED)];
+  assert.throws(() => refuseParticipantPrefix('x', 'route', registry, participants,
+    (slug) => `builder:${slug}`),
+  /owner step name "x" shares workers\/builder-x\.mcp\.json with existing participant worker:builder-x/);
+});
+
 test('the host-bearing doors follow the host\'s registry: identity, the MCP send, the texts', () => {
   const home = path.join(SB, 'doors', '.promptobus');
   store.bus(home, { cli: '0.5.1' });

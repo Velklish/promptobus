@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schemas admit step-shaped `by`; send checks it against the registry.
   [03-cli § Status, done, sweep, dismiss, history, prune](docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune), [04-protocol § The gate record](docs/reference/04-protocol.md#the-gate-record).
 
+- **The declared owner is lifted under its own name** (PB-274.1). `spawn --worker <slug>` records
+  `<owner name>:<slug>` and routes with that step name while retaining `edits-tree` worktree and rights.
+  Gate result checks, owner-only subject lookup and recipient lists use the declared address. The default
+  pipeline still records `worker:<slug>`. [03-cli § Spawn](docs/reference/03-cli.md#spawn),
+  [03-cli § Review](docs/reference/03-cli.md#review).
+
 - **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
   when the preceding participant's result is recorded for that subject and current assignment; a
   `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the

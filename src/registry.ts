@@ -57,7 +57,7 @@ export interface RoleEntry {
 /** A registry value: governance roles first, then the steps in pipeline order. Never mutated. */
 export interface RoleRegistry {
   readonly entries: readonly RoleEntry[];
-  /** Declared names plus the worker address used by spawn; absent on the shipped registry. */
+  /** Declared names; absent on the shipped registry. */
   readonly activeSteps?: readonly string[];
 }
 
@@ -141,7 +141,6 @@ export function registryOf(host: PromptobusHost | null | undefined): RoleRegistr
   if (!declared) return SHIPPED_REGISTRY;
   const registry = withSteps(SHIPPED_REGISTRY, declared);
   const active = declared.map((step) => step.name);
-  if (!active.includes(WORKER)) active.unshift(WORKER);
   return Object.freeze({ ...registry, activeSteps: Object.freeze(active) });
 }
 

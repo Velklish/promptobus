@@ -466,13 +466,13 @@ entry, `worker` included, in the `<name>-` shape — `reviewer-two:x` and `revie
 `worker-foo:x` and `worker:foo-x`, would share one participant id (`addrDir`), one mailbox and one
 file stem. An admitted step's stem is
 `<name>-<slug>` and its fields are its kind's. `registryOf(host)` is `withSteps` over the host's
-optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)). Its value also keeps the active step names in declaration order and the `worker` address used by `spawn` when the declaration renames its owner. Address admission and refusal lists use those names, so a shipped gate omitted by a declaration is not offered as a recipient. The standalone host
+optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)). Its value also keeps the active step names in declaration order. Address admission and refusal lists use those names, so a shipped step omitted by a declaration is not offered as a recipient. The standalone host
 answers it from the `pipeline` key of `promptobus.json` and omits it when the key is absent, so a
 host without a declaration hands over the shipped registry
 ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)). It is computed per call,
 and the package keeps no table of its own that anything writes into. A declared step is listed after
 the shipped ones. A shipped gate left out of a declaration stays in the registry as an inactive
-entry, while address admission and refusal lists follow the declaration plus the `worker` owner address. Pipeline order is
+entry, while address admission and refusal lists follow the declaration. Pipeline order is
 `pipelineOf(host)`, not the registry's.
 
 **The grammar needs no registry.** `isAddress`, `roleOf`, `addrDir` and `participantFileStem`

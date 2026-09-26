@@ -810,6 +810,20 @@ test('a cold cache says "never checked" in words, and the document still carries
 
 // --- the legacy path: no flag, no routing -------------------------------------
 
+test('a routed owner uses its declared step beside the edits-tree catalog role', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('declared-owner-t20260905-090004');
+  const namedHost = { ...HOST, pipeline: () => [
+    { name: 'builder', kind: 'edits-tree' },
+    { name: 'approver', kind: 'writes-main-tree' },
+  ] };
+  const plan = await planSpawn(namedHost, routedOpts({ task, worker: 'named-owner' }));
+  assert.equal(plan.address, 'builder:named-owner');
+  assert.equal(plan.routing.step, 'builder');
+  assert.equal(plan.routing.role, 'worker');
+});
+
 test('without --strategy the plan carries no decision and the record gets no routing field', async () => {
   seedCache(HEALTHY());
   const task = freshTask('legacy-t20260905-090005');

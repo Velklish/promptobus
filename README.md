@@ -107,7 +107,7 @@ promptobus spawn --repo ./my-repo --brief ./brief.md --task-title "Rename the bi
 promptobus status
 ```
 
-`--repo` is a path on disk and `--brief` is required. The worker gets a worktree, the brief and the bus; its first message is a `status`. Read mail from the orchestrator session with the `promptobus_mailbox` tool — the warden knocks when something arrives, and the Stop guard does not let a worker's turn end while mail is unread or while it owes an answer it has not sent. Answer a `question` with `promptobus_send`, accept a `result`, or send `review` findings back.
+`--repo` is a path on disk and `--brief` is required. The worker gets a worktree, the brief and the bus; its first message is a `status`. `--worker <slug>` keeps its flag name when a pipeline renames the owner: an owner named `builder` is addressed as `builder:<slug>`, and the default remains `worker:<slug>`. Read mail from the orchestrator session with the `promptobus_mailbox` tool — the warden knocks when something arrives, and the Stop guard does not let a worker's turn end while mail is unread or while it owes an answer it has not sent. Answer a `question` with `promptobus_send`, accept a `result`, or send `review` findings back.
 
 Ask for an independent reading of the diff:
 
