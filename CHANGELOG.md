@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a root until its active children close. Closing a child preserves the parent's teamlead record.
   [01-overview § Store home](docs/reference/01-overview.md#store-home), [04-protocol § Store layout](docs/reference/04-protocol.md#store-layout).
 
+### Changed
+
+- **No-`max` quality evidence matches the measured effort rung** (PB-263.2). The Sonnet 5 SWE-bench figure no longer
+  cites `claude-sonnet-xhigh`: its effort is unstated and Claude Code's baked default is `high`. GPT-5.5's Terminal-Bench
+  2.1 Codex CLI figure now cites `codex-gpt55-medium`, whose default is `medium` in both no-turn metadata reads.
+  The mini row remains a hypothesis; no quality band moved.
+  [Model routing guide](docs/guides/model-routing.md#re-rating-a-row).
+
 ### Documentation
 
 - **The Codex and Cursor MCP child mailbox paths have a live measurement** (PB-178.1).

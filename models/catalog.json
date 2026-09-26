@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-09-25T00:00:00.000Z",
+  "updated": "2026-09-27T00:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-51-high",
@@ -535,8 +535,8 @@
       },
       "billing": "subscription",
       "priority": 250,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from claude-sonnet-xhigh on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-sonnet-xhigh"
@@ -563,21 +563,11 @@
       },
       "billing": "subscription",
       "priority": 240,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
-        "text": "quality uses SWE-bench Verified 60→1 / 96→10: 85.2→7; speed uses Artificial Analysis 40→1 / 310→10: 76 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $6→2. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality is a hypothesis of 7. The SWE-bench Verified table lists Claude Sonnet 5 at 85.2 % (https://benchlm.ai/benchmarks/swe-bench-verified, opened 2026-09-27), which would give 7 under the 60→1 / 96→10 pair, but it names neither effort nor agent harness. Claude Code 2.1.280's baked Sonnet 5 row says default_effort high, not this base row's xhigh (read from the resolved binary without a model turn, 2026-09-27). The 85.2 % figure guides placement but does not cite an xhigh result, so the band stays 7 as a hypothesis. speed uses Artificial Analysis 40→1 / 310→10: 76 tokens/s→2; quotaCost uses blended list price $2.50→1 / $30→10: $6→2. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
-          {
-            "rating": "quality",
-            "basis": "SWE-bench Verified",
-            "version": "Verified",
-            "figure": "85.2 %",
-            "agentHarness": "not stated by the page",
-            "provenance": "primary leaderboard page, opened",
-            "url": "https://benchlm.ai/benchmarks/swe-bench-verified",
-            "date": "2026-09-06"
-          },
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
@@ -597,6 +587,9 @@
             "version": "price schedule 2026-09-06",
             "agentHarness": "vendor API"
           }
+        ],
+        "hypothesis": [
+          "quality"
         ]
       }
     },
@@ -620,8 +613,8 @@
       },
       "billing": "subscription",
       "priority": 260,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
         "text": "Interpolated -2 effort step(s) from claude-sonnet-xhigh on the 1–10 scale: quality -2, speed unchanged because throughput belongs to the model and serving stack, quotaCost -2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "claude-sonnet-xhigh"
@@ -1611,8 +1604,8 @@
       },
       "billing": "subscription",
       "priority": 610,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
         "text": "Interpolated +2 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality +2, speed unchanged because throughput belongs to the model and serving stack, quotaCost +2; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt55-medium"
@@ -1720,11 +1713,21 @@
       },
       "billing": "subscription",
       "priority": 690,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
-        "text": "quality is a hypothesis of 8, placed by Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 83.1→8, preferred over the harness-free 88.0 (the archived leaderboard, opened 2026-09-23; the page names no effort). It stays a hypothesis because the rung that figure belongs to is not settled: the model-routing guide (§ Re-rating a row) lands a no-effort figure on the base rung `max`, which GPT-5.5's ladder does not have, and ADR-004 names the harness's default effort instead, which nobody has established for Codex CLI on GPT-5.5. speed is a hypothesis of 3: no throughput figure is published for GPT-5.5 at medium effort; the band was placed on 2026-09-06 beside GPT-5.6 Sol's throughput as then read (90 tokens/s, band 3), which codex-sol-max now cites at 72.6 tokens/s (band 2) — the band is not re-placed here. quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality cites Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 83.1→8. The leaderboard lists GPT-5.5 under Codex CLI at 83.1 % ±1.1 without an effort. Codex CLI 0.156.1 reports gpt-5.5.default_reasoning_level medium, matching this row, from CODEX_HOME=<fresh empty directory> codex debug models and --bundled (both without a model turn, 2026-09-27). speed is a hypothesis of 3: no throughput figure is published for GPT-5.5 at medium effort; the band was placed on 2026-09-06 beside GPT-5.6 Sol's throughput as then read (90 tokens/s, band 3), which codex-sol-max now cites at 72.6 tokens/s (band 2) — the band is not re-placed here. quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
+          {
+            "rating": "quality",
+            "basis": "Terminal-Bench",
+            "version": "2.1",
+            "agentHarness": "Codex CLI",
+            "provenance": "public leaderboard page, opened",
+            "figure": "83.1 % ±1.1 (effort not stated by the page)",
+            "url": "https://snorkel.ai/leaderboard/terminal-bench-2-1/",
+            "date": "2026-09-27"
+          },
           {
             "rating": "quotaCost",
             "basis": "OpenAI list price, blended (input + output) / 2",
@@ -1737,7 +1740,6 @@
           }
         ],
         "hypothesis": [
-          "quality",
           "speed"
         ]
       }
@@ -1763,8 +1765,8 @@
       },
       "billing": "subscription",
       "priority": 745,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
         "text": "Interpolated -1 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality -1, speed unchanged because throughput belongs to the model and serving stack, quotaCost -1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt55-medium"
@@ -1791,8 +1793,8 @@
       },
       "billing": "subscription",
       "priority": 650,
-      "assessedAt": "2026-09-06T00:00:00.000Z",
-      "source": "public benchmarks, subscription-balance series, 2026-09-06",
+      "assessedAt": "2026-09-27T00:00:00.000Z",
+      "source": "public benchmarks, re-read 2026-09-27",
       "evidence": {
         "text": "Interpolated +1 effort step(s) from codex-gpt55-medium on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt55-medium"

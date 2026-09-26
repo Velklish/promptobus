@@ -407,3 +407,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-185.2"></a>`PB-185.2-codex-stop-hook-unobserved` · 2026-09-27 · completed · — · Observe the Codex Stop hook on a turn that needs no follow-up
 - <a id="pb-274"></a>`PB-274-step-lift` · 2026-09-27 · completed · — · promptobus step lifts a gate step by name on a machine precondition; review and review --approver become its aliases
 - <a id="pb-273.1"></a>`PB-273.1-declared-step-undiscoverable` · 2026-09-27 · batch PB-274 · — · A declared step parses and routes, but no tool description or refusal list names it
+- <a id="pb-263.2"></a>`PB-263.2-no-max-quality-citations` · 2026-09-27 · completed · — · Reconcile quality citations on ladders without max
