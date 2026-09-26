@@ -624,3 +624,42 @@ check(': its delivery latency survived — that number is read from health and t
 check(': its message counts survived — they are read from the canonical messages',
   swept?.turns > 0 || swept?.reviewRounds > 0,
   JSON.stringify({ turns: swept?.turns, reviewRounds: swept?.reviewRounds }));
+
+// --- the third proof: an edited squash, named by the acceptance commit's trailer ---
+// A conflict resolved at the squash hides the branch from both measurements; `Squash-of` is the third proof.
+const TREPO = path.join(SB, 'trailer-repo');
+mkdirSync(TREPO, { recursive: true });
+git(TREPO, 'init', '-q', '-b', 'master');
+writeFileSync(path.join(TREPO, 'named.txt'), 'the shared line\n');
+git(TREPO, 'add', 'named.txt');
+git(TREPO, 'commit', '-qm', 'base');
+const NAMED = path.join(TREPO, '.claude', 'worktrees', 'named');
+git(TREPO, 'worktree', 'add', '-q', '-b', 'worktree-promptobus-named', NAMED);
+writeFileSync(path.join(NAMED, 'named.txt'), 'the line as the worker wrote it\n');
+git(NAMED, 'add', 'named.txt');
+git(NAMED, 'commit', '-qm', 'the line as the worker wrote it');
+writeFileSync(path.join(TREPO, 'named.txt'), 'the line as the base wrote it\n');
+git(TREPO, 'add', 'named.txt');
+git(TREPO, 'commit', '-qm', 'the base writes the same line');
+const namedHead = git(NAMED, 'rev-parse', 'HEAD').stdout.trim();
+const namedMerge = git(TREPO, 'merge', '-q', '--squash', 'worktree-promptobus-named');
+writeFileSync(path.join(TREPO, 'named.txt'), 'the line as the base wrote it\nthe line as the worker wrote it\n');
+git(TREPO, 'add', 'named.txt');
+git(TREPO, 'commit', '-qm', 'PB-1: closed — the named piece', '--trailer', `Squash-of: ${namedHead}`);
+const namedAcceptance = git(TREPO, 'log', '-1', '--format=%h').stdout.trim();
+const TRAILER_TASK = 'sweep-trailer-t20260926-180000';
+store.createTask(HOME, { id: TRAILER_TASK, title: 'squash с правкой при слиянии', owner: OWNER });
+store.upsertParticipant(HOME, TRAILER_TASK, store.participantRecord('worker:named', {
+  harness: 'claude', mode: 'managed', sessionRef: 'sess-named', repoAbs: TREPO, worktree: NAMED,
+  branch: 'worktree-promptobus-named',
+}));
+check(': the squash conflicted and was resolved by hand — the precondition is stated',
+  namedMerge.status !== 0 && existsSync(NAMED), namedMerge.stderr.trim());
+const namedOut = await capture(async () => sweep(HOST, { task: TRAILER_TASK, address: 'worker:named' },
+  { registry: stand.registry }));
+check(': sweep removes the tree the acceptance commit names, with the reason done prints',
+  !existsSync(NAMED) && namedOut.includes(`worktree ${NAMED} removed (branch worktree-promptobus-named is merged `
+    + `as a squash — named by the acceptance commit ${namedAcceptance} (Squash-of)), branch worktree-promptobus-named deleted`),
+  namedOut.trim());
+check(': and its branch goes with it',
+  git(TREPO, 'rev-parse', '--verify', '--quiet', 'worktree-promptobus-named').status !== 0);

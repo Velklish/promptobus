@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`done` and `sweep` recognise an edited squash by the acceptance trailer** (PB-284). The acceptance commit carries
+  `Squash-of: <full sha of the worker head that was squashed>` (`git commit -F <draft> --trailer "Squash-of: <sha>"`),
+  and a commit of the base since the fork point whose trailer equals the branch head is a third proof that the branch
+  was taken: the tree and the `worktree-` branch go with `merged as a squash — named by the acceptance commit <short
+  sha> (Squash-of)`. It is asked after `merge-tree` and `patch-id`, whose trees go with the same words as before; a
+  branch past the named head, and an edited squash with no trailer, keep both.
+  [03-cli § namedBySquash](docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head).
+
 - **A session holds one address per task, and a send is made only from a record the session provably holds** (PB-265).
   `promptobus_send` and `promptobus send` resolve the sender in the task the call names: the `orchestrator` by its
   recorded owner, any other address by the session its lift wrote. `PROMPTOBUS_ROLE` picks among the records the

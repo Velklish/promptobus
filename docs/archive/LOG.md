@@ -397,3 +397,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-273"></a>`PB-273-pipeline-declaration` · 2026-09-26 · completed · — · pipeline in promptobus.json declares the owner step and the gate steps; validate refuses a second editor and a governance name
 - <a id="pb-266.3"></a>`PB-266.3-glossary-registry-row-symbol` · 2026-09-26 · merged into PB-273 · — · The glossary registry row cites a symbol the module does not export
 - <a id="pb-265"></a>`PB-265-session-address-per-task-send` · 2026-09-26 · completed · — · A session holds one address per task, and promptobus send ships on a positive proof
+- <a id="pb-284"></a>`PB-284-sweep-proof-by-trailer` · 2026-09-26 · completed · — · sweep and done recognise an edited squash by the acceptance commit's trailer naming the worker head

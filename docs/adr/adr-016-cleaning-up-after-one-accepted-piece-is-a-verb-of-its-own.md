@@ -200,3 +200,23 @@ of `done` where the gap was measured.
   being dead and the merge being provable, and neither is a verdict on the work.
 - **What this does not give:** a way to sweep a piece of somebody else's task, and a way to
   reclaim the journal of a live task. Both are deliberate.
+
+## Amendment, 2026-09-26 (PB-284): the proof set grows by the acceptance trailer
+
+"The merge proof is the one `done` already uses and there is no third measurement" no
+longer holds as written. The owner decided on 2026-09-26 that the acceptance commit names
+the worker head it squashed in a git trailer, `Squash-of: <full sha>`, and that `done` and
+`sweep` accept it as a third proof: a commit of the base since the fork point whose trailer
+equals the branch head ([03-cli § namedBySquash](../reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head)).
+It closes the case both content measurements miss by construction — a squash whose content
+the approver edited at the merge — which the card records at 4 of 7 accepted pieces of one
+run and 25 of the run before, each removed by hand.
+
+The first half of the bullet stands: `inspectWorktree` and `worktreeDisposition` still
+decide for both commands, so "merged" means one thing in both. The trailer is asked wherever
+`merge-tree` and `patch-id` did not prove the work in — including where `merge-tree` proved it
+out, which is the archived-card case the decision exists for — so a tree they recognise goes
+with the same words, and naming a head discards whatever of it the squash left behind.
+Equality is the whole test — a branch past the named head keeps its tree. An edited squash
+whose acceptance commit names no head is still not recognised, and "cheap to delete,
+impossible to return" is why it keeps its tree and branch.

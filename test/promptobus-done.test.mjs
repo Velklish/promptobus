@@ -9,6 +9,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { check } from './check.mjs';
 import { makeSandbox, snapshotOfList, writeHostConfig } from './sandbox.mjs';
 import { capture, captureSplit } from './console.mjs';
@@ -441,3 +442,61 @@ await capture(async () => done(SECRETS, { task: SECRETS_TASK, snapshot: deadSess
 check(': the settings file leaves with the mcp-config and the contact point, not after them',
   !Object.values(secretFiles).some(existsSync),
   Object.entries(secretFiles).filter(([, at]) => existsSync(at)).map(([k]) => k).join(', '));
+
+// --- an edited squash, named by the acceptance commit's trailer ---------------------
+// A conflict resolved at the squash hides the branch from both measurements; `Squash-of` is the third proof.
+const TRAILER = path.join(SB, 'trailer-ws');
+const trailerHome = path.join(TRAILER, '.promptobus');
+mkdirSync(trailerHome, { recursive: true });
+writeFileSync(path.join(TRAILER, 'AGENTS.md'), 'песочница\n');
+writeHostConfig(TRAILER);
+const TREPO = path.join(TRAILER, 'repo');
+mkdirSync(TREPO, { recursive: true });
+const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
+git(TREPO, 'init', '-q', '-b', 'master');
+git(TREPO, 'commit', '-q', '--allow-empty', '-m', 'основа');
+function editedSquash(name, named) {
+  const file = `${name}.txt`;
+  writeFileSync(path.join(TREPO, file), 'общая строка\n');
+  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', `основа ${name}`);
+  const tree = path.join(TREPO, '.claude', 'worktrees', name);
+  const branch = `worktree-promptobus-${name}`;
+  git(TREPO, 'worktree', 'add', '-q', '-b', branch, tree);
+  writeFileSync(path.join(tree, file), 'строка ветки\n');
+  git(tree, 'add', file); git(tree, 'commit', '-qm', 'работа ветки');
+  writeFileSync(path.join(TREPO, file), 'строка базы\n');
+  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', 'база меняет ту же строку');
+  const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
+  const merged = git(TREPO, 'merge', '-q', '--squash', branch);
+  writeFileSync(path.join(TREPO, file), 'строка базы\nстрока ветки\n');
+  git(TREPO, 'add', file);
+  git(TREPO, 'commit', '-qm', `PB-1: closed — ${name}`, ...(named ? ['--trailer', `Squash-of: ${head}`] : []));
+  return { tree, branch, conflicted: merged.status !== 0, acceptance: git(TREPO, 'log', '-1', '--format=%h').stdout.trim() };
+}
+const NAMED = editedSquash('named', true);
+const UNNAMED = editedSquash('unnamed', false);
+const TRAILER_TASK = 'trailer-t20260926-180000';
+store.createTask(trailerHome, { id: TRAILER_TASK, title: 'squash с правкой при слиянии', owner: null });
+for (const [address, piece] of [['worker:named', NAMED], ['worker:unnamed', UNNAMED]]) {
+  store.upsertParticipant(trailerHome, TRAILER_TASK, store.participantRecord(address, {
+    harness: 'claude', mode: 'managed', sessionRef: `sess-${address.split(':')[1]}`,
+    repoAbs: TREPO, worktree: piece.tree, branch: piece.branch,
+  }));
+}
+check(': both squashes conflicted and were resolved by hand — the precondition is stated',
+  NAMED.conflicted && UNNAMED.conflicted && existsSync(NAMED.tree) && existsSync(UNNAMED.tree),
+  JSON.stringify({ named: NAMED.conflicted, unnamed: UNNAMED.conflicted }));
+const trailerOut = await capture(async () => done(TRAILER, {
+  task: TRAILER_TASK, snapshot: (participants) => snapshotOfList(participants, []),
+}));
+check(': done removes the tree and the branch the acceptance commit names, and says which commit',
+  !existsSync(NAMED.tree) && git(TREPO, 'rev-parse', '--verify', '--quiet', NAMED.branch).status !== 0
+  && trailerOut.includes(`worktree ${NAMED.tree} removed (branch ${NAMED.branch} is merged as a squash — `
+    + `named by the acceptance commit ${NAMED.acceptance} (Squash-of)), branch ${NAMED.branch} deleted`),
+  trailerOut.trim());
+check(': the same squash with no trailer keeps both, and the not-merged line is word for word as before',
+  existsSync(UNNAMED.tree) && git(TREPO, 'rev-parse', '--verify', '--quiet', UNNAMED.branch).status === 0
+  && trailerOut.includes(`worktree ${UNNAMED.tree} left in place: branch ${UNNAMED.branch} is not merged: `
+    + '1 commit(s) are not in master, and neither the merge nor the patch-id comparison with master could '
+    + 'confirm the work was taken — take them (merge/MR) or delete yourself'),
+  trailerOut.trim());

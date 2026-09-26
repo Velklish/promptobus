@@ -301,6 +301,141 @@ check('uncertainty resolves in favor of "keep", and the report says what was mea
 git(REPO, 'worktree', 'remove', '--force', CF);
 git(REPO, 'branch', '-D', 'worktree-a2a-conflict');
 
+// --- an edited squash, named by the acceptance commit's trailer ------------------
+// A conflict resolved at the squash hides the branch from both measurements; `Squash-of` is the third proof.
+
+// One repository per case: a shared base would let one case's commit name another's head.
+const acceptanceOf = (repo) => git(repo, 'log', '-1', '--format=%h').stdout.trim();
+const squashRepo = (name) => {
+  const repo = path.join(SB, `squash-${name}`);
+  mkdirSync(repo, { recursive: true });
+  git(repo, 'init', '-q', '-b', 'master');
+  writeFileSync(path.join(repo, 'shared'), 'общая строка\n');
+  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'основа');
+  const tree = path.join(repo, '.claude', 'worktrees', name);
+  const branch = `worktree-a2a-${name}`;
+  git(repo, 'worktree', 'add', '-q', '-b', branch, tree);
+  return { repo, tree, branch };
+};
+const trailerArgs = (sha) => (sha ? ['--trailer', `Squash-of: ${sha}`] : []);
+function editedSquash(name, trailerOf) {
+  const { repo, tree, branch } = squashRepo(name);
+  writeFileSync(path.join(tree, 'shared'), 'строка ветки\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'работа ветки');
+  writeFileSync(path.join(tree, 'own'), 'второй коммит ветки\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'ещё работа ветки');
+  writeFileSync(path.join(repo, 'shared'), 'строка базы\n');
+  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'база меняет ту же строку');
+  const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
+  const foreign = git(repo, 'rev-parse', 'HEAD').stdout.trim();
+  const merged = git(repo, 'merge', '-q', '--squash', branch);
+  writeFileSync(path.join(repo, 'shared'), 'строка базы\nстрока ветки\n');
+  git(repo, 'add', 'shared');
+  git(repo, 'commit', '-qm', 'PB-1: closed — принятая работа', ...trailerArgs(trailerOf?.({ head, foreign })));
+  return { repo, tree, branch, head, conflicted: merged.status !== 0, acceptance: acceptanceOf(repo) };
+}
+const notMergedExactly = (branch) => `branch ${branch} is not merged: 2 commit(s) are not in master, and neither the `
+  + 'merge nor the patch-id comparison with master could confirm the work was taken — take them (merge/MR) or delete yourself';
+
+const named = editedSquash('named', ({ head }) => head);
+const namedInfo = inspectWorktree(named.repo, named.tree, 'master');
+check('fixture: the squash conflicted and was resolved by hand — neither content measurement sees the branch',
+  named.conflicted && namedInfo.unmerged === 2 && namedInfo.adds === null && namedInfo.squashed === false,
+  JSON.stringify({ conflicted: named.conflicted, ...namedInfo }));
+check('an edited squash whose acceptance commit names the branch head in Squash-of — the directory goes', (() => {
+  const d = worktreeDisposition(namedInfo);
+  return namedInfo.namedBy === named.acceptance && d.action === 'remove'
+    && d.reason === `branch ${named.branch} is merged as a squash — named by the acceptance commit ${named.acceptance} (Squash-of)`;
+})(), JSON.stringify({ acceptance: named.acceptance, ...worktreeDisposition(namedInfo) }));
+const rmNamed = removeWorktree(named.repo, named.tree, named.branch);
+check('the named branch: the directory and the mechanism branch are removed',
+  rmNamed.removed && rmNamed.branchDeleted === true && !existsSync(named.tree)
+  && git(named.repo, 'rev-parse', '--verify', '-q', named.branch).status !== 0, JSON.stringify(rmNamed));
+
+const unnamed = editedSquash('unnamed', null);
+const unnamedInfo = inspectWorktree(unnamed.repo, unnamed.tree, 'master');
+check('the same edited squash with no trailer keeps the directory, with the not-merged sentence unchanged',
+  unnamed.conflicted && unnamedInfo.namedBy === false && worktreeDisposition(unnamedInfo).action === 'keep'
+  && worktreeDisposition(unnamedInfo).reason === notMergedExactly(unnamed.branch),
+  JSON.stringify({ ...unnamedInfo, ...worktreeDisposition(unnamedInfo) }));
+
+const foreign = editedSquash('foreign', ({ foreign: sha }) => sha);
+const foreignInfo = inspectWorktree(foreign.repo, foreign.tree, 'master');
+check('a trailer naming another sha is no proof — the directory stays',
+  foreign.conflicted && foreignInfo.namedBy === false && worktreeDisposition(foreignInfo).action === 'keep'
+  && worktreeDisposition(foreignInfo).reason === notMergedExactly(foreign.branch),
+  JSON.stringify({ ...foreignInfo, ...worktreeDisposition(foreignInfo) }));
+
+const moved = editedSquash('moved-on', ({ head }) => head);
+writeFileSync(path.join(moved.tree, 'after'), 'коммит после принятой головы\n');
+git(moved.tree, 'add', '.'); git(moved.tree, 'commit', '-qm', 'работа после принятия');
+const movedInfo = inspectWorktree(moved.repo, moved.tree, 'master');
+check('a branch one commit past the named head has work the base lacks — the directory stays', (() => {
+  const d = worktreeDisposition(movedInfo);
+  return movedInfo.unmerged === 3 && movedInfo.namedBy === false && d.action === 'keep' && /is not merged/.test(d.reason);
+})(), JSON.stringify({ ...movedInfo, ...worktreeDisposition(movedInfo) }));
+
+// An acceptance that archives the card: the base takes the branch's edit and not its card, so
+// `merge-tree` proves the work OUT, and only the trailer can prove it in.
+function archivedCard(name, trailered) {
+  const { repo, tree, branch } = squashRepo(name);
+  writeFileSync(path.join(tree, 'card'), 'карточка задачи\n');
+  git(tree, 'add', 'card'); git(tree, 'commit', '-qm', 'PB-1: filed and taken');
+  writeFileSync(path.join(tree, 'shared'), 'строка ветки\n');
+  git(tree, 'add', 'shared'); git(tree, 'commit', '-qm', 'работа ветки');
+  const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
+  git(repo, 'merge', '-q', '--squash', branch);
+  git(repo, 'rm', '-q', '-f', 'card');
+  git(repo, 'commit', '-qm', 'PB-1: closed — карточка ушла в архив', ...trailerArgs(trailered ? head : null));
+  return { repo, tree, branch, acceptance: acceptanceOf(repo) };
+}
+const archived = archivedCard('archived', true);
+const archivedInfo = inspectWorktree(archived.repo, archived.tree, 'master');
+check('an acceptance that archived the card: merge-tree proves the work out, and the trailer naming the head removes the directory', (() => {
+  const d = worktreeDisposition(archivedInfo);
+  return archivedInfo.adds === true && archivedInfo.namedBy === archived.acceptance && d.action === 'remove'
+    && d.reason === `branch ${archived.branch} is merged as a squash — named by the acceptance commit ${archived.acceptance} (Squash-of)`;
+})(), JSON.stringify({ acceptance: archived.acceptance, ...archivedInfo, ...worktreeDisposition(archivedInfo) }));
+const unarchived = archivedCard('archived-unnamed', false);
+const unarchivedInfo = inspectWorktree(unarchived.repo, unarchived.tree, 'master');
+check('the same archived-card squash with no trailer keeps the directory, with the would-add sentence unchanged',
+  unarchivedInfo.adds === true && unarchivedInfo.namedBy === false && worktreeDisposition(unarchivedInfo).action === 'keep'
+  && worktreeDisposition(unarchivedInfo).reason === `branch ${unarchived.branch} is not merged: 2 commit(s) are not in master, `
+    + 'and merging them into master would add changes it does not have — take them (merge/MR) or delete yourself',
+  JSON.stringify({ ...unarchivedInfo, ...worktreeDisposition(unarchivedInfo) }));
+
+// A clean squash carrying the trailer too: the earlier measurements answer first, with their
+// own sentences, and the trailer is not even read.
+function cleanSquash(name, moveAfter) {
+  const { repo, tree, branch } = squashRepo(name);
+  writeFileSync(path.join(tree, 'shared'), 'общая строка\nстрока ветки\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'работа ветки');
+  const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
+  git(repo, 'merge', '-q', '--squash', branch);
+  git(repo, 'commit', '-qm', 'PB-2: closed — чистый squash', ...trailerArgs(head));
+  if (moveAfter) {
+    writeFileSync(path.join(repo, 'shared'), 'общая строка\nстрока ветки\nстрока следующего воркера\n');
+    git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'следующая работа в той же строке');
+  }
+  return { repo, tree, branch };
+}
+const byPatch = cleanSquash('clean-moved', true);
+const byPatchInfo = inspectWorktree(byPatch.repo, byPatch.tree, 'master');
+check('a clean squash the base moved over is still proven by patch-id first, in the same words', (() => {
+  const d = worktreeDisposition(byPatchInfo);
+  return byPatchInfo.squashed === true && byPatchInfo.namedBy === null && d.action === 'remove'
+    && d.reason === `branch ${byPatch.branch} is merged as a squash — master holds a commit with this `
+      + 'branch\'s own patch (patch-id), though its 1 commit(s) are not in master';
+})(), JSON.stringify({ ...byPatchInfo, ...worktreeDisposition(byPatchInfo) }));
+const byMerge = cleanSquash('clean', false);
+const byMergeInfo = inspectWorktree(byMerge.repo, byMerge.tree, 'master');
+check('a clean squash is still proven by merge-tree first, in the same words', (() => {
+  const d = worktreeDisposition(byMergeInfo);
+  return byMergeInfo.adds === false && byMergeInfo.namedBy === null && d.action === 'remove'
+    && d.reason === `branch ${byMerge.branch} is merged as a squash — its 1 commit(s) are not in master, `
+      + 'and merging them into master would add nothing';
+})(), JSON.stringify({ ...byMergeInfo, ...worktreeDisposition(byMergeInfo) }));
+
 // --- base of a new worktree: local default ahead of origin -----------
 //
 // The task's central fork: a worker must see commits that a human has not pushed yet. The

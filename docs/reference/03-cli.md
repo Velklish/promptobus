@@ -881,7 +881,7 @@ The columns are the result, not the count. `pid=30360 ppid=1 pgid=30358` in **bo
 
 Right after the close it appends one telemetry record per harness generation of a participant that lifted a session ([Participant telemetry](#participant-telemetry)) — before the sweeps, because the run is over at the close and everything after that line may lawfully end in a warning. A telemetry file that cannot be written is itself a warning and never a refusal: the task is already closed and there is no undo.
 
-It also sweeps the worktrees of every closed task, and a directory goes only when the branch's work is proven to be in the repository's default branch. The judgement is about **content, not ancestry**: a squash merge leaves none of the branch's commits in the base by construction, so the commit count says nothing on its own. Two measurements answer it (`lib/worktree.js`): whether merging the branch into the base would add anything (`git merge-tree --write-tree`), and whether the base holds a commit carrying the branch's own patch (`git patch-id --stable` over `git diff <fork> <branch>`). The second exists because the first stops answering once the base moves over the same lines — which is exactly what the next worker landing on the same file does. On a `remove` disposition, `done` removes both the worktree directory and the mechanism-created `worktree-` branch, using `git branch -D` because a proven squash is not ancestry-merged; its output names the content measurement and both removals. Everything else keeps both, and the report names the state it measured: `merged as a squash`, `is entirely in <base>`, or `is not merged`. A squash whose content was edited while merging, and work taken as a series of cherry-picks, are not recognised and keep the directory and branch: it is cheap to delete and impossible to return.
+It also sweeps the worktrees of every closed task, and a directory goes only when the branch's work is proven to be in the repository's default branch. The judgement is about **content, not ancestry**: a squash merge leaves none of the branch's commits in the base by construction, so the commit count says nothing on its own. Three measurements answer it, in this order (`lib/worktree.js`): whether merging the branch into the base would add anything (`git merge-tree --write-tree`), whether the base holds a commit carrying the branch's own patch (`git patch-id --stable` over `git diff <fork> <branch>`), and whether a commit of the base since the fork point names the branch head in its `Squash-of` trailer ([`namedBySquash`](#namedbysquash--did-an-acceptance-commit-name-the-branch-head)). The second exists because the first stops answering once the base moves over the same lines — which is exactly what the next worker landing on the same file does. The third exists because an approver who edits the content while squashing — a conflict resolved by hand, a card the acceptance archived — leaves the first two without a proof: `merge-tree` conflicts or finds the base without what the squash left out, and no commit of the base carries the branch's patch. It is asked wherever those two did not prove the work in, including where `merge-tree` proved it out, so a tree they recognise goes with the same words, and a named head takes with it whatever of that head the squash left behind. On a `remove` disposition, `done` removes both the worktree directory and the mechanism-created `worktree-` branch, using `git branch -D` because a proven squash is not ancestry-merged; its output names the measurement that proved it and both removals. Everything else keeps both, and the report names the state it measured: `merged as a squash`, `is entirely in <base>`, or `is not merged`. A squash whose content was edited while merging and whose acceptance commit names no head, and work taken as a series of cherry-picks, are not recognised and keep the directory and branch: it is cheap to delete and impossible to return.
 
 **A contact point outlives its session, and neither of the two obvious ways to read it is right.** `tasks/<id>/wake/<address>.json` is `{address, socket, token, pid, session, at}`, one per address, and nothing in it distinguishes "this session is reachable" from "this session was reachable once" — the file's own name invites the first reading, and a reader counting files counts a killed participant as live. **The `pid` in the file is not a liveness handle.** `writeWake` stores `process.pid` of whatever process wrote the file, which for a Claude participant is the Stop hook that exits immediately after; measured 2026-09-12 over a live store of nine contact points, eight named a pid that was already `ESRCH`, and five of those eight belonged to sessions that were demonstrably alive. Checking that pid would report almost every live participant dead. **The socket is the handle, and it must be read as a path.** A Codex address carries a `#<n>` thread suffix on one socket file, so `existsSync` over the whole address is false for a live Codex point: in the same measurement the raw check called both live Codex reviewers gone, while the path before the `#` separated all nine correctly — eight live, one gone, and the one it called gone was exactly the participant whose process had been killed. `status` therefore reads the socket path, not the address and not the pid, and marks a line it cannot vouch for: `alarm: socket handed over <at> — STALE: the socket it names is gone`. The same reading now backs the orchestrator's own line, which had been checking the raw address and was right only because that participant is never Codex.
 
@@ -893,7 +893,7 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 **Its gate is not the owner gate of `done`, and `dismiss` and `stop` now stand on this side of that line.** Acceptance runs in the approver's session, not the orchestrator's ([ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)), so the command admits the task mailbox owner **or** a participant of this task with role `approver` whose recorded session is the calling one — proven the same way direct worker↔approver traffic is proven, by the session on the participant record, and read from the one home the three cleanup commands share (`approverHere` in `lib/store.js`). Nobody else. It refuses the orchestrator, which owns the task rather than a piece of it, and an address that is not a participant, naming who is. **A session that is not dead refuses too, before anything is touched**: `git worktree remove` does not look at processes, and the directory would leave from under a running `cwd`. The refusal names `promptobus stop <address>` as the step before it. **A state that could not be read refuses too, on a line of its own that says why**: the harness binary was not found or does not start, naming what was looked for — the host's own reason, `claude on this process's PATH`, or the path with its error code; tmux could not be run for a Cursor participant, naming where it was looked for ([05-drivers § Cursor: tmux by absolute path](05-drivers.md#cursor-tmux-by-absolute-path)); the harness registry could not be read (`claude agents --json is unreadable`); the harness's registry home is named by nobody; there is nobody to ask; or the record carries no session reference. All but the last are about the observer, not the session, and the line says to repeat the sweep once `status` reads it. A record with no reference will never read, so that line names the way out instead: close the session from the harness and remove the tree by hand, or lift the participant again so its record carries one. One "session is unknown" used to cover all three, and sent a reader after a dead or mis-addressed participant when `claude` was simply not on a lifted session's `PATH` — which the state query no longer depends on: it runs the binary the host names, the lift's own door ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)). `status` prints the same reason on the participant's line.
 
-**What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same two content measurements `done` uses and no third one. The metadata records of the artifacts it **sent**, the `files/` entry of each, and the blob of each once no surviving record names it — a blob is deduplicated inside the task, which is why it leaves last and only then. Its files in `workers/` — the mcp-config, the settings file and the temporary stands — and its contact point under `wake/`.
+**What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same measurements `done` uses and no other. The metadata records of the artifacts it **sent**, the `files/` entry of each, and the blob of each once no surviving record names it — a blob is deduplicated inside the task, which is why it leaves last and only then. Its files in `workers/` — the mcp-config, the settings file and the temporary stands — and its contact point under `wake/`.
 
 **What it never removes, and this is a check rather than a comment.** The journal, the canonical messages, the mailboxes, the warden log, `health.json`, `stalls.json` and the `waits/` sidecars. Those are exactly what `recordTelemetry` reads at `done` to write the rows a strategy is built from ([Participant telemetry](#participant-telemetry)), so a sweep that took one of them would blank that piece's telemetry row silently. `keptPaths` names them and `keptBy` refuses a removal aimed inside any of them; the suite runs the guard on both answers and then closes the swept task and reads the row back.
 
@@ -1184,6 +1184,50 @@ gained since that fork. Found — the work is in.
 What it deliberately does not recognise: a squash whose content was edited while it
 was merged, and work taken as a series of cherry-picks. Both keep the directory, and
 that is the safe direction — a directory is cheap to delete and impossible to return.
+The first goes only when its acceptance commit names the branch head, which is the
+next measurement's question, not this one's.
+
+### `namedBySquash` — did an acceptance commit name the branch head?
+
+Source: `lib/worktree.js`, `namedBySquash`.
+
+Did an acceptance commit name the branch head?
+
+`squashedInto` finds the branch only while the squash carries the branch's own
+patch. An approver who resolves a conflict while squashing, or whose
+acceptance archives and folds the task card, writes a commit whose diff is not
+the branch's, and both content measurements then keep the directory of work
+that was taken. So the acceptance commit says what it took, in a git trailer —
+the acceptance trailer: `Squash-of: <full sha of the worker head that was
+squashed>`, written by `git commit -F <draft> --trailer "Squash-of: <sha>"`,
+which appends to the fold draft and leaves it whole ([contributing § Approver
+path](../guides/contributing.md#approver-path)).
+
+The trailers are read by git, not by a pattern over the message: `git log
+<fork>..<base>` with `%(trailers:key=Squash-of,valueonly)` in its format, each
+value compared with the branch head, `git rev-parse <branch>^{commit}`.
+Equality is the whole test: a branch that moved past the named head holds work
+the base does not, and it stays. The range starts at the fork point, so no
+commit older than the branch can name it.
+
+The short sha of the naming commit — found, and `worktreeDisposition` answers
+`remove` with `merged as a squash — named by the acceptance commit <short sha>
+(Squash-of)`; `false` — no commit since the fork names the head; `null` — git
+did not answer at all.
+
+It is asked last, wherever `branchAdds` did not answer `false` and
+`squashedInto` did not answer `true`: every tree those two recognise goes the
+way, and with the words, it went before. That includes `branchAdds` answering
+`true` — the archived card, which the squash left out and a merge would bring
+back. **Naming a head discards whatever of that head the squash left behind:**
+`merge-tree`'s "the base lacks this" no longer holds the directory, and the
+fold draft in the acceptance commit is the record of what was left out and
+why.
+
+What it still does not recognise is an edited squash whose acceptance commit
+carries no trailer, and every acceptance made before the procedure asked for
+one is such a commit. Those keep the directory and branch, for the reason
+`squashedInto` gives.
 
 ### `recordTelemetry` — one telemetry record per participant that lifted a session
 
@@ -1498,7 +1542,7 @@ Source: `lib/sweep.js`, `sweepTree`.
 
 The worktree directory of one participant and the `worktree-` branch behind it, decided by
 `inspectWorktree` and `worktreeDisposition` — the same pair `done` uses, so there is no
-second opinion about what "merged" means and no third measurement.
+second opinion about what "merged" means.
 
 It answers one of four states, and the artifacts of the piece follow it: `removed` and
 `none` let them go, `kept` and `vanished` hold them.

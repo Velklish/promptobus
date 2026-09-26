@@ -4,7 +4,7 @@
     "citation": 44,
     "crossFile": 6,
     "fileLevel": 55,
-    "bound": 52,
+    "bound": 53,
     "sameFileCitation": 11
   },
   "byFile": {
@@ -223,7 +223,8 @@
       "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round"
     ],
     "lib/worktree.js": [
-      "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit"
+      "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit",
+      "../docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head"
     ],
     "src/driver.ts": [
       "../docs/reference/05-drivers.md#the-driver-contract",

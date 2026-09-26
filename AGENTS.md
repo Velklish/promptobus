@@ -22,6 +22,10 @@ Worker boundaries: change only the assigned branch or worktree; do not touch sta
 
 Test changes use `npm run probe` after the change is committed; its restore comes from the pre-mutation snapshot, never from Git. The [contributing guide](docs/guides/contributing.md) § the probe defines the four outcomes and the `--mutate`/`--stdin-patch` forms.
 
+## Acceptance trailer
+
+The acceptance commit of step 5 carries `--trailer "Squash-of: <the worker head that was squashed>"`, the full sha: `git commit -F "$(git rev-parse --git-dir)/BACKSLOP_DRAFT" --trailer "Squash-of: <sha>"`. It is the proof `done` and `sweep` use for a squash whose content was edited at the merge ([03-cli § namedBySquash](docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head)). The generated step-5 sentence above does not show the flag because its source is the tracker's template.
+
 ## Comments
 
 The mutation rule above names `npm run probe`; this section only governs comment placement.
