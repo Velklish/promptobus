@@ -2253,7 +2253,7 @@ const seatPlan = planReview(WS, { target: REPO, task: seatTask.id });
 check('PB-250: a clone-root subject lists the one approver attachments by name, type and time',
   seatPlan.reviewedAddress === 'approver:seat'
   && seatPlan.attachmentSeat?.kind === 'one'
-  && /one approver whose recorded repository belongs to that clone/.test(String(seatPlan.prompt))
+  && /This subject selects approver:seat as its recorded approver/.test(String(seatPlan.prompt))
   && /approver:seat attached these as of/.test(String(seatPlan.prompt))
   && /approver-evidence\.md — other — /.test(String(seatPlan.prompt))
   && String(seatPlan.reReview).includes('approver-evidence.md')

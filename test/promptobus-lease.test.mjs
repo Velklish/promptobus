@@ -1,9 +1,10 @@
 // `promptobus lease -- <command…>` on real processes: two measuring runs never overlap, and a holder
 // killed with SIGKILL does not keep a waiter out. Run: npm test
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +82,159 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
     /machine lease is held by worker:[ab] \(task lease-t1\) · node -e .* · since \d{4}-\d\d-\d\dT.* · pid \d+ — waiting, up to 30 s/
       .test(waited?.err ?? ''),
     JSON.stringify([ra.err, rb.err]));
+}
+
+// Two approval branches start from one main tip. Only one publisher may touch its index at a time.
+{
+  const repo = path.join(SB, 'publication');
+  mkdirSync(repo);
+  const git = (...args) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
+  const mustGit = (...args) => {
+    const r = git(...args);
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  mustGit('init', '-q', '-b', 'main');
+  writeFileSync(path.join(repo, '.gitignore'), '.claude/worktrees/\n');
+  writeFileSync(path.join(repo, 'base.txt'), 'base\n');
+  mustGit('add', '.');
+  mustGit('commit', '-qm', 'base');
+  const branch = (name) => {
+    const at = path.join(repo, '.claude', 'worktrees', name);
+    mustGit('worktree', 'add', '-q', '-b', `accept-${name}`, at, 'main');
+    writeFileSync(path.join(at, `${name}.txt`), `${name}\n`);
+    const r = spawnSync('git', ['-C', at, '-c', 'user.name=t', '-c', 'user.email=t@t', 'add', '.'], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(r.stderr);
+    const committed = spawnSync('git', ['-C', at, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', name], { encoding: 'utf8' });
+    if (committed.status !== 0) throw new Error(committed.stderr);
+  };
+  branch('a');
+  branch('b');
+  writeFileSync(path.join(repo, 'owner-untracked.txt'), 'owner bytes\n');
+  const stamps = path.join(SB, 'publish-stamps.log');
+  const result = (name) => path.join(SB, `publish-${name}.json`);
+  const release = path.join(SB, 'release-publisher-a');
+  const publisher = (name, releaseFile = null) => ['node', '-e', `
+    const fs = require('fs'), cp = require('child_process');
+    const repo = ${JSON.stringify(repo)}, name = ${JSON.stringify(name)};
+    const stamp = (event) => fs.appendFileSync(${JSON.stringify(stamps)}, JSON.stringify({ name, event, at: Date.now() }) + ${JSON.stringify('\n')});
+    const git = (...args) => cp.spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    const state = () => ({
+      head: git('rev-parse', 'HEAD').stdout.trim(),
+      status: git('status', '--porcelain', '--untracked-files=all').stdout,
+      index: fs.readFileSync(require('path').join(repo, '.git', 'index')).toString('base64'),
+      tracked: fs.readFileSync(require('path').join(repo, 'base.txt'), 'utf8'),
+      untracked: fs.readFileSync(require('path').join(repo, 'owner-untracked.txt'), 'utf8'),
+    });
+    stamp('enter');
+    const publish = () => {
+      const before = state();
+      const merged = git('merge', '--ff-only', 'accept-' + name);
+      const after = state();
+      fs.writeFileSync(${JSON.stringify(result(name))}, JSON.stringify({ before, after, code: merged.status, stderr: merged.stderr }));
+      stamp('exit');
+      process.exitCode = merged.status ?? 1;
+    };
+    const releaseFile = ${JSON.stringify(releaseFile)};
+    if (releaseFile) {
+      const timer = setInterval(() => { if (fs.existsSync(releaseFile)) { clearInterval(timer); publish(); } }, 20);
+    } else { publish(); }
+  `];
+  const a = run(['--as', 'approver:a', '--key', repo, '--wait', '30', '--', ...publisher('a', release)]);
+  await until(() => existsSync(stamps));
+  const alias = path.join(SB, 'publication-alias');
+  symlinkSync(repo, alias);
+  const b = run(['--as', 'approver:b', '--key', alias, '--wait', '30', '--', ...publisher('b')], { waitFor: 'waiting' });
+  await b.saw;
+  const otherRepo = path.join(SB, 'other-publication');
+  mkdirSync(otherRepo);
+  const otherMarker = path.join(SB, 'other-publisher.ran');
+  const other = await run(['--as', 'approver:other', '--key', otherRepo, '--wait', '5', '--', 'node', '-e',
+    `require('fs').writeFileSync(${JSON.stringify(otherMarker)}, '1')`]).done;
+  check('a different clone key can publish while the first publisher is held',
+    other.code === 0 && existsSync(otherMarker) && !readFileSync(stamps, 'utf8').includes('"event":"exit"'),
+    JSON.stringify({ other, events: readFileSync(stamps, 'utf8') }));
+  const machineA = run(['--as', 'worker:machine-a', '--wait', '10', '--', ...measure('within-a')]);
+  const machineB = run(['--as', 'worker:machine-b', '--wait', '10', '--', ...measure('within-b')]);
+  const machineResults = await Promise.all([machineA.done, machineB.done]);
+  const machineSpans = {};
+  for (const line of readFileSync(STAMPS, 'utf8').trim().split('\n')) {
+    const [what, who, at] = line.split(' ');
+    if (who.startsWith('within-')) (machineSpans[who] ??= {})[what] = Number(at);
+  }
+  const [machineFirst, machineSecond] = Object.values(machineSpans).sort((x, y) => x.enter - y.enter);
+  check('machine holders still exclude each other while a keyed publisher holds the clone',
+    machineResults.every((r) => r.code === 0) && machineSecond?.enter >= machineFirst?.exit
+    && !readFileSync(stamps, 'utf8').includes('"event":"exit"'),
+    JSON.stringify({ machineResults, machineSpans, events: readFileSync(stamps, 'utf8') }));
+  writeFileSync(release, 'go');
+  const [ra, rb] = await Promise.all([a.done, b.done]);
+  const events = readFileSync(stamps, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  const aExit = events.find((e) => e.name === 'a' && e.event === 'exit')?.at;
+  const bEnter = events.find((e) => e.name === 'b' && e.event === 'enter')?.at;
+  const refused = JSON.parse(readFileSync(result('b'), 'utf8'));
+  check('two publishers keyed by the canonical clone root, including a symlink alias, do not overlap',
+    ra.code === 0 && rb.code !== 0 && bEnter >= aExit && rb.err.includes('clone publication lease is held by approver:a'),
+    JSON.stringify({ codes: [ra.code, rb.code], events, wait: rb.err }));
+  check('a refused fast-forward under the clone lease leaves the clone index, tree and untracked bytes unchanged',
+    refused.code !== 0 && JSON.stringify(refused.before) === JSON.stringify(refused.after)
+    && refused.before.head === mustGit('rev-parse', 'accept-a')
+    && refused.before.status === '?? owner-untracked.txt\n',
+    JSON.stringify(refused));
+  const missingMarker = path.join(SB, 'missing-key-command.ran');
+  const missing = await run(['--key', path.join(SB, 'no-such-clone'), '--', 'node', '-e',
+    `require('fs').writeFileSync(${JSON.stringify(missingMarker)}, '1')`]).done;
+  check('a missing clone key refuses before running the publication command',
+    missing.code === 1 && missing.err.includes('--key') && !existsSync(missingMarker),
+    JSON.stringify(missing));
+}
+
+// A dead wrapper cannot free a clone lock while its exec'd publication command survives.
+{
+  const repo = path.join(SB, 'surviving-publication');
+  mkdirSync(repo);
+  const pidFile = path.join(SB, 'surviving-publisher.pid');
+  const release = path.join(SB, 'release-survivor');
+  const ran = path.join(SB, 'after-survivor.ran');
+  orphans.push(pidFile);
+  const survivor = ['node', '-e', `
+    const fs = require('fs');
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+    const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) clearInterval(timer); }, 20);
+  `];
+  const holder = run(['--as', 'approver:killed-wrapper', '--key', repo, '--wait', '10', '--', ...survivor]);
+  await until(() => existsSync(pidFile));
+  const commandPid = Number(readFileSync(pidFile, 'utf8'));
+  holder.child.kill('SIGKILL');
+  await holder.done;
+  const held = lease.readLease(ROOT, repo).holder;
+  const waiter = run(['--as', 'approver:after-kill', '--key', repo, '--wait', '10', '--', 'node', '-e',
+    `require('fs').writeFileSync(${JSON.stringify(ran)}, '1')`]);
+  await until(() => waiter.err().includes('waiting') || existsSync(ran), 5000);
+  check('a keyed lease stays held by the surviving child after its wrapper is killed',
+    held?.alive && held.childPid === commandPid && waiter.err().includes('waiting') && !existsSync(ran),
+    JSON.stringify({ held, wait: waiter.err(), ran: existsSync(ran) }));
+  writeFileSync(release, 'go');
+  const next = await waiter.done;
+  check('the next keyed publisher runs after the surviving child exits',
+    next.code === 0 && existsSync(ran) && /^clone publication lease: free/.test(lease.leaseLines(ROOT, Date.now(), repo)[0]),
+    JSON.stringify({ next, lines: lease.leaseLines(ROOT, Date.now(), repo) }));
+}
+
+// If the wrapper died before its child registered, automatic recovery has no safe proof.
+{
+  const repo = path.join(SB, 'ambiguous-publication');
+  mkdirSync(repo);
+  const scope = createHash('sha256').update(realpathSync(repo)).digest('hex');
+  const lock = path.join(ROOT, 'keys', `${scope}.lock`);
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({ pid: 2 ** 22 + 12345, since: new Date().toISOString() })}\n`);
+  const ran = path.join(SB, 'ambiguous-publisher.ran');
+  const result = await run(['--as', 'approver:ambiguous', '--key', repo, '--wait', '1', '--', 'node', '-e',
+    `require('fs').writeFileSync(${JSON.stringify(ran)}, '1')`]).done;
+  check('a dead wrapper without a known child pid requires explicit recovery and runs no publisher',
+    result.code === 1 && result.err.includes(lock) && result.err.includes('verify the publisher and child are dead')
+    && !existsSync(ran) && existsSync(lock), JSON.stringify(result));
 }
 
 // A holder killed mid-measurement: the waiter proceeds by liveness, well inside its bound.

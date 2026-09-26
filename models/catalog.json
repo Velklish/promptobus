@@ -1485,7 +1485,8 @@
       "model": "gpt-5.6-sol",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1512,7 +1513,8 @@
       "model": "gpt-5.6-sol",
       "effort": "max",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -1566,7 +1568,8 @@
       "model": "gpt-5.6-sol",
       "effort": "ultra",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -1593,7 +1596,8 @@
       "model": "gpt-5.5",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 10,
@@ -1701,7 +1705,8 @@
       "model": "gpt-5.5",
       "effort": "medium",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -1743,7 +1748,8 @@
       "model": "gpt-5.5",
       "effort": "low",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1770,7 +1776,8 @@
       "model": "gpt-5.5",
       "effort": "high",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -1909,7 +1916,8 @@
       "model": "gpt-5.6-terra",
       "effort": "max",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -1967,7 +1975,8 @@
       "model": "gpt-5.6-terra",
       "effort": "ultra",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -2225,7 +2234,8 @@
       "model": "gpt-6-sol",
       "effort": "max",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -2357,7 +2367,8 @@
       "model": "gpt-6-sol",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -2384,7 +2395,8 @@
       "model": "gpt-6-sol",
       "effort": "ultra",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -2571,7 +2583,8 @@
       "effort": "max",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 9,
@@ -2683,7 +2696,8 @@
       "model": "gpt-6-astra",
       "effort": "high",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 7,
@@ -2710,7 +2724,8 @@
       "model": "gpt-6-astra",
       "effort": "xhigh",
       "roles": [
-        "worker"
+        "worker",
+        "approver"
       ],
       "ratings": {
         "quality": 8,
@@ -2738,7 +2753,8 @@
       "effort": "ultra",
       "roles": [
         "worker",
-        "reviewer"
+        "reviewer",
+        "approver"
       ],
       "ratings": {
         "quality": 10,

@@ -18,6 +18,8 @@ The task tracker and decision log live in `docs/` and are managed with `npx gith
 Worker boundaries: change only the assigned branch or worktree; do not touch status directories or `docs/archive/`; closure and triage belong to the approver.
 <!-- backslop:end -->
 
+**Approver publication.** Under Promptobus, the approver performs step 5 in its own worktree created from local main: review, squash, gates, archive, fold and the final acceptance commit happen there. After final lint, verify that the clone root is on main and run `promptobus lease --as approver:<slug> --task <id> --key <clone root> -- git -C <clone root> merge --ff-only <approver branch>`. The keyed lease serialises publication into that clone. A refused fast-forward means main moved; redo the squash on current main in the approver worktree, rerun gates and retry. Stop the approver before `sweep` or `done` removes its worktree and branch.
+
 ## Mutation probes
 
 Test changes use `npm run probe` after the change is committed; its restore comes from the pre-mutation snapshot, never from Git. The [contributing guide](docs/guides/contributing.md) § the probe defines the four outcomes and the `--mutate`/`--stdin-patch` forms.

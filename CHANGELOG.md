@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Worker preambles name the absolute worktree and the session's allowed roots.** The path reaches every harness through the host preamble context and a package-owned roots line, so a Codex worker can use its actual cwd instead of reconstructing it. A three-worker live baseline on codex-cli 0.156.1 had zero outside-root refusals, so this is prevention rather than a measured reduction. (PB-214)
 
-- **An approver's assignment, the lift refusals, and the approver's attachments** (PB-250). `review --approver` takes optional `--brief <file>`: the text is the assignment in the lift prompt, and after a lift that started the bus keeps it as `brief-approver-<slug>.md`, the same occupancy `spawn` uses for the worker's `brief-<slug>.md` and not that file. `--brief` without `--approver` is refused, because a reviewer's subject is the diff. A later message to the approver stays legal. The refusal that finds no reviewer for the subject names the path it was given and every subject this task's reviewers lifted from, and states that an approver is lifted for a piece a reviewer already read; the neighbouring path refusals say the same. A review of the clone root lists that approver's attachments — name, type and time — and the approver preamble carries the same attachment-contract sentence as the worker. A review of a worker worktree keeps that worker's list and, after it, lists the approver whose recorded repository is that worktree. Several approvers share a path; the subject names them and takes the latest lift, and a tie — the same stamp, or a record with none — builds no list. [03-cli § Review](docs/reference/03-cli.md#review).
+- **An approver's assignment, the lift refusals, and the approver's attachments** (PB-250). `review --approver` takes optional `--brief <file>`: the text is the assignment in the lift prompt, and after a lift that started the bus keeps it as `brief-approver-<slug>.md`, the same occupancy `spawn` uses for the worker's `brief-<slug>.md` and not that file. `--brief` without `--approver` is refused, because a reviewer's subject is the diff. A later message to the approver stays legal. The refusal that finds no reviewer for the subject names the path it was given and every subject this task's reviewers lifted from, and states that an approver is lifted for a piece a reviewer already read; the neighbouring path refusals say the same. A review of the approver worktree lists that approver's attachments — name, type and time — and the approver preamble carries the same attachment-contract sentence as the worker. A review of a worker worktree keeps that worker's list and, after it, lists the approver whose recorded review subject is that worktree. Several approvers share a path; the subject names them and takes the latest lift, and a tie — the same stamp, or a record with none — builds no list. [03-cli § Review](docs/reference/03-cli.md#review).
 - **The machine lease** (PB-241, [ADR-018](docs/adr/adr-018-the-bus-leases-the-machine-for-measurements.md)). `promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>` runs one measuring command at a time per machine, across tasks and workspaces: the lease is a directory lock under `/tmp/promptobus-<uid>/` held by the wrapper's own pid and refused when that directory is a symlink or another user's, a lease holder that dies is dropped by liveness, a waiter prints who holds the machine and gives up at the bound (default 1800 s) without running anything. `status` opens with the lease holder and the waiters. The worker and approver preambles carry the command, addressed, with the rule for what counts as a measurement; the reviewer preamble says the lease is not its own. The orchestration skill drops orchestrator-issued slots for it.
 
 - **A field added to a published record schema can first be sent in the release after the one that adds it** (PB-234.2).
@@ -68,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [§ The gate record](docs/reference/04-protocol.md#the-gate-record).
 
 ### Changed
+
+- **Approver acceptance now runs in its own worktree** (PB-222). The lift creates a branch
+  from local main, places the project layer and acceptance work there, and records it for
+  `sweep` and `done`. A clone-keyed lease serialises the final `git merge --ff-only`;
+  a moved main requires a new squash and gate run. A killed publication wrapper keeps its
+  clone lease while the recorded child runs; an ambiguous lock requires explicit recovery.
+  Codex gains the role after a live SessionStart
+  and clone-integrity proof, while Cursor awaits its own live proof. A malformed clone-root
+  Codex config refuses before lift. [03-cli § Review](docs/reference/03-cli.md#review),
+  [ADR-024](docs/adr/adr-024-approver-acceptance-in-own-worktree.md).
 
 - **`done` and `sweep` recognise an edited squash by the acceptance trailer** (PB-284). The acceptance commit carries
   `Squash-of: <full sha of the worker head that was squashed>` (`git commit -F <draft> --trailer "Squash-of: <sha>"`),

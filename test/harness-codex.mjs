@@ -313,6 +313,14 @@ export async function codexMain(args) {
     process.stdout.write(`resuming ${argv[1] ?? '?'}\n`);
     return;
   }
+  if (argv[0] === 'features' && argv[1] === 'list') {
+    const config = readFileSync(path.join(process.env.CODEX_HOME, 'config.toml'), 'utf8');
+    if (config.startsWith('[features\n')) {
+      process.stderr.write('TOML parse error at line 1, column 10: unclosed table\n');
+      process.exitCode = 1;
+    } else process.stdout.write('hooks stable true\n');
+    return;
+  }
   if (argv[0] === 'exec') {
     process.stdout.write(`${JSON.stringify({ type: 'thread.started', thread_id: 'smoke' })}\n`);
     process.stdout.write(`${JSON.stringify({ type: 'turn.completed', status: 'completed' })}\n`);

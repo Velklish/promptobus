@@ -398,3 +398,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-266.3"></a>`PB-266.3-glossary-registry-row-symbol` · 2026-09-26 · merged into PB-273 · — · The glossary registry row cites a symbol the module does not export
 - <a id="pb-265"></a>`PB-265-session-address-per-task-send` · 2026-09-26 · completed · — · A session holds one address per task, and promptobus send ships on a positive proof
 - <a id="pb-284"></a>`PB-284-sweep-proof-by-trailer` · 2026-09-26 · completed · — · sweep and done recognise an edited squash by the acceptance commit's trailer naming the worker head
+- <a id="pb-222"></a>`PB-222-approver-project-layer-has-no-safe-home` · 2026-09-26 · completed · — · Проектный слой приёмщика негде разместить безопасно ни на одном харнессе, кроме Claude
+- <a id="pb-185.1"></a>`PB-185.1-codex-approver-hooks-unread` · 2026-09-26 · completed · — · A Codex approver does not get the hooks file Codex reads

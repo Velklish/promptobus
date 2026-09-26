@@ -1,11 +1,11 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { check } from './check.mjs';
-import { capture } from './console.mjs';
+import { capture, expectFail } from './console.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 
 function thrown(fn) {
@@ -21,9 +21,10 @@ const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-approver-
 const here = path.dirname(fileURLToPath(import.meta.url));
 const NODE_BIN = path.join(here, '..', 'node_modules', '.bin');
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
-const { planApprover, reviewerResultSent, approverLift } = await import(path.join(here, '..', 'lib', 'approver.js'));
+const { approverLayer, planApprover, reviewerResultSent, approverLift } = await import(path.join(here, '..', 'lib', 'approver.js'));
+const { codexDriver } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
 const { ATTACHMENT_CONTRACT, GATE_LINE_COUNTS, GATE_LINE_VERIFICATION } = await import(path.join(here, '..', 'lib', 'handoff.js'));
-const { review } = await import(path.join(here, '..', 'lib', 'review.js'));
+const { planReview, review } = await import(path.join(here, '..', 'lib', 'review.js'));
 const { helpText } = await import(path.join(here, '..', 'lib', 'cli.js'));
 const { routingContext, models } = await import(path.join(here, '..', 'lib', 'models.js'));
 const { PROMPTOBUS_SERVER } = await import(path.join(here, '..', 'lib', 'contract.js'));
@@ -31,6 +32,22 @@ const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 
 const WS = path.join(SB, 'ws');
 mkdirSync(WS, { recursive: true });
+const layerBox = path.join(SB, 'layer-guard');
+const foreignLaunch = path.join(layerBox, '.codex', 'hooks.json');
+mkdirSync(path.dirname(foreignLaunch), { recursive: true });
+writeFileSync(foreignLaunch, 'owner hook\n');
+const foreignLayer = thrown(() => approverLayer({ files: [{ path: foreignLaunch }] }, layerBox));
+check(': an approver refuses a launch file it did not write',
+  foreignLayer.threw && foreignLayer.msg.includes(foreignLaunch)
+  && readFileSync(foreignLaunch, 'utf8') === 'owner hook\n', foreignLayer.msg);
+const linkedOwner = path.join(SB, 'linked-owner');
+mkdirSync(linkedOwner);
+symlinkSync(linkedOwner, path.join(layerBox, '.cursor'));
+const linkedLaunch = path.join(layerBox, '.cursor', 'hooks.json');
+const linkedLayer = thrown(() => approverLayer({ files: [{ path: linkedLaunch }] }, layerBox));
+check(': an approver refuses a symlinked launch parent before writing through it',
+  linkedLayer.threw && linkedLayer.msg.includes(path.join(layerBox, '.cursor'))
+  && !existsSync(path.join(linkedOwner, 'hooks.json')), linkedLayer.msg);
 writeHostConfig(WS, { tools: ['claude', 'cursor', 'codex'] });
 writeFileSync(path.join(WS, 'AGENTS.md'), 'workspace\n');
 
@@ -246,20 +263,21 @@ check(': routed approver --harness cursor raises harness-refused, not harness-un
 const CLI = path.join(here, '..', 'bin', 'promptobus.js');
 
 const plan = planApprover(WS, { target: REPO, task: TASK, dryRun: true });
-check(': planApprover names the approver address and clone root cwd',
+check(': planApprover names an approver worktree under the clone',
   plan.address === 'approver:cargos-api'
-  && plan.cloneRoot === REPO,
-  JSON.stringify({ address: plan.address, cloneRoot: plan.cloneRoot }));
+  && plan.cloneRoot === REPO
+  && plan.worktreePath.startsWith(path.join(REPO, '.claude', 'worktrees') + path.sep)
+  && plan.launch.cwd === undefined,
+  JSON.stringify({ address: plan.address, cloneRoot: plan.cloneRoot, worktree: plan.worktreePath }));
 
 const claudePlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'claude' });
 check(': approver on Claude keeps edit and shell — package deny list is empty',
   (!claudePlan.launch.settings?.permissions?.deny?.length),
   JSON.stringify(claudePlan.launch.settings));
-check(': approver on Claude is lifted with the worktree guard off — it writes to the clone root it sits in',
+check(': approver on Claude keeps background worktree isolation',
   JSON.parse(claudePlan.launch.files.find((f) => f.path === claudePlan.settingsPath).text)
-    .worktree?.bgIsolation === 'none',
+    .worktree?.bgIsolation === undefined,
   JSON.stringify(claudePlan.launch.settings));
-// With the guard off the harness drops its own "Never push … force-push" line, so the preamble says it.
 check(': the approver preamble forbids push and force-push and leaves the push to the orchestrator',
   claudePlan.prompt.includes('You never push, never force-push, and never rewrite commits that are already on the remote: the orchestrator pushes.'),
   claudePlan.prompt.slice(0, 700));
@@ -267,6 +285,9 @@ check(': the approver preamble forbids push and force-push and leaves the push t
 check(': the approver runs the gates, so its preamble puts them under the machine lease at its own address',
   claudePlan.prompt.includes(`promptobus lease --as approver:cargos-api --task ${TASK} -- <command…>`),
   claudePlan.prompt.slice(claudePlan.prompt.indexOf('## Machine lease'), claudePlan.prompt.indexOf('## Machine lease') + 300));
+check(': the approver preamble places the clone fast-forward under its canonical publication key',
+  claudePlan.prompt.includes(`promptobus lease --as approver:cargos-api --task ${TASK} --key ${REPO} -- git -C ${REPO} merge --ff-only ${claudePlan.branch}`),
+  claudePlan.prompt.slice(0, 800));
 
 check(': the approver preamble quotes the attachment contract',
   claudePlan.prompt.includes(ATTACHMENT_CONTRACT),
@@ -339,11 +360,11 @@ check(': a refused approver lift keeps no brief',
   refusedBriefs.length === 0, refusedBriefs.join(', '));
 
 const cursorPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'cursor' });
-check(': approver on Cursor refuses before launch — project config is read only from the selected workspace',
+check(': approver on Cursor stays refused until a live lift proves its project layer',
   typeof cursorPlan.refusal === 'string'
   && cursorPlan.refusal.includes('harness "cursor" cannot lift an approver')
-  && cursorPlan.refusal.includes('`.cursor/`')
-  && cursorPlan.refusal.includes('clone root'),
+  && cursorPlan.refusal.includes('no live Cursor lift')
+  && cursorPlan.launch.files.some((f) => f.path === path.join(cursorPlan.worktreePath, '.cursor', 'hooks.json')),
   String(cursorPlan.refusal));
 const cursorCliRefusal = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--dry-run',
@@ -372,13 +393,14 @@ check(': --harness cursor with --brief keeps no brief',
 
 const { eligibleHarnessesForRole } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 check(': approver routing preflight uses only harnesses with approverLift',
-  eligibleHarnessesForRole(hostOf(WS), 'approver').every((h) => h !== 'cursor' && h !== 'codex')
-  && eligibleHarnessesForRole(hostOf(WS), 'approver').join(',') === 'claude',
+  eligibleHarnessesForRole(hostOf(WS), 'approver').every((h) => h !== 'cursor')
+  && eligibleHarnessesForRole(hostOf(WS), 'approver').includes('claude')
+  && eligibleHarnessesForRole(hostOf(WS), 'approver').includes('codex'),
   eligibleHarnessesForRole(hostOf(WS), 'approver').join(','));
 const routedCtx = await routingContext(WS, { strategy: 'balanced', role: 'approver', dryRun: true });
 const routedDecision = routedCtx.decide([]);
-check(': routed approver lift never chooses cursor or codex before preflight',
-  routedDecision.chosen.harness === 'claude',
+check(': routed approver lift never chooses Cursor before live proof',
+  routedDecision.chosen.harness !== 'cursor',
   routedDecision.chosen.harness);
 
 const cursorOnlyWs = path.join(SB, 'cursor-only');
@@ -403,8 +425,8 @@ check(': routed approver --harness cursor keeps the harness refusal, not a missi
 check(': routed approver catalog offers no cursor tuples',
   !routedDecision.candidates.some((c) => c.harness === 'cursor' && !c.excluded?.code),
   routedDecision.candidates.filter((c) => c.harness === 'cursor').map((c) => c.excluded?.code).join(','));
-check(': routed approver catalog offers no codex tuples',
-  !routedDecision.candidates.some((c) => c.harness === 'codex' && !c.excluded?.code),
+check(': routed approver catalog offers Codex tuples after live proof',
+  routedDecision.candidates.some((c) => c.harness === 'codex' && !c.excluded?.code),
   routedDecision.candidates.filter((c) => c.harness === 'codex').map((c) => c.excluded?.code).join(','));
 check(': approver hand-off may cite another participant landed artifact by name',
   plan.prompt.includes('**cite** a landed artifact filename sent by another participant')
@@ -416,11 +438,11 @@ check('PB-232: the approver preamble counts gates by command, and names each ver
   plan.prompt.slice(plan.prompt.indexOf('Hand-off form')));
 
 const codexPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'codex' });
-check(': approver on Codex refuses before launch — launch files must not land in the shared clone root',
-  typeof codexPlan.refusal === 'string'
-  && codexPlan.refusal.includes('harness "codex" cannot lift an approver')
-  && codexPlan.refusal.includes('clone root'),
-  String(codexPlan.refusal));
+check(': approver on Codex plans its project files in its own worktree',
+  codexPlan.refusal === null
+  && codexPlan.launch.cwd === codexPlan.worktreePath
+  && codexPlan.launch.files.some((f) => f.path === path.join(codexPlan.worktreePath, '.codex', 'hooks.json')),
+  JSON.stringify({ refusal: codexPlan.refusal, cwd: codexPlan.launch.cwd, files: codexPlan.launch.files.map((f) => f.path) }));
 const codexCliRefusal = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'codex', '--dry-run',
 ], {
@@ -428,11 +450,33 @@ const codexCliRefusal = spawnSync(process.execPath, [
   cwd: WS,
   env: { ...process.env, PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off' },
 });
-check(': CLI review --approver --harness codex refuses and does not register a participant',
-  codexCliRefusal.status !== 0
-  && /cannot lift an approver/.test(`${codexCliRefusal.stderr}${codexCliRefusal.stdout}`)
+check(': CLI review --approver --harness codex dry-runs without registering a participant',
+  codexCliRefusal.status === 0
+  && codexCliRefusal.stdout.includes(codexPlan.worktreePath)
   && !store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api'),
   `${codexCliRefusal.status} ${codexCliRefusal.stderr} ${codexCliRefusal.stdout}`);
+const foreignCodexConfig = path.join(REPO, '.codex', 'config.toml');
+mkdirSync(path.dirname(foreignCodexConfig), { recursive: true });
+const codexParseDir = path.join(SB, 'codex-parse-bin');
+stubCommand(codexParseDir, 'codex-parse', `import { readFileSync } from 'node:fs';
+import path from 'node:path';
+const config = readFileSync(path.join(process.env.CODEX_HOME, 'config.toml'), 'utf8');
+if (config.startsWith('[features\\n')) {
+  process.stderr.write('TOML parse error at line 1, column 10: unclosed table\\n');
+  process.exitCode = 1;
+} else process.stdout.write('hooks stable true\\n');`);
+const codexParseTool = { bin: path.join(codexParseDir, 'codex-parse') };
+writeFileSync(foreignCodexConfig, '[features]\napps = true\n');
+const validCodexConfig = thrown(() => codexDriver.refuseForeignProjectLayer(REPO, codexPlan.worktreePath, codexParseTool));
+check(': a valid clone-root Codex config permits an approver lift preflight',
+  !validCodexConfig.threw, validCodexConfig.msg);
+writeFileSync(foreignCodexConfig, '[features\napps = true\n');
+const codexForeign = thrown(() => codexDriver.refuseForeignProjectLayer(REPO, codexPlan.worktreePath, codexParseTool));
+check(': Codex approver refuses malformed clone-root config before it can create a worktree',
+  codexForeign.threw && codexForeign.msg.includes(foreignCodexConfig)
+  && codexForeign.msg.includes('cannot parse clone-root project config')
+  && !existsSync(codexPlan.worktreePath), codexForeign.msg);
+rmSync(foreignCodexConfig);
 const codexOnlyWs = path.join(SB, 'codex-only');
 mkdirSync(codexOnlyWs, { recursive: true });
 writeHostConfig(codexOnlyWs, { tools: ['codex'] });
@@ -447,10 +491,8 @@ const codexOnlyRefusal = await (async () => {
     return { threw: true, msg: e.message ?? String(e) };
   }
 })();
-check(': routed approver --harness codex keeps the harness refusal, not a missing-declaration error',
-  codexOnlyRefusal.threw
-  && /cannot lift an approver/.test(codexOnlyRefusal.msg)
-  && !/declares no such harness/.test(codexOnlyRefusal.msg),
+check(': routed approver --harness codex is eligible',
+  !codexOnlyRefusal.threw,
   codexOnlyRefusal.msg);
 
 const REUSE_TASK = 'pb2065-reuse';
@@ -635,7 +677,7 @@ writeFileSync(path.join(LIVE_REPO, 'AGENTS.md'), 'repo\n');
 g(LIVE_REPO, 'add', '.');
 g(LIVE_REPO, 'commit', '-m', 'init', '-q');
 const LIVE_WT = path.join(LIVE_REPO, '.claude', 'worktrees', 'a2a-warden');
-g(LIVE_REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-warden', LIVE_WT, 'main');
+g(LIVE_REPO, 'worktree', 'add', '-q', '-b', 'worktree-promptobus-a2a-warden', LIVE_WT, 'main');
 writeFileSync(path.join(LIVE_WT, 'warden.txt'), 'work\n');
 g(LIVE_WT, 'add', '.');
 g(LIVE_WT, 'commit', '-m', 'work', '-q');
@@ -652,7 +694,7 @@ store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('worker:wa
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
-  branch: 'worktree-a2a-warden',
+  branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
 store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('reviewer:warden', {
@@ -672,7 +714,7 @@ store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('worker:wa
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
-  branch: 'worktree-a2a-warden',
+  branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
   sessionId: '00000000-0000-4000-8000-000000000099',
 }));
@@ -718,15 +760,18 @@ check(': CLI review --approver registers approver:warden from the worktree comma
   && liveLift.stdout.includes('approver:warden')
   && !!store.participantOf(store.readTask(LIVE_HOME, LIVE_TASK), 'approver:warden'),
   `${liveLift.status} ${liveLift.stderr} ${liveLift.stdout}`);
-check(': worktree approver lift names the clone root cwd, not undefined',
-  liveLift.stdout.includes(`approver cwd: ${LIVE_REPO}`)
+check(': approver lift names its own worktree cwd',
+  liveLift.stdout.includes(`approver cwd: ${path.join(LIVE_REPO, '.claude', 'worktrees')}`)
   && !liveLift.stdout.includes('approver cwd: undefined'),
   liveLift.stdout);
 
 const liveApprover = store.participantOf(store.readTask(LIVE_HOME, LIVE_TASK), 'approver:warden');
-check(': approver record keeps the worktree review target for relift, not the clone root',
-  liveApprover?.metadata?.repoAbs === LIVE_WT,
-  JSON.stringify({ repoAbs: liveApprover?.metadata?.repoAbs, wt: LIVE_WT, clone: LIVE_REPO }));
+check(': approver record separates the durable clone and the review subject',
+  liveApprover?.metadata?.repoAbs === LIVE_REPO
+  && liveApprover?.metadata?.reviewSubject === LIVE_WT
+  && liveApprover?.metadata?.worktree?.startsWith(path.join(LIVE_REPO, '.claude', 'worktrees') + path.sep)
+  && existsSync(liveApprover.metadata.worktree),
+  JSON.stringify(liveApprover?.metadata));
 
 const wrongSubject = thrown(() => planApprover(LIVE_WS, { target: LIVE_REPO, task: LIVE_TASK, dryRun: true }));
 check(': a clone-root approver lift names the path it got and the reviewer subject that would work',
@@ -751,7 +796,7 @@ store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('worker:w
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
-  branch: 'worktree-a2a-warden',
+  branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
 store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('reviewer:warden', {
@@ -816,7 +861,7 @@ store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('worker:wa
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
-  branch: 'worktree-a2a-warden',
+  branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
 store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('reviewer:warden', {
@@ -976,3 +1021,150 @@ const ultraApproverText = `${ultraApprover.stdout}${ultraApprover.stderr}`;
 check(': an approver with no tool seam still reads the binary and refuses ultracode',
   ultraApprover.status === 1 && ultraApproverText.includes('2.0.0') && /DEFAULT effort/.test(ultraApproverText),
   `status=${ultraApprover.status} ${ultraApproverText}`);
+
+const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const { stop } = await import(path.join(here, '..', 'lib', 'stop.js'));
+const RETRY_BIN = path.join(SB, 'retry-bin');
+const RETRY_BG = path.join(SB, 'retry-session.txt');
+stubCommand(RETRY_BIN, 'claude', `import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--bg') {
+  const name = args[args.indexOf('--name') + 1] ?? '';
+  writeFileSync(${JSON.stringify(RETRY_BG)}, name);
+  process.stdout.write('backgrounded · cafe34 · ' + name + '\\n');
+  process.exit(0);
+}
+if (args[0] === 'agents' && existsSync(${JSON.stringify(RETRY_BG)})) {
+  process.stdout.write(JSON.stringify([{ id: 'sess-retry', name: readFileSync(${JSON.stringify(RETRY_BG)}, 'utf8'), status: 'running', sessionId: '00000000-0000-4000-8000-0000000000aa' }]));
+  process.exit(0);
+}
+if (args[0] === 'stop') { rmSync(${JSON.stringify(RETRY_BG)}, { force: true }); process.exit(0); }
+process.stdout.write('[]');`);
+const originalPrepare = claudeDriver.prepare;
+const priorPath = process.env.PATH;
+const priorWarden = process.env.PROMPTOBUS_WARDEN;
+claudeDriver.prepare = (context) => {
+  const launch = originalPrepare(context);
+  if (context.task === TASK && context.role === 'approver') {
+    launch.files.push({ path: path.join(context.cwd, '.claude', 'role-layer.txt'), text: 'bus layer\n' });
+  }
+  return launch;
+};
+process.env.PATH = `${RETRY_BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${priorPath ?? ''}`;
+process.env.PROMPTOBUS_WARDEN = 'off';
+try {
+  const liftOptions = { target: REPO, task: TASK, harness: 'claude', tool: { ok: true, bin: path.join(RETRY_BIN, 'claude'), version: '2.1.280' } };
+  await capture(() => approverLift(WS, liftOptions));
+  const first = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  const layerFile = path.join(first.metadata.worktree, '.claude', 'role-layer.txt');
+  const originalBytes = readFileSync(layerFile);
+  store.bindSessionIdentity(() => ({ id: first.metadata.sessionId }));
+  await capture(() => stop(WS, { task: TASK, address: 'approver:cargos-api' }));
+  claudeDriver.forgetSessions();
+  writeFileSync(layerFile, 'foreign edit\n');
+  let refused = '';
+  try { await capture(() => approverLift(WS, liftOptions)); } catch (e) { refused = e.message ?? String(e); }
+  const pending = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  check(': a refused relift retains the previous launch-layer ownership in its pending record',
+    refused.includes(layerFile) && pending?.metadata?.pending === true
+    && JSON.stringify(pending.metadata.launchLayer) === JSON.stringify(first.metadata.launchLayer)
+    && readFileSync(layerFile, 'utf8') === 'foreign edit\n',
+    `${refused} ${JSON.stringify(pending?.metadata)}`);
+  writeFileSync(layerFile, originalBytes);
+  await capture(() => approverLift(WS, liftOptions));
+  const restored = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  check(': restoring the bytes permits relift of the same approver worktree',
+    restored?.metadata?.pending !== true && !!restored?.metadata?.session
+    && restored.metadata.worktree === first.metadata.worktree
+    && readFileSync(layerFile).equals(originalBytes),
+    JSON.stringify(restored?.metadata));
+} finally {
+  claudeDriver.prepare = originalPrepare;
+  process.env.PATH = priorPath;
+  if (priorWarden === undefined) delete process.env.PROMPTOBUS_WARDEN;
+  else process.env.PROMPTOBUS_WARDEN = priorWarden;
+}
+
+const { sweep } = await import(path.join(here, '..', 'lib', 'sweep.js'));
+const { createRegistry } = await import(path.join(here, '..', 'dist', 'index.js'));
+const lifecycleTree = liveApprover.metadata.worktree;
+const lifecycleBranch = liveApprover.metadata.branch;
+const workerHead = spawnSync('git', ['-C', LIVE_WT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+writeFileSync(path.join(lifecycleTree, 'warden.txt'), 'work\n');
+g(lifecycleTree, 'add', 'warden.txt');
+g(lifecycleTree, 'commit', '-m', 'accepted work', '-m', `Squash-of: ${workerHead}`, '-q');
+const published = spawnSync(process.execPath, [
+  CLI, 'lease', '--as', 'approver:warden', '--task', LIVE_TASK, '--key', LIVE_REPO, '--',
+  'git', '-C', LIVE_REPO, 'merge', '--ff-only', lifecycleBranch,
+], {
+  encoding: 'utf8', cwd: LIVE_WS,
+  env: { ...process.env, PROMPTOBUS_LEASE_DIR: path.join(LIVE, 'publication-lease'), PROMPTOBUS_WARDEN: 'off' },
+});
+check(': the real approver branch publishes by a clone-keyed fast-forward',
+  published.status === 0
+  && spawnSync('git', ['-C', LIVE_REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+    === spawnSync('git', ['-C', lifecycleTree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+  `${published.status} ${published.stderr} ${published.stdout}`);
+
+const postPublication = planReview(LIVE_WS, { target: lifecycleTree, task: LIVE_TASK, dryRun: true });
+const reviewOutput = await capture(() => review(LIVE_WS, { target: lifecycleTree, task: LIVE_TASK, dryRun: true }));
+check(': reviewing the published approver worktree uses its recorded base and still sees the acceptance diff',
+  postPublication.baseLine.includes(liveApprover.metadata.baseSha)
+  && postPublication.diff.includes('warden.txt')
+  && !reviewOutput.includes('no changes — nothing to review'),
+  `${postPublication.baseLine}\n${postPublication.diff.slice(0, 400)}\n${reviewOutput.slice(0, 400)}`);
+
+const workerForSweep = store.participantOf(store.readTask(LIVE_HOME, LIVE_TASK), 'worker:warden');
+store.upsertParticipant(LIVE_HOME, LIVE_TASK, {
+  ...workerForSweep, sessionRef: 'worker-warden-ref',
+  metadata: { ...workerForSweep.metadata, repoAbs: LIVE_REPO },
+});
+let approverAlive = true;
+const lifecycleDriver = {
+  ...claudeDriver,
+  inspect: (ref) => ({ state: ref === liveApprover.sessionRef && approverAlive ? 'alive' : 'gone',
+    busy: false, stall: null, id: ref, note: null }),
+  stop: async () => { approverAlive = false; return { ok: true, stopped: true, note: 'closed' }; },
+  sweepParticipant: () => {},
+};
+const lifecycleRegistry = createRegistry({ drivers: { claude: lifecycleDriver }, fallback: 'claude' });
+store.bindSessionIdentity(() => ({ id: liveApprover.metadata.sessionId }));
+const workerSweep = await capture(() => sweep(LIVE_WS, { task: LIVE_TASK, address: 'worker:warden' },
+  { registry: lifecycleRegistry }));
+check(': the published acceptance lets sweep remove the worker branch before the approver',
+  !existsSync(LIVE_WT)
+  && spawnSync('git', ['-C', LIVE_REPO, 'rev-parse', '--verify', '--quiet', 'worktree-promptobus-a2a-warden'], { encoding: 'utf8' }).status !== 0,
+  workerSweep);
+
+const liveSweep = await expectFail(() => sweep(LIVE_WS, { task: LIVE_TASK, address: 'approver:warden' },
+  { registry: lifecycleRegistry }));
+check(': an approver worktree stays while its real lifted session is alive',
+  liveSweep.failed && liveSweep.out.includes('session is still alive') && existsSync(lifecycleTree),
+  liveSweep.out);
+await capture(() => stop(LIVE_WS, { task: LIVE_TASK, address: 'approver:warden' },
+  { registry: lifecycleRegistry }));
+const approverSweep = await capture(() => sweep(LIVE_WS, { task: LIVE_TASK, address: 'approver:warden' },
+  { registry: lifecycleRegistry }));
+check(': stop then sweep removes the accepted approver worktree and branch',
+  !existsSync(lifecycleTree)
+  && spawnSync('git', ['-C', LIVE_REPO, 'rev-parse', '--verify', '--quiet', lifecycleBranch], { encoding: 'utf8' }).status !== 0,
+  approverSweep);
+
+const unmergedTree = path.join(LIVE_REPO, '.claude', 'worktrees', 'unmerged-approver');
+const unmergedBranch = 'worktree-promptobus-unmerged-approver';
+g(LIVE_REPO, 'worktree', 'add', '-q', '-b', unmergedBranch, unmergedTree, 'main');
+writeFileSync(path.join(unmergedTree, 'unmerged.txt'), 'unaccepted\n');
+g(unmergedTree, 'add', '.');
+g(unmergedTree, 'commit', '-m', 'unaccepted', '-q');
+store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('approver:unmerged', {
+  harness: 'claude', sessionRef: 'unmerged-ref', sessionId: '00000000-0000-4000-8000-0000000000bb',
+  repoAbs: LIVE_REPO, worktree: unmergedTree, branch: unmergedBranch,
+}));
+const unmergedSweep = await capture(() => sweep(LIVE_WS, { task: LIVE_TASK, address: 'approver:unmerged' },
+  { registry: lifecycleRegistry }));
+check(': sweep keeps an unmerged approver worktree and branch',
+  existsSync(unmergedTree)
+  && spawnSync('git', ['-C', LIVE_REPO, 'rev-parse', '--verify', '--quiet', unmergedBranch], { encoding: 'utf8' }).status === 0
+  && unmergedSweep.includes('left in place'),
+  unmergedSweep);

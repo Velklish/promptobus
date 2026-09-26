@@ -121,9 +121,7 @@ const roleFile = (role) => claudeDriver.prepare({
   guardCommand: 'promptobus guard',
 }).files.find((f) => f.path === path.join(SB, 'settings.json'));
 
-check('PB-240: the approver\'s settings file switches off the background-session worktree guard',
-  JSON.parse(roleFile('approver').text).worktree?.bgIsolation === 'none', roleFile('approver').text);
-for (const role of ['worker', 'reviewer', null]) {
+for (const role of ['worker', 'reviewer', 'approver', null]) {
   check(`: a ${role ?? 'role-less'} lift keeps the guard — its file names no worktree key`,
     JSON.parse(roleFile(role).text).worktree === undefined, roleFile(role).text);
 }

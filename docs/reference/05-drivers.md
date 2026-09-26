@@ -15,95 +15,74 @@ The command does not judge that result. Consumer acceptance procedure stays in t
 card; this package supplies the address, liftoff, driver role, routed tuple and working
 directory.
 
-The approver session cwd is the repository clone root; a worker service worktree is attached
-through `addDirs` when the review subject is that worktree. Claude Code writes launch files
-to the task store. **Cursor and Codex cannot lift an approver:** Cursor reads project
-configuration only from the selected workspace's `.cursor/`; Codex reads project hooks and
-`.codex/skills` from the thread cwd, and writing launch files into the shared clone root
-would overwrite or delete untracked project content without restoration. The approver role
-ships on Claude Code only — measured on a live lift. `review --approver --harness cursor`
-and `--harness codex` refuse before start. The role needs
-repository writes and shell commands for merged-tree gates, squash and archive, so its
-package deny list is empty, and its settings file switches off the harness's own guard on writes
-in the clone root ([§ below](#the-approver-writes-to-the-shared-clone-the-harness-guard-and-the-key-that-lifts-it)). A host may add its exact external MCP write tools through
+The approver session cwd is a separate worktree created from the clone's local default branch.
+The launch layer and acceptance writes land there. The clone root is attached for one final
+fast-forward of the accepted commit. The role needs repository writes and shell commands for
+gates, squash and archive, so its package deny list is empty. A host may add its exact external MCP write tools through
 `participantDenyTools('approver')`; the completeness gate runs before any harness branch on
 the harness that can lift an approver. The bus is never denied. That classification is
 independent of the reviewer, whose deny lists and read-only sandbox remain unchanged.
 [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md) records the floor of 7
 and the worker↔approver routing exception; [ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)
-records the `--approver` flag and the reviewer-result precondition. A repeat lift reuses an
+records the `--approver` flag and the reviewer-result precondition; [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
+records the worktree and publication rule. A repeat lift reuses an
 alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
 session starts a fresh approver instead of spawning a second session beside the first.
 
-## The approver writes to the shared clone: the harness guard and the key that lifts it
+## Approver worktree, project layer and publication
 
-Source: `lib/driver-claude.js` (`settingsFile`), `lib/approver.js` (`buildApproverPrompt`, `planApprover`).
+Source: lib/approver.js (planApprover, approverLift), lib/worktree.js
+(createWorktree, inspectWorktree), and the three driver prepare functions.
 
-Claude Code refuses `Write`, `Edit` and `NotebookEdit` in a background session when the target
-lies in the session's main checkout, until the session moves into a worktree with `EnterWorktree`.
-The rule is the harness's own: the participant settings file never carried anything that imposes
-it. Read from the binary of `claude` 2.1.280: the check sits in those tools' input validation and
-applies to a session of kind `bg`; it lets through a target outside the session's cwd, any target
-when the cwd is itself a linked worktree, and a target inside a linked worktree. The switch is the
-settings key `worktree.bgIsolation` — `"worktree"`, the default, or `"none"` — and the environment
-variable `CLAUDE_BG_ISOLATION` is consulted before it. What the session is told:
+A fresh lift creates a service worktree and branch from the clone's local default branch.
+The worktree path and branch are recorded on the approver participant, with the clone root
+in repoAbs and the reviewer subject in reviewSubject. The reviewer subject stays the
+relift argument. Dependencies are installed from package-lock.json and a declared
+repository generator runs before launch files are written. The approver reads the
+repository's AGENTS.md in its own checkout; if that document requires generated tracker
+adapters outside the repository's generator declaration, the approver runs that step
+before gates.
 
-> This background session hasn't isolated its changes yet. Call EnterWorktree first so edits land
-> in a worktree instead of the shared checkout, then retry this edit using the worktree path (a
-> path inside a linked git worktree, including one you create with `git worktree add`, is
-> accepted). (To disable this guard for this repo, set `"worktree": {"bgIsolation": "none"}` in
-> .claude/settings.json.)
+Claude Code continues to take its MCP and settings files from the task store. Its normal
+background worktree isolation now permits writes in the approver worktree, so the driver
+does not set worktree.bgIsolation to none. Cursor and Codex place their project layer
+inside the approver worktree, the directory each harness selects as its workspace. Codex
+also copies the hooks document into the participant home when hook discovery redirects a
+linked worktree to the main checkout. A pre-existing destination for a launch file or
+skills copy is refused before any file is overwritten; a relift may rewrite only the
+byte-identical layer recorded from the previous lift.
 
-For a worker the guard is right, and it stays. The approver is seated in the clone root on
-purpose — it merges, runs `archive` and fills `result.md` there — so the guard left it the shell
-alone, and a participant found that out by hitting it. `archive` passed all along, being a
-command. **So the Claude driver writes `"worktree": {"bgIsolation": "none"}` into the
-approver's participant settings file, and into no other role's.** Measured 2026-09-24 on
-`claude` 2.1.280 in a disposable clone, each session lifted with the driver's own argv (`--bg`,
-`--settings`, `--permission-mode auto`) and asked for one `Write` into the clone root:
+The final acceptance commit is made in the approver worktree after gates, archive and
+fold. The approver verifies that the clone root is on the default branch and advances it
+with `promptobus lease --key <clone> -- git -C <clone> merge --ff-only <approver branch>`.
+The canonical clone-root key serialises bus publication commands while gates and other
+work remain parallel. The keyed command records its pid before exec, and a killed lease
+wrapper leaves the lock held while that command lives. A lock with no recorded child pid
+requires manual recovery after both processes are verified dead. When main has advanced,
+Git refuses that publication; the approver
+redoes the squash on current main, reruns gates, and retries. In the controlled diverged
+branch test, refusal left the clone's index, tracked tree and untracked content intact.
+Project-layer placement makes no clone-root writes. Once the branch is taken and the session is dead,
+sweep or done removes the approver worktree and branch through the same content checks
+used for a worker.
 
-| Where the key was | Outcome |
-|---|---|
-| nowhere — run twice, before and after the next row | refused, with the text above |
-| the participant settings file (`--settings`) | written |
-| `CLAUDE_BG_ISOLATION=none` in the environment of `claude --bg` | refused — the variable does not reach the session |
-| `"none"` in the settings file, `"worktree"` in the clone's `.claude/settings.json` | written — the `--settings` layer wins |
-| `"none"` in the clone's `.claude/settings.json` only | written |
+Codex's return to the approver role follows a live SessionStart event from a hooks file
+naming the approver address and a byte-identical clone root after the lift. A foreign
+clone-root `.codex/hooks.json` or malformed `.codex/config.toml` refuses Codex approver
+and worker lifts before worktree creation; a malformed config there stopped a measured
+lift before its isolated home could protect it. In a controlled `config/read` probe with
+the approver worktree as cwd, an isolated participant home, and a valid clone-root config
+setting `features.apps` and an extra MCP server, the effective config kept the home's
+`features.apps` value and did not add the server. A malformed `.codex/config.toml` one
+level above the clone's Git root was not loaded in the same probe. Cursor remains
+refused until its own lift proves the MCP layer, write denies and hooks. The absence of a
+clone-root placement problem is a reason to measure Cursor, not proof that it works.
 
-The last row is the control for the one above it: the clone's own file is read, so the fourth row
-is the `--settings` layer beating it, not a file nobody read. The environment row agrees with
-[§ The harness binary after a lift](#the-harness-binary-after-a-lift-the-lifts-door-not-path): a
-background session gets the environment of the daemon that pre-created it. The clone's own
-`.claude/settings.json` would lift the guard as well, but for every background session in that
-repository, workers included, and the file is the consumer's; the package does not write it.
-
-**The same key rewrites the session's own instructions.** Read from the binary of `claude`
-2.1.280, not measured live: the `# Background Session` section of the system prompt reads the same
-switch. Under `"none"` its isolation paragraph becomes "Edit files directly in your working
-directory — this session is configured to work in place rather than isolating into a worktree.
-Skip EnterWorktree unless the user explicitly asks to work in a worktree.", and the git paragraph
-after it is dropped whole: commit before finishing and push if the repository has a remote,
-"Never push to main/master, force-push, or merge.", and ask before committing or switching
-branches in the user's own checkout. Most of that paragraph contradicted the approver's role — it
-merges and commits in that checkout — but with it the approver loses the ban on push and
-force-push. So its preamble (`buildApproverPrompt`) states it: the approver never pushes, never
-force-pushes and never rewrites commits already on the remote; the orchestrator pushes. "On the
-remote" rather than "the main branch's history", because an acceptance procedure may squash
-local, unpushed commits on purpose.
-
-**The key reaches a fresh lift only.** A repeat `review --approver` onto a live or unknown
-approver session reuses it and returns before the launch files are written (`planApprover`'s
-`reuse`, checked ahead of `writeLaunchFiles`), so that session's settings file is not rewritten. A
-session lifted by an earlier version keeps the guard until it is stopped and lifted again.
-
-**Not measured.** A managed (policy) tier: the binary lists `worktree.bgIsolation` among the keys
-that tier merges restrictively, with `"worktree"` as the restrictive value, so an organisation
-that sets it there presumably keeps the guard on for the approver too, and the approver is back to
-the shell. `"worktree"` in `~/.claude/settings.json`: the `--settings` layer sits above user
-settings by the harness's precedence, which is an assumption here rather than a run. The worker
-tree attached through `addDirs` is a linked worktree, so writes there were never refused — that is
-read from the binary, not measured. Cursor and Codex cannot lift an approver, so no other driver
-has this key to write.
+The Codex config check copies an existing clone-root file into a temporary private home
+and asks the selected Codex binary for `features list`. Only a TOML parse error refuses;
+other probe failures are warned and left to the normal lift. The copy is removed before
+the worktree is created. A dry-run plans files without launching the binary, so it checks
+foreign hooks but does not parse the clone-root config.
 
 ## A stop returns after the record is gone, not after the command returns
 
@@ -342,12 +321,13 @@ pin a mutable updater path and probe the version of that same concrete binary. I
 the host's `HostToolBin` passes through unchanged. It is not a capability and is not required
 of drivers whose binaries do not need this normalization.
 
-`refuseForeignProjectHooks?(lookupDir, writtenDir)` is optional. Spawn calls it at plan
-time, before the first write of this lift, when the driver has the operation. It throws
-GateError naming the file, and returns nothing when there is nothing to refuse. A string
-return is not a refusal: spawn does not read one. The Codex driver throws when Codex would
-load a hooks file from a path this lift does not write. A harness with no such file leaves
-the operation absent, and spawn does not ask it.
+`refuseForeignProjectLayer?(lookupDir, writtenDir, tool?)` is optional. Spawn calls it at
+plan time without a binary and again with the selected binary before the first write of
+the lift. It throws GateError naming the file, and returns nothing when there is nothing
+to refuse. A string return is not a refusal: spawn does not read one. The Codex driver
+throws when Codex would run foreign hooks from the clone root or cannot parse the
+clone-root config. A harness without that project-layer concern leaves the operation
+absent, and spawn does not ask it.
 
 ### `worktreeTouchedMs` — the third liveness signal, and what the first two miss
 
@@ -445,7 +425,7 @@ is stable and on by default, and a handler is enabled unless its state says othe
 A linked worktree reads project `hooks.json` from the main checkout, so a worker's
 copy is written to the participant home after that home is built, and not among the
 launch files. A reviewer sandbox is not a worktree and keeps the single file in its
-working directory. An approver on Codex is not covered. The measured event is
+working directory. The approver uses the same redirected participant-home hook document; its live evidence is in the approver section above. The measured event is
 SessionStart; Stop was not in those journals. `bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own
 and is rewritten, whatever its bytes; the reviewer sandbox is that path. Any file
