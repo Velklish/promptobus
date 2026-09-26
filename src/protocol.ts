@@ -241,6 +241,24 @@ export function foreignSessionOf(p: WithMetadata | null | undefined, session: st
   return sameSession(short, writer) ? null : short;
 }
 
+/** The session a participant record is bound to: the owner for the orchestrator, the lift's session
+ * for every other address. `null` — an unbound record, legal to read and never sent as. */
+export function boundSessionOf(p: WithMetadata | null | undefined): string | null {
+  if (addressOf(p) === ORCHESTRATOR) return ownerOf(p);
+  return sessionIdOf(p) ?? sessionOf(p);
+}
+
+/** Whether this session PROVABLY holds the record — a positive proof, where `foreignSessionOf` answers
+ * `null` for a record bound to nobody. [reference/04-protocol.md#addresses](../docs/reference/04-protocol.md#addresses) */
+export function holdsSession(p: WithMetadata | null | undefined, session: string | null | undefined): boolean {
+  const writer = typeof session === 'string' ? session.trim() : '';
+  if (!writer) return false;
+  if (addressOf(p) === ORCHESTRATOR) return ownerOf(p)?.trim() === writer;
+  const full = sessionIdOf(p);
+  if (full) return norm(full) === norm(writer);
+  return sameSession(sessionOf(p), writer);
+}
+
 /** Readable participant name, the one their session is shown under at the harness. */
 export function nameOf(p: WithMetadata | null | undefined): string | null {
   return field(p, 'name');

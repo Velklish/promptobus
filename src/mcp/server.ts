@@ -15,10 +15,15 @@ import type { DecorateParticipant } from './render.js';
 
 /** Who this process is on the bus. The adapter computes it: environment and workspace root are its. */
 export interface McpIdentity {
+  /** The mailbox this process reads: the declared role, `orchestrator` when none is declared. */
   role: string;
+  /** The declared role alone, `null` when none: a hint about `declaredTask` the sender record must agree with. */
+  hint?: string | null;
   home: string;
   declaredTask: string | null;
   session: string | null;
+  /** Why `session` is `null`, in the resolver's words. */
+  why?: string | null;
 }
 
 /** Server name and version in the `initialize` reply. Both are consumer facts. */
@@ -217,8 +222,9 @@ export function createMcpServer(options: McpOptions): {
       }
       case 'promptobus_send': {
         const to = args?.to as string;
+        const from = service.senderFor(home, task, identity);
         const { message, artifact, sameContent } = service.send(home, task, {
-          from: role,
+          from,
           to,
           type: args?.type as string,
           body: args?.body as string,
@@ -228,14 +234,14 @@ export function createMcpServer(options: McpOptions): {
         // The sender may also have attached to a foreign task. Send is a turn
         // people make without having taken their own mail: the last place
         // where what has piled up can still be named.
-        const unread = service.unreadNote(home, task, role, session);
+        const unread = from === role ? service.unreadNote(home, task, role, session) : null; // mailbox reads `role`
         return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, task), to)}${ADDR_MARK}${to}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`
           // Said plainly, not as a warning: a repeat send is lawful, and the sender is the
           // one who cannot otherwise tell this reply from the reply to a new version.
           + (sameContent ? ` · the same content as ${sameContent.filename}`
             + `${sameContent.names > 1 ? ` (${sameContent.names} names)` : ''}` : '')
-          + ` · ${service.identityLabel(home, task, role, session)}`
+          + ` · ${service.identityLabel(home, task, from, session)}`
           + (unread ? `\n${unread}` : '');
       }
       case 'promptobus_task':

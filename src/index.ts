@@ -15,7 +15,7 @@ export {
   FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MAILBOX_COPY, MECHANISM_VERSION_FIELD,
   mechanismVersionOf, MESSAGE_TYPES, nameOf,
   newTaskIdentity, ORCHESTRATOR, ownerOf, participantFileStem, repoAbsOf, requireTaskId,
-  foreignSessionOf,
+  boundSessionOf, foreignSessionOf, holdsSession,
   reviewerAddress, roleOf, ROUTING_FIELD, routingOf, sameSession, sessionIdOf, sessionOf, SLUG_MAX, slugify, stampOfId,
   startedOf, TASK_ID_RE,
   TASK_TITLE_SEP, taskDir, tasksDir, UNDECLARED_HARNESS, UNDECLARED_ROLE, workerAddress,
@@ -75,7 +75,7 @@ export type {
   McpEvent, McpIdentity, McpInput, McpJoin, McpOptions, McpOutput, McpServerInfo, McpStalls,
 } from './mcp/server.js';
 export type {
-  MailboxRead, OutgoingMessage, PromptobusService, SameContent, SentMessage,
+  MailboxRead, OutgoingMessage, PromptobusService, SameContent, SenderCaller, SentMessage,
 } from './mcp/service.js';
 export {
   ADDR_MARK, MAILBOX_EMPTY, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages,

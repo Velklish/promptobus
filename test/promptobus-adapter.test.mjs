@@ -64,18 +64,14 @@ const unversionedWrites = captureSplit(() => {
     id: 'warning-t20260909-170000', title: 'writer warnings', owner: 'first-session',
   });
   store.claimOwnership(unversionedWritesHome, warned.id, 'second-session');
-  store.sendMessage(unversionedWritesHome, warned.id, {
-    from: 'worker:guest', to: store.ORCHESTRATOR, type: 'status', body: 'foreign update',
-  });
 });
 const writerWarnings = unversionedWrites.err.split('\n')
   .filter((line) => line.includes('without mechanismVersion'));
-check('writer fallback: create, claim, and automatic sender warnings name the home and record',
-  writerWarnings.length === 3
+check('writer fallback: create and claim warnings name the home and record',
+  writerWarnings.length === 2
   && writerWarnings.every((line) => line.includes(unversionedWritesHome))
   && writerWarnings.some((line) => line.includes('creating task warning-t20260909-170000 orchestrator participant'))
-  && writerWarnings.some((line) => line.includes('claiming task warning-t20260909-170000 orchestrator participant'))
-  && writerWarnings.some((line) => line.includes('automatically registering task warning-t20260909-170000 participant worker:guest')),
+  && writerWarnings.some((line) => line.includes('claiming task warning-t20260909-170000 orchestrator participant')),
   JSON.stringify(writerWarnings));
 
 check('participantRecord: an unnamed writer has no synthetic 0.0.0 version',
@@ -128,26 +124,6 @@ for (const [suffix, writer] of [
     && refusal.msg.includes('this session runs 0.5.1'),
     `${refusal.code} · ${refusal.msg}`);
 }
-
-const senderHome = path.join(SB, 'automatic-sender-version', '.promptobus');
-store.bus(senderHome, { cli: '0.6.0' });
-const senderTask = store.createTask(senderHome, {
-  id: 'sender-t20260906-100050', title: 'automatic sender writer', owner: 'writer-session',
-});
-store.sendMessage(senderHome, senderTask.id, {
-  from: 'worker:guest', to: store.ORCHESTRATOR, type: 'status', body: 'foreign task update',
-});
-const senderFile = store.taskFile(senderHome, senderTask.id);
-const senderMeta = JSON.parse(readFileSync(senderFile, 'utf8'));
-senderMeta.participants.find((p) => p.metadata.address === 'worker:guest').brandNewField = true;
-writeFileSync(senderFile, JSON.stringify(senderMeta, null, 2) + '\n');
-
-const senderRefusal = thrown(() => store.bus(senderHome, { cli: '0.5.1' }).readTask(senderTask.id));
-check('mixed versions: an automatically registered sender names its writer release',
-  senderRefusal.code === 'schema-version-unsupported'
-  && senderRefusal.msg.includes('written by mechanism 0.6.0')
-  && senderRefusal.msg.includes('this session runs 0.5.1'),
-  `${senderRefusal.code} · ${senderRefusal.msg}`);
 
 const claimHome = path.join(SB, 'claim-version', '.promptobus');
 store.bus(claimHome, { cli: '0.5.1' });
@@ -297,6 +273,15 @@ check('policy ATI: a direct sender absent from this task is refused without auto
   unknownDirect.threw && /no sender participant/.test(unknownDirect.msg)
   && store.participantOf(store.readTask(home, task.id), 'worker:ghost') === null,
   unknownDirect.msg);
+
+// The orchestrator route was the one a first message used to register a sender on.
+const ghostToOrch = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:ghost', to: store.ORCHESTRATOR, type: 'status', body: 'a first message from nowhere',
+}));
+check('policy ATI: a sender absent from this task is refused on the orchestrator route too — no message registers it',
+  ghostToOrch.threw && /no sender participant/.test(ghostToOrch.msg)
+  && store.participantOf(store.readTask(home, task.id), 'worker:ghost') === null,
+  ghostToOrch.msg);
 
 const borrowedDirect = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'approver:a', type: 'question', body: 'borrowed address',

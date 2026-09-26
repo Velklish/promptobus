@@ -496,6 +496,11 @@ check('spawn: the session id comes from the list, not from parsing output',
 check('spawn: no list — the id still comes from parsing output, it does not vanish',
   spawnedSessionId({ state: 'unknown', session: null }, BG_OUT) === parseSessionId(BG_OUT),
   String(spawnedSessionId({ state: 'unknown', session: null }, BG_OUT)));
+// A token the spare pattern pulls out of free text is not an identifier, and no record takes it as one.
+const TOKEN_OUT = 'agent: run42x started';
+check('spawn: a parsed token that is not in the shape of a session id binds nothing',
+  parseSessionId(TOKEN_OUT) === 'run42x' && spawnedSessionId({ state: 'unknown', session: null }, TOKEN_OUT) === null,
+  `${parseSessionId(TOKEN_OUT)} · ${spawnedSessionId({ state: 'unknown', session: null }, TOKEN_OUT)}`);
 
 // Review note: the session registry moved into liftoff.js so the two files would not
 // import each other. A cycle in ESM is harmless today, and the suite is green with it —

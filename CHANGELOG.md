@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`promptobus send` is a command** (PB-265). `promptobus send <address> (--body <text> | --file <path>) [--type <type>]
+  [--task <id>] [--artifact <file>]` writes one bus message as the address this session holds in the task; naming both
+  `--body` and `--file` is refused. There is still no `--from`. The barrier it was withdrawn for is built: the sender
+  is a record the session provably holds, never an address nobody else is known to hold.
+  [03-cli § Send](docs/reference/03-cli.md#send), [ADR-019](docs/adr/adr-019-session-address-per-task-lands.md).
+
 - **`pipeline` in `promptobus.json` declares the owner step and the gate steps** (PB-273). `owner` is the one
   `edits-tree` step; `gates` run in order, each `reads-diff` or `writes-main-tree` with optional `instructions` and
   `qualityFloor`. The standalone host answers `pipeline()` owner first and omits it without the key, so the default
@@ -62,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [§ The gate record](docs/reference/04-protocol.md#the-gate-record).
 
 ### Changed
+
+- **A session holds one address per task, and a send is made only from a record the session provably holds** (PB-265).
+  `promptobus_send` and `promptobus send` resolve the sender in the task the call names: the `orchestrator` by its
+  recorded owner, any other address by the session its lift wrote. `PROMPTOBUS_ROLE` picks among the records the
+  session holds on any task and must agree with the record on `PROMPTOBUS_TASK`; a disagreement is refused naming both.
+  A record bound to no session is read and never sent as, and a Claude lift that reads no session id is refused rather
+  than leaving such a record behind a live session; a task with no recorded owner has no provable orchestrator. A session with no bound record
+  in a task cannot send in it: a message no longer registers its sender, so a teamlead's address in its parent task
+  will come from its lift (PB-269), not from its first message.
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
 
 - **One role registry declares every address, stem, deny list, floor and route** (PB-266). `src/registry.ts` holds the
   governance roles `orchestrator`, `teamlead`, `peer`, `reporter`, `user` and the step kinds `edits-tree`, `reads-diff`,

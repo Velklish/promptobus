@@ -130,6 +130,7 @@ promptobus done
 | `promptobus review <path>` | Поднять read-only ревьюера на снимке диффа. `--title` или `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта. Подкоманды `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | Аренда машины, затем активные задачи: участники, непрочитанная почта, состояние сессий, диагностика отсутствующей ссылки на сессию, маршрут и счёт проходов ревью |
+| `promptobus send <address>` | Написать одно сообщение от адреса, который эта сессия держит в задаче; `--body` или `--file`, `--type`, `--task`, `--artifact`. `--from` нет |
 | `promptobus done` | Закрыть задачу; погасить поднятые шиной сессии, если не задан `--keep-sessions` |
 | `promptobus stop <address>` | Погасить сессию ОДНОГО участника, оставив задачу открытой; запись сессии уходит вместе с процессом |
 | `promptobus sweep <address>` | Убрать за ОДНИМ принятым куском, оставив задачу активной: worktree и ветку при доказуемом слиянии, присланные им блобы и файлы, его файлы в `workers/` |
@@ -148,7 +149,7 @@ promptobus done
 
 | Инструмент | Вход | Что делает |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Послать типизированное сообщение; `to` — это `orchestrator`, `worker:<slug>`, `reviewer:<slug>` или `approver:<slug>` |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Послать типизированное сообщение; `to` — это `orchestrator`, `worker:<slug>`, `reviewer:<slug>` или `approver:<slug>`. Отправитель — адрес, который эта сессия держит в этой задаче |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Без `message` отдаёт заголовки и помечает почту прочитанной; с `message` отдаёт одно тело и ничего не помечает. На адресе orchestrator вызов без сессии получает копию, оставляет оригиналы, и ответ об этом говорит. `claim: true` перехватывает ящик у прежней сессии |
 | `promptobus_task` | `{ task? }` | Метаданные задачи, участники, каталог артефактов |
 

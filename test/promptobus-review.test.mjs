@@ -1171,6 +1171,27 @@ check(': the session list isn\'t parsed — not a refusal, but an unconfirmed st
   /reviewer reviewer:cargos-api started/.test(unverified)
   && /lift of session .* is not confirmed/.test(unverified), unverified);
 
+// Neither the list nor the output names the session: the lift binds nothing, and a record
+// bound to nothing never sends — so the lift is refused while the session stays up.
+claudeStub("if (args[0] === 'agents') process.exit(1);\nprocess.stdout.write('backgrounded');");
+const unboundTask = store.createTask(home, { id: 't20260926-110000', title: 'ревью без id сессии' });
+const unboundLift = liftoffRun(
+  { target: REPO, task: unboundTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
+  { STUB_SILENT_FAIL: '1' },
+);
+const unboundPart = store.participantOf(store.readTask(home, unboundTask.id), 'reviewer:cargos-api')?.metadata;
+const unboundSend = expectThrow(() => store.senderFor(home, unboundTask.id, {
+  session: 'the-live-session', hint: 'reviewer:cargos-api', declaredTask: unboundTask.id,
+}));
+check(': a lift that reads no session id is refused; its record stays unbound and pending, and nothing is sent as it',
+  unboundLift.status === 1 && /is alive and working, but no session id was read/.test(unboundLift.text)
+  && /it cannot report/.test(unboundLift.text)
+  && unboundLift.text.includes(`promptobus stop reviewer:cargos-api --task ${unboundTask.id}`)
+  && !!unboundPart && unboundPart.session === null && !Object.hasOwn(unboundPart, 'sessionId')
+  && unboundPart.pending === true
+  && unboundSend.threw && /carries no session binding/.test(unboundSend.msg),
+  `status=${unboundLift.status} · ${JSON.stringify(unboundPart)} · ${unboundSend.msg} · ${unboundLift.text}`);
+
 // The order of id sources is the same as the worker's (`spawnedSessionId`): a record
 // from `claude agents` is the harness's direct answer, parsing `claude --bg`'s output
 // remains the fallback.

@@ -1,8 +1,8 @@
 # ADR-019: A session's address is per task, and a positive session binding is the barrier
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-26
-**Deciders:** the owner, in the planning dialogue of 2026-09-26. The text is drafted by the planning session and is not yet reviewed by the owner; the status turns Accepted when PB-265 lands.
+**Deciders:** the owner, in the planning dialogue of 2026-09-26. The text is drafted by the planning session; it was accepted when PB-265 landed.
 
 ## Context
 

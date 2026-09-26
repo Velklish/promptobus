@@ -87,6 +87,21 @@ the surface, not about the reviews.
 The code, its tests and this analysis stay in the tree, and `promptobus send` is not registered
 as a command. The next attempt begins from them.
 
+## Amendment, 2026-09-26 (PB-265): the barrier landed
+
+The missing piece named above is built, and `promptobus send` is registered on it
+([ADR-019](adr-019-session-address-per-task-lands.md)). **The barrier is a positive proof:**
+`holdsSession` in `src/protocol.ts` answers yes only when the calling session is the one on the
+record — the task's recorded owner for `orchestrator`, the `sessionId` a lift wrote (or its short
+`session` by prefix) for any other address. `foreignSessionOf` keeps its `null` for an unbound record;
+that answer stays right for reading and no longer reaches a send. `senderFor` in `lib/store.js`
+resolves the sender in the task a call names, for the CLI and the MCP tool alike, and each of the
+four findings above is refused by a check of its own in `test/send.test.mjs`: nothing falls back to
+`orchestrator`, a declared `PROMPTOBUS_ROLE` is a hint that must agree with the record of its declared
+task, a task with no recorded owner has no provable orchestrator, and a record bound to no session is
+never sent as. `--from` stays absent. A message no longer registers its sender in a task, so the
+address a session holds in a task comes from a lift or an owner claim and from nothing else.
+
 ## Consequences
 
 - **The case that produced the card is NOT unblocked.** A session that raised its own task

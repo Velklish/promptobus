@@ -35,6 +35,7 @@ import process from 'node:process';
 import {
   HARNESS_HOME_VAR, claudeConfigDir, readSession, scriptFile, traceFile, writeSession,
 } from './harness.mjs';
+import { awaitBinding } from './harness-shared.mjs';
 
 const argv = process.argv.slice(2);
 const home = process.env[HARNESS_HOME_VAR];
@@ -238,6 +239,8 @@ function git(args) {
   return { status: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() };
 }
 
+let bound = null;
+
 async function act(action) {
   // A pause inside the turn is not decoration. Store marks are laid down by warden
   // ticks: it notices a mailbox fetch on its own tick, and sees a send immediately. A
@@ -285,6 +288,8 @@ async function act(action) {
     return;
   }
   if (action.tool === 'promptobus_send') {
+    bound ??= awaitBinding({ home: busHome, task, address, note });
+    await bound;
     const res = await rpc('tools/call', { name: 'promptobus_send', arguments: action.args ?? {} });
     note({ kind: 'send', args: action.args, text: textOf(res), isError: res?.result?.isError === true });
     return;

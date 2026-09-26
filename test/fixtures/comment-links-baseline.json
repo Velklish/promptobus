@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 33,
-    "citation": 43,
+    "citation": 44,
     "crossFile": 6,
     "fileLevel": 55,
     "bound": 52,
@@ -180,7 +180,7 @@
       "models.js"
     ],
     "lib/send.js": [
-      "../docs/reference/03-cli.md#send--built-not-published"
+      "../docs/reference/03-cli.md#send"
     ],
     "lib/server.js": [
       "../src/mcp/server.ts",

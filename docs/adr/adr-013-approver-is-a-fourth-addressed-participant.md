@@ -113,3 +113,11 @@ to `done`, and the task stays active.
   pre-existing silent disagreements while it was being written: the overlay `byRole`
   map and `DEFAULT_POLICY.byRole`; targeted telemetry tests cover the remaining inline
   runtime projection.
+
+## Amendment, 2026-09-26 (PB-265)
+
+"Automatic foreign registration remains available only for mail to `orchestrator`" no longer
+holds: no message registers its sender on any route. A sender is the record the calling
+session provably holds in the task the call names
+([ADR-019](adr-019-session-address-per-task-lands.md), [ADR-011](adr-011-a-session-address-is-per-task.md)
+§ Amendment); the direct worker↔approver route keeps its own session check unchanged.

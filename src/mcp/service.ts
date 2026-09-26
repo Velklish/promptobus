@@ -14,6 +14,14 @@ export interface OutgoingMessage {
   session?: string | null;
 }
 
+/** Who asks to send: the session, why it is missing, and the declared role with its task. */
+export interface SenderCaller {
+  session: string | null;
+  why?: string | null;
+  hint?: string | null;
+  declaredTask?: string | null;
+}
+
 /** A file already in the task holding these very bytes, and how many names the payload has. */
 export interface SameContent {
   filename: string;
@@ -64,6 +72,8 @@ export interface PromptobusService {
   /** Active task of the process: declared → session binding → the only active one. */
   resolveTaskId(home: string, declared: string | null | undefined, session: string | null): string;
   send(home: string, task: string, outgoing: OutgoingMessage): SentMessage;
+  /** The address this caller sends as in the task: the record its session provably holds. */
+  senderFor(home: string, task: string, caller: SenderCaller): string;
   /** Tail `your mailbox: unread N`; `null` — zero, or nothing to say. */
   unreadNote(home: string, task: string, addr: string, session: string | null): string | null;
   /** Journal cache for one tool call: the journal is read four to six times. */

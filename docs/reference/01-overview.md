@@ -127,7 +127,10 @@ read or validate is a refusal naming it, never a parser's error.
 Addresses, not participant ids. Bus tools talk in addresses: the address is
 declared to the participant by their mcp-config, health and contact points
 are keyed by it, and a person reads it. Translating an address into a v1
-record id is the adapter's job — where the adapter lives.
+record id is the adapter's job — where the adapter lives. The declared
+address is the mailbox the process reads; the address a send is made from is
+resolved per task by `senderFor`, from the record the session provably holds
+([04-protocol § Addresses](04-protocol.md#addresses)).
 
 ### The stdio server: transport rules
 

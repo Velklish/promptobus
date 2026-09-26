@@ -14,6 +14,7 @@ const SB = makeSandbox('promptobus-promptobus-live-cursor-');
 const home = path.join(SB, 'matcher', '.promptobus');
 const task = 'livecursormatcher-t20260909-000000';
 store.createTask(home, { id: task, title: 'live Cursor review matcher' });
+store.upsertParticipant(home, task, store.participantRecord(WORKER, { dismissed: new Date().toISOString() }));
 for (const [type, body] of [
   ['status', 'LIVE-CURSOR-HELLO: worker started'],
   ['result', 'LIVE-CURSOR-WOKE: worker wake result'],

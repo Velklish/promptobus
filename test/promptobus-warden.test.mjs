@@ -1937,6 +1937,7 @@ const ORCH_TASK = 'orkestr-t20260901-201000';
 store.createTask(HOME, { id: ORCH_TASK, title: 'занятость участника без bg-сессии' });
 registerWake(HOME, ORCH_TASK, 'orchestrator',
   { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('bl418o'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
+store.upsertParticipant(HOME, ORCH_TASK, store.participantRecord('worker:api', { dismissed: new Date().toISOString() }));
 store.sendMessage(HOME, ORCH_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог куска' });
 const orchHealth = () => store.readHealth(HOME, ORCH_TASK).orchestrator;
 const orchRound = (knock, now) => wdn.wardenRound(HOME, ORCH_TASK, { knock, sessions: [], now });
@@ -2032,6 +2033,7 @@ const ASK_ROWS = [
 ].join('');
 writeFileSync(ASK_FILE, ASK_ROWS);
 store.markTranscript(HOME, ASK_TASK, 'orchestrator', ASK_FILE, ASK_SESSION);
+store.upsertParticipant(HOME, ASK_TASK, store.participantRecord('worker:api', { dismissed: new Date().toISOString() }));
 store.sendMessage(HOME, ASK_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'a piece is done' });
 const askHealth = () => store.readHealth(HOME, ASK_TASK).orchestrator;
 const askRound = (knock, now) => wdn.wardenRound(HOME, ASK_TASK, { knock, sessions: [], now });
@@ -2447,6 +2449,7 @@ store.createTask(HOME, { id: HEIR_TASK, title: 'claim переписывает c
 store.writeWake(HOME, HEIR_TASK, 'orchestrator', {
   socket: sockPath('old-dead'), token: 'old', session: OLD_ORCH,
 });
+store.upsertParticipant(HOME, HEIR_TASK, store.participantRecord('worker:api', { dismissed: new Date().toISOString() }));
 store.sendMessage(HOME, HEIR_TASK, {
   from: 'worker:api', to: 'orchestrator', type: 'result', body: 'после смены id',
 });

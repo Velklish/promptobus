@@ -56,6 +56,9 @@ const SB = makeSandbox('promptobus-promptobus-mixed-');
 const MATCHER_HOME = path.join(SB, 'matcher', '.promptobus');
 const MATCHER_TASK = 'mixedmatcher-t20260909-000000';
 store.createTask(MATCHER_HOME, { id: MATCHER_TASK, title: 'mixed matcher' });
+for (const sender of [WORKER, REVIEWER]) {
+  store.upsertParticipant(MATCHER_HOME, MATCHER_TASK, store.participantRecord(sender, { dismissed: new Date().toISOString() }));
+}
 store.sendMessage(MATCHER_HOME, MATCHER_TASK, {
   from: WORKER, to: 'orchestrator', type: 'result', body: 'LIVE-MIXED-HELLO: worker reply',
 });

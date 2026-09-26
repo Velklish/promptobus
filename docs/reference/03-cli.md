@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `spawn`, `review`, `models`, `status`, `send`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -75,6 +75,8 @@ The participant preamble names the generator and dependency outcomes in every ca
 Source: `lib/liftoff.js` — `spawnedSessionId`, `sessionIdFull`.
 
 There is nowhere to learn a session's identifier before the launch, so the lift writes it on a second pass, and the order it reads it in is tested rather than assumed. The record from `claude agents --json` is the harness's direct answer; `parseSessionId` guesses an id out of free text and will guess differently on another claude build. Its third pattern is a deliberately narrow spare — the value must carry a digit, or "session started successfully" would declare `started` the identifier — and no match is `null`.
+
+A value parsed out of the output binds a participant only in the shape of a session id — a uuid, or a hex head of six or more characters. The spare pattern's token is not taken for one: `spawnedSessionId` answers `null` for it, and a lift that ends with no id at all is refused rather than leaving a record that can never send ([§ Send](#send)).
 
 `spawnedSessionId` is not called `sessionIdOf` on purpose. That name is the participant-record accessor in [protocol.ts](../../src/protocol.ts), where it means the FULL identifier, and two different subjects under one name in one repository is how a reader is misled. Nor is it "short": the first branch returns the short `id` of the harness record, and the first `parseSessionId` pattern legally returns a full uuid out of the text. The subject is "the session id as the lift learned it".
 
@@ -920,11 +922,33 @@ Runs one measuring command under the machine lease ([01-overview](01-overview.md
 - **Running.** The command runs with inherited stdio, in the caller's directory and environment, without a shell: pipes and `&&` go inside `sh -c '…'`. `lease` exits with the command's own exit code, or `128 + signal` when a signal ended it. SIGINT, SIGTERM and SIGHUP sent to the wrapper are forwarded to the command, and the lease is released only after the command has exited.
 - **What it does not cover.** A wrapper killed with SIGKILL leaves its command running, and the lease is dropped by liveness while that command may still load the machine. A `lease` nested inside a leased command waits for the outer one until its bound.
 
-## Send — built, not published
+## Send
 
-`promptobus send` exists in the tree (`lib/send.js`, `test/send.test.mjs`) and is **not registered as a command**: `promptobus send` answers `unknown command`. It was withdrawn before release after four review rounds produced four major findings of one class — the command granting more rights than it promised — the last of which was that its ownership check was negative rather than positive: `foreignSession` returns `null` both when the session matches and when the participant record carries no session at all, so a declared role for an unbound participant passed.
+```
+promptobus send <address> (--body <text> | --file <path>) [--type <type>] [--task <id>] [--artifact <file>]
+```
 
-The decision the command was built for stands and is unchanged: a session's bus address becomes per-task, and a sender that can be chosen is a sender that can be borrowed ([ADR-011](../adr/adr-011-a-session-address-is-per-task.md)). What did not reach release is the first implementation of it. The next attempt starts from the code and the analysis in the branch rather than from nothing, and its missing piece is named: a POSITIVE binding of an address to a session, which the store does not record for a participant today.
+Writes one bus message (`lib/send.js`). `--file` reads the body from a file; naming both `--body` and `--file` is refused with both flags named. `--type` defaults to `status`; `--artifact` attaches a file as `artifactPath` does on the tool. The task comes from `--task`, then `PROMPTOBUS_TASK`, then the session's binding, then the only active task — the same order as every other command.
+
+**There is no `--from`.** The sender is the participant of the named task whose recorded session this process provably holds ([04-protocol § Addresses](04-protocol.md#addresses), [ADR-019](../adr/adr-019-session-address-per-task-lands.md)): the `orchestrator` by the task's recorded owner, any other address by the `sessionId` its lift wrote, or the short `session` by prefix when no full id is on record. The MCP tool `promptobus_send` resolves its sender with the same function (`senderFor`, `lib/store.js`), so the two doors cannot disagree. Each refusal says what could not be proven:
+
+| case | refusal |
+|---|---|
+| the process names no session — no harness identity at all, or two of them contested ([02-host § Session identity](02-host.md#session-identity)) | `this process cannot name its own session — <the resolver's reason>` |
+| `PROMPTOBUS_ROLE` names an address the task does not have | `… which is not a participant of task <id>` — nothing is registered |
+| `PROMPTOBUS_ROLE` names a record bound to no session | `«<address>» of task <id> carries no session binding — its record is legal to read and illegal to send as`: a lift still in progress binds it on return (send again after the next turn), and a lift that returned without binding it must be repeated |
+| `PROMPTOBUS_ROLE` names a record held by another session — on its declared task or any other | names the declared address, the session on its record and this one |
+| the session holds two records in the task and no declared role names one of them | names both and asks for `PROMPTOBUS_ROLE` |
+| the session holds no record in the task | names the owner the task belongs to; writing as `orchestrator` would borrow it |
+| the task records no owner | nobody can prove to be its `orchestrator`; a participant bound by its lift still sends |
+
+**`PROMPTOBUS_ROLE` is a hint.** When it names a record the session holds, it picks that record on any task — it grants nothing, it chooses among what is already proven. It binds only on its declared task: when the call's task is `PROMPTOBUS_TASK`, or when no task is declared, the sender must be the declared address. On any other task a hint the session does not hold is ignored and the record alone decides. That is what lets one session hold two addresses — `orchestrator` in its own task and `teamlead:<slug>` in its parent's — and send as each in its own task.
+
+**A task with no recorded owner has no provable orchestrator, and no claim route either.** The owner is written when a session that names itself opens the task; `promptobus_mailbox {claim: true}` refuses an ownerless task on purpose, because a claim there would switch the owner gate on for every other session after the fact ([ADR-017](../adr/adr-017-the-owner-gate-is-a-positive-proof.md) § 2C). Such a task still takes mail from participants its lifts bound.
+
+**A lift binds its record after the session is up**, and a lift that cannot bind it is refused: when neither `claude agents --json` nor the `--bg` output names the session, the record is left unbound — and a reviewer's or approver's record pending, as on a lift whose session never appeared; a worker's record carries no such mark — and the refusal says the session is alive and cannot report, with the route to stop it (`stop <address>`, the record being its only handle) and lift again. A send made before a lift returns is refused as unbound too: the lift writes the record with no session, launches, and writes the session once it has seen it (`persist`). A model's first tool call normally comes later than that; the harness stands, which play their first turn at once, wait for the binding before their first send (`awaitBinding`, `test/harness-shared.mjs`). Binding the record before launch is filed as PB-265.1.
+
+A successful send starts the task warden, as every other write path does; a refused one writes nothing and starts none.
 
 ## Guard and warden
 

@@ -907,7 +907,7 @@ const offPathBin = path.join(SB, 'off-path');
 stubCommand(offPathBin, 'claude', `const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]))}); process.exit(0); }
-process.stdout.write('backgrounded · sess-0003\\n');`);
+process.stdout.write('backgrounded · 5e550003\\n');`);
 const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const foundNote = `claude not found in PATH — taken from ${offPathBin}`;
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',

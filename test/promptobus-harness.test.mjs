@@ -120,6 +120,11 @@ check('the stub writes startedAt as epoch milliseconds',
 check('the record is found by the same findSession the mechanism uses, and is judged alive',
   findSession(listed, NAME)?.id === record?.id && sessionLiveness(findSession(listed, NAME), listed) === 'alive',
   JSON.stringify(record));
+// What a lift's persist writes: the journal record bound to the session that was lifted.
+const unbound = store.participantOf(store.readTask(HOME, TASK), ADDR);
+store.upsertParticipant(HOME, TASK, {
+  ...unbound, metadata: { ...unbound.metadata, session: record?.id ?? null, sessionId: record?.sessionId ?? null },
+});
 
 const wake = await waitFor(() => {
   const w = store.readWake(HOME, TASK, ADDR);

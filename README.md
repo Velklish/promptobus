@@ -131,6 +131,7 @@ promptobus done
 | `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | The machine lease, then active tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
+| `promptobus send <address>` | Write one message as the address this session holds in the task; `--body` or `--file`, `--type`, `--task`, `--artifact`. There is no `--from` |
 | `promptobus done` | Close a task; stop bus-started sessions unless `--keep-sessions` |
 | `promptobus stop <address>` | Close ONE participant's session and leave the task open; the session record goes with the process |
 | `promptobus sweep <address>` | Clean up after ONE accepted piece and leave the task active: its worktree and branch when the merge is provable, the blobs and files it sent, its files in `workers/` |
@@ -149,7 +150,7 @@ promptobus done
 
 | Tool | Input | Does |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>` or `approver:<slug>` |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>` or `approver:<slug>`. The sender is the address this session holds in that task |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Without `message` it lists headers and marks them read; with `message` it returns that one body and marks nothing. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 

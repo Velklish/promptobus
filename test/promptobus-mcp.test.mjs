@@ -54,11 +54,17 @@ const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 // The version-marker field name comes from its own home (`protocol.ts`), not a literal: the
 // adapter writes it and the store reads it, and if the two drifted apart, the fixture would be checking a field that doesn't exist.
 const { MECHANISM_VERSION_FIELD } = await import(path.join(here, '..', 'dist', 'index.js'));
-store.createTask(HOME, { id: TASK, title: 'событие CargoCreated в двух сервисах' });
+// The owner and the worker's session are what a lift records: a send is made as the address its
+// session provably holds, so both records are bound to the identities the servers below present.
+const SUITE_ORCHESTRATOR = 'mcp-suite-orchestrator';
+const SUITE_WORKER = 'mcp-suite-worker';
+store.createTask(HOME, { id: TASK, title: 'событие CargoCreated в двух сервисах', owner: SUITE_ORCHESTRATOR });
 store.createTask(WRONG_HOME, { id: TASK, title: 'другая задача с тем же id' });
 // The worker is registered as a participant: since  a message is delivered only to
 // whoever is present in the task's journal, and it's `spawn` that registers them there — there's no live spawn in these tests.
-const joinWorker = (home, id) => store.upsertParticipant(home, id, store.participantRecord('worker:cargos-api', { repo: 'cargos-api' }));
+const joinWorker = (home, id) => store.upsertParticipant(home, id, store.participantRecord('worker:cargos-api', {
+  repo: 'cargos-api', sessionId: SUITE_WORKER,
+}));
 joinWorker(HOME, TASK);
 joinWorker(WRONG_HOME, TASK);
 const { PROMPTOBUS_TOOLS, PROTOCOL_VERSIONS } = await import(path.join(here, '..', 'lib', 'contract.js'));
@@ -78,9 +84,12 @@ function startServer(role, { config = null, cwd = SB, task = TASK, baseEnv = pro
   // These orchestrators are the owner path. A runner with no harness variable is no-identity
   // and would receive a copy; a call that means that passes an empty identity itself.
   const named = HARNESS_IDENTITY_NAMES.some((name) => Object.hasOwn(env, name) || String(baseEnv[name] ?? '').trim());
+  const pointed = ['PROMPTOBUS_CODEX_SESSION', 'PROMPTOBUS_CURSOR_SESSION'].some((name) => Object.hasOwn(env, name));
   const sessionDefault = role === 'orchestrator' && !named
-    ? { CLAUDE_CODE_SESSION_ID: 'mcp-suite-orchestrator' }
-    : {};
+    ? { CLAUDE_CODE_SESSION_ID: SUITE_ORCHESTRATOR }
+    : role === 'worker:cargos-api' && !named && !pointed && baseEnv === process.env
+      ? { CLAUDE_CODE_SESSION_ID: SUITE_WORKER }
+      : {};
   const child = spawn(config?.command ?? process.execPath, config?.args ?? [BIN, 'mcp'], {
     cwd,
     env: {
@@ -528,21 +537,27 @@ const directCrossTask = startServer('worker:cargos-api', {
 });
 await directCrossTask.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 directCrossTask.notify('notifications/initialized');
+// Codex starts its MCP child before thread/start returns. The pointer is already there,
+// while the id appears in the same record only after the handshake.
+writeFileSync(codexMcpRecord, `${JSON.stringify({
+  home: HOME_ALIAS, task: TASK, address: 'worker:cargos-api', threadId: 'direct-worker-session',
+})}\n`);
+// The session names itself now, and holds nothing in the foreign task: the sender rule refuses it.
 const unknownDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
   arguments: { to: 'approver:cargos-api', type: 'question', body: 'foreign direct', task: SECOND },
 });
 check('send: an explicit foreign task cannot auto-register a sender for direct worker↔approver traffic',
   unknownDirectCrossTask.result?.isError === true
-  && /no sender participant/.test(text(unknownDirectCrossTask))
+  && /no participant of it is bound to session direct-worker-session/.test(text(unknownDirectCrossTask))
   && store.participantOf(store.readTask(HOME, SECOND), 'worker:cargos-api') === null,
   text(unknownDirectCrossTask));
-// Codex starts its MCP child before thread/start returns. The pointer is already there,
-// while the id appears in the same record only after the handshake.
-writeFileSync(codexMcpRecord, `${JSON.stringify({
-  home: HOME_ALIAS, task: TASK, address: 'worker:cargos-api', threadId: 'direct-worker-session',
-})}\n`);
 
+// The worker's record in the second task, bound the way a lift binds one: a message never
+// registers its sender, and this is the record the send below is resolved to.
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+  sessionId: SUITE_WORKER, dismissed: new Date().toISOString(),
+}));
 const sentSecond = await worker.call('tools/call', {
   name: 'promptobus_send',
   arguments: { to: 'orchestrator', type: 'status', body: 'отчёт по второй задаче', task: SECOND },
@@ -552,13 +567,6 @@ check('send: the task argument overrides the declared session — the message we
   && store.countInbox(HOME, SECOND, 'orchestrator') === 1
   && store.countInbox(HOME, TASK, 'orchestrator') === 0, text(sentSecond));
 
-// A sender who wasn't a participant of the foreign task gets recorded as one: without a record
-// v1 has nothing to ask the routing policy. The record is DISMISSED FROM MONITORING though — otherwise
-// the foreign task's warden would take a session that just wrote there once under its watch,
-// and would report its stop to the orchestrator.
-const guestIn = store.participantOf(store.readTask(HOME, SECOND), 'worker:cargos-api');
-check(': a sender in a foreign task is recorded as a participant and immediately dismissed from monitoring',
-  Boolean(guestIn) && Boolean(guestIn?.metadata.dismissed), JSON.stringify(guestIn));
 check(': a guest dismissed from monitoring does not appear in the stall report',
   (blockedParticipants(HOME, SECOND, store.readTask(HOME, SECOND).participants,
     { 'worker:cargos-api': { state: 'gone', busy: false, stall: null, id: null } }) ?? []).length === 0);
@@ -808,6 +816,8 @@ const boot = async (srv) => {
 const owns = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE_CODE_SESSION_ID: OWNER } }));
 const alien = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE_CODE_SESSION_ID: STRANGER } }));
 const anon = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE_CODE_SESSION_ID: '' } }));
+// A message never registers its sender: the record stands as the removed first-message registration left it.
+store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { dismissed: new Date().toISOString() }));
 const putOwned = (body) => store.sendMessage(HOME, OWNED, { from: 'worker:cargos-api', to: 'orchestrator', type: 'result', body });
 
 putOwned('оригинал владельца');
@@ -903,9 +913,8 @@ check(': no session identity gets a copy and the owner-gate line, and the origin
 store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { repo: 'cargos-api' }));
 
 // `promptobus_mailbox` without identity only hands a copy, so the tail must not say "fetch it".
-const anonSend = await anon.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'счётчик без сессии' },
-});
+// Such a call sends nothing at all, so the tail is read where it still appears — the task reply.
+const anonSend = await anon.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check(': no session identity in the unread tail gets the owner-gate line and the copy note, not "fetch it"',
   !/your mailbox: unread \d+ — fetch it with the promptobus_mailbox tool/.test(text(anonSend))
   && !/FOREIGN MAILBOX/.test(text(anonSend))
@@ -1004,8 +1013,9 @@ joinWorker(HOME, OWNED);
 const foreignSend = await owns.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'status', body: 'счётчик в ответе отправки' },
 });
-check(': the same wording appears in the send response',
-  /FOREIGN MAILBOX: unread 1/.test(text(foreignSend)) && !/your mailbox/.test(text(foreignSend)),
+check(': a former owner cannot send as the orchestrator — the refusal names the session on record',
+  foreignSend.result?.isError === true && /belongs to session stranger-3333-4444/.test(text(foreignSend))
+  && store.countInbox(HOME, OWNED, 'worker:cargos-api') === 0,
   text(foreignSend));
 store.readInbox(HOME, OWNED, 'orchestrator');
 
@@ -1017,6 +1027,7 @@ check(': the owner is named in the participant list — it needs no separate ren
 // switched off entirely, otherwise old tasks would become unreadable.
 const LEGACY = 'legacy-t20260827-000000';
 store.createTask(HOME, { id: LEGACY, title: 'задача прежнего CLI', owner: null });
+store.upsertParticipant(HOME, LEGACY, store.participantRecord('worker:cargos-api', { dismissed: new Date().toISOString() }));
 store.sendMessage(HOME, LEGACY, { from: 'worker:cargos-api', to: 'orchestrator', type: 'status', body: 'наследство' });
 const legacyRead = await alien.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: LEGACY } });
 check(': a task without an owner behaves as before — no copies, no warnings',
@@ -1112,7 +1123,9 @@ check(': task starts with the task, not with an alarm',
 // distinguishes entries is the work's name, not the timestamp.
 const NAMED = 'worker:gates';
 const NAMED_FULL = 'Worker: Гейты lint: слепые зоны, контрактный маркер';
-store.upsertParticipant(HOME, TASK, store.participantRecord(NAMED, { repo: 'agent-workspace/promptobus', name: `${NAMED_FULL} (0829-1208)` }));
+store.upsertParticipant(HOME, TASK, store.participantRecord(NAMED, {
+  repo: 'agent-workspace/promptobus', name: `${NAMED_FULL} (0829-1208)`, sessionId: 'mcp-suite-gates',
+}));
 const toNamed = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: NAMED, type: 'status', body: 'проверка имени' },
 });
@@ -1125,7 +1138,7 @@ check(': the machine address and id remain in the send response',
   text(toNamed).includes(` · address ${NAMED} · id `) && /· id \S+ · PROMPTOBUS_HOME=/.test(text(toNamed)),
   text(toNamed).split('\n')[0]);
 
-const gates = startServer(NAMED);
+const gates = startServer(NAMED, { env: { CLAUDE_CODE_SESSION_ID: 'mcp-suite-gates' } });
 await gates.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 await gates.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'result', body: 'гейты закрыты' },

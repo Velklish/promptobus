@@ -1,14 +1,13 @@
-// PB-179: the bus door that was built and WITHDRAWN before release. Run: npm test
-// `send` is not registered as a command (ADR-011 § The first implementation), so these
-// drive `lib/send.js` directly — the dispatch is what was withdrawn, the logic is what
-// stays covered. The environment is still passed in rather than the sender: the command's
-// point is that the sender comes from the process, and handing it in would prove nothing.
+// The `send` door, driven through the dispatcher a person reaches. Run: npm test
+// The environment is passed in rather than the sender: the sender comes from the record the
+// session holds in the task, and handing it in would prove nothing (04-protocol § Addresses).
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture, expectFail, expectThrow } from './console.mjs';
+import { capture, expectFail } from './console.mjs';
 
 const { addrDir } = await import('../dist/protocol.js');
 
@@ -19,8 +18,8 @@ const HOME = path.join(ROOT, '.promptobus');
 const TASK = 'sendtest-t20260912-000000';
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
-const { send } = await import(path.join(here, '..', 'lib', 'send.js'));
-const { helpText } = await import(path.join(here, '..', 'lib', 'cli.js'));
+const { helpText, runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
+const { serve } = await import(path.join(here, '..', 'lib', 'server.js'));
 const runPromptobusHelp = () => { console.log(helpText(host)); };
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { sessionEnv } = await import(path.join(here, '..', 'lib', 'spawn.js'));
@@ -36,18 +35,8 @@ const host = hostOf(ROOT);
 store.createTask(HOME, { id: TASK, title: 'send door', owner: OWNER });
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:one', { harness: 'claude' }));
 
-// `argv` keeps the command shape the withdrawn dispatch parsed, so a future registration
-// can be checked against these same cases without rewriting them.
-const call = (argv, env) => {
-  const [, to, ...rest] = argv;
-  const opt = (name) => {
-    const i = rest.indexOf(`--${name}`);
-    return i >= 0 ? rest[i + 1] : undefined;
-  };
-  if (rest.includes('--from')) throw new Error('unknown option --from');
-  return send(host, { to, task: opt('task'), type: opt('type'), body: opt('body'), artifact: opt('artifact') },
-    { cwd: ROOT, env });
-};
+// The argv of every case goes to the dispatcher as a person types it.
+const call = (argv, env) => runPromptobus(argv, { host, cwd: ROOT, env });
 const run = (argv, env = {}) => capture(() => call(argv, { ...baseEnv, ...env }));
 const refuse = (argv, env = {}) => expectFail(() => call(argv, { ...baseEnv, ...env }));
 // The environment EXACTLY as given: spreading a participant env over `baseEnv` would let
@@ -79,15 +68,15 @@ const last = (addr) => {
 }
 
 {
-  // NOT a success — this is the hole the command was withdrawn for (ADR-011 § The first
-  // implementation, round 4). `worker:one` carries no session binding, and the store keeps
-  // no POSITIVE one, so a declared role for it is accepted on the strength of "nobody else
-  // is known to hold it". The case is kept, and named for what it is, so that a future
-  // re-registration has to change this line before it can call itself fixed.
-  await run(['send', 'orchestrator', '--body', 'from a worker', '--task', TASK],
+  // `worker:one` carries no session binding: "nobody else is known to hold it" is not a proof
+  // that this session does, so the declared role is refused and nothing is written.
+  const before = inbox('orchestrator').length;
+  const r = await refuse(['send', 'orchestrator', '--body', 'from a worker', '--task', TASK],
     { PROMPTOBUS_ROLE: 'worker:one' });
-  check(': KNOWN HOLE of the dormant implementation — an unbound participant address is claimable',
-    last('orchestrator')?.sender === addrDir('worker:one'), JSON.stringify(last('orchestrator')?.sender));
+  check(': an unbound participant address is refused, and the refusal names the missing binding',
+    r.failed === true && /«worker:one» of task \S+ carries no session binding/.test(r.out)
+      && inbox('orchestrator').length === before,
+    `${r.failed} · ${inbox('orchestrator').length - before} written · ${r.out}`);
 }
 
 // The environment a REAL participant gets, taken from the lift path rather than typed
@@ -140,12 +129,13 @@ for (const harness of ['cursor']) {
 }
 
 {
-  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap.
-  // The withdrawn dispatch refused it by not declaring the option; here the stand-in
-  // parser refuses it the same way, so the case keeps its meaning for a re-registration.
-  const r = await expectThrow(() => call(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK], baseEnv));
+  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap:
+  // the dispatcher refuses it by not declaring the option.
+  const before = inbox('orchestrator').length;
+  const r = await refuse(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK]);
   check(': --from is not an option — a sender that can be chosen can be borrowed',
-    r.threw === true && /unknown option --from/.test(r.msg ?? ''), JSON.stringify(r));
+    r.failed === true && /Unknown option '--from'/.test(r.out) && inbox('orchestrator').length === before,
+    `${r.failed} · ${r.out}`);
 }
 
 {
@@ -182,12 +172,12 @@ for (const harness of ['cursor']) {
 // ([04-protocol](../docs/reference/04-protocol.md) § Artifacts); the tool half is checked live in promptobus-mcp.
 {
   const before = inbox('worker:one').length;
-  // A `GateError` and not a bare one: that is what the top-level catch prints without a stack.
-  const r = expectThrow(() => call(['send', 'worker:one', '--body', 'record attached', '--type', 'artifact', '--task', TASK], baseEnv));
+  // A `GateError` and not a bare one is what the top-level catch prints without a stack.
+  const r = await refuse(['send', 'worker:one', '--body', 'record attached', '--type', 'artifact', '--task', TASK]);
   check(': type artifact with no file is refused here too, in the words the tool uses',
-    r.threw === true && r.name === 'GateError' && /artifactPath/.test(r.msg)
+    r.failed === true && /artifactPath/.test(r.out) && !/\bat \S+:\d+:\d+/.test(r.out)
     && inbox('worker:one').length === before,
-    `${r.name} · ${inbox('worker:one').length} against ${before} · ${r.msg}`);
+    `${r.failed} · ${inbox('worker:one').length} against ${before} · ${r.out}`);
 }
 
 // A declared role is a CLAIM. These are the ways of claiming one that must not work, and
@@ -266,23 +256,179 @@ for (const [name, argv] of [
     !existsSync(trace), existsSync(trace) ? readFileSync(trace, 'utf8') : 'absent');
 }
 
-// The withdrawal itself, at the level a person reaches it. A one-line restoration of
-// `case 'send'` would pass every check above, because they drive the module: this is the
-// only one that fails if the command is published again without a fresh review.
+// The registration itself: the argv carries no `--task`, and the session's declared task
+// is what resolves it, as it does for a participant.
 {
-  const { runPromptobus } = await import(path.join(here, '..', 'lib', 'cli.js'));
   const before = inbox('orchestrator').length;
-  const r = await expectFail(() => runPromptobus(['send', 'orchestrator', '--body', 'republished'], {
-    host, cwd: ROOT, env: baseEnv,
-  }));
-  check(': `send` is not a command — the withdrawal holds at the CLI, and nothing is written',
-    r.failed === true && /unknown command "send"/.test(r.out)
-      && inbox('orchestrator').length === before,
-    `${r.failed} · ${inbox('orchestrator').length - before} written · ${r.out}`);
+  const r = await run(['send', 'orchestrator', '--body', 'republished'], { PROMPTOBUS_TASK: TASK });
+  check(': `send` is a command — the dispatcher reaches the door, and the message lands',
+    /sent status → orchestrator · from orchestrator/.test(r) && inbox('orchestrator').length === before + 1,
+    `${inbox('orchestrator').length - before} written · ${r}`);
 }
 
 {
   const help = await capture(() => runPromptobusHelp());
-  check(': `send` is named nowhere a person would find it — help and the subcommand list',
-    !/\bsend <address>/.test(help) && !/status, send,/.test(help), help.slice(0, 200));
+  const unknown = await refuse(['nonsense']);
+  check(': `send` is named where a person would find it — help and the subcommand list',
+    /promptobus send <address> \(--body <text> \| --file <path>\)/.test(help)
+      && /status, send, done/.test(unknown.out),
+    `${help.slice(0, 200)} · ${unknown.out}`);
+}
+
+const lastIn = (task, addr) => {
+  const files = inbox2(task, addr).sort();
+  if (!files.length) return null;
+  return JSON.parse(readFileSync(path.join(HOME, 'tasks', task, 'inbox', addrDir(addr), files.at(-1)), 'utf8'));
+};
+
+// A participant bound by its lift: the record carries the session the lift wrote.
+const WORKER_SESSION = 'worker-bound-session';
+const BOUND = 'sendtest-bound-t20260926-000000';
+store.createTask(HOME, { id: BOUND, title: 'bound worker', owner: OWNER });
+store.upsertParticipant(HOME, BOUND, store.participantRecord('worker:bound', {
+  harness: 'claude', session: 'worker-b', sessionId: WORKER_SESSION,
+}));
+
+{
+  const r = await run(['send', 'orchestrator', '--body', 'from the bound worker', '--task', BOUND],
+    { CLAUDE_CODE_SESSION_ID: WORKER_SESSION, PROMPTOBUS_ROLE: 'worker:bound' });
+  check(': a participant whose record holds this session sends as it',
+    lastIn(BOUND, 'orchestrator')?.sender === addrDir('worker:bound') && /from worker:bound/.test(r),
+    `${JSON.stringify(lastIn(BOUND, 'orchestrator')?.sender)} · ${r}`);
+}
+
+{
+  const before = inbox2(BOUND, 'orchestrator').length;
+  const r = await refuse(['send', 'orchestrator', '--body', 'borrowed by the owner', '--task', BOUND],
+    { PROMPTOBUS_ROLE: 'worker:bound' });
+  check(': a declared role that disagrees with the record is refused, naming both',
+    r.failed === true
+      && /PROMPTOBUS_ROLE names «worker:bound», but that record of task \S+ is held by session worker-bound-session, and this one is orch-session; this session holds orchestrator there/.test(r.out)
+      && inbox2(BOUND, 'orchestrator').length === before,
+    `${r.failed} · ${inbox2(BOUND, 'orchestrator').length - before} written · ${r.out}`);
+}
+
+{
+  // A task with no owner has no provable orchestrator; a participant bound by its lift
+  // proves its own address, and that proof does not rest on the owner.
+  const OWNERLESS_BOUND = 'sendtest-ownerless-bound-t20260926-000000';
+  store.createTask(HOME, { id: OWNERLESS_BOUND, title: 'no owner, bound worker', owner: null });
+  store.upsertParticipant(HOME, OWNERLESS_BOUND, store.participantRecord('worker:three', {
+    harness: 'claude', sessionId: WORKER_SESSION,
+  }));
+  await run(['send', 'orchestrator', '--body', 'from a bound worker, no owner', '--task', OWNERLESS_BOUND],
+    { CLAUDE_CODE_SESSION_ID: WORKER_SESSION });
+  const asOrch = await refuse(['send', 'worker:three', '--body', 'no owner', '--task', OWNERLESS_BOUND],
+    { PROMPTOBUS_ROLE: 'orchestrator' });
+  check(': a task with no owner takes a bound participant\'s message and refuses the orchestrator address',
+    lastIn(OWNERLESS_BOUND, 'orchestrator')?.sender === addrDir('worker:three')
+      && asOrch.failed === true && /records no owner/.test(asOrch.out) && /no claim route/.test(asOrch.out)
+      && inbox2(OWNERLESS_BOUND, 'worker:three').length === 0,
+    `${JSON.stringify(lastIn(OWNERLESS_BOUND, 'orchestrator')?.sender)} · ${asOrch.out}`);
+}
+
+// One session, two tasks: `teamlead:x` in the parent, `orchestrator` in its own.
+const LEAD = 'teamlead-session';
+const PARENT = 'sendtest-parent-t20260926-000000';
+const CHILD = 'sendtest-child-t20260926-000000';
+store.createTask(HOME, { id: PARENT, title: 'parent', owner: 'parent-session' });
+store.upsertParticipant(HOME, PARENT, store.participantRecord('teamlead:x', { session: LEAD, sessionId: LEAD }));
+store.createTask(HOME, { id: CHILD, title: 'child', owner: LEAD });
+store.upsertParticipant(HOME, CHILD, store.participantRecord('worker:child', { harness: 'claude' }));
+
+{
+  await run(['send', 'orchestrator', '--type', 'status', '--body', 'parent status', '--task', PARENT],
+    { CLAUDE_CODE_SESSION_ID: LEAD });
+  await run(['send', 'worker:child', '--type', 'status', '--body', 'child status', '--task', CHILD],
+    { CLAUDE_CODE_SESSION_ID: LEAD });
+  check(': one session sends status in two tasks, and each message carries its sender for that task',
+    lastIn(PARENT, 'orchestrator')?.sender === addrDir('teamlead:x')
+      && lastIn(CHILD, 'worker:child')?.sender === 'orchestrator',
+    JSON.stringify({ parent: lastIn(PARENT, 'orchestrator')?.sender, child: lastIn(CHILD, 'worker:child')?.sender }));
+}
+
+{
+  // The declared role speaks about its declared task: on the other task the record decides,
+  // and with no declared task the hint is checked against the task the call names.
+  const leadEnv = { CLAUDE_CODE_SESSION_ID: LEAD, PROMPTOBUS_ROLE: 'orchestrator' };
+  const before = inbox2(PARENT, 'orchestrator').length;
+  const r = await run(['send', 'orchestrator', '--body', 'hint for the child', '--task', PARENT],
+    { ...leadEnv, PROMPTOBUS_TASK: CHILD });
+  const unscoped = await refuse(['send', 'orchestrator', '--body', 'hint with no task', '--task', PARENT], leadEnv);
+  check(': a declared role binds only its declared task — elsewhere the record decides',
+    /from teamlead:x/.test(r) && inbox2(PARENT, 'orchestrator').length === before + 1
+      && unscoped.failed === true && /belongs to session parent-session/.test(unscoped.out)
+      && /holds teamlead:x/.test(unscoped.out),
+    `${r} · ${unscoped.out}`);
+}
+
+// The MCP door asks the same resolution: `promptobus_send` from the lead's own server.
+const mcpSend = async (env, args) => {
+  const output = [];
+  await serve({
+    host,
+    env,
+    cwd: ROOT,
+    input: Readable.from([`${JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'promptobus_send', arguments: args },
+    })}\n`]),
+    output: { write: (chunk) => output.push(chunk) },
+  });
+  const answer = JSON.parse(output.join(''));
+  return { error: answer.result?.isError === true, text: answer.result?.content?.map((c) => c.text).join('\n') ?? '' };
+};
+
+{
+  const before = inbox2(PARENT, 'orchestrator').length;
+  const r = await mcpSend({
+    PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_ROLE: 'orchestrator', PROMPTOBUS_TASK: CHILD,
+    CLAUDE_CODE_SESSION_ID: LEAD,
+  }, { to: 'orchestrator', type: 'status', body: 'parent status over mcp', task: PARENT });
+  check(': promptobus_send resolves the sender per task — the lead writes to the parent as teamlead:x',
+    !r.error && lastIn(PARENT, 'orchestrator')?.sender === addrDir('teamlead:x')
+      && inbox2(PARENT, 'orchestrator').length === before + 1 && /address=teamlead:x/.test(r.text),
+    r.text);
+}
+
+{
+  const before = inbox('orchestrator').length;
+  const r = await mcpSend({
+    PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_ROLE: 'worker:one', PROMPTOBUS_TASK: TASK,
+    CLAUDE_CODE_SESSION_ID: OWNER,
+  }, { to: 'orchestrator', type: 'status', body: 'unbound over mcp' });
+  check(': promptobus_send refuses an unbound record too, naming the missing binding',
+    r.error && /«worker:one» of task \S+ carries no session binding/.test(r.text)
+      && inbox('orchestrator').length === before,
+    r.text);
+}
+
+{
+  // Two records held by one session in one task: the declared role picks the held one, on any task —
+  // it grants nothing there, it only names a record the session already proves.
+  const TWO = 'sendtest-two-t20260926-000000';
+  store.createTask(HOME, { id: TWO, title: 'two held addresses', owner: 'two-owner' });
+  for (const address of ['teamlead:y', 'peer:y']) {
+    store.upsertParticipant(HOME, TWO, store.participantRecord(address, { sessionId: LEAD }));
+  }
+  const unnamed = await refuse(['send', 'orchestrator', '--body', 'which one', '--task', TWO],
+    { CLAUDE_CODE_SESSION_ID: LEAD });
+  const r = await run(['send', 'orchestrator', '--body', 'as the peer', '--task', TWO],
+    { CLAUDE_CODE_SESSION_ID: LEAD, PROMPTOBUS_ROLE: 'peer:y', PROMPTOBUS_TASK: CHILD });
+  check(': a session holding two addresses in one task sends as the one its declared role names',
+    unnamed.failed === true && /holds teamlead:y and peer:y in task/.test(unnamed.out)
+      && lastIn(TWO, 'orchestrator')?.sender === addrDir('peer:y') && /from peer:y/.test(r),
+    `${unnamed.out} · ${JSON.stringify(lastIn(TWO, 'orchestrator')?.sender)} · ${r}`);
+}
+
+{
+  const file = path.join(ROOT, 'body.md');
+  writeFileSync(file, 'body from a file\n');
+  await run(['send', 'worker:one', '--file', file, '--task', TASK]);
+  const landed = last('worker:one');
+  const before = inbox('worker:one').length;
+  const both = await refuse(['send', 'worker:one', '--body', 'x', '--file', file, '--task', TASK]);
+  check(': --file reads the body from that file, and --body with --file is refused naming both',
+    landed?.body === 'body from a file\n'
+      && both.failed === true && /--body and --file/.test(both.out) && inbox('worker:one').length === before,
+    `${JSON.stringify(landed?.body)} · ${both.out}`);
 }

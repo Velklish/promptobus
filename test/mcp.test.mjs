@@ -24,7 +24,7 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 
 const {
-  addrDir, addressOf, createMcpServer, GateError, negotiateProtocol, openEngine, ORCHESTRATOR,
+  addrDir, addressOf, createMcpServer, GateError, holdsSession, negotiateProtocol, openEngine, ORCHESTRATOR,
   ownerOf, PromptobusError, readableName, roleOf, summarizeMessages, ADDR_MARK, MESSAGE_TYPES,
 } = await import('../dist/index.js');
 
@@ -126,6 +126,11 @@ const busService = {
   },
   send: (home, task, { from, to, type, body }) => at(home)
     .sendSync(task, { from: addrDir(from), to: [addrDir(to)], type, body }),
+  senderFor: (home, task, { session }) => {
+    const held = readTask(home, task).participants.filter((p) => holdsSession(p, session));
+    if (held.length !== 1) throw new GateError(`session ${session} holds ${held.length} records in task ${task}`);
+    return addressOf(held[0]);
+  },
   unreadNote: (home, task, addr) => {
     const n = at(home).unread(task, addrDir(addr));
     return n ? `your mailbox: unread ${n}` : null;
@@ -399,7 +404,7 @@ test('tools/call: mailbox returns what arrived and glues on the stalled diagnost
       name: 'promptobus_send',
       arguments: { to: 'orchestrator', type: 'status', body: 'взял в работу' },
     }),
-  ], { role: 'worker:cargos-api', session: 'session-worker' });
+  ], { role: 'worker:cargos-api', session: 'bg-42' });
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
   ]);
@@ -415,7 +420,7 @@ test('tools/call: an orchestrator mailbox with no session identity is a copy, an
       name: 'promptobus_send',
       arguments: { to: 'orchestrator', type: 'status', body: 'left for the owner' },
     }),
-  ], { role: 'worker:cargos-api', session: 'session-worker' });
+  ], { role: 'worker:cargos-api', session: 'bg-42' });
   const before = at(home).unread(TASK, addrDir('orchestrator'));
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
@@ -473,7 +478,7 @@ test('tools/call: a foreign session mailbox is a copy with a loud heading, origi
 // Worker mail to the orchestrator for the checks below; the id comes off the store, not the reply.
 async function statusFromWorker(body) {
   await talk([rpc(1, 'tools/call', { name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body } })],
-    { role: 'worker:cargos-api', session: 'session-worker' });
+    { role: 'worker:cargos-api', session: 'bg-42' });
   return at(home).glance(TASK, addrDir('orchestrator')).find((m) => m.body === body);
 }
 
