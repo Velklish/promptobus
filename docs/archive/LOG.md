@@ -386,3 +386,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-187.2"></a>`PB-187.2-codex-holder-refuses-a-named-hidden-model` · 2026-09-26 · completed · — · The holder's start-path model check refuses a named hidden model, and hidden-row retention has no live check
 - <a id="pb-264"></a>`PB-264-tmux-list-failure-minor-batch` · 2026-09-26 · completed · — · Minor batch: a tmux list-sessions failure other than no server is not an empty server
 - <a id="pb-239.5"></a>`PB-239.5-tmux-nonzero-list-reads-empty-server` · 2026-09-26 · batch PB-264 · — · A tmux list-sessions that fails for a reason other than no server still reads as an empty server
+- <a id="pb-243"></a>`PB-243-mailbox-delivery-cost` · 2026-09-26 · merged into PB-278 · — · Mail delivery to the orchestrator costs more than it carries
+- <a id="pb-179"></a>`PB-179-no-door-to-write-to-another-task` · 2026-09-26 · merged into PB-265 · — · A session cannot write to a participant of another task: its own address is nailed by its MCP config, and there is no `send` command
