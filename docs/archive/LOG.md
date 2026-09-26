@@ -369,3 +369,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-188.2"></a>`PB-188.2-probe-replacement-side` · 2026-09-26 · batch PB-256 · — · `--mutate` warns about the pattern and says nothing about the replacement, where three probes died
 - <a id="pb-241.1"></a>`PB-241.1-probe-reads-a-compile-error-as-red` · 2026-09-26 · batch PB-256 · — · npm run probe --run with a build step reads a compile error of the mutation as red
 - <a id="pb-178.2"></a>`PB-178.2-mailbox-no-identity-fetches-originals` · 2026-09-26 · completed · — · A mailbox call with no session identity fetches the originals, and that fail-open has to be removed.
+- <a id="pb-258"></a>`PB-258-codex-homes-sweep-by-one-registry` · 2026-09-26 · completed · — · A Codex lift sweeps the machine-wide participant homes root by its own registry — a scratch run or a standalone driver suite deletes the homes of live participants

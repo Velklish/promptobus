@@ -559,11 +559,40 @@ must print the path a real lift will use. It sits beside the other participant f
 the task store, so `done` sweeps it with them — by the address stem, without asking a
 driver.
 
-### `sweepParticipantHomes` — remove every home under the root that no session record names
+### `sweepParticipantHomes` — remove every home of this registry that no session record names
 
 Source: `lib/driver-codex.js`, `sweepParticipantHomes`.
 
-Remove every home under the root that no session record names.
+Remove every home of this registry that no session record names.
+
+The homes root is one directory, `$TMPDIR/promptobus-codex-homes`. A home is a direct child of it.
+`removeParticipantHome` still refuses anything that is not: the owner's `~/.codex`, a nested path,
+the root itself. The directory name ends with `_` and the sha1 of `path.resolve` of
+`harnessStateHome('codex', env)` — the environment variable first, otherwise the bound host's
+answer. `participantCodexHome`, `makeParticipantHome`, `sweepParticipantHomes` and
+`sweepParticipant` all take that suffix from one function. The readable head and the task-address
+hash are unchanged. `--dry-run` and a real lift both call `participantCodexHome`, so the printed
+path is the path that will be built. A sweep deletes a child only when that suffix is its own and
+no session record names the path. `makeParticipantHome` refuses a directory that does not carry it.
+The plan's home is named from the environment the lift will pass — the process environment
+overlaid with the host's extra environment.
+
+A second registry has a different suffix in the same directory. A lift under it reads that root and
+leaves the first registry's names in place, because the suffix is not its own. The same task and
+address under two registries are two directories. The key is `path.resolve` of the registry home,
+not its realpath: two spellings that do not fold are two registries, and neither sweep removes the
+other's homes.
+
+A home an older version left is a direct child of that same root with no `_` in the name: the older
+slug replaces every non-alphanumeric with `-`, so it cannot carry this suffix. A sweep cannot prove
+which registry made it, and does not remove it. The directory stays, credentials copy included, until
+an operator deletes it. Nothing in this version moves it or deletes it from the sweep. A session
+record that already stores that exact path still removes it when the record is dropped — the record
+is the proof, and the guard allows any direct child.
+
+When `harnessStateHome` refuses — no environment variable and no bound host — the sweep returns
+nothing and removes nothing. The lift already refuses on that same answer. Reading every child as
+an orphan would empty the root.
 
 A home holds a copy of the owner's credentials and the `http_headers` of the
 canonical MCP set in the clear, and the paths that remove one all need something to
@@ -587,7 +616,9 @@ Source: `lib/driver-codex.js`.
 
 The participant's isolated Codex home.
 
-One `CODEX_HOME` per participant, built before the lift and removed with the session.
+One `CODEX_HOME` per participant, a direct child of `$TMPDIR/promptobus-codex-homes` whose name
+ends with the registry suffix under `sweepParticipantHomes`, built before the lift and removed
+with the session. The same task and address under two registries are two directories.
 It is what makes a Codex participant's environment the mechanism's rather than the
 owner's: an empty home lifts no personal MCP server, and the `[projects]` records and
 the marketplace snapshot a run writes land in it instead of in `~/.codex` (measured on

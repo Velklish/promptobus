@@ -187,6 +187,8 @@ export interface SpawnContext {
   denyTools?: DriverDenyTool[] | null;
   /** Workspace settings addressed to the participant: the driver puts them in its file. */
   extraSettings?: Record<string, unknown>;
+  /** The environment the lift will pass. */
+  env?: Record<string, string | undefined>;
   /** The rest is the consumer's business: the driver reads only what the contract named. */
   [key: string]: unknown;
 }

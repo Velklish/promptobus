@@ -1168,7 +1168,7 @@ check('PB-161: a direct child of the homes root is removed',
 // symlink without a word, and a link aimed at the owner's home would have the mechanism
 // write its `config.toml` over theirs.
 const symVictim = path.join(SB, 'sym-victim-codex-home');
-const symHome = path.join(participantHomesRoot(), 'pb161-symlink-probe');
+const symHome = codexDriver.participantCodexHome({ task: 'pb161-symlink', address: 'probe' });
 mkdirSync(symVictim, { recursive: true });
 writeFileSync(path.join(symVictim, 'config.toml'), 'owner = "do not touch"\n');
 // The homes root is shared with every other run on this machine, so the probe clears
@@ -1188,18 +1188,19 @@ unlinkSync(symHome); // the link itself, not what it points at — rmSync calls 
 // A home nothing names is a home whose session is over. The sweep is what covers the
 // ways the record-bound removal cannot be reached: a holder killed outright, a lift
 // that died before writing its record, a task closed on a dead app-server.
-const orphanHome = path.join(participantHomesRoot(), 'pb161-orphan-probe');
+const emptyRegistry = { PROMPTOBUS_CODEX_HOME: path.join(SB, 'sweep-empty-registry') };
+const orphanHome = codexDriver.participantCodexHome({ task: 'pb161-orphan', address: 'probe' }, emptyRegistry);
 mkdirSync(orphanHome, { recursive: true });
 writeFileSync(path.join(orphanHome, 'auth.json'), '{"stub":"credentials"}\n', { mode: 0o600 });
-const sweptOrphans = sweepParticipantHomes({ PROMPTOBUS_CODEX_HOME: path.join(SB, 'sweep-empty-registry') });
+const sweptOrphans = sweepParticipantHomes(emptyRegistry);
 check('PB-161: a home no session record names is swept, credentials copy and all',
   sweptOrphans.includes(orphanHome) && !existsSync(orphanHome),
   JSON.stringify(sweptOrphans));
 
 // And the reverse, which is what makes the sweep safe to run at every lift: a home a
 // live record names is not touched by it.
-const liveHome = path.join(participantHomesRoot(), 'pb161-live-probe');
 const sweepRegistry = { PROMPTOBUS_CODEX_HOME: path.join(SB, 'sweep-live-registry') };
+const liveHome = codexDriver.participantCodexHome({ task: 'pb161-live', address: 'probe' }, sweepRegistry);
 mkdirSync(liveHome, { recursive: true });
 writeSession({ ref: 'pb161-live-ref', codexHome: liveHome, state: 'alive' }, sweepRegistry);
 const sweptBeside = sweepParticipantHomes(sweepRegistry);
@@ -1215,15 +1216,111 @@ check('PB-161: dropping the record drops the home it names',
 
 // `done` calls this for a participant whose session is dead, with or without a
 // worktree. A reviewer has none, and its home holds the same credentials copy.
-const sweptByTask = path.join(participantHomesRoot(), path.basename(
-  codexDriver.participantCodexHome({ task: 'pb161-sweep-task', address: 'reviewer:none' }),
-));
+const sweptByTask = codexDriver.participantCodexHome(
+  { task: 'pb161-sweep-task', address: 'reviewer:none' },
+  sweepRegistry,
+);
 mkdirSync(sweptByTask, { recursive: true });
 check('PB-161: a closed participant with no session record is swept by task and address',
   codexDriver.sweepParticipant({ metadata: { address: 'reviewer:none' } }, 'pb161-sweep-task', sweepRegistry) === true
   && !existsSync(sweptByTask)
   && codexDriver.sweepParticipant({ metadata: {} }, 'pb161-sweep-task', sweepRegistry) === false,
   sweptByTask);
+
+// Two registries, one homes root, the process TMPDIR — not a diverted one per registry.
+// The sweep a lift runs is `sweepParticipantHomes`. An older flat name has no registry suffix.
+const registryEnvA = { PROMPTOBUS_CODEX_HOME: path.join(SB, 'registry-a') };
+const registryEnvB = { PROMPTOBUS_CODEX_HOME: path.join(SB, 'registry-b') };
+const homeA = codexDriver.participantCodexHome({ task: 'registry-a', address: 'worker:a' }, registryEnvA);
+const homeB = codexDriver.participantCodexHome({ task: 'registry-b', address: 'worker:b' }, registryEnvB);
+const sameA = codexDriver.participantCodexHome({ task: 'shared-task', address: 'worker:one' }, registryEnvA);
+const sameB = codexDriver.participantCodexHome({ task: 'shared-task', address: 'worker:one' }, registryEnvB);
+const orphanOfA = codexDriver.participantCodexHome({ task: 'registry-a', address: 'orphan' }, registryEnvA);
+const orphanOfB = codexDriver.participantCodexHome({ task: 'registry-b', address: 'orphan' }, registryEnvB);
+const oldFlat = path.join(participantHomesRoot(), 'old-flat-no-registry-key');
+for (const dir of [homeA, homeB, orphanOfA, orphanOfB, oldFlat]) mkdirSync(dir, { recursive: true });
+writeFileSync(path.join(homeA, 'auth.json'), '{"stub":"a"}\n', { mode: 0o600 });
+writeFileSync(path.join(oldFlat, 'auth.json'), '{"stub":"old"}\n', { mode: 0o600 });
+writeSession({ ref: 'registry-a-live', codexHome: homeA, state: 'alive' }, registryEnvA);
+writeSession({ ref: 'registry-b-live', codexHome: homeB, state: 'alive' }, registryEnvB);
+const sweptByB = sweepParticipantHomes(registryEnvB);
+const sweptUndeclared = sweepParticipantHomes({});
+check('PB-258: the lift\'s sweep under one registry leaves the other registry\'s home and an older flat home',
+  path.dirname(homeA) === participantHomesRoot()
+  && path.dirname(homeB) === participantHomesRoot()
+  && participantHomesRoot() === path.join(tmpdir(), 'promptobus-codex-homes')
+  && homeA !== homeB
+  && sameA !== sameB
+  && path.dirname(sameA) === participantHomesRoot()
+  && path.dirname(sameB) === participantHomesRoot()
+  && sweptByB.includes(orphanOfB) && !existsSync(orphanOfB)
+  && !sweptByB.includes(homeA) && existsSync(homeA)
+  && !sweptByB.includes(orphanOfA) && existsSync(orphanOfA)
+  && !sweptByB.includes(homeB) && existsSync(homeB)
+  && !sweptByB.includes(oldFlat) && existsSync(oldFlat)
+  && readFileSync(path.join(homeA, 'auth.json'), 'utf8') === '{"stub":"a"}\n'
+  && readFileSync(path.join(oldFlat, 'auth.json'), 'utf8') === '{"stub":"old"}\n'
+  && sweptUndeclared.length === 0
+  && existsSync(homeA) && existsSync(oldFlat),
+  JSON.stringify({ sweptByB, sweptUndeclared, homeA, homeB, oldFlat }));
+dropSession('registry-a-live', registryEnvA);
+dropSession('registry-b-live', registryEnvB);
+rmSync(orphanOfA, { recursive: true, force: true });
+rmSync(oldFlat, { recursive: true, force: true });
+
+const foreignHome = codexDriver.participantCodexHome({ task: 'guard-foreign', address: 'probe' }, registryEnvA);
+const bareHome = path.join(participantHomesRoot(), 'no-suffix');
+rmSync(foreignHome, { recursive: true, force: true });
+rmSync(bareHome, { recursive: true, force: true });
+const foreignRefusal = thrown(() => makeParticipantHome({
+  dir: foreignHome, env: registryEnvB, ownerHome: callerCodexHome,
+}));
+const bareRefusal = thrown(() => makeParticipantHome({
+  dir: bareHome, env: registryEnvA, ownerHome: callerCodexHome,
+}));
+check('PB-258: the lift refuses a home of another registry and a home with no suffix',
+  foreignRefusal.threw && /not a home of this registry/.test(foreignRefusal.msg)
+  && bareRefusal.threw && /not a home of this registry/.test(bareRefusal.msg)
+  && !existsSync(foreignHome) && !existsSync(bareHome),
+  JSON.stringify({ foreignRefusal, bareRefusal, foreignHome, bareHome }));
+rmSync(foreignHome, { recursive: true, force: true });
+rmSync(bareHome, { recursive: true, force: true });
+
+const plannedForB = codexDriver.prepare({
+  ...ctx, task: 'plan-env', address: 'worker:plan', env: registryEnvB,
+});
+check('PB-258: the lift plan names the home of the environment it is given',
+  plannedForB.codexHome === codexDriver.participantCodexHome(
+    { task: 'plan-env', address: 'worker:plan' }, registryEnvB,
+  )
+  && plannedForB.codexHome !== codexDriver.participantCodexHome(
+    { task: 'plan-env', address: 'worker:plan' }, registryEnvA,
+  ),
+  plannedForB.codexHome);
+
+const hostOrEnv = path.join(SB, 'host-or-env-registry');
+const byEnv = codexDriver.participantCodexHome(
+  { task: 'host-or-env', address: 'worker:one' },
+  { PROMPTOBUS_CODEX_HOME: hostOrEnv },
+);
+const savedCodexHome = process.env.PROMPTOBUS_CODEX_HOME;
+delete process.env.PROMPTOBUS_CODEX_HOME;
+bindHarnessHomes(null);
+bindHarnessHomes({ harnessStateHome: (harness) => (harness === 'codex' ? hostOrEnv : null) });
+let byHost = '';
+let sweptByHost = [];
+try {
+  byHost = codexDriver.participantCodexHome({ task: 'host-or-env', address: 'worker:one' }, {});
+  mkdirSync(byHost, { recursive: true });
+  sweptByHost = sweepParticipantHomes({});
+} finally {
+  bindHarnessHomes(null);
+  if (savedCodexHome === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
+  else process.env.PROMPTOBUS_CODEX_HOME = savedCodexHome;
+}
+check('PB-258: a host-named registry and the same path in the env var give the same home',
+  byEnv === byHost && sweptByHost.includes(byHost) && !existsSync(byHost),
+  JSON.stringify({ byEnv, byHost, sweptByHost }));
 
 // The trust key measured on codex-cli 0.146.0: the RESOLVED spelling is trusted and
 // the unresolved one is not, so a link in the path is the case that decides it. A
