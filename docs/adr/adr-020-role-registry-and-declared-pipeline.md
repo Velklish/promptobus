@@ -1,8 +1,8 @@
 # ADR-020: Roles and steps come from one registry, and the delivery pipeline is declared
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-26
-**Deciders:** the owner, in the planning dialogue of 2026-09-26. The text is drafted by the planning session and is not yet reviewed by the owner; the status turns Accepted when PB-273 and PB-274 land.
+**Deciders:** the owner, in the planning dialogue of 2026-09-26.
 
 ## Context
 

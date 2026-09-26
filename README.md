@@ -18,8 +18,8 @@ English is canonical. The Russian README is the only other language in this repo
 
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. A task may have a root parent; `status` shows its children and `done` waits for each child to close. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
-- **Isolated review.** `promptobus review` starts a read-only reviewer on a snapshot of the diff; findings come back on the bus, and a repeat call sends the same reviewer a fresh snapshot.
-- **Addressed acceptance.** `approver:<slug>` is a fourth participant, lifted with `promptobus review <path> --task <id> --approver` once a reviewer result is on record. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to workers in that task only while the calling session holds it, and the canonical exchange stays in the task journal.
+- **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate after the required earlier results are on record. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
+- **Addressed acceptance.** `review <path> --task <id> --approver` lifts the first `writes-main-tree` gate after the preceding participant and owner have reported. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to workers in that task only while the calling session holds it, and the canonical exchange stays in the task journal.
 - **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
 - **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread, or while an answer the participant owes has not been sent — and a warden wakes the addressee when mail arrives. Which types ask for an answer is a published table, and `status` prints `UNANSWERED` for a turn that ended owing one.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
@@ -115,7 +115,13 @@ Ask for an independent reading of the diff:
 promptobus review ./my-repo --title "Review the rename"
 ```
 
-The path is required, `--title` opens a new review task, and `--task <id>` sends a new snapshot to a reviewer that is already up. Close the task when the work is accepted:
+The path is required, `--title` opens a new review task, and `--task <id>` sends a new snapshot to a reviewer that is already up. On a declared pipeline, lift a gate by name after its predecessor reports:
+
+```bash
+promptobus step security ./my-repo --task <id>
+```
+
+Close the task when the work is accepted:
 
 ```bash
 promptobus done
@@ -130,7 +136,8 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | Command | What it does |
 |---|---|
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
-| `promptobus review <path>` | Start a read-only reviewer on a snapshot of the diff. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
+| `promptobus step <name> <path> --task <id>` | Lift the named declared gate when the preceding participant's result is on record for this subject; a main-tree writer also needs the owner's result. `--base <ref>`, `--brief <file>` for a writer, routing flags, `--dry-run` |
+| `promptobus review <path>` | Lift the first `reads-diff` gate on a snapshot of the diff; `--approver` selects the first `writes-main-tree` gate. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | The machine lease, then active roots with their child tasks: participants, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus send <address>` | Write one message as the address this session holds in the task; `--body` or `--file`, `--type`, `--task`, `--artifact`. There is no `--from` |
@@ -152,7 +159,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 
 | Tool | Input | Does |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message; `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>` or `approver:<slug>`. The sender is the address this session holds in that task |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message to an address in the declared pipeline or `orchestrator`. The tool description lists the installation's active steps. The sender is the address this session holds in that task |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Without `message` it lists headers and marks them read; with `message` it returns that one body and marks nothing. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 

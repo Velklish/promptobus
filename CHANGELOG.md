@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
+  when the preceding participant's result is recorded for that subject and current assignment; a
+  `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the
+  first gate of their kinds and print its name. The MCP send description and address refusals list
+  the active pipeline rather than omitted shipped gates. [03-cli § Review](docs/reference/03-cli.md#review),
+  [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
+
 - **The Codex Stop hook is observed on completed worker and reviewer turns** (PB-185.2). On
   codex-cli 0.156.1, each holder journal records the participant's own `Stop` hook starting and
   completing before `turn/completed`; the worker uses its isolated home file and the reviewer uses

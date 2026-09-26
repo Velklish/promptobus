@@ -405,3 +405,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-263.1"></a>`PB-263.1-no-effort-figure-on-ladder-without-max` · 2026-09-27 · completed · — · A no-effort figure has no landing rung on a ladder without `max`
 - <a id="pb-178.1"></a>`PB-178.1-mcp-child-has-no-session-identity` · 2026-09-27 · completed · — · A Cursor or Codex MCP child has no harness identity, so the mailbox copy is not what that session receives.
 - <a id="pb-185.2"></a>`PB-185.2-codex-stop-hook-unobserved` · 2026-09-27 · completed · — · Observe the Codex Stop hook on a turn that needs no follow-up
+- <a id="pb-274"></a>`PB-274-step-lift` · 2026-09-27 · completed · — · promptobus step lifts a gate step by name on a machine precondition; review and review --approver become its aliases
+- <a id="pb-273.1"></a>`PB-273.1-declared-step-undiscoverable` · 2026-09-27 · batch PB-274 · — · A declared step parses and routes, but no tool description or refusal list names it

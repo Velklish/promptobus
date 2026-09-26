@@ -57,6 +57,8 @@ export interface RoleEntry {
 /** A registry value: governance roles first, then the steps in pipeline order. Never mutated. */
 export interface RoleRegistry {
   readonly entries: readonly RoleEntry[];
+  /** Declared names plus the worker address used by spawn; absent on the shipped registry. */
+  readonly activeSteps?: readonly string[];
 }
 
 /** A step a declaration names. */
@@ -135,19 +137,28 @@ export function withSteps(registry: RoleRegistry, declared: readonly DeclaredSte
 
 /** The registry a host declares; the shipped one while it declares no pipeline, or when there is no host. */
 export function registryOf(host: PromptobusHost | null | undefined): RoleRegistry {
-  return withSteps(SHIPPED_REGISTRY, host?.pipeline?.() ?? []);
+  const declared = host?.pipeline?.();
+  if (!declared) return SHIPPED_REGISTRY;
+  const registry = withSteps(SHIPPED_REGISTRY, declared);
+  const active = declared.map((step) => step.name);
+  if (!active.includes(WORKER)) active.unshift(WORKER);
+  return Object.freeze({ ...registry, activeSteps: Object.freeze(active) });
 }
 
 /** Whether the registry admits an address: the grammar holds and its role is one of the entries. */
 export function admitsAddress(registry: RoleRegistry, address: unknown): boolean {
   if (typeof address !== 'string' || !ADDRESS_RE.test(address)) return false;
   const at = address.indexOf(':');
-  return roleEntry(registry, at < 0 ? address : address.slice(0, at))?.slug === at >= 0;
+  const name = at < 0 ? address : address.slice(0, at);
+  const entry = roleEntry(registry, name);
+  return entry?.slug === (at >= 0)
+    && (entry?.layer !== 'step' || !registry.activeSteps || registry.activeSteps.includes(name));
 }
 
 /** The addressees of one pipeline: its orchestrator and every step. */
 export function pipelineAddressNames(registry: RoleRegistry): string[] {
-  return [ORCHESTRATOR, ...registry.entries.filter((e) => e.layer === 'step').map((e) => e.name)];
+  return [ORCHESTRATOR, ...(registry.activeSteps
+    ?? registry.entries.filter((e) => e.layer === 'step').map((e) => e.name))];
 }
 
 /** The address list the texts print: `orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>`. */

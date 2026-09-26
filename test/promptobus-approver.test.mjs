@@ -86,6 +86,19 @@ const worker = store.participantRecord('worker:cargos-api', {
 });
 store.upsertParticipant(HOME, TASK, worker);
 const assignedAt = '2026-09-13T12:00:00.000Z';
+function recordOwnerResult(home, task, repo, slug = 'cargos-api') {
+  const address = `worker:${slug}`;
+  const existing = store.participantOf(store.readTask(home, task), address);
+  store.upsertParticipant(home, task, store.participantRecord(address, {
+    ...(existing?.metadata ?? {}),
+    harness: existing?.harness ?? 'claude',
+    worktree: repo,
+    started: assignedAt,
+  }));
+  store.sendMessage(home, task, {
+    from: address, to: store.ORCHESTRATOR, type: 'result', body: 'owner done',
+  });
+}
 const reviewer = store.participantRecord('reviewer:cargos-api', {
   harness: 'claude',
   repo: 'repos/loads_search/cargos-api',
@@ -103,6 +116,7 @@ store.upsertParticipant(HOME, TASK, {
     sessionId: '00000000-0000-4000-8000-000000000002',
   },
 });
+recordOwnerResult(HOME, TASK, REPO);
 
 check(': reviewerResultSent is false before any reviewer result',
   reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', reviewer) === false,
@@ -156,6 +170,7 @@ store.createTask(HOME, {
   adapter: { slug: 'pb235', stamp: 't20260925-154900' },
   participants: [],
 });
+recordOwnerResult(HOME, HARNESS_TASK, REPO);
 store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:cargos-api', {
   harness: 'claude',
   repo: 'repos/loads_search/cargos-api',
@@ -192,7 +207,7 @@ g(OTHER_REPO, 'commit', '-m', 'init', '-q');
 const wrongRepoPlan = thrown(() => planApprover(WS, { target: OTHER_REPO, task: TASK, dryRun: true }));
 check(': same slug at a different repository refuses before lift',
   wrongRepoPlan.threw
-  && /recorded at/.test(wrongRepoPlan.msg)
+  && /recorded subject/.test(wrongRepoPlan.msg)
   && wrongRepoPlan.msg.includes(REPO),
   wrongRepoPlan.msg);
 
@@ -204,6 +219,7 @@ store.createTask(HOME, {
   adapter: { slug: 'pb2065', stamp: 't20260913-120004' },
   participants: [],
 });
+recordOwnerResult(HOME, WRONG_REUSE_TASK, OTHER_REPO);
 store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('reviewer:cargos-api', {
   harness: 'claude',
   repo: 'repos/other/cargos-api',
@@ -350,8 +366,8 @@ const noReviewer = thrown(() => planApprover(WS, {
 check(': no such reviewer names the passed path and that the task has no reviewer',
   noReviewer.threw
   && noReviewer.msg.includes(REPO)
-  && /this task records no reviewer/.test(noReviewer.msg)
-  && /piece a reviewer already read/.test(noReviewer.msg),
+  && /type=result message from reviewer:cargos-api/.test(noReviewer.msg)
+  && /no participant is recorded/.test(noReviewer.msg),
   noReviewer.msg);
 const refusedBriefs = existsSync(store.filesDir(HOME, NO_REVIEWER))
   ? readdirSync(store.filesDir(HOME, NO_REVIEWER)).filter((name) => name.startsWith('brief-'))
@@ -503,6 +519,7 @@ store.createTask(HOME, {
   adapter: { slug: 'pb2065', stamp: 't20260913-120003' },
   participants: [],
 });
+recordOwnerResult(HOME, REUSE_TASK, REPO);
 store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('reviewer:cargos-api', {
   harness: 'claude',
   repo: 'repos/loads_search/cargos-api',
@@ -619,11 +636,10 @@ store.sendMessage(HOME, OWNERLESS, {
   type: 'result',
   body: 'review done',
 });
-const ownerlessPlan = planApprover(WS, { target: REPO, task: OWNERLESS, dryRun: true });
-check(': ownerless approver prompt routes through the orchestrator, not worker null',
-  !ownerlessPlan.prompt.includes('null')
-  && ownerlessPlan.prompt.includes('route participant traffic through the orchestrator'),
-  ownerlessPlan.prompt);
+const ownerlessPlan = thrown(() => planApprover(WS, { target: REPO, task: OWNERLESS, dryRun: true }));
+check(': an ownerless piece cannot lift a writes-main-tree gate',
+  ownerlessPlan.threw && /type=result message from worker:cargos-api/.test(ownerlessPlan.msg),
+  ownerlessPlan.msg);
 
 function mcpSend(role, sendArgs, { home = HOME, task = TASK, cwd = WS, env = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -718,6 +734,7 @@ store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('worker:wa
   worktree: LIVE_WT,
   sessionId: '00000000-0000-4000-8000-000000000099',
 }));
+recordOwnerResult(LIVE_HOME, LIVE_TASK, LIVE_WT, 'warden');
 
 const LIVE_BIN = path.join(LIVE, 'bin');
 mkdirSync(LIVE_BIN, { recursive: true });
@@ -777,9 +794,8 @@ const wrongSubject = thrown(() => planApprover(LIVE_WS, { target: LIVE_REPO, tas
 check(': a clone-root approver lift names the path it got and the reviewer subject that would work',
   wrongSubject.threw
   && wrongSubject.msg.includes(LIVE_REPO)
-  && wrongSubject.msg.includes(`reviewer:warden lifted from ${LIVE_WT}`)
-  && /reviewer:promptobus/.test(wrongSubject.msg)
-  && /piece a reviewer already read/.test(wrongSubject.msg),
+  && wrongSubject.msg.includes(`reviewer:promptobus`)
+  && /no participant is recorded/.test(wrongSubject.msg),
   wrongSubject.msg);
 
 const BRIEF_TASK = 'pb250-brief';
@@ -799,6 +815,7 @@ store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('worker:w
   branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
+recordOwnerResult(LIVE_HOME, BRIEF_TASK, LIVE_WT, 'warden');
 store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('reviewer:warden', {
   harness: 'claude',
   repo: 'repos/external/promptobus',
@@ -845,7 +862,7 @@ const refusedNames = readdirSync(store.filesDir(LIVE_HOME, BRIEF_TASK)).filter((
 check(': a refused approver lift after a kept brief does not write another copy',
   refusedSubject.status !== 0
   && refusedSubject.stderr.includes(LIVE_REPO)
-  && refusedSubject.stderr.includes(LIVE_WT)
+  && refusedSubject.stderr.includes('reviewer:promptobus')
   && refusedNames.join(',') === 'brief-approver-warden.md,brief-warden.md'
   && readFileSync(workerBrief, 'utf8') === 'the worker assignment\n',
   `${refusedSubject.status} ${refusedSubject.stderr} names=${refusedNames.join(',')}`);
@@ -864,6 +881,7 @@ store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('worker:wa
   branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
+recordOwnerResult(LIVE_HOME, FAIL_TASK, LIVE_WT, 'warden');
 store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('reviewer:warden', {
   harness: 'claude',
   repo: 'repos/external/promptobus',
@@ -988,6 +1006,7 @@ store.createTask(HOME, {
   adapter: { slug: 'pb2065', stamp: 't20260913-170100' },
   participants: [],
 });
+recordOwnerResult(HOME, ULTRA_TASK, REPO);
 store.upsertParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:cargos-api', {
   harness: 'claude',
   repo: 'repos/loads_search/cargos-api',

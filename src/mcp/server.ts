@@ -4,9 +4,10 @@ import {
   GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
-import { MCP_TOOLS } from './tools.js';
+import { mcpTools } from './tools.js';
 import { pipelineOf } from '../pipeline.js';
-import type { DeclaredStep } from '../registry.js';
+import { SHIPPED_REGISTRY } from '../registry.js';
+import type { DeclaredStep, RoleRegistry } from '../registry.js';
 import type { PromptobusService } from './service.js';
 import {
   ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessage, renderMessages, renderTask,
@@ -70,6 +71,8 @@ export interface McpOutput {
 export interface McpOptions {
   /** Store operations. Passed explicitly — the factory does not supply a default of its own. */
   service: PromptobusService;
+  /** The host's registry value for the addresses this server advertises. */
+  registry?: RoleRegistry;
   /** Protocol versions the server serves. The first is its latest. */
   protocolVersions: string[];
   /** Process identity. A callback, not a value: only the adapter reads the environment. */
@@ -116,9 +119,10 @@ export function createMcpServer(options: McpOptions): {
   serve: (streams: { input: McpInput; output: McpOutput }) => Promise<void>;
 } {
   const {
-    service, protocolVersions, resolveIdentity, serverInfo,
+    service, registry = SHIPPED_REGISTRY, protocolVersions, resolveIdentity, serverInfo,
     onJoin, decorateParticipant, pipeline, stalls, errorText,
   } = options;
+  const tools = mcpTools(registry);
   // An empty version list is a refusal here, at create, not `undefined` in the
   // reply to the first `initialize`: `negotiateProtocol` takes `versions[0]`
   // as its latest, and a server with no version at all would tell the client
@@ -291,7 +295,7 @@ export function createMcpServer(options: McpOptions): {
   // The allowed keys come from the DECLARATION, not a second list: a handler list would
   // drift from the schema, and the drift is invisible until a key is dropped in silence.
   function requireDeclaredArgs(name: string, args: Record<string, unknown>): void {
-    const schema = MCP_TOOLS.find((t) => t.name === name)?.inputSchema;
+    const schema = tools.find((t) => t.name === name)?.inputSchema;
     if (schema?.additionalProperties !== false) return;
     const known = Object.keys(schema.properties ?? {});
     const extra = Object.keys(args).filter((key) => !known.includes(key));
@@ -346,7 +350,7 @@ export function createMcpServer(options: McpOptions): {
       case 'ping':
         return { jsonrpc: '2.0', id, result: {} };
       case 'tools/list':
-        return { jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } };
+        return { jsonrpc: '2.0', id, result: { tools } };
       case 'tools/call': {
         const name = params?.name as string;
         try {

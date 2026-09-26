@@ -14,7 +14,7 @@ const SCHEMAS = path.join(ROOT, 'schemas');
 const readJson = (rel) => JSON.parse(readFileSync(path.join(SCHEMAS, rel), 'utf8'));
 
 const bus = await import('../dist/index.js');
-const { MCP_TOOLS } = await import('../dist/mcp/tools.js');
+const { mcpTools } = await import('../dist/mcp/tools.js');
 const store = await import('../lib/store.js');
 const { hostOf } = await import('../lib/host.js');
 const { refuseParticipantPrefix } = await import('../lib/spawn.js');
@@ -24,7 +24,11 @@ const { serviceFor } = await import('../lib/server.js');
 const catalog = await import('../lib/model-routing/catalog.js');
 
 const SHIPPED = bus.SHIPPED_REGISTRY;
-const STEPS = [{ name: 'security', kind: bus.READS_DIFF }, { name: 'merge', kind: bus.WRITES_MAIN_TREE }];
+const STEPS = [
+  { name: 'worker', kind: bus.EDITS_TREE },
+  { name: 'security', kind: bus.READS_DIFF },
+  { name: 'merge', kind: bus.WRITES_MAIN_TREE },
+];
 const SB = makeSandbox('promptobus-test-registry-');
 const WS = path.join(SB, 'ws');
 writeHostConfig(WS);
@@ -101,7 +105,7 @@ test('every schema role enum and address pattern agrees with the shipped registr
 
 test('the shipped texts print the shipped list, byte for byte', () => {
   const list = bus.addressList(SHIPPED);
-  const send = MCP_TOOLS.find((t) => t.name === 'promptobus_send');
+  const send = mcpTools(SHIPPED).find((t) => t.name === 'promptobus_send');
   assert.ok(send.description.includes(`Address: ${list}.`), send.description);
   assert.equal(send.inputSchema.properties.to.description, `recipient address: ${list}`);
   assert.ok(helpText(PLAIN).includes('[--role <worker|reviewer|approver|step-name>]'));
@@ -142,7 +146,7 @@ test('a host that declares no pipeline, or no host, answers the shipped registry
     const model = SHIPPED.entries.find((m) => m.layer === 'step' && m.kind === kind);
     assert.deepEqual(
       [e.kind, e.slug, e.stem, e.deny, e.hostDenyRole, e.floor, e.catalogRole, e.routed, e.lift],
-      [kind, true, 'prefixed', model.deny, model.hostDenyRole, model.floor, model.catalogRole, model.routed, model.lift],
+      [kind, true, name === 'worker' ? 'slug' : 'prefixed', model.deny, model.hostDenyRole, model.floor, model.catalogRole, model.routed, model.lift],
       name,
     );
   }
@@ -158,7 +162,8 @@ test('the grammar admits every entry of any registry without an edit, and the re
     assert.equal(bus.addrDir(address), e.slug ? `${e.name}-x-1` : e.name);
     if (e.slug) assert.equal(bus.participantFileStem(address), e.stem === 'slug' ? 'x-1' : `${e.name}-x-1`);
     else assert.throws(() => bus.participantFileStem(address), new RegExp(e.name));
-    assert.ok(bus.admitsAddress(REG, address), `${address} is admitted by the declaring registry`);
+    const active = e.layer !== 'step' || STEPS.some((step) => step.name === e.name);
+    assert.equal(bus.admitsAddress(REG, address), active, `${address} admission follows the active pipeline`);
   }
   assert.ok(bus.isAddress('boss:x') && !bus.admitsAddress(REG, 'boss:x'), 'an undeclared step parses and is not admitted');
   assert.ok(!bus.admitsAddress(SHIPPED, 'security:x'), 'a declared step is unknown to the shipped registry');
@@ -176,7 +181,11 @@ test('every entry passes through the reserved worker names, the record write, th
     } else {
       assert.equal(refuseParticipantPrefix('x-1', 'route', REG), 'x-1');
     }
-    assert.equal(store.participantRecord(address, {}, REG).role, e.name);
+    if (e.layer !== 'step' || STEPS.some((step) => step.name === e.name)) {
+      assert.equal(store.participantRecord(address, {}, REG).role, e.name);
+    } else {
+      assert.throws(() => store.participantRecord(address, {}, REG), /invalid participant address/);
+    }
     const tools = ['Edit', 'Bash'];
     assert.equal(bus.packageDenyTools(REG, e.name, tools) === tools, e.deny === 'write-tools', e.name);
     assert.equal(bus.defaultFloor(REG, e.name), e.floor, e.name);
@@ -202,7 +211,11 @@ test('the host-bearing doors follow the host\'s registry: identity, the MCP send
   assert.ok(send(DECLARING, 'security:x').message.id, 'a declared step receives mail');
   assert.throws(() => send(PLAIN, 'security:x'), /unknown recipient address "security:x"/);
   assert.throws(() => send(DECLARING, 'boss:x'), (e) => e.message.endsWith(`"boss:x" — ${bus.addressList(REG)}`));
-  assert.equal(bus.addressList(REG), 'orchestrator, worker:<slug>, reviewer:<slug>, approver:<slug>, security:<slug> or merge:<slug>');
+  assert.equal(bus.addressList(REG), 'orchestrator, worker:<slug>, security:<slug> or merge:<slug>');
+  const declaredSend = mcpTools(REG).find((tool) => tool.name === 'promptobus_send');
+  assert.ok(declaredSend.description.includes(`Address: ${bus.addressList(REG)}.`));
+  assert.equal(declaredSend.inputSchema.properties.to.description, `recipient address: ${bus.addressList(REG)}`);
+  assert.ok(!declaredSend.description.includes('reviewer:<slug>'));
 });
 
 test('the record-bearing surfaces stay on the shipped step names until rights are keyed by kind', () => {

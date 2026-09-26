@@ -464,12 +464,13 @@ entry, `worker` included, in the `<name>-` shape — `reviewer-two:x` and `revie
 `worker-foo:x` and `worker:foo-x`, would share one participant id (`addrDir`), one mailbox and one
 file stem. An admitted step's stem is
 `<name>-<slug>` and its fields are its kind's. `registryOf(host)` is `withSteps` over the host's
-optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)). The standalone host
+optional `pipeline()` member ([02-host](02-host.md#what-the-host-must-answer)). Its value also keeps the active step names in declaration order and the `worker` address used by `spawn` when the declaration renames its owner. Address admission and refusal lists use those names, so a shipped gate omitted by a declaration is not offered as a recipient. The standalone host
 answers it from the `pipeline` key of `promptobus.json` and omits it when the key is absent, so a
 host without a declaration hands over the shipped registry
 ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)). It is computed per call,
 and the package keeps no table of its own that anything writes into. A declared step is listed after
-the shipped ones, and a shipped step the declaration leaves out stays: the order of a pipeline is
+the shipped ones. A shipped gate left out of a declaration stays in the registry as an inactive
+entry, while address admission and refusal lists follow the declaration plus the `worker` owner address. Pipeline order is
 `pipelineOf(host)`, not the registry's.
 
 **The grammar needs no registry.** `isAddress`, `roleOf`, `addrDir` and `participantFileStem`
@@ -485,9 +486,8 @@ the role `participantDenyTools` is asked with (`lib/review.js`, `lib/approver.js
 worker names (`refuseParticipantPrefix`), the participant records the three lifts write, the lift
 words — a step is announced with its kind's words, `the reviewer` for a `reads-diff` step —
 (`lib/liftoff.js` and the Cursor and Codex drivers), the `models --role` help, and the doors
-above with their address lists. The shipped one, for what no declaration changes: `ROUTED_ROLES`,
-the default floors and `DEFAULT_ROLE`, the grammar, the `promptobus_send` description, and the
-address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
+above with their address lists. The MCP `promptobus_send` description and its `to` schema are built from that same host registry when the server is constructed. The shipped one, for what no declaration changes: `ROUTED_ROLES`,
+the default floors and `DEFAULT_ROLE`, the grammar, and the address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
 
 **What a kind does not carry yet.** The behaviour that differs by role compares the shipped step
 names, so a declared step inherits the fields above and none of these rights: the routing policy

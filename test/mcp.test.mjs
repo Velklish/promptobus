@@ -25,7 +25,7 @@ import test from 'node:test';
 
 const {
   addrDir, addressOf, createMcpServer, GateError, holdsSession, negotiateProtocol, openEngine, ORCHESTRATOR,
-  ownerOf, PromptobusError, readableName, roleOf, summarizeMessages, ADDR_MARK, MESSAGE_TYPES,
+  ownerOf, PromptobusError, readableName, registryOf, roleOf, summarizeMessages, ADDR_MARK, MESSAGE_TYPES,
 } = await import('../dist/index.js');
 
 // **The service is passed to the factory, and it has no default**: half the list
@@ -370,6 +370,19 @@ test('notifications/initialized gets no reply, and ping — an empty result', as
 test('tools/list matches the live v0.61.0 server snapshot — to the character', async () => {
   const { responses } = await talk([rpc(1, 'tools/list', {})]);
   assert.deepEqual(responses[0].result.tools, expectedTools());
+});
+
+test('tools/list names only recipients in the registry handed to this server', async () => {
+  const registry = registryOf({ pipeline: () => [
+    { name: 'worker', kind: 'edits-tree' },
+    { name: 'security', kind: 'reads-diff' },
+  ] });
+  const { responses } = await talk([rpc(1, 'tools/list', {})], { options: { registry } });
+  const send = responses[0].result.tools.find((tool) => tool.name === 'promptobus_send');
+  assert.match(send.description, /security:<slug>/);
+  assert.doesNotMatch(send.description, /reviewer:<slug>|approver:<slug>/);
+  assert.match(send.inputSchema.properties.to.description, /security:<slug>/);
+  assert.doesNotMatch(send.inputSchema.properties.to.description, /reviewer:<slug>|approver:<slug>/);
 });
 
 test('the send schema requires to/type/body and knows the v1 protocol types', async () => {
