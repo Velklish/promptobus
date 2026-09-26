@@ -95,6 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Codex config refuses before lift. [03-cli § Review](docs/reference/03-cli.md#review),
   [ADR-024](docs/adr/adr-024-approver-acceptance-in-own-worktree.md).
 
+- **A no-effort figure has a defined rung only when the catalog can justify one** (PB-263.1). A ladder with `max`
+  keeps the catalog's `max` convention; one without `max` needs a measured model-specific harness default before
+  citing the figure. Codex CLI 0.156.1 reports `medium` for GPT-5.5, while GPT-5.4 mini is absent from its model
+  data. The guide and ADR name every current no-`max` base and the outstanding catalog citations; no ratings move.
+  [Model routing guide](docs/guides/model-routing.md#re-rating-a-row), [ADR-004](docs/adr/adr-004-subscription-balance.md).
+
 - **`done` and `sweep` recognise an edited squash by the acceptance trailer** (PB-284). The acceptance commit carries
   `Squash-of: <full sha of the worker head that was squashed>` (`git commit -F <draft> --trailer "Squash-of: <sha>"`),
   and a commit of the base since the fork point whose trailer equals the branch head is a third proof that the branch
