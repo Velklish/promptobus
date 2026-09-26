@@ -380,3 +380,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-239.4"></a>`PB-239.4-suite-seal-misses-cursor-install-dirs` · 2026-09-26 · batch PB-261 · — · A Cursor binary search handed an environment without the suite's install-directory seal still reaches /usr/local/bin, where `cursor` is the Cursor app CLI
 - <a id="pb-262"></a>`PB-262-guard-no-identity-owner-paths-minor-batch` · 2026-09-26 · completed · — · Minor batch: the guard acts as the orchestrator's owner only on a proven right
 - <a id="pb-178.5"></a>`PB-178.5-guard-stop-hook-no-identity-registers-wake` · 2026-09-26 · batch PB-262 · — · guard-stop-hook-no-identity-registers-wake
+- <a id="pb-263"></a>`PB-263-catalog-evidence-minor-batch` · 2026-09-26 · completed · — · Minor batch: catalog evidence that no longer matches its sources
+- <a id="pb-246.2"></a>`PB-246.2-codex-tb21-figures-citable` · 2026-09-26 · batch PB-263 · — · codex-terra-max and codex-gpt55-medium can cite their Terminal-Bench 2.1 Codex CLI figures instead of stating them as hypotheses
+- <a id="pb-254.1"></a>`PB-254.1-grok-4-6-rows-list-price` · 2026-09-26 · batch PB-263 · — · The Grok 4.6 rows say no list price exists, and xAI now lists grok-4.6 at $2 / $6

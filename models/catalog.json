@@ -948,7 +948,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "quality is newly assessed as 8 against Terminal-Bench 2.1 60→1 / 90→10: the exact Cursor variant has no figure, while vendor Grok 4.6 reports 88.4 and Cursor CLI Grok 4.5 reports 79.3; 8 keeps the variant below the vendor configuration. speed is newly assessed as 2 beside vendor Grok 4.6 at 63 tokens/s under Artificial Analysis 40→1 / 310→10. quotaCost is newly assessed as 10 from the local Cursor usage spike, far above every measured neighbour; no list price exists. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality is newly assessed as 8 against Terminal-Bench 2.1 60→1 / 90→10: the exact Cursor variant has no figure, while vendor Grok 4.6 reports 88.4 and Cursor CLI Grok 4.5 reports 79.3; 8 keeps the variant below the vendor configuration. speed is newly assessed as 2 beside vendor Grok 4.6 at 63 tokens/s under Artificial Analysis 40→1 / 310→10. quotaCost stays a hypothesis of 10 from the local Cursor usage spike, far above every measured neighbour: xAI now lists grok-4.6 at $2.00 in / $6.00 out below 200k prompt tokens (docs.x.ai/developers/pricing, opened 2026-09-25), but whether Cursor's cursor-grok-4.6 is that model is not established — the Cursor display name moved from \"Cursor Grok 4.6\" to \"Grok 4.6\" between the listings of 2026-09-05 and 2026-09-25 — so no price is attached. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "hypothesis": [
           "quality",
           "speed",
@@ -1718,7 +1718,7 @@
       "assessedAt": "2026-09-06T00:00:00.000Z",
       "source": "public benchmarks, subscription-balance series, 2026-09-06",
       "evidence": {
-        "text": "quality is newly assessed as 8 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 83.1→8, preferred over the higher harness-free 88.0. speed is newly assessed as 3 beside the measured 90 tokens/s Sol row rather than translated from 1–5. quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality is a hypothesis of 8, placed by Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 83.1→8, preferred over the harness-free 88.0 (the archived leaderboard, opened 2026-09-23; the page names no effort). It stays a hypothesis because the rung that figure belongs to is not settled: the model-routing guide (§ Re-rating a row) lands a no-effort figure on the base rung `max`, which GPT-5.5's ladder does not have, and ADR-004 names the harness's default effort instead, which nobody has established for Codex CLI on GPT-5.5. speed is a hypothesis of 3: no throughput figure is published for GPT-5.5 at medium effort; the band was placed on 2026-09-06 beside GPT-5.6 Sol's throughput as then read (90 tokens/s, band 3), which codex-sol-max now cites at 72.6 tokens/s (band 2) — the band is not re-placed here. quotaCost uses blended list price $2.50→1 / $30→10: $17.50→6. Anchors assessed 2026-09-06; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
           {
             "rating": "quotaCost",
@@ -1926,8 +1926,18 @@
       "assessedAt": "2026-09-23T00:00:00.000Z",
       "source": "public benchmarks, re-read 2026-09-23",
       "evidence": {
-        "text": "quality is newly assessed as 7 using Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 78.4→7, preferred over the harness-free 82.5. speed uses Artificial Analysis 40→1 / 310→10: 83 tokens/s→2 — the leaderboard read 114 tokens/s on 2026-09-06, band 3. quotaCost uses blended list price $2.50→1 / $30→10: $7→2 — the vendor price table lists $2 in / $12 out, not the $2.50 / $15 read on 2026-09-06, band 3. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
+        "text": "quality cites Terminal-Bench 2.1 Codex CLI 60→1 / 90→10: 78.4→7, preferred over the harness-free 82.5. speed uses Artificial Analysis 40→1 / 310→10: 83 tokens/s→2 — the leaderboard read 114 tokens/s on 2026-09-06, band 3. quotaCost uses blended list price $2.50→1 / $30→10: $7→2 — the vendor price table lists $2 in / $12 out, not the $2.50 / $15 read on 2026-09-06, band 3. Anchors assessed 2026-09-06; figures seen 2026-09-23; bands use clamp(1 + round-half-up((x - floor) / (ceiling - floor) × 9), 1, 10). A figure is identified by benchmark, version and agent harness; the harness this catalog runs is preferred, otherwise the highest published figure is the placement guide. There is no comparison field.",
         "sources": [
+          {
+            "rating": "quality",
+            "basis": "Terminal-Bench",
+            "version": "2.1",
+            "agentHarness": "Codex CLI",
+            "provenance": "public leaderboard page, opened",
+            "figure": "78.4 % ±1.3 (effort not stated by the page)",
+            "url": "https://snorkel.ai/leaderboard/terminal-bench-2-1/",
+            "date": "2026-09-23"
+          },
           {
             "rating": "speed",
             "basis": "Artificial Analysis output speed",
@@ -1948,9 +1958,6 @@
             "url": "https://developers.openai.com/api/docs/pricing",
             "date": "2026-09-23"
           }
-        ],
-        "hypothesis": [
-          "quality"
         ]
       }
     },
