@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a root until its active children close. Closing a child preserves the parent's teamlead record.
   [01-overview § Store home](docs/reference/01-overview.md#store-home), [04-protocol § Store layout](docs/reference/04-protocol.md#store-layout).
 
+### Documentation
+
+- **The Codex and Cursor MCP child mailbox paths have a live measurement** (PB-178.1).
+  Codex 0.156.1 `thread/start` and `cursor-agent` 2026.09.26-dd393fe `mcp list-tools` each
+  started a configured server without a model turn. With no session variable or record pointer
+  in either child, `promptobus_mailbox` returned a no-identity copy and left the one original
+  unread in each throwaway store. The 0.146.0 variable list remains historical evidence.
+  [02-host § Session identity](docs/reference/02-host.md#session-identity), [03-cli § ownership](docs/reference/03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss).
+
 ## [0.18.0] — 2026-09-26
 
 ### Added

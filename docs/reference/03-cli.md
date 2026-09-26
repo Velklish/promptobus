@@ -1293,6 +1293,13 @@ same `ownerRoute` — not the owner's "fetch it" line. An address this gate does
 `worker:…`, `reviewer:…`, `approver:…`) keeps fetching, whether or not the call names a
 session. That address's mailbox is the participant's, and this gate has nothing to say about it.
 
+The [MCP child measurement](02-host.md#session-identity) exercised this branch with the environments
+Codex 0.156.1 `thread/start` and `cursor-agent` 2026.09.26-dd393fe `mcp list-tools` built for
+configured servers without a session-record pointer. Each call returned a copy of the one
+unread orchestrator message with the no-identity and original-stayed lines; the unread
+count was one before and after. The earlier 0.146.0 child-variable list is historical
+evidence, not the environment asserted for 0.156.1.
+
 `right` names which of five answers it is, so a refusal can say what could not be proven
 rather than what was missing:
 
