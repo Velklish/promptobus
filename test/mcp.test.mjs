@@ -95,6 +95,8 @@ const busService = {
     return was;
   },
   countInbox: (home, task, addr) => at(home).unread(task, addrDir(addr)),
+  historyMessage: (home, task, addr, id) => at(home).history({ task, participant: addrDir(addr), all: true })
+    .entries.find((e) => e.message.id === id)?.message ?? null,
   identityLabel: (home, task, addr) => `PROMPTOBUS_HOME=${home} · task=${task} · address=${addr}`,
   ownership: (home, task, addr, session) => {
     if (addr !== ORCHESTRATOR) return { gated: false, allowed: false, right: 'other-address', owner: null, session };
@@ -466,6 +468,85 @@ test('tools/call: a foreign session mailbox is a copy with a loud heading, origi
   // where the gate does not let them.
   assert.deepEqual(calls.stalls, []);
   assert.deepEqual(calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: true, mayRegister: false }]);
+});
+
+// Worker mail to the orchestrator for the checks below; the id comes off the store, not the reply.
+async function statusFromWorker(body) {
+  await talk([rpc(1, 'tools/call', { name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body } })],
+    { role: 'worker:cargos-api', session: 'session-worker' });
+  return at(home).glance(TASK, addrDir('orchestrator')).find((m) => m.body === body);
+}
+
+test('tools/call: mailbox lists headers — id, size, first line — and marks them read; the body comes by id', async () => {
+  const body = 'status first line\nsecond line only the body carries';
+  const sent = await statusFromWorker(body);
+  const { responses } = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
+    rpc(2, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
+    rpc(3, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
+  ]);
+  const headers = textOf(responses[0]);
+  assert.ok(headers.includes('### status from cargos-api · address worker:cargos-api · '), headers);
+  assert.ok(headers.includes(`message ${sent.id} · ${body.length} characters: status first line`), headers);
+  assert.equal(headers.includes('second line only the body carries'), false, headers);
+  assert.equal(at(home).unread(TASK, addrDir('orchestrator')), 0);
+  const opened = textOf(responses[1]);
+  assert.equal(responses[1].result.isError, undefined, opened);
+  assert.match(opened, new RegExp(`^message ${sent.id} · PROMPTOBUS_HOME=`));
+  assert.ok(opened.includes(`### status from cargos-api · address worker:cargos-api · ${sent.ts}\n${body}`), opened);
+  assert.equal(textOf(responses[2]), opened, 'a body read marks nothing and can be asked again');
+});
+
+test('tools/call: a header cuts a long first line at a word boundary and still names the whole size', async () => {
+  const body = `${'word '.repeat(40)}tail`;
+  const sent = await statusFromWorker(body);
+  const { responses } = await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
+  const line = textOf(responses[0]).split('\n').find((l) => l.startsWith(`message ${sent.id}`)) ?? '';
+  assert.ok(line.startsWith(`message ${sent.id} · ${body.length} characters: word word`), line);
+  assert.ok(line.endsWith('word…'), line);
+  assert.equal(line.includes('tail'), false, line);
+});
+
+test('tools/call: a body by id of mail still unread is refused, and the refusal takes nothing', async () => {
+  const sent = await statusFromWorker('not yet listed');
+  const { responses } = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
+    rpc(2, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: 'no-such-id' } }),
+  ]);
+  assert.equal(responses[0].result.isError, true);
+  assert.ok(textOf(responses[0]).includes(`no message ${sent.id} in the read mail of orchestrator`), textOf(responses[0]));
+  assert.equal(responses[1].result.isError, true);
+  assert.equal(at(home).unread(TASK, addrDir('orchestrator')), 1);
+  await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
+});
+
+test('tools/call: claim together with message is refused by both names, and nothing is taken', async () => {
+  const sent = await statusFromWorker('claim and message');
+  const { responses } = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { claim: true, message: sent.id } }),
+  ]);
+  assert.equal(responses[0].result.isError, true);
+  assert.match(textOf(responses[0]), /"claim" or "message", not both/);
+  assert.equal(at(home).unread(TASK, addrDir('orchestrator')), 1);
+  await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
+});
+
+test('tools/call: a session that only peeks gets an unread body by id as a copy, under its own heading', async () => {
+  const sent = await statusFromWorker('a copy for the peeking session\nits second line');
+  const noIdentity = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
+  ], { session: null });
+  const copy = textOf(noIdentity.responses[0]);
+  assert.match(copy, /^this call carries no session identity/);
+  assert.ok(copy.includes('its second line'), copy);
+  const foreign = await talk([
+    rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
+  ], { session: 'session-чужая' });
+  const foreignCopy = textOf(foreign.responses[0]);
+  assert.match(foreignCopy, /^FOREIGN MAILBOX: the orchestrator address of task /);
+  assert.ok(foreignCopy.includes('its second line'), foreignCopy);
+  assert.equal(at(home).unread(TASK, addrDir('orchestrator')), 1);
+  await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
 });
 
 test('a foreign session gets no entry mark — once it becomes the owner, it enters on the same connection', async () => {

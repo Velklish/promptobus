@@ -7,7 +7,7 @@ import type { Ownership } from '../protocol.js';
 import { MCP_TOOLS } from './tools.js';
 import type { PromptobusService } from './service.js';
 import {
-  ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessages, renderTask,
+  ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessage, renderMessages, renderTask,
 } from './render.js';
 import type { DecorateParticipant } from './render.js';
 
@@ -156,14 +156,42 @@ export function createMcpServer(options: McpOptions): {
       + `${head}\n\n${renderMessages(service, home, task, addr, messages, session)}`;
   }
 
+  // A body by id comes from the mail this address has read; a session that only peeks also gets an
+  // unread one, as a copy under the same heading its header read carries.
+  function messageById(home: string, task: string, addr: string, session: string | null, own: Ownership, asked: unknown): string {
+    const id = typeof asked === 'string' ? asked.trim() : '';
+    if (!id) throw new GateError('promptobus_mailbox: "message" is the message id a header line names — a non-empty string');
+    const peek = own.gated || own.right === 'no-identity';
+    let found = service.historyMessage(home, task, addr, id);
+    let alarm: string | null = null;
+    if (!found && peek) {
+      const { messages, broken } = service.peekInbox(home, task, addr);
+      alarm = service.brokenNote(broken);
+      found = messages.find((m) => m.id === id) ?? null;
+    }
+    if (!found) {
+      throw new GateError(`no message ${id} in the ${peek ? '' : 'read '}mail of ${addr} — a body is returned once `
+        + 'a mailbox read has listed its header; promptobus_mailbox without message lists unread mail and marks it read');
+    }
+    const copy = own.gated ? foreignNote(task, own) : peek ? service.noIdentityMailboxLine(home, task, own) : null;
+    return [alarm, copy, renderMessage(service, home, task, addr, found, session)].filter(Boolean).join('\n\n');
+  }
+
   function syncTool(identity: McpIdentity, name: string, args: Record<string, unknown>, task: string): string {
     const { home, role, session } = identity;
     switch (name) {
       case 'promptobus_mailbox': {
         const own = service.ownership(home, task, role, session);
-        if (args?.claim === true) return claim(home, task, role, session, own);
+        if (args?.claim === true) {
+          if (args?.message !== undefined) {
+            throw new GateError('promptobus_mailbox takes "claim" or "message", not both — claim the mailbox first, '
+              + 'then ask the body by its id');
+          }
+          return claim(home, task, role, session, own);
+        }
         // No session is not proved foreign, and this fetch still must not take the mail.
         const peek = own.gated || own.right === 'no-identity';
+        if (args?.message !== undefined) return messageById(home, task, role, session, own, args.message);
         const { messages, broken } = peek
           ? service.peekInbox(home, task, role)
           : service.readInbox(home, task, role);

@@ -7,8 +7,8 @@
 // branches are checked, the ones this was all built for:
 //
 //   • delivery — a knock goes to whoever has unread mail, and not to whoever is empty;
-//   • postcard content — the text of a short message rides in it as text, a long one and an
-//     artifact go as a counter, and the postcard's overall budget is never exceeded;
+//   • postcard content — every message rides as its stub, never its text, a bus line rides
+//     whole when it fits, and the postcard's overall budget is never exceeded;
 //   • stop — written to the log, no postcard is sent;
 //   • fallback to self-wake — there is no contact point, or the driver's channel did not accept
 //     the notification;
@@ -230,8 +230,8 @@ check(`only the one with something waiting gets knocked: the orchestrator is emp
 const body = first.calls[0].body;
 check('the injection body names the task, the address, and the unread count',
   body.includes(TASK) && body.includes('worker:api') && /has unread: 1/.test(body), body);
-check(`: a short message rides in the postcard as text`,
-  body.includes('бриф') && /task from orchestrator/.test(body), body);
+check(`: a short message rides in the postcard as its stub — sender, type and size, never the text`,
+  !body.includes('бриф') && /— task from orchestrator · \S+: text 4 characters — fetch the mailbox/.test(body), body);
 check(': the postcard still points to the inbox — only fetching it marks messages read',
   body.includes('mailbox') && /Fetch the mailbox|only mailbox marks messages read/.test(body), body);
 check('the injection body relies on the bus rules and disclaims any escalation of privileges',
@@ -507,8 +507,8 @@ const long = { type: 'result', from: 'worker:api', ts: 'T2', body: 'ы'.repeat(K
 const withArt = { type: 'artifact', from: 'worker:api', ts: 'T3', body: 'дифф', artifact: 'diff.patch' };
 
 const one = orderBody(TASK, 'orchestrator', 1, [short]);
-check(': a short message rides out as text in full',
-  one.includes('да, делай') && one.includes('answer from orchestrator'), one);
+check(': a short message rides out as its stub — sender, type and size, never the text',
+  !one.includes('да, делай') && one.includes('— answer from orchestrator · T1: text 9 characters — fetch the mailbox'), one);
 
 const big = orderBody(TASK, 'orchestrator', 1, [long]);
 check(': a long message rides out as a counter with its own size, not a fragment',
@@ -518,17 +518,38 @@ const art = orderBody(TASK, 'orchestrator', 1, [withArt]);
 check(': a message with an artifact rides out as a counter, however short it is',
   !art.includes('дифф') && art.includes('artifact diff.patch'), art);
 
-// The budget is spent in order of arrival: what arrived first rides out first. A message that
-// ate almost the whole budget leaves no room for its neighbor — that one goes out as a
-// counter or in the tail, but never silently vanishes.
-const half = { type: 'status', from: 'worker:api', ts: 'T4', body: 'я'.repeat(KNOCK_TEXT_MAX - 80) };
+// The budget is spent in order of arrival: what arrived first rides out first. A bus line
+// (`bus: true`) rides whole, and one that ate almost the whole budget leaves no room for its
+// neighbor — that one goes out in the tail, but never silently vanishes.
+const half = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T4', body: 'я'.repeat(KNOCK_TEXT_MAX - 160) };
 const pack = orderBody(TASK, 'orchestrator', 2, [half, short]);
 check(': the budget is shared across the postcard — the first one fit whole, the second no longer does',
-  pack.includes(half.body) && !pack.includes('да, делай'), pack.slice(0, 400));
+  pack.includes(half.body) && !pack.includes('answer from orchestrator'), pack.slice(0, 400));
 check(': what did not fit is named, not swallowed',
   /— and 1 more: fetch the mailbox|text 9 characters/.test(pack), pack.slice(-300));
 check(': the postcard does not grow past the budget plus its own frame',
   pack.length < KNOCK_TEXT_MAX * 2, String(pack.length));
+
+// A bus line is not in the mailbox, so its overflow never says "fetch the mailbox": too long to
+// ride whole, it names its size and where it is read; with no room at all, the tail counts it apart.
+const busRoute = 'not in the mailbox — the bus status command shows it';
+const oversized = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T5', body: 'ю'.repeat(KNOCK_TEXT_MAX + 1) };
+const overCard = orderBody(TASK, 'orchestrator', 0, [oversized]);
+check(': a bus line too long to ride whole names its size and that it is not in the mailbox',
+  overCard.includes(`— unreachable from promptobus · T5: ${KNOCK_TEXT_MAX + 1} characters, ${busRoute}`)
+  && !overCard.includes('ююю') && !/T5: text \d+ characters/.test(overCard), overCard.slice(0, 400));
+const stubs = Array.from({ length: 40 }, (_, i) => (
+  { id: `m${i}`, type: 'status', from: 'worker:very-long-address-here', ts: `2026-09-26T00:00:${i}`, body: 'ок' }));
+const lateBus = [1, 2].map((i) => ({ id: null, bus: true, type: 'mailbox-broken', from: 'promptobus', ts: `B${i}`, body: 'r'.repeat(100) }));
+const crowded = orderBody(TASK, 'orchestrator', 40, [...stubs, ...lateBus]);
+check(': bus lines with no room left are counted apart in the tail, not sent to the mailbox',
+  new RegExp(`— and \\d+ more: fetch the mailbox; 2 bus lines more, ${busRoute}`).test(crowded)
+  && crowded.length - orderBody(TASK, 'orchestrator', 40, []).length <= KNOCK_TEXT_MAX, crowded.slice(-300));
+const noId = { id: null, type: 'status', from: 'worker:api', ts: 'T6', body: 'NO-ID-BODY' };
+const noIdCard = orderBody(TASK, 'orchestrator', 1, [noId]);
+check(': a message without an id and without the bus mark is still a stub, never its text',
+  !noIdCard.includes('NO-ID-BODY') && noIdCard.includes('— status from worker:api · T6: text 10 characters — fetch the mailbox'),
+  noIdCard);
 
 // The budget holds the ENTIRE block of digests, not the sum of the bodies (review note): every
 // line carries a "type from address · time" header, and fifty unread messages would give a
@@ -720,7 +741,7 @@ if (!waitedListening.ok) {
   const wired = (knocks[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
   check(': the knock goes out immediately — unread mail is the whole condition',
     knocks.length === 1 && wired.length === 2 && wired[0]?.type === 'auth'
-    && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('бриф'),
+    && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('text 4 characters'),
     JSON.stringify(knocks).slice(0, 300));
 }
 
@@ -1691,6 +1712,8 @@ const idleList = [{ id: 'k1', name: KNOCK_NAME, pid: 4242, state: 'blocked', sta
 const knockRound = (knock, sessions, now) => wdn.wardenRound(HOME, KNOCK_TASK,
   { knock, sessions: snap(KNOCK_TASK, sessions), now });
 const knockHealth = () => store.readHealth(HOME, KNOCK_TASK)['worker:api'];
+// A postcard names a message by its stub, never its text; the bodies below differ in length to tell them apart.
+const stubOf = (body) => `: text ${body.length} characters — fetch the mailbox`;
 
 // The first knock for a new message goes out right away, even to a busy session: it has not
 // seen the message yet, and waiting for it to go idle would mean keeping the participant
@@ -1700,8 +1723,8 @@ const kFirst = stubKnock();
 await knockRound(kFirst, busyList);
 check(': the first knock for a new message goes out to a busy session too',
   kFirst.calls.length === 1, String(kFirst.calls.length));
-check(': the first knock carries the message text itself',
-  kFirst.calls[0].body.includes('первое'), kFirst.calls[0].body);
+check(': the first knock carries the message stub',
+  kFirst.calls[0].body.includes(stubOf('первое')), kFirst.calls[0].body);
 
 // A re-knock about the SAME unread mail does not go to a busy session: it will see the
 // notification only at the end of the turn, and the loop's own watch already returns the
@@ -1721,12 +1744,12 @@ await knockRound(kIdle, idleList, T418);
 check(': the session went idle and did not fetch the mailbox — the re-knock goes out',
   kIdle.calls.length === 1 && knockHealth().knocks === 2, JSON.stringify(knockHealth()));
 check(': a repeat does not list what was already knocked, it names the overall counter',
-  !kIdle.calls[0].body.includes('первое') && /has unread: 1/.test(kIdle.calls[0].body),
+  !kIdle.calls[0].body.includes(stubOf('первое')) && /has unread: 1/.test(kIdle.calls[0].body),
   kIdle.calls[0].body);
 
 // A new message arrived on top of the old one — it waits under the unanswered knock, then rides
 // out alone, without its neighbor from the previous knock.
-knockSend('второе');
+knockSend('второе сообщение');
 const kUnder = stubKnock();
 await knockRound(kUnder, busyList, T418 + 1000);
 check(': a new message under an outstanding knock waits for the take',
@@ -1737,7 +1760,7 @@ await knockRound(kGrew, busyList, T418G);
 check(': past the coalescing window a new message wakes it, even a busy session',
   kGrew.calls.length === 1, String(kGrew.calls.length));
 check(': the repeat carries only the new one, while the counter is still the overall one',
-  (kGrew.calls[0]?.body ?? '').includes('второе') && !kGrew.calls[0].body.includes('первое')
+  (kGrew.calls[0]?.body ?? '').includes(stubOf('второе сообщение')) && !kGrew.calls[0].body.includes(stubOf('первое'))
   && /has unread: 2/.test(kGrew.calls[0].body), kGrew.calls[0]?.body);
 
 // Session state is unknown — that is not "busy": no list, no record, no field. The re-knock
@@ -1764,8 +1787,8 @@ registerWake(HOME, KNOCK_TASK, 'worker:api',
 const kMoved = stubKnock();
 await knockRound(kMoved, idleList, T418G + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 4000);
 check(': a rewritten contact point returns the full list — the session never saw it',
-  kMoved.calls.length === 1 && kMoved.calls[0].body.includes('первое')
-  && kMoved.calls[0].body.includes('второе'), kMoved.calls[0].body);
+  kMoved.calls.length === 1 && kMoved.calls[0].body.includes(stubOf('первое'))
+  && kMoved.calls[0].body.includes(stubOf('второе сообщение')), kMoved.calls[0].body);
 
 // A Claude turn-end hook has a different pid from the long-lived bus server, but the
 // contact point still belongs to the same session. Refreshing that pid alone must not
@@ -1813,11 +1836,11 @@ const burstTaken = await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, 
 check('the take is one line with the count of what waited under the knock',
   burstTaken.events.includes(`delivered ${BURST_ADDR}: mailbox was taken (had 4, knocks 1, coalesced 3)`)
   && burstHealth().coalesced === undefined, JSON.stringify(burstTaken.events));
-burstSend('review');
+burstSend('first review note');
 await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 25000 });
 check('after the take a fifth send knocks again',
   burstKnock.calls.length === 2 && /has unread: 1/.test(burstKnock.calls[1].body)
-  && burstKnock.calls[1].body.includes('review'), String(burstKnock.calls.length));
+  && burstKnock.calls[1].body.includes(stubOf('first review note')), String(burstKnock.calls.length));
 // A take and a new message inside one round leave the count where it was; the knocked message
 // is gone all the same, and the new one must not wait out the window under a knock already answered.
 store.readInbox(HOME, BURST_TASK, BURST_ADDR);
@@ -1825,7 +1848,7 @@ burstSend('second review');
 const burstRace = await wdn.wardenRound(HOME, BURST_TASK, { knock: burstKnock, now: B0 + 27000 });
 check('a take hidden by a new message in the same round is still a take, and the new message knocks',
   burstRace.events.includes(`delivered ${BURST_ADDR}: mailbox was taken (had 1, knocks 1)`)
-  && burstKnock.calls.length === 3 && burstKnock.calls[2].body.includes('second review'),
+  && burstKnock.calls.length === 3 && burstKnock.calls[2].body.includes(stubOf('second review')),
   JSON.stringify(burstRace.events));
 // A peek sets a broken ref aside: the count drops, yet nobody took the knocked mail.
 store.readInbox(HOME, BURST_TASK, BURST_ADDR);
@@ -1902,8 +1925,8 @@ const counterNow = Date.parse(store.readHealth(HOME, COUNTER_TASK)[COUNTER_ADDR]
 await counterRound(counterMoved, counterNow);
 check(': a same-session turn-counter rewrite wakes immediately with only new messages',
   counterMoved.calls.length === 1
-  && counterMoved.calls[0].body.includes('counter second')
-  && !counterMoved.calls[0].body.includes('counter first'), counterMoved.calls[0]?.body);
+  && counterMoved.calls[0].body.includes(stubOf('counter second'))
+  && !counterMoved.calls[0].body.includes(stubOf('counter first')), counterMoved.calls[0]?.body);
 
 // Busyness for a participant WITHOUT a bg session (review note). The orchestrator is the
 // human's session: it has no name in the log, and an interactive `claude agents --json`

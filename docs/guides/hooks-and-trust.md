@@ -136,7 +136,7 @@ Why the prognosis is printed at all: without it the label reads as a break in ev
 
 A health record written before the field carries no `selfWake`. The prognosis is then not said rather than guessed, with one exception the wake record settles on its own: no contact point handed over at all is the start-up state whoever wrote the health file, and it is also what an address the warden has not yet reached looks like.
 
-Postcard text is a copy, not a read. Only `promptobus_mailbox` marks mail read. If a knock repeats, the mailbox still has unread items.
+A postcard is not a read: it names each message by its stub, never its text. Only `promptobus_mailbox` marks mail read. If a knock repeats, the mailbox still has unread items.
 
 ## Related
 

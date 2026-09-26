@@ -272,7 +272,16 @@ async function act(action) {
   }
   if (action.tool === 'promptobus_mailbox') {
     const res = await rpc('tools/call', { name: 'promptobus_mailbox', arguments: action.args ?? {} });
-    note({ kind: 'mailbox', text: textOf(res), isError: res?.result?.isError === true });
+    const text = textOf(res);
+    // The mailbox lists headers; a session asks each body by the id its header names.
+    const bodies = [];
+    for (const [, message] of text.matchAll(/^message (\S+) · \d+ characters/gm)) {
+      const one = await rpc('tools/call', {
+        name: 'promptobus_mailbox', arguments: { ...(action.args?.task ? { task: action.args.task } : {}), message },
+      });
+      bodies.push(textOf(one));
+    }
+    note({ kind: 'mailbox', text, bodies, isError: res?.result?.isError === true });
     return;
   }
   if (action.tool === 'promptobus_send') {

@@ -158,7 +158,7 @@ check('the driver sees the participant alive, free, and with its own stall reaso
 // --- knock --------------------------------------------------------------------
 
 store.sendMessage(HOME, TASK, {
-  from: store.ORCHESTRATOR, to: ADDR, type: 'answer', body: 'ответ оркестратора участнику',
+  from: store.ORCHESTRATOR, to: ADDR, type: 'answer', body: 'ответ оркестратора участнику\nвторая строка ответа',
 });
 const knocked = await knockSocket({ socket: wake.socket, token: wake.token }, 'служебный стук пробы');
 check('a knock by the real driver knockSocket was accepted by the participant',
@@ -179,8 +179,10 @@ check('the wire reached the participant whole: auth on the first line, the token
   && knock.msgV === 1 && knock.from === 'promptobus-warden' && knock.body === 'служебный стук пробы',
   JSON.stringify(knock));
 const box = trace.find((e) => e.kind === 'mailbox');
-check('the participant fetched the mailbox with the real tool and saw the orchestrator reply there',
-  typeof box?.text === 'string' && box.text.includes('ответ оркестратора участнику'), JSON.stringify(box));
+check('the participant fetched the headers with the real tool, then the orchestrator reply by its id',
+  typeof box?.text === 'string' && box.text.includes('answer from the orchestrator')
+  && !box.text.includes('вторая строка ответа')
+  && Array.isArray(box.bodies) && box.bodies.some((b) => b.includes('вторая строка ответа')), JSON.stringify(box));
 check('the protocol channel wrote no unreadable lines',
   !trace.some((e) => e.kind === 'stray'), JSON.stringify(trace.filter((e) => e.kind === 'stray')));
 

@@ -567,7 +567,8 @@ test('an unreadable inbox ref is named in the postcard and clears on a later gla
   const firstPostcard = previewBlock(first.messages);
   assert.ok(firstPostcard.includes('EACCES'), firstPostcard);
   assert.ok(firstPostcard.includes(refusedRef), firstPostcard);
-  assert.ok(firstPostcard.includes('the second message'), firstPostcard);
+  assert.ok(/— task from orchestrator · \S+: text 18 characters — fetch the mailbox/.test(firstPostcard), firstPostcard);
+  assert.ok(!firstPostcard.includes('the second message'), firstPostcard);
   assert.ok(first.messages.some((message) => message.type === 'mailbox-broken' && message.ts), firstPostcard);
   assert.ok(firstRound.events.some((event) => event.includes(`EACCES ${refusedRef}`)), firstRound.events.join('\n'));
   const firstStatus = capture(() => status(path.dirname(home), { task, sessions: {} }));
@@ -609,7 +610,8 @@ test('a malformed inbox ref is named in the postcard and stays in the mailbox', 
   const note = driver.calls.activate[0].notification;
   const postcard = previewBlock(note.messages);
   assert.equal(note.unread, 2);
-  assert.ok(postcard.includes('the intact message'), postcard);
+  assert.ok(/— task from orchestrator · \S+: text 18 characters — fetch the mailbox/.test(postcard), postcard);
+  assert.ok(!postcard.includes('the intact message'), postcard);
   assert.ok(postcard.includes('schema-invalid'), postcard);
   assert.ok(postcard.includes(malformedRef), postcard);
   assert.ok(note.messages.some((message) => message.type === 'mailbox-broken'
@@ -630,7 +632,7 @@ test('a malformed inbox ref is named in the postcard and stays in the mailbox', 
   });
   const second = driver.calls.activate[1].notification;
   const secondCard = previewBlock(second.messages);
-  assert.ok(!secondCard.includes('the intact message'), secondCard);
+  assert.ok(!secondCard.includes('task from orchestrator'), secondCard);
   assert.ok(secondCard.includes(malformedRef), secondCard);
 
   const read = store.readInbox(home, task, 'worker:a');

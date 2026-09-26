@@ -562,7 +562,7 @@ export async function runScenario({
   // capabilities snapshot.
   const fieldsOf = (addr) => participantOf(addr)?.metadata ?? {};
   const healthOf = (addr) => (store.readHealth(home, TASK) ?? {})[addr] ?? {};
-  const postcard = (mark) => inbox.seen.find((p) => String(p.body ?? '').includes(mark)) ?? null;
+  const postcard = (line) => inbox.seen.find((p) => String(p.body ?? '').includes(line)) ?? null;
   const timings = [];
   const at = (name, ms) => { timings.push({ name, ms }); trace(`${name}: ${(ms / 1000).toFixed(1)} s`); };
   // What the run actually went with — by the word of the started process. Goes into the
@@ -626,10 +626,12 @@ export async function runScenario({
     const status = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.status), { timeoutMs: step });
     check('step 3: the first worker status landed in the orchestrator mailbox',
       sentBy(status, WORKER) && status?.type === 'status', JSON.stringify(status));
-    const card = await waitFor(() => postcard(MARK.status), { timeoutMs: step });
-    check('step 3: the warden woke the orchestrator with a postcard carrying the message text itself',
-      card?.auth === true && card?.tokenOk === true && card?.msgV === 1 && card?.from === 'promptobus-warden',
-      JSON.stringify(inbox.seen));
+    const stub = `— status from ${WORKER} · ${status?.ts}: text ${status?.body.length} characters — fetch the mailbox`;
+    const card = await waitFor(() => postcard(stub), { timeoutMs: step });
+    check('step 3: the warden woke the orchestrator with a postcard naming sender, type and size — the stub, not the text',
+      card?.auth === true && card?.tokenOk === true && card?.msgV === 1 && card?.from === 'promptobus-warden'
+      && !String(card?.body).includes(MARK.status),
+      `${stub} · ${JSON.stringify(inbox.seen)}`);
     check('step 3: orchestrator health names the channel as a socket and counts knocks',
       healthOf(store.ORCHESTRATOR).channel === 'socket' && (healthOf(store.ORCHESTRATOR).knocks ?? 0) >= 1,
       JSON.stringify(healthOf(store.ORCHESTRATOR)));
@@ -638,8 +640,12 @@ export async function runScenario({
     // --- step 4: orchestrator answer ------------------------------------------------
     const t4 = Date.now();
     const box = await mcp.tool('promptobus_mailbox');
-    check('step 4: the orchestrator mailbox via a real tool returned the worker message',
-      box.isError === false && box.text.includes(MARK.status), tail(box.text));
+    check('step 4: the orchestrator mailbox via a real tool listed the worker message by its header',
+      box.isError === false && box.text.includes(`message ${status?.id} · ${status?.body.length} characters`)
+      && store.countInbox(home, TASK, store.ORCHESTRATOR) === 0, tail(box.text));
+    const opened = await mcp.tool('promptobus_mailbox', { message: status?.id });
+    check('step 4: after the header read the body came by its id',
+      opened.isError === false && opened.text.includes(status?.body), tail(opened.text));
     const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: правь только ${NOTE_FILE}` });
     check('step 4: the orchestrator answer went to the worker',
       sent.isError === false && !!msgOf(WORKER, MARK.answer), `${tail(sent.text)} · ${JSON.stringify(inboxOf(WORKER))}`);

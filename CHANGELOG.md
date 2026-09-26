@@ -63,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `spawn` refuses a worker name starting with `teamlead-` or `peer-`, or equal to `orchestrator`, `reporter` or `user`.
   [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
 
+- **The mailbox returns headers, and the postcard carries the stub** (PB-278). `promptobus_mailbox` without
+  `message` lists one header per message — type, sender, time, message id, size in characters and the first
+  line — and marks the mail read as before; `promptobus_mailbox { message: <id> }` returns that one body from
+  the address's history and marks nothing. A peeking session gets an unread body as a copy; `claim` with
+  `message` is refused. Every postcard line for a message is its stub, never the body; the bus's own
+  `mailbox-broken` and `unreachable` lines, marked by the new optional `bus: true` on `NotificationMessage`,
+  still ride whole, and one too long for the budget names its size and that it is not in the mailbox.
+  An adapter that assembles `PromptobusService` itself adds `historyMessage`. The worker and reviewer preambles
+  and the `warden` help say what the postcard now carries.
+  [04-protocol § Messages](docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks),
+  [03-cli § Guard and warden](docs/reference/03-cli.md#guard-and-warden).
+
 ### Fixed
 
 - **A tmux `list-sessions` failure other than no server is no longer read as an empty server** (PB-264, PB-239.5).

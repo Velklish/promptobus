@@ -436,6 +436,7 @@ function brokenPreview(note: BrokenNote, now: number): NotificationMessage {
     ts: new Date(now).toISOString(),
     body: `unreadable ref ${note.name}: ${note.code}`,
     artifact: null,
+    bus: true,
   };
 }
 
@@ -766,6 +767,7 @@ async function reportTo(home: string, task: string, orchestrator: ParticipantV1,
     unread: countInbox(home, task, orchestrator.id),
     messages: lines.map((body) => ({
       id: null, type: 'unreachable', from: 'promptobus', ts: new Date(now).toISOString(), body, artifact: null,
+      bus: true,
     })),
   });
   return r.ok ? null : r.error ?? 'unknown';

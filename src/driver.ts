@@ -326,6 +326,8 @@ export interface NotificationMessage {
   ts: string;
   body: string;
   artifact: string | null;
+  /** A line of the bus's own, not a mailbox message: it rides whole on the postcard when it fits. */
+  bus?: true;
 }
 
 /** A participant from whom there is nothing to wait for — as stall analysis named it. */

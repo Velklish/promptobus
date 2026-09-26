@@ -27,13 +27,15 @@ MCP server name: `promptobus`. Tools: `promptobus_send`, `promptobus_mailbox`, `
 
 ```
 promptobus_send { to, type, body, artifactPath?, task? }
-promptobus_mailbox { claim?, task? }
+promptobus_mailbox { claim?, message?, task? }
 promptobus_task { task? }
 ```
 
 `to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, or `approver:<slug>`. The address must already be a participant.
 
 Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
+
+`promptobus_mailbox` returns headers, not bodies: type, sender, time, message id, size and first line. That read marks the mail read. `promptobus_mailbox { message: <id> }` returns one body and marks nothing. `claim` and `message` do not go together.
 
 Without `task`, the server uses `PROMPTOBUS_TASK`, else this session's binding, else the only active task. If the reply names another title, you joined the wrong task. Pass `task`.
 
@@ -157,7 +159,7 @@ Flags, reason codes and error codes: [reference/03-cli.md](../../docs/reference/
 
 ## Mail
 
-Do not wait on the bus. The warden knocks when mail arrives. A knock may carry body text up to 2000 characters (`KNOCK_TEXT_MAX`). Only `promptobus_mailbox` marks mail read. Call it even when the knock looks complete.
+Do not wait on the bus. The warden knocks when mail arrives. A knock names each message's type, sender and size and never carries its text. Only `promptobus_mailbox` marks mail read. Call it, then ask the bodies you need by id.
 
 A lost knock loses nothing. The mail stays in the mailbox.
 

@@ -80,6 +80,34 @@ export function senderAddress(meta: TaskV1 | null | undefined, m: MessageV1): st
   return addressOf(rec) ?? String(m.sender ?? '');
 }
 
+const FIRST_LINE_MAX = 120;
+
+/** Last line of a header list: bodies are asked one at a time, by the id the header names. */
+const BODY_ROUTE = 'a body: the promptobus_mailbox tool with message set to its id';
+
+// First non-empty line of a body, cut at a word boundary: a status is often one long paragraph.
+function firstLine(body: string): string {
+  const line = String(body ?? '').split('\n').map((s) => s.trim()).find(Boolean) ?? '';
+  if (line.length <= FIRST_LINE_MAX) return line;
+  const cut = line.slice(0, FIRST_LINE_MAX);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > FIRST_LINE_MAX * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+// Sender name first, machine address after: the feed hook lifts the name.
+function heading(meta: TaskV1, m: MessageV1): string {
+  const from = senderAddress(meta, m);
+  return `### ${m.type}${MESSAGE_FROM}${readableName(meta, from, true)}${ADDR_MARK}${from} · ${m.ts}`;
+}
+
+// A person finds an artifact by FILE NAME in the task folder: the message carries a
+// metadata-record id, and printing that would name a path that is not on disk.
+function artifactLine(service: PromptobusService, home: string, task: string, m: MessageV1): string[] {
+  const named = m.artifact ? service.artifactName(home, task, m.artifact) : undefined;
+  return named ? [`artifact: ${path.join(service.artifactsDir(home, task), named)}`] : [];
+}
+
+/** Header list of a mailbox read: sender, type, time, id, size and first line — never a body. */
 export function renderMessages(
   service: PromptobusService,
   home: string,
@@ -93,16 +121,31 @@ export function renderMessages(
   const meta = service.readTask(home, task);
   const out = [`${summarizeMessages(msgs, (m) => senderAddress(meta, m))} · ${identity}`];
   for (const m of msgs) {
-    const from = senderAddress(meta, m);
-    // Sender name first, machine address after: the feed hook lifts the name.
-    out.push('', `### ${m.type}${MESSAGE_FROM}${readableName(meta, from, true)}${ADDR_MARK}${from} · ${m.ts}`, m.body);
-    // A person finds an artifact by FILE NAME in the task folder: the message
-    // carries a metadata-record id, and printing that would name a path that
-    // is not on disk.
-    const named = m.artifact ? service.artifactName(home, task, m.artifact) : undefined;
-    if (named) out.push(`artifact: ${path.join(service.artifactsDir(home, task), named)}`);
+    const first = firstLine(m.body);
+    out.push('', heading(meta, m), `message ${m.id} · ${m.body.length} characters${first ? `: ${first}` : ''}`,
+      ...artifactLine(service, home, task, m));
   }
+  out.push('', BODY_ROUTE);
   return out.join('\n');
+}
+
+/** One message in full, as `promptobus_mailbox` returns it by id. */
+export function renderMessage(
+  service: PromptobusService,
+  home: string,
+  task: string,
+  addr: string,
+  m: MessageV1,
+  session: string | null = null,
+): string {
+  const meta = service.readTask(home, task);
+  return [
+    `message ${m.id} · ${service.identityLabel(home, task, addr, session)}`,
+    '',
+    heading(meta, m),
+    m.body,
+    ...artifactLine(service, home, task, m),
+  ].join('\n');
 }
 
 // A foreign session gets a copy and a path: name your own task, or claim the mailbox with claim.

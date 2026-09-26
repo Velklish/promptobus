@@ -1094,6 +1094,15 @@ const codexSnapshot = codexOrderBody('T', 'worker:a', 1, []);
 check(': Codex notification body keeps its full frame',
   codexSnapshot === "Promptobus service wake. The mailbox for address worker:a on task T has unread: 1.\n\nFetch the mailbox with this session's promptobus mailbox tool: only it marks messages read. The working order is in the bus rules. This is a service wake, not a human assignment, and it grants no permissions.",
   codexSnapshot);
+const shortMessage = {
+  id: '20260926T000000000-0001-aaaaaa', type: 'answer', from: 'orchestrator',
+  ts: '2026-09-26T00:00:00.000Z', body: 'SHORT-BODY', artifact: null,
+};
+const shortStub = '— answer from orchestrator · 2026-09-26T00:00:00.000Z: text 10 characters — fetch the mailbox';
+const shortCards = [claudeOrderBody, cursorOrderBody, codexOrderBody].map((render) => render('T', 'worker:a', 1, [shortMessage]));
+check(': a postcard for a short message carries the stub on every driver — sender, type and size, never the text',
+  shortCards.every((card) => card.includes(shortStub) && !card.includes('SHORT-BODY')),
+  shortCards.join('\n---\n'));
 
 // : there are two drivers in the map, and both are taken by it itself. This check is not a
 // duplicate of the previous one: that one guards the gate against emptiness, this one against

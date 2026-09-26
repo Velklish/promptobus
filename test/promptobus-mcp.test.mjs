@@ -265,8 +265,10 @@ await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'единственным каналом' },
 });
 const onlyChannel = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
-check(': mailbox is the only channel there is, and it delivered the body',
-  text(onlyChannel).includes('единственным каналом'), text(onlyChannel));
+const onlyId = /^message (\S+) · /m.exec(text(onlyChannel))?.[1];
+const onlyBody = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: onlyId } });
+check(': mailbox is the only channel there is, and it delivered the body by the id its header named',
+  !!onlyId && text(onlyBody).includes('единственным каналом'), `${text(onlyChannel)} · ${text(onlyBody)}`);
 
 // A read and a send from the worker, then the orchestrator drains what the send left:
 // the scenario below starts from an empty orchestrator mailbox. Nothing is asserted about
@@ -308,13 +310,68 @@ await worker.call('tools/call', {
   arguments: { to: 'orchestrator', type: 'result', body: 'Готово: contract.cs, publisher.cs' },
 });
 const delivered = await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
-check('mailbox: what came from the worker is delivered whole',
+check('mailbox: what came from the worker is listed by sender, type and first line',
   text(delivered).includes('result from worker:cargos-api') && text(delivered).includes('contract.cs'),
   text(delivered));
 
 const emptyBox = await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('mailbox: empty — with identity, not an error',
   text(emptyBox).startsWith('empty') && text(emptyBox).includes(`PROMPTOBUS_HOME=${HOME}`), text(emptyBox));
+
+// --- what marks mail read: headers, bodies by id, the postcard ---------------
+
+const { guardVerdict } = await import(path.join(here, '..', 'lib', 'guard.js'));
+const { renderNotification: claudePostcard } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const TWO_LINES = 'Short task: first line\nsecond line, only in the body';
+await orch.call('tools/call', { name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: TWO_LINES } });
+const pending = store.glanceInbox(HOME, TASK, 'worker:cargos-api').find((m) => m.body === TWO_LINES);
+const card = claudePostcard({
+  kind: 'unread', task: TASK, address: 'worker:cargos-api', unread: 1,
+  messages: [{ id: pending?.id, type: 'task', from: 'orchestrator', ts: pending?.ts, body: TWO_LINES, artifact: null }],
+});
+check('postcard: a short message rides as its stub — sender, type and size — never its text',
+  card.includes(`— task from orchestrator · ${pending?.ts}: text ${TWO_LINES.length} characters — fetch the mailbox`)
+  && !card.includes('first line'), card);
+const early = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
+const toldByTask = await worker.call('tools/call', { name: 'promptobus_task', arguments: {} });
+const verdictBefore = guardVerdict(HOME, TASK, 'worker:cargos-api', null);
+check('read marks: after the postcard alone a body asked by id is refused, and the participant is still told it has unread mail',
+  early.result?.isError === true
+  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 1
+  && verdictBefore?.key === 'mailbox:1'
+  && text(toldByTask).includes('your mailbox: unread 1'),
+  `${text(early)} · unread ${store.countInbox(HOME, TASK, 'worker:cargos-api')} · ${JSON.stringify(verdictBefore)}`);
+const heads = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
+const verdictAfter = guardVerdict(HOME, TASK, 'worker:cargos-api', null);
+check('read marks: the mailbox header read marks it read, and the header carries only the first line',
+  text(heads).includes(`message ${pending?.id} · ${TWO_LINES.length} characters: Short task: first line`)
+  && !text(heads).includes('only in the body')
+  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 0
+  && !String(verdictAfter?.key ?? '').startsWith('mailbox:'),
+  `${text(heads)} · ${JSON.stringify(verdictAfter)}`);
+const opened = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
+check('body by id: after the header read the whole body comes back, and it marks nothing',
+  opened.result?.isError !== true && text(opened).includes(TWO_LINES)
+  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 0, text(opened));
+// The orchestrator's history holds a file by that name; an id that climbs out of the worker's box must not reach it.
+const foreignRead = store.history(HOME, { task: TASK, participant: 'orchestrator', all: true }).entries[0]?.message.id;
+const climbed = await worker.call('tools/call', {
+  name: 'promptobus_mailbox', arguments: { message: `../orchestrator/${foreignRead}` },
+});
+const nul = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: 'a\u0000b' } });
+check('body by id: an id that is not a bare name reads no file outside the address history',
+  !!foreignRead && climbed.result?.isError === true && /no message/.test(text(climbed))
+  && nul.result?.isError === true && /no message/.test(text(nul)) && !/ERR_INVALID_ARG_VALUE/.test(text(nul)),
+  `${text(climbed)} · ${text(nul)}`);
+// A history file cut short is the bus's refusal naming the record, not a parser's SyntaxError.
+const cutFile = path.join(store.historyDir(HOME, TASK, 'worker:cargos-api'), `${pending?.id}.json`);
+const cutWhole = readFileSync(cutFile, 'utf8');
+writeFileSync(cutFile, cutWhole.slice(0, Math.floor(cutWhole.length / 2)));
+const cut = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
+writeFileSync(cutFile, cutWhole);
+check('body by id: a truncated history record is refused by the bus, naming the record',
+  cut.result?.isError === true && text(cut).includes(`history record ${pending?.id} of worker:cargos-api does not read`)
+  && !/SyntaxError|Unexpected end/.test(text(cut)), text(cut));
 
 // --- tool errors ------------------------------------------------------
 

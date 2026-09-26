@@ -118,6 +118,12 @@ the `PROMPTOBUS_HOME=… · task=… · address=…` heading rest on session
 identity, and only the adapter reads the environment. The consumer adapter
 assembles the service.
 
+`historyMessage` is the one read of history on the list: a message the
+address has already read, by id — the body `promptobus_mailbox` returns. The
+adapter reads the one history file named by that id; unread mail is not in it.
+An id that is not a bare file name is no message, and a record that does not
+read or validate is a refusal naming it, never a parser's error.
+
 Addresses, not participant ids. Bus tools talk in addresses: the address is
 declared to the participant by their mcp-config, health and contact points
 are keyed by it, and a person reads it. Translating an address into a v1
@@ -165,6 +171,14 @@ The cost is known and accepted: the client prepends
 **There is no expectation tool in the set and there will not be one.** A
 task has one alarm, and that is the warden.
 
+**A body is one more argument of `promptobus_mailbox`, not a fourth tool.**
+`promptobus_mailbox` takes `claim`, `message` and `task`. Without `message` it
+returns headers and marks the mail read; with `message` set to an id from a
+header it returns that one body and marks nothing
+([04-protocol](04-protocol.md) § Messages: names, order and what a read marks).
+The three-tool set is named across the reference, the skills and the hooks, and
+a fourth tool would move all of them for a read the mailbox already owns.
+
 **An undeclared top-level key is refused, and the refusal names it.** All
 three declarations carry `additionalProperties: false`, and the server
 checks the call against that same declaration before it resolves the task —
@@ -190,6 +204,11 @@ whoever knows the store can assemble them. Everything that knows about the
 workspace arrives here through one `decorate` hook: participant lines about
 the repository, worktree, and background session are assembled by the
 adapter and handed over ready.
+
+A mailbox read is rendered as headers (`renderMessages`): the heading line
+stays as it was — a feed hook lifts the sender name from it — and under it one
+line names the message id, the size in characters and the first line. The body
+is rendered only by `renderMessage`, for one message asked by id.
 
 ### The package entry point
 

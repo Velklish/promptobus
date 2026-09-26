@@ -226,13 +226,14 @@ check(': a bare interpreter from mcp.json is not a needle',
     `${JSON.stringify(seenArgs)} · ${busLine.length} · ${JSON.stringify(kids)}`);
 }
 
-check(': the wake text calls the mailbox by the Cursor NAME and carries a message excerpt',
+check(': the wake text calls the mailbox by the Cursor NAME and carries the message stub',
   (() => {
     const text = cursorDriver.renderNotification({
       kind: 'unread', task: 'T', address: 'worker:a', unread: 2,
       messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'ТЕЛО-СООБЩЕНИЯ' }],
     });
-    return text.includes('promptobus-promptobus_mailbox') && text.includes('ТЕЛО-СООБЩЕНИЯ')
+    return text.includes('promptobus-promptobus_mailbox') && !text.includes('ТЕЛО-СООБЩЕНИЯ')
+      && text.includes('— answer from orchestrator · now: text 14 characters — fetch the mailbox')
       && text.includes('worker:a');
   })(), cursorDriver.renderNotification({ kind: 'unread', task: 'T', address: 'worker:a', unread: 0, messages: [] }).slice(0, 90));
 

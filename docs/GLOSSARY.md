@@ -12,6 +12,8 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 | standalone host | standalone host | Host built from the current directory, Git, and `promptobus.json`. It does not know another product's layout. | `src/standalone.ts` (`createStandaloneHost`) |
 | task | task | On-disk unit of work: title, status, participants, mail, and artifacts. | `schemas/v1/task.schema.json`, `src/v1/model.ts` |
 | mailbox | mailbox | Unread messages for one participant. Reading moves them to history. | `src/mcp/tools.ts` (`promptobus_mailbox`) |
+| message header | header | What a mailbox read lists for one message instead of its body: type, sender, time, message id, size in characters and the first line. Reading the headers marks the messages read; a body is asked by its id. | `src/mcp/render.ts` (`renderMessages`), [reference/04-protocol.md](reference/04-protocol.md) § Messages: names, order and what a read marks |
+| stub | stub | A postcard's line for one message: type, sender, time and size, never the body. | `lib/notification.js` (`previewLine`) |
 | participant | participant | Address on a task: `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, or `approver:<slug>` — the orchestrator and the shipped pipeline's steps. The grammar admits any step-shaped name; the registry says which names are known, the governance addresses and a host's declared steps among them. | `src/protocol.ts` (`isAddress`), `src/registry.ts` (`admitsAddress`) |
 | orchestrator | orchestrator | Session that owns the task mailbox and routes work. | `src/protocol.ts` (`ORCHESTRATOR`) |
 | worker | worker | Session that edits one git worktree and reports on the bus. | `src/protocol.ts` (`workerAddress`) |

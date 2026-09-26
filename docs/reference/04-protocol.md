@@ -250,6 +250,8 @@ The FS requirement is inherited whole: hard links inside one volume. Their
 absence is a lawful environment condition, and the answer is the typed
 code `link-refused`, not a half-written record.
 
+**A mailbox read lists headers; a body is asked by its id.** `promptobus_mailbox` without `message` takes the unread mail — the move of each reference into history is what marks a message read — and lists one header per message: the heading `### <type> from <name> · address <address> · <time>`, then `message <id> · <N> characters: <first line>`, then the artifact path when the message carries one, and last a line naming the route to a body. The first line is the body's first non-empty line, cut at 120 characters on a word boundary and marked `…` when cut: a `status` is often one long paragraph, and a first line with no bound would carry the whole body back in. `promptobus_mailbox` with `message: <id>` returns that one body from the address's history and marks nothing, so it can be asked again. An id still unread is refused with the route: only the header read marks mail read, and a body read that took mail would be a second door. A session that only peeks — proven foreign, or with no session identity on the orchestrator address — never takes, so an unread body by id comes to it as a copy under the same heading its header read carries. `claim` and `message` in one call are refused by both names. `promptobus_task` and `promptobus status` count unread references and never render a body. The postcard carries a stub per message, never the body ([03-cli](03-cli.md) § Guard and warden).
+
 ### The v1 store: what is written and in what order
 
 Source: `src/v1/store.ts`.

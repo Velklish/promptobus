@@ -391,3 +391,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-266.1"></a>`PB-266.1-record-by-pattern-default-pipeline` · 2026-09-26 · merged into PB-277 · — · Gate and handover records refuse a declared step's address: their by pattern names the default pipeline only
 - <a id="pb-266"></a>`PB-266-role-registry` · 2026-09-26 · completed · — · One registry declares every role and step: parser, stems, denies, floors, schemas, routes
 - <a id="pb-268"></a>`PB-268-install-lays-out-skills` · 2026-09-26 · completed · — · promptobus install lays out the package's process skills and owns them
+- <a id="pb-278"></a>`PB-278-mailbox-headers` · 2026-09-26 · completed · — · The mailbox returns headers and the postcard carries the stub

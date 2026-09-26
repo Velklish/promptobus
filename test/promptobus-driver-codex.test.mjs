@@ -1536,7 +1536,8 @@ const seamNote = {
 check(': the wake text calls the mailbox by the Codex name, taken off the session record',
   (() => {
     const text = codexDriver.renderNotification(seamNote);
-    return text.includes(codexSees(codexMcpName('promptobus', PREFIX), 'promptobus_mailbox')) && text.includes('BODY');
+    return text.includes(codexSees(codexMcpName('promptobus', PREFIX), 'promptobus_mailbox'))
+      && text.includes('— answer from orchestrator · now: text 4 characters — fetch the mailbox');
   })());
 
 // The seam has to return a string. A registry that holds no such record cannot know
@@ -1549,7 +1550,7 @@ check(': with no record behind it the seam names the tool without a key, and doe
     const r = thrown(() => codexDriver.renderNotification(seamNote));
     if (r.threw) return false;
     const text = codexDriver.renderNotification(seamNote);
-    return !text.includes('mcp__') && /mailbox tool/.test(text) && text.includes('BODY');
+    return !text.includes('mcp__') && /mailbox tool/.test(text) && text.includes('answer from orchestrator · now: text 4 characters');
   })(), thrown(() => codexDriver.renderNotification(seamNote)).msg);
 
 const { ws, repoAbs, repo } = buildWorkspace(SB);

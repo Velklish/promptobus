@@ -48,6 +48,8 @@ export interface PromptobusService {
   claimOwnership(home: string, task: string, owner: string): string | null;
   /** How much unread mail sits at the address. */
   countInbox(home: string, task: string, addr: string): number;
+  /** One message this address has already read, by message id; `null` — not in its history. */
+  historyMessage(home: string, task: string, addr: string, id: string): MessageV1 | null;
   /** Reply heading: home, task by id and name, address, and drift from the session binding. */
   identityLabel(home: string, task: string, addr: string, session?: string | null): string;
   /** Mailbox ownership: `allowed` is the right, proven; `gated` is the narrower "proved foreign". */

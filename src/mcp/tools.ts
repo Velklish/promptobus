@@ -56,9 +56,10 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'promptobus_mailbox',
-    description: 'Take the accumulated messages for your address without blocking. That same call '
-      + 'marks them read: the warden postcard carries the text of short messages, but '
-      + 'the truth stays in the mailbox, and a lost postcard loses nothing. '
+    description: 'Take the accumulated messages for your address without blocking, as headers: sender, type, time, '
+      + 'message id, size and first line. That same call marks them read: the warden postcard names sender, type and '
+      + 'size and never carries the text, the truth stays in the mailbox, and a lost postcard loses nothing. '
+      + 'With message set to an id from a header, the call returns that one body instead and marks nothing. '
       + 'The reply names PROMPTOBUS_HOME, the address, and the task — by id and by name; check them if you are waiting '
       + 'for a message that is not there. The orchestrator mailbox is bound to the session that started the task: '
       + 'a foreign session gets a copy, the originals stay with the owner. '
@@ -72,6 +73,11 @@ export const MCP_TOOLS: McpTool[] = [
           type: 'boolean',
           description: 'bind the orchestrator mailbox to this session and read it as yours; '
             + 'the reply will name the previous owner',
+        },
+        message: {
+          type: 'string',
+          description: 'message id from a header line: return that one body from the mail this address has read; '
+            + 'not together with claim',
         },
         ...TASK_ARG,
       },
