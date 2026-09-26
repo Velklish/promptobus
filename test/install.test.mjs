@@ -4,8 +4,9 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -15,8 +16,11 @@ import { createStandaloneHost } from '../dist/host-index.js';
 import { runPromptobus } from '../lib/cli.js';
 import {
   CURSOR_HOOK_EVENTS, CURSOR_HOOK_EVENTS_SOURCE_VERSION, CURSOR_PROVEN_HOOK_EVENTS, HOME_HOOK_DIRS,
-  assertCursorHookEvents, cursorUnprovenHookEvents, install, parseHarnessList, uninstall,
+  assertCursorHookEvents, cursorUnprovenHookEvents, install, packageSkills, parseHarnessList, uninstall,
 } from '../lib/install.js';
+import { CLAUDE_SKILLS_REL } from '../lib/driver-claude.js';
+import { CURSOR_SKILLS_REL } from '../lib/driver-cursor.js';
+import { CODEX_SKILLS_REL } from '../lib/driver-codex.js';
 import { GateError } from '../lib/store.js';
 import { prune } from '../lib/prune.js';
 import { capture } from './console.mjs';
@@ -81,9 +85,16 @@ function snapshot(dir) {
   const rels = [
     'promptobus.json',
     path.join('.promptobus', 'hooks', 'bus.mjs'),
+    path.join('.promptobus', 'manifest.json'),
     path.join('.claude', 'settings.json'),
+    path.join('.claude', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.claude', 'skills', 'solo-review', 'SKILL.md'),
     path.join('.cursor', 'hooks.json'),
+    path.join('.cursor', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.cursor', 'skills', 'solo-review', 'SKILL.md'),
     path.join('.codex', 'hooks.json'),
+    path.join('.codex', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.codex', 'skills', 'solo-review', 'SKILL.md'),
   ];
   const out = {};
   for (const rel of rels) {
@@ -568,4 +579,258 @@ test('no install path writes into the HOME sandbox or the real user hook dirs', 
       assert.equal(existsSync(marker), false);
     }
   }
+});
+
+test('driver skill constants match expected project relative paths', () => {
+  assert.equal(CLAUDE_SKILLS_REL, path.join('.claude', 'skills'));
+  assert.equal(CURSOR_SKILLS_REL, path.join('.cursor', 'skills'));
+  assert.equal(CODEX_SKILLS_REL, path.join('.codex', 'skills'));
+});
+
+test('packageSkills discovers all packaged skills and their files', () => {
+  const skills = packageSkills();
+  const names = skills.map((s) => s.name);
+  assert.ok(names.includes('orchestrate'));
+  assert.ok(names.includes('solo-review'));
+  for (const skill of skills) {
+    assert.ok(skill.files.length > 0);
+    const main = skill.files.find((f) => f.rel === 'SKILL.md');
+    assert.ok(main && main.text.length > 0);
+  }
+});
+
+test('install lays out byte-identical process skills, self-ignoring .gitignore, and tracks them in manifest', () => {
+  const { dir, home } = sandbox();
+  assert.equal(doInstall(dir, home, { harnesses: 'claude,cursor,codex' }), 0);
+
+  const expectedSkills = packageSkills();
+  const harnesses = [
+    { name: 'claude', base: path.join(dir, CLAUDE_SKILLS_REL) },
+    { name: 'cursor', base: path.join(dir, CURSOR_SKILLS_REL) },
+    { name: 'codex', base: path.join(dir, CODEX_SKILLS_REL) },
+  ];
+
+  for (const h of harnesses) {
+    for (const skill of expectedSkills) {
+      for (const file of skill.files) {
+        const filePath = path.join(h.base, skill.name, file.rel);
+        assert.ok(existsSync(filePath), `missing ${filePath}`);
+        const content = readFileSync(filePath, 'utf8');
+        assert.equal(content, file.text, `mismatch in ${filePath}`);
+      }
+      const giPath = path.join(h.base, skill.name, '.gitignore');
+      assert.ok(existsSync(giPath), `missing ${giPath}`);
+      assert.equal(readFileSync(giPath, 'utf8'), '*\n');
+    }
+  }
+
+  const manifest = readJson(dir, path.join('.promptobus', 'manifest.json'));
+  assert.deepEqual(manifest.harnesses, ['claude', 'cursor', 'codex']);
+  assert.ok(manifest.ownedSkills);
+  assert.deepEqual(manifest.ownedSkills.claude, [
+    path.join('.claude', 'skills', 'orchestrate', '.gitignore'),
+    path.join('.claude', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.claude', 'skills', 'solo-review', '.gitignore'),
+    path.join('.claude', 'skills', 'solo-review', 'SKILL.md'),
+  ]);
+  assert.deepEqual(manifest.ownedSkills.cursor, [
+    path.join('.cursor', 'skills', 'orchestrate', '.gitignore'),
+    path.join('.cursor', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.cursor', 'skills', 'solo-review', '.gitignore'),
+    path.join('.cursor', 'skills', 'solo-review', 'SKILL.md'),
+  ]);
+  assert.deepEqual(manifest.ownedSkills.codex, [
+    path.join('.codex', 'skills', 'orchestrate', '.gitignore'),
+    path.join('.codex', 'skills', 'orchestrate', 'SKILL.md'),
+    path.join('.codex', 'skills', 'solo-review', '.gitignore'),
+    path.join('.codex', 'skills', 'solo-review', 'SKILL.md'),
+  ]);
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('--check and --dry-run detect modified or missing owned skill files', () => {
+  const { dir, home } = sandbox();
+  assert.equal(doInstall(dir, home, { harnesses: 'claude,cursor' }), 0);
+  assert.equal(doInstall(dir, home, { check: true }), 0);
+
+  const claudeSkill = path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md');
+  writeFileSync(claudeSkill, '# Hand modified skill content\n<!-- promptobus:owned -->\n');
+
+  let checkCode;
+  const checkOutput = capture(() => { checkCode = doInstall(dir, home, { check: true }); });
+  assert.equal(checkCode, 1);
+  assert.match(checkOutput, /drift: \.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md/);
+
+  let dryRunCode;
+  const dryRunOutput = capture(() => { dryRunCode = doInstall(dir, home, { dryRun: true }); });
+  assert.equal(dryRunCode, 0);
+  assert.match(dryRunOutput, /dry-run: would write \.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md/);
+
+  // Reinstall fixes the drifted skill file
+  assert.equal(doInstall(dir, home, {}), 0);
+  assert.equal(doInstall(dir, home, { check: true }), 0);
+
+  // Deleting an owned skill file is also detected as drift
+  rmSync(claudeSkill);
+  let deleteCheckCode;
+  const deleteCheckOutput = capture(() => { deleteCheckCode = doInstall(dir, home, { check: true }); });
+  assert.equal(deleteCheckCode, 1);
+  assert.match(deleteCheckOutput, /drift: \.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md/);
+
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('uninstall removes owned skills, prunes empty skill dirs, and preserves foreign skills', () => {
+  const { dir, home } = sandbox();
+  // Place foreign skills in claude and cursor skill locations
+  const foreignClaude = path.join(dir, '.claude', 'skills', 'my-team-skill', 'SKILL.md');
+  const foreignCursor = path.join(dir, '.cursor', 'skills', 'extra-skill', 'guide.md');
+  mkdirSync(path.dirname(foreignClaude), { recursive: true });
+  mkdirSync(path.dirname(foreignCursor), { recursive: true });
+  writeFileSync(foreignClaude, '# Team skill\n');
+  writeFileSync(foreignCursor, '# Extra guide\n');
+
+  assert.equal(doInstall(dir, home, { harnesses: 'claude,cursor' }), 0);
+  assert.ok(existsSync(foreignClaude));
+  assert.ok(existsSync(foreignCursor));
+  assert.ok(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md')));
+  assert.ok(existsSync(path.join(dir, '.cursor', 'skills', 'orchestrate', 'SKILL.md')));
+
+  // Uninstall cursor only
+  assert.equal(doUninstall(dir, home, { harnesses: 'cursor' }), 0);
+  assert.equal(existsSync(path.join(dir, '.cursor', 'skills', 'orchestrate')), false);
+  assert.equal(existsSync(path.join(dir, '.cursor', 'skills', 'solo-review')), false);
+  assert.ok(existsSync(foreignCursor));
+  assert.ok(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md')));
+
+  // Uninstall remaining claude
+  assert.equal(doUninstall(dir, home), 0);
+  assert.equal(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate')), false);
+  assert.equal(existsSync(path.join(dir, '.claude', 'skills', 'solo-review')), false);
+  assert.ok(existsSync(foreignClaude));
+  assert.ok(existsSync(foreignCursor));
+
+  const manifest = readJson(dir, path.join('.promptobus', 'manifest.json'));
+  assert.deepEqual(manifest.harnesses, []);
+  assert.deepEqual(manifest.ownedSkills, { claude: [], cursor: [], codex: [] });
+  assert.deepEqual(homeHits(home), []);
+});
+
+test('install refuses to silently overwrite foreign skill file at package skill path', () => {
+  const { dir, home } = sandbox();
+  const foreignSkill = path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md');
+  mkdirSync(path.dirname(foreignSkill), { recursive: true });
+  writeFileSync(foreignSkill, '# My custom unowned orchestrate skill\n');
+
+  assert.throws(
+    () => doInstall(dir, home, { harnesses: 'claude' }),
+    (err) => err instanceof GateError && /\.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md already exists and is not owned/.test(err.message),
+  );
+
+  // --check with a foreign file names the path and foreign refusal, exits 1 and does not throw (N3, N8)
+  let checkCode;
+  const checkOutput = capture(() => { checkCode = doInstall(dir, home, { harnesses: 'claude', check: true }); });
+  assert.equal(checkCode, 1);
+  assert.match(checkOutput, /drift: \.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md — not owned by promptobus/);
+
+  // --dry-run reports refusal of foreign file and exits 0 (N3, N8)
+  let dryRunCode;
+  const dryRunOutput = capture(() => { dryRunCode = doInstall(dir, home, { harnesses: 'claude', dryRun: true }); });
+  assert.equal(dryRunCode, 0);
+  assert.match(dryRunOutput, /dry-run: would refuse \.claude[\\/]skills[\\/]orchestrate[\\/]SKILL\.md — not owned by promptobus/);
+});
+
+test('install recognizes ownership from in-file marker when manifest is absent', () => {
+  const { dir, home } = sandbox();
+  const skillDir = path.join(dir, '.claude', 'skills', 'orchestrate');
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(path.join(skillDir, '.gitignore'), '*\n');
+  writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: orchestrate\n---\n\n<!-- promptobus:owned -->\n\n# Old orchestrate\n');
+
+  // Manifest does not exist (fresh clone)
+  assert.equal(existsSync(path.join(dir, '.promptobus', 'manifest.json')), false);
+
+  // Install recognises in-file marker and succeeds
+  assert.equal(doInstall(dir, home, { harnesses: 'claude' }), 0);
+
+  const manifest = readJson(dir, path.join('.promptobus', 'manifest.json'));
+  assert.deepEqual(manifest.harnesses, ['claude']);
+  assert.ok(manifest.ownedSkills.claude.includes(path.join('.claude', 'skills', 'orchestrate', 'SKILL.md')));
+});
+
+test('uninstall succeeds when package skills directory is absent', () => {
+  const { dir, home } = sandbox();
+  assert.equal(doInstall(dir, home, { harnesses: 'claude,cursor' }), 0);
+  assert.ok(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md')));
+
+  const missingSkills = path.join(dir, 'absent-skills');
+  assert.throws(
+    () => doInstall(dir, home, { harnesses: 'claude', skillsDir: missingSkills }),
+    (err) => err instanceof GateError && err.message.includes('package skills directory is missing'),
+  );
+
+  // Uninstall succeeds even when package skills directory is absent (wanted is empty)
+  assert.equal(doUninstall(dir, home, { skillsDir: missingSkills }), 0);
+  assert.equal(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate')), false);
+});
+
+test('packageSkills rejects missing directory, empty directory, and symlinks', () => {
+  const { dir } = sandbox();
+  assert.throws(
+    () => packageSkills(path.join(dir, 'nonexistent')),
+    (err) => err instanceof GateError && err.message.includes('package skills directory is missing'),
+  );
+
+  const emptyDir = path.join(dir, 'empty');
+  mkdirSync(emptyDir);
+  assert.throws(
+    () => packageSkills(emptyDir),
+    (err) => err instanceof GateError && err.message.includes('package skills directory has no skills'),
+  );
+
+  // Symlink to a directory at top level of skills/
+  const topSymlinkDir = path.join(dir, 'top-symlink');
+  const topTarget = path.join(dir, 'top-target');
+  mkdirSync(topSymlinkDir, { recursive: true });
+  mkdirSync(topTarget, { recursive: true });
+  symlinkSync(topTarget, path.join(topSymlinkDir, 'linked-skill'));
+  assert.throws(
+    () => packageSkills(topSymlinkDir),
+    (err) => err instanceof GateError && err.message.includes('package skills contains symlink'),
+  );
+
+  // Symlink to a file inside a skill
+  const symlinkDir = path.join(dir, 'with-symlink');
+  const dummyTarget = path.join(dir, 'target');
+  mkdirSync(path.join(symlinkDir, 'skill-a'), { recursive: true });
+  writeFileSync(dummyTarget, 'dummy');
+  symlinkSync(dummyTarget, path.join(symlinkDir, 'skill-a', 'link'));
+  assert.throws(
+    () => packageSkills(symlinkDir),
+    (err) => err instanceof GateError && err.message.includes('package skills contains symlink'),
+  );
+});
+
+test('installed skills with self-ignoring .gitignore remain untracked in git', () => {
+  const { dir, home } = sandbox();
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  // Add a .gitignore to ignore machine-local .promptobus/ and promptobus.json
+  writeFileSync(path.join(dir, '.gitignore'), '.promptobus/\npromptobus.json\n');
+  spawnSync('git', ['add', '.gitignore'], { cwd: dir });
+  spawnSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir });
+
+  assert.equal(doInstall(dir, home, { harnesses: 'claude,cursor,codex' }), 0);
+
+  // Skill files exist on disk
+  assert.ok(existsSync(path.join(dir, '.claude', 'skills', 'orchestrate', 'SKILL.md')));
+  assert.ok(existsSync(path.join(dir, '.cursor', 'skills', 'orchestrate', 'SKILL.md')));
+  assert.ok(existsSync(path.join(dir, '.codex', 'skills', 'orchestrate', 'SKILL.md')));
+
+  const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(status.status, 0);
+  const lines = status.stdout.split('\n').filter(Boolean);
+  // Control: .claude/settings.json is seen as an untracked file
+  assert.ok(lines.some((l) => l.includes('.claude/settings.json') || l.includes('.claude\\settings.json')), 'untracked control files must be listed');
+  // Assertion: no line in untracked files list contains skills
+  assert.ok(lines.every((l) => !l.includes('skills')), 'laid-out skills must not appear in untracked files');
 });

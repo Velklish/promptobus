@@ -24,7 +24,7 @@ English is canonical. The Russian README is the only other language in this repo
 - **MCP server and hooks.** `promptobus mcp` exposes three tools over stdio. `promptobus install` writes the project-level hooks — bus feedback after each bus tool call and a Stop guard that returns the turn while mail is unread, or while an answer the participant owes has not been sent — and a warden wakes the addressee when mail arrives. Which types ask for an answer is a published table, and `status` prints `UNANSWERED` for a turn that ended owing one.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
 - **A library, not only a CLI.** Engine, host contract, driver contract and hook planner are exported with TypeScript types; the bundled runtime also reuses the package's canonical atomic, quoting and process helpers through built implementation modules, and the package has no runtime dependencies.
-- **Process skills included.** `skills/orchestrate` and `skills/solo-review` tell an agent how to run a split and how to ask for a review.
+- **Process skills included.** `promptobus install` lays out `skills/orchestrate` and `skills/solo-review` into the project skill location of each selected harness and owns them. They tell an agent how to run a split and how to ask for a review.
 
 ## Requirements
 

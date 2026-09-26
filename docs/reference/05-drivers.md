@@ -266,6 +266,16 @@ would cost a lift — a bad id comes back in about two seconds with empty stdout
 the ids that do exist, without opening a chat. So `optionRefusal` refuses on the binary version
 and on `tmux`, and leaves the model-and-level pair to the binary.
 
+### Cursor: project skills location
+
+Source: `lib/driver-cursor.js` (`CURSOR_SKILLS_REL`).
+
+Cursor reads project-level skills from `.cursor/skills/<name>/SKILL.md`. Measured 2026-09-26 on
+`cursor-agent` 2026.09.26-dd393fe: a session started with
+`cursor-agent --trust -p --workspace <dir> "..."` and asked to inventory its available skills and
+rules listed `.cursor/skills/<name>/SKILL.md` alongside rules in `.cursor/rules/`, and obeyed
+instructions from that skill file during subsequent turns.
+
 ### Cursor: tmux by absolute path
 
 Source: `lib/cursor-persist.js` (`tmuxBin`, `tmux`, `readTmuxSessions`, `findSession`).

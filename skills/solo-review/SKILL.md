@@ -3,6 +3,8 @@ name: solo-review
 description: Isolated review of your own diff. A read-only Promptobus reviewer session reads the change with a fresh context and sends findings on the bus. Use when asked to raise a reviewer, check a diff, or review a branch with new eyes. Not for spawning workers or running a multi-repo task (that is orchestrate).
 ---
 
+<!-- promptobus:owned -->
+
 # Solo review
 
 The reviewer is a separate background session. Your context does not flow into it. Orchestration is not required. One command is enough.

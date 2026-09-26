@@ -102,15 +102,21 @@ promptobus uninstall [--harnesses claude,cursor,codex]
 
 ### What the installer writes
 
-| Harness | Project file | Loop guard |
-|---|---|---|
-| Claude Code | `.claude/settings.json` | `Stop` and `SessionStart` |
-| Cursor | `.cursor/hooks.json` (`version` 1) | `stop` |
-| Codex | `.codex/hooks.json` | `Stop` and `SessionStart` |
+| Harness | Project file | Loop guard | Project skills |
+|---|---|---|---|
+| Claude Code | `.claude/settings.json` | `Stop` and `SessionStart` | `.claude/skills/<name>/SKILL.md` |
+| Cursor | `.cursor/hooks.json` (`version` 1) | `stop` | `.cursor/skills/<name>/SKILL.md` |
+| Codex | `.codex/hooks.json` | `Stop` and `SessionStart` | `.codex/skills/<name>/SKILL.md` |
 
 The loop guard is the only hook installed. A `PostToolUse` hook that echoed each bus call into the session was installed until the 0.6.x line; an install now removes it where an earlier one wrote it, together with the runner script it ran. Nothing is generated under `.promptobus/hooks/` any more — `busHookRel()` survives as the path that recognises such a leftover, and removing it would remove the ability to clean one up.
 
-The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) are checked first; no committed project file records hook ownership.
+The package's process skills (`skills/orchestrate` and `skills/solo-review`) are laid out byte-identical into the project skills directory of each selected harness. Each laid-out skill file carries the in-file ownership marker `<!-- promptobus:owned -->` below its YAML frontmatter. Ownership is recorded in `.promptobus/manifest.json` under `ownedSkills`. On a fresh clone or another checkout where the local manifest is absent, `install` reads the in-file marker to recognise package-owned skills. If a foreign file is already present at an install path without an ownership marker or manifest record, `install` refuses to overwrite it and reports the path. When a foreign file occupies a skill path, `--dry-run` reports `dry-run: would refuse <rel> — not owned by promptobus` and `--check` reports `drift: <rel> — not owned by promptobus`.
+
+Laid-out skill files in the consumer's tree are ignored rather than committed: `install` writes a self-ignoring `.gitignore` (containing `*`) inside each laid-out skill directory (following the pattern used by the Codex driver for sandboxes), so the laid-out skills add no untracked paths.
+
+`install --check` detects if an owned skill file was modified or deleted. `uninstall` removes only owned skill files and their `.gitignore`, prunes empty skill directories, and leaves foreign skills intact.
+
+The install manifest at `.promptobus/manifest.json` (`installManifestRel()`) is machine-local state the installer never commits; add `.promptobus/` to your `.gitignore`. During a merge, its exact hook ids (`prevIds`) and owned skill paths (`ownedSkills`) are checked first; no committed project file records ownership.
 
 The installer leaves an existing unselected harness file byte-for-byte untouched. If it finds an owned hook group left by an earlier install, it rewrites that file only to remove the group; `install --check` reports drift for that cleanup when needed.
 

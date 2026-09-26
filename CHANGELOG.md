@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`promptobus install` lays out and owns the package's process skills** (PB-268, [ADR-023](docs/adr/adr-023-install-owns-process-skills.md)).
+  `promptobus install --harnesses <list>` copies bundled process skills (`skills/orchestrate` and `skills/solo-review`) into each selected harness's project skill directory (`.claude/skills/`, `.cursor/skills/`, `.codex/skills/`).
+  Delivered skill content is byte-identical to the package source, and ownership is tracked in `.promptobus/manifest.json` under `ownedSkills`.
+  An existing foreign file at an install path without an ownership marker or manifest record is preserved with an installation refusal.
+  Each laid-out skill directory receives a self-ignoring `.gitignore` so skill files remain ignored in the consumer's tree.
+  `install --check` detects if owned skill files have drifted or were deleted, and `uninstall` removes only owned skill files while pruning empty directories and preserving foreign skills.
+  [Install guide](docs/guides/install.md).
+
 - **Codex GPT-5.6 and GPT-5.5 catalog ladders now cover their listed efforts** (PB-246.3). Added low for Sol, Terra, Luna and GPT-5.5, plus xhigh for Luna, by interpolation from the existing base ratings. The Codex priority order remains unique without moving existing rows. [Model routing guide](docs/guides/model-routing.md).
 
 - **A gate-record entry can say whether it is a project gate or a card's own verification run** (PB-232).

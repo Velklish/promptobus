@@ -3,6 +3,8 @@ name: orchestrate
 description: Orchestrate a large task with worker sessions on Promptobus. Use when work splits across repositories or independent slices, and the user asks to spawn workers, run in parallel, or watch a worker. Start workers only after explicit approval. Not for a one-line edit, a read, or a question. Isolated review of one diff without workers is solo-review.
 ---
 
+<!-- promptobus:owned -->
+
 # Orchestrate
 
 You hold the whole task. Workers edit isolated git worktrees. Mail goes through Promptobus. Workers do not write to each other.
