@@ -417,3 +417,10 @@ ownership gate is the other half of the same: a foreign session does not
 get a socket written (`joinBus`), but it may become the owner on the same
 connection — `mailbox {claim: true}` — and the mark would keep
 `wake/<address>.json` on the previous owner's socket until the end of the turn.
+
+**A no-identity call is judged the same way, not by `gated` alone.** Its
+`right` proves nothing either way (03-cli § The owner gate), so `join` reads
+`right` — the owner, a session that names itself on a task with no recorded
+owner, or a participant address may hand over the contact point; a
+`no-identity` or `foreign` call may not, and neither is marked entered: the
+next call on this connection is asked again.

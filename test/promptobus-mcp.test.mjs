@@ -767,10 +767,50 @@ await ownerWake.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check(`: the mailbox's owner does register a contact point`,
   store.readWake(HOME, OWNED, 'orchestrator')?.socket === `/tmp/promptobus-mcp-wake-${OWNER}.sock`,
   JSON.stringify(store.readWake(HOME, OWNED, 'orchestrator')));
-// Both servers are stopped right away: a live child process keeps the file's event loop alive, and
+
+// A no-identity call proves nothing either way, and used to pass the same `!gated` check
+// the owner does — overwriting `wake/orchestrator.json` with its own socket, no session.
+const THIEF = 'thief-5555-6666';
+const anonWake = await boot(startServer('orchestrator', {
+  task: OWNED,
+  env: {
+    CLAUDE_CODE_SESSION_ID: '',
+    CLAUDE_CODE_MESSAGING_SOCKET: `/tmp/promptobus-mcp-wake-${THIEF}.sock`,
+    CLAUDE_CODE_MESSAGING_TOKEN: `tok-${THIEF}`,
+  },
+}));
+await anonWake.call('tools/call', { name: 'promptobus_task', arguments: {} });
+check(': a no-identity session does not replace the owner\'s contact point',
+  store.readWake(HOME, OWNED, 'orchestrator')?.socket === `/tmp/promptobus-mcp-wake-${OWNER}.sock`
+  && store.readWake(HOME, OWNED, 'orchestrator')?.token === `tok-${OWNER}`
+  && store.readWake(HOME, OWNED, 'orchestrator')?.session === OWNER,
+  JSON.stringify(store.readWake(HOME, OWNED, 'orchestrator')));
+
+// Contested identity (two harnesses naming themselves at once) resolves to session null the
+// same as no identity at all, and must not register either — proven, never assumed.
+const CONTESTED = 'contested-7777-8888';
+const contestedWake = await boot(startServer('orchestrator', {
+  task: OWNED,
+  env: {
+    CLAUDE_CODE_SESSION_ID: CONTESTED,
+    CODEX_THREAD_ID: 'own-thread',
+    CLAUDE_CODE_MESSAGING_SOCKET: `/tmp/promptobus-mcp-wake-${CONTESTED}.sock`,
+    CLAUDE_CODE_MESSAGING_TOKEN: `tok-${CONTESTED}`,
+  },
+}));
+await contestedWake.call('tools/call', { name: 'promptobus_task', arguments: {} });
+check(': a session whose identity is contested does not register a contact point either',
+  store.readWake(HOME, OWNED, 'orchestrator')?.socket === `/tmp/promptobus-mcp-wake-${OWNER}.sock`
+  && store.readWake(HOME, OWNED, 'orchestrator')?.token === `tok-${OWNER}`
+  && store.readWake(HOME, OWNED, 'orchestrator')?.session === OWNER,
+  JSON.stringify(store.readWake(HOME, OWNED, 'orchestrator')));
+
+// All four servers are stopped right away: a live child process keeps the file's event loop alive, and
 // the file would never finish at all — the runner would kill it on a timeout as hung.
 alienWake.stop();
 ownerWake.stop();
+anonWake.stop();
+contestedWake.stop();
 rmSync(store.wakeFile(HOME, OWNED, 'orchestrator'), { force: true });
 
 check(': reading the foreign mailbox did not carry off the original',

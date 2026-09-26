@@ -271,7 +271,7 @@ test('the contact point is handed over on initialize and is not handed over a se
   // fell back to `self-wake`. Identity is already resolved at `initialize`,
   // there is no need to wait for a tool.
   const one = await talk([rpc(1, 'initialize', { capabilities: {} })]);
-  assert.deepEqual(one.calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: false }]);
+  assert.deepEqual(one.calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: false, mayRegister: true }]);
   // A repeat is not work: `onJoin` writes to the store and raises a process,
   // and a session enters a task once per connection. It is counted by task,
   // so three `initialize`s and two tool calls in a row give exactly one entry.
@@ -288,8 +288,8 @@ test('the contact point is handed over on initialize and is not handed over a se
     rpc(5, 'tools/call', { name: 'promptobus_task', arguments: { task: SECOND } }),
   ]);
   assert.deepEqual(many.calls.joins, [
-    { home, task: TASK, address: 'orchestrator', gated: false },
-    { home, task: SECOND, address: 'orchestrator', gated: false },
+    { home, task: TASK, address: 'orchestrator', gated: false, mayRegister: true },
+    { home, task: SECOND, address: 'orchestrator', gated: false, mayRegister: true },
   ]);
 });
 
@@ -329,7 +329,7 @@ test('an entry that refused on the handshake leaves no mark — the next call en
   // the session would have been left without a bus exactly because it had
   // nothing to hand the contact point over with.
   assert.equal(responses[0].result.protocolVersion, VERSIONS[0]);
-  assert.deepEqual(calls.joins, [{ home: brokenHome, task: TASK, address: 'orchestrator', gated: false }]);
+  assert.deepEqual(calls.joins, [{ home: brokenHome, task: TASK, address: 'orchestrator', gated: false, mayRegister: true }]);
   assert.match(textOf(responses[1]), new RegExp(`^task ${TASK} · журнал, который чинят`));
 });
 
@@ -388,7 +388,7 @@ test('tools/call: send puts the message and names the recipient, the address, an
   // Task entry is before the tool work, and ownership is counted by the
   // package: the consumer hands over the contact point and raises the
   // listener, but only it knows with what.
-  assert.deepEqual(calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: false }]);
+  assert.deepEqual(calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: false, mayRegister: true }]);
 });
 
 test('tools/call: mailbox returns what arrived and glues on the stalled diagnostic', async () => {
@@ -417,6 +417,7 @@ test('tools/call: an orchestrator mailbox with no session identity is a copy, an
   const before = at(home).unread(TASK, addrDir('orchestrator'));
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
+    rpc(2, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
   ], { session: null });
   const said = textOf(responses[0]);
   assert.match(said, /carries no session identity/);
@@ -424,9 +425,14 @@ test('tools/call: an orchestrator mailbox with no session identity is a copy, an
   assert.equal(said.includes('left for the owner'), true);
   assert.equal(at(home).unread(TASK, addrDir('orchestrator')), before);
   assert.deepEqual(calls.stalls, []);
-  assert.deepEqual(calls.joins.map((join) => ({ task: join.task, address: join.address })), [
-    { task: TASK, address: 'orchestrator' },
+  // Not marked entered either: proving nothing, the second call in this
+  // same connection is asked again, same as a foreign one.
+  assert.deepEqual(calls.joins, [
+    { home, task: TASK, address: 'orchestrator', gated: false, mayRegister: false },
+    { home, task: TASK, address: 'orchestrator', gated: false, mayRegister: false },
   ]);
+  // Consume "left for the owner" with a real owner read: `home` is shared
+  // across this file's tests, and a peek would leave it unread for the next one.
   await talk([rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} })]);
 });
 
@@ -447,7 +453,7 @@ test('tools/call: a participant address with no session identity still fetches i
   assert.equal(said.includes('the participant\'s own mail'), true);
   assert.equal(/carries no session identity/.test(said), false);
   assert.equal(at(home).unread(SECOND, addrDir('worker:cargos-api')), 0);
-  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:cargos-api', gated: false }]);
+  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:cargos-api', gated: false, mayRegister: true }]);
 });
 
 test('tools/call: a foreign session mailbox is a copy with a loud heading, originals stay with the owner', async () => {
@@ -459,7 +465,7 @@ test('tools/call: a foreign session mailbox is a copy with a loud heading, origi
   // The stalled diagnostic is not sent to a stranger: the route in it leads
   // where the gate does not let them.
   assert.deepEqual(calls.stalls, []);
-  assert.deepEqual(calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: true }]);
+  assert.deepEqual(calls.joins, [{ home, task: TASK, address: 'orchestrator', gated: true, mayRegister: false }]);
 });
 
 test('a foreign session gets no entry mark — once it becomes the owner, it enters on the same connection', async () => {
@@ -481,9 +487,9 @@ test('a foreign session gets no entry mark — once it becomes the owner, it ent
     options: { resolveIdentity: () => ({ role: 'orchestrator', home: claimHome, declaredTask: TASK, session: heir }) },
   });
   assert.deepEqual(calls.joins, [
-    { home: claimHome, task: TASK, address: 'orchestrator', gated: true },
-    { home: claimHome, task: TASK, address: 'orchestrator', gated: true },
-    { home: claimHome, task: TASK, address: 'orchestrator', gated: false },
+    { home: claimHome, task: TASK, address: 'orchestrator', gated: true, mayRegister: false },
+    { home: claimHome, task: TASK, address: 'orchestrator', gated: true, mayRegister: false },
+    { home: claimHome, task: TASK, address: 'orchestrator', gated: false, mayRegister: true },
   ]);
 });
 

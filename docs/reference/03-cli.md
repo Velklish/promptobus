@@ -1211,6 +1211,12 @@ rather than what was missing:
 | `foreign` | no | yes | the call names a session and the owner is another one |
 | `other-address` | no | no | the address asked about is not `orchestrator` |
 
+**A second consumer reads `right`, not `gated`: `join`.** Handing over the `orchestrator`
+contact point ([01-overview § join](01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener))
+is allowed for `owner`, `ownerless` and `other-address`, refused for `foreign` and
+`no-identity` alike. `gated` alone would have let the second one through: it answers "proved
+foreign", and a call that names no session proves nothing either way.
+
 **`done`, `stop` and `dismiss` read `!allowed` and never `gated`, and for `done` that is the
 whole gate.** Each of the three ends or edits somebody's run — the close sweeps worktree
 directories of closed tasks, the stop takes a worker off work another session is watching, the

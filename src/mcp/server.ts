@@ -31,6 +31,8 @@ export interface McpJoin {
   task: string;
   address: string;
   gated: boolean;
+  /** Whether this call's `right` may take the contact point — false for `no-identity` and `foreign`. */
+  mayRegister: boolean;
 }
 
 /** Who stall diagnosis is asked about. */
@@ -219,9 +221,12 @@ export function createMcpServer(options: McpOptions): {
     // Ownership is asked here: contact-point handoff must happen before work
     // — otherwise the first call of a foreign session would have time to
     // write its own socket.
-    const { gated } = service.ownership(home, task, role, session);
-    onJoin({ home, task, address: role, gated });
-    if (!gated) joined.add(task);
+    const own = service.ownership(home, task, role, session);
+    // A no-identity call proves nothing either way, so it may not register —
+    // `gated` alone would let it through: `gated` means "proved foreign" only.
+    const mayRegister = own.right !== 'no-identity' && own.right !== 'foreign';
+    onJoin({ home, task, address: role, gated: own.gated, mayRegister });
+    if (mayRegister) joined.add(task);
   }
 
   // Enter by the DECLARED task — that is how enter happens on handshake, where
