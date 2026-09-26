@@ -298,7 +298,9 @@ rebooted.
 the Cursor binary search and for tmux alike, read from the environment the search is handed. It
 is a suite seam and is unset in life: the absolute entries sit outside any sandboxed `HOME`, so
 the suite's hygiene (`test/hygiene.mjs`) sets it to `~/.local/bin` — the sandbox one — and an
-unstubbed tmux there is not found rather than the machine's.
+unstubbed tmux there is not found rather than the machine's. The Cursor-binary search shares the
+same seam, so `test/promptobus-driver-cursor.test.mjs` hands its own `findCursorBin`/`liveBin`
+checks the same sealed value rather than letting them fall through to the default list.
 
 ### The driver contract
 

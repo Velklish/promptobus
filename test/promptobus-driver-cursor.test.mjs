@@ -19,6 +19,7 @@
 // serial runner group. Here everything that is judged without a clock.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -59,7 +60,7 @@ const {
   ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTranscript, sessionFile, SESSION_ENV_VAR,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
   turnState,
-  workspaceHash, writeSession,
+  workspaceHash, writeSession, searchPath,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
@@ -334,16 +335,39 @@ check('PB-85: real tmux resolver searches a known install location outside PATH'
 
 // PB-93: binary names are ranked before directories, so a Cursor binary wins over a
 // bare `agent` even when both are present on the same search path.
+const pb93InstallDirs = process.env.PROMPTOBUS_CURSOR_INSTALL_DIRS;
+
+// Records which keys the search actually reads off the env it is handed, so the checks
+// below observe the real call instead of recomputing from a copy held on the side.
+function recordingEnv(base) {
+  const reads = {};
+  const env = new Proxy(base, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof prop === 'string') reads[prop] = value;
+      return value;
+    },
+  });
+  return { env, reads };
+}
+
 const pb93BinPath = path.join(SB, 'pb93-bin-path');
 stubCommand(pb93BinPath, 'agent', '');
 stubCommand(pb93BinPath, 'cursor-agent', '');
+const pb93Home = path.join(SB, 'pb93-home');
+const pb93Recorded = recordingEnv({ PATH: pb93BinPath, PROMPTOBUS_CURSOR_INSTALL_DIRS: pb93InstallDirs });
 const pb93Find = typeof cursorModule.findCursorBin === 'function'
-  ? cursorModule.findCursorBin({ env: { PATH: pb93BinPath }, home: path.join(SB, 'pb93-home') })
+  ? cursorModule.findCursorBin({ env: pb93Recorded.env, home: pb93Home })
   : null;
 check('PB-93: findCursorBin prefers cursor-agent over a bare agent',
   typeof cursorModule.findCursorBin === 'function'
   && pb93Find?.path === path.join(pb93BinPath, 'cursor-agent'),
   String(pb93Find));
+check('PB-239.4: findCursorBin actually read the sealed install-directory variable, and stays inside the sandbox',
+  pb93Recorded.reads.PROMPTOBUS_CURSOR_INSTALL_DIRS === pb93InstallDirs
+  && searchPath({ env: { PATH: pb93Recorded.reads.PATH, PROMPTOBUS_CURSOR_INSTALL_DIRS: pb93Recorded.reads.PROMPTOBUS_CURSOR_INSTALL_DIRS }, home: pb93Home })
+    .dirs.every((dir) => dir.startsWith(SB)),
+  JSON.stringify(pb93Recorded.reads));
 
 // PB-93: stop resolves with the caller's environment. Put a decoy in process.env and
 // the expected binary in a separate env; liveBin must use the latter.
@@ -352,19 +376,38 @@ const pb93CallerPath = path.join(SB, 'pb93-caller-path');
 stubCommand(pb93ProcessPath, 'cursor-agent', '');
 stubCommand(pb93CallerPath, 'cursor-agent', '');
 const pb93PathBefore = process.env.PATH;
+// liveBin has no home override of its own — HOME is swapped here too, so the seal's
+// `~/.local/bin` entry lands inside the sandbox for this call as well.
+const pb93HomeBefore = process.env.HOME;
+const pb93LiveHome = path.join(SB, 'pb93-live-home');
+mkdirSync(pb93LiveHome, { recursive: true });
 let pb93Live;
+let pb93LiveRecorded;
+let pb93LiveHomeSeen;
 try {
   process.env.PATH = pb93ProcessPath;
+  process.env.HOME = pb93LiveHome;
+  pb93LiveRecorded = recordingEnv({ PATH: pb93CallerPath, PROMPTOBUS_CURSOR_INSTALL_DIRS: pb93InstallDirs });
   pb93Live = typeof cursorModule.liveBin === 'function'
-    ? cursorModule.liveBin('recorded-cursor', { env: { PATH: pb93CallerPath } })
+    ? cursorModule.liveBin('recorded-cursor', { env: pb93LiveRecorded.env })
     : null;
+  pb93LiveHomeSeen = homedir();
 } finally {
   process.env.PATH = pb93PathBefore;
+  if (pb93HomeBefore === undefined) delete process.env.HOME;
+  else process.env.HOME = pb93HomeBefore;
 }
 check('PB-93: liveBin resolves against the caller environment',
   typeof cursorModule.liveBin === 'function'
   && pb93Live === realpathSync(path.join(pb93CallerPath, 'cursor-agent')),
   `${String(pb93Live)} · ${realpathSync(path.join(pb93CallerPath, 'cursor-agent'))} · ${pb93Live === realpathSync(path.join(pb93CallerPath, 'cursor-agent'))}`);
+check('PB-239.4: liveBin actually read the sealed install-directory variable, and stays inside the sandbox too',
+  pb93LiveRecorded.reads.PROMPTOBUS_CURSOR_INSTALL_DIRS === pb93InstallDirs
+  && searchPath({
+    env: { PATH: pb93LiveRecorded.reads.PATH, PROMPTOBUS_CURSOR_INSTALL_DIRS: pb93LiveRecorded.reads.PROMPTOBUS_CURSOR_INSTALL_DIRS },
+    home: pb93LiveHomeSeen,
+  }).dirs.every((dir) => dir.startsWith(SB)),
+  JSON.stringify({ reads: pb93LiveRecorded.reads, home: pb93LiveHomeSeen }));
 
 // --- lift plan ----------------------------------------------------------------------
 

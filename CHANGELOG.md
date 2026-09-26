@@ -45,6 +45,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The unread tail no longer tells a no-identity call to fetch a mailbox it can only copy** (PB-178.4).
+  `unreadNote` on the orchestrator address now reads `ownership`'s `right` before its `gated` field: on
+  `no-identity` the tail opens with the same `unprovenOwnerLine` the mailbox reply uses (PB-178.2, which
+  also names a contested identity by its own words rather than flattening it to "no session identity"),
+  then says what a `promptobus_mailbox` call from this session will do, then the same `ownerRoute` —
+  instead of "your mailbox: unread N — fetch it with the promptobus_mailbox tool", a route that call
+  cannot take. The owner's and a participant's tails are unchanged, and the foreign tail keeps its own
+  wording.
+  [03-cli § The owner gate](docs/reference/03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss).
+
+- **The suite's two `findCursorBin`/`liveBin` checks now carry the install-directory seal** (PB-239.4).
+  The PB-93 checks in `test/promptobus-driver-cursor.test.mjs` handed the Cursor binary search an
+  environment without `PROMPTOBUS_CURSOR_INSTALL_DIRS`, so the default install list applied and could
+  reach `/opt/homebrew/bin` and `/usr/local/bin` on the running machine — latent, since the suite's own
+  stub always won on `PATH` first. Both calls now carry the sealed value, and a check observes the call
+  itself — through a recording proxy on the env object it is handed — to confirm the seal was actually
+  read and every directory the search produced from it lies inside the sandbox.
+  [05-drivers § Cursor: tmux by absolute path](docs/reference/05-drivers.md#cursor-tmux-by-absolute-path).
+
 - **A malformed mailbox ref is named, and the transcript path is recorded from the session's start** (PB-260).
   `glanceInbox` reports a record that does not parse as `schema-invalid` with the ref name, on the same postcard
   line and health mark a filesystem refusal already uses, and still does not move the ref. A `schema-invalid`

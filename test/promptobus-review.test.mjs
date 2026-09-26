@@ -1207,13 +1207,18 @@ check('re-review: the hint also names the task id',
 // isn't named: a line that always prints stops being readable alongside a non-empty one.
 const quietReview = await capture(() => review(WS, { target: REPO, task: task.id }));
 check(': the orchestrator\'s empty mailbox is not named in `promptobus review`\'s output',
-  !/your mailbox/.test(quietReview), quietReview);
+  !/your mailbox|unread \d+ at the orchestrator/.test(quietReview), quietReview);
 store.sendMessage(home, task.id, {
   from: 'reviewer:cargos-api', to: 'orchestrator', type: 'result', body: `отчёт reviewer'а лежит непрочитанным`,
 });
+// This CLI process names no session (the suite drops the identity variables), so the
+// counter takes the owner-gate's no-identity route rather than the owner's "fetch it".
 const loudReview = await capture(() => review(WS, { target: REPO, task: task.id }));
 check(`: unread mail in the orchestrator's mailbox is named in \`promptobus review\`'s output along with the route`,
-  /your mailbox: unread 1 — fetch it with the promptobus_mailbox tool/.test(loudReview), loudReview);
+  /unread 1 at the orchestrator: task .* carries no session identity/.test(loudReview)
+  && /hands a copy; the originals stay in the mailbox/.test(loudReview)
+  && /from any session that names itself/.test(loudReview),
+  loudReview);
 check(': the counter is a notification, not a reader — the message stays in the inbox',
   store.countInbox(home, task.id, 'orchestrator') === 1,
   String(store.countInbox(home, task.id, 'orchestrator')));

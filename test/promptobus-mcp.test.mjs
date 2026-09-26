@@ -577,6 +577,24 @@ check('PB-218: and it says what to remove, not what to add',
   /removing it answers/.test(text(contestedRefusal)), text(contestedRefusal));
 contestedDirect.stop();
 
+// The unread tail reads the same contested state and must not flatten it to "no session
+// identity" either — that phrase belongs to the plain case, not the one naming two claimants.
+const contestedOrch = startServer('orchestrator', {
+  task: SECOND,
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { CLAUDE_CODE_SESSION_ID: 'parent-session', CODEX_THREAD_ID: 'own-thread', PROMPTOBUS_WARDEN: 'off' },
+});
+await contestedOrch.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+contestedOrch.notify('notifications/initialized');
+const contestedTail = await contestedOrch.call('tools/call', { name: 'promptobus_task', arguments: {} });
+check(': the unread tail for two identity variables names both too, and is not called none',
+  /CLAUDE_CODE_SESSION_ID/.test(text(contestedTail)) && /CODEX_THREAD_ID/.test(text(contestedTail))
+  && /hands a copy; the originals stay in the mailbox/.test(text(contestedTail))
+  && !/carries no session identity/.test(text(contestedTail))
+  && /Clear the environment down to one identity variable/.test(text(contestedTail)),
+  text(contestedTail));
+contestedOrch.stop();
+
 const relativePointerDirect = startServer('worker:cargos-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_CODEX_SESSION: path.basename(codexMcpRecord), PROMPTOBUS_WARDEN: 'off' },
@@ -826,6 +844,19 @@ check(': no session identity gets a copy and the owner-gate line, and the origin
   && text(anonInbox).includes('оригинал владельца')
   && store.countInbox(HOME, OWNED, 'orchestrator') === 1, text(anonInbox));
 store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { repo: 'cargos-api' }));
+
+// `promptobus_mailbox` without identity only hands a copy, so the tail must not say "fetch it".
+const anonSend = await anon.call('tools/call', {
+  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'счётчик без сессии' },
+});
+check(': no session identity in the unread tail gets the owner-gate line and the copy note, not "fetch it"',
+  !/your mailbox: unread \d+ — fetch it with the promptobus_mailbox tool/.test(text(anonSend))
+  && !/FOREIGN MAILBOX/.test(text(anonSend))
+  && /unread 1 at the orchestrator: task .* carries no session identity/.test(text(anonSend))
+  && /hands a copy; the originals stay in the mailbox/.test(text(anonSend))
+  && /from the session that owns the task/.test(text(anonSend)),
+  text(anonSend));
+
 const namelessWorker = await boot(startServer('worker:cargos-api', {
   task: OWNED, env: { CLAUDE_CODE_SESSION_ID: '' },
 }));

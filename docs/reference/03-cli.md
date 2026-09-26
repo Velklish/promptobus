@@ -1196,7 +1196,10 @@ originals stay, and the reply is `unprovenOwnerLine` — the sentence this gate
 already says, including the contested reason from `sessionIdentityReport` (`identitySaid`) —
 then the same copy sentence the foreign heading uses, then `ownerRoute` for repeating
 the mailbox tool. It is not the foreign-mailbox heading: nothing was proved foreign, and `claim` from a call
-that names no session is refused as before. An address this gate does not judge (`other-address`:
+that names no session is refused as before. The unread tail (`unreadNote`) makes the same exception on
+`no-identity`, with the same `unprovenOwnerLine` head; it has no copy printed below it to point at, so
+it names the count and says what a `promptobus_mailbox` call from this session will do instead, then the
+same `ownerRoute` — not the owner's "fetch it" line. An address this gate does not judge (`other-address`:
 `worker:…`, `reviewer:…`, `approver:…`) keeps fetching, whether or not the call names a
 session. That address's mailbox is the participant's, and this gate has nothing to say about it.
 
