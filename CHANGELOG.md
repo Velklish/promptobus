@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend penalties, and describes the implemented models command check. The CLI
   reference gives the matching `quotaCost` examples.
   [Fixture guide](test/fixtures/model-routing/README.md).
+- **Packaged documentation links follow the release tag** (PB-292). READMEs and
+  installed skills link to source-only pages at the package's version; sibling skill
+  links remain local, and a check rejects stale release tags.
+  [Overview § Documentation in the package](docs/reference/01-overview.md#documentation-in-the-package).
+
 - **Orchestrator MCP setup names each harness file and format** (PB-291). The install
   guide separates manual MCP registration from hook installation and gives read-only
   checks for Claude Code, Cursor and Codex. [Install § MCP server](docs/guides/install.md#3-mcp-server-for-the-orchestrator).

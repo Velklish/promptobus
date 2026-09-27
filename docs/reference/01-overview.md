@@ -19,6 +19,26 @@ That number is written out by hand, and the suite compares it to `package.json`,
 
 The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass.
 
+### Documentation in the package
+
+`package.json` ships both READMEs and the two process skills, but not `docs/`, `CHANGELOG.md`, `backslop.json` or `.github/`. Links from shipped Markdown to those source-only files use `https://github.com/Velklish/promptobus/blob/v<package version>/…` so an installed package keeps the documentation of its own release. The installer copies skill text without rewriting it (`lib/install.js`); links between the two installed skills remain relative, and the instructions needed to run the workflow are in the skill text.
+
+After changing `package.json`'s version for a release, refresh all package documentation links and installation examples with this one command before the release commit and tag:
+
+```bash
+node --input-type=module -e '
+import fs from "node:fs";
+const version = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
+for (const file of ["README.md", "README.ru.md", "docs/guides/install.md", "skills/orchestrate/SKILL.md"]) {
+  const text = fs.readFileSync(file, "utf8");
+  fs.writeFileSync(file, text
+    .replace(/https:\/\/github\.com\/Velklish\/promptobus\/blob\/v\d+\.\d+\.\d+\//g, `https://github.com/Velklish/promptobus/blob/v${version}/`)
+    .replace(/github:Velklish\/promptobus#v\d+\.\d+\.\d+/g, `github:Velklish/promptobus#v${version}`));
+}'
+```
+
+The documentation check compares every such tag with `package.json`. On `main` between releases, these links still open the last tagged release's pages; the current source pages are in this checkout. A version bump before its tag exists briefly points to a future destination, so publish the release commit and tag together.
+
 The `.` entry point exports `Engine` and its public input and result types, including
 `SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.
 

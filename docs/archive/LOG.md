@@ -444,3 +444,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-302"></a>`PB-302-docs-codex-home-and-thread-config` · 2026-09-27 · completed · — · Document the actual Codex private-home contents and thread config overrides
 - <a id="pb-290"></a>`PB-290-docs-supported-install-source` · 2026-09-27 · completed · — · Use an available package source throughout the installation guide
 - <a id="pb-291"></a>`PB-291-docs-orchestrator-mcp-setup` · 2026-09-27 · completed · — · Make orchestrator MCP setup explicit for each supported harness
+- <a id="pb-292"></a>`PB-292-docs-portable-package-and-installed-links` · 2026-09-27 · completed · — · Keep documentation links usable in the packed package and installed skills
