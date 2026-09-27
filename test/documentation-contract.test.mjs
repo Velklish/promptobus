@@ -79,3 +79,15 @@ check('docs: frozen legacy fixture provenance names both consumers and missing s
     'The frozen [legacy store snapshot](../../test/fixtures/promptobus/MANIFEST.md) is current input to both the [legacy reader test](../../test/promptobus-legacy-fixture.test.mjs) and the [migration test](../../test/promptobus-migration.test.mjs). Its original generator and recorded baseline revision are absent from the public repository; the manifest describes the available provenance and how to maintain this compatibility input without recapturing it.')
   && !/\bgit\s+show\s+(?:e2ea30a|8ca22be)\b/.test(provenance),
   'the provenance or one of its current consumer relationships changed');
+
+const retention = section(protocol, '### Artifacts: how a file becomes a message attachment');
+check('docs: artifact retention covers active sweep and whole-task prune',
+  has(retention,
+    "The same payload under two names yields two metadata records and one immutable blob. Retention is separate: `prune` removes a whole task and its blobs, while `sweep` may remove an accepted sender's artifact records and file entries during an active task. Under the publication lock, `blobNamed` keeps the blob if any surviving metadata record or another hard link still names it; otherwise the sweep removes it. See [the CLI cleanup contract](03-cli.md#sweepartifacts--the-removals-of-one-piece-under-the-publication-lock)."),
+  'the artifact section changed a cleanup boundary or survival condition');
+
+const claim = section(protocol, '## Claim').split('\n### ')[0];
+check('docs: claim distinguishes enforced identity checks from owner liveness',
+  has(claim,
+    "`promptobus_mailbox` with `claim: true` rebinds a task's orchestrator mailbox to the calling session. The tool requires the orchestrator address, a session identity and a recorded owner; `claimOwnership` in `lib/store.js` then replaces that owner under the task lock. It does not check whether the previous owner is live. The caller must establish that the previous session has ended before takeover; this is a precondition on the caller, not an enforced liveness gate."),
+  'claim must keep the identity gate and caller-side liveness precondition distinct');

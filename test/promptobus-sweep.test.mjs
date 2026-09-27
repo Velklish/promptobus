@@ -165,6 +165,7 @@ const gateRecord = (by) => `${JSON.stringify({
   records: [{ command: 'npm test', exit: 0, tree: 'a'.repeat(40), dirty: false, at: '2026-09-13T12:00:00.000Z', by }],
 })}\n`;
 say('worker:accepted', 'orchestrator', 'artifact', 'мои гейты', file('gates-accepted.json', gateRecord('worker:accepted')));
+say('worker:accepted', 'orchestrator', 'artifact', 'only this sender', file('retired.txt', 'unshared payload\n'));
 say('worker:accepted', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
 say('worker:neighbour', 'orchestrator', 'artifact', 'соседские гейты', file('gates-neighbour.json', gateRecord('worker:neighbour')));
 say('worker:neighbour', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
@@ -267,6 +268,7 @@ check(': a files-folder entry and its blob are ONE inode — the sweep proves th
 
 const sharedRecords = () => artifactRecords().filter((a) => a.filename.startsWith('shared'));
 const acceptedBlob = blobOf('gates-accepted.json');
+const retiredBlob = blobOf('retired.txt');
 const neighbourBlob = blobOf('gates-neighbour.json');
 const sharedBlob = path.join(store.blobsDir(HOME, TASK), sharedRecords()[0].sha256);
 const openBlob = blobOf('open-patch.diff');
@@ -451,6 +453,10 @@ check(': its own files-folder entry and its artifact record are gone',
   !existsSync(path.join(store.filesDir(HOME, TASK), 'gates-accepted.json'))
   && !artifactRecords().some((a) => a.filename === 'gates-accepted.json'),
   readdirSync(store.filesDir(HOME, TASK)).join(', '));
+check(': an unreferenced blob leaves during active-task sweep',
+  !existsSync(retiredBlob)
+  && !existsSync(path.join(store.filesDir(HOME, TASK), 'retired.txt'))
+  && !artifactRecords().some((a) => a.filename === 'retired.txt'));
 check(': but the BLOB stays while a second hard link holds it, and the line says so',
   existsSync(acceptedBlob) && /the payload is still named/.test(out)
   && /another hard link to it/.test(out), out.trim());

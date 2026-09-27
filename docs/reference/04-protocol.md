@@ -151,7 +151,7 @@ removes the mcp-config, settings and participant directories as for any other
 stemmed participant. Their participant records and mail remain in the task
 journal.
 
-Canonical messages, intent records and inbox or history references are hard links to one inode. The blob is also immutable: multiple artifact metadata records may name one content-addressed payload, and `prune` removes the task and its blobs together.
+Canonical messages, intent records and inbox or history references are hard links to one inode. Artifact blobs are immutable content-addressed payloads: multiple metadata records may name one blob. Immutability does not set their retention; `prune` removes a whole task and its blobs, while a live-task sweep may remove an accepted sender's unreferenced blob.
 
 **Two locks, and they guard different things.** `.lock/` is the journal lock: the journal writers take it, and so does a piece sweep for the whole of its destructive stretch, worktree removal included. `.lock-blobs/` is the publication lock: a send that carries an artifact holds it while it writes the payload, names it and writes the metadata record, and a sweep holds it while it decides a payload is nobody's. A send with no artifact takes neither — the hot path of an ordinary message is untouched, and the measured cost on a send that does carry one is about half a millisecond, against a lock the journal holds across git.
 
@@ -159,7 +159,7 @@ The publication lock exists because the window between a payload and its record 
 
 **Publication holds the lock across an `await`, and that changes what a nesting licence may mean.** `withDirLock` lets a call nested inside this process's own critical section straight through, because a synchronous stretch cannot be interleaved and the nested call IS the same section. An `await` breaks that, so `withDirLockAsync` neither asks that licence nor hands it out: asynchronous holders of one lock path queue inside the process and each takes the directory in turn. A synchronous take arriving over a live asynchronous holder of the same process is refused outright rather than waited out, with its own code `lock-self-async` and not `lock-busy`: that one means "wait and retry", and here the wait is `sleepSync` and would block the very loop that has to release the lock. Waiting for a FOREIGN process differs by caller too: a synchronous take sits the hold out with `sleepSync`, because it has nothing else to do, while an asynchronous one awaits a timer — freezing the loop there would stop every other timer of the sender's own session for the length of a foreign hold, and a published asynchronous API has to behave as one. Two answers to that one question is the defect it replaced — the sweep read the link count, the engine read the records, and a payload could be nobody's to one of them while the other still held it. The full task tree and the safe deletion boundary for these paths are listed in [01-overview](01-overview.md) § Store home.
 
-`promptobus sweep <address>` is the one cleanup that works inside a LIVE task, and it stays outside the engine for that reason: `engine.prune` refuses on an active task, and the moment one piece is accepted the task is active by definition. It removes the artifact metadata records of one sender, their `files/` entries and the blobs no surviving record names — never a canonical message, an inbox or history reference, a `waits/` sidecar, `health.json`, `supervisor.log` or `stalls.json`. The engine's own rule that blobs never leave one by one is not broken by it: a blob still leaves only when nothing names it, and a re-send of the same payload writes it again. A `files/` entry is addressed by the `filename` the record carries, which `sendSync` fills from the adapter's placement callback AFTER the digest, so a second send of one payload is recorded under the numbered name that actually landed. Which record an entry belongs to is then proven by the inode the two share, because a name without that proof could name a foreign file and an inode without the name cannot separate two entries of one deduplicated blob. The command is in [03-cli](03-cli.md) § Status, done, dismiss, history, prune.
+`promptobus sweep <address>` is the one cleanup that works inside a LIVE task, and it stays outside the engine for that reason: `engine.prune` refuses on an active task, and the moment one piece is accepted the task is active by definition. It removes the artifact metadata records of one sender, their `files/` entries and blobs that no surviving metadata record or other hard link names — never a canonical message, an inbox or history reference, a `waits/` sidecar, `health.json`, `supervisor.log` or `stalls.json`. A blob still leaves only when nothing names it, and a re-send of the same payload writes it again. A `files/` entry is addressed by the `filename` the record carries, which `sendSync` fills from the adapter's placement callback AFTER the digest, so a second send of one payload is recorded under the numbered name that actually landed. Which record an entry belongs to is then proven by the inode the two share, because a name without that proof could name a foreign file and an inode without the name cannot separate two entries of one deduplicated blob. The command is in [03-cli](03-cli.md) § Status, done, dismiss, history, prune.
 
 ## Fan-out
 
@@ -325,7 +325,9 @@ The gate record says WHAT was run. It does not say why that run means anything, 
 
 ## Claim
 
-The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. A call that names no session gets a copy, the owner gate's no-identity line, the sentence that the originals stayed, and that gate's route ([03-cli § ownership](03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss)); it does not take the originals and it does not get the foreign-mailbox header. `promptobus_mailbox` with `claim: true` takes ownership when the previous session is gone. `src/protocol.ts` names the header constants.
+The orchestrator mailbox is owned by the session that opened the task. Another session gets a copy and a foreign-mailbox header. A call that names no session gets a copy, the owner gate's no-identity line, the sentence that the originals stayed, and that gate's route ([03-cli § ownership](03-cli.md#ownership--the-owner-gate-of-done-stop-and-dismiss)); it does not take the originals and it does not get the foreign-mailbox header. `src/protocol.ts` names the header constants.
+
+`promptobus_mailbox` with `claim: true` rebinds a task's orchestrator mailbox to the calling session. The tool requires the orchestrator address, a session identity and a recorded owner; `claimOwnership` in `lib/store.js` then replaces that owner under the task lock. It does not check whether the previous owner is live. The caller must establish that the previous session has ended before takeover; this is a precondition on the caller, not an enforced liveness gate. No live-owner displacement was measured for this documentation clarification.
 
 ### Messages: names, order and what a read marks
 
@@ -414,8 +416,12 @@ Content-addressed v1 artifacts.
 
 The payload is addressed by SHA-256 and deduplicated inside the task; the
 file name lives separately, in metadata. The same payload under two names
-yields two metadata records and one blob. The blob is immutable and is
-deleted only with the task — `prune`.
+yields two metadata records and one immutable blob. Retention is separate:
+`prune` removes a whole task and its blobs, while `sweep` may remove an
+accepted sender's artifact records and file entries during an active task.
+Under the publication lock, `blobNamed` keeps the blob if any surviving
+metadata record or another hard link still names it; otherwise the sweep
+removes it. See [the CLI cleanup contract](03-cli.md#sweepartifacts--the-removals-of-one-piece-under-the-publication-lock).
 
 The digest is computed as a STREAM, on the write pass: reading the file
 twice would hash something other than what landed on disk — the source may

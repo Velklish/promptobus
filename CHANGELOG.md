@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Mailbox claim states its liveness precondition** (PB-301.1). The protocol
+  reference identifies the checks that the claim enforces and assigns the
+  previous owner's liveness check to the caller. No takeover policy changes.
+  [04-protocol § Claim](docs/reference/04-protocol.md#claim).
+
+- **Artifact retention distinguishes sweep from prune** (PB-301). The protocol
+  reference states when a live-task sweep removes an unreferenced blob and
+  when a surviving record or hard link keeps it. The blob's immutable
+  content and deduplication remain separate from its lifetime.
+  [04-protocol § Artifacts](docs/reference/04-protocol.md#artifacts-how-a-file-becomes-a-message-attachment).
+
 - **Legacy fixture provenance is self-contained** (PB-299). The manifest names
   both current consumers and explains why the frozen snapshot cannot be
   regenerated from the public checkout. It no longer offers a Git command

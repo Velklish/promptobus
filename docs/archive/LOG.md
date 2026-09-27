@@ -439,3 +439,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-286.1"></a>`PB-286.1-codex-teamlead-final-proof` · 2026-09-27 · completed · — · Complete Codex teamlead proof and admission
 - <a id="pb-298"></a>`PB-298-docs-adr-current-resolutions` · 2026-09-27 · completed · — · Expose current resolutions and supersession in accepted architecture decisions
 - <a id="pb-299"></a>`PB-299-docs-legacy-fixture-provenance` · 2026-09-27 · completed · — · Make legacy fixture provenance and recovery instructions usable from the public repository
+- <a id="pb-301"></a>`PB-301-docs-artifact-retention-contract` · 2026-09-27 · completed · — · Document live-task sweep as an artifact-blob retention boundary
+- <a id="pb-301.1"></a>`PB-301.1-docs-claim-liveness-precondition` · 2026-09-27 · batch PB-301 · — · Clarify whether claim checks owner liveness or relies on an operator precondition
