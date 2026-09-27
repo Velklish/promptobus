@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend penalties, and describes the implemented models command check. The CLI
   reference gives the matching `quotaCost` examples.
   [Fixture guide](test/fixtures/model-routing/README.md).
+- **Installation examples use the available pinned release** (PB-290). The guide and both
+  READMEs show local dependency and global CLI commands for the GitHub tag, and the host
+  reference points to the same source. [Install § Package](docs/guides/install.md#1-package).
 
 ## [0.19.0] — 2026-09-27
 

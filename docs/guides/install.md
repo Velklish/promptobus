@@ -16,13 +16,20 @@ node bin/promptobus.js --version
 
 It prints `promptobus` and the version in `package.json`. No version is written out here: a number in a guide drifts at every release with nothing to catch it.
 
-As a dependency:
+As a local library dependency, pin the GitHub release tag (the package is not published on the npm registry):
 
 ```bash
-npm install promptobus
+npm install github:Velklish/promptobus#v0.19.0
 ```
 
-The CLI entry is `bin/promptobus.js` (`package.json` `bin.promptobus`).
+For a global CLI on `PATH`, install the same release globally:
+
+```bash
+npm install -g github:Velklish/promptobus#v0.19.0
+promptobus --version
+```
+
+The CLI entry is `bin/promptobus.js` (`package.json` `bin.promptobus`). Update both examples when the release tag changes.
 
 ## 2. Workspace file
 

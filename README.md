@@ -40,13 +40,20 @@ English is canonical. The Russian README is the only other language in this repo
 
 ## Installation
 
-The package is not on the npm registry. Install it from GitHub, pinned to a release tag from [CHANGELOG.md](CHANGELOG.md):
+The package is not on the npm registry. Install the current GitHub release as a local library dependency:
 
 ```bash
-npm install github:Velklish/promptobus#v<version>
+npm install github:Velklish/promptobus#v0.19.0
 ```
 
-Add `-g` to get the `promptobus` command on `PATH`. From a clone:
+For a global CLI on `PATH`, use the same pinned tag:
+
+```bash
+npm install -g github:Velklish/promptobus#v0.19.0
+promptobus --version
+```
+
+From a clone:
 
 ```bash
 npm install

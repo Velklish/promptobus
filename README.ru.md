@@ -35,13 +35,20 @@ Promptobus даёт одной агентской сессии — оркест�
 
 ## Установка
 
-Пакета нет в реестре npm. Ставится он с GitHub, пином на тег релиза из [CHANGELOG.md](CHANGELOG.md):
+Пакета нет в реестре npm. Локальную зависимость ставят с GitHub, закрепив текущий тег релиза:
 
 ```bash
-npm install github:Velklish/promptobus#v<version>
+npm install github:Velklish/promptobus#v0.19.0
 ```
 
-Добавьте `-g`, чтобы команда `promptobus` появилась в `PATH`. Из клона:
+Для глобальной CLI-команды в `PATH` используйте тот же тег:
+
+```bash
+npm install -g github:Velklish/promptobus#v0.19.0
+promptobus --version
+```
+
+Из клона:
 
 ```bash
 npm install

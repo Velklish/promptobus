@@ -83,6 +83,8 @@ Migration also refuses before mutation if the former `tasks/` contains a non-emp
 
 `createStandaloneHost` (`src/standalone.ts`) walks up from `cwd` looking for `promptobus.json` (`HOST_CONFIG`). If the file is missing, the root is the resolved `cwd` and the config is empty.
 
+The shipped CLI uses this host whether the package was installed as a local library dependency or a global command. Both installation forms use the pinned GitHub release in [Install § Package](../guides/install.md#1-package); no npm registry package is available.
+
 It reads: `commandName`, `locale`, `version`, `tools`, `rules`, `mcp`, `skills`, `pipeline` ([§ The pipeline declaration](#the-pipeline-declaration)).
 
 The shipped `bin/promptobus.js` always supplies `commandName: 'promptobus'` and the
