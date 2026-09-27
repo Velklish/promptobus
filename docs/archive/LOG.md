@@ -423,3 +423,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-284.1"></a>`PB-284.1-fixture-add-all-commits-worktree-gitlink` · 2026-09-27 · batch PB-287 · — · squash fixtures run git add . at the clone root and commit the worker worktree as an embedded gitlink
 - <a id="pb-275"></a>`PB-275-step-kind-rights` · 2026-09-27 · completed · — · A step's kind decides its cwd, deny list and direct route
 - <a id="pb-222.1"></a>`PB-222.1-cursor-approver-live-proof` · 2026-09-27 · completed · — · Prove Cursor approver launch layer in a live worktree
+- <a id="pb-87.2"></a>`PB-87.2-cursor-mcp-deny-syntax-live-lift` · 2026-09-27 · completed · — · Cursor's MCP deny-pattern syntax for the reviewer needs one live lift, deferred until the Cursor window is restored

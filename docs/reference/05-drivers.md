@@ -214,6 +214,26 @@ binary. Cursor's `stop` re-resolves the recorded agent path through `PATH` and i
 directories (`liveBin`), and its `tmux` calls search the same places and run tmux by absolute
 path ([Cursor: tmux by absolute path](#cursor-tmux-by-absolute-path)).
 
+## Cursor: reviewer deny layer
+
+Source: `lib/driver-cursor.js` (`REVIEWER_DENY`, `cliConfig`, `approveOwnServer`)
+and `lib/review.js` (`reviewerDenyTools`).
+
+A Cursor reviewer gets `Write(**)` and `Shell(**)` in its sandbox's
+`.cursor/cli.json`. These rules deny file and shell actions. The driver does not
+declare `mcpDenyTools`, so host-classified MCP write tools add no rule; the review
+prompt is their only boundary. The driver enables its own bus server pointwise with
+`cursor-agent mcp enable promptobus`; a host's other `mcp` entries are written
+to `.cursor/mcp.json` but are not enabled by that call. It does not pass
+`--approve-mcps`, which would approve every server found up the directory tree.
+
+On `cursor-agent` 2026.09.26-dd393fe, a disposable reviewer tried three candidate
+deny spellings, one per fixture tool. The first lift returned `MCP server does not
+exist` for the unapproved fixture while the bus worked. A rerun enabled the fixture
+pointwise, but all fixture and bus MCP calls returned `Not connected`. Neither lift
+showed a connected tool being denied, so no mechanical MCP rule is claimed.
+[03-cli § Review](03-cli.md#review) states the resulting reviewer boundary.
+
 ## Cursor: the persist session
 
 Source: `lib/cursor-persist.js`.

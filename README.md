@@ -123,6 +123,8 @@ The path is required, `--title` opens a new review task, and `--task <id>` sends
 promptobus step security ./my-repo --task <id>
 ```
 
+A Cursor reviewer mechanically denies file and shell writes. External MCP writes are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](docs/reference/03-cli.md#review).
+
 Close the task when the work is accepted:
 
 ```bash

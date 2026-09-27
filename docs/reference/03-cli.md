@@ -133,8 +133,14 @@ that classification. Codex places each classified tool in its server's
 [ADR-007](../adr/adr-007-codex-participant-isolated-home.md) that covers every server
 the participant has: a Codex reviewer lifts in an isolated `CODEX_HOME`, the
 owner's personal MCP set is not in it, and neither is codex-cli's built-in `codex_apps`
-server, which the home turns off. Cursor remains
-prompt-only until its MCP deny syntax is verified. An incomplete host classification,
+server, which the home turns off. Cursor mechanically denies file and shell writes
+through `.cursor/cli.json`, but its MCP write tools remain prompt-only: this driver
+does not declare `mcpDenyTools`. On `cursor-agent` 2026.09.26-dd393fe, one live
+reviewer tried three candidate deny spellings on separate fixture tools. The first
+lift had the fixture configured but not enabled; after pointwise enable in a rerun,
+both fixture and bus MCP calls returned `Not connected`. No connected tool was
+observed blocked by a candidate pattern, so Promptobus cannot claim mechanical
+MCP denial for Cursor. An incomplete host classification,
 or a missing member where the host hands the participant any server but the bus,
 refuses a mechanical reviewer before launch files are written — the classification
 must cover every server the participant receives, not only the third-party ones. Their `denyTools` settings still protect the

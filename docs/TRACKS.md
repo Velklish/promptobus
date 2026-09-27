@@ -154,7 +154,7 @@ Added after this snapshot: [PB-158](archive/LOG.md#pb-158) — `done` removes a 
 
 Added after this snapshot: [PB-157](archive/LOG.md#pb-157) — the review snapshot is taken from the working tree, so a mandated post-commit mutation probe removes the reviewed change from the diff. Ordered near the top: it is a verification prerequisite for every track.
 
-Added after this snapshot (triage of 2026-09-10): [PB-140.1](archive/LOG.md#pb-140.1) — the fourteen default literals behind hint parameters go, the gate's allowlist empties — then [PB-87.1](archive/LOG.md#pb-87.1) — the Codex reviewer's mechanical MCP deny through `disabled_tools` and a completeness signal on the host answer; it follows the C additions. Deferred: [PB-87.2](backlog/deferred/PB-87.2-cursor-mcp-deny-syntax-live-lift.md) — the Cursor deny syntax waits for a live lift after the Cursor window is restored.
+Added after this snapshot (triage of 2026-09-10): [PB-140.1](archive/LOG.md#pb-140.1) — the fourteen default literals behind hint parameters go, the gate's allowlist empties — then [PB-87.1](archive/LOG.md#pb-87.1) — the Codex reviewer's mechanical MCP deny through `disabled_tools` and a completeness signal on the host answer; it follows the C additions. Deferred: [PB-87.2](archive/LOG.md#pb-87.2) — the Cursor deny syntax waits for a live lift after the Cursor window is restored.
 
 ### W — Guard and warden delivery
 

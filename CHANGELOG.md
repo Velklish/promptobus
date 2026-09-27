@@ -123,6 +123,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Cursor reviewer MCP writes remain prompt-guarded after a live syntax check** (PB-87.2).
+  On `cursor-agent` 2026.09.26-dd393fe, the first disposable lift lacked fixture
+  approval; the rerun connected neither the fixture nor the bus. None of the three
+  candidate deny spellings was proven on a connected tool. File and shell denies
+  remain mechanical. [03-cli § Review](docs/reference/03-cli.md#review).
+
 - **The Codex and Cursor MCP child mailbox paths have a live measurement** (PB-178.1).
   Codex 0.156.1 `thread/start` and `cursor-agent` 2026.09.26-dd393fe `mcp list-tools` each
   started a configured server without a model turn. With no session variable or record pointer
