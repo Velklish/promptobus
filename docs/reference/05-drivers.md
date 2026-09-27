@@ -33,6 +33,10 @@ gates, squash and archive, so its package deny list is empty. A host may add its
 `participantDenyTools('approver')`; the completeness gate runs before any harness branch on
 the harness that can lift an approver. The bus is never denied. That classification is
 independent of the reviewer, whose deny lists and read-only sandbox remain unchanged.
+Cursor writes an explicit `.cursor/cli.json` even when the approver's package deny list is
+empty, so it does not inherit permission rules from a parent directory. Cursor has no
+mechanical deny for individual MCP tools; the classified external writes are stated in
+the approver prompt, and an incomplete classification still refuses the lift.
 [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md) records the floor of 7
 and the worker↔approver routing exception; [ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)
 records the `--approver` flag and the reviewer-result precondition; [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
@@ -85,9 +89,30 @@ lift before its isolated home could protect it. In a controlled `config/read` pr
 the approver worktree as cwd, an isolated participant home, and a valid clone-root config
 setting `features.apps` and an extra MCP server, the effective config kept the home's
 `features.apps` value and did not add the server. A malformed `.codex/config.toml` one
-level above the clone's Git root was not loaded in the same probe. Cursor remains
-refused until its own lift proves the MCP layer, write denies and hooks. The absence of a
-clone-root placement problem is a reason to measure Cursor, not proof that it works.
+level above the clone's Git root was not loaded in the same probe. Cursor's approver
+layer places its MCP entry, permission configuration and hooks in the approver worktree.
+The launch refuses a pre-existing project file there before overwriting it.
+If a Cursor approver's persist session is gone or stale, status supplies a
+relift command for the recorded review subject with `--approver`; it keeps the
+approver's harness and does not substitute another one.
+
+A live Cursor approver lift used `gemini-3.8-flash-high` from the api pool in a
+throwaway clone. Its worktree `.cursor/hooks.json` named `--role
+approver:proof-repo --task pb2221-cursor-proof`; `hook-events.jsonl:1` recorded
+`{"event":"stop","role":"approver:proof-repo"}`. The task journal's message
+`20260927T001518474-0001-4bc69c` has `sender: "approver-proof-repo"` on line 5,
+`type: "status"` on line 9, and a body on line 10 reporting that `promptobus_task`
+returned and Cursor's `Write` tool answered `Write permission denied: `. The
+transcript records both tool calls. This proof supplied `Write(**)` only for the
+probe; the production approver's package deny list stays empty. The project
+`.cursor/mcp.json` named the bus server, and `.cursor/cli.json` held that deny.
+
+The same run stopped and closed the session, then compared the clone root: both
+snapshots had a clean tracked tree at the same HEAD, and all three pre-existing
+untracked `.cursor/` files kept their SHA-256 hashes. A relift after changing the
+approver worktree's `.cursor/hooks.json` refused to overwrite it (exit 1), with
+the foreign file's hash unchanged before and after. The corrected proof script
+exited 0.
 
 The Codex config check copies an existing clone-root file into a temporary private home
 and asks the selected Codex binary for `features list`. Only a TOML parse error refuses;

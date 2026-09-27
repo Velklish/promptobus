@@ -79,12 +79,17 @@ check(': the Cursor driver sits in the registry map and is taken by name',
 check(': without a name the previous driver is taken — Claude Code argv does not move',
   liftDriver().id === 'claude' && liftDriver(null).id === 'claude' && liftDriver('').id === 'claude');
 
-const approverRoute = cursorDriver.stallRoute({
-  kind: 'gone', address: 'approver:cur', doneCommand: 'promptobus done',
-}, null);
-check(': an approver without a session names that Cursor cannot relift an approver',
-  /Cursor cannot lift an approver/.test(approverRoute)
-  && !/lift the worker/.test(approverRoute), approverRoute);
+const approverReviewCommand = `promptobus review "/recorded/subject" --approver --task ${TASK}`;
+for (const kind of ['gone', 'stale']) {
+  const approverRoute = cursorDriver.stallRoute({
+    kind, address: 'approver:cur', repoAbs: '/approver/worktree',
+    reviewCommand: approverReviewCommand, doneCommand: 'promptobus done',
+  }, null);
+  check(`: ${kind} Cursor approver route relifts the recorded subject with --approver`,
+    approverRoute.endsWith(`lift the approver again: ${approverReviewCommand}`)
+    && !approverRoute.includes('Claude Code')
+    && !approverRoute.includes('"/approver/worktree"'), approverRoute);
+}
 
 function thrown(fn) {
   try {

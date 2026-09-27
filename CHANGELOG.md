@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   receives only its registry-mapped role. The owner and `writes-main-tree` step share the direct
   route. [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry),
   [02-host § What the host must answer](docs/reference/02-host.md#what-the-host-must-answer).
+- **Cursor approvers lift with their project layer in an isolated worktree** (PB-222.1). The
+  driver admits approver lifts, and 12 catalog tuples whose own quality and assessed base
+  quality meet the role's floor are routable. The worktree carries the MCP entry, permission
+  rules and hooks. A live Cursor lift showed the bus call, Write denial and Stop hook;
+  the clone root stayed byte-identical, and a foreign worktree hooks file was preserved.
+  Gone or stale sessions relift on the recorded review subject with `--approver`.
+  [05-drivers § Approver worktree](docs/reference/05-drivers.md#approver-worktree-project-layer-and-publication).
 
 - **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
   declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;

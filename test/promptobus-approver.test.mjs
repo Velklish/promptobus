@@ -259,22 +259,17 @@ const modelsCode = await models(hostOf(modelsCursorOnly), {
   output: { write: (chunk) => { modelsJson += chunk; } },
 });
 const modelsDecision = JSON.parse(modelsJson.trim());
-check(': models --role approver on a cursor-only workspace exits with chosen null, not candidates-empty',
-  modelsCode === 0 && modelsDecision.chosen === null,
-  JSON.stringify({ code: modelsCode, chosen: modelsDecision.chosen }));
-const harnessRefused = await (async () => {
-  try {
-    await routingContext(modelsCursorOnly, {
-      strategy: 'balanced', role: 'approver', harness: 'cursor', dryRun: true,
-    });
-    return { threw: false, code: null };
-  } catch (e) {
-    return { threw: true, code: e.code ?? null, msg: e.message ?? String(e) };
-  }
-})();
-check(': routed approver --harness cursor raises harness-refused, not harness-unknown',
-  harnessRefused.threw && harnessRefused.code === 'harness-refused',
-  harnessRefused.msg ?? String(harnessRefused.code));
+const cursorCandidates = modelsDecision.candidates.filter((c) => c.harness === 'cursor'
+  && c.excluded?.code !== 'role-not-allowed');
+check(': models --role approver offers 12 Cursor tuples on a Cursor-only workspace',
+  modelsCode === 0 && cursorCandidates.length === 12,
+  JSON.stringify({ code: modelsCode, ids: cursorCandidates.map((c) => c.tupleId) }));
+const cursorRouting = await routingContext(modelsCursorOnly, {
+  strategy: 'balanced', role: 'approver', harness: 'cursor', dryRun: true,
+});
+check(': routed approver --harness cursor passes harness eligibility',
+  cursorRouting.decide([]).candidates.some((c) => c.tupleId === 'cursor-gemini-38-high'
+    && c.excluded?.code !== 'role-not-allowed'));
 
 const CLI = path.join(here, '..', 'bin', 'promptobus.js');
 
@@ -376,71 +371,66 @@ check(': a refused approver lift keeps no brief',
   refusedBriefs.length === 0, refusedBriefs.join(', '));
 
 const cursorPlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'cursor' });
-check(': approver on Cursor stays refused until a live lift proves its project layer',
-  typeof cursorPlan.refusal === 'string'
-  && cursorPlan.refusal.includes('harness "cursor" cannot lift an approver')
-  && cursorPlan.refusal.includes('no live Cursor lift')
-  && cursorPlan.launch.files.some((f) => f.path === path.join(cursorPlan.worktreePath, '.cursor', 'hooks.json')),
-  String(cursorPlan.refusal));
-const cursorCliRefusal = spawnSync(process.execPath, [
+check(': approver on Cursor plans its MCP, deny and hook files in its own worktree',
+  cursorPlan.refusal === null
+  && cursorPlan.launch.cwd === cursorPlan.worktreePath
+  && ['mcp.json', 'cli.json', 'hooks.json'].every((name) => cursorPlan.launch.files.some((f) =>
+    f.path === path.join(cursorPlan.worktreePath, '.cursor', name))),
+  JSON.stringify({ refusal: cursorPlan.refusal, files: cursorPlan.launch.files.map((f) => f.path) }));
+const cursorProjectFile = (name) => JSON.parse(cursorPlan.launch.files.find((f) =>
+  f.path === path.join(cursorPlan.worktreePath, '.cursor', name)).text);
+check(': Cursor approver project layer names the bus and role guard with empty package denies',
+  Object.hasOwn(cursorProjectFile('mcp.json').mcpServers, PROMPTOBUS_SERVER)
+  && cursorProjectFile('hooks.json').hooks.stop.some((hook) => hook.command.includes('--role approver:cargos-api'))
+  && cursorProjectFile('cli.json').permissions.deny.length === 0);
+const cursorCliDryRun = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--dry-run',
 ], {
   encoding: 'utf8',
   cwd: WS,
   env: { ...process.env, PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off' },
 });
-check(': CLI review --approver --harness cursor refuses and does not register a participant',
-  cursorCliRefusal.status !== 0
-  && /cannot lift an approver/.test(`${cursorCliRefusal.stderr}${cursorCliRefusal.stdout}`)
+check(': CLI review --approver --harness cursor dry-runs without a participant',
+  cursorCliDryRun.status === 0
+  && cursorCliDryRun.stdout.includes(`approver cwd: ${cursorPlan.worktreePath}`)
   && !store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api'),
-  `${cursorCliRefusal.status} ${cursorCliRefusal.stderr} ${cursorCliRefusal.stdout}`);
+  `${cursorCliDryRun.status} ${cursorCliDryRun.stderr} ${cursorCliDryRun.stdout}`);
 const cursorBrief = spawnSync(process.execPath, [
-  CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--brief', ASSIGN,
+  CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--brief', ASSIGN, '--dry-run',
 ], {
   encoding: 'utf8',
   cwd: WS,
   env: { ...process.env, PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off' },
 });
-check(': --harness cursor with --brief keeps no brief',
-  cursorBrief.status !== 0
-  && /cannot lift an approver/.test(`${cursorBrief.stderr}${cursorBrief.stdout}`)
+check(': Cursor approver dry-run with --brief keeps no brief',
+  cursorBrief.status === 0
   && briefNames(HOME, TASK).length === 0,
   `${cursorBrief.status} ${cursorBrief.stderr} names=${briefNames(HOME, TASK).join(',')}`);
 
 const { eligibleHarnessesForRole } = await import(path.join(here, '..', 'lib', 'drivers.js'));
-check(': approver routing preflight uses only harnesses with approverLift',
-  eligibleHarnessesForRole(hostOf(WS), 'approver').every((h) => h !== 'cursor')
+check(': approver routing preflight includes Cursor after live proof',
+  eligibleHarnessesForRole(hostOf(WS), 'approver').includes('cursor')
   && eligibleHarnessesForRole(hostOf(WS), 'approver').includes('claude')
   && eligibleHarnessesForRole(hostOf(WS), 'approver').includes('codex'),
   eligibleHarnessesForRole(hostOf(WS), 'approver').join(','));
 const routedCtx = await routingContext(WS, { strategy: 'balanced', role: 'approver', dryRun: true });
 const routedDecision = routedCtx.decide([]);
-check(': routed approver lift never chooses Cursor before live proof',
-  routedDecision.chosen.harness !== 'cursor',
-  routedDecision.chosen.harness);
+check(': routed approver catalog includes Cursor tuples',
+  routedDecision.candidates.some((c) => c.tupleId === 'cursor-gemini-38-high'
+    && c.excluded?.code !== 'role-not-allowed'));
 
 const cursorOnlyWs = path.join(SB, 'cursor-only');
 mkdirSync(cursorOnlyWs, { recursive: true });
 writeHostConfig(cursorOnlyWs, { tools: ['cursor'] });
 writeFileSync(path.join(cursorOnlyWs, 'AGENTS.md'), 'workspace\n');
-const cursorOnlyRefusal = await (async () => {
-  try {
-    await routingContext(cursorOnlyWs, {
-      strategy: 'balanced', role: 'approver', harness: 'cursor', dryRun: true,
-    });
-    return { threw: false, msg: '' };
-  } catch (e) {
-    return { threw: true, msg: e.message ?? String(e) };
-  }
-})();
-check(': routed approver --harness cursor keeps the harness refusal, not a missing-declaration error',
-  cursorOnlyRefusal.threw
-  && /cannot lift an approver/.test(cursorOnlyRefusal.msg)
-  && !/declares no such harness/.test(cursorOnlyRefusal.msg),
-  cursorOnlyRefusal.msg);
-check(': routed approver catalog offers no cursor tuples',
-  !routedDecision.candidates.some((c) => c.harness === 'cursor' && !c.excluded?.code),
-  routedDecision.candidates.filter((c) => c.harness === 'cursor').map((c) => c.excluded?.code).join(','));
+const cursorOnlyCtx = await routingContext(cursorOnlyWs, {
+  strategy: 'balanced', role: 'approver', harness: 'cursor', dryRun: true,
+});
+check(': routed approver --harness cursor is declared and eligible',
+  cursorOnlyCtx.decide([]).candidates.some((c) => c.tupleId === 'cursor-gemini-38-high'
+    && c.excluded?.code !== 'role-not-allowed'));
+check(': routed approver catalog excludes Cursor GLM max with a below-floor base row',
+  routedDecision.candidates.find((c) => c.tupleId === 'cursor-glm-max')?.excluded?.code === 'role-not-allowed');
 check(': routed approver catalog offers Codex tuples after live proof',
   routedDecision.candidates.some((c) => c.harness === 'codex' && !c.excluded?.code),
   routedDecision.candidates.filter((c) => c.harness === 'codex').map((c) => c.excluded?.code).join(','));

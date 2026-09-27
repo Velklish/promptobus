@@ -122,15 +122,20 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 
 **All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and fifteen rows reach it. They are Claude Code's Fable ladders and both Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-6-astra` at `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. No Sol rung is a reviewer, because both Sol base rows sit at 8. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-003's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
 
-**Claude Code and Codex lift approvers.** The floor is 7, and 15 Claude Code
-tuples and 16 Codex tuples reach it with an assessed base row at the same floor.
-Cursor remains refused pending a live lift proving its project layer, write denies
-and hooks. Each approver works in a separate worktree based on local main, and
+**All three harnesses lift approvers.** The floor is 7, and 15 Claude Code,
+12 Cursor and 16 Codex tuples reach it with an assessed base row at the same floor.
+Cursor offers the Gemini 3.8 Flash high and medium, Grok 4.7 and 4.6 medium through
+xhigh, Kimi K3 low, high and max, and Gemini 3.7 Flash high rows. The GLM 5.2 max
+row is excluded even though its interpolated quality reaches 7: its assessed high
+base row has quality 6. Each approver works in a separate worktree based on local main, and
 the clone root receives its acceptance commit by fast-forward
 ([ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)). Codex refuses
 a clone-root project hooks file it did not write, or a config file whose TOML
 cannot be parsed, before creating the worktree. A valid clone-root config did
 not add a server or override the participant home in a live probe.
+The Cursor lift was proven with `gemini-3.8-flash-high` from the api pool;
+[05-drivers § Approver worktree](../reference/05-drivers.md#approver-worktree-project-layer-and-publication)
+records its hook, bus, permission and clone-root evidence.
 The lift is `review --approver` once a reviewer result is on record; acceptance work makes costly
 state changes, and [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)
 records why that work rejects 6 without buying the independent defect discovery of 8.

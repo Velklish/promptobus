@@ -454,9 +454,9 @@ test('reviewer requires both the rung and its assessed base row at the ADR-005 f
     'the reviewer harness set changed — say so in CHANGELOG and the guide, the diversity bonus depends on it');
 });
 
-test('approver is offered only at its assessed floor, on 31 shipped tuples', () => {
+test('approver is offered only at its assessed floor, on 43 shipped tuples', () => {
   const offered = CATALOG.tuples.filter((tuple) => tuple.roles.includes('approver'));
-  assert.equal(offered.length, 31);
+  assert.equal(offered.length, 43);
   for (const tuple of offered) {
     assert.ok(tuple.ratings.quality >= 7,
       `${tuple.id}: offered as an approver at quality ${tuple.ratings.quality}, below the floor of 7`);
@@ -468,8 +468,8 @@ test('approver is offered only at its assessed floor, on 31 shipped tuples', () 
   }
 
   const harnesses = new Set(offered.map((tuple) => tuple.harness));
-  assert.deepEqual([...harnesses].sort(), ['claude', 'codex'],
-    'Claude Code and Codex lift approvers; Cursor waits for live proof');
+  assert.deepEqual([...harnesses].sort(), ['claude', 'codex', 'cursor'],
+    'all three harnesses lift approvers');
 });
 
 test('the shipped catalog passes validate with no overlay present', () => {
