@@ -453,3 +453,14 @@ test('a pointer inside a function is bound by the symbol that encloses it', () =
   assert.equal(enclosingSymbol(lines, 3, 2), 'wardenRound', 'the comment line is blank in `code`, so its column is passed');
   assert.equal(enclosingSymbol(['const x = 1;', ''], 2, 0), null, 'at column 0 nothing encloses it');
 });
+
+test('the contributing guide quotes the baseline counts it names', () => {
+  const guide = readFileSync(path.join(ROOT, 'docs', 'guides', 'contributing.md'), 'utf8');
+  const named = (cls) => {
+    const found = guide.match(new RegExp('`' + cls + '`, (\\d+) pointers today'));
+    assert.ok(found, `${cls} is named in the contributing guide with a count`);
+    return Number(found[1]);
+  };
+  assert.equal(named('fileLevel'), BASELINE.classes.fileLevel);
+  assert.equal(named('crossFile'), BASELINE.classes.crossFile);
+});

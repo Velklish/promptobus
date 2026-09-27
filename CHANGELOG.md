@@ -103,6 +103,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   READMEs show local dependency and global CLI commands for the GitHub tag, and the host
   reference points to the same source. [Install § Package](docs/guides/install.md#1-package).
 
+- **Documentation links are checked in the suite** (PB-295). Every tracked Markdown
+  link is resolved in the checkout, in the files `npm pack` ships through the shared
+  process runner, and at the installed skill paths, including heading anchors. A longer
+  fence is not closed by a shorter one. A badge keeps its outer destination, the
+  first reference definition wins, a heading in a comment is not an anchor, and two
+  changelog anchors name the headings that exist. Task links and delivery misses are a
+  shrink-only baseline. External URLs are a separate command that treats an auth,
+  rate-limit or transport failure as unverified.
+  [Contributing § Documentation links](docs/guides/contributing.md#documentation-links).
+
+- **The comment-length gate is described as the check it is** (PB-295.1). `AGENTS.md`
+  names the trees the length check reads, and the contributing guide's pointer
+  counts match the baseline those counts are held against.
+  [Contributing § The sweep](docs/guides/contributing.md#the-sweep).
+
 ## [0.19.0] — 2026-09-27
 
 ### Added
@@ -489,7 +504,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Codex holder answers `requestUserInput` with the 0.156.1 response shape** (PB-196.2). It maps each question id to an empty answer list because no person is present to make a selection; the generated schema now validates the reply. [05-drivers](docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home).
 
-- **Codex 0.156.1 rollout timing is identified as turn wall time** (PB-196.3). A fresh turn with a command showed that `duration_ms` after `time_to_first_token_ms` includes tool wait, so it cannot calibrate model-active output throughput. The rollout remains excluded as a sidecar source. [Model routing guide](docs/guides/model-routing.md#participant-telemetry).
+- **Codex 0.156.1 rollout timing is identified as turn wall time** (PB-196.3). A fresh turn with a command showed that `duration_ms` after `time_to_first_token_ms` includes tool wait, so it cannot calibrate model-active output throughput. The rollout remains excluded as a sidecar source. [Model routing guide](docs/guides/model-routing.md#participant-telemetry-the-collecting-half).
 
 - **A dangling symlink at the canonical message directory is a retryable `dir-occupied` refusal, not `intent-lost`** (PB-65.4).
   Mkdir `ENOENT` there used to fall through as a missing intent, and recovery told the operator the message was
@@ -641,7 +656,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binary: the same key drops the harness's git paragraph from the session's prompt, "Never push to main/master,
   force-push, or merge." with it, so the approver preamble now says it never pushes, force-pushes or rewrites commits
   already on the remote, and that the orchestrator pushes. The key reaches a fresh lift only: a repeat `--approver`
-  onto a live session reuses it without rewriting its settings file. [05-drivers](docs/reference/05-drivers.md#the-approver-writes-to-the-shared-clone-the-harness-guard-and-the-key-that-lifts-it).
+  onto a live session reuses it without rewriting its settings file. [05-drivers](docs/reference/05-drivers.md#approver-worktree-project-layer-and-publication).
 - **`sweep` and `stop` from a lifted participant no longer depend on `claude` being on that session's `PATH`** (PB-239).
   The Claude driver's state query (`claude agents --json`) and `claude stop` called the bare name, while the lift resolves
   the binary through `host.resolveToolBin`. A background Claude session inherits its daemon's environment, and that `PATH`

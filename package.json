@@ -22,6 +22,7 @@
     "pretest": "npm run build",
     "test": "node test/run.mjs",
     "audit": "node scripts/audit-public.mjs",
+    "docs-links:external": "node scripts/docs-links.mjs --external",
     "pins": "node scripts/check-pins.mjs",
     "probe": "node scripts/mutation-probe.mjs",
     "codex-schema": "node scripts/check-codex-schema.mjs",
