@@ -421,3 +421,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-274.3"></a>`PB-274.3-renamed-owner-track-title` · 2026-09-27 · batch PB-287 · — · renamed-owner-track-title
 - <a id="pb-282.1"></a>`PB-282.1-never-checked-reads-as-no-limit-source` · 2026-09-27 · batch PB-287 · — · A never-checked harness still reads as "exposes no limit source" in unknown-remaining
 - <a id="pb-284.1"></a>`PB-284.1-fixture-add-all-commits-worktree-gitlink` · 2026-09-27 · batch PB-287 · — · squash fixtures run git add . at the clone root and commit the worker worktree as an embedded gitlink
+- <a id="pb-275"></a>`PB-275-step-kind-rights` · 2026-09-27 · completed · — · A step's kind decides its cwd, deny list and direct route

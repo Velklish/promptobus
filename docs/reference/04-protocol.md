@@ -21,14 +21,15 @@ lifts, `link` and `ask` register their respective addresses; nothing registers `
 Once registered, their routes are the closed table below. `addrDir` is injective only over admitted addresses —
 `reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
-default routing rule keeps participant traffic with the orchestrator. The direct
-worker↔approver route opens after a reviewer result is on record; worker↔worker and
-reviewer↔participant routes remain refused.
+default routing rule keeps step traffic with the orchestrator. The declared `edits-tree`
+owner and the one `writes-main-tree` step of a piece may write directly after a reviewer
+result is on record; `reads-diff` and other step pairs stay on the orchestrator route.
 
 | Sender | Recipient | Types | Decision |
 |---|---|---|---|
 | `orchestrator` | any participant of its task | all seven | unchanged |
 | any participant | `orchestrator` of its task | all seven | unchanged |
+| declared owner | declared `writes-main-tree` step of its task | all seven | the one direct step pair |
 | `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
 | `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign; delivery enters the other root's orchestrator mailbox as its peer sender |
 | `user` | `orchestrator` of a root or child task | `question` | the person asks that task's orchestrator; `teamlead:<slug>` selects its child task |
@@ -485,8 +486,8 @@ instance of one of three step kinds ([ADR-020](../adr/adr-020-role-registry-and-
 | `reporter` | governance | `reporter` | none; the name is reserved | none | — | — | no | — |
 | `user` | governance | `user` | none; the name is reserved | none | — | — | no | — |
 | `worker` | step, `edits-tree` | `worker:<slug>` | `<slug>` | none | 5 | `worker` | yes | `worker` |
-| `reviewer` | step, `reads-diff` | `reviewer:<slug>` | `reviewer-<slug>` | the harness's write tools; the host classifies MCP writes as `reviewer` | 9 | `reviewer` | yes | `reviewer` |
-| `approver` | step, `writes-main-tree` | `approver:<slug>` | `approver-<slug>` | none; the host classifies MCP writes as `approver` | 7 | `approver` | yes | `approver` |
+| `reviewer` | step, `reads-diff` | `reviewer:<slug>` | `reviewer-<slug>` | the harness's write tools; the host classifies MCP writes by kind | 9 | `reviewer` | yes | `reviewer` |
+| `approver` | step, `writes-main-tree` | `approver:<slug>` | `approver-<slug>` | none; the host classifies MCP writes by kind | 7 | `approver` | yes | `approver` |
 
 The deny list, floor, catalog role, routing and lift text of a step are its kind's. The
 catalog stays rated per kind, so `ROUTED_ROLES` is the catalog roles of the three kinds and
@@ -518,21 +519,26 @@ behind the MCP join and every command (`resolveIdentity`), `promptobus send`, th
 `promptobus_send`, and `history --participant`. An undeclared `boss:x` parses and is refused there.
 
 **Who reads which registry.** The host's, through `registryOf(host)`: the package deny list and
-the role `participantDenyTools` is asked with (`lib/review.js`, `lib/approver.js`), the reserved
-worker names (`refuseParticipantPrefix`), the participant records the three lifts write, the lift
+the selector for `participantDenyToolsByKind` or legacy `participantDenyTools`
+(`lib/review.js`, `lib/approver.js`), the reserved step names (`refuseParticipantPrefix`), the participant records the three lifts write, the lift
 words — a step is announced with its kind's words, `the reviewer` for a `reads-diff` step —
 (`lib/liftoff.js` and the Cursor and Codex drivers), the `models --role` help, and the doors
 above with their address lists. The MCP `promptobus_send` description and its `to` schema are built from that same host registry when the server is constructed. The shipped one, for what no declaration changes: `ROUTED_ROLES`,
 the default floors and `DEFAULT_ROLE`, the grammar, and the address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
 
-**What a kind does not carry yet.** The behaviour that differs by role compares the shipped step
-names, so a declared step inherits the fields above and none of these rights: the routing policy's
-direct worker–approver exception (`lib/store.js`), the approver and title lookups over the task
-record (`approverHere`, `unprovenApproverLine`, and the approver seat in
-`lib/review.js`), `readableName` (it drops a shipped step's prefix and prints any other address
-whole), the guard's participant prefixes (`lib/guard.js`), the Codex
+**Rights by kind.** A `reads-diff` gate receives the reviewer's snapshot, cwd and package
+deny list, including the harness's write tools byte-for-byte. A `writes-main-tree` gate
+works in its own worktree of local main, with the owner's worktree attached for reading,
+the approver's deny handling, and the direct route with the owner step. The owner step
+of kind `edits-tree` edits its worktree. The route uses the active registry for each send;
+the single owner and single `writes-main-tree` gate form its only direct step pair.
+
+**What a kind does not carry yet.** Some remaining behaviour compares shipped step names:
+the approver lookups over the task record (`approverHere`, `unprovenApproverLine`, and the
+approver seat in `lib/review.js`), `readableName` (it drops a shipped step's prefix and
+prints any other address whole), the guard's participant prefixes (`lib/guard.js`), the Codex
 holder's approval split (`lib/codex-session.js`), the resolver's live workers and reviewer bonus,
-the drivers' sandbox and cwd choices, their re-lift routes and parts of `status`'s recovery hints.
+the drivers' re-lift routes and parts of `status`'s recovery hints.
 `titleFromLines` takes the active `edits-tree` owner from the registry value when assembling
 the task title from track titles.
 

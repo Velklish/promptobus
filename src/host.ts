@@ -2,7 +2,7 @@
 // [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
-import type { DeclaredStep, HostDenyRole } from './registry.js';
+import type { DeclaredStep, HostDenyRole, StepKind } from './registry.js';
 import { ROOT_DIR } from './v1/layout.js';
 
 /** Host object marker: the suite uses it to tell a host from a root string. */
@@ -161,6 +161,8 @@ export interface PromptobusHost {
   reviewSkillDir(name: string): string;
 
   participantServers(): HostServers;
+  /** Classify external write tools by step kind; never include the bus. */
+  participantDenyToolsByKind?(kind: StepKind): HostMcpToolClassification;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
   participantDenyTools?(role: HostDenyRole): HostMcpToolClassification;
   /** Optional declared pipeline: owner then gates, with an absolute instructions path and a qualityFloor only where declared.

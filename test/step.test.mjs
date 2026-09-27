@@ -94,6 +94,62 @@ test('a main-tree gate needs both predecessor and owner results', () => {
   assert.ok(planned.addDirs.includes(subject));
 });
 
+test('a named reads-diff gate keeps the reviewer sandbox and accepts kind or legacy role classification', () => {
+  const denyTask = 'step-denies-t20260927-000005';
+  store.createTask(home, { id: denyTask, title: 'kind denies', status: 'active', participants: [] });
+  store.upsertParticipant(home, denyTask, store.participantRecord('worker:piece', {
+    harness: 'claude', worktree: subject, baseSha: base, started: assignedAt,
+  }, registry));
+  const shippedHost = { ...host, pipeline: () => [pipeline.owner, pipeline.gates[0]] };
+  const namedHost = { ...host, pipeline: () => [pipeline.owner, pipeline.gates[1]] };
+  for (const harness of ['claude', 'cursor', 'codex']) {
+    const shipped = planReview(shippedHost, { target: subject, task: denyTask, stepName: 'reviewer', harness, dryRun: true });
+    const named = planReview(namedHost, { target: subject, task: denyTask, stepName: 'security', harness, dryRun: true });
+    assert.equal(named.repoDir, shipped.repoDir, harness);
+    assert.deepEqual(named.settings.permissions?.deny, shipped.settings.permissions?.deny, harness);
+    assert.equal(named.settings.sandbox, shipped.settings.sandbox, harness);
+    assert.equal(named.settings.approvalPolicy, shipped.settings.approvalPolicy, harness);
+  }
+  const calls = [];
+  const servers = () => ({ servers: { catalog: { type: 'http', url: 'http://catalog.invalid/mcp' } }, external: [] });
+  const kindHost = {
+    ...namedHost,
+    participantServers: servers,
+    participantDenyToolsByKind: (kind) => {
+      calls.push(kind);
+      return { tools: [{ server: 'catalog', tool: 'create_entry' }], complete: true };
+    },
+  };
+  const kindPlan = planReview(kindHost, { target: subject, task: denyTask, stepName: 'security', harness: 'codex', dryRun: true });
+  assert.deepEqual(kindPlan.mcpConfig.mcpServers.catalog.disabled_tools, ['create_entry']);
+  assert.equal(kindPlan.refusal, null);
+  assert.deepEqual(calls, ['reads-diff']);
+
+  const legacyHost = {
+    ...namedHost,
+    participantServers: servers,
+    participantDenyTools: (role) => {
+      if (role !== 'reviewer' && role !== 'approver') throw new Error(`unknown deny role ${role}`);
+      calls.push(role);
+      return { tools: [{ server: 'catalog', tool: role === 'reviewer' ? 'create_entry' : 'merge_entry' }], complete: true };
+    },
+  };
+  const legacyReview = planReview(legacyHost, { target: subject, task: denyTask, stepName: 'security', harness: 'codex', dryRun: true });
+  assert.deepEqual(legacyReview.mcpConfig.mcpServers.catalog.disabled_tools, ['create_entry']);
+  assert.equal(legacyReview.refusal, null);
+  const writerHost = { ...legacyHost, pipeline: () => [pipeline.owner, pipeline.gates[2]] };
+  const writerTask = 'step-legacy-writer-t20260927-000006';
+  store.createTask(home, { id: writerTask, title: 'strict legacy classifier', status: 'active', participants: [] });
+  store.upsertParticipant(home, writerTask, store.participantRecord('worker:piece', {
+    harness: 'claude', worktree: subject, started: assignedAt,
+  }, registryOf(writerHost)));
+  store.sendMessage(home, writerTask, { from: 'worker:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
+  const legacyWriter = planApprover(writerHost, { target: subject, task: writerTask, stepName: 'approver', harness: 'codex', dryRun: true });
+  assert.equal(legacyWriter.refusal, null);
+  assert.deepEqual(legacyWriter.mcpConfig.mcpServers.catalog.disabled_tools, ['merge_entry']);
+  assert.deepEqual(calls, ['reads-diff', 'reviewer', 'approver']);
+});
+
 test('a cleared predecessor assignment refuses the next gate until a new result', async () => {
   store.stampReviewAssignment(home, task, 'security:piece', null);
   const missing = /step approver requires a type=result message from security:piece.*current assignment timestamp is absent/;
@@ -143,18 +199,16 @@ test('a renamed owner is the recorded worktree owner and its result opens the ma
     { name: 'builder', kind: 'edits-tree' },
     { name: 'approver', kind: 'writes-main-tree' },
   ] };
-  assert.ok(!admitsAddress(registryOf(renamedHost), 'worker:piece'));
-  assert.ok(admitsAddress(registryOf(renamedHost), 'builder:piece'));
-  assert.equal(registryOf(renamedHost).activeSteps.join(','), 'builder,approver');
-  assert.equal(addressList(registryOf(renamedHost)), 'orchestrator, builder:<slug> or approver:<slug>');
+  const renamedRegistry = registryOf(renamedHost);
+  assert.ok(!admitsAddress(renamedRegistry, 'worker:piece'));
+  assert.ok(admitsAddress(renamedRegistry, 'builder:piece'));
+  assert.equal(renamedRegistry.activeSteps.join(','), 'builder,approver');
+  assert.equal(addressList(renamedRegistry), 'orchestrator, builder:<slug> or approver:<slug>');
   const noOwnerTask = 'step-renamed-owner-t20260927-000002';
   store.createTask(home, { id: noOwnerTask, title: 'renamed owner without result', status: 'active', participants: [] });
-  store.upsertParticipant(home, noOwnerTask, store.participantRecord('security:piece', {
-    harness: 'claude', worktree: subject, started: assignedAt,
-  }, registry));
   store.upsertParticipant(home, noOwnerTask, store.participantRecord('builder:piece', {
     harness: 'claude', worktree: subject, started: assignedAt,
-  }, registryOf(renamedHost)));
+  }, renamedRegistry));
   assert.throws(() => planApprover(renamedHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true }),
     /type=result message from builder:piece/);
   store.sendMessage(home, noOwnerTask, {
@@ -163,6 +217,59 @@ test('a renamed owner is the recorded worktree owner and its result opens the ma
   const planned = planApprover(renamedHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true });
   assert.equal(planned.address, 'approver:piece');
   assert.equal(planned.workerAddress, 'builder:piece');
+});
+
+test('the one direct route joins the declared owner and writes-main-tree step only', () => {
+  const routedHost = { ...host, pipeline: () => [
+    { name: 'builder', kind: 'edits-tree' },
+    { name: 'security', kind: 'reads-diff' },
+    { name: 'merge', kind: 'writes-main-tree' },
+  ] };
+  const routedTask = 'step-rights-t20260927-000004';
+  const routedRegistry = registryOf(routedHost);
+  assert.throws(() => planReview(routedHost, { target: subject, task, stepName: 'merge', dryRun: true }),
+    /step merge is writes-main-tree, not reads-diff/);
+  assert.throws(() => planApprover(routedHost, { target: subject, task, stepName: 'security', dryRun: true }),
+    /step security is reads-diff, not writes-main-tree/);
+  store.createTask(home, { id: routedTask, title: 'kind routes', status: 'active', participants: [] });
+  const addresses = [
+    ['builder:piece', '00000000-0000-4000-8000-000000000021'],
+    ['security:piece', '00000000-0000-4000-8000-000000000022'],
+    ['merge:piece', '00000000-0000-4000-8000-000000000023'],
+  ];
+  for (const [address, sessionId] of addresses) {
+    store.upsertParticipant(home, routedTask, store.participantRecord(address, {
+      harness: 'claude', sessionId, started: assignedAt,
+      ...(address.startsWith('builder:') ? { worktree: subject } : {}),
+      ...(address.startsWith('security:') ? { repoAbs: subject, reviewAssignedAt: assignedAt } : {}),
+      ...(address.startsWith('merge:') ? { reviewSubject: subject } : {}),
+    }, routedRegistry));
+  }
+  const send = (from, to, type = 'question', artifactPath = undefined) => store.sendMessage(home, routedTask, {
+    from, to, type, body: 'route', artifactPath,
+    session: store.participantOf(store.readTask(home, routedTask), from).metadata.sessionId,
+  }, { registry: routedRegistry, status: 'promptobus status' });
+  assert.ok(send('builder:piece', 'merge:piece').message.id);
+  assert.ok(send('merge:piece', 'builder:piece').message.id);
+  assert.throws(() => send('security:piece', 'builder:piece'), /through the orchestrator/);
+  assert.throws(() => send('builder:piece', 'security:piece'), /through the orchestrator/);
+  const attachment = path.join(box, 'security-attachment.txt');
+  writeFileSync(attachment, 'not sent');
+  assert.throws(() => send('security:piece', 'builder:piece', 'artifact', attachment), /through the orchestrator/);
+  store.sendMessage(home, routedTask, { from: 'builder:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
+  store.sendMessage(home, routedTask, { from: 'security:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
+  const keyedHost = {
+    ...routedHost,
+    participantServers: () => ({ servers: { catalog: { type: 'http', url: 'http://catalog.invalid/mcp' } }, external: [] }),
+    participantDenyToolsByKind: (kind) => ({
+      tools: kind === 'writes-main-tree' ? [{ server: 'catalog', tool: 'create_entry' }] : [], complete: true,
+    }),
+  };
+  const merge = planApprover(keyedHost, { target: subject, task: routedTask, stepName: 'merge', dryRun: true });
+  assert.ok(merge.worktreePath.startsWith(path.join(clone, '.claude', 'worktrees')));
+  assert.ok(merge.prompt.includes(`session cwd is the approver worktree ${merge.worktreePath}`));
+  assert.ok(merge.addDirs.includes(subject));
+  assert.ok(merge.settings.permissions.deny.includes('mcp__catalog__create_entry'));
 });
 
 test('only the declared edits-tree owner is selected from matching worktrees', () => {

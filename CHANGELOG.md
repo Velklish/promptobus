@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   track title during preview and after the participant is written. The default pipeline
   keeps its existing worker title. [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
 
+- **Declared steps take their kind's rights** (PB-275). A `reads-diff` gate keeps the reviewer's
+  snapshot and deny lists; a `writes-main-tree` gate keeps the approver's own worktree and
+  deny handling. A kind-aware host classifies MCP writes by kind; the legacy role classifier
+  receives only its registry-mapped role. The owner and `writes-main-tree` step share the direct
+  route. [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry),
+  [02-host § What the host must answer](docs/reference/02-host.md#what-the-host-must-answer).
+
 - **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
   declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;
   sweep removes their files and blobs while protecting the owner tree, including a physical-path

@@ -8,7 +8,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 ## What the host must answer
 
-The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 48 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
+The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 49 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
 
 | Member | Signature | Meaning of `null` or an absent answer |
 |---|---|---|
@@ -38,6 +38,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
 | `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
+| `participantDenyToolsByKind` | `participantDenyToolsByKind?(kind: StepKind): HostMcpToolClassification` | Optional kind-aware member; a complete answer classifies the canonical external MCP servers for that step kind, including an empty tool list. It takes precedence when both classifiers exist. |
 | `participantDenyTools` | `participantDenyTools?(role: HostDenyRole): HostMcpToolClassification` | Optional member; `HostDenyRole` is `'reviewer' \| 'approver'`, declared in `src/registry.ts`. `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
 | `pipeline` | `pipeline?(): readonly HostPipelineStep[]` | Optional member: the owner step, then the gates in order, `{ name, kind, instructions?, qualityFloor? }` each. `instructions` is an absolute path resolved against the install root; it and `qualityFloor` are present only when declared. The standalone host answers it when `promptobus.json` declares `pipeline` and omits it when the key is absent; a declaration that does not hold makes it throw `PromptobusError` `pipeline-invalid` ([§ The pipeline declaration](#the-pipeline-declaration)). Absent, `registryOf(host)` is the shipped role registry ([04-protocol § The role registry](04-protocol.md#the-role-registry)) and the pipeline is the default `worker`, `reviewer`, `approver`. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
@@ -110,22 +111,27 @@ implementations must provide this member before calling `install`, `spawn`, or
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.
 
-`participantDenyTools(role: HostDenyRole)` is an optional member for `reviewer` and `approver`; `HostDenyRole`
-is declared with the role registry in `src/registry.ts`.
-It returns `{ tools, complete }`, where `tools` contains the exact `{ server, tool }`
+`participantDenyToolsByKind(kind: StepKind)` is the optional kind-aware classifier.
+`participantDenyTools(role: HostDenyRole)` remains the legacy classifier. The package
+calls exactly one: the kind-aware member when present, otherwise the legacy member
+with the registry-mapped role. `reads-diff` maps to `reviewer`, and `writes-main-tree`
+maps to `approver`; a legacy member never receives a kind string. Both members return
+`{ tools, complete }`, where `tools` contains the exact `{ server, tool }`
 pairs that the host knows are write tools of its canonical external MCP servers; it
 must not infer them from names and must not return the Promptobus bus. The answer is
-role-specific: a host may constrain acceptance without changing the review boundary.
+kind-specific: a host may constrain acceptance without changing the review boundary.
 
 `complete: true` means the host has finished classifying its canonical external
-servers, even when there are no write tools. A mechanical reviewer refuses before
+servers, even when there are no write tools. The chosen member must return
+`complete: true`. A mechanical reviewer refuses before
 launch when the answer is incomplete, or when a host that hands it any server but
 the bus has no member. A consumer lifting an approver applies the same completeness
-rule to that role; an incomplete answer is not an empty deny list. The classification
+rule to that kind; an incomplete answer is not an empty deny list. The classification
 covers every server the host hands the participant, not only third-party ones, and a
 complete answer lets the driver translate the pairs into its own deny syntax. That
 translation disables only the named MCP tools; it does not choose the participant's
-repository sandbox. Codex cannot lift an approver ([ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)).
+repository sandbox. Codex lifts an approver in its own worktree after the live hook proof
+described in [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md).
 
 The approver's package deny list is empty because it needs repository writes and shell
 commands for merged-tree gates, squash and archive. The reviewer lists are unchanged.

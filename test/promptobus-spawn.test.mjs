@@ -74,6 +74,7 @@ function versionLess(a, b) {
 }
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
+const { planApprover } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const throughput = await import(path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
 const { GUARD_HOOK_EVENT, guardHookCommand, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { shellQuote } = await import(path.join(here, '..', 'lib', 'util.js'));
@@ -2139,6 +2140,23 @@ check('a declared owner track title reaches the task title',
   ownerPlan.retitle?.preview === ownerPlan.workTitle
   && store.readTask(HOME, OWNER_TASK).title === ownerPlan.workTitle,
   JSON.stringify({ preview: ownerPlan.retitle?.preview, title: store.readTask(HOME, OWNER_TASK).title }));
+store.sendMessage(HOME, OWNER_TASK, {
+  from: 'builder:named-owner', to: store.ORCHESTRATOR, type: 'result', body: 'owner result',
+});
+let ownerAcceptance;
+let ownerAcceptanceError;
+try {
+  ownerAcceptance = planApprover(ownerHost, {
+    target: ownerPlan.worktreePath, task: OWNER_TASK, stepName: 'approver', dryRun: true,
+  });
+} catch (error) {
+  ownerAcceptanceError = error.message;
+}
+check('the spawned named owner result opens its main-tree gate without a worker alias',
+  ownerAcceptance?.address === 'approver:named-owner'
+  && ownerAcceptance?.workerAddress === 'builder:named-owner'
+  && !store.participantOf(store.readTask(HOME, OWNER_TASK), 'worker:named-owner'),
+  JSON.stringify({ address: ownerAcceptance?.address, owner: ownerAcceptance?.workerAddress, error: ownerAcceptanceError }));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });
