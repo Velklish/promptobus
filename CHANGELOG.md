@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A read-only reporter answers the person from a root task** (PB-281). `report --task <root>`
+  lifts one Claude Code session at the install root. Its digest tool reads the root tree;
+  its ask tool sends as `user` and reads later answers without consuming the person's mail.
+  Its deny list includes the reviewer's write tools and the bus send tool. Concurrent
+  lifts cannot replace a live reporter, and each status call refreshes session state.
+  `done` removes its token-bearing launch files after its session dies.
+  [03-cli § Report](docs/reference/03-cli.md#report), [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
 - **Participant records bind before launch** (PB-265.1). Claude Code receives a recorded
   `--session-id` UUID; Codex and Cursor record their session pointer before starting.
   MCP children can send on turn 0 while the harness id is still null, after the pointer
@@ -19,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Governance instructions for a flat task or a two-level tree** (PB-272). The installed
   orchestration skill gives the owner's 2026-09-26 thresholds, teamlead sibling and escalation
   rules, and the reporter's journal-answering contract. A teamlead lift now requires its first
-  status to list the rule files it read. The reporter lift remains a separate delivery task.
+  status to list the rule files it read.
   [Orchestrate skill](skills/orchestrate/SKILL.md#choosing-a-flat-task-or-a-tree), [03-cli § Spawn](docs/reference/03-cli.md#spawn).
 
 - **A digest prints task trees from the journal without a model turn** (PB-280). `digest [--task <id>]`
@@ -36,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the owner gate, root-only rule and four allowed message types bound the route. After one root
   is pruned, its matching peer record can still be unlinked by the surviving root's owner.
   [03-cli § Link](docs/reference/03-cli.md#link), [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
-
 - **A person can ask a task orchestrator through the bus** (PB-279). `promptobus ask "<text>" --task <id>` sends a `question` from a sessionless `user`; `--to teamlead:<slug>` selects the linked child task. `ask --answers` prints and consumes the user mailbox. A harness identity, including a proven MCP session record, or a bus address refuses both commands. The root or child orchestrator owes the latest user question until it sends an `answer` to `user`; guard and status name the debt, including in another task owned by the same session. [03-cli § Ask](docs/reference/03-cli.md#ask), [04-protocol § Message types](docs/reference/04-protocol.md#message-types).
 
 - **Never-checked harnesses report an unknown limit source** (PB-282.1). The

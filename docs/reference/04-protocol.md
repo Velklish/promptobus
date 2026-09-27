@@ -17,8 +17,9 @@ registry](#the-role-registry)). The grammar admits the slugless `orchestrator`, 
 and `user` and `<name>:<slug>` under any other step-shaped name; which of those names exist
 is the registry's answer, asked where a participant is written or addressed. The governance
 addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it. Teamlead
-lifts, `link` and `ask` register their respective addresses; nothing registers `reporter` yet.
-Once registered, their routes are the closed table below. `addrDir` is injective only over admitted addresses —
+lifts and `link` register their addresses; `ask` registers `user` in the addressed task on
+first use, and `report` registers `reporter` in a root task. Once registered, their routes are the closed table
+below. `addrDir` is injective only over admitted addresses —
 `reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
 default routing rule keeps step traffic with the orchestrator. The declared `edits-tree`
@@ -38,8 +39,14 @@ result is on record; `reads-diff` and other step pairs stay on the orchestrator 
 
 The specific `peer:<slug>` rule takes priority over the generic participant-to-orchestrator row:
 peer-to-orchestrator sends also need a reciprocal link and use only the four types in the peer row.
-The `user` and `reporter` rows take the same priority over generic vertical traffic. A teamlead
-pair is a sibling pair only when both records in the root point to child tasks whose `parent`
+The `user` and `reporter` rows take the same priority over generic vertical traffic.
+A teamlead cannot grant the reporter a send route. The reporter-only MCP `promptobus_ask`
+uses a proven reporter session binding, then writes a `question` as `user`
+to its root orchestrator; `promptobus_digest` and `promptobus_status` use the same proof for
+reads of that root tree. The terminal `ask` command still refuses every
+participant identity, including the reporter, and `promptobus_send` still
+refuses a reporter sender at the routing policy.
+A teamlead pair is a sibling pair only when both records in the root point to child tasks whose `parent`
 names that root and whose owner sessions match the teamlead bindings. A peer route needs a
 `peerTask` link in both roots, with each peer record bound to the other root's owner session.
 `link` writes those records under the two task locks in task-id order; the route stays
@@ -133,12 +140,16 @@ The engine receives either a workspace `root`, which resolves to `<root>/.prompt
 Participant settings and launch sidecars use `participantFileStem`: a worker keeps
 `<slug>`, while every other slugged address of the registry uses `<name>-<slug>` —
 `reviewer-<slug>`, `approver-<slug>`, `teamlead-<slug>`, `peer-<slug>` and a declared
-step's. A worker name that begins with one of those prefixes, or that equals a slugless
+step's. `reporter` is the sole bare address with a participant file stem:
+`participantFileStem('reporter')` returns `reporter`. A worker name that begins with one of those prefixes, or that equals a slugless
 address — `orchestrator`, `reporter`, `user` — is refused and the refusal names the role,
 so two addresses cannot name the same sidecar.
-Those three slugless addresses have no participant file stem. `done` can remove their
-contact points by address, but skips the mcp-config, settings and participant-directory
-paths that require a stem. Their participant records and mail remain in the task journal.
+`orchestrator` and `user` have no participant file stem. `done` removes contact
+points for all three bare addresses by address. Its secret-file sweep skips
+addresses without a participant file stem; for a dead reporter session it
+removes the mcp-config, settings and participant directories as for any other
+stemmed participant. Their participant records and mail remain in the task
+journal.
 
 Canonical messages, intent records and inbox or history references are hard links to one inode. The blob is also immutable: multiple artifact metadata records may name one content-addressed payload, and `prune` removes the task and its blobs together.
 
@@ -491,7 +502,7 @@ instance of one of three step kinds ([ADR-020](../adr/adr-020-role-registry-and-
 | `orchestrator` | governance | `orchestrator` | none; the name is reserved | none | — | — | no | — |
 | `teamlead` | governance | `teamlead:<slug>` | `teamlead-<slug>` | none | — | — | no | — |
 | `peer` | governance | `peer:<slug>` | `peer-<slug>` | none | — | — | no | — |
-| `reporter` | governance | `reporter` | none; the name is reserved | none | — | — | no | — |
+| `reporter` | governance | `reporter` | `reporter` | reviewer writes plus bus send at lift | — | — | no | reporter |
 | `user` | governance | `user` | none; the name is reserved | none | — | — | no | — |
 | `worker` | step, `edits-tree` | `worker:<slug>` | `<slug>` | none | 5 | `worker` | yes | `worker` |
 | `reviewer` | step, `reads-diff` | `reviewer:<slug>` | `reviewer-<slug>` | the harness's write tools; the host classifies MCP writes by kind | 9 | `reviewer` | yes | `reviewer` |
@@ -518,9 +529,10 @@ the shipped ones. A shipped gate left out of a declaration stays in the registry
 entry, while address admission and refusal lists follow the declaration. Pipeline order is
 `pipelineOf(host)`, not the registry's.
 
-**The grammar needs no registry.** `isAddress`, `roleOf`, `addrDir` and `participantFileStem`
+**The grammar needs no registry.** `isAddress`, `roleOf` and `addrDir`
 admit the slugless names (`orchestrator`, `reporter`, `user`) and `<name>:<slug>` under any other
-step-shaped name, so no regular expression is edited for a step. Which names are known is the
+step-shaped name; `participantFileStem` gives `reporter` a bare sidecar and requires a slug for
+other participant files. No regular expression is edited for a step. Which names are known is the
 registry's answer (`admitsAddress`), asked by the doors that hold one: the participant record write
 (`participantRecord`, the shipped registry unless the caller hands another), the session identity
 behind the MCP join and every command (`resolveIdentity`), `promptobus send`, the MCP
@@ -528,7 +540,7 @@ behind the MCP join and every command (`resolveIdentity`), `promptobus send`, th
 
 **Who reads which registry.** The host's, through `registryOf(host)`: the package deny list and
 the selector for `participantDenyToolsByKind` or legacy `participantDenyTools`
-(`lib/review.js`, `lib/approver.js`), the reserved step names (`refuseParticipantPrefix`), the participant records the three lifts write, the lift
+(`lib/review.js`, `lib/approver.js`), the reserved step names (`refuseParticipantPrefix`), the participant records the lifts write, the lift
 words — a step is announced with its kind's words, `the reviewer` for a `reads-diff` step —
 (`lib/liftoff.js` and the Cursor and Codex drivers), the `models --role` help, and the doors
 above with their address lists. The MCP `promptobus_send` description and its `to` schema are built from that same host registry when the server is constructed. The shipped one, for what no declaration changes: `ROUTED_ROLES`,

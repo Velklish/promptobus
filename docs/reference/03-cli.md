@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `step`, `review`, `models`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `spawn`, `step`, `review`, `report`, `models`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -14,7 +14,7 @@ Required: `--repo`, `--brief`. `--brief` is a file (`lib/spawn.js`). The file it
 
 The [orchestrate skill](../../skills/orchestrate/SKILL.md#choosing-a-flat-task-or-a-tree) selects a flat task for up to 5 pieces, up to 3 concurrent workers, one repository group with one acceptance recipe and up to 8 hours. From 8 pieces, 4 concurrent workers, two groups with different acceptance recipes, or a contract between groups that needs an owner above both, the root orchestrator (TGM) raises a two-level tree. The task owner chooses the shape for 6 or 7 pieces, and for a run over 8 hours without another tree trigger. These thresholds come from the owner's measurement of 33 task journals on 2026-09-26; they are instructions, not a CLI validation rule.
 
-A teamlead's group runs in its child task. The TGM holds contracts between groups and receives changes of logic, changes of requirements and questions the brief and rules do not answer. An optional reporter on the root reads the whole tree's journals, `status` and the digest for the person; it names the message behind an answer and does not call a result accepted. When the journal cannot answer, it uses `promptobus ask` as `user` and brings the orchestrator's answer back. The `report` lift is not shipped yet; the reporter contract belongs to [ADR-022](../adr/adr-022-user-addressee-and-orchestrator-debt.md) and the separate reporter delivery task.
+A teamlead's group runs in its child task. The TGM holds contracts between groups and receives changes of logic, changes of requirements and questions the brief and rules do not answer. An optional reporter lifted on the root by `promptobus report --task <root>` reads the whole tree's journals, `promptobus_digest` and `promptobus_status` for the person; it names the message behind an answer and does not call a result accepted. When those records cannot answer, its reporter-only MCP `promptobus_ask` asks the root orchestrator as `user` and reads the later answer. The terminal `promptobus ask` refuses a reporter session. See [Report](#report) and [ADR-022](../adr/adr-022-user-addressee-and-orchestrator-debt.md).
 
 Only Claude Code lifts a teamlead at the shared install root. An explicit `--harness cursor` or a Cursor-only catalog model is refused before any session starts with the ADR-015 project-layer reason and the return condition tracked in PB-222. `--harness codex` and Codex-only catalog models remain refused before start: lifting a worker on another harness, receiving its result, and reviews under a Codex teamlead have not been measured; the return condition is tracked in PB-286.1. With `--strategy` and no harness flag, the resolver sees Claude tuples only. `--dry-run` prints the root, child, address, cwd, MCP default, command, and prompt without creating either a task or a session. A pending relift intent remains untouched during planning, dry-run and unsupported-harness refusals; replay happens only on execution. A live teamlead address refuses a second lift; after its session dies the same address relifts into the same child task and rebinds both records. Its session name includes the full root task id and slug even when another brief has the same heading. The short id printed by `claude --bg` must match the live `claude agents --json` row used for the full owner id; an unidentifiable launch is refused. Claude Code takes the MCP config, settings and plugin directory per session; its launch writes only to the task store, leaving the install root's project files untouched.
 
@@ -960,6 +960,49 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `prune` previews deletions. `--yes` deletes. `--older-than <days>` changes the age. The threshold is derived from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The subject is separate from `done` on purpose: `done` ends a LIVE run and sweeps foreign leftovers, `prune` removes the journal of something long closed, and the cost of a mistake differs — `done` runs in every run, `prune` is called by a person by hand. Artifacts leave with their mail rather than on a clock of their own: an artifact arrived with a message, and without the message it is a file with no reason; the dry run names their count separately.
 
+## Report
+
+`promptobus report --task <root> [routing flags] [--dry-run]` lifts one `reporter`
+on Claude Code at the install root. It refuses a child task, a closed task,
+or a second live reporter. Cursor and Codex are refused for the same
+install-root project-layer reason as the teamlead lift. `--dry-run` prints
+the session, MCP, deny list and prompt plan without writing a participant
+or starting a harness. Routing uses the reviewer catalog role and is
+constrained to Claude Code.
+
+Before writing launch files, `report` records a pending reporter under the
+task journal lock. A second command refuses if the reporter changed while it
+planned or the first launcher is still alive. A pending record can be retried
+after its launcher exits and the harness confirms that its session is gone.
+The lock is released before Claude starts, so messages to the task continue
+during the lift. Each reporter `promptobus_status` call refreshes the harness
+session list before printing it. The lift matches the session id printed by
+its own `claude --bg` against the harness list, even when another reporter
+session has the same name. If the launch prints no id, `report` refuses and
+warns that an orphaned session may remain; it stops no session by name. If
+the pending reservation changes during launch, cleanup stops only that
+launch's matched id.
+
+The reporter's settings deny the reviewer's Edit, Write, NotebookEdit, Bash,
+WebFetch and WebSearch tools, plus `mcp__promptobus__promptobus_send` and
+host-classified external MCP writes. Its MCP entry names the root task.
+The reporter reads `promptobus_digest` for the same JSON page as
+`digest --json` and `promptobus_status` for live session state, then answers
+the person in its own window with the source message id. A `result` in that
+page is a participant report, not acceptance.
+If the journal does not answer, `promptobus_ask` sends a question as
+`user` to the root orchestrator. The tool returns the question id; a later
+`promptobus_ask` call with `answers: true` and `after: <id>` reads later
+answers without taking them from the user mailbox. It never forwards or
+filters worker status for the orchestrator.
+
+`status` lists the reporter beneath its root. `done` of that root stops
+the reporter with the other managed sessions, unless `--keep-sessions` was
+chosen. The reporter owes no bus answer: its answer is spoken in its
+window, so the Stop guard does not wait for a `promptobus_send` it cannot
+make. These instructions are the lift's copy of the reporter rules in
+[`skills/orchestrate/SKILL.md` § Reporter for the person](../../skills/orchestrate/SKILL.md#reporter-for-the-person).
+
 ## Digest
 
 ```
@@ -1058,7 +1101,7 @@ promptobus ask --answers --task <id>
 
 `ask` is the person's terminal command. It registers `user` without a session on first use in the addressed task, then sends a `question` from `user` to that task's `orchestrator`. `--to orchestrator` is the default. `--to teamlead:<slug>` looks up the linked child of the named root task and asks that child's `orchestrator`; read its answers with the child task id. The caller must name `--task` even when one task is active.
 
-The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session identity according to the [ADR-010 resolver](../adr/adr-010-session-identity-is-a-driver-member.md). This includes a Codex or Cursor MCP session record that proves the process's home, task and address; both sending a question and `--answers` refuse before touching the `user` mailbox. The refusal names every identity candidate and warns that a participant shell can inherit its parent's session identity. A plain terminal may use `PROMPTOBUS_HOME` to select the store. `ask --answers` consumes the `user` mailbox in the named task, prints each body, and prints an empty mailbox on the next read.
+The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session identity according to the [ADR-010 resolver](../adr/adr-010-session-identity-is-a-driver-member.md). This includes the reporter and any Codex or Cursor MCP session record that proves the process's home, task and address; both sending a question and `--answers` refuse before touching the `user` mailbox. The refusal names every identity candidate and warns that a participant shell can inherit its parent's session identity. A plain terminal may use `PROMPTOBUS_HOME` to select the store. `ask --answers` consumes the `user` mailbox in the named task, prints each body, and prints an empty mailbox on the next read. The reporter's separate MCP ask tool is the sole participant exception; the CLI rule still holds.
 
 ## Guard and warden
 
@@ -1072,7 +1115,7 @@ For ordinary participants, that is also how a clean-and-silent turn is told from
 
 For ordinary participants, the debt is anchored on the later of two hand-overs: the last message that asks for an answer ([04-protocol.md](04-protocol.md) § Message types), and the participant's spawn. The last that ASKS for one, not the last that arrived — the search walks history back past every type that expects none, so a `status` read after a `question` leaves the question owed. The spawn is in the list because an assignment arrives as the session's opening prompt, not as a bus message — three of the nine participants of the PB-203 post-mortem have no inbound bus message in their whole life, and without that anchor the state would not cover them. Nothing is stored for this: it is computed from the canon and the journal on each call, and `health.json` keeps the shape it had.
 
-**Who owes: every non-orchestrator participant, and the orchestrator only for a `user` question.** The ordinary door is that one address, not a list of roles — a role list would have to learn each role the bus gains, and the one it had not learned would drop out of the state in silence rather than into it. A role added later is covered the day it exists. For an orchestrator, `unansweredUserQuestions` reads canonical messages so an unread question is already a debt; the latest question after the last `answer` to `user` anchors it. A `status` to `user`, a message to another participant, or a question from a teamlead or peer does not create or settle that debt. While mail is unread, the guard names the person's question in its mailbox verdict; after it is read, the debt verdict still names it.
+**Who owes: every participant except the reporter and orchestrator, and the orchestrator only for a `user` question.** The ordinary door is that one address, not a list of roles — a role list would have to learn each role the bus gains, and the one it had not learned would drop out of the state in silence rather than into it. A role added later is covered the day it exists. For an orchestrator, `unansweredUserQuestions` reads canonical messages so an unread question is already a debt; the latest question after the last `answer` to `user` anchors it. A `status` to `user`, a message to another participant, or a question from a teamlead or peer does not create or settle that debt. While mail is unread, the guard names the person's question in its mailbox verdict; after it is read, the debt verdict still names it.
 
 One list does have to learn every role, and it is not this one: the guard's participant prefixes in `lib/guard.js` (`declaredParticipant`), which answer "is this session already a participant" for the root's successor detector. A role missing from them is not merely unguarded — its session is taken for a stranger in the workspace root and offered a mailbox that is not its own. They are the shipped role registry's steps ([04-protocol § The role registry](04-protocol.md#the-role-registry)) — `worker:`, `reviewer:` and `approver:`. A step a host declares and the governance roles are not among them until rights are keyed by step kind and something lifts them.
 

@@ -108,7 +108,7 @@ export const SUITE_PREFIXES = [
   // schema-skew.test.mjs writes `schema-skew-` and `schema-skew-missing-`; one entry covers both.
   'schema-skew-',
   'promptobus-ambient-', 'promptobus-ask-', 'promptobus-codex-',
-  'promptobus-copy-', 'promptobus-cursor-', 'promptobus-digest-', 'promptobus-driver-',
+  'promptobus-copy-', 'promptobus-cursor-', 'promptobus-digest-', 'promptobus-driver-', 'promptobus-report-',
   'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-', 'promptobus-link-',
   'promptobus-mcp-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',

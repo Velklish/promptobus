@@ -74,6 +74,7 @@ export function taskDir(home: string, id: string): string {
 // drifted copies would have cleanup sweep past them, so the name lives here.
 export function participantFileStem(address: string): string {
   const [kind, slug] = String(address).split(':');
+  if (address === 'reporter') return 'reporter';
   // An address with no slug yields no file name, and that must not be silent: the glue used to
   // return `undefined` and write `undefined.mcp.json`. Bare, like its neighbours: a caller error.
   if (!slug) throw new Error(`address «${address}» does not yield a participant file name — it has no slug`);

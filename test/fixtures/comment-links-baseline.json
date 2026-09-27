@@ -265,7 +265,7 @@
       "../../docs/reference/01-overview.md#join--entering-a-task-hand-over-the-contact-point-and-lift-a-listener"
     ],
     "src/mcp/service.ts": [
-      "../../docs/reference/01-overview.md#the-mcp-service-what-the-three-tools-do"
+      "../../docs/reference/01-overview.md#the-mcp-service-what-the-six-tools-do"
     ],
     "src/mcp/tools.ts": [
       "../../docs/reference/01-overview.md#the-tool-declarations"

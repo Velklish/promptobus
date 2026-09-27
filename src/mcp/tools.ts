@@ -25,7 +25,7 @@ const TASK_ARG = {
     type: 'string',
     description: 'task id — needed when several tasks are active and this session has no binding; '
       + 'without it the session PROMPTOBUS_TASK is used, otherwise this session\'s declared binding '
-      + '(written by spawn, review, and claim), otherwise the only active task',
+      + '(written by spawn, review, report, and claim), otherwise the only active task',
   },
 };
 
@@ -94,6 +94,34 @@ export function mcpTools(registry: RoleRegistry): McpTool[] {
       description: 'Metadata of the current task: id, title, status, parent, children, participants with repositories '
         + 'and bg-sessions, unread counts, path to the artifacts folder.',
       inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
+    },
+    {
+      name: 'promptobus_digest',
+      description: 'Reporter only: read the root task and its children as the same JSON page printed by digest --json. '
+        + 'The calling session must prove it holds the reporter address of that root task.',
+      inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
+    },
+    {
+      name: 'promptobus_status',
+      description: 'Reporter only: read the status view of this root task, including the live session state. '
+        + 'The calling session must prove it holds the reporter address of that root task.',
+      inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
+    },
+    {
+      name: 'promptobus_ask',
+      description: 'Reporter only: ask the root orchestrator as user. Supply body to send a question; '
+        + 'the reply names its message id. Later call with answers: true and after: that id '
+        + 'to read the orchestrator answers without consuming the user mailbox.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          body: { type: 'string', description: 'question text sent as user to the root orchestrator' },
+          answers: { type: 'boolean', description: 'read answers from the journal; no question is sent' },
+          after: { type: 'string', description: 'question message id returned by a prior call; read only later answers' },
+          ...TASK_ARG,
+        },
+        additionalProperties: false,
+      },
     },
   ];
 }

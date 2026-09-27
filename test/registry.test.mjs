@@ -179,6 +179,7 @@ test('the grammar admits every entry of any registry without an edit, and the re
     assert.equal(bus.roleOf(address), e.name);
     assert.equal(bus.addrDir(address), e.slug ? `${e.name}-x-1` : e.name);
     if (e.slug) assert.equal(bus.participantFileStem(address), e.stem === 'slug' ? 'x-1' : `${e.name}-x-1`);
+    else if (e.name === 'reporter') assert.equal(bus.participantFileStem(address), 'reporter');
     else assert.throws(() => bus.participantFileStem(address), new RegExp(e.name));
     const active = e.layer !== 'step' || STEPS.some((step) => step.name === e.name);
     assert.equal(bus.admitsAddress(REG, address), active, `${address} admission follows the active pipeline`);

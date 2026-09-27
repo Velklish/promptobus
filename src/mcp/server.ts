@@ -192,6 +192,26 @@ export function createMcpServer(options: McpOptions): {
 
   function syncTool(identity: McpIdentity, name: string, args: Record<string, unknown>, task: string): string {
     const { home, role, session } = identity;
+    if (name === 'promptobus_digest' || name === 'promptobus_status' || name === 'promptobus_ask') {
+      if (role !== 'reporter') throw new GateError(`${name} is for the reporter only; this session declares ${role}`);
+      const held = service.senderFor(home, task, identity);
+      if (held !== 'reporter') throw new GateError(`${name} needs a session bound to reporter in task ${task}`);
+      const meta = service.readTask(home, task);
+      if (meta.parent) throw new GateError(`${name} needs a root task; ${task} is a child of ${meta.parent}`);
+      if (name === 'promptobus_digest') return service.reporterDigest(home, task);
+      if (name === 'promptobus_status') return service.reporterStatus(home, task);
+      if (args?.answers === true) {
+        if (args?.body !== undefined) throw new GateError('promptobus_ask takes body or answers: true, not both');
+        const after = typeof args?.after === 'string' ? args.after.trim() : '';
+        if (!after) throw new GateError('promptobus_ask with answers: true needs after: <question message id>');
+        return service.reporterAnswers(home, task, after);
+      }
+      if (args?.after !== undefined) throw new GateError('promptobus_ask after is only for answers: true');
+      const body = typeof args?.body === 'string' ? args.body.trim() : '';
+      if (!body) throw new GateError('promptobus_ask needs non-empty body or answers: true');
+      if (meta.status !== 'active') throw new GateError(`promptobus_ask: task ${task} is closed`);
+      return service.reporterAsk(home, task, body);
+    }
     switch (name) {
       case 'promptobus_mailbox': {
         const own = service.ownership(home, task, role, session);

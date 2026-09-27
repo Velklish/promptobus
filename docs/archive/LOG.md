@@ -433,3 +433,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-289"></a>`PB-289-done-fails-on-user-address` · 2026-09-27 · completed · — · promptobus done fails on a task where the user asked
 - <a id="pb-286"></a>`PB-286-codex-teamlead-lift` · 2026-09-27 · completed · — · A teamlead lifts on Codex: the bus launches it, so wake and session identity already exist
 - <a id="pb-280"></a>`PB-280-digest` · 2026-09-27 · completed · — · promptobus digest prints the tree without a model
+- <a id="pb-281"></a>`PB-281-reporter` · 2026-09-27 · completed · — · promptobus report lifts a read-only reporter that answers from the journal and asks on the person's behalf

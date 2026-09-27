@@ -1,5 +1,5 @@
-// The MCP service: what the three tools do.
-// [reference/01-overview.md#the-mcp-service-what-the-three-tools-do](../../docs/reference/01-overview.md#the-mcp-service-what-the-three-tools-do)
+// The MCP service: what the six tools do.
+// [reference/01-overview.md#the-mcp-service-what-the-six-tools-do](../../docs/reference/01-overview.md#the-mcp-service-what-the-six-tools-do)
 import type { Ownership } from '../protocol.js';
 import type { ArtifactV1, MessageV1, TaskV1 } from '../v1/model.js';
 
@@ -71,6 +71,14 @@ export interface PromptobusService {
   /** Take incoming mail: read items move to history. */
   readInbox(home: string, task: string, addr: string): MailboxRead;
   readTask(home: string, task: string): TaskV1;
+  /** The root tree digest in the same JSON shape as the CLI. */
+  reporterDigest(home: string, task: string): string;
+  /** The root task's status view, including live session state. */
+  reporterStatus(home: string, task: string): string;
+  /** A reporter's one write, made as the user address after its session is proven. */
+  reporterAsk(home: string, task: string, body: string): string;
+  /** Read answers after a question id without consuming the user's mailbox. */
+  reporterAnswers(home: string, task: string, after: string): string;
   /** Readable task journals, including closed children. */
   listTasks(home: string): TaskV1[];
   /** Active task of the process: declared → session binding → the only active one. */

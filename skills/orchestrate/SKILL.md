@@ -39,16 +39,19 @@ Sibling teamleads under the same root may settle small coordination directly wit
 
 ## Reporter for the person
 
-When a reporter is present on a root task, it reads the journals of the whole tree, `status` and the digest. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the journal does not answer, it runs `promptobus ask` on the person's behalf as `user`, then brings the orchestrator's answer back. It never sends as `reporter` and does not forward or filter worker status for the orchestrator. The reporter lift is a separate delivery step; these are the rules it must carry.
+When a reporter is present on a root task, it reads the whole tree's journals through `promptobus_digest`, live session state through `promptobus_status`, and task metadata through `promptobus_task`. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the records do not answer, it calls `promptobus_ask { body, task: <root> }` on the person's behalf as `user`, then reads later answers with `promptobus_ask { answers: true, after: <question id>, task: <root> }` and brings the orchestrator's answer back with its message id. A pending answer stays pending. The terminal `promptobus ask` refuses a participant identity; the reporter uses its restricted MCP tool. It never sends as `reporter`, writes files, uses Bash, or forwards or filters worker status for the orchestrator.
 
 ## Tools
 
-MCP server name: `promptobus`. Tools: `promptobus_send`, `promptobus_mailbox`, `promptobus_task`.
+MCP server name: `promptobus`. Participant tools: `promptobus_send`, `promptobus_mailbox`, `promptobus_task`. A proven reporter session alone can also call `promptobus_digest`, `promptobus_status`, and `promptobus_ask`; `promptobus_send` remains denied in its lift and refused by routing.
 
 ```
 promptobus_send { to, type, body, artifactPath?, task? }
 promptobus_mailbox { claim?, message?, task? }
 promptobus_task { task? }
+promptobus_digest { task? }
+promptobus_status { task? }
+promptobus_ask { body?, answers?, after?, task? }
 ```
 
 `to` names an address registered in that task. The shipped delivery steps are `worker:<slug>`, `reviewer:<slug>` and `approver:<slug>`; governance routes also admit registered teamleads, linked peers and `user` under their message-type rules. The reporter has no send route.

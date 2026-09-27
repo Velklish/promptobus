@@ -808,7 +808,7 @@ check('inbox: an empty mailbox of the named task names that same task',
   text(emptySecond).startsWith('empty') && text(emptySecond).includes(`task=${SECOND}`), text(emptySecond));
 
 const schemas = await loose.call('tools/list', {});
-check('tools/list: the task argument is declared on all three tools',
+check('tools/list: the task argument is declared on all bus tools',
   (schemas.result?.tools ?? []).every((t) => t.inputSchema?.properties?.task?.type === 'string'),
   (schemas.result?.tools ?? []).map((t) => `${t.name}:${!!t.inputSchema?.properties?.task}`).join(','));
 

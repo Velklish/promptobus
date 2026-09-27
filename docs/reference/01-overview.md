@@ -98,12 +98,15 @@ Declared in `src/mcp/tools.ts` and listed in `lib/contract.js` as `PROMPTOBUS_TO
 - `promptobus_send`
 - `promptobus_mailbox`
 - `promptobus_task`
+- `promptobus_digest`
+- `promptobus_status`
+- `promptobus_ask`
 
 Each accepts an optional `task` id. Without it the server uses `PROMPTOBUS_TASK`, else the session binding, else the only active task.
 
 `promptobus mcp` is JSON-RPC 2.0 over stdio (`lib/server.js`). Protocol versions the server accepts: `2025-06-18`, `2025-03-26`, `2024-11-05` (`lib/contract.js`).
 
-### The MCP service: what the three tools do
+### The MCP service: what the six tools do
 
 Source: `src/mcp/service.ts`.
 
@@ -119,6 +122,14 @@ Mailbox ownership, the "session → task" binding, active-task resolve, and
 the `PROMPTOBUS_HOME=… · task=… · address=…` heading rest on session
 identity, and only the adapter reads the environment. The consumer adapter
 assembles the service.
+
+`promptobus_digest`, `promptobus_status` and `promptobus_ask` require the declared `reporter`
+role and a session that `senderFor` proves holds that root task's reporter
+record. Every other role and a reporter with no proven binding are refused
+before a digest read or user write. The digest tool returns the same JSON
+shape as `digest --json`; the status tool reads the root tree's live session state. The ask tool sends a `question` as `user`; a
+second call with `answers: true` and `after` set to that question's id
+reads later `answer` messages without consuming the `user` mailbox.
 
 `historyMessage` is the one read of history on the list: a message the
 address has already read, by id — the body `promptobus_mailbox` returns. The
@@ -193,7 +204,7 @@ declaration rather than repeated in the handler: two lists would drift, and
 the drift shows itself only when a key is dropped in silence. That is what
 happened live — a file sent under `artifactName` instead of `artifactPath`
 left a `type=artifact` message with no attachment ([04-protocol](04-protocol.md) § Artifacts).
-The rule covers all three tools rather than `send` alone because the defect
+The rule covers every tool rather than `send` alone because the defect
 is the class and not the one call: `promptobus_mailbox` given `claimed`
 would have dropped the key and performed an ordinary take, leaving the
 mailbox with the session that already held it. A caller that passes keys of
