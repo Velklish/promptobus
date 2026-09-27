@@ -28,5 +28,5 @@ The owner's structure of 2026-09-26 makes the case unavoidable: a teamlead is on
 ## Consequences
 
 - A teamlead, a peer and the person's `user` address become expressible; [ADR-021](adr-021-task-tree-and-governance-routes.md) and [ADR-022](adr-022-user-addressee-and-orchestrator-debt.md) rest on this.
-- A participant whose harness gives its MCP child no identity cannot send until the identity card for Cursor and Codex lands; the refusal names the reason rather than guessing.
-- ADR-011 receives an amendment section when PB-265 lands, naming the barrier that closed it.
+- A participant whose harness gives its MCP child no identity cannot send. [ADR-014](adr-014-mcp-session-proof.md) supplies the session-record pointer used by Cursor and Codex MCP children, so the normal lift can prove its binding before a harness id appears.
+- [ADR-011](adr-011-a-session-address-is-per-task.md) has the amendment naming the barrier that closed its first attempt.

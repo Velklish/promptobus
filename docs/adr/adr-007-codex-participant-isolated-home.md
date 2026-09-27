@@ -153,3 +153,11 @@ always, trusted or not, so the copy alone is enough. Where a reviewer's copy lan
   The writer's vocabulary is strings, string arrays and one level of string-valued
   table, and it must stay that narrow — a config Codex refuses to load does not degrade,
   it takes the participant's whole MCP set with it.
+
+## Current resolution
+
+The Stop observation above was made before later Codex hook runs. On codex-cli 0.156.1,
+worker and reviewer turns recorded Stop; see [hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces)
+and [the Codex driver](../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
+The approver evidence in [ADR-024](adr-024-approver-acceptance-in-own-worktree.md)
+records SessionStart. It does not establish that an approver Stop hook ran.

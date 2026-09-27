@@ -129,3 +129,11 @@ the participant home's `config.toml` — and not merely the text of the record.
 - Future changes to what a reviewer's directory holds must move together: the driver's
   `reviewSandbox` and `prepare`, the trust record in its `spawn`, `03-cli` § Review, and
   this file.
+
+## Current resolution
+
+The reporting failure above describes the 2026-09-12 turn. The holder now accepts
+Codex's `mcpServer/elicitation/request` only for a tool-call approval from a server
+configured in the participant home; other elicitations remain declined. A later live
+reviewer sent a bus `result` after those approvals. The current whitelist and its
+measured boundary are in [the Codex holder](../reference/03-cli.md#the-codex-holder).

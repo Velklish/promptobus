@@ -437,3 +437,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-296"></a>`PB-296-docs-routing-current-behavior` · 2026-09-27 · completed · — · Remove obsolete implementation-stage claims from model-routing documentation
 - <a id="pb-297"></a>`PB-297-docs-routing-fixture-arithmetic` · 2026-09-27 · completed · — · Recompute model-routing fixture documentation with the current rating scale
 - <a id="pb-286.1"></a>`PB-286.1-codex-teamlead-final-proof` · 2026-09-27 · completed · — · Complete Codex teamlead proof and admission
+- <a id="pb-298"></a>`PB-298-docs-adr-current-resolutions` · 2026-09-27 · completed · — · Expose current resolutions and supersession in accepted architecture decisions

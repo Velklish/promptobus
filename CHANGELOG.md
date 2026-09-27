@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reading a committed diff. Claude and Cursor keep their command-start denial.
   [03-cli § Review](docs/reference/03-cli.md#review), [05-drivers § Codex](docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
 
+### Changed
+
+- **Accepted decisions point to the current contract** (PB-298). Resolutions in the
+  Codex, session-address, approver and cleanup ADRs distinguish dated observations
+  from current capabilities. The documentation index names the registered send
+  command and the later approver worktree decision.
+  [Documentation index](docs/README.md).
+
 ### Documentation
 
 - **Model-routing documentation describes the current contract** (PB-296). The guide now

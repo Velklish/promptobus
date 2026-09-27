@@ -186,11 +186,10 @@ of `done` where the gap was measured.
 - **The gate is the first place in the CLI where a non-owner may change a task's files.** It
   is narrow — one role, proven by the participant record's own session — but it is a
   precedent, and a future role wanting the same must argue for it rather than inherit it.
-- **Two gates now answer "who may" differently, and that is on purpose.** `done`, `stop` and
-  `dismiss` keep the fail-open `ownership` gate; this command does not use it. Anyone reading
-  one and assuming the other will be wrong, so the difference is stated in `03-cli` beside the
-  command as well as here. A future command should decide its own direction rather than copy
-  whichever neighbour it read first.
+- **The original owner gate differed from the sweep's positive proof.** That earlier
+  fail-open rule for `done`, `stop` and `dismiss` was replaced by
+  [ADR-017](adr-017-the-owner-gate-is-a-positive-proof.md). The difference recorded
+  here is historical; current cleanup callers use the positive permission rule.
 - **The destructive stretch holds the journal lock for the length of a `git worktree remove`.**
   Other writers of that task — a lift, a close, a title patch — wait for it. The alternative
   was leaving the re-lift race open, and a blocked journal write is recoverable where a
@@ -220,3 +219,11 @@ with the same words, and naming a head discards whatever of it the squash left b
 Equality is the whole test — a branch past the named head keeps its tree. An edited squash
 whose acceptance commit names no head is still not recognised, and "cheap to delete,
 impossible to return" is why it keeps its tree and branch.
+
+## Current resolution
+
+The owner gate of `done`, `stop` and `dismiss` grants rights only on positive proof,
+with the ownerless-task exception stated in
+[ADR-017](adr-017-the-owner-gate-is-a-positive-proof.md). The approver proof for
+`stop`, `dismiss` and `sweep` is described in
+[the CLI cleanup contract](../reference/03-cli.md#requiresweeper--who-may-sweep-a-piece).

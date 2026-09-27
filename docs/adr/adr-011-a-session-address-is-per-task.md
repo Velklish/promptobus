@@ -114,3 +114,11 @@ address a session holds in a task comes from a lift or an owner claim and from n
 - When the per-task address lands, the door gains the ability to choose among the addresses the
   session legitimately holds — which is a different thing from choosing any address, and is
   the distinction this decision exists to keep.
+
+## Current resolution
+
+The consequences above describe the withdrawn first attempt. The positive session
+binding in [ADR-019](adr-019-session-address-per-task-lands.md) now gates the registered
+`promptobus send` command. A sender must prove the address it holds in the named task;
+an unbound participant record grants no send right. See [Send](../reference/03-cli.md#send)
+for the current command.

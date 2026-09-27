@@ -68,8 +68,8 @@ record. Band 6 is rejected because it admits rows assessed only one step above t
 worker floor of 5 for a state transition whose wrong target is costly to restore. Band 8 is
 rejected because it buys the stronger independent defect-finding judgement assigned to the
 reviewer, while the approver starts only after that judgement is green and follows a recipe.
-At 7 the shipped catalog offers 31 tuples across Claude Code, Cursor and Codex; floors 6 and
-8 would offer 40 and 22 respectively. **The three-harness count is superseded for approver routing by [ADR-015](adr-015-approver-lift-is-a-flag-on-review.md):** only Claude Code lifts an approver, and the shipped catalog now offers 11 approver tuples on Claude Code alone. The threshold is therefore tied to the role's work,
+At 7 the shipped catalog offered 31 tuples across Claude Code, Cursor and Codex; floors 6 and
+8 would have offered 40 and 22 respectively. [ADR-015](adr-015-approver-lift-is-a-flag-on-review.md) later limited the lift to Claude Code; [ADR-024](adr-024-approver-acceptance-in-own-worktree.md) superseded that harness restriction. The threshold is therefore tied to the role's work,
 not chosen as the midpoint between worker 5 and reviewer 9. Both routing and validation
 read effective quality — the tuple's general rating with `roleRatings[role]` over it —
 for the tuple and its assessed base row.
@@ -113,6 +113,15 @@ to `done`, and the task stays active.
   pre-existing silent disagreements while it was being written: the overlay `byRole`
   map and `DEFAULT_POLICY.byRole`; targeted telemetry tests cover the remaining inline
   runtime projection.
+
+## Current resolution
+
+The earlier clone-root approver lift was restricted to Claude Code under
+[ADR-015](adr-015-approver-lift-is-a-flag-on-review.md).
+[ADR-024](adr-024-approver-acceptance-in-own-worktree.md) supersedes that harness
+restriction and places acceptance in a separate worktree. The current approver lift
+is available on Claude Code, Cursor and Codex after a reviewer result; see
+[the driver contract](../reference/05-drivers.md#approver-lift-after-a-reviewer-result).
 
 ## Amendment, 2026-09-26 (PB-265)
 
