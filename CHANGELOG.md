@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- **Model-routing documentation describes the current contract** (PB-296). The guide now
+  explains cache reads and clearing, the Claude inventory, telemetry generations and
+  declared routed steps. The CLI reference names optional near-limit warning fields
+  and the declared-step case of `role-unknown`.
+  [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
+
 ## [0.19.0] — 2026-09-27
 
 ### Added

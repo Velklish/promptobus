@@ -10,7 +10,7 @@ The decision behind all of it is [ADR-003](../adr/adr-003-model-routing.md); the
 
 The model-routing JSON schemas remain static artifacts. The parity test in [test/model-routing-catalog.test.mjs](../../test/model-routing-catalog.test.mjs) compares their role enums and closed property maps with `ROUTED_ROLES`, alongside the runtime default maps. Adding a routed role therefore updates the canonical list, its role-specific defaults and the static schema artifacts in one change.
 
-An addressed participant outside `ROUTED_ROLES` — `orchestrator`, or a future role deliberately left unrouted — has an explicit outcome: policy role keys and resolver selection are rejected as unknown, while live-tuple and telemetry projections exclude it. It is not silently treated as routed.
+`ROUTED_ROLES` names catalog roles, not every routed address. A declared routed step is admitted by the registry, uses its step kind's catalog role for ratings and live-tuple accounting, and keeps its own step name in decisions and telemetry. An address with no routed catalog role — such as `orchestrator` or a future role deliberately left unrouted — is rejected as unknown for policy role keys and resolver selection, and excluded from live-tuple and telemetry projections.
 
 ## The layers
 
@@ -242,7 +242,7 @@ Line by line:
 
 Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — `message`, and `rule` where the check has a name of its own. `layer` names whoever wrote the key in question: the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where no overlay ever touched it. A finding about allow and deny together names the deny side, because deny is applied last, and its message names the allow side too. `allow-shadowed-by-deny` is a name allowed in one layer and denied in another — lawful since ADR-004, and a warning rather than the error it was, because deny simply wins.
 
-Warnings carry `code` and `message` and then whatever facts the caller may want without parsing prose. Those first two fields are the whole of a warning in a decision document — `warnings` in `decision.schema.json` is closed on them — so a decision copies them and translates nothing. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision. `promotion-expired` is also validate-only: it names a quota-cost promotion whose last observed date passed, and never reaches a decision.
+Warnings carry required `code` and `message`; the decision schema also permits optional `harness` and `usedPercent` on a `near-limit` warning, so a caller can name the affected harness and its binding window's usage without parsing prose. Merged-catalog warnings copied into a decision keep their `code` and `message`; the resolver adds the near-limit fields from the availability snapshot. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision. `promotion-expired` is also validate-only: it names a quota-cost promotion whose last observed date passed, and never reaches a decision.
 
 `priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` carry a `layer` as well, because they are raised from tuple values and after the merge those values may come from anywhere in your stack. It is the **highest-precedence layer among the values that raised the warning**, and `catalog` when your overlays touched none of them — so the question you actually have, *did my own file do this?*, is answered by comparing that field with your layer's id. It is always there: an overlay that collapses two rungs of a ladder gets `ladder-indistinguishable` with your layer's id on it, and the same code from the shipped catalog says `catalog`. `models validate` prints it on the line, as `<code> · <layer>: <message>`, so you do not have to call the library to ask.
 
@@ -291,14 +291,13 @@ that guessed at one would start a paid turn on the person's plan. So the argv is
 a subcommand `claude --help` lists with flags `claude auth status --help` lists,
 and a probe that wants a new fact reads those helps first.
 
-**The inventory is not a listing.** The binary publishes no model list at all:
-no `models` subcommand and no `--list-models` (measured 2026-09-05 by the
-catalog track on the same build). The only names it publishes are the `--model`
-aliases in its help text, so the inventory reported here is the driver's own
-alias set, handed in by the driver — which owns it next to the default model it
-lifts participants on. That is why the models arrive as an argument instead of
-being imported: the driver is private to the registry, and a module of the
-mechanism reaching into it is exactly the crossing the boundary gate refuses
+**The inventory is not a binary listing.** The binary publishes no model list at
+all: no `models` subcommand and no `--list-models` (measured 2026-09-05 by the
+catalog track on the same build). Its help text publishes `--model` aliases;
+the driver supplies the full model IDs it accepts, those aliases and its default
+model. The inventory is filtered by the resolved binary's version floor for each
+ID. These facts arrive as an argument because the driver owns them beside its
+lift default; the adapter cannot import the private driver through the registry
 ([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)).
 
 **Where the tier and the windows come from, measured 2026-09-06 on 2.1.251.**
@@ -465,8 +464,10 @@ all: what is not connected cannot be misread.
 
 Source: `lib/model-routing/telemetry.js`.
 
-Participant telemetry: one JSON Lines record per routed participant, appended
-when `promptobus done` closes the task.
+Participant telemetry: one JSON Lines record per harness generation of a
+participant that lifted a session, appended when `promptobus done` closes the
+task. A re-bound participant contributes its closed generations and its current
+generation; an explicit unrouted `--model` lift also contributes a record.
 
 **What it is for.** The catalog's ratings come from published benchmarks, and
 two frontier models a point apart on one leaderboard share a band; nothing in
@@ -506,13 +507,11 @@ and low-entropy, and anyone holding both the file and the workspace could
 match one against the other. The claim is the narrow one — the id is not IN
 the file — and the file is the account's, mode 0600, exactly as the cache is.
 
-**Written at `done`, and not at `dismiss`.** A dismissal is not the end of a
-participant: `dismiss` says out loud that a new assignment to the same address
-puts it back under watch, so a record per dismissal would put several rows on
-one participant's run with nothing to merge them by — and the file is
-append-only, read by PB-37 as one row per participant run. `done` is the one
-moment a run is over for good, and `dismissedBeforeDone` carries the dismissal
-into that single row.
+**Written at `done`, and not at `dismiss`.** A dismissal can precede another
+assignment to the same address, so it does not append telemetry. At `done`, each
+closed harness generation with a model contributes a row, followed by the current
+generation. The current row's `dismissedBeforeDone` records whether that
+participant was dismissed when the task closed.
 
 **No lock, unlike the cache.** The cache write is a read-merge-write and loses
 a neighbour's entries without one; this is an append of whole lines, which is
@@ -627,9 +626,11 @@ the two branches that HAVE those words — a non-zero exit and a session that ne
 came up — and on no other: a lift that worked said nothing about a limit.
 
 It RETURNS the line to append to the refusal, or `''` when it marked nothing. The
-mark it writes lands in a file nothing reads yet and no flag clears yet, so a
-refusal that did not name it would leave a person with a state they never saw;
-the words are the driver's, because the file and the command are its own.
+preflight reads this cache mark on the next routing decision. A mark with a readable
+reset expires at its reset time; `promptobus models --clear-exhausted <harness>` clears a
+reset-less mark. The refusal names the mark so the person knows which state the
+next decision will read; the words are the driver's, because the file and the
+command are its own.
 
 It has to be called from HERE rather than by a caller catching a refusal, because
 `fail` ends the process: past that line there is no caller left to classify
