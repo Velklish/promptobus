@@ -77,22 +77,7 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 
 ### 2. Give the orchestrator the MCP server
 
-Participant lifts write an MCP entry for workers, reviewers and approvers. The orchestrator session needs the same stdio server in the harness's project MCP file:
-
-```json
-{
-  "mcpServers": {
-    "promptobus": {
-      "type": "stdio",
-      "command": "promptobus",
-      "args": ["mcp"],
-      "env": { "PROMPTOBUS_HOME": "/absolute/path/to/workspace/.promptobus" }
-    }
-  }
-}
-```
-
-Without a global install, `command` is `node` and `args` is `["/absolute/path/to/bin/promptobus.js", "mcp"]`. The server name must stay `promptobus`: hook matchers and tool names are built from it.
+Participant lifts write their own MCP entries. Register the orchestrator's stdio server separately in the project file for its harness: Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, or Codex `.codex/config.toml`. The [install guide](docs/guides/install.md#3-mcp-server-for-the-orchestrator) gives valid snippets, trust prerequisites and read-only verification commands for each. `promptobus install` writes hooks and skills, not this MCP entry.
 
 ### 3. Install the project hooks
 

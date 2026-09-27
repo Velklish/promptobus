@@ -72,22 +72,7 @@ node bin/promptobus.js --version
 
 ### 2. Дать оркестратору MCP-сервер
 
-Подъём участника пишет запись MCP worker'у, ревьюеру и approver'у. Сессии оркестратора нужен тот же stdio-сервер в project-файле MCP её инструмента:
-
-```json
-{
-  "mcpServers": {
-    "promptobus": {
-      "type": "stdio",
-      "command": "promptobus",
-      "args": ["mcp"],
-      "env": { "PROMPTOBUS_HOME": "/absolute/path/to/workspace/.promptobus" }
-    }
-  }
-}
-```
-
-Без глобальной установки `command` — это `node`, а `args` — `["/absolute/path/to/bin/promptobus.js", "mcp"]`. Имя сервера обязано остаться `promptobus`: из него собираются матчеры хуков и имена инструментов.
+Подъём участника пишет ему собственную запись MCP. Для оркестратора stdio-сервер регистрируют отдельно в project-файле его инструмента: `.mcp.json` для Claude Code, `.cursor/mcp.json` для Cursor, `.codex/config.toml` для Codex. [Руководство по установке](docs/guides/install.md#3-mcp-server-for-the-orchestrator) даёт фрагмент нужного формата, условия доверия и команды проверки без отправки сообщений. `promptobus install` пишет хуки и скиллы, но не эту запись MCP.
 
 ### 3. Поставить project hooks
 

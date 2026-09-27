@@ -90,7 +90,9 @@ A worker repository may have its own `promptobus.json` — separate from the wor
 
 ## 3. MCP server for the orchestrator
 
-Each participant lift writes its MCP entry; this includes workers, reviewers and approvers. The orchestrator session needs the same stdio server.
+`install` writes project hooks and process skills; it does not register an MCP server for the orchestrator. Each participant lift writes its own MCP entry. Register the orchestrator's server in the project configuration of the harness that runs that session. The examples below use the package's CLI entry, so they also work after a local dependency install: replace `/absolute/path/to/bin/promptobus.js` with its absolute path and replace the workspace path with the absolute store path. Keep the server name `promptobus` (`lib/contract.js`, `src/hooks.ts`).
+
+### Claude Code: `.mcp.json` at the workspace root
 
 ```json
 {
@@ -107,9 +109,42 @@ Each participant lift writes its MCP entry; this includes workers, reviewers and
 }
 ```
 
-If `promptobus` is on `PATH`, `command` may be `promptobus` and `args` may be `["mcp"]`. The server name must stay `promptobus`: hook matchers and tool names use it (`lib/contract.js`, `src/hooks.ts`).
+Trust this project when Claude Code asks. From the workspace, `claude mcp list` is a read-only check that the `promptobus` entry is visible. The project hooks in `.claude/settings.json` have their own trust gate.
 
-Where that JSON lives is the harness's project MCP file. Do not put it in `~/.claude`, `~/.cursor`, or `~/.codex`. Those home catalogs are out of scope for this installer.
+### Cursor: `.cursor/mcp.json` at the workspace root
+
+```json
+{
+  "mcpServers": {
+    "promptobus": {
+      "command": "node",
+      "args": ["/absolute/path/to/bin/promptobus.js", "mcp"],
+      "env": {
+        "PROMPTOBUS_HOME": "/absolute/path/to/workspace/.promptobus"
+      }
+    }
+  }
+}
+```
+
+Open the workspace as a Git repository and approve the server when Cursor asks. From that workspace, `cursor-agent mcp list-tools promptobus` reads the available tool names without sending a bus message. The project `stop` hook in `.cursor/hooks.json` is a separate install result.
+
+### Codex: `.codex/config.toml` at the workspace root
+
+```toml
+[mcp_servers.promptobus]
+command = "node"
+args = ["/absolute/path/to/bin/promptobus.js", "mcp"]
+
+[mcp_servers.promptobus.env]
+PROMPTOBUS_HOME = "/absolute/path/to/workspace/.promptobus"
+```
+
+Trust the project so Codex loads its `.codex/config.toml` layer. From the workspace, `codex mcp list` checks the server entry without sending a bus message. Review project hooks separately with `/hooks`; their trust is distinct from the MCP config.
+
+For a global CLI, all three entries may use `command` `promptobus` and `args` containing only `mcp`. These are three alternative project files, not one JSON file shared by the harnesses. Neither `install` nor npm `postinstall` writes them. Restart a harness session after changing its project MCP file so it reads the new entry.
+
+An orchestrator entry created by hand has no participant session-record pointer. In the measured Codex and Cursor MCP child paths, the harness session variable does not reach that child; an owner-bound orchestrator mailbox read then returns a copy and leaves the originals unread ([02-host § Session identity](../reference/02-host.md#session-identity)). Registering the MCP server does not remove that identity limit.
 
 ## 4. Project hooks
 
