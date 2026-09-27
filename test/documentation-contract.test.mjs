@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { threadStartConfig } from '../lib/codex-session.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => process.env.PROMPTOBUS_DOCS_REV
@@ -20,6 +21,8 @@ const section = (document, heading) => {
     && /^#+ /.test(line) && line.match(/^#+/)[0].length <= depth);
   return lines.slice(start + 1, end < 0 ? undefined : end).join('\n');
 };
+const decision = (document, label, nextLabel) => section(document, '## Decision')
+  .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
 
 const adr007 = adr('007', 'codex-participant-isolated-home');
 const adr008 = adr('008', 'codex-reviewer-working-directory');
@@ -91,3 +94,37 @@ check('docs: claim distinguishes enforced identity checks from owner liveness',
   has(claim,
     "`promptobus_mailbox` with `claim: true` rebinds a task's orchestrator mailbox to the calling session. The tool requires the orchestrator address, a session identity and a recorded owner; `claimOwnership` in `lib/store.js` then replaces that owner under the task lock. It does not check whether the previous owner is live. The caller must establish that the previous session has ended before takeover; this is a precondition on the caller, not an enforced liveness gate."),
   'claim must keep the identity gate and caller-side liveness precondition distinct');
+
+const cli = read('docs/reference/03-cli.md');
+const drivers = read('docs/reference/05-drivers.md');
+const spawn = section(cli, '## Spawn');
+const codexPhrases = section(drivers, '### Codex: the phrases a participant is addressed by');
+check('docs: Codex home inventory includes conditional hooks and auth',
+  has(spawn,
+    "The lift copies the owner's `auth.json` at mode 0600 when present; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`.")
+  && has(codexPhrases,
+    "The lift copies the owner's `auth.json` at mode 0600 when it exists; a missing file is reported and an API key in the environment can still authenticate the participant.")
+  && has(codexPhrases,
+    "A linked worktree with a planned guard hooks file also gets `hooks.json` in the participant home at lift. Codex otherwise resolves the project's hooks file in the main checkout, which the lift does not trust. A directory that is not a linked worktree keeps its planned hook file in its own `.codex/`.")
+  && has(decision(adr007, '1B', '2B'),
+    "The owner's `auth.json` is copied at mode 0600 when present. A linked worktree with a planned guard hooks file also gets `hooks.json` in this home; other working directories keep that file in their own `.codex/`."),
+  'a Codex home passage changed the linked-worktree or optional-auth boundary');
+
+const workerConfig = threadStartConfig({ role: 'worker', effort: 'high' });
+const teamleadConfig = threadStartConfig({ role: 'teamlead' });
+const holder = section(cli, '## The Codex holder');
+const transports = section(drivers, '#### The two `mcp_servers` transports, and the field that kills the config load');
+check('docs: Codex thread/start overrides match the holder and role boundary',
+  Object.keys(workerConfig).sort().join(',') === 'bypass_hook_trust,model_reasoning_effort'
+  && workerConfig.bypass_hook_trust === true
+  && workerConfig.model_reasoning_effort === 'high'
+  && Object.keys(teamleadConfig).sort().join(',') === 'bypass_hook_trust,features.hooks'
+  && teamleadConfig.bypass_hook_trust === true
+  && teamleadConfig['features.hooks'] === false
+  && has(holder,
+    '`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. The internal teamlead preparation sets `features.hooks = false` on `thread/start` to disable project hook discovery even if project config enables it. That config branch does not itself grant Codex teamlead production admission.')
+  && has(transports,
+    '`ThreadStartParams.config` is built by `threadStartConfig`: it always sets `bypass_hook_trust = true` for app-server hook trust, adds `model_reasoning_effort` when the lift names an effort, and sets `features.hooks = false` only on the internal teamlead preparation path. That last branch does not itself admit Codex teamlead in production. The MCP set remains in the home, not in this request.')
+  && has(decision(adr007, '2B', '3C'),
+    '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and the internal teamlead preparation adds `features.hooks = false`. The prepared branch does not itself grant production admission; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
+  JSON.stringify({ workerConfig, teamleadConfig }));

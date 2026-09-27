@@ -583,13 +583,17 @@ The prefix stays for the other thing it does, which the home does not replace �
 name the participant is told is derived from the config key (§ Consumer identity inside a
 harness in [02-host](02-host.md)).
 
-`ThreadStartParams.config` remains the passthrough for the one key that is per-turn rather
-than per-home: `model_reasoning_effort`, which both roles honour. Measured on codex-cli
-0.146.0 with no paid turn — the thread echoes the asked level back as
-`ThreadStartResponse.reasoningEffort`; the first `turn/start` sends effort as well, and that
-value persists across later wakes on the same thread. Both roles use `turn/start` so the bus
-tools stay on the participant thread: `review/start` was an observed stall of the bus mailbox
-and is unused.
+`ThreadStartParams.config` is built by `threadStartConfig`: it always sets
+`bypass_hook_trust = true` for app-server hook trust, adds
+`model_reasoning_effort` when the lift names an effort, and sets
+`features.hooks = false` only on the internal teamlead preparation path. That
+last branch does not itself admit Codex teamlead in production. The MCP set
+remains in the home, not in this request. Measured on codex-cli 0.146.0
+without a paid turn, the thread echoed the asked effort as
+`ThreadStartResponse.reasoningEffort`; the first `turn/start` sends effort as
+well, and that value persists across later wakes. Worker and reviewer turns
+use `turn/start` so bus tools stay on the participant thread; `review/start`
+was an observed mailbox stall and is unused.
 
 #### The holder's record watch
 
@@ -702,11 +706,22 @@ owner's: an empty home lifts no personal MCP server, and the `[projects]` record
 the marketplace snapshot a run writes land in it instead of in `~/.codex` (measured on
 codex-cli 0.146.0 by the consumer, with no paid turn).
 
-Four things go in, and nothing else. A copy of the owner's `auth.json` at mode 0600 —
-the account is the owner's, and an isolated home holding that copy answers
-`codex login status` with `Logged in using ChatGPT` without a turn. The mechanism's own
-MCP entries under `[mcp_servers]`. The trust record for the participant's own working
-directory. And `[features] apps = false`, for every role.
+At lift, `config.toml` holds the mechanism's `[mcp_servers]` entries and
+`[features] apps = false` for every role. Worker, reviewer and approver homes
+also carry a trust record for their own working directory. The lift copies
+the owner's `auth.json` at mode 0600 when it exists; a missing file is reported
+and an API key in the environment can still authenticate the participant.
+With that copy, `codex login status` answered `Logged in using ChatGPT`
+without a turn in the isolated-home measurement.
+
+A linked worktree with a planned guard hooks file also gets `hooks.json` in
+the participant home at lift. Codex otherwise resolves the project's hooks
+file in the main checkout, which the lift does not trust. A directory that
+is not a linked worktree keeps its planned hook file in its own `.codex/`.
+The internal teamlead preparation path can instead copy `skills/` into the
+home and set `[features] hooks = false`; this home layout does not establish
+production admission for Codex teamlead. App-server may subsequently write
+its session rollout into the home.
 
 One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical skill
 roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the

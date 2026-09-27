@@ -73,10 +73,14 @@ participant's working directory, the way the Cursor driver copies `.cursor/skill
 ## Decision
 
 **1B.** One `CODEX_HOME` per participant, built before the lift and removed with the
-session. It is a directory under `$TMPDIR` at mode 0700, named by task and address, and
-it holds exactly four things: a copy of the owner's `auth.json` at mode 0600, the
-mechanism's `[mcp_servers]` entries, the trust record of decision 3, and
-`[features] apps = false`. The last one was added on codex-cli 0.156.1, whose `apps`
+session. It is a directory under `$TMPDIR` at mode 0700, named by task and address.
+At lift, its `config.toml` holds the mechanism's `[mcp_servers]` entries and
+`[features] apps = false`; admitted roles also get the trust record of decision 3.
+The owner's `auth.json` is copied at mode 0600 when present. A linked worktree
+with a planned guard hooks file also gets `hooks.json` in this home; other
+working directories keep that file in their own `.codex/`. The internal
+teamlead preparation may put `skills/` here and disable hooks, without itself
+granting production admission. The `apps` setting was added on codex-cli 0.156.1, whose `apps`
 feature is on by default and lifts a built-in `codex_apps` MCP server into an otherwise
 empty home — 52 tools, some of them account writes. With the key the thread lists the
 mechanism's servers and nothing else (measured 2026-09-25, no turn;
@@ -99,8 +103,11 @@ with two transports killed the whole config load. With no personal set in the ho
 is nothing to merge with, and 2C would leave two sources free to drift. The key prefix
 stays, because it also does something the home does not replace — the tool name the
 model sees is derived from the config key, and moving the key would rename every bus
-tool the participant was told about. `ThreadStartParams.config` keeps
-`model_reasoning_effort`, which is per-turn rather than per-home.
+tool the participant was told about. `ThreadStartParams.config` always carries
+`bypass_hook_trust`, optionally carries `model_reasoning_effort`, and the
+internal teamlead preparation adds `features.hooks = false`. The prepared
+branch does not itself grant production admission; the current overrides are
+listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).
 
 **3C.** The trust record names the participant's own working directory, by its realpath —
 measured: a trusted project's own `.codex/config.toml` server comes up in the thread, and
@@ -128,7 +135,7 @@ always, trusted or not, so the copy alone is enough. Where a reviewer's copy lan
   the owner's home before any participant exists, and `initialize` loads that home's
   configuration — so the marketplace snapshot refresh this ADR names above is not
   something the isolation removes, and the integrity check stays per section.
-- A copy of the owner's credentials sits on disk at mode 0600 for the life of the
+- When the owner has `auth.json`, a copy sits on disk at mode 0600 for the life of the
   session. `stop` — and `done` through it — removes the home, and so does a failed lift.
   The removal guard only ever removes a direct child of the homes root, so a record
   naming the owner's home cannot take it with it.
@@ -139,9 +146,10 @@ always, trusted or not, so the copy alone is enough. Where a reviewer's copy lan
 - A worker's repository can now put MCP servers and exec policies into its own
   participant session through its `.codex/config.toml`. The CLI flag
   `--dangerously-bypass-hook-trust` does not reach app-server. Trust is the
-  `thread/start` override `bypass_hook_trust`. SessionStart runs for a worker, from
-  the file in the participant home, and for a reviewer, from the sandbox
-  `.codex/hooks.json`. Stop was not in those journals, and an approver is not covered.
+  `thread/start` override `bypass_hook_trust`. SessionStart runs for a worker
+  from the participant home when its worktree is linked, otherwise from its
+  own `.codex/hooks.json`; a reviewer uses the sandbox's `.codex/hooks.json`.
+  Stop was not in those dated journals, and an approver was not covered then.
 - The session rollout an operator may want to read is inside the participant home and
   goes away with it. `phrases.logs` names that home rather than `~/.codex`.
 - A repository that tracks `.codex/skills` of its own would have it overwritten by the

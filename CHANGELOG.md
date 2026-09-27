@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Codex home and thread configuration reflect the launch code** (PB-302).
+  The references include conditional linked-worktree `hooks.json`, optional
+  copied authentication, and the three `thread/start` overrides, while keeping
+  internal teamlead preparation distinct from production admission.
+  [05-drivers § Codex](docs/reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by), [03-cli § The Codex holder](docs/reference/03-cli.md#the-codex-holder).
+
 - **Mailbox claim states its liveness precondition** (PB-301.1). The protocol
   reference identifies the checks that the claim enforces and assigns the
   previous owner's liveness check to the caller. No takeover policy changes.
