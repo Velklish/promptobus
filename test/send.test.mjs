@@ -271,7 +271,7 @@ for (const [name, argv] of [
   const unknown = await refuse(['nonsense']);
   check(': `send` is named where a person would find it — help and the subcommand list',
     /promptobus send <address> \(--body <text> \| --file <path>\)/.test(help)
-      && /status, send, done/.test(unknown.out),
+      && /status, send, link, unlink, done/.test(unknown.out),
     `${help.slice(0, 200)} · ${unknown.out}`);
 }
 

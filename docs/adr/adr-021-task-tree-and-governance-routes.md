@@ -1,6 +1,6 @@
 # ADR-021: A task tree of two levels with governance routes
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-26
 **Deciders:** the owner, in the planning dialogue of 2026-09-26. The text is drafted by the planning session and is not yet reviewed by the owner; the status turns Accepted when PB-267, PB-269, PB-270 and PB-271 land.
 

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Two root tasks can link as peers** (PB-271). `link` registers reciprocal peer addresses bound to
+  the other task's owner session, and `unlink` removes the records while keeping earlier mail.
+  A question to a peer enters the other root's orchestrator mailbox under the source peer address;
+  the owner gate, root-only rule and four allowed message types bound the route. After one root
+  is pruned, its matching peer record can still be unlinked by the surviving root's owner.
+  [03-cli § Link](docs/reference/03-cli.md#link), [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
 - **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
   declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;
   sweep removes their files and blobs while protecting the owner tree, including a physical-path

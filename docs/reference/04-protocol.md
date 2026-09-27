@@ -29,7 +29,7 @@ worker↔approver route stays open; worker↔worker and reviewer↔participant r
 | `orchestrator` | any participant of its task | all seven | unchanged |
 | any participant | `orchestrator` of its task | all seven | unchanged |
 | `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
-| `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign |
+| `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign; delivery enters the other root's orchestrator mailbox as its peer sender |
 | `user` | `orchestrator` | `question` | the person asks the top of the tree |
 | `orchestrator` | `user` | `answer`, `status` | the answer and progress lines |
 | `reporter` | nobody | none | the reporter reads |
@@ -40,6 +40,13 @@ The `user` and `reporter` rows take the same priority over generic vertical traf
 pair is a sibling pair only when both records in the root point to child tasks whose `parent`
 names that root and whose owner sessions match the teamlead bindings. A peer route needs a
 `peerTask` link in both roots, with each peer record bound to the other root's owner session.
+`link` writes those records under the two task locks in task-id order; the route stays
+closed if a crash leaves only one record. `unlink` removes both records without changing
+the messages already in either journal. An orchestrator send to its `peer:<slug>` address
+is delivered to the other root's `orchestrator` mailbox with the sender recorded as
+`peer:<source-slug>`. Its artifact belongs to the destination task, and that task's
+warden wakes its owner. A direct send into the other root as its bound peer address uses
+the same reciprocal-link rule. See [03-cli § Link](03-cli.md#link).
 Other pairs are refused with the root orchestrator as the route. A direct sender must
 already be registered in that task and its recorded session must match the calling
 harness session. Direct messages

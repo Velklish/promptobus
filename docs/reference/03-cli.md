@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `step`, `review`, `models`, `status`, `send`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `spawn`, `step`, `review`, `models`, `status`, `send`, `link`, `unlink`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -887,6 +887,9 @@ each active child or unfinished child link. Close each child explicitly first;
 there is no cascade. `done` on a child closes that task alone and keeps the
 parent's teamlead record and mail.
 
+A registered peer appears on its root's participant line as `peer:<slug> · peer task <id>`;
+the task id names the other root, not a child of the one printed.
+
 Participant lines for each piece follow the declaration: owner step, then gate steps in order. Pieces follow their first participant's journal position; governance participants retain their order relative to one another. A later re-lift may move a participant record in the journal without moving its line out of its piece. Each line still shows that participant's own session state.
 
 `status` opens with the machine lease — `free`, the holder with address, task, command, since when and pid, or a lock left by a dead process — and one line per live waiter, before any task and also when none is active (§ Lease). Then it lists active roots and their children — each task header ends with the pipeline steps in order, `pipeline worker → reviewer → approver` without a declaration ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)) — participants, unread counts, review-round/question/result counts, and warden health. A participant line includes `rounds N · questions N · results N` beside `unread N` whenever at least one of those counts is non-zero; the counts come from canonical message records, so they remain visible before any mailbox is fetched. A re-bound reviewer also names `harness <current>` and, for each closed generation, `prior harness <h> until <stamp>: rounds N · questions N · results N` — or `re-bound from <h> at <stamp>` when that generation sent none of those. The current line's counts start when the previous harness ended; the earlier counts stay on the prior clause, from the previous generation's end back to the one before it, or to the start of the address for the first. A participant lifted with `--strategy` also gets its routing line — the strategy, the tuple, the score, how old the availability snapshot was when the pick was made, and the warnings — read out of `metadata.routing` ([04-protocol](04-protocol.md)) through the accessor. That record also keeps `windows`: the applicable windows of the chosen tuple with the `usedPercent` they had at the lift, which is the starting value a later reader needs to say what the run spent. It is the resolver's own applicable set, and it is empty when the harness reported no window. The strategy envelope agreed before a run is therefore auditable during it, not only at its start.
@@ -954,6 +957,37 @@ With `--key <clone-root>`, the same wait bound applies to a separate publication
 - **Running.** The command runs with inherited stdio, in the caller's directory and environment, without a shell: pipes and `&&` go inside `sh -c '…'`. `lease` exits with the command's own exit code, or `128 + signal` when a signal ended it. SIGINT, SIGTERM and SIGHUP sent to the wrapper are forwarded to the command, and the lease is released only after the command has exited.
 - **What it does not cover.** A wrapper killed with SIGKILL leaves its command running, and the lease is dropped by liveness while that command may still load the machine. A `lease` nested inside a leased command waits for the outer one until its bound.
 - **Keyed recovery.** A keyed command starts through a POSIX shell that writes its own pid into `child.pid` before replacing itself with the command; the command arguments remain literal. A keyed lock is reclaimed only after both the wrapper and command pids are dead. A killed wrapper with a live command keeps the next publisher waiting. If the wrapper is dead and the child pid was never recorded, the next publisher refuses with the lock path and an explicit recovery instruction: verify that both processes are dead before removing the lock directory. The machine lease retains its wrapper-pid recovery rule.
+
+## Link
+
+```
+promptobus link <task-a> <task-b>
+promptobus unlink <task-a> <task-b>
+```
+
+`link` joins two active root tasks. Each task needs a valid `adapter.slug` and a recorded
+owner session. Task A gains `peer:<slug-of-b>` bound to B's owner session; B gains
+`peer:<slug-of-a>` bound to A's. `unlink` removes those two participant records and leaves
+canonical messages, inboxes and history in their task journals. Both commands require the
+calling session to pass the positive [owner gate](#ownership--the-owner-gate-of-done-stop-and-dismiss)
+for at least one named task. A stranger, a child task, a self-link or a conflicting peer
+address is refused before either journal changes. With both journals present, repeating
+either command is safe.
+If one root's journal has been pruned, its former owner cannot be checked there. The
+surviving root's owner may `unlink` the pair only while its peer record names that exact
+missing task id. This removes the surviving record and lets a new root use the same slug;
+mail still held by the surviving root stays in its journal.
+
+After linking, `send peer:<slug-of-b> --task <task-a> --type question --body "…"` writes
+into B's orchestrator mailbox as `peer:<slug-of-a>`. The reply names B's task and the
+destination message id. The reverse direction uses B as the source. The same destination
+rule applies to `promptobus_send`, and the destination task's warden wakes its owner.
+`question`, `answer`, `status` and `artifact` are the allowed types; an artifact goes into
+the destination task's files. `task`, `result` and `review` are refused. An owner can also
+name the other task directly with `--task` and send from the peer address it holds there.
+Each delivered message is canonical in the destination task's journal. A link that has only
+one of its two records after an interrupted write admits no peer route; repeat `link` or
+`unlink` to finish that pair.
 
 ## Send
 

@@ -227,7 +227,7 @@ export function createMcpServer(options: McpOptions): {
       case 'promptobus_send': {
         const to = args?.to as string;
         const from = service.senderFor(home, task, identity);
-        const { message, artifact, sameContent } = service.send(home, task, {
+        const { message, artifact, sameContent, deliveredTask } = service.send(home, task, {
           from,
           to,
           type: args?.type as string,
@@ -239,13 +239,18 @@ export function createMcpServer(options: McpOptions): {
         // people make without having taken their own mail: the last place
         // where what has piled up can still be named.
         const unread = from === role ? service.unreadNote(home, task, role, session) : null; // mailbox reads `role`
-        return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, task), to)}${ADDR_MARK}${to}`
+        const landedTask = deliveredTask ?? task;
+        const landedTo = deliveredTask ? ORCHESTRATOR : to;
+        const landedFrom = deliveredTask ? `peer:${service.readTask(home, task).adapter.slug}` : from;
+        return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, landedTask), landedTo)}`
+          + `${ADDR_MARK}${landedTo}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`
           // Said plainly, not as a warning: a repeat send is lawful, and the sender is the
           // one who cannot otherwise tell this reply from the reply to a new version.
           + (sameContent ? ` · the same content as ${sameContent.filename}`
             + `${sameContent.names > 1 ? ` (${sameContent.names} names)` : ''}` : '')
-          + ` · ${service.identityLabel(home, task, from, session)}`
+          + ` · ${service.identityLabel(home, landedTask, landedFrom, session)}`
+          + (deliveredTask ? ` · via ${to} of task ${task}` : '')
           + (unread ? `\n${unread}` : '');
       }
       case 'promptobus_task':
