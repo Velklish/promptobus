@@ -429,3 +429,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-228"></a>`PB-228-mixed-e2e-red-under-sibling-load` · 2026-09-27 · batch PB-288 · — · test/promptobus-mixed.test.mjs went red once under measured sibling-worker load, not reproduced on base
 - <a id="pb-264.1"></a>`PB-264.1-tmux-teardown-list-line` · 2026-09-27 · batch PB-288 · — · tmux-teardown-list-line
 - <a id="pb-24.2"></a>`PB-24.2-snapshot-model-has-no-efforts-or-speed-tiers` · 2026-09-27 · rejected · — · The snapshot's model object carries no efforts or speed tiers, so PB-28 cannot record what the catalog would rate ultra and fast from
+- <a id="pb-272"></a>`PB-272-governance-instructions` · 2026-09-27 · completed · — · The package skill and lift texts describe TGM, teamlead and reporter, with the thresholds for raising a tree

@@ -48,6 +48,14 @@ check('teamlead dry-run names the child, root, address and install cwd without s
   dry.out.includes(planned.childTask) && dry.out.includes(task)
   && dry.out.includes('teamlead:group-one') && dry.out.includes(root)
   && !existsSync(marker) && !store.taskExists(home, planned.childTask), dry.out);
+const firstStatusInstruction = 'In your first status to the root orchestrator, list every rule file you read by path.';
+check('teamlead prompt instructs first status to list rule files read',
+  planned.prompt.includes(firstStatusInstruction)
+  && planned.rules.length > 0 && planned.rules.every((file) => planned.prompt.includes(`- ${file}`)), planned.prompt);
+check('teamlead lift keeps sibling assignments vertical',
+  planned.prompt.includes('The bus refuses task, result and review to a sibling.')
+  && planned.prompt.includes('Raise a change of logic, a change of requirements')
+  && planned.prompt.includes('Bring a contract between groups to the root.'), planned.prompt);
 check('teamlead dry-run MCP entry defaults to child and names reporting root',
   planned.launch.mcpConfig.mcpServers.promptobus.env.PROMPTOBUS_TASK === planned.childTask
   && planned.launch.mcpConfig.mcpServers.promptobus.env.PROMPTOBUS_ROOT_TASK === task

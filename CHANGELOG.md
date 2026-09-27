@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same proof while the pointer is active. The stands send without a binding wait.
   [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
 
+- **Governance instructions for a flat task or a two-level tree** (PB-272). The installed
+  orchestration skill gives the owner's 2026-09-26 thresholds, teamlead sibling and escalation
+  rules, and the reporter's journal-answering contract. A teamlead lift now requires its first
+  status to list the rule files it read. The reporter lift remains a separate delivery task.
+  [Orchestrate skill](skills/orchestrate/SKILL.md#choosing-a-flat-task-or-a-tree), [03-cli § Spawn](docs/reference/03-cli.md#spawn).
+
 - **Two root tasks can link as peers** (PB-271). `link` registers reciprocal peer addresses bound to
   the other task's owner session, and `unlink` removes the records while keeping earlier mail.
   A question to a peer enters the other root's orchestrator mailbox under the source peer address;

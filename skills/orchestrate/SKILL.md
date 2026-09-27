@@ -17,9 +17,29 @@ Launch workers only after the user says yes to a named split. Silence is not app
 
 | Role | Who | Does | Does not |
 |---|---|---|---|
-| Orchestrator | you | Cut the work, write briefs, spawn, accept results | Edit a worker's tree |
+| Orchestrator (TGM on a root task) | you | Cut the work, write briefs, spawn, accept results; hold contracts between groups on a root task | Edit a worker's tree |
+| Teamlead | one session with `teamlead:<slug>` in the root and `orchestrator` in its child task | Run one group's workers and delivery pipeline; report upward | Decide a change of logic or requirements for the root |
 | Worker | a session in a worktree | Change that tree, send `status` / `question` / `result` | Decide for you, open tracker files, talk to the user |
 | Reviewer | `promptobus review` | Read a diff, send findings | Fix the findings |
+| Reporter | optional read-only session on a root task | Answer the person from the task journals | Send as `reporter` or treat a result as accepted |
+
+## Choosing a flat task or a tree
+
+The owner measured 33 task journals on this machine on 2026-09-26. The median task had 3 pieces, 3 concurrent workers, 69 messages to the orchestrator and took 1.1 hours. The five largest had 5 to 33 pieces, peak concurrency of 3 to 7 workers, 400 to 832 messages to the orchestrator, 344 to 877 thousand characters of inbound mail and lasted up to 16.8 hours. Use the owner's thresholds from that measurement:
+
+- Keep one orchestrator for up to 5 pieces and up to 3 concurrent workers, in one repository group with one acceptance recipe, when the run is expected to take up to 8 hours.
+- Raise a root task with a TGM and child tasks led by teamleads from 8 pieces, from 4 concurrent workers, for two or more repository groups with different acceptance recipes, or whenever a contract between groups needs someone above both to hold it. Any one condition is enough.
+- For 6 or 7 pieces, let the task owner choose the shape. Ask the owner to choose when the expected run exceeds 8 hours without another tree trigger.
+
+The TGM holds the whole task and gives each teamlead a brief for its repository group. Each teamlead owns one child task and its workers. The tree has only these two levels. Keep each group's assignments, results and review inside its child task; summarize progress and decisions to the root.
+
+## Teamleads and siblings
+
+Sibling teamleads under the same root may settle small coordination directly with `question`, `answer`, `status` or `artifact`. The bus refuses `task`, `result` and `review` between siblings. Raise a change of logic, a change of requirements, or a question the brief and rules do not answer to the root orchestrator without waiting to be asked. A teamlead reads its rule files before work and lists every rule file it read by path in its first `status` to the root.
+
+## Reporter for the person
+
+When a reporter is present on a root task, it reads the journals of the whole tree, `status` and the digest. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the journal does not answer, it runs `promptobus ask` on the person's behalf as `user`, then brings the orchestrator's answer back. It never sends as `reporter` and does not forward or filter worker status for the orchestrator. The reporter lift is a separate delivery step; these are the rules it must carry.
 
 ## Tools
 
@@ -31,7 +51,7 @@ promptobus_mailbox { claim?, message?, task? }
 promptobus_task { task? }
 ```
 
-`to` is `orchestrator`, `worker:<slug>`, `reviewer:<slug>`, or `approver:<slug>`. The address must already be a participant.
+`to` names an address registered in that task. The shipped delivery steps are `worker:<slug>`, `reviewer:<slug>` and `approver:<slug>`; governance routes also admit registered teamleads, linked peers and `user` under their message-type rules. The reporter has no send route.
 
 Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
