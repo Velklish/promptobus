@@ -187,3 +187,92 @@ if (tagAvailable) {
     shallow ? `${tag} unavailable in shallow checkout; tag-tree reachability unverified`
       : `${tag} unavailable before release tag or without fetched tags; tag-tree reachability unverified`);
 }
+
+const glossary = read('docs/GLOSSARY.md');
+const trust = read('docs/guides/hooks-and-trust.md');
+const drivers = read('docs/reference/05-drivers.md');
+const englishFeatures = section(english, '## Features', '## Requirements');
+const russianFeatures = section(russian, '## Что умеет', '## Требования');
+const englishHooks = starts(englishFeatures, '- **MCP server and hooks.**');
+const russianHooks = starts(russianFeatures, '- **MCP-сервер и хуки.**');
+const englishMcpTools = section(english, '### MCP tools', '### Model routing');
+const russianMcpTools = section(russian, '### Инструменты MCP', '### Маршрутизация моделей');
+const toolRows = (doc) => [...doc.matchAll(/^\| `(promptobus_[a-z]+)` \|/gm)].map((match) => match[1]);
+const sixTools = ['promptobus_send', 'promptobus_mailbox', 'promptobus_task',
+  'promptobus_digest', 'promptobus_status', 'promptobus_ask'];
+const overviewTools = section(overview, '### The tool declarations', '### Rendering a reply for a participant');
+const englishLibrary = section(english, '## Library', '## Development');
+const russianLibrary = section(russian, '## Библиотека', '## Разработка');
+const englishDevelopment = section(english, '## Development', '## Contributing');
+const russianDevelopment = section(russian, '## Разработка', '## Как участвовать');
+const trustRoles = section(trust, "## A participant's hooks are not the workspace's", '## What is never touched');
+const trustNeverTouched = section(trust, '## What is never touched', '## How to verify');
+const driversIntro = section(drivers, '# Drivers', '## Participant binding before launch');
+const russianCommands = section(russian, '### Команды', '### Инструменты MCP');
+const russianSteps = starts(russianFeatures, '- **Шаги проверки.**');
+const russianAcceptance = starts(russianFeatures, '- **Адресованная приёмка.**');
+const russianStepCommand = starts(russianCommands, '| `promptobus step <name> <path> --task <id>` |');
+check('PB-293 entry points match current hooks tools roles and package',
+  englishHooks.includes('`promptobus mcp` exposes six tools over stdio, including three restricted to a proven reporter session.')
+    && englishHooks.includes('Stop and SessionStart loop guard for Claude Code and Codex, and a stop guard for Cursor.')
+    && englishHooks.includes('as soon as an orchestrator receives a question from `user`.')
+    && russianHooks.includes('`promptobus mcp` отдаёт шесть инструментов по stdio; три доступны только подтверждённой сессии reporter.')
+    && russianHooks.includes('Stop и SessionStart для Claude Code и Codex, только на stop для Cursor.')
+    && russianHooks.includes('сразу после вопроса `user` оркестратору.')
+    && same(toolRows(englishMcpTools), sixTools)
+    && same(toolRows(russianMcpTools), sixTools)
+    && sixTools.slice(3).every((name) => starts(englishMcpTools, `| \`${name}\` |`).includes('Reporter only:'))
+    && sixTools.slice(3).every((name) => starts(russianMcpTools, `| \`${name}\` |`).includes('Только для reporter:'))
+    && overviewTools.includes('The service declares six tools: `send`, `mailbox`, and `task` for participants,')
+    && overviewTools.includes('and `digest`, `status`, and `ask` for a proven reporter.')
+    && overviewTools.includes('six declarations carry `additionalProperties: false`')
+    && section(overview, '### Rendering a reply for a participant', '### The package entry point')
+      .includes('names the home, task and address')
+    && starts(englishLibrary, '| `promptobus/hooks` |').includes('Stop and SessionStart loop guard')
+    && starts(russianLibrary, '| `promptobus/hooks` |').includes('Stop и SessionStart; Cursor ставит только stop')
+    && englishDevelopment.includes('`skills/`, `schemas/` and `models/` ship in the tarball.')
+    && russianDevelopment.includes('`skills/`, `schemas/` и `models/` едут в tarball.')
+    && starts(glossary, '| hook |').includes('Claude Code and Codex use Stop and SessionStart; Cursor uses stop.')
+    && starts(glossary, '| hook |').includes('former PostToolUse feed hook is recognised only for removal.')
+    && starts(glossary, '| unanswered |').includes('an orchestrator\'s question from `user` is visible immediately, before its turn ends.')
+    && section(trust, '# Hooks, trust, and troubleshooting', '## What the installer edits')
+      .includes('Stop and SessionStart on Claude Code and Codex, and stop on Cursor.')
+    && trustRoles.includes('A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox.')
+    && trustRoles.includes('Teamlead and reporter sessions work at the install root')
+    && !trustNeverTouched.includes('runner must stay')
+    && driversIntro.includes('Claude Code and Codex install Stop and SessionStart,')
+    && driversIntro.includes('while Cursor installs stop only')
+    && driversIntro.includes('Teamlead and reporter sessions work at the install root')
+    && ['promptobus spawn --teamlead', 'promptobus report', 'promptobus step', 'promptobus ask']
+      .every((command) => russianCommands.includes(`| \`${command}`))
+    && russianSteps.includes('Первый гейт чтения диффа можно поднять без результата предыдущего участника; каждый следующий гейт требует текущий результат предшествующего объявленного гейта для того же объекта проверки.')
+    && russianAcceptance.includes('после текущих результатов предшествующего объявленного гейта и владельца для того же объекта проверки.')
+    && russianStepCommand.includes('первому гейту чтения диффа предшествующий результат не нужен; следующим нужен текущий результат предшествующего объявленного гейта для того же объекта проверки, а гейту записи — также результат владельца'),
+  'Current entry prose must describe the six-tool, guard-only, root-role and packed-file contracts');
+
+const cli = read('docs/reference/03-cli.md');
+const orchestrate = read('skills/orchestrate/SKILL.md');
+const soloReview = read('skills/solo-review/SKILL.md');
+const cliWakeRecipe = section(cli, '**Re-proving it costs one lift and one message.**', '**Nothing runs `claude` with a bare word.**');
+const englishWorkspace = section(english, '### 1. Declare the workspace', '### 2. Give the orchestrator the MCP server');
+const russianWorkspace = section(russian, '### 1. Объявить рабочее место', '### 2. Дать оркестратору MCP-сервер');
+const orchestrateHarness = starts(orchestrate, '`--harness` must be listed');
+const soloClose = section(soloReview, '## Close', '## Not this skill');
+const overviewEntry = section(overview, '## Entry points', '### Documentation in the package');
+check('PB-293.1 CLI recipes state routed and task-selection conditions',
+  cliWakeRecipe.includes('The measured orchestrator side used `promptobus mcp` driven over stdio')
+    && cliWakeRecipe.includes('`promptobus send` is also a CLI command (`lib/cli.js`)')
+    && englishWorkspace.includes('On a new `spawn` or `review` lift without that flag, an explicit or recorded strategy can select a harness when routing applies; without a strategy, the new lift uses the `claude` fallback.')
+    && englishWorkspace.includes('A repeat `spawn` reuses its participant\'s recorded harness. A repeat `review` reuses the reviewer\'s recorded harness unless an allowed explicit harness rebind takes effect.')
+    && russianWorkspace.includes('При новом подъёме `spawn` или `review` без этого флага явная или записанная стратегия может выбрать инструмент, если работает маршрутизация; без стратегии новый участник получает запасной `claude`.')
+    && russianWorkspace.includes('Повторный `spawn` использует записанный инструмент участника. Повторный `review` использует записанный инструмент ревьюера, кроме разрешённой явной смены инструмента.')
+    && orchestrateHarness.includes('For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list.')
+    && orchestrateHarness.includes('With no strategy, the new unrouted lift falls back to `claude`.')
+    && orchestrateHarness.includes('A repeat `spawn` uses its participant\'s recorded harness; a repeat `review` uses the reviewer\'s recorded harness unless an allowed explicit harness rebind takes effect.')
+    && soloClose.includes('Commands using `resolveTaskId` try an explicit `--task` or `PROMPTOBUS_TASK`, then the session binding, then the sole active task.')
+    && soloClose.includes('A single leftover active task can therefore be selected without a flag; with several active tasks and no binding, the command asks for `--task`.')
+    && soloClose.includes('`review <path>` has separate directory pickup')
+    && overviewEntry.includes('Commands that call `resolveTaskId` try an explicit task, then the session binding, then the sole active task')
+    && overviewEntry.includes('Without `--harness`, a new routed lift takes the selected harness, and a new lift with no strategy reaches the Claude Code fallback')
+    && overviewEntry.includes('A repeat `spawn` uses its participant\'s recorded driver; a repeat `review` uses its reviewer\'s recorded driver unless an allowed explicit rebind takes effect'),
+  'Send, harness fallback and task selection must retain their actual conditions');

@@ -1,6 +1,6 @@
 # Hooks, trust, and troubleshooting
 
-Project hooks are one thing: a Stop guard that refuses to end a turn with unread mail. Participants get their own, written by the driver into the directory they work in — see [A participant's hooks are not the workspace's](#a-participants-hooks-are-not-the-workspaces). This guide is for Claude Code, Cursor, and Codex.
+Current project hooks run one loop guard: Stop and SessionStart on Claude Code and Codex, and stop on Cursor. It refuses to end a turn with unread mail or an owed answer. Drivers also prepare participant hook files — see [A participant's hooks are not the workspace's](#a-participants-hooks-are-not-the-workspaces). This guide is for Claude Code, Cursor, and Codex.
 
 There used to be a second one — a `PostToolUse` line echoing each bus call back into the session. It is gone, and an install removes it where an earlier one wrote it. Nothing of the working machinery ran through it: the turn is returned by the Stop guard, unread counts ride in the MCP reply itself, and delivery to a participant is the warden's over its own channel.
 
@@ -22,7 +22,7 @@ Owned records are identified by exact install ids first, not by file position. G
 
 ## A participant's hooks are not the workspace's
 
-`promptobus install` writes hook files at the **workspace root**. A participant never works there: a worker's directory is its worktree and a Codex reviewer's is a sandbox of its own, so a hook file at the root is not a project file for either of them. The driver therefore writes the participant's own, into the directory that participant works in, carrying that participant's identity (`--role`, `--task`, `--home`) where the workspace's own guard carries none.
+`promptobus install` writes hook files at the **workspace root**. A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`). Drivers prepare participant hooks with that participant's identity (`--role`, `--task`, `--home`); the workspace guard carries none. A root hook can therefore also be in the project layer of a teamlead or reporter session.
 
 For Codex that directory is also the only project the participant trusts: the lift records `[projects."<realpath of the working directory>"]` in the participant's home, and nothing else. So the hooks file goes beside the skills copy, in `.codex/` of the working directory, under the same self-ignoring `.gitignore` that keeps a worker's diff clean.
 
@@ -79,7 +79,6 @@ it does not measure a turn that the guard returns for follow-up or a Codex appro
 - Foreign hook groups that are not guard-shaped, and unknown fields in the project files
 - Hooks that are not owned by Promptobus
 - The participant worktree's main tree outside the hook the driver writes
-- `.promptobus/hooks/` during ordinary task cleanup — the runner must stay
 
 `uninstall` is the same rule in reverse: owned Promptobus records only.
 

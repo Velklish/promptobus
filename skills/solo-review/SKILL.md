@@ -55,7 +55,7 @@ The two halves are independent:
 
 The close automatically refreshes the availability of the window-bearing harnesses represented by the reviewer's telemetry records, using the existing 15 s preflight budget. A refusal or timeout leaves the end reading absent, prints `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable), and does not block the close; `promptobus models calibrate` counts that run under "without windows" rather than as spend evidence.
 
-A leftover active task forces every later command to take `--task`.
+Commands using `resolveTaskId` try an explicit `--task` or `PROMPTOBUS_TASK`, then the session binding, then the sole active task. A single leftover active task can therefore be selected without a flag; with several active tasks and no binding, the command asks for `--task`. `review <path>` has separate directory pickup as described above. Close the review task to keep a later unbound command from selecting it by accident.
 
 ## Not this skill
 

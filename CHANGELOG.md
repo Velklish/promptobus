@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend penalties, and describes the implemented models command check. The CLI
   reference gives the matching `quotaCost` examples.
   [Fixture guide](test/fixtures/model-routing/README.md).
+- **CLI recipes state their selection conditions** (PB-293.1). The send recipe
+  names the existing CLI command, and orchestration and review guidance explains
+  routed harness choice and task binding before their fallbacks.
+  [CLI § Spawn](docs/reference/03-cli.md#spawn).
+
+- **Entry documentation matches current hooks, tools and roles** (PB-293). Both
+  READMEs, the overview and glossary now describe the guard-only hook set, all six
+  MCP tools, workspace-root governance sessions and the actual packed directories.
+  [Overview § The tool declarations](docs/reference/01-overview.md#the-tool-declarations).
+
 - **Packaged documentation links follow the release tag** (PB-292). READMEs and
   installed skills link to source-only pages at the package's version; sibling skill
   links remain local, and a check rejects stale release tags.

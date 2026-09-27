@@ -81,7 +81,7 @@ promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refres
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
 
-`--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
+`--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. Teamlead and reporter lifts use Claude Code by their own contract.
 
 For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its child task is the default in the lifted session's MCP entry; the teamlead reports upward by naming the root task explicitly. The teamlead runs at the install root on Claude Code. `--dry-run` shows the child task and session plan before starting it.
 

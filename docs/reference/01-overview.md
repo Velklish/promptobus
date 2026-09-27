@@ -17,6 +17,8 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `lib/cli.js` → `./cli` | Command parser |
 | `schemas/v1/*.json` → `./schemas/*` | Record and declaration schemas |
 
+`promptobus send` dispatches through `lib/cli.js`. Commands that call `resolveTaskId` try an explicit task, then the session binding, then the sole active task (`lib/store.js`). A single leftover task can be selected by that last rule; several unbound active tasks require an explicit task. `review <path>` has its own directory pickup before it opens a new review task ([03-cli § Review](03-cli.md#review)). Without `--harness`, a new routed lift takes the selected harness, and a new lift with no strategy reaches the Claude Code fallback (`lib/spawn.js`, `lib/drivers.js`). A repeat `spawn` uses its participant's recorded driver; a repeat `review` uses its reviewer's recorded driver unless an allowed explicit rebind takes effect (`lib/spawn.js`, `lib/review.js`).
+
 The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass.
 
 ### Documentation in the package
@@ -201,8 +203,8 @@ takes it from there, checking the quote in the documentation; a live
 **The name prefix is double on purpose**: the full name a session sees is
 `mcp__promptobus__promptobus_send`. The client namespaces names itself, and
 short `send` and `task` collide with foreign ones in a shared session set.
-The cost is known and accepted: the client prepends
-`PostToolUse:mcp__<server>__<…> says:` to every journal line in the tape.
+The full name distinguishes this server's tool from a tool with the same short
+name in another server.
 
 **There is no expectation tool in the set and there will not be one.** A
 task has one alarm, and that is the warden.
@@ -212,11 +214,12 @@ task has one alarm, and that is the warden.
 returns headers and marks the mail read; with `message` set to an id from a
 header it returns that one body and marks nothing
 ([04-protocol](04-protocol.md) § Messages: names, order and what a read marks).
-The three-tool set is named across the reference, the skills and the hooks, and
-a fourth tool would move all of them for a read the mailbox already owns.
+The service declares six tools: `send`, `mailbox`, and `task` for participants,
+and `digest`, `status`, and `ask` for a proven reporter. A separate body tool
+would duplicate the mailbox operation.
 
 **An undeclared top-level key is refused, and the refusal names it.** All
-three declarations carry `additionalProperties: false`, and the server
+six declarations carry `additionalProperties: false`, and the server
 checks the call against that same declaration before it resolves the task —
 MCP clients do not validate a tool's input schema, so a schema that only
 said so would change nothing. The allowed keys are read from the
@@ -249,7 +252,7 @@ journals, including children already done; each child has its own participants
 and mailboxes. The service supplies the readable task list to the renderer.
 
 A mailbox read is rendered as headers (`renderMessages`): the heading line
-stays as it was — a feed hook lifts the sender name from it — and under it one
+names the home, task and address, and under it one
 line names the message id, the size in characters and the first line. The body
 is rendered only by `renderMessage`, for one message asked by id.
 

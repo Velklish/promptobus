@@ -7,6 +7,12 @@ gets is the workspace's call, and how a task is journalled is the engine's.
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
+The current project hook is a loop guard: Claude Code and Codex install Stop and SessionStart,
+while Cursor installs stop only (`src/hooks.ts`, `lib/install.js`). A former PostToolUse feed
+hook and its runner are recognised for removal during install or uninstall. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`);
+workers and approvers use worktrees, and diff reviewers use separate directories. The
+participant launch supplies its own identity to the guard.
+
 ## Participant binding before launch
 
 Every lift writes a participant binding before starting the harness. Claude Code 2.1.280
