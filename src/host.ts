@@ -110,7 +110,7 @@ export interface HostLegacyLayout {
 export interface HostRoutingOverlay {
   id: string;
   path: string;
-  /** Whether this is the layer the TOOL writes (ADR-004, decision 6).
+  /** Whether this is the layer the TOOL writes (ADR-005, decision 6).
    * [reference/02-host.md#the-layer-the-tool-writes](../docs/reference/02-host.md#the-layer-the-tool-writes) */
   writable?: boolean;
 }

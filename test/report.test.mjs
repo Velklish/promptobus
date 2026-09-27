@@ -46,7 +46,7 @@ check('report refuses a child task before writing a reporter record',
 for (const harness of ['cursor', 'codex']) {
   const refused = await refusal({ task: TASK, harness, dryRun: true });
   check(`report refuses ${harness} with the install-root project-layer reason`,
-    refused.threw && /ADR-015/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
+    refused.threw && /ADR-024/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
 }
 const planned = await planReport(host, { task: TASK, dryRun: true });
 check('reporter MCP entry carries the root task and reporter address',

@@ -6,7 +6,7 @@
 
 ## Context
 
-The order worker, then reviewer, then approver exists only in prose. The bus knows three lifts — `spawn`, `review`, `review --approver` — and a closed address regexp, while [ADR-013](adr-013-approver-is-a-fourth-addressed-participant.md) records that the fourth role cost about ten independent edits of one contract. The owner wants a person to add, remove and reorder the steps that follow the hand-over to a worker — a second read-only review, no review at all — as the expected way of working, with one declaration per installation and no override by a repository or a task.
+The order worker, then reviewer, then approver exists only in prose. The bus knows three lifts — `spawn`, `review`, `review --approver` — and a closed address regexp, while [ADR-024](adr-024-approver-acceptance-in-own-worktree.md) records that the fourth role cost about ten independent edits of one contract. The owner wants a person to add, remove and reorder the steps that follow the hand-over to a worker — a second read-only review, no review at all — as the expected way of working, with one declaration per installation and no override by a repository or a task.
 
 ## Options
 
@@ -25,7 +25,7 @@ The order worker, then reviewer, then approver exists only in prose. The bus kno
 
 **Decision 4 — the roles' source of truth.**
 - 4A. One registry declares governance roles and step kinds with every surface keyed to it; declared step names are admitted through it.
-- 4B. Edit the copies once more. Rejected by ADR-013's own count.
+- 4B. Edit the copies once more. Rejected by ADR-024's own count.
 
 ## Decision
 

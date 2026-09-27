@@ -2,7 +2,7 @@
 
 The catalog is the maintainers' rating of tuples and ships inside the package. An overlay is a JSON file a person or a consumer writes to change what the catalog says — weights, ratings, allow and deny rules, the role floors, the pay-as-you-go policy — without forking anything.
 
-The decision behind all of it is [ADR-003](../adr/adr-003-model-routing.md); the command surface is [reference/03-cli.md](../reference/03-cli.md) § Model routing. This guide is the operational half: what is in the catalog file, how the layers combine, and the file to copy.
+The decision behind all of it is [ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md); the command surface is [reference/03-cli.md](../reference/03-cli.md) § Model routing. This guide is the operational half: what is in the catalog file, how the layers combine, and the file to copy.
 
 ## Routed roles and the schema boundary
 
@@ -37,7 +37,7 @@ Three combining rules, and they differ on purpose.
 
 | Field | Rule | Why |
 |---|---|---|
-| `weights.<strategy>` | the named set is replaced **whole** | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose. Only the four ADR-003 strategies have one: `balance` orders tuples inside a harness by `balanced`, so re-weighting `balanced` re-weights the inside of `balance` with it |
+| `weights.<strategy>` | the named set is replaced **whole** | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose. Only the four ADR-005 strategies have one: `balance` orders tuples inside a harness by `balanced`, so re-weighting `balanced` re-weights the inside of `balance` with it |
 | `deny.<kind>` | the lists of every layer are **unioned** | a ban written in any layer stands, and no layer above it lifts one |
 | `allow.<kind>` | the lists of every layer are **intersected** | one rule then covers both lists — a layer's rule survives every layer above it |
 | everything else | field by field | naming a field is how an overlay changes it; not naming it is how it leaves the layer below alone |
@@ -46,7 +46,7 @@ Three combining rules, and they differ on purpose.
 
 **Allow lists of different kinds hold at once.** `allow.harnesses` and `allow.models` are not alternatives: a tuple has to be named by every allow list that exists, and it is excluded by the first one that does not name it — `allow: { harnesses: ["claude"], models: ["claude-opus-5"] }` admits the Claude tuples that run `claude-opus-5` and nothing else. Deny is the mirror image and needs only one hit. The resolver applies allow before deny.
 
-**A ban is final from below.** [ADR-004](../adr/adr-004-subscription-balance.md) decision 5 made the deny lists accumulate: your file and a consumer's policy file both hold, whichever sits higher.
+**A ban is final from below.** [ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) decision 5 made the deny lists accumulate: your file and a consumer's policy file both hold, whichever sits higher.
 
 ```text
 // ~/.promptobus/model-routing.json    // a consumer's policy layer above it
@@ -120,7 +120,7 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 - `quality` is a hypothesis of 8, the band of `cursor-grok-high`. The one figure a pair could band is Terminal-Bench 2.1 under Vals AI, 73.41 % at xhigh, which gives 5. The predecessor was placed by 2.1 figures under other harnesses, and every head-to-head on xAI's launch page puts 4.7 above 4.6, so the successor rule keeps 8. Terminal-Bench 4.0 lists 4.7 at 37.6 % under Grok Build, beside GPT-5.6 Sol at max, quality 8, at 37.3 % under Codex; that pair is keyed to Claude Code, so neither figure is banded.
 - `speed` cites Artificial Analysis at 52.4 tokens/s, band 1, and `quotaCost` the xAI list price of $2 / $6, blended $4, band 1. The Grok 4.6 rows keep their `quotaCost` of 10, a hypothesis from a local usage spike: xAI now lists grok-4.6 at the same $2 / $6 (docs.x.ai/developers/pricing, opened 2026-09-25), but whether Cursor's `cursor-grok-4.6` is that model is not established — the Cursor display name moved from "Cursor Grok 4.6" to "Grok 4.6" between the 2026-09-05 and 2026-09-25 listings — so no price is attached. On ratings alone the `quality`, `balanced` and `economy` weights put 4.7 above 4.6 at every rung, while the `speed` weights keep 4.6 ahead on its speed band; a local correction of the `quotaCost` band goes through `models calibrate`.
 
-**All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and fifteen rows reach it. They are Claude Code's Fable ladders and both Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-6-astra` at `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. No Sol rung is a reviewer, because both Sol base rows sit at 8. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-003's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
+**All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and fifteen rows reach it. They are Claude Code's Fable ladders and both Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-6-astra` at `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. No Sol rung is a reviewer, because both Sol base rows sit at 8. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-005's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
 
 **All three harnesses lift approvers.** The floor is 7, and 15 Claude Code,
 12 Cursor and 16 Codex tuples reach it with an assessed base row at the same floor.
@@ -137,7 +137,7 @@ The Cursor lift was proven with `gemini-3.8-flash-high` from the api pool;
 [05-drivers § Approver worktree](../reference/05-drivers.md#approver-worktree-project-layer-and-publication)
 records its hook, bus, permission and clone-root evidence.
 The lift is `review --approver` once a reviewer result is on record; acceptance work makes costly
-state changes, and [ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md)
+state changes, and [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
 records why that work rejects 6 without buying the independent defect discovery of 8.
 
 **Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
@@ -146,9 +146,9 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 **An unrated model is not a tuple.** The catalog holds only models the maintainers assessed against a source they named: every row carries `source` and `evidence`, and a model nobody could assess at all gets no row.
 
-**A hypothesis is a row that says so, not a row that is missing.** This is the part the v1 wording got wrong and PB-29 had to settle. Where no figure can be cited for *that exact model and effort rung*, ADR-004 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. That is deliberate, because the alternative is worse: dropping the row would silently remove a model the person can actually launch, on the grounds that a leaderboard has not got round to it. Twelve of the twenty-two base models shipped today carry a hypothesis for `quality`, `composer-2.5` and `cursor-grok-4.6-high` carry one for all three, and the catalog is more honest for saying so than it would be for hiding them. What `validate` refuses is narrower and sharper: a rating with **neither** a source, **nor** an interpolation from a base row with evidence, **nor** a stated hypothesis.
+**A hypothesis is a row that says so, not a row that is missing.** This is the part the v1 wording got wrong and PB-29 had to settle. Where no figure can be cited for *that exact model and effort rung*, ADR-005 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. That is deliberate, because the alternative is worse: dropping the row would silently remove a model the person can actually launch, on the grounds that a leaderboard has not got round to it. Twelve of the twenty-two base models shipped today carry a hypothesis for `quality`, `composer-2.5` and `cursor-grok-4.6-high` carry one for all three, and the catalog is more honest for saying so than it would be for hiding them. What `validate` refuses is narrower and sharper: a rating with **neither** a source, **nor** an interpolation from a base row with evidence, **nor** a stated hypothesis.
 
-**Since PB-29 `evidence` says which of its numbers are published and which are not.** The field takes the v1 string still, but the shipped rows use the object form ADR-004 asks for — `{ text, sources, interpolatedFrom, hypothesis }` — and `validate` reads it: for each of `quality`, `speed` and `quotaCost` the row must either cite a figure in `sources` (the benchmark or price source, its version, the agent harness where the page names one, the figure, the size of the field the band was cut from, the URL and the date it was seen), or be marked `interpolatedFrom` a base row with a citation or hypothesis, or name that rating in `hypothesis` — "no citable figure for this model and effort rung, and here is the reasoning instead". A rating in none of the three is a `catalog-invalid` error. So "rated from a source" is now a machine-checkable claim rather than a promise in prose, and a reader can tell at a glance which half of a row rests on a published number. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
+**Since PB-29 `evidence` says which of its numbers are published and which are not.** The field takes the v1 string still, but the shipped rows use the object form ADR-005 asks for — `{ text, sources, interpolatedFrom, hypothesis }` — and `validate` reads it: for each of `quality`, `speed` and `quotaCost` the row must either cite a figure in `sources` (the benchmark or price source, its version, the agent harness where the page names one, the figure, the size of the field the band was cut from, the URL and the date it was seen), or be marked `interpolatedFrom` a base row with a citation or hypothesis, or name that rating in `hypothesis` — "no citable figure for this model and effort rung, and here is the reasoning instead". A rating in none of the three is a `catalog-invalid` error. So "rated from a source" is now a machine-checkable claim rather than a promise in prose, and a reader can tell at a glance which half of a row rests on a published number. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
 
 ### Canonical priority
 
@@ -164,7 +164,7 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 A rating is a **band**: an integer from 1 through 10, produced from one published figure and the dated anchor pair of its benchmark, version and agent harness. It reads no field, so adding or removing a model moves no other model's band. Four steps, and the fourth is what makes the third checkable:
 
-1. **Find the figure, with its version and its harness.** A number without both is not a figure ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)): the same Grok 4.6 was reported at 88.4 on Terminal-Bench 2.1 and 26 on 3.0, and Claude Fable 5 scores 83.8 under Claude Code and 80.4 under Terminus 2 on one version. Where several figures exist, take the harness this catalog runs the model on; where none does, take the highest published one and say in `evidence.text` that this fallback was used. The source order is ADR-004's and is unchanged: SWE-bench Verified, then Terminal-Bench, then Aider polyglot, then the vendor model card. When the page names no effort, a ladder with `max` uses that base rung by catalog convention, not as a claim about the harness default. A ladder without `max` uses the model-specific harness default only after that default has been measured and matched to a catalog rung. Until then the figure cannot be cited for an effort rung; keep the rating a hypothesis.
+1. **Find the figure, with its version and its harness.** A number without both is not a figure ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)): the same Grok 4.6 was reported at 88.4 on Terminal-Bench 2.1 and 26 on 3.0, and Claude Fable 5 scores 83.8 under Claude Code and 80.4 under Terminus 2 on one version. Where several figures exist, take the harness this catalog runs the model on; where none does, take the highest published one and say in `evidence.text` that this fallback was used. The source order is ADR-005's and is unchanged: SWE-bench Verified, then Terminal-Bench, then Aider polyglot, then the vendor model card. When the page names no effort, a ladder with `max` uses that base rung by catalog convention, not as a claim about the harness default. A ladder without `max` uses the model-specific harness default only after that default has been measured and matched to a catalog rung. Until then the figure cannot be cited for an effort rung; keep the rating a hypothesis.
 2. **Pick the anchor pair** for exactly that source, version and harness from the table in ADR-005 § Absolute bands. If that source, version or harness has no pair, do not compute a band from it or reuse another version's pair: keep the rating as a hypothesis against measured neighbours, name the reasoning in `evidence.hypothesis` and `evidence.text`, and add the anchor through a dated ADR/catalog-wide decision first. Adding one re-bands the whole catalog.
    **Even when the pair exists:** under the successor rule, a successor is the next vendor version in the same model family and its predecessor is the previous version. If the successor's figure differs in benchmark, version or agent harness from the source triple on which the predecessor's band rests, the computed band cannot demote the successor below the predecessor when the vendor's published head-to-heads put the successor ahead on every comparison. The predecessor's band means the corresponding effort rung. Record the figure and its computed band in `evidence.text`, not in `evidence.sources`: a rating named in `evidence.hypothesis` cannot also carry a citation, and `validate` rejects that row. Keep the successor rating as a hypothesis at the corresponding predecessor-rung band until a figure for the successor is published from the source triple on which the predecessor's band rests; then apply steps 1–2 normally.
 3. **Compute the band**: `clamp(1 + roundHalfUp((figure − floor) / (ceiling − floor) × 9), 1, 10)`, rounding half up. SWE-bench Verified under 60 → 1 and 96 → 10: 96.0 → 10, 95.0 → 10, 93.4 → 9, 85.2 → 7, 80.6 → 6, 78.7 → 6.
@@ -240,7 +240,7 @@ Line by line:
 | error `overlay-invalid` | an overlay's shape, a strategy whose four weights do not sum to 100, a reference to a tuple, model, harness, effort, flag or role that does not exist, a name both allowed and denied **in one layer**, allow lists that intersect to nothing (`allow-intersection-empty`) and an allow list every name of which is denied (`deny-covers-allow`) |
 | warning | `stale-rating`, `priority-duplicate`, `priority-not-canonical`, `promotion-expired`, `allow-shadowed-by-deny`, `quality-floor-alias` — every one of them advisory; `promotion-expired` is validate-only, and none of them stops a run |
 
-Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — `message`, and `rule` where the check has a name of its own. `layer` names whoever wrote the key in question: the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where no overlay ever touched it. A finding about allow and deny together names the deny side, because deny is applied last, and its message names the allow side too. `allow-shadowed-by-deny` is a name allowed in one layer and denied in another — lawful since ADR-004, and a warning rather than the error it was, because deny simply wins.
+Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — `message`, and `rule` where the check has a name of its own. `layer` names whoever wrote the key in question: the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where no overlay ever touched it. A finding about allow and deny together names the deny side, because deny is applied last, and its message names the allow side too. `allow-shadowed-by-deny` is a name allowed in one layer and denied in another — lawful since ADR-005, and a warning rather than the error it was, because deny simply wins.
 
 Warnings carry required `code` and `message`; the decision schema also permits optional `harness` and `usedPercent` on a `near-limit` warning, so a caller can name the affected harness and its binding window's usage without parsing prose. Merged-catalog warnings copied into a decision keep their `code` and `message`; the resolver adds the near-limit fields from the availability snapshot. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision. `promotion-expired` is also validate-only: it names a quota-cost promotion whose last observed date passed, and never reaches a decision.
 
@@ -269,7 +269,7 @@ under are the contract ([model-routing.ts](../../src/model-routing.ts)); this
 file is only the harness half of it.
 
 The whole probe is TWO reads and no turn. Binary and version come from the host
-(`resolveToolBin`) — ADR-003 says an adapter reports `binary_missing` from its
+(`resolveToolBin`) — ADR-005 says an adapter reports `binary_missing` from its
 verdict rather than searching `PATH` itself — and auth comes from `claude auth
 status --json`, the one non-interactive check the binary offers today.
 Measured 2026-09-05 on `claude` 2.1.251: three runs, 0.86 / 1.17 / 1.36 s wall,
@@ -301,10 +301,9 @@ lift default; the adapter cannot import the private driver through the registry
 ([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)).
 
 **Where the tier and the windows come from, measured 2026-09-06 on 2.1.251.**
-ADR-003 recorded an assumption — this harness exposes no remaining limit — and
-[ADR-004](../adr/adr-004-subscription-balance.md) supersedes it: the
+[ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md): the
 source Claude Code's own `/usage` command reads is reachable with the
-credentials the CLI already holds, and costs no turn.
+credentials the CLI already holds, and costs no turn. Measured 2026-09-06.
 
   • **the tier is offline.** The credential record — a keychain generic
     password on macOS, `~/.claude/.credentials.json` elsewhere — carries
@@ -357,9 +356,9 @@ and is none of this file's business: an adapter answers about the ACCOUNT,
 before any session exists.
 
 **The quota source is not the binary — it is the dashboard's own call.** The
-binary names no limit, and ADR-003 recorded that as "Cursor exposes none".
-[ADR-004](../adr/adr-004-subscription-balance.md) supersedes the
-assumption on a spike of 2026-09-06: `POST <backendUrl>/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
+binary names no limit. A spike on 2026-09-06, recorded in
+[ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), showed
+`POST <backendUrl>/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
 answers the account's billing cycle with the CLI's own token, and costs no turn.
 So a successful probe is `available` now — auth, model AND limit confirmed — and
 every path where the limit could not be read is still `unknown` /
@@ -369,7 +368,7 @@ every path where the limit could not be read is still `unknown` /
 carries ONE window — `billingCycleStart` to `billingCycleEnd` — and two
 percentages inside it: `autoPercentUsed` for Cursor's own models, which the
 answer lists in `autoBucketModels`, and `apiPercentUsed` for named third-party
-models. ADR-004 writes that as two windows of the same length with a pool
+models. ADR-005 writes that as two windows of the same length with a pool
 scope each: the `auto` pool names the ids it covers, and the `api` pool names
 none because it is the complement and a list of everything else is not a fact
 any harness stated.
@@ -573,7 +572,7 @@ Source: `lib/model-routing/resolver.js`, `resolve`.
 
 The resolver: one decision from the merged catalog, the availability snapshot
 and a strategy. A pure function — no clock of its own, no disk, no harness —
-because determinism is the contract ADR-003 fixed: the same inputs give the
+because determinism is the contract ADR-005 fixed: the same inputs give the
 same tuple whatever order they arrive in, and every number that moved the
 pick is published.
 
@@ -593,7 +592,7 @@ the neutral 50 % an unknown remaining limit counts as. The overlay schema has
 no key for either, so an overlay cannot move them and neither can this file.
 
 **The filter steps are in the ADR's order, and the first one that matches is
-the exclusion reported.** ADR-003 gave nine and ADR-004 added the `flags`
+the exclusion reported.** ADR-005 gave nine and ADR-005 added the `flags`
 selector after the inventory step, because that is where the snapshot row it
 reads arrives. Order is what makes an explanation stable: a tuple the account
 cannot run AND that is rated for the other role must always give the same
@@ -601,7 +600,7 @@ answer, or two runs would disagree about why.
 
 **A harness the snapshot does not carry is filtered, not excluded.** The
 snapshot covers the harnesses the workspace declared (`host.declaredTools()`,
-the preflight's `harnesses`), and ADR-003 says the catalog is filtered by that
+the preflight's `harnesses`), and ADR-005 says the catalog is filtered by that
 declaration. A tuple for a harness this workspace never declared was not
 considered and does not belong in `candidates`; the exclusion enum has no code
 for it either.
@@ -665,15 +664,15 @@ Four different rules live here, and they differ on purpose:
     nobody chose;
   * a DENY list ACCUMULATES across layers, per selector kind. A ban written in
     any layer stands, and no layer above it lifts one: lifting a ban means
-    changing the layer that wrote it. ADR-003's "Clarification, 2026-09-05" —
-    replacement per selector kind — is superseded whole by ADR-004 decision 5,
-    which measured the cost of the old rule: a product policy could only make
+    changing the layer that wrote it
+    ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)).
+    Replacement per selector kind was rejected: a product policy could only make
     its bans hold by sitting above a person's file and erasing that person's
     own `deny.tuples` with it;
   * an ALLOW list INTERSECTS across layers, per selector kind. A tuple must be
     named by every allow list of that kind that any layer states, so one
     sentence covers both lists — a layer's rule survives every layer above it
-    (ADR-004, option B1). The cost is real and is checked rather than
+    (ADR-005, option B1). The cost is real and is checked rather than
     discovered: two layers can intersect to nothing, and `validate` reports
     `allow-intersection-empty` when they do. An intersection that came out
     empty is `[]` and NOT an absent key, because the two mean opposite things
@@ -774,7 +773,7 @@ the machine. `promptobusHome()` — the per-workspace task store — is not used
 here at all.
 
 It carries no account key. v1 assumes ONE locally authenticated account per
-harness (ADR-003), so there is nothing to tell apart; the snapshot schema keeps
+harness (ADR-005), so there is nothing to tell apart; the snapshot schema keeps
 a `fingerprint` slot for the day that changes, and the rule that comes with it
 is that the key must be opaque and one-way.
 
@@ -812,7 +811,7 @@ Verdict shape: `{ ok, errors, warnings }`. An error carries the code the
 reference table names (`catalog-invalid`, `overlay-invalid` —
 [03-cli](../reference/03-cli.md)), the layer id it belongs to, and
 the field it is about. A warning never makes `ok` false: a stale rating is a
-warning by ADR-003, and the canonical-priority checks are warnings because
+warning by ADR-005, and the canonical-priority checks are warnings because
 the priority scheme is documented convention rather than schema.
 
 ### Loading the catalog and the layer stack
@@ -826,7 +825,7 @@ The catalog is the maintainers' rating of tuples and ships with the package
 host names them and their order, lowest precedence first
 (`routingPaths().overlays` — [02-host](../reference/02-host.md)), and
 above those the constraints the caller took from the command line. The stack
-is exactly the one ADR-003 fixed:
+is exactly the one ADR-005 fixed:
 
     canonical catalog → host overlays, lowest to highest → CLI constraints
 
@@ -920,7 +919,7 @@ the only thing that writes a cache entry here.
 
 Source: `lib/models.js`, `availabilityOf`.
 
-The decision with the availability facts it was made on attached (ADR-004).
+The decision with the availability facts it was made on attached (ADR-005).
 
 The block is assembled HERE and not in the resolver, and that is the whole
 reason it exists as a separate step. `resolve` is pure — no disk, no clock of
@@ -992,7 +991,7 @@ of that harness.
 A model scope may arrive without `models`: the adapter holds the driver's
 dictionary and could not resolve the harness's display name to ids. That
 window stays — it is printed for a person and binds nothing — and the resolver
-matches by exact id, so it never guesses a family (ADR-004). An `auto` pool
+matches by exact id, so it never guesses a family (ADR-005). An `auto` pool
 without its list is the other way round: the harness publishes that list, so
 its absence is an adapter fault and the window goes. An `api` pool carries no
 list at all, being the complement, and one attached to it is dropped with the
@@ -1006,7 +1005,7 @@ is a second set of rules about it.
 
 Source: `lib/model-routing/validate.js`, `citationChecks`.
 
-ADR-004 § Catalog ratings from published results: "`validate` refuses a rated
+ADR-005 § Catalog ratings from published results: "`validate` refuses a rated
 row with no source, unless the row is marked interpolated." Applied per
 rating, because that is the grain the ADR rates at — a row can have a
 published price behind `quotaCost` and nothing behind `speed`, and saying so
@@ -1042,7 +1041,7 @@ The inventory ids the `auto` pool covers.
 
 `autoBucketModels` names FAMILIES — `composer-2.5`, `cursor-grok-4.6` — while
 the inventory names ids with the effort level and the speed tier baked into
-them (`cursor-grok-4.6-xhigh-fast`). ADR-004 requires a scope that covers
+them (`cursor-grok-4.6-xhigh-fast`). ADR-005 requires a scope that covers
 models to name them **by id**, because the resolver matches exactly and infers
 no family; so the family inference happens here, in the module that holds both
 lists, and what travels is ids.
@@ -1076,7 +1075,7 @@ harness states (`windowDurationMins`), and a label invented from it would be a
 second, quieter claim about the same fact. A window whose `usedPercent` is not a
 number is not a window and is left out; the projection would drop it anyway.
 
-`kind` and `scope` are ADR-004's and are stated rather than derived: `primary`
+`kind` and `scope` are ADR-005's and are stated rather than derived: `primary`
 is the five-hour SESSION window and `secondary` the seven-day WEEKLY one — the
 names app-server gives two windows whose lengths it also states — and neither
 binds a model, so the scope is `null`, the account. A window whose length the
@@ -1098,7 +1097,7 @@ Source: `lib/model-routing/adapter-claude.js`, `spentWindow`.
 
 The account-wide row that is spent, or `null` when none is.
 
-**Account-wide only**, and that is a reading of ADR-004 rather than of PB-26's
+**Account-wide only**, and that is a reading of ADR-005 rather than of PB-26's
 one sentence about "a window at 100 %". `exhausted` is a statement about the
 HARNESS — it takes every tuple on it out of routing — and a `weekly_scoped` row
 at 100 % says one model family is spent while the rest of the account runs. A
@@ -1119,11 +1118,11 @@ inactive.
 endpoint saying the account may not spend that row at all, which is a state
 rather than a moment, and an inactive locked row is still locked.
 
-### `usageWindows` — the usage answer as ADR-004 windows
+### `usageWindows` — the usage answer as ADR-005 windows
 
 Source: `lib/model-routing/adapter-claude.js`, `usageWindows`.
 
-The usage answer as ADR-004 windows.
+The usage answer as ADR-005 windows.
 
 `limits[]` is the general shape and the only one read: the top-level `five_hour`
 and `seven_day` objects duplicate two of its rows, and the neighbouring keys with
@@ -1141,8 +1140,8 @@ as a duplicate.
 
 **`is_active` is read by nothing here, and that is not an oversight.** It marks
 the row that binds RIGHT NOW, which is a question the snapshot does not ask an
-adapter: every window is carried, ADR-003 takes `remaining` as the largest
-`usedPercent` over the applicable ones and ADR-004 names the binding window per
+adapter: every window is carried, ADR-005 takes `remaining` as the largest
+`usedPercent` over the applicable ones and ADR-005 names the binding window per
 candidate tuple. A flag saying which row binds the account as a whole would be a
 second, coarser answer to a question two consumers already answer per tuple.
 
@@ -1253,7 +1252,7 @@ The model ids a scope's display name resolves to, or `null` when it resolves to
 none.
 
 A `weekly_scoped` row names its model the way a person reads it — "Fable" — and
-ADR-004 asks the adapter to resolve that into ids, because the resolver matches
+ADR-005 asks the adapter to resolve that into ids, because the resolver matches
 by exact id and infers no family. **The table is the driver's** and arrives as
 an argument, beside the inventory and for the same reason: it is one more
 reading of the dictionary the driver owns, and a copy of it here would go on
@@ -1261,7 +1260,7 @@ naming an id nobody points at after a repin — silently, because a scope
 resolving to a stale id binds no row and prints no complaint.
 
 A name the table does not carry resolves to `null`: the window then stays in
-the snapshot, is printed for a person, and binds nothing, which is ADR-004's
+the snapshot, is printed for a person, and binds nothing, which is ADR-005's
 own rule and why the table may be short without being wrong.
 
 The answer is a fresh array on every call: it travels into a verdict, and a
@@ -1294,7 +1293,7 @@ which sends the next run back to the adapter.
 Source: `lib/model-routing/render.js`, `paceLines`.
 
 The pace table: one row per eligible harness/pool representative, under the
-candidates (ADR-004).
+candidates (ADR-005).
 
 Per HARNESS/POOL group and not per candidate, because that is the comparison
 `balance` actually makes — each group is represented by the tuple that would
@@ -1401,6 +1400,6 @@ the harness published about a turn that was really billed.
 
 A row names a WHOLE id (`cursor-grok-4.6-medium`), which is the id the
 inventory prints, so this route matches exactly and infers no family — the rule
-ADR-004 fixed for the resolver. **A model with no row is not in the pool**: no
+ADR-005 fixed for the resolver. **A model with no row is not in the pool**: no
 events this cycle and no bucket entry leaves it in `api`, which is the
 conservative reading, the api pool being the fuller one.

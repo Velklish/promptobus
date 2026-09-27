@@ -1440,7 +1440,7 @@ check('PB-161.1: the copy destination alone is enough — the guard needs no sib
 
 // And the other half of the same rule, which is the one a false warning would live in.
 // A repository may lawfully keep its own `.codex/config.toml` and `.codex/agents` — the
-// trust record of ADR-007 exists so a worker READS exactly those — and no lift writes
+// trust record of ADR-008 exists so a worker READS exactly those — and no lift writes
 // them. Asking Git about the claimed directory whole would name them on every single
 // lift and call them about to be overwritten; asking about the paths the lift writes
 // says nothing.
@@ -1814,7 +1814,7 @@ await reapHolder(legacyRef, env);
 dropSession(legacyRef, env);
 
 // The start path asks `model/list` with `includeHidden: true`: a named hidden
-// model is still named (ADR-004).
+// model is still named (ADR-005).
 const hiddenModelRef = 'hidden-model-recognised-at-start';
 const hiddenModelEnv = { ...env, [PROBE_VAR]: 'hidden' };
 writeSession({

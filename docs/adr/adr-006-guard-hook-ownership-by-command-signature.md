@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-09
-**Deciders:** Павел Ким (owner), on the PB-52 checkpoint of the 2026-09-09b run
+**Deciders:** Павел Ким (owner), 2026-09-09
 
 ## Context
 
@@ -15,7 +15,7 @@ a copied guard from another machine in place and installs a duplicate.
 The guard hook has a stable rendered shape even when those paths change: two
 quoted launch elements, optional bare host-prefix words, the bare `guard`
 subcommand, and either no flags or the identity triple
-`--role <value> --task <value> --home <value>`. PB-52's regression reproduces
+`--role <value> --task <value> --home <value>`. The regression reproduces
 the duplicate after rewriting both paths and deleting `.promptobus/`, then
 verifies that uninstall removes the copied guard.
 

@@ -22,7 +22,7 @@ Codex and Cursor write their session-record pointer on the participant record be
 holder or persist session starts. Their MCP children use that pointer even while `threadId`
 or `chatId` is null. The pointer must name a readable driver record for the same home,
 task and address; the recorded pointer stays alongside the harness id after lift. See
-[04-protocol § Addresses](04-protocol.md#addresses) and [ADR-014](../adr/adr-014-mcp-session-proof.md).
+[04-protocol § Addresses](04-protocol.md#addresses) and [ADR-019](../adr/adr-019-session-address-per-task-lands.md).
 
 ## Approver: lift after a reviewer result
 
@@ -43,10 +43,9 @@ Cursor writes an explicit `.cursor/cli.json` even when the approver's package de
 empty, so it does not inherit permission rules from a parent directory. Cursor has no
 mechanical deny for individual MCP tools; the classified external writes are stated in
 the approver prompt, and an incomplete classification still refuses the lift.
-[ADR-013](../adr/adr-013-approver-is-a-fourth-addressed-participant.md) records the floor of 7
-and the worker↔approver routing exception; [ADR-015](../adr/adr-015-approver-lift-is-a-flag-on-review.md)
-records the `--approver` flag and the reviewer-result precondition; [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
-records the worktree and publication rule. A repeat lift reuses an
+[ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md) records the floor of 7,
+the worker↔approver routing exception, the `--approver` flag and the reviewer-result
+precondition, and the worktree and publication rule. A repeat lift reuses an
 alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
 session starts a fresh approver instead of spawning a second session beside the first.
 

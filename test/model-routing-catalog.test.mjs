@@ -68,7 +68,7 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
  * it does.
  *
  * The LAST layer is marked writable unless a caller marked one itself, because
- * that is what a lawful declaration looks like since ADR-004 — exactly one
+ * that is what a lawful declaration looks like since ADR-005 — exactly one
  * writable layer whenever any is declared, and a host should mark the
  * highest-precedence one. A stand-in that declared none would make every test
  * here a test of the refusal.
@@ -331,7 +331,7 @@ test('an interpolated row is exactly what the ADR-005 arithmetic makes of its ba
   // quality one band per step (signed), speed unchanged, quotaCost one band
   // per step with the SAME sign, all clamped to 1…10. The owner cut the
   // quotaCost step from two bands to one on 2026-09-06 (ADR-005 decision 3a):
-  // two bands preserved ADR-004's relative movement and drove long ladders into
+  // two bands preserved ADR-005's relative movement and drove long ladders into
   // the clamp, where `claude-opus-medium` shared band 1 with `gpt-5.4-mini`. Written as arithmetic in
   // the ADR precisely so that replacing it by
   // measurement is one change; this is what stops a hand-edited rung drifting
@@ -483,7 +483,7 @@ test('the shipped catalog passes validate with no overlay present', () => {
 test('a model the harness exposes but the catalog does not rate produces no tuple', () => {
   // Measured 2026-09-06 (PB-29): `model/list` over `codex app-server` returns
   // the five visible models AND two hidden ones, `gpt-reserve` and
-  // `codex-auto-review`, which ADR-004 keeps out of the catalog; `claude --help`
+  // `codex-auto-review`, which ADR-005 keeps out of the catalog; `claude --help`
   // publishes the aliases fable, opus and sonnet; Haiku is the baked alias proven
   // in PB-34.1, and a row keyed on an alias is
   // a rating of whatever the vendor points it at today. An absent row is an
@@ -530,7 +530,7 @@ test('every layer overrides the one below it, field by field', () => {
   assert.equal(merged.policy.penalties.unknownAvailability, 30);
   assert.equal(merged.policy.qualityFloor.reviewer, 9, 'the alias still reaches the floor it names');
   assert.equal(merged.policy.qualityFloor.worker, 5, 'and leaves the worker floor at its default');
-  // A deny list is the exception and ADR-004 is why: it ACCUMULATES. The higher
+  // A deny list is the exception and ADR-005 is why: it ACCUMULATES. The higher
   // layer adds its ban to the lower one's rather than writing over it.
   assert.deepEqual(merged.policy.deny.models, ['claude-opus-5', 'claude-sonnet-5']);
   // Left alone by the higher layer, so the lower one still holds.
@@ -555,7 +555,7 @@ test('the layer order IS the precedence order — for the scalars it still gover
   // call and the assertions below must go red. A merge that folded layers into
   // a set rather than a sequence would pass everything above and fail here.
   //
-  // ADR-004 narrowed what the order governs, and deliberately: a deny list no
+  // ADR-005 narrowed what the order governs, and deliberately: a deny list no
   // longer depends on it, because a ban written in any layer stands. What is
   // still ordered is every SCALAR — the highest layer that states one wins —
   // and that is the half this test now pins.
@@ -576,11 +576,11 @@ test('the layer order IS the precedence order — for the scalars it still gover
   assert.deepEqual([...swapped.policy.deny.harnesses].sort(), ['codex', 'cursor']);
 });
 
-// --- ADR-004: the merge is union, intersection and two selectors --------------
+// --- ADR-005: the merge is union, intersection and two selectors --------------
 
 test('two layers with different deny lists — BOTH bans hold', () => {
   // The mutation probe of PB-31: make the merge replace again and this goes red.
-  // It is the whole of ADR-004 decision 5 in one assertion — the first consumer
+  // It is the whole of ADR-005 decision 5 in one assertion — the first consumer
   // had to sit above a person's file and erase their `deny.tuples` to make its
   // own policy stand, and under union it does not.
   const canonical = canonicalLayer();
@@ -649,7 +649,7 @@ test('DEFAULT_POLICY.byRole accepts approver rules and keeps other roles separat
   assert.deepEqual(rulesForRole(merged.policy, 'worker').deny.harnesses, ['cursor']);
 });
 
-test('validate names each ADR-004 check by its rule, on a layer pair that fires it', () => {
+test('validate names each ADR-005 check by its rule, on a layer pair that fires it', () => {
   // Every one of the three has to be reachable and has to name the layer that
   // wrote each half — the whole reason they exist is that an unsatisfiable
   // policy would otherwise reach a person as an empty candidate list.
@@ -739,7 +739,7 @@ test('validate refuses a flag, a role and a floor the vocabulary does not have',
 test('a byRole block is checked against the catalog like an unscoped rule', () => {
   // `referenceChecks` has to walk into the nested block: a tuple id nobody rates
   // is as wrong there as it is at the top level, and it was reachable only
-  // through the flat selectors before ADR-004.
+  // through the flat selectors before ADR-005.
   const verdict = validateLayers({
     canonical: canonicalLayer(),
     overlays: [overlayLayer('workspace', {
@@ -978,7 +978,7 @@ test('a v1 policy overlay still loads, while any v1 value on the rating scale gi
   // file whose meaning did not move keeps working, and a v1 file holding a
   // value whose SCALE moved is refused, because the two are indistinguishable
   // by inspection. `reviewerQualityFloor: 5` meant the top band of five under
-  // ADR-004 and reads as half way up ten under ADR-005 — read unchanged it
+  // ADR-005 and reads as half way up ten under ADR-005 — read unchanged it
   // would lower a person's reviewer floor from 9 to 5 without a word, which is
   // the one direction a floor must never move by itself.
   const policyOnly = overlayLayer('user', {
@@ -1277,7 +1277,7 @@ test('validate refuses weights that do not sum to 100, and rules that both allow
   assert.equal(contradiction.ok, false);
   assert.ok(contradiction.errors.some((e) => e.message.includes('both allowed and denied')));
 
-  // Across layers it is no longer that error. ADR-004 made it lawful — deny
+  // Across layers it is no longer that error. ADR-005 made it lawful — deny
   // wins — so it becomes a warning that sends the person to the file which took
   // their allow list away, and the error beside it is the one that actually
   // stops routing: every name the merged allow list admits is denied.
@@ -1611,9 +1611,9 @@ test('every warning carries code and message, the two fields a decision may copy
 });
 
 test('a finding names the layer that wrote the key it is about', () => {
-  // 03-cli and ADR-003 promise a layer id — "denied by overlay \"workspace\"" —
+  // 03-cli and ADR-005 promise a layer id — "denied by overlay \"workspace\"" —
   // so the merge records who wrote each weight set and every allow/deny list.
-  // Without that the only honest answer would be the whole stack. Under ADR-004
+  // Without that the only honest answer would be the whole stack. Under ADR-005
   // a list has as many writers as there are layers that stated one, so the
   // record is a list of rules rather than one id per key.
   const weights = validateLayers({
@@ -1802,7 +1802,7 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
       qualityFloor: { approver: 7 },
       deny: { byRole: { approver: { harnesses: ['codex'] } } },
     },
-    // ADR-004's pace, default and account blocks belong to the same parity
+    // ADR-005's pace, default and account blocks belong to the same parity
     // corpus: each has one lawful document and one document the two shapes must
     // reject together.
     { schemaVersion: 1, balance: { band: 5, spendUnit: 5 } },
@@ -1881,7 +1881,7 @@ test('the package ships the catalog', () => {
 // --- the writable layer -------------------------------------------------------
 
 test('exactly one routing layer is writable, and the refusal names the layers', () => {
-  // ADR-004 decision 6: the workspace overlay is state, so one layer — and only
+  // ADR-005 decision 6: the workspace overlay is state, so one layer — and only
   // one — is the file the tool writes. The check is at the DECLARATION, not at
   // the write: a person who learns their host names no writable layer from
   // `models strategy --set` learns it after making the edit it refuses to keep.

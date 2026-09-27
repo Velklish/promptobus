@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-26
-**Deciders:** the owner, in the planning dialogue of 2026-09-26. The text is drafted by the planning session and is not yet reviewed by the owner; the status turns Accepted when PB-267, PB-269, PB-270 and PB-271 land.
+**Deciders:** the owner, in the planning dialogue of 2026-09-26.
 
 ## Context
 
@@ -23,14 +23,14 @@ One orchestrator carries every participant's traffic. The owner's measurement of
 - 3C. 3A plus a new upward-only type. Not taken now: the type list is frozen and no case needs it yet.
 
 **Decision 4 — peers.**
-- 4A. An explicit `link` on both sides, each peer bound to the other's owner session, and only the sibling types. 4B. Any orchestrator writes to any task by name. Rejected: an address that can be named can be borrowed (ADR-011).
+- 4A. An explicit `link` on both sides, each peer bound to the other's owner session, and only the sibling types. 4B. Any orchestrator writes to any task by name. Rejected: an address that can be named can be borrowed (ADR-019).
 
 **Decision 5 — where a teamlead sits.**
 - 5A. At the install root, like the top; its group is the set of repositories in its brief. 5B. In one repository's directory. Rejected: awkward for a group of several.
 
 ## Decision
 
-1A, 2A, 3A, 4A, 5A. `done` on a root refuses over an active child rather than cascading. A teamlead and a reporter lift on Claude Code first; Cursor and Codex read their project layer from cwd and are refused with the reason of [ADR-015](adr-015-approver-lift-is-a-flag-on-review.md) until the clone-root rental card lands.
+1A, 2A, 3A, 4A, 5A. `done` on a root refuses over an active child rather than cascading. A teamlead and a reporter lift on Claude Code. Codex teamlead admission is the amendment below. Cursor stays refused as a teamlead for the project-layer reason in [ADR-024](adr-024-approver-acceptance-in-own-worktree.md).
 
 ## Consequences
 
@@ -40,13 +40,13 @@ One orchestrator carries every participant's traffic. The owner's measurement of
 
 ## Amendment: Codex at the install root
 
-**Amendment status:** Accepted by the owner on 2026-09-27. The three limits named below are measured under PB-286.3.
+**Amendment status:** Accepted by the owner on 2026-09-27. The limits below were measured on codex-cli 0.156.1.
 
 `live.PM5Iux` showed two Codex teamlead lifts with byte-identical tracked and untracked install-root content, first status from `teamlead:<slug>`, and a second holder-driven turn after root wake. The install root's `SessionStart` hook ran. `live.E5Q8vs` showed that the root project config overrode a private-home `hooks = false`, and that the child MCP entry could not read the teamlead's root mailbox; its holder still started and completed the wake turn. `live.rVcwVK` showed no foreign hook marker with `features.hooks = false` in `thread/start`, and the separate root MCP entry read the root message as the teamlead. Its script stopped at a server-name assertion before the second lift or a worker lift.
 
 The Codex path copies skills into the teamlead's own `CODEX_HOME`, writes no project layer at the install root, binds a second MCP entry to the root teamlead address, and uses holder-driven turns. At codex-cli 0.156.1, [app-server makes request config a CLI override](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/config_manager.rs#L355-L382), and [session flags follow project config](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/config/src/loader/mod.rs#L395-L416).
 
-`live.XtOh7N` stopped on a proof repository outside the install root; `live.3Acln1` received the worker result but completed its handling in the first holder turn. The corrected `live.ej1Piv` exited 0. Both teamlead lifts left the install-root snapshot and git status unchanged. The first received root mail through its own MCP entry and woke for a second holder turn. The second lifted a Cursor worker, received its result on the child task, then woke for a second turn and ran `review --dry-run` for Claude Code, Cursor and Codex, each exiting 0 on a clean tracked tree. The admitted Codex teamlead keeps the same two-address task tree; Cursor teamleads remain refused under ADR-015.
+`live.XtOh7N` stopped on a proof repository outside the install root; `live.3Acln1` received the worker result but completed its handling in the first holder turn. The corrected `live.ej1Piv` exited 0. Both teamlead lifts left the install-root snapshot and git status unchanged. The first received root mail through its own MCP entry and woke for a second holder turn. The second lifted a Cursor worker, received its result on the child task, then woke for a second turn and ran `review --dry-run` for Claude Code, Cursor and Codex, each exiting 0 on a clean tracked tree. The admitted Codex teamlead keeps the same two-address task tree; Cursor teamleads remain refused under ADR-024.
 
 The clean run proves an absent foreign-hook marker but does not isolate the thread override's effect: both holder logs report an untrusted install root with project hooks disabled. Its proof skill file lacked YAML frontmatter and did not load. The worker operation ran after a `full-access` request; no live artifact records the applied `danger-full-access` sandbox, and `workspace-write` was not tried for that worker operation. The three review commands were dry-runs, not reviewer lifts.
 

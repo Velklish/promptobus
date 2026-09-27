@@ -77,7 +77,7 @@
       }
     },
     "reviewerQualityFloor": {
-      "description": "ALIAS for qualityFloor.reviewer, kept so an overlay written for v1 keeps its meaning (ADR-004). A layer stating both is a models validate warning and the explicit key wins.",
+      "description": "ALIAS for qualityFloor.reviewer, kept so an overlay written for v1 keeps its meaning (ADR-005). A layer stating both is a models validate warning and the explicit key wins.",
       "type": "integer",
       "minimum": 1,
       "maximum": 10
@@ -112,7 +112,7 @@
       }
     },
     "nearLimit": {
-      "description": "When models says an account is running short (ADR-004). Two readings of the same binding window, and either one on its own raises the line; a third level takes the tuple out of automatic selection.",
+      "description": "When models says an account is running short (ADR-005). Two readings of the same binding window, and either one on its own raises the line; a third level takes the tuple out of automatic selection.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -148,7 +148,7 @@
       }
     },
     "account": {
-      "description": "A person's answers to questions no harness method returns — today one, Cursor's plan name. NOTHING WRITES THIS: models prints the key, the value and the path of the layer, and a person or an agent adds the line (ADR-004). The value is display only and enters no score; the snapshot keeps what was measured, and this is printed beside it as the person's answer.",
+      "description": "A person's answers to questions no harness method returns — today one, Cursor's plan name. NOTHING WRITES THIS: models prints the key, the value and the path of the layer, and a person or an agent adds the line (ADR-005). The value is display only and enters no score; the snapshot keeps what was measured, and this is printed beside it as the person's answer.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -290,7 +290,7 @@
     },
     {
       "schemaVersion": 1,
-      "note": "schema example: the two selectors ADR-004 added — a mark the snapshot carries, and a rule that holds for one role only",
+      "note": "schema example: the two selectors ADR-005 added — a mark the snapshot carries, and a rule that holds for one role only",
       "deny": {
         "flags": ["no-zdr"],
         "byRole": { "reviewer": { "harnesses": ["example"] } }

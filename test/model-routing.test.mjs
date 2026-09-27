@@ -114,10 +114,10 @@ test('the golden fixtures validate against their schemas', () => {
   }
 });
 
-// --- snapshot v2: the shapes ADR-004 added, and the ones it refuses ----------
+// --- snapshot v2: the shapes ADR-005 added, and the ones it refuses ----------
 
 test('the snapshot schema is version 2, and a version 1 document is not one', () => {
-  // ADR-004 decision D: a v1 cache is discarded rather than migrated, and the
+  // ADR-005 decision D: a v1 cache is discarded rather than migrated, and the
   // schema is where that is a fact rather than a policy — a document of the old
   // version does not validate, so nothing can write one back half-converted.
   const validate = validatorFor('urn:promptobus:model-routing:snapshot');
@@ -128,7 +128,7 @@ test('the snapshot schema is version 2, and a version 1 document is not one', ()
 });
 
 test('a window states its kind, its length and what it binds — or it is not a window', () => {
-  // The three rules of ADR-004 that the schema itself can hold. `kind` is a NAME
+  // The three rules of ADR-005 that the schema itself can hold. `kind` is a NAME
   // and `lengthSec` is the number, and neither is derived from the other; a
   // window with no length has no pace; and a scope is explicit, because a scope
   // read from an ABSENCE would silently mean "the whole account", which is the
@@ -167,7 +167,7 @@ test('the tier and the flag list are closed vocabularies, not free text', () => 
   // The tier is the second adapter-authored string that reaches disk, and it is
   // shaped like a code so it cannot carry an address or a line of harness
   // output. The flag list is closed because an overlay may deny by a flag
-  // (ADR-004), and a name checked against nothing would let a typo ban silently
+  // (ADR-005), and a name checked against nothing would let a typo ban silently
   // nothing.
   const validate = validatorFor('urn:promptobus:model-routing:snapshot');
   const doc = readJson(path.join(FIXTURES, 'snapshot.json'));

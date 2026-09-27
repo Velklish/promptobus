@@ -14,12 +14,12 @@ Tasks and decisions are managed with backslop:
 
 - a task is a `PB-<number>-<slug>.md` file; its status is the `docs/backlog/{triage,queue,active,deferred}/` directory; closed tasks live in `docs/archive/<id>-<slug>/` with `task.md` and `result.md`;
 - queue priority is the “Order” field in the file; `npx github:Velklish/backslop#v0.3.0 new` assigns numbers across directories, while findings get `N.k` without coordination;
-- decisions are ADRs in `docs/adr/` with a row in `docs/README.md`; an accepted decision is replaced by a new one, not edited;
+- decisions are ADRs in `docs/adr/` with a row in `docs/README.md`; a new decision on a question already decided rewrites that ADR, keeping its number and the rationale that still holds, and a record that no longer governs anything is deleted;
 - the change procedure and worker/approver roles are in the backslop section of `AGENTS.md`; details are in `backslop-task` and `backslop-batch`, and documentation population is in `backslop-seed`;
 - gates are `npx github:Velklish/backslop#v0.3.0 lint` plus `gates` from `backslop.json`;
 - the tool version is pinned in `backslop.json` (`cli` with a tag and the `version` stamp); update with `npx github:Velklish/backslop#v0.3.0 upgrade`, while `migrate` changes file formats between versions.
 
-**Amendment, 2026-09-23 (PB-248).** A closed task is a journal line of `docs/archive/LOG.md`; a directory is a task not yet folded.
+**Amendment, 2026-09-23.** A closed task is a journal line of `docs/archive/LOG.md`; a directory is a task not yet folded.
 
 ## Consequences
 

@@ -1,144 +1,50 @@
-# ADR-017: The owner gate is a positive proof
+# ADR-017: Cleaning up after one accepted piece is its own verb, and the owner gate is a positive proof
 
 **Status:** Accepted
-**Date:** 2026-09-16
-**Deciders:** the run's orchestrator, on the brief of [PB-223](../archive/LOG.md#pb-223), which asks for the decision about a task with no owner to be named rather than left silent. **Not reviewed by the owner**: the boundary the card sets is the fork; what is recorded here is which branch of it was taken.
+**Date:** 2026-09-14
+**Deciders:** the repository owner, decision of 2026-09-12 that the telemetry a strategy is built from must survive, and the standing mandate of that day to close the remaining forks. The ownerless-task fork was closed on 2026-09-16. The approver door on `stop` and `dismiss` was added on 2026-09-17. The acceptance trailer was added on 2026-09-26.
 
 ## Context
 
-`ownership` answered one question — is this mailbox closed for another session — and answered
-`gated: false` whenever it had nothing to compare:
+Everything the mechanism cleaned, it cleaned for a whole task. `done` closes the task, stops the sessions, sweeps the worktrees of closed tasks, removes a branch it has proven merged, and sweeps journals past a threshold. Per piece there was nothing: `dismiss` removes a watch only, `stop` kills one session, and neither touches a directory. `engine.prune` refuses on an active task, and at the moment one piece is accepted the task is active by definition.
 
-```
-if (!owner || !session) return { gated: false, owner, session };
-```
+Measured on disk on 2026-09-12: `artifacts/`, `blobs/` and `files/` of an accepted piece stay until the whole journal is swept; `workers/<stem>.settings.json` was removed by nobody; a task closed on 2026-09-10 still carried three reviewer settings files; seventeen mechanism directories stood in the temporary root.
 
-Its readers split into two groups that want opposite defaults. The advisory ones — the
-foreign-mailbox heading, the unread tail, the `status` warning, the attach gates of `spawn`
-and `review`, the guard's successor hint — ask "may I call this mailbox somebody else's",
-and on an absence of evidence they must stay quiet. The destructive ones — `done`, `stop`,
-`dismiss` — ask "may this call end somebody's run", and they read `!gated` as a yes.
+The owner's boundary: the telemetry a strategy is built from must survive. The worktree and the branch of the accepted participant, the blobs and files of that piece, and the temporary stands may go. `telemetry.jsonl` lives outside the store. `health.json`, `supervisor.log`, `stalls.json`, `messages/` and the `waits/` sidecars leave with the task directory and must survive a piece sweep because `done` reads them to write telemetry.
 
-That made `done` reachable from any shell that carries no harness identity variable, over
-**any** task in the store, a live foreign one included: it closes the task, stops the
-participants' sessions, removes their worktrees and deletes the branches it judged merged.
-There is no privilege boundary here — whoever calls already has the store directory — but
-the gate does not exist against an outsider. It exists against the neighbouring session on
-the same machine, and that arrangement is the standard one: several sessions of one
-workspace, each with its own task. Against it the gate did not work.
-
-[ADR-016](adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md) met the same
-gate from the other side and rejected reusing it for the piece sweep, recording its default
-as a **considered** fail-open for `done`: "its subject is the owner's own run, and a run
-nobody owns has nobody to protect". PB-223 reopens exactly that sentence: a run nobody owns
-is not the case that hurt — a run somebody else owns, entered by a call that names nobody,
-is.
-
-## Options
-
-**Decision 1 — what the gate answers.**
-
-**1A — one field with the direction flipped.** Make `gated` mean "the right was not proven"
-and let every reader take it. Rejected: the advisory readers would then print the
-foreign-mailbox heading at a plain shell reading its own task, and the `spawn` attach gate
-would refuse a legitimate CLI run into the single active task. One field cannot carry both
-questions, and forcing it to would move the defect rather than remove it.
-
-**1B — two fields, and they are not each other's negation.** `allowed` is the right, proven
-positively; `gated` stays the narrower "proved foreign" and keeps its readers untouched.
-`right` names which of the answers it is, so a refusal can say what was not proven.
-
-**Decision 2 — a task that records no owner.**
-
-The owner is written into the `orchestrator` participant record only when the environment
-supplied identity at `createTask`, so a run opened from a shell that names no session has no
-owner by construction. The card demands this be settled out loud: such a task belongs either
-to everyone or to nobody.
-
-**2A — it belongs to everyone.** Any call passes, identity or not. Rejected: this is today's
-silent behaviour with a name attached, and it leaves the destructive verbs open to a call
-that names nobody. The card's whole subject is that an absence must stop reading as a yes.
-
-**2B — it belongs to nobody, and the named exception is a session that names itself.** Such a
-task cannot be owned by anybody provably, so nothing more than "the caller named itself" is
-available to ask — and that much is asked. Chosen.
-
-**2C — it belongs to nobody, full stop.** Every call refused until the mailbox is claimed.
-Rejected on a measurement rather than a preference: `claim` lives only in the MCP tool
-`promptobus_mailbox {claim: true}` and there is no CLI verb for it, so an ownerless task
-would have no route to a close at all from the side that created it, and its worktrees and
-journals would stay for good.
-
-**Decision 3 — the tasks opened before the owner existed.**
-
-**3A — a migration that writes an owner into them.** Rejected: there is no true value to
-write. Any id chosen would be an invention, and an invented owner is worse than none — it
-would refuse the one session that might legitimately close the task.
-
-**3B — the named exception of 2B covers them.** They have no owner by the same construction
-as a fresh shell-opened task, and they need no separate rule. Chosen.
+The owner gate had the opposite default. `ownership` answered `gated: false` whenever it had nothing to compare, and `done`, `stop` and `dismiss` read `!gated` as a yes. A shell with no harness identity could close any task in the store. The gate exists against the neighbouring session on the same machine, not against an outsider who already has the store directory.
 
 ## Decision
 
-**1B, 2B, 3B.** The owner gate of `done`, `stop` and `dismiss` grants the right by evidence
-and refuses every absence of it, and the answer carries the reason by name.
+**`promptobus sweep <address>`** cleans up after one accepted piece and leaves the task active. A flag on `done` was rejected because `done` promises the whole task and a subset flag makes every promise conditional ([ADR-012](adr-012-stopping-one-participant-is-a-verb-of-its-own.md)). Relaxing `engine.prune` was rejected because it wipes a task's correspondence and blobs whole. Naming the verb `accept` was rejected because the command carries no verdict on the work.
 
-- **`allowed` is granted only by a proof**: the call names a session, and that session is the
-  recorded owner — or the task records no owner and the call still names itself.
-- **`gated` is unchanged, byte for byte**, and so is every advisory reader's behaviour. The
-  lines that take it keep their silence where nothing can be compared; `lib/store.js` reads
-  `gated` itself and is the main file of the change, so the claim is about behaviour rather
-  than about which files the diff names.
-- **`right` is one of `owner`, `ownerless`, `no-identity`, `foreign`, `other-address`**, and
-  the refusal head (`unprovenOwnerLine`) and its route (`ownerRoute`) are built from it. Every
-  branch of the route must be walkable by the caller that gets it: the claim route goes to the
-  owner whose daemon died; a task with no recorded owner has no owning session to be sent to,
-  so its route is "any session that names itself"; and a call whose environment names two
-  harnesses is repaired by removing a variable, so it is told that and carries the resolver's
-  own reason in the head ([PB-218](../archive/LOG.md#pb-218)
-  named those two states apart, and a gate that ignored the distinction would contradict it
-  in the same pass).
-- **An address other than `orchestrator` grants no right, and has no refusal text either.**
-  This gate does not judge it, and a question that was not asked is not a yes. Its `owner` is
-  `null` because nobody looked it up rather than because the task has none, so
-  `unprovenOwnerLine` and `ownerRoute` throw on it instead of printing "records no mailbox
-  owner" about a task that has one: an answer the gate never gave has nothing true to say.
-- **The piece sweep keeps its own gate.** The directions now agree, but the sets of callers
-  do not: `requireSweeper` admits the approver of this task on its own recorded session, and
-  refuses an ownerless task unless an approver proves the session. ADR-016 stands; only its
-  reason for the deviation changes.
+- **It removes** the participant's worktree and the `worktree-` branch the mechanism created; the metadata records of the artifacts it sent, the `files/` entry of each, and the blob of each once no surviving record names it; its mcp-config, settings file and temporary stands in `workers/`; and its contact point under `wake/`. The driver's `sweepParticipant` runs for the dead session, so a Codex home outside those directories goes too.
+- **It keeps** the journal, `messages/`, the mailboxes, `waits/`, `health.json`, `supervisor.log` and `stalls.json`. `keptPaths` names them; `keptBy` answers which of them a removal would land inside; the remover throws on a non-null answer. The list is derived from what `recordTelemetry` reads at `done`. `brief-<slug>.md` and `review-<slug>.diff` stay: they are evidence of why the piece was accepted, and their stems live in `lib/review.js` and `lib/spawn.js`.
+- **Merge proof.** `inspectWorktree` and `worktreeDisposition` decide for both `done` and `sweep`. A squash the base has since moved over is proven by `patch-id --stable` where `merge-tree` stops answering. Since 2026-09-26 a third proof stands beside them: the acceptance commit names the worker head it squashed in a git trailer, `Squash-of: <full sha>`, and both commands accept a commit of the base since the fork point whose trailer equals the branch head ([03-cli § namedBySquash](../reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head)). It closes the case both content measurements miss — a squash whose content was edited at the merge. Measured on the runs that forced the trailer: 4 of 7 accepted pieces of one run and 25 of the run before, each removed by hand. Equality is the whole test. An edited squash whose acceptance commit names no head keeps its tree and branch.
+- **One proof gates the tree, the blobs and the files.** A piece whose merge is not provable keeps all three. The secrets in `workers/` still go: they are gated on the session being dead, not on the merge. A worktree the journal names and disk does not have is not judged taken. A reviewer, which names no worktree, has nothing to prove and nothing to hold back.
+- **A session that is not dead refuses before anything is touched.** "Unknown" refuses on the same line as "alive". The refusal names `promptobus stop <address>`.
+- **A closed task is refused.** An explicit `--task` is not a way in. What is left of a closed task belongs to `done` and `prune`.
+- **Every removal target is proven before the first side effect.** Both derived paths must stay direct children of the task's own directories. A record this walk cannot read stops the whole sweep.
+- **The destructive stretch runs under the task journal lock.** The record and the liveness are read again under the lock; a change refuses with nothing removed. The refusals are returned rather than thrown, so an exit does not leave the lock directory behind.
+- **A blob leaves only when nothing holds it**, read twice: the surviving records, and the hard-link count of the payload. `send` and `sendSync` take no task lock, so a payload stashed but not yet linked is invisible to both readings. A `files/` entry is addressed by the name the record carries and proven by its inode. The exit code is 0 for every lawful outcome, a kept tree included, and 1 only when git refused a removal the disposition had already approved.
+- **Who may sweep.** The task mailbox owner, or an approver of this task holding its own recorded session. The proof is the session on the participant record. Any other participant is refused. The owner gate of `done` was not reused, because its old fail-open default would have let any session naming `--task` delete another participant's work out of a live task.
 
-**Amendment, 2026-09-17 (PB-231).** The second door now stands on `stop` and `dismiss` as well:
-all three cleanup commands admit the task mailbox owner **or** an approver of this task holding
-its own recorded session, and all three read it from one home — `approverHere` in `lib/store.js`,
-moved there out of `lib/sweep.js` so that no copy can drift. Accepting one piece is those three
-commands in a row, and the role the recipe names could execute one of them. The sets of callers
-therefore differ in one place only, the ownerless branch: the owner gate admits a session that
-names itself on a task with no recorded owner, and `requireSweeper` refuses it unless an approver
-proves the session. `done` is untouched — closing the run is the owner's — so the decision above
-stands word for word for it, and for `stop` and `dismiss` it is where their refusal starts rather
-than where it ends. A refusal to an approver-shaped caller now also says which of the two proofs
-failed: a record with no session of its own, or a session that is not the one on record.
+**The owner gate of `done`, `stop` and `dismiss`** grants the right by evidence and refuses every absence of it. `allowed` and `gated` are not each other's negation. Advisory readers — the foreign-mailbox heading, the unread tail, the `status` warning, the attach gates of `spawn` and `review`, the guard's successor hint — keep `gated` and stay quiet when nothing can be compared.
+
+- **`allowed` is granted only by a proof**: the call names a session, and that session is the recorded owner — or the task records no owner and the call still names itself. `done`, `stop` and `dismiss` all read this answer (`ownership` in `lib/store.js`).
+- **`right` is one of `owner`, `ownerless`, `no-identity`, `foreign`, `other-address`.** The refusal head and its route are built from it. A task with no recorded owner has no owning session to be sent to, so its route is "any session that names itself". A call whose environment names two harnesses is told to remove a variable and carries the resolver's own reason. An address other than `orchestrator` is not judged by this gate: `unprovenOwnerLine` and `ownerRoute` throw on it rather than printing that the task records no owner.
+- **A task that records no owner belongs to nobody**, with one named exception: a session that names itself. `ownership` grants that session `allowed` for `done`, `stop` and `dismiss`. Giving it to everyone was the silent fail-open. Refusing every call until `claim` was rejected because `claim` lives only in `promptobus_mailbox {claim: true}` and there is no CLI verb, so the session that opened the task would have no route to a close. Tasks opened before an owner was recorded are the same case and get no invented owner.
+- **`sweep` does not share that exception.** `requireSweeper` demands a recorded owner or a proven approver. An ownerless task is refused unless an approver proves the session, because the command deletes a worktree, a branch and blobs while the rest of the task is still live.
+- **Since 2026-09-17, `stop` and `dismiss` admit the same second door as `sweep`.** All three cleanup commands admit the task mailbox owner or an approver of this task holding its own recorded session, read from `approverHere` in `lib/store.js`. `done` is untouched by that door: closing the run is the owner's. A refusal to an approver-shaped caller says which proof failed: a record with no session of its own, or a session that is not the one on record.
+
+The owner gate of `done`, `stop` and `dismiss` grants rights only on positive proof, with the ownerless-task exception stated above. The approver proof for `stop`, `dismiss` and `sweep` is described in [the CLI cleanup contract](../reference/03-cli.md#requiresweeper--who-may-sweep-a-piece).
 
 ## Consequences
 
-**A shell with no harness identity can no longer run `done`, `stop` or `dismiss`.** This is
-the cost, and it is named rather than discovered: a harness names its own session, so the
-route is a session that does, and on an owned task whose daemon died —
-`mailbox {claim: true}` from the successor. A pure shell that opened its own task keeps the
-close, because that task has no owner and 2B lets a self-naming session through; a pure shell
-that names no session at all does not, anywhere.
-
-**The suite must name its caller.** Four files called these verbs from a stand with harness
-identity stripped by hygiene and passed only because the gate failed open; each now installs
-an identity, the way `promptobus-sweep.test.mjs` already did. A file that cannot name its
-caller can only ever see the refusal, and that is a property of the gate, not of the suite.
-
-**`Ownership` in `src/protocol.ts` gained two required fields**, so a second producer of that
-type — `src/legacy-store.ts` — answers them too. Its `gated` is untouched: the legacy store is
-a migration reader, and nothing there consults `allowed`.
-
-**What is left open.** The gate still cannot tell two identity-less callers apart, because
-nothing in the environment distinguishes them; it only stops treating that as permission.
-And a task with no owner remains open to any self-naming session — the strongest statement
-available about it until a CLI route to `claim` exists.
+- The help of all four states the boundary: `done` is the task, `sweep` is one accepted piece, `stop` is one session, `dismiss` is the watch.
+- Disk stops growing with accepted work inside a live run. The keep list has an owner: anything `recordTelemetry` reads must be in `keptPaths`, and the suite closes the swept task and reads the telemetry row back.
+- The sweep gate is the first place in the CLI where a non-owner may change a task's files. It is one role, proven by the participant record's own session. There is still no way to sweep a piece of somebody else's task, and no way to reclaim the journal of a live task.
+- The destructive stretch holds the journal lock for the length of a `git worktree remove`.
+- A shell with no harness identity can no longer run `done`, `stop` or `dismiss`. On an owned task whose daemon died, the route is `mailbox {claim: true}` from the successor. A pure shell that opened its own task may `done`, `stop` and `dismiss` it, because that task has no owner. A pure shell that names no session at all does not, anywhere. `sweep` still refuses that shell unless an approver proves the session.
+- `Ownership` in `src/protocol.ts` gained `allowed` and `right`. The legacy store answers them; its `gated` is untouched because nothing there consults `allowed`.
+- The gate still cannot tell two identity-less callers apart. A task with no owner remains open to any self-naming session on `done`, `stop` and `dismiss` until a CLI route to `claim` exists. `sweep` still refuses that session unless an approver proves it.

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-25
-**Deciders:** the owner decided that the bus owns the lease (2026-09-25, recorded in the card of PB-241); the worker of that card settled the design points below, which the owner's decision left open.
+**Deciders:** the owner decided that the bus owns the lease on 2026-09-25. The design points below are the ones that decision left open.
 
 ## Context
 

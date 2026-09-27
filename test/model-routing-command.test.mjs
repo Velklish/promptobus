@@ -10,7 +10,7 @@
 //
 // Three properties are the subject, and each of them would be silent if it broke:
 //
-// 1. **A run with no candidate leaves the store exactly as it was.** ADR-003
+// 1. **A run with no candidate leaves the store exactly as it was.** ADR-005
 //    puts routing in the gate order `lib/spawn.js` already states — "two gates,
 //    both before any write to disk" — and the check is a byte comparison of the
 //    whole store directory before and after, not a spot check of one file: a
@@ -212,7 +212,7 @@ const routedOpts = (extra = {}) => ({
   ...extra,
 });
 
-// --- the strategy default, ADR-004 ------------------------------------------
+// --- the strategy default, ADR-005 ------------------------------------------
 
 /** The writable layer under the standalone host: `<promptobusHome>/model-routing.json`. */
 const WORKSPACE_OVERLAY = () => path.join(HOST.promptobusHome(), 'model-routing.json');
@@ -449,7 +449,7 @@ test('a broken overlay warns before an unrouted lift takes the legacy path', asy
 });
 
 test('a flag on the command line always wins over the default', async () => {
-  // ADR-004's precedence, and the rule ADR-003 fixed for --harness, --model and
+  // ADR-005's precedence, and the rule ADR-005 fixed for --harness, --model and
   // --effort: a named value is never replaced. This is the check the mutation
   // probe of PB-32 breaks.
   dropOverlays();
@@ -507,7 +507,7 @@ test('`models` names the one question the tool cannot answer, and no command wri
 // --- `models validate`, `--clear-exhausted` ----------------------------------
 
 test('`models validate` prints the bans in force and who can lift each one', async () => {
-  // The whole point of ADR-004's union is met where a person meets it: a deny
+  // The whole point of ADR-005's union is met where a person meets it: a deny
   // rule is lifted in the layer that wrote it and nowhere else, and no allow
   // list anywhere reaches one. A person reading `denied-by-policy` on a
   // candidate row otherwise has to work out which of three files to open.
@@ -540,7 +540,7 @@ test('`models validate` checks the shipped catalog and the layers the host names
   assert.match(said.out, /user \(absent\)/);
   assert.match(said.out, /the catalog and 2 overlay layer\(s\) hold/);
   // Which layer the tool writes is a fact about the stack, and this is the
-  // command a person runs to ask about the stack (ADR-004, PB-25).
+  // command a person runs to ask about the stack (ADR-005, PB-25).
   assert.match(said.out, /workspace .*\[writable\]/);
   assert.equal(/user .*\[writable\]/.test(said.out), false, 'only one layer may be marked');
 });
@@ -977,7 +977,7 @@ test('a re-review with --strategy --refresh pays no preflight, and still says th
 });
 
 test('a repeat spawn at a routed address does not re-route, and says why', async () => {
-  // ADR-003: once a participant is lifted its harness and model are fixed. The
+  // ADR-005: once a participant is lifted its harness and model are fixed. The
   // flag has nothing to choose, and silence about that would read as a routed
   // restart.
   seedCache(HEALTHY());

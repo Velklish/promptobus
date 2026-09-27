@@ -118,7 +118,7 @@
           "minLength": 1
         },
         "evidence": {
-          "description": "What a later maintainer checks the rating against. A bare string is the v1 form and still holds. The object form is what ADR-004 asks for once ratings come from published results: it carries the citation per rating, so `validate` can refuse a rated row that has none.",
+          "description": "What a later maintainer checks the rating against. A bare string is the v1 form and still holds. The object form is what ADR-005 asks for once ratings come from published results: it carries the citation per rating, so `validate` can refuse a rated row that has none.",
           "oneOf": [
             { "type": "string" },
             { "$ref": "urn:promptobus:model-routing:catalog#/$defs/citedEvidence" }
@@ -220,7 +220,7 @@
           "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
         },
         "hypothesis": {
-          "description": "Ratings with no published figure for this exact model. ADR-004 refuses to invent one: the row says so, and the band stays the maintainers' reasoning.",
+          "description": "Ratings with no published figure for this exact model. ADR-005 refuses to invent one: the row says so, and the band stays the maintainers' reasoning.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,

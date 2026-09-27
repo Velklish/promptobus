@@ -242,7 +242,7 @@ test('a logged-in account whose limit could not be read is quota_unknown with it
   // The binary half succeeded and the account half was not answered — here
   // because no token could be read, which is the shape a refused keychain has.
   // `available` would claim the limit was confirmed, and `quota_unknown` is the
-  // code written for auth-is-fine-limit-is-not. Since ADR-004 this is a BRANCH
+  // code written for auth-is-fine-limit-is-not. Since ADR-005 this is a BRANCH
   // rather than the only outcome: the check below it is the one where the
   // dashboard answered.
   const verdict = await ask(machine());
@@ -589,7 +589,7 @@ function account({ token = FAKE_TOKEN, source = 'keychain', replies = {} } = {})
 
 test('the auto pool names inventory ids, by exact name or by family prefix', () => {
   // `autoBucketModels` names FAMILIES and the inventory names ids with the effort
-  // level and the speed tier baked in. ADR-004 wants a scope that covers models to
+  // level and the speed tier baked in. ADR-005 wants a scope that covers models to
   // name them by id, because the resolver matches exactly and infers no family —
   // so the inference happens in the adapter, which holds both lists.
   const bucket = ['composer-2.5', 'cursor-grok-4.6', 'vega', 'default'];
@@ -660,7 +660,7 @@ test('the auto window of a lagging bucket list is drawn from the aggregation, an
 });
 
 test('one billing cycle becomes two windows of the same length, one per pool', () => {
-  // ADR-004: `kind` is a name and `lengthSec` is the number, and a billing cycle
+  // ADR-005: `kind` is a name and `lengthSec` is the number, and a billing cycle
   // is `monthly` and is not thirty days — the length is the one the answer states.
   const windows = periodWindows(PERIOD_USAGE, STUB_IDS);
   assert.deepEqual(windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
@@ -669,7 +669,7 @@ test('one billing cycle becomes two windows of the same length, one per pool', (
   assert.deepEqual(windows.map((w) => w.usedPercent), [86.1025, 98.4]);
   assert.deepEqual(windows.map((w) => w.resetAt), ['2030-01-04T00:00:00.000Z', '2030-01-04T00:00:00.000Z']);
   // The auto pool names the ids it covers; the api pool names none, being the
-  // complement — ADR-004 refuses a list there rather than letting a second,
+  // complement — ADR-005 refuses a list there rather than letting a second,
   // quieter claim ride along.
   assert.deepEqual(windows[0].scope, { pool: 'auto', models: ['cursor-grok-4.6-xhigh-fast'] });
   assert.deepEqual(windows[1].scope, { pool: 'api' });
@@ -694,7 +694,7 @@ test('a cycle that does not read yields no window at all, and a percentage past 
 
 test('the tier is the plan included amount, marked derived, and never the account spend', () => {
   // No Cursor method returns the plan name — the spike checked, and cursor.com
-  // refuses the CLI token — so ADR-004 makes the included amount the proxy and
+  // refuses the CLI token — so ADR-005 makes the included amount the proxy and
   // marks it `derived`. The number is the PLAN's, which is why a tier stays a
   // property of the plan rather than a fact about the person.
   assert.deepEqual(derivedTier(PERIOD_USAGE), { name: 'included:7000', source: 'derived' });
@@ -748,7 +748,7 @@ test('the config file is read for one field: the account it also holds does not 
 
 test('a logged-in account whose dashboard answers is available, with two pool windows and a tier', async () => {
   // The sentence this replaces is the reference's: "a successful probe is
-  // `unknown`, not `available`". ADR-004 supersedes the assumption under it, and
+  // `unknown`, not `available`". ADR-005 supersedes the assumption under it, and
   // the word still means auth, model AND limit confirmed.
   const wired = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [POLICY_CALL]: ok(LIMIT_STATUS) } });
   const verdict = await ask(machine(), VERDICT_BUDGET_MS, wired.deps);
@@ -850,7 +850,7 @@ test('no token is quota_unknown, not a logged-out account', async () => {
   // `status` has already answered the auth question and the binary just listed the
   // inventory. Calling an unreadable keychain a logged-out account would take
   // every Cursor tuple out of routing on a dialog somebody dismissed. PB-27's text
-  // says `not_authenticated` here; this follows ADR-004's own reading of the word,
+  // says `not_authenticated` here; this follows ADR-005's reading of the word,
   // and the reference says so.
   const verdict = await ask(machine(), VERDICT_BUDGET_MS, { readToken: async () => null });
   assert.equal(verdict.state, 'unknown');
@@ -890,7 +890,7 @@ test('the policy call is optional: a refusal costs the nudge and nothing else', 
 
 test('one spent pool does not exhaust the harness; both do', async () => {
   // A pool at or past 100 % is spent for the tuples it covers, and the resolver
-  // reads that per tuple as the binding window (ADR-004). `exhausted` takes every
+  // reads that per tuple as the binding window (ADR-005). `exhausted` takes every
   // Cursor tuple out of routing, and one spent pool leaves the other one running —
   // which is the whole point of publishing two windows rather than one number.
   const onePool = {

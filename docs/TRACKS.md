@@ -122,7 +122,7 @@ Deferred assignments: [PB-120](archive/LOG.md#pb-120).
 
 PB-155/PB-78/PB-58 first. PB-43 precedes PB-59/PB-105. Keep their policy choices explicit. PB-116 waits for C; PB-38.2 is deferred. PB-34.1/PB-37.3 are evidence work, not permission to run paid probes or invent ratings.
 
-Triage of 2026-09-10: PB-37.5 is closed by the owner's decision (validate-only stays); PB-116 is executed under C; [PB-104.1](archive/LOG.md#pb-104.1) — amend ADR-004 to the shipped hidden-row behaviour — is added, documentation only.
+Triage of 2026-09-10: PB-37.5 is closed by the owner's decision (validate-only stays); PB-116 is executed under C; [PB-104.1](archive/LOG.md#pb-104.1) — amend ADR-005 to the shipped hidden-row behaviour — is added, documentation only.
 
 Queued assignments: [PB-155](archive/LOG.md#pb-155), [PB-78](archive/LOG.md#pb-78), [PB-58](archive/LOG.md#pb-58), [PB-60](archive/LOG.md#pb-60), [PB-43](archive/LOG.md#pb-43), [PB-59](archive/LOG.md#pb-59), [PB-149](archive/LOG.md#pb-149), [PB-136](archive/LOG.md#pb-136), [PB-37.1](archive/LOG.md#pb-37.1), [PB-61](archive/LOG.md#pb-61), [PB-105](archive/LOG.md#pb-105), [PB-125](archive/LOG.md#pb-125), [PB-124](archive/LOG.md#pb-124), [PB-116](archive/LOG.md#pb-116), [PB-37.3](archive/LOG.md#pb-37.3), [PB-34.1](archive/LOG.md#pb-34.1).
 

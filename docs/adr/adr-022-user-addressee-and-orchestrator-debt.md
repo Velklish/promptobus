@@ -6,7 +6,7 @@
 
 ## Context
 
-The loop guard holds a participant that owes an answer; `answerOwedSince` in `lib/answers.js` exempts `orchestrator` by decision. The person is not an address: a question typed into the orchestrator's chat is invisible to the bus. The owner's report: an orchestrator busy answering its workers forgets to answer the person. The merged measurement of PB-243 adds the load side: 26% of an orchestrator's carried context was mail delivery, 398 of 512 mailbox reads were `status` messages that expect no answer.
+The loop guard holds a participant that owes an answer; `answerOwedSince` in `lib/answers.js` exempts `orchestrator` by decision. The person is not an address: a question typed into the orchestrator's chat is invisible to the bus. The owner's report: an orchestrator busy answering its workers forgets to answer the person. A measurement of orchestrator context adds the load side: 26% of an orchestrator's carried context was mail delivery, 398 of 512 mailbox reads were `status` messages that expect no answer.
 
 ## Options
 

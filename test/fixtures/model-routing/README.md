@@ -7,7 +7,7 @@ The golden set:
 | File | What it is |
 |---|---|
 | `catalog.json` | the merged catalog the run sees. Placeholder harnesses and models; the ratings are not claims about any real model |
-| `snapshot.json` | the availability cache the run reads. Version 2 since ADR-004: `example` carries a tier and two windows — an account-wide session one and a weekly one scoped to a model family — and `other` carries a `null` tier and no window at all, which is the harness the `unknown-remaining` warning is about |
+| `snapshot.json` | the availability cache the run reads. Version 2 since ADR-005: `example` carries a tier and two windows — an account-wide session one and a weekly one scoped to a model family — and `other` carries a `null` tier and no window at all, which is the harness the `unknown-remaining` warning is about |
 | `decision.json` | the golden `models --json` output |
 | `models.txt` | the golden `models` text output |
 | `balance-catalog.json` | the catalog of the **balance** pair: six tuples over the three real harness names, two of them on one Cursor model family and one on a model the account hides |
@@ -44,7 +44,7 @@ With the default `spendUnit` of 5 the spend penalty is `5 × (quotaCost − 1) /
 
 Codex leads by more than the band of 5, and it is chosen.
 
-**The point of the pair is that the two strategies disagree on one snapshot.** `balanced` picks `claude-fable` at 68.74 — the best-rated tuple. `balance` picks `codex-sol` at 66.43, because Cursor's auto pool is fourteen points ahead of its own cycle while Codex is sixteen behind its week. That is the behaviour ADR-004 exists for, and a fixture on which both strategies agreed would not show it.
+**The point of the pair is that the two strategies disagree on one snapshot.** `balanced` picks `claude-fable` at 68.74 — the best-rated tuple. `balance` picks `codex-sol` at 66.43, because Cursor's auto pool is fourteen points ahead of its own cycle while Codex is sixteen behind its week. That is the behaviour ADR-005 exists for, and a fixture on which both strategies agreed would not show it.
 
 ## The run these outputs come from
 
@@ -59,7 +59,7 @@ with `catalog.json` as the catalog, `snapshot.json` as the cache, **no overlay f
 
 When a change moves them, reproduce the pair rather than editing it: resolve with `strategy: 'balanced'`, `role: 'worker'`, the two overlay layers absent, no live participant and the frozen clock above, attach `harnesses` with the exported `availabilityOf`, normalise the paths, and write both files — `models.txt` is `render()` of that same document. A hand-edited golden records what someone expected instead of what the code does, which is the one thing a golden exists not to do.
 
-**Take the layer paths from `test/model-routing-resolver.test.mjs`, not from the reference.** They live in that file's own constants and they have moved: [ADR-004](../../../docs/adr/adr-004-subscription-balance.md) put the workspace overlay at `<promptobusHome>/model-routing.json`, and a regeneration written from an older description silently reverts that one path in `decision.json` and fails a test with a diff that looks like it is about something else.
+**Take the layer paths from `test/model-routing-resolver.test.mjs`, not from the reference.** They live in that file's own constants and they have moved: [ADR-005](../../../docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) put the workspace overlay at `<promptobusHome>/model-routing.json`, and a regeneration written from an older description silently reverts that one path in `decision.json` and fails a test with a diff that looks like it is about something else.
 
 ## Comparison is byte-for-byte after two normalisations
 
@@ -76,7 +76,7 @@ Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runt
 
 ## Where the numbers come from
 
-`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–10 scale normalises as `(r − 1) / 9 × 100`, and `quotaCost` is inverted as `(10 − r) / 9 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 71.78, `other-steady` 56.94 (66.94 − 10 for unknown availability), and `example-deep-high` 54.56. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
+`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–10 scale normalises as `(r − 1) / 9 × 100`, and `quotaCost` is inverted as `(10 − r) / 9 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-005) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 71.78, `other-steady` 56.94 (66.94 − 10 for unknown availability), and `example-deep-high` 54.56. The rules are [ADR-005](../../../docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
 
 The pair also carries a **`near-limit`** warning, and it was not put there on purpose — the numbers already in it produce one. `example`'s session window is 40 % used with 20.1 % of it elapsed, which is 19.93 points ahead of its own pace, past the `nearLimit.underspend` default of −15. It is the level-and-rate distinction in one line: 40 % used is nowhere near the 80 % threshold, and the account is still spending twice as fast as the window refills. Under the amended rule, the single paced harness is short, so the set is short as a whole and `economy` is proposed.
 

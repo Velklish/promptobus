@@ -163,7 +163,7 @@ test('a snapshot that names no window is the primary window, and it needs a leng
   // `rateLimitNote` reads `snap.usedPercent` — the flat form has always been the
   // primary window, so it is READ as one.
   //
-  // What it is not given is a length it did not state. ADR-004 made `lengthSec`
+  // What it is not given is a length it did not state. ADR-005 made `lengthSec`
   // required, because without it there is no pace and the cache projection drops
   // the window on the way to disk — invisibly. So a flat form that names a
   // duration is a window, and one that does not is none.
@@ -288,7 +288,7 @@ test('a model app-server hides is KEPT, with the mark on it', async () => {
   // inventory is the rows without `hidden`, so a tuple naming one still comes out
   // as `model-not-in-inventory`. What dropping it cost was the other half: an
   // inventory that did not match what the harness lists, and a `models validate`
-  // that could only call a hidden row missing (ADR-004, PB-28).
+  // that could only call a hidden row missing (ADR-005, PB-28).
   //
   // Mutation probe: put `.filter((m) => !m.hidden)` back and this reddens.
   const verdict = await probe({ flags: 'hidden' });
@@ -311,7 +311,7 @@ test('the plan comes off the limits answer, and account/read is not called for i
   // `planType` is already inside the answer to `account/rateLimits/read`, which the
   // probe makes anyway. So the tier is taken from the call already being made.
   //
-  // `source` is `probe`, one of ADR-004's four, and not the name of a method:
+  // `source` is `probe`, one of ADR-005's four, and not the name of a method:
   // `account/read` is not a value the closed list has.
   assert.deepEqual(accountTier({ planType: 'plus' }), { name: 'plus', source: 'probe' });
   assert.deepEqual(accountTier({ planType: '  pro  ' }), { name: 'pro', source: 'probe' });
@@ -348,7 +348,7 @@ test('credits are two booleans and the balance stops at the adapter', async () =
 test('the reset credits are counted from the payload, surfaced, and never spent', async () => {
   // They sit at the TOP level of the answer rather than inside `rateLimits`, which
   // is why the adapter keeps the payload as well as the snapshot. Spending one is
-  // money-adjacent and a person's decision — ADR-004 puts it among the things not
+  // money-adjacent and a person's decision — ADR-005 puts it among the things not
   // in v1.
   assert.deepEqual(resetCreditCount({ rateLimitResetCredits: { availableCount: 2 } }), { available: 2 });
   assert.deepEqual(resetCreditCount({ rateLimitResetCredits: { availableCount: 0 } }), { available: 0 });
@@ -416,7 +416,7 @@ test('a binary without the limit read falls back to the notification, and that p
   // applies to. The notification carries the snapshot flat and with an ISO reset
   // — and, in the shape this stand-in models, no `windowDurationMins`.
   //
-  // Since ADR-004 that means NO WINDOW rather than a window without a length: a
+  // Since ADR-005 that means NO WINDOW rather than a window without a length: a
   // window with no length has no pace, and a length derived from the id would be
   // a number app-server never stated. The verdict is otherwise untouched — the
   // account is still known to be authenticated and still `available`. What it
@@ -436,7 +436,7 @@ test('a flat notification of a spent limit keeps its RESET, which is the half th
   // `--clear-exhausted` lifts, and reading a timed limit as one would be a
   // regression. It is answered by `reachedResetAt(snap)`, which reads the
   // snapshot and not the window list — so the reset survives even though the
-  // payload states no duration and therefore states no window (ADR-004).
+  // payload states no duration and therefore states no window (ADR-005).
   const verdict = await probe({ flags: 'unsupported,flat', limit: true });
   assert.equal(verdict.state, 'exhausted');
   assert.equal(verdict.reason, 'subscription_exhausted');
@@ -591,7 +591,7 @@ test('not one of those probes started a thread', async () => {
 
 test('a Codex window survives the cache projection — kind, length and scope are stated, not guessed', () => {
   // The regression this exists for is silent: `windowOf` requires `kind`,
-  // `lengthSec` and an explicit `scope` since ADR-004, and an adapter still
+  // `lengthSec` and an explicit `scope` since ADR-005, and an adapter still
   // emitting the old shape would have every window DROPPED on the way to disk.
   // Nothing would go red — `remaining` would quietly become 50 for every
   // candidate, each would take the −10 unknown penalty, and the entry would fall

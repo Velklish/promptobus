@@ -127,7 +127,7 @@ test('a driver that declares no availability adapter answers unknown / probe_fai
 
 // --- the budget --------------------------------------------------------------
 
-test('the preflight budget is the 15 s ADR-003 fixed', () => {
+test('the preflight budget is the 15 s ADR-005 fixed', () => {
   // A number in prose and a number in code are two numbers until something
   // compares them. This is the one that reddens when the budget is raised.
   assert.equal(PREFLIGHT_BUDGET_MS, 15_000);
@@ -510,7 +510,7 @@ test('a value the adapter garbled is dropped, and only that value', () => {
       { id: 'missing', kind: 'session', lengthSec: 1, scope: null },
       { id: 'over', kind: 'session', lengthSec: 1, usedPercent: 101, scope: null },
       { id: 'under', kind: 'session', lengthSec: 1, usedPercent: -1, scope: null },
-      // ADR-004 makes kind and lengthSec required: a window with no length has no
+      // ADR-005 makes kind and lengthSec required: a window with no length has no
       // PACE, and one that silently never paces is worse than one dropped here.
       { id: 'no-kind', lengthSec: 1, usedPercent: 1, scope: null },
       { id: 'bad-kind', kind: 'daily', lengthSec: 1, usedPercent: 1, scope: null },
@@ -536,7 +536,7 @@ test('a value the adapter garbled is dropped, and only that value', () => {
       { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: 'soon', scope: null },
     ],
   });
-  // The flag list is closed (ADR-004): an overlay may deny by a flag, so a name
+  // The flag list is closed (ADR-005): an overlay may deny by a flag, so a name
   // checked against nothing would let `no-zdrr` validate, match no model, and
   // read to whoever wrote it as a rule that holds.
   assert.deepEqual(projected.models, [
@@ -558,7 +558,7 @@ test('a value the adapter garbled is dropped, and only that value', () => {
 });
 
 test('the tier is projected like a code, and an unreadable one becomes null rather than free text', () => {
-  // ADR-004 puts a second adapter-authored string on disk beside `message`. It is
+  // ADR-005 puts a second adapter-authored string on disk beside `message`. It is
   // shaped like a code — no spaces, no `@` — so it cannot become a second route
   // for harness output or for an account address, and a value outside that shape
   // is dropped rather than repaired. Losing a tier costs a line of output:
@@ -582,7 +582,7 @@ test('the tier is projected like a code, and an unreadable one becomes null rath
 });
 
 test('credits are carried as flags and a count, never as an amount', () => {
-  // Informational (ADR-004): nothing scores them and nothing spends a reset.
+  // Informational (ADR-005): nothing scores them and nothing spends a reset.
   // The balance is deliberately not carried — what an account holds is a fact
   // about that account, and this file promises to hold no identity.
   const projected = snapshotEntry({
@@ -601,7 +601,7 @@ test('credits are carried as flags and a count, never as an amount', () => {
 });
 
 test('a cache of an older schemaVersion is discarded, and the diagnosis says so', async () => {
-  // ADR-004 decision D: discarded, never migrated. The shortest fact in this file
+  // ADR-005 decision D: discarded, never migrated. The shortest fact in this file
   // lives sixty seconds and the longest an hour, so a reader for the old shape
   // would buy one hour of not asking and be kept forever.
   //

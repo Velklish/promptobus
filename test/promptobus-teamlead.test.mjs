@@ -65,7 +65,7 @@ check('teamlead dry-run MCP entry defaults to child and names reporting root',
 let modelRefusal = '';
 try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); } catch (error) { modelRefusal = error.message; }
 check('teamlead refuses a Cursor-only model before start',
-  modelRefusal.includes('ADR-015') && modelRefusal.includes('PB-222') && !existsSync(marker), modelRefusal);
+  modelRefusal.includes('ADR-024') && modelRefusal.includes('PB-222') && !existsSync(marker), modelRefusal);
 const codexModelPlan = await planTeamlead(host, { ...opts, model: 'gpt-5.6-sol' });
 check('teamlead admits a Codex-only model without a harness flag',
   codexModelPlan.driver.id === 'codex' && codexModelPlan.model === 'gpt-5.6-sol'
@@ -99,7 +99,7 @@ for (const harness of ['cursor']) {
     cwd: root, encoding: 'utf8', env: process.env,
   });
   check(`teamlead --harness ${harness} exits non-zero before start with its return condition`,
-    ran.status !== 0 && ran.stderr.includes('ADR-015')
+    ran.status !== 0 && ran.stderr.includes('ADR-024')
     && ran.stderr.includes('PB-222')
     && !existsSync(marker) && !store.taskExists(home, planned.childTask), ran.stderr);
 }
@@ -232,9 +232,9 @@ try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); }
 catch (error) { pendingRefusals.push(error.message); }
 check('pending rebind dry-run and unsupported choices leave journals and intent untouched',
   pendingDry.out.includes('dry-run: nothing written') && pendingRefusals.length === 3
-  && pendingRefusals[0].includes('ADR-015')
+  && pendingRefusals[0].includes('ADR-024')
   && pendingRefusals[1].includes('relift cannot change its harness')
-  && pendingRefusals[2].includes('ADR-015')
+  && pendingRefusals[2].includes('ADR-024')
   && [store.taskFile(home, task), store.taskFile(home, child.id), intentFile]
     .every((file, index) => readFileSync(file, 'utf8') === pendingSnapshot[index])
   && readFileSync(marker, 'utf8').length === pendingLaunches,

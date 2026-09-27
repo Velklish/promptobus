@@ -188,15 +188,15 @@ A layer carries `writable?: boolean`, and **exactly one layer carries it wheneve
 
 The refusal is at the DECLARATION and not at the write, for the reason `harnessStateHome` refuses instead of guessing: a host that names layers and no writable one has an incomplete declaration, and a person who learns that from `models strategy --set` learns it after making the edit it refuses to keep. Two is the same fault from the other side — with two, which file the tool writes would depend on iteration order, and the loser's copy would sit on disk saying something nobody set.
 
-**The writable layer is state, not configuration, so it must not be a file anybody commits.** The standalone `workspace` layer lives at `<promptobusHome>/model-routing.json`: `models strategy --set` writes its default there and `--clear` removes that key (`lib/models.js` `strategyCommand`). The file is per-workspace, outside the repository root. `<workspaceRoot>/model-routing.local.json` is **no longer read, and there is no fallback**: two paths under one layer id would make the file a person edits depend on which of them exists. A consumer keeps the layer wherever its own state lives, under the same one condition.
+**The writable layer is state, not configuration, so it must not be a file anybody commits.** The standalone `workspace` layer lives at `<promptobusHome>/model-routing.json`: `models strategy --set` writes its default there and `--clear` removes that key (`lib/models.js` `strategyCommand`; [ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)). The file is per-workspace, outside the repository root. `<workspaceRoot>/model-routing.local.json` is **no longer read, and there is no fallback**: two paths under one layer id would make the file a person edits depend on which of them exists. A consumer keeps the layer wherever its own state lives, under the same one condition.
 
 The cache and the `user` overlay are untouched by this and stay account-scoped: `promptobusHome()` names the workspace layer and nothing else.
 
-**One command writes a layer that is not the writable one, and it is named here so the rule above stays readable.** `promptobus models calibrate --write` merges calibrated `ratings` into the layer whose id is `user` ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), superseding one sentence of ADR-004's host contract for this command alone). It is deliberately not the writable layer: a rating is a property of the account, which runs the same models in every workspace, while the writable layer is per-workspace state. The exception is that narrow — only that command, only the `ratings` block, and only after its text proposal has been printed and the person has agreed to those exact lines — and it changes nothing about "exactly one writable layer", which still governs everything the tool writes on its own. If a higher layer already names a tuple/rating pair being written, a successful write warns with that layer and pair because the `user` value is shadowed; the JSON outcome reports the same pairs in `write.shadowedBy`. Without a terminal, `--write` without `--yes` refuses even when no rating would move; in text mode that refusal follows the proposal, while `--json` raises it before its document. A host that declares no `user` layer refuses that write, naming the layers it does declare.
+**One command writes a layer that is not the writable one, and it is named here so the rule above stays readable.** `promptobus models calibrate --write` merges calibrated `ratings` into the layer whose id is `user` ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)). It is deliberately not the writable layer: a rating is a property of the account, which runs the same models in every workspace, while the writable layer is per-workspace state. The exception is that narrow — only that command, only the `ratings` block, and only after its text proposal has been printed and the person has agreed to those exact lines — and it changes nothing about "exactly one writable layer", which still governs everything the tool writes on its own. If a higher layer already names a tuple/rating pair being written, a successful write warns with that layer and pair because the `user` value is shadowed; the JSON outcome reports the same pairs in `write.shadowedBy`. Without a terminal, `--write` without `--yes` refuses even when no rating would move; in text mode that refusal follows the proposal, while `--json` raises it before its document. A host that declares no `user` layer refuses that write, naming the layers it does declare.
 
 A host should mark the **highest-precedence** layer. When a higher layer already names a strategy default, a successful `--set` warns that the new value is shadowed and names that higher layer. `models validate` prints which layer is writable beside its path, and reports a declaration that is not exactly-one-writable as a finding — the command a person runs to check their stack must not say it holds while `models` refuses to run on it.
 
-See [adr-003-model-routing.md](../adr/adr-003-model-routing.md) and [adr-004-subscription-balance.md](../adr/adr-004-subscription-balance.md).
+See [adr-005-ten-point-scale-absolute-bands-calibrate.md](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md).
 
 ## Harness state homes
 
@@ -250,7 +250,7 @@ The spawn path chooses a readable participant session name from the work-slice t
 
 ## Session identity
 
-**Who a session is comes from its driver, not from one harness's variable.** `DriverOptions.identityVar` names the environment variable a harness uses to name its own session, or `null` when it has none: `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID`, `CODEX_THREAD_ID`. Task ownership, `claim`, the warden's claim and the loop guard all read the answer — 23 call sites across 8 modules — and until [ADR-010](../adr/adr-010-session-identity-is-a-driver-member.md) every one of them read the first of those three directly.
+**Who a session is comes from its driver, not from one harness's variable.** `DriverOptions.identityVar` names the environment variable a harness uses to name its own session, or `null` when it has none: `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID`, `CODEX_THREAD_ID`. Task ownership, `claim`, the warden's claim and the loop guard all read the answer — 23 call sites across 8 modules — and until [ADR-019](../adr/adr-019-session-address-per-task-lands.md) every one of them read the first of those three directly.
 
 **The member answers for ONE path, and the distinction is measured rather than cautionary.** It answers for a command the session runs. In measured Codex 0.156.1 and `cursor-agent` 2026.09.26-dd393fe MCP children, none of the three command-path identity variables arrived. A generated participant bus entry supplies a separate session-record pointer; an entry without that pointer names no session. On the command path the old reader was worse than empty: a live Codex participant's environment carried its orchestrator's `CLAUDE_CODE_SESSION_ID`, and the reader returned **the parent's id** as the participant's own.
 
@@ -281,7 +281,7 @@ path aliases. Normalizing at the read boundary admits existing records written t
 symlink without weakening the refusal for another physical home. Missing, unreadable or
 differently bound records leave identity null. The harness id may still be null: the
 participant record already carries the pointer before launch. The server refreshes proof
-for each tool call. [ADR-014](../adr/adr-014-mcp-session-proof.md)
+for each tool call. [ADR-019](../adr/adr-019-session-address-per-task-lands.md)
 
 ## Passing the host
 
@@ -383,6 +383,7 @@ The writable flag names the layer that `models strategy --set` and `--clear` wri
 `--set` records `defaults.strategy`; `--clear` removes just that key and does
 not create a file when there is nothing to clear. Both preserve other keys in
 the writable document. A changed file is written atomically with mode `0600`.
+[ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) records this layer.
 
 Exactly one layer carries it whenever any layer is declared; `readLayers`
 refuses zero and refuses two, naming the layers it found. The refusal is at

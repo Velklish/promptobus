@@ -143,12 +143,6 @@
     "docs/TRACKS.md -> backlog/deferred/PB-24.1-codex-notification-window-duration.md",
     "docs/TRACKS.md -> backlog/deferred/PB-38.2-cursor-tier-unknown-until-first-turn.md",
     "docs/TRACKS.md -> backlog/deferred/PB-57.1-harness-throughput-producers-absent.md",
-    "docs/adr/adr-013-approver-is-a-fourth-addressed-participant.md -> ../archive/LOG.md#pb-206.4",
-    "docs/adr/adr-015-approver-lift-is-a-flag-on-review.md -> ../archive/LOG.md#pb-206",
-    "docs/adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md -> ../archive/LOG.md#pb-158",
-    "docs/adr/adr-016-cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own.md -> ../archive/LOG.md#pb-6",
-    "docs/adr/adr-017-the-owner-gate-is-a-positive-proof.md -> ../archive/LOG.md#pb-218",
-    "docs/adr/adr-017-the-owner-gate-is-a-positive-proof.md -> ../archive/LOG.md#pb-223",
     "docs/guides/contributing.md -> ../archive/LOG.md",
     "docs/guides/contributing.md -> ../archive/LOG.md#pb-94",
     "docs/reference/03-cli.md -> ../archive/LOG.md#pb-243"

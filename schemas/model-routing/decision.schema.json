@@ -9,7 +9,7 @@
   "properties": {
     "schemaVersion": { "const": 2 },
     "strategy": {
-      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here. `balance` is ADR-004's fifth: it answers which account to spend from rather than how to weigh a tuple, and it has no weight set of its own.",
+      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here. `balance` is ADR-005's fifth: it answers which account to spend from rather than how to weigh a tuple, and it has no weight set of its own.",
       "enum": ["quality", "balanced", "speed", "economy", "balance"]
     },
     "role": { "enum": ["worker", "reviewer", "approver"] },
@@ -123,7 +123,7 @@
       }
     },
     "harnesses": {
-      "description": "ADR-004: the availability facts behind this decision, one row per harness the snapshot carried — the tier and every window with its kind, scope, used percent and reset. OPTIONAL, so a decision assembled without a snapshot in reach stays valid; assembled by the command rather than by the resolver, which reads no disk. It is here rather than only in the text output because `render` prints the decision document and nothing else, and two outputs of one command that read different sources drift.",
+      "description": "ADR-005: the availability facts behind this decision, one row per harness the snapshot carried — the tier and every window with its kind, scope, used percent and reset. OPTIONAL, so a decision assembled without a snapshot in reach stays valid; assembled by the command rather than by the resolver, which reads no disk. It is here rather than only in the text output because `render` prints the decision document and nothing else, and two outputs of one command that read different sources drift.",
       "type": "array",
       "items": { "$ref": "urn:promptobus:model-routing:decision#/$defs/harnessAvailability" }
     },
@@ -215,7 +215,7 @@
           ]
         },
         "pace": {
-          "description": "How much of this candidate's binding window is spent against how much of it has elapsed (ADR-004). Present on every scored candidate when the strategy is `balance`, and on none otherwise: `balance` is a choice layer above the scoring, so a candidate keeps its score and its place and only the pick moves, but a decision carrying a number no rule of its own strategy used would invite a reader to believe one did.",
+          "description": "How much of this candidate's binding window is spent against how much of it has elapsed (ADR-005). Present on every scored candidate when the strategy is `balance`, and on none otherwise: `balance` is a choice layer above the scoring, so a candidate keeps its score and its place and only the pick moves, but a decision carrying a number no rule of its own strategy used would invite a reader to believe one did.",
           "$ref": "urn:promptobus:model-routing:decision#/$defs/pace"
         },
         "excluded": {
@@ -329,7 +329,7 @@
           "type": "number"
         },
         "components": {
-          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-005) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
           "type": "object",
           "additionalProperties": false,
           "required": ["quality", "speed", "quotaCost", "remaining"],

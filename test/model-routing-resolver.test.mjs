@@ -11,7 +11,7 @@
 // 1. **The goldens are reproduced.** `decision.json` from `catalog.json` plus
 //    `snapshot.json`, normalised exactly as the fixtures README says, and
 //    `models.txt` byte-for-byte from that decision.
-// 2. **Every rule of ADR-003 on its own inputs.** The nine filter steps, the four
+// 2. **Every rule of ADR-005 on its own inputs.** The nine filter steps, the four
 //    weighted components, the three adjustments, the reviewer rules and each of
 //    the four tie-break levels — the last three on synthetic catalogs, because a
 //    tie has to be built to be tested.
@@ -136,7 +136,7 @@ const overlay = (fields) => ({ schemaVersion: 2, ...fields });
 
 /**
  * The decision the golden files pin: what the resolver answers, plus the
- * availability block the COMMAND attaches (ADR-004).
+ * availability block the COMMAND attaches (ADR-005).
  *
  * The resolver reads no disk and holds no snapshot beyond the one it was handed,
  * so the block is assembled a layer up — and it is assembled here by the same
@@ -422,8 +422,8 @@ test('a reviewer is routed from the tuples rated for it', () => {
   assert.equal(excludedOf(decision, 'example-quick').code, 'role-not-allowed');
   assert.equal(excludedOf(decision, 'example-quick').detail, 'rated for worker only');
   assert.deepEqual(scoredIds(decision), ['other-steady', 'example-deep-high', 'example-deep-max']);
-  // The pick is not the top scorer, and the reviewer floor of 5 (ADR-004,
-  // raised from ADR-003's 4) is why: `other-steady` rates 4 and keeps its place
+  // The pick is not the top scorer, and the reviewer floor of 5 (ADR-005,
+  // raised from ADR-005's 4) is why: `other-steady` rates 4 and keeps its place
   // at the head of the list with its score — the floor is a choice rule.
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
   assert.equal(byId(decision, 'other-steady').excluded, null, 'the floor is a choice rule, not a filter');
@@ -442,7 +442,7 @@ test('a reviewer that differs from the live worker gains the diversity bonus', (
   assert.deepEqual(byId(decision, 'other-steady').score.adjustments,
     [{ code: 'unknown-availability', points: -10 }, { code: 'reviewer-diversity', points: 5 }]);
   // The bonus puts other-steady at the head of the list; the floor of 5 still
-  // moves the pick past it, which is the two rules composing as ADR-004 says.
+  // moves the pick past it, which is the two rules composing as ADR-005 says.
   assert.equal(scoredIds(decision)[0], 'other-steady');
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
 });
@@ -557,7 +557,7 @@ test('the approver uses the quality floor of 7 and its own fallback warning', ()
 });
 
 test('reviewerQualityFloor is still read, as an alias for qualityFloor.reviewer', () => {
-  // An overlay written for v1 keeps its meaning (ADR-004).
+  // An overlay written for v1 keeps its meaning (ADR-005).
   const aliased = decide({ role: 'reviewer', workspace: overlay({ reviewerQualityFloor: 8 }) });
   assert.equal(aliased.chosen.tupleId, 'other-steady', 'a floor of 8 admits the quality-8 top scorer');
 
@@ -615,7 +615,7 @@ test('a role rating override is what the reviewer floor reads too', () => {
   assert.equal(worker.chosen.tupleId, 'alpha-fast',
     'no override for a worker: it is scored at quality 5 and clears the worker floor of 3');
 
-  // The reviewer floor is pinned at 4 here rather than left at ADR-004's 5,
+  // The reviewer floor is pinned at 4 here rather than left at ADR-005's 5,
   // because the arrangement needs exactly one of the two tuples above it —
   // with nothing above the floor the soft fallback fires and the check would
   // pass for the wrong reason.
@@ -819,7 +819,7 @@ test('allow lists of different kinds hold at once — a tuple must be named by e
   assert.equal(decision.chosen.tupleId, 'example-deep-high', 'the one tuple both lists name');
 });
 
-// --- ADR-004: the balance strategy -------------------------------------------
+// --- ADR-005: the balance strategy -------------------------------------------
 
 /** One decision on the balance pair. */
 const paced = (over = {}) => decide({ catalog: BALANCE_CATALOG, snapshot: BALANCE_SNAPSHOT, ...over });
@@ -835,7 +835,7 @@ function windowless(...harnesses) {
 }
 
 test('the balance fixtures are documents their own schemas accept', () => {
-  // The pair is hand-written to ADR-004's shapes, and a hand-written fixture
+  // The pair is hand-written to ADR-005's shapes, and a hand-written fixture
   // that the schema would refuse is a fixture the rest of this section proves
   // things about a document nothing else in the package would ever see.
   const ajvSnapshot = ajv.getSchema('urn:promptobus:model-routing:snapshot');
@@ -894,7 +894,7 @@ test('the binding window is chosen per TUPLE, and a scope is what makes it diffe
 });
 
 test('balance picks a different harness from balanced, on one snapshot', () => {
-  // The whole point of ADR-004 in one pair of runs. `balanced` sends the work to
+  // The whole point of ADR-005 in one pair of runs. `balanced` sends the work to
   // the best-rated tuple; `balance` sends it to the account with room, because
   // Cursor's auto pool is fourteen points AHEAD of its own cycle while Codex is
   // sixteen behind its week.
@@ -1002,7 +1002,7 @@ test('balance warns only when no scored representative reaches the quality floor
 });
 
 test('the reviewer is inside the balance, and nothing pins it to one harness', () => {
-  // ADR-004 decision 4. The reviewer is routed by pace like a worker, with the
+  // ADR-005 decision 4. The reviewer is routed by pace like a worker, with the
   // floor of 5 above it, and the harness it lands on is whichever is furthest
   // behind its own pace — here Codex, not Claude.
   const decision = paced({ strategy: 'balance', role: 'reviewer' });
@@ -1033,7 +1033,7 @@ test('the band ties two harnesses and the balanced score then decides', () => {
 });
 
 test('the spend penalty is what keeps a heavy tuple from oscillating the strategy', () => {
-  // ADR-004 option C2: the discount is in the units of the underspend. With the
+  // ADR-005 option C2: the discount is in the units of the underspend. With the
   // unit at zero the penalty vanishes and the raw underspend decides; the
   // default makes a quotaCost of 5 give up exactly one band against a 1.
   const free = paced({ strategy: 'balance', workspace: overlay({ balance: { spendUnit: 0 } }) });
@@ -1408,7 +1408,7 @@ test('the pace table marks the harness the cap held out', () => {
 });
 
 test('remaining is per tuple for every strategy, not per harness', () => {
-  // ADR-004 refines ADR-003's own word: the applicable windows are the
+  // ADR-005: the applicable windows are the
   // account-wide ones PLUS the scope covering this tuple. Two Cursor tuples on
   // one snapshot therefore differ, because their pools do — 100 − 62 against
   // 100 − 72 — and that reaches the score under quality, balanced, speed and
@@ -1450,7 +1450,7 @@ test('a lift records the applicable windows of the tuple it chose', () => {
 });
 
 test('a hidden row is carried and never chosen, and is not a runtime row either', () => {
-  // ADR-004: the harness lists it and declines to offer it. The resolver's
+  // ADR-005: the harness lists it and declines to offer it. The resolver's
   // inventory is the rows without the mark, so a tuple naming one is excluded by
   // the existing code and no new one is added.
   const decision = paced({ strategy: 'balance' });
@@ -1517,7 +1517,7 @@ test('a no-window pool does not print beside a paced pool of the same harness', 
   assert.equal(cursorRows.some((row) => row.includes('no window that can be paced')), false);
 });
 
-// --- ADR-004: the near-limit signal ------------------------------------------
+// --- ADR-005: the near-limit signal ------------------------------------------
 
 const nearLimits = (decision) => decision.warnings.filter((w) => w.code === 'near-limit');
 
@@ -1613,7 +1613,7 @@ test('a harness that cannot be paced raises no near-limit line — a threshold n
   assert.equal(nearLimits(decision).length, 2, 'the other two are still measured');
 });
 
-test('the thresholds are policy values, and the defaults are ADR-004\'s', () => {
+test('the thresholds are policy values, and the defaults are ADR-005\'s', () => {
   // The defaults raise nothing on this fixture: Cursor at 62 % is under 80, and
   // its −14.08 is inside the −15 band. One point either way turns each on.
   assert.deepEqual(nearLimits(paced({})), []);
@@ -1781,7 +1781,7 @@ test('the lift line names each near-limit harness once, with its percentage', ()
   assert.match(routingLine(older), /warnings: near-limit, near-limit, near-limit$/);
 });
 
-// --- ADR-004: the two new selectors ------------------------------------------
+// --- ADR-005: the two new selectors ------------------------------------------
 
 /** The fixture snapshot with a flag put on a RATED model, which the golden has on an unrated one. */
 function flaggedSnapshot(model = 'example-quick', flags = ['no-zdr']) {
@@ -1840,7 +1840,7 @@ test('the flag selector runs after the inventory step, so it never speaks for a 
 });
 
 test('silence is not absence: a flag deny excludes nothing on a harness that listed no models', () => {
-  // ADR-004 states the limit rather than implying it. A person who must never
+  // ADR-005 states the limit rather than implying it. A person who must never
   // run outside zero-data-retention does not get that guarantee from a harness
   // with no inventory, and the decision says so with a warning instead of
   // appearing to.

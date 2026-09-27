@@ -302,9 +302,9 @@ export interface DriverOptions {
    * stand-in channel substitutes delivery only where it truly is a socket. */
   knockChannel: string;
   /** Variable carrying the harness's OWN session id in a process it starts, or `null`. It answers
-   * for a command the session runs, not for an MCP server child. See 02-host.md and ADR-010. */
+   * for a command the session runs, not for an MCP server child. See 02-host.md and ADR-019. */
   identityVar: string | null;
-  /** Record proof for an MCP child, accepted only when home, task and address match. See 02-host.md and ADR-014. */
+  /** Record proof for an MCP child, accepted only when home, task and address match. See 02-host.md and ADR-019. */
   mcpIdentity: McpIdentityRecord | null;
   /** Ancestor variables that must not reach the session. */
   envDrop: string[];

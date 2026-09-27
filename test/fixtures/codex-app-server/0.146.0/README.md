@@ -22,7 +22,7 @@ thread configuration used for the Codex reviewer's MCP deny layer. On 0.146.0,
 the capture records configuration acceptance and startup readiness but does not
 claim a tool-list result. No `turn/start` was sent. That configuration form is no
 longer the shipped one — the entries now live in the participant home's
-`config.toml` (ADR-007) — so this file stands as the record of what was measured
+`config.toml` (ADR-008) — so this file stands as the record of what was measured
 on the override form, not as a description of the current path.
 
 `DisabledToolsEnforcement-0.146.0-2026-09-11.json` answers what that one could

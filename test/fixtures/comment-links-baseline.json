@@ -113,7 +113,7 @@
     "lib/model-routing/adapter-claude.js": [
       "../../docs/guides/model-routing.md#claude-code-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids",
-      "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-004-windows",
+      "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-005-windows",
       "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none",
       "../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability"
     ],
@@ -188,7 +188,7 @@
     ],
     "lib/spawn.js": [
       "drivers.js",
-      "../docs/adr/adr-007-codex-participant-isolated-home.md",
+      "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../src/hooks.ts",
       "drivers.js",
       "review.js"

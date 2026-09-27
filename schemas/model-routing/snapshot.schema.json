@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:model-routing:snapshot",
   "title": "Availability snapshot",
-  "description": "What the local account can run right now, per harness — and, on disk, the cache file the host names (src/host.ts routingPaths cacheFile), mode 0600. Every object here is closed: an implementation cannot quietly add a token, an email or an open account id, because a document carrying one stops validating. Version 2 (ADR-004) adds the harness tier, the window kind and scope, and the hidden mark on a model; a version 1 document is discarded rather than migrated.",
+  "description": "What the local account can run right now, per harness — and, on disk, the cache file the host names (src/host.ts routingPaths cacheFile), mode 0600. Every object here is closed: an implementation cannot quietly add a token, an email or an open account id, because a document carrying one stops validating. Version 2 (ADR-005) adds the harness tier, the window kind and scope, and the hidden mark on a model; a version 1 document is discarded rather than migrated.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "takenAt", "harnesses"],
@@ -32,7 +32,7 @@
       "enum": ["available", "exhausted", "unavailable", "unknown"]
     },
     "reason": {
-      "description": "Stable reason code. The list is fixed in ADR-003, unchanged by ADR-004, and written once in docs/reference/03-cli.md.",
+      "description": "Stable reason code. The list is fixed in ADR-005, unchanged by ADR-005, and written once in docs/reference/03-cli.md.",
       "enum": [
         "binary_missing",
         "not_authenticated",
@@ -78,7 +78,7 @@
           "type": "string"
         },
         "tier": {
-          "description": "The plan this account is on (ADR-004). null when the harness names none. Carried and displayed; an input to no score in v1.",
+          "description": "The plan this account is on (ADR-005). null when the harness names none. Carried and displayed; an input to no score in v1.",
           "oneOf": [
             { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/tier" },
             { "type": "null" }
@@ -109,7 +109,7 @@
       }
     },
     "tier": {
-      "description": "ADR-004: the plan name and where it came from. A tier is a property of the PLAN, shared by everyone on it — which is why it does not break the cache's promise to hold no identity, and why the derived form carries the plan's included amount and never the account's used amount.",
+      "description": "ADR-005: the plan name and where it came from. A tier is a property of the PLAN, shared by everyone on it — which is why it does not break the cache's promise to hold no identity, and why the derived form carries the plan's included amount and never the account's used amount.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "source"],
@@ -153,11 +153,11 @@
           "type": "boolean"
         },
         "hidden": {
-          "description": "The harness lists this row and declines to offer it (ADR-004). Carried so a person sees the whole inventory; the resolver's inventory is the rows without it, so a tuple naming one is excluded as model-not-in-inventory.",
+          "description": "The harness lists this row and declines to offer it (ADR-005). Carried so a person sees the whole inventory; the resolver's inventory is the rows without it, so a tuple naming one is excluded as model-not-in-inventory.",
           "type": "boolean"
         },
         "flags": {
-          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the flag or the model in an overlay. The list is CLOSED (ADR-004), because an overlay may select by a flag and a name checked against nothing would let a person's typo ban silently nothing — the cost is that a new mark a harness starts printing needs a release rather than a data change.",
+          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the flag or the model in an overlay. The list is CLOSED (ADR-005), because an overlay may select by a flag and a name checked against nothing would let a person's typo ban silently nothing — the cost is that a new mark a harness starts printing needs a release rather than a data change.",
           "type": "array",
           "uniqueItems": true,
           "items": { "enum": ["no-zdr"] }
@@ -165,7 +165,7 @@
       }
     },
     "window": {
-      "description": "One limit period of the account. ADR-004 makes kind and lengthSec required and scope explicit: kind is a NAME and lengthSec is the number, and neither is derived from the other — a billing cycle is monthly and is not thirty days. An adapter that cannot state a length reports no window at all.",
+      "description": "One limit period of the account. ADR-005 makes kind and lengthSec required and scope explicit: kind is a NAME and lengthSec is the number, and neither is derived from the other — a billing cycle is monthly and is not thirty days. An adapter that cannot state a length reports no window at all.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "kind", "lengthSec", "usedPercent", "scope"],

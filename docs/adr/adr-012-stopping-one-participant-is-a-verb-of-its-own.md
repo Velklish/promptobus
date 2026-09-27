@@ -15,7 +15,7 @@ So the worker killed the holder by hand, from the pids in the Codex registry rec
 freed — a 45 MB holder and its 127 MB `app-server` — on a machine at 89.3 % swap under four
 workers. **The kill left a lie behind.** The record stayed at `state: alive`, and only `done` on
 that task would ever clear it, so anything reading the registry for liveness after that read a
-session that did not exist. That is the same shape `PB-175` measured for the contact point file,
+session that did not exist. That is the same shape as a contact-point file that outlives the session it names,
 and the two differ in where the cure lives: a contact point has an externally checkable sign
 beside it (its socket), so its READER can be fixed; a registry record has none, and only the
 thing that stops the session can retire it.

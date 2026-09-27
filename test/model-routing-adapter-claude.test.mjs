@@ -191,7 +191,7 @@ test('logged out is unavailable / not_authenticated, and the version is still re
 test('logged in is unknown / quota_unknown: auth confirmed, the remaining limit not', async () => {
   // `available` is unreachable for this harness on purpose. The word means auth,
   // model AND limit confirmed, and Claude Code publishes no stable limit source at
-  // all — ADR-003 says such an adapter answers `unknown` rather than modelling a
+  // all — ADR-005 says such an adapter answers `unknown` rather than modelling a
   // value, and the resolver penalises that by ten points instead of blocking.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const verdict = await probe(box.host);
@@ -492,7 +492,7 @@ test('the credential record is three fields, and the refresh token is not one of
 });
 
 test('a scope display name resolves to pinned ids, and an unknown one resolves to none', () => {
-  // ADR-004: the adapter holds the harness's model dictionary and resolves a
+  // ADR-005: the adapter holds the harness's model dictionary and resolves a
   // display name into the ids the catalog rates; the resolver matches by exact id
   // and infers no family, so what it is handed has to be ids.
   // "Fable" is a FAMILY window and names both ids the binary serves under it: a
@@ -510,7 +510,7 @@ test('a scope display name resolves to pinned ids, and an unknown one resolves t
 });
 
 test('the usage answer becomes three windows: a session, a weekly, and a model-scoped weekly', () => {
-  // The lengths are the kinds' own — the payload states neither — and ADR-004
+  // The lengths are the kinds' own — the payload states neither — and ADR-005
   // requires `lengthSec` on every window, because a pace cannot be computed
   // without one.
   const windows = usageWindows(USAGE, MODEL_SCOPE_IDS);
@@ -532,7 +532,7 @@ test('the usage answer becomes three windows: a session, a weekly, and a model-s
 });
 
 test('a scope this adapter cannot resolve keeps its window and binds nothing', () => {
-  // ADR-004's own rule: `models` is absent when the display name does not resolve,
+  // ADR-005: `models` is absent when the display name does not resolve,
   // the window stays in the snapshot and is printed for a person, and it binds no
   // tuple. Dropping it would lose a limit the harness stated.
   const doc = {
@@ -550,7 +550,7 @@ test('a scope this adapter cannot resolve keeps its window and binds nothing', (
 });
 
 test('rows this adapter cannot place are left out rather than guessed at', () => {
-  // A kind nobody measured has no known length, and ADR-004 says an adapter that
+  // A kind nobody measured has no known length, and ADR-005 says an adapter that
   // cannot state a length reports no window. A percentage that is not a number is
   // not a window either — the projection would drop it, and dropping it here is
   // what keeps the count in the message honest.
@@ -582,7 +582,7 @@ test('only an account-wide window spends the harness; a spent model scope does n
   // `exhausted` takes every tuple of the harness out of routing, and a
   // `weekly_scoped` row at 100 % says one model family is spent while the rest of
   // the account runs. The spent scope travels as its own `usedPercent`, which is
-  // where the resolver reads it per tuple (ADR-004, binding window).
+  // where the resolver reads it per tuple (ADR-005, binding window).
   const scoped = {
     limits: [{
       kind: 'weekly_scoped', percent: 100, resets_at: '2030-01-04T13:00:00+00:00',
@@ -631,8 +631,8 @@ test('a spent row the harness marks inactive does not exhaust the account, and a
 });
 
 test('logged in with a readable record and a usage answer is available: auth, model and limit confirmed', async () => {
-  // The sentence this replaces is ADR-003's, and [03-cli](../docs/reference/03-cli.md)
-  // said it too: `available` was a state this harness could not reach. ADR-004
+  // The sentence this replaces is ADR-005's, and [03-cli](../docs/reference/03-cli.md)
+  // said it too: `available` was a state this harness could not reach. ADR-005
   // supersedes the assumption under it, and the word keeps its meaning — auth,
   // model AND limit confirmed.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
@@ -770,7 +770,7 @@ test('an account-wide window at 100 % is exhausted, and it carries the reset it 
 });
 
 test('the profile is asked for the tier only when the record names none, and then the source says probe', async () => {
-  // ADR-004 closes `source` to four names, and which one it is says where the
+  // ADR-005 closes `source` to four names, and which one it is says where the
   // value came from: `credentials` is the record read offline, `probe` is the
   // harness having been asked.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);

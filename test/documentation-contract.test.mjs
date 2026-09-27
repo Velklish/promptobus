@@ -24,32 +24,39 @@ const section = (document, heading) => {
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
 
-const adr007 = adr('007', 'codex-participant-isolated-home');
 const adr008 = adr('008', 'codex-reviewer-working-directory');
-const adr011 = adr('011', 'a-session-address-is-per-task');
-const adr013 = adr('013', 'approver-is-a-fourth-addressed-participant');
-const adr016 = adr('016', 'cleaning-up-after-one-accepted-piece-is-a-verb-of-its-own');
+const adr017 = adr('017', 'the-owner-gate-is-a-positive-proof');
 const adr019 = adr('019', 'session-address-per-task-lands');
+const adr024 = adr('024', 'approver-acceptance-in-own-worktree');
 const resolutions = [
-  has(section(adr007, '## Current resolution'),
+  has(section(adr008, '## Current resolution'),
     'worker and reviewer turns recorded Stop; see [hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces) and [the Codex driver](../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver). The approver evidence in [ADR-024](adr-024-approver-acceptance-in-own-worktree.md) records SessionStart. It does not establish that an approver Stop hook ran.'),
   has(section(adr008, '## Current resolution'),
     "The holder now accepts Codex's `mcpServer/elicitation/request` only for a tool-call approval from a server configured in the participant home; other elicitations remain declined. A later live reviewer sent a bus `result` after those approvals."),
-  has(section(adr011, '## Current resolution'),
-    'The positive session binding in [ADR-019](adr-019-session-address-per-task-lands.md) now gates the registered `promptobus send` command. A sender must prove the address it holds in the named task; an unbound participant record grants no send right.'),
-  has(section(adr013, '## Current resolution'),
-    'The earlier clone-root approver lift was restricted to Claude Code under [ADR-015](adr-015-approver-lift-is-a-flag-on-review.md). [ADR-024](adr-024-approver-acceptance-in-own-worktree.md) supersedes that harness restriction and places acceptance in a separate worktree. The current approver lift is available on Claude Code, Cursor and Codex after a reviewer result; see [the driver contract](../reference/05-drivers.md#approver-lift-after-a-reviewer-result).')
-    && has(section(adr013, '## Consequences'),
-      'records the separate consolidation. In exchange, parity now checks the exported runtime lists, both default maps and all six schema surfaces.'),
-  has(section(adr016, '## Current resolution'),
-    'The owner gate of `done`, `stop` and `dismiss` grants rights only on positive proof, with the ownerless-task exception stated in [ADR-017](adr-017-the-owner-gate-is-a-positive-proof.md). The approver proof for `stop`, `dismiss` and `sweep` is described in [the CLI cleanup contract](../reference/03-cli.md#requiresweeper--who-may-sweep-a-piece).'),
+  has(section(adr019, '## Decision'),
+    'The positive session binding now gates the registered `promptobus send` command. A sender must prove the address it holds in the named task; an unbound participant record grants no send right.'),
+  has(section(adr024, '## Decision'),
+    'The earlier clone-root approver lift was restricted to Claude Code. That harness restriction no longer governs: acceptance is placed in a separate worktree. The current approver lift is available on Claude Code, Cursor and Codex after a reviewer result; see [the driver contract](../reference/05-drivers.md#approver-lift-after-a-reviewer-result).')
+    && has(section(adr024, '## Consequences'),
+      'parity now checks the exported runtime lists, both default maps and all six schema surfaces.'),
+  has(section(adr017, '## Decision'),
+    'The owner gate of `done`, `stop` and `dismiss` grants rights only on positive proof, with the ownerless-task exception stated above. The approver proof for `stop`, `dismiss` and `sweep` is described in [the CLI cleanup contract](../reference/03-cli.md#requiresweeper--who-may-sweep-a-piece).'),
   has(section(adr019, '## Consequences'),
-    'A participant whose harness gives its MCP child no identity cannot send. [ADR-014](adr-014-mcp-session-proof.md) supplies the session-record pointer used by Cursor and Codex MCP children, so the normal lift can prove its binding before a harness id appears.')
+    'A participant whose harness gives its MCP child no identity cannot send. The session-record pointer used by Cursor and Codex MCP children lets the normal lift prove its binding before a harness id appears.')
     && has(section(adr019, '## Consequences'),
-      '[ADR-011](adr-011-a-session-address-is-per-task.md) has the amendment naming the barrier that closed its first attempt.'),
+      'The barrier that closed that attempt is this positive session binding, and the command is registered only on it.'),
+];
+const migrated = [
+  'docs: Codex Stop is recorded for worker and reviewer turns only',
+  'docs: Codex elicitation accepts only a home-configured tool-call approval',
+  'docs: send requires a positive session binding',
+  'docs: approver lift covers three harnesses in a separate worktree',
+  'docs: sweep and the owner gate grant rights only by positive proof',
+  'docs: an MCP child without identity cannot send',
 ];
 check('docs: accepted ADRs identify current capability and ownership rules',
-  resolutions.every(Boolean), resolutions.map((ok, i) => `${['007', '008', '011', '013', '016', '019'][i]}:${ok}`).join(' '));
+  resolutions.every(Boolean), resolutions.map((ok, i) => `${migrated[i]}:${ok}`).join(' '));
+migrated.forEach((name, i) => check(name, resolutions[i], name));
 
 const index = read('docs/README.md');
 const listed = readdirSync(path.join(root, 'docs/adr')).filter((name) => /^adr-\d{3}-[a-z0-9-]+\.md$/.test(name));
@@ -60,11 +67,13 @@ const indexRows = new Map(index.split('\n').flatMap((line) => {
 check('docs: the index covers every ADR and names the implemented send door',
   indexRows.size === listed.length
   && listed.every((name) => indexRows.get(name)?.target === name)
-  && indexRows.get('adr-011-a-session-address-is-per-task.md')?.status === 'Accepted'
-  && has(indexRows.get('adr-011-a-session-address-is-per-task.md')?.description ?? '',
-    'ADR-019 records the positive binding that now gates the registered send command')
-  && has(indexRows.get('adr-013-approver-is-a-fourth-addressed-participant.md')?.description ?? '',
-    'ADR-024 updates its harness and worktree boundary'),
+  && indexRows.get('adr-019-session-address-per-task-lands.md')?.status === 'Accepted'
+  && has(indexRows.get('adr-019-session-address-per-task-lands.md')?.description ?? '',
+    'a positive binding gates the registered send command')
+  && has(indexRows.get('adr-024-approver-acceptance-in-own-worktree.md')?.description ?? '',
+    'accepts in its own worktree')
+  && has(indexRows.get('adr-024-approver-acceptance-in-own-worktree.md')?.description ?? '',
+    'Claude Code, Cursor and Codex'),
   listed.filter((name) => indexRows.get(name)?.target !== name).join(', '));
 
 const manifest = read('test/fixtures/promptobus/MANIFEST.md');
@@ -106,7 +115,7 @@ check('docs: Codex home inventory includes conditional hooks and auth',
     "The lift copies the owner's `auth.json` at mode 0600 when it exists; a missing file is reported and an API key in the environment can still authenticate the participant.")
   && has(codexPhrases,
     "A linked worktree with a planned guard hooks file also gets `hooks.json` in the participant home at lift. Codex otherwise resolves the project's hooks file in the main checkout, which the lift does not trust. A directory that is not a linked worktree keeps its planned hook file in its own `.codex/`.")
-  && has(decision(adr007, '1B', '2B'),
+  && has(decision(adr008, '1B', '2B'),
     "The owner's `auth.json` is copied at mode 0600 when present. A linked worktree with a planned guard hooks file also gets `hooks.json` in this home; other working directories keep that file in their own `.codex/`."),
   'a Codex home passage changed the linked-worktree or optional-auth boundary');
 
@@ -125,6 +134,6 @@ check('docs: Codex thread/start overrides match the holder and role boundary',
     '`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. The internal teamlead preparation sets `features.hooks = false` on `thread/start` to disable project hook discovery even if project config enables it. That config branch does not itself grant Codex teamlead production admission.')
   && has(transports,
     '`ThreadStartParams.config` is built by `threadStartConfig`: it always sets `bypass_hook_trust = true` for app-server hook trust, adds `model_reasoning_effort` when the lift names an effort, and sets `features.hooks = false` only on the internal teamlead preparation path. That last branch does not itself admit Codex teamlead in production. The MCP set remains in the home, not in this request.')
-  && has(decision(adr007, '2B', '3C'),
+  && has(decision(adr008, '2B', '3C'),
     '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and the internal teamlead preparation adds `features.hooks = false`. The prepared branch does not itself grant production admission; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
   JSON.stringify({ workerConfig, teamleadConfig }));

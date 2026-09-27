@@ -155,7 +155,7 @@ test('routingPaths keeps the account files out of the per-workspace store', asyn
   // would pass every other check in this file and only show up as three
   // harnesses re-probed per clone.
   //
-  // The workspace layer is the exception, and since ADR-004 it is a deliberate
+  // The workspace layer is the exception, and since ADR-005 it is a deliberate
   // one: the tool WRITES that file, so it lives inside `promptobusHome()` rather
   // than in the repository root, where a `.gitignore` is a contract with the
   // repository and not with this package. It is also the one layer marked
@@ -348,7 +348,7 @@ test('the built host declaration carries the writable layer flag a consumer comp
   // in the public declaration and not only in a comment. The first consumer's
   // suite compares this declaration, and a layer flag that never reached it
   // would make `readLayers` refuse a host whose types said nothing was missing
-  // (ADR-004, PB-25).
+  // (ADR-005, PB-25).
   const dts = readFileSync(path.join(ROOT, 'dist', 'host.d.ts'), 'utf8');
   const block = dts.slice(dts.indexOf('interface HostRoutingOverlay'));
   assert.ok(block, 'dist/host.d.ts declares no HostRoutingOverlay');

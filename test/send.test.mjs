@@ -129,7 +129,7 @@ for (const harness of ['cursor']) {
 }
 
 {
-  // There is no `--from`, and its absence is the decision (ADR-011), not a parsing gap:
+  // There is no `--from`, and its absence is the decision (ADR-019), not a parsing gap:
   // the dispatcher refuses it by not declaring the option.
   const before = inbox('orchestrator').length;
   const r = await refuse(['send', 'orchestrator', '--body', 'borrowed', '--from', 'worker:one', '--task', TASK]);
