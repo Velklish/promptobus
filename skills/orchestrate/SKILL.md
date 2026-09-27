@@ -45,6 +45,7 @@ A foreign-mailbox header means the originals stay with the owner. If the mail is
 
 ```bash
 promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
+promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude] [--dry-run]
 promptobus status [--task <id>]
 promptobus done [--task <id>] [--keep-sessions]
 promptobus dismiss <address> [--task <id>]
@@ -56,6 +57,8 @@ promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <commandâ€
 ```
 
 `--harness` must be listed in `promptobus.json` `tools`. Without the flag the CLI uses `claude`.
+
+For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its child task is the default in the lifted session's MCP entry; the teamlead reports upward by naming the root task explicitly. The teamlead runs at the install root on Claude Code. `--dry-run` shows the child task and session plan before starting it.
 
 `--strategy` is one of `quality`, `balanced`, `speed`, `economy`, `balance`. Without it the command takes the recorded default if there is one, and otherwise routes nothing and takes the defaults. See [Model routing](#model-routing).
 

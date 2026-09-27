@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   availability cache and task files untouched.
   [02-host § The pipeline declaration](docs/reference/02-host.md#the-pipeline-declaration).
 
+- **A teamlead lift owns one child task** (PB-269). `spawn --teamlead --brief <file> --task <root>`
+  starts one Claude Code session at the install root, binds the root teamlead address and child
+  orchestrator to it, and relifts a dead session into the same child. Session names include the
+  slug. The first link stores complete participants; a relift updates both session references
+  through a durable intent whose replay holds the root lock. Dry-run leaves repair untouched. Cursor
+  and Codex are refused before start because their project layer would touch the shared root.
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn).
 - **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
   when the preceding participant's result is recorded for that subject and current assignment; a
   `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the
