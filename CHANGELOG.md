@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Codex teamleads at the install root** (PB-286.1). Explicit Codex selection, Codex-only
+  models and implicit routing can lift a child-task orchestrator; Cursor stays refused.
+  The Codex dry-run names its root MCP entry, thread hook override and sandbox choice.
+  Live proofs completed two lifts and root wake, worker lifts on all three harnesses,
+  and real reviews on all three with `full-access`; install-root bytes stayed unchanged.
+  `workspace-write` participant lifts refused. [03-cli § Spawn](docs/reference/03-cli.md#spawn),
+  [05-drivers § Codex](docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
+
+### Fixed
+
+- **Codex reviewer file reads** (PB-286.1). Its prompt now permits read-only shell
+  commands inside the read-only sandbox while forbidding writes, builds, tests and
+  analyzers. A Codex reviewer lifted by a Codex teamlead returned a result after
+  reading a committed diff. Claude and Cursor keep their command-start denial.
+  [03-cli § Review](docs/reference/03-cli.md#review), [05-drivers § Codex](docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
+
 ### Documentation
 
 - **Model-routing documentation describes the current contract** (PB-296). The guide now

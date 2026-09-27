@@ -60,7 +60,7 @@ try {
     && threadStartConfig({ role: 'teamlead', effort: 'medium' }).model_reasoning_effort === 'medium'
     && !Object.hasOwn(threadStartConfig({ role: 'worker', effort: 'medium' }), 'features.hooks')
     && !Object.hasOwn(threadStartConfig({ role: 'reviewer' }), 'features.hooks'));
-  check('dormant Codex teamlead path has its own sandbox choices',
+  check('Codex teamlead path has its own sandbox choices',
     planned.settings.sandbox === 'workspace-write'
     && fullAccess.settings.sandbox === 'danger-full-access');
   check('Codex teamlead preparation writes no project files at the install root',

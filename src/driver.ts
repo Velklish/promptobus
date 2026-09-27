@@ -223,6 +223,13 @@ export interface LaunchPlan {
   cwd?: string;
 }
 
+export interface ReviewerCommandPhrases {
+  isolation: string;
+  procedureSkip: string;
+  record: string;
+  gate: string;
+}
+
 /** Harness words the adapter inserts into its lines. Shared text stays with the adapter; the
  * harness-specific command comes from here, or every printer would know the enter command. */
 export interface DriverPhrases {
@@ -241,6 +248,8 @@ export interface DriverPhrases {
   tool(server: string, name: string, host: PromptobusHost): string;
   /** The reviewer's MCP boundary in this harness's own measured vocabulary. */
   mcpBoundary: string;
+  /** What a reviewer may run to read files, and how the prompt names skipped checks. */
+  reviewerCommands: ReviewerCommandPhrases;
   /** Rules of THIS harness appended to the participant prompt — its headless habits. Empty means
    * nothing to append, and the prompt stays exactly what the caller assembled. */
   promptRules: string;

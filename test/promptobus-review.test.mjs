@@ -463,6 +463,27 @@ check('PB-87.1: Codex refuses the legacy array classification shape',
 const cursorClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Cursor tools', harness: 'cursor',
 });
+const readSkill = path.join(WS, '.codex', 'skills', 'review-reader');
+mkdirSync(readSkill, { recursive: true });
+writeFileSync(path.join(readSkill, 'SKILL.md'), '# Review reader\n');
+const skillHost = {
+  ...classifiedHost,
+  resolveRepoModule: () => ({ name: 'review-reader', meta: { review: { skill: 'review-reader' } } }),
+  reviewSkillDir: () => readSkill,
+};
+const skillPrompts = Object.fromEntries(['claude', 'cursor', 'codex'].map((harness) => [
+  harness, planReview(skillHost, { target: REPO, title: `${harness} reader`, harness }).prompt,
+]));
+check('reviewer prompt: Claude keeps its command-start denial',
+  plan.prompt.includes('- File edits and command starts are disabled for you by the mechanism. Edit nothing')
+  && skillPrompts.claude.includes('Skip steps that need a write, a command start, or an unavailable MCP server')
+  && plan.prompt.includes('not run, because a reviewer runs nothing'),
+  plan.prompt.split('\n').find((line) => line.includes('command starts')) ?? plan.prompt);
+check('reviewer prompt: Cursor keeps its command-start denial',
+  cursorClassifiedPlan.prompt.includes('- File edits and command starts are disabled for you by the mechanism. Edit nothing')
+  && skillPrompts.cursor.includes('Skip steps that need a write, a command start, or an unavailable MCP server')
+  && cursorClassifiedPlan.prompt.includes('not run, because a reviewer runs nothing'),
+  cursorClassifiedPlan.prompt.split('\n').find((line) => line.includes('command starts')) ?? cursorClassifiedPlan.prompt);
 check('PB-87: Cursor does not consume Claude MCP deny ids',
   JSON.stringify(cursorClassifiedPlan.settings.permissions.deny) === JSON.stringify(['Write(**)', 'Shell(**)'])
   && !JSON.stringify(cursorClassifiedPlan.settings).includes('mcp__catalog__create_entry'),
@@ -470,6 +491,14 @@ check('PB-87: Cursor does not consume Claude MCP deny ids',
 const codexClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Codex tools', harness: 'codex',
 });
+check('reviewer prompt: Codex reads by read-only shell and cannot run checks',
+  codexClassifiedPlan.prompt.includes('The read-only sandbox blocks file writes.')
+  && codexClassifiedPlan.prompt.includes('Read files with read-only shell commands (`cat`, `sed -n`, `rg`, `git show`, `git diff`, `git log`)')
+  && codexClassifiedPlan.prompt.includes('do not run builds, tests or analyzers')
+  && skillPrompts.codex.includes('Skip steps that need a write, a command that builds, tests or runs an analyzer')
+  && codexClassifiedPlan.prompt.includes('not run, because a reviewer runs no gates or mechanical checks')
+  && !codexClassifiedPlan.prompt.includes('File edits and command starts are disabled for you by the mechanism.'),
+  codexClassifiedPlan.prompt.split('\n').find((line) => line.includes('read-only sandbox')) ?? codexClassifiedPlan.prompt);
 check('PB-87.1: Codex applies its sandbox plan and mechanical MCP boundary',
   codexClassifiedPlan.settings.sandbox === 'read-only'
   && codexClassifiedPlan.settings.approvalPolicy === 'on-request'

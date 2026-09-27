@@ -66,25 +66,41 @@ let modelRefusal = '';
 try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); } catch (error) { modelRefusal = error.message; }
 check('teamlead refuses a Cursor-only model before start',
   modelRefusal.includes('ADR-015') && modelRefusal.includes('PB-222') && !existsSync(marker), modelRefusal);
-let codexModelRefusal = '';
-try { await planTeamlead(host, { ...opts, model: 'gpt-5.6-sol' }); }
-catch (error) { codexModelRefusal = error.message; }
-check('teamlead refuses a Codex-only model before start',
-  codexModelRefusal.includes('PB-286.1') && codexModelRefusal.includes('reviews')
-  && !existsSync(marker), codexModelRefusal);
+const codexModelPlan = await planTeamlead(host, { ...opts, model: 'gpt-5.6-sol' });
+check('teamlead admits a Codex-only model without a harness flag',
+  codexModelPlan.driver.id === 'codex' && codexModelPlan.model === 'gpt-5.6-sol'
+  && !existsSync(marker), codexModelPlan.driver.id);
+const codexPlan = await planTeamlead(host, { ...opts, harness: 'codex' });
+const codexDry = await captureSplit(() => spawnTeamlead(host, { ...opts, harness: 'codex', dryRun: true }));
+const codexFull = await captureSplit(() => spawnTeamlead(host, {
+  ...opts, harness: 'codex', permissionMode: 'full-access', dryRun: true,
+}));
+check('Codex teamlead dry-run names its driver, hook override and root MCP entry',
+  codexPlan.driver.id === 'codex'
+  && codexDry.out.includes('harness: Codex')
+  && codexDry.out.includes('features.hooks=false')
+  && codexDry.out.includes('Codex sandbox: workspace-write')
+  && codexDry.out.includes('promptobus-root · stdio')
+  && codexDry.out.includes('codex --dangerously-bypass-hook-trust app-server --stdio')
+  && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexDry.out);
+check('Codex teamlead full access dry-run names its sandbox',
+  codexFull.out.includes('Codex sandbox: danger-full-access')
+  && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexFull.out);
 const routed = await planTeamlead(host, { ...opts, strategy: 'quality', dryRun: true });
-check('teamlead strategy restricts the routed choice to Claude Code',
-  routed.driver.id === 'claude' && routed.decision?.chosen?.harness === 'claude',
+check('teamlead strategy considers Claude Code and Codex but cannot choose Cursor',
+  ['claude', 'codex'].includes(routed.driver.id)
+  && routed.decision?.candidates.some((candidate) => candidate.harness === 'codex')
+  && routed.decision?.chosen?.harness !== 'cursor',
   JSON.stringify(routed.decision?.chosen));
 
-for (const harness of ['cursor', 'codex']) {
+for (const harness of ['cursor']) {
   const ran = spawnSync(process.execPath, [cli, 'spawn', '--teamlead', '--task', task,
     '--brief', brief, '--slug', 'group-one', '--harness', harness], {
     cwd: root, encoding: 'utf8', env: process.env,
   });
   check(`teamlead --harness ${harness} exits non-zero before start with its return condition`,
-    ran.status !== 0 && ran.stderr.includes(harness === 'cursor' ? 'ADR-015' : 'PB-286.1')
-    && ran.stderr.includes(harness === 'cursor' ? 'PB-222' : 'worker lift')
+    ran.status !== 0 && ran.stderr.includes('ADR-015')
+    && ran.stderr.includes('PB-222')
     && !existsSync(marker) && !store.taskExists(home, planned.childTask), ran.stderr);
 }
 
@@ -217,7 +233,7 @@ catch (error) { pendingRefusals.push(error.message); }
 check('pending rebind dry-run and unsupported choices leave journals and intent untouched',
   pendingDry.out.includes('dry-run: nothing written') && pendingRefusals.length === 3
   && pendingRefusals[0].includes('ADR-015')
-  && pendingRefusals[1].includes('PB-286.1')
+  && pendingRefusals[1].includes('relift cannot change its harness')
   && pendingRefusals[2].includes('ADR-015')
   && [store.taskFile(home, task), store.taskFile(home, child.id), intentFile]
     .every((file, index) => readFileSync(file, 'utf8') === pendingSnapshot[index])
