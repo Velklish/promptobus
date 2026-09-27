@@ -121,6 +121,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Codex teamlead admission stays closed after live isolation measurements** (PB-286).
+  The dormant Codex teamlead path places skills and a root mailbox entry in its own home and
+  disables hooks at `thread/start`. The measured root status and wake do not yet cover
+  an other-harness worker result or reviews, so `spawn --teamlead --harness codex`
+  refuses with the PB-286.1 return condition. Cursor remains refused.
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn), [05-drivers § Codex](docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver).
+
 - **No-`max` quality evidence matches the measured effort rung** (PB-263.2). The Sonnet 5 SWE-bench figure no longer
   cites `claude-sonnet-xhigh`: its effort is unstated and Claude Code's baked default is `high`. GPT-5.5's Terminal-Bench
   2.1 Codex CLI figure now cites `codex-gpt55-medium`, whose default is `medium` in both no-turn metadata reads.

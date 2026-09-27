@@ -37,3 +37,11 @@ One orchestrator carries every participant's traffic. The owner's measurement of
 - Routing gains a closed table with a decision column; every pair outside it is refused naming the vertical route.
 - The top orchestrator's inbound traffic becomes the teamleads' summaries instead of every worker's mail.
 - Thresholds for raising a tree — up to 5 pieces and 3 concurrent workers for one orchestrator, from 8 pieces or 4 concurrent workers or two groups for a tree — ship in the package skill and are the owner's reading of the measurement, to be re-read against later telemetry.
+
+## Proposed amendment: a Codex teamlead
+
+**Amendment status:** Proposed, for the owner's review. The Accepted status of the original task-tree decision is unchanged.
+
+`live.PM5Iux` showed two Codex teamlead lifts with byte-identical tracked and untracked install-root content, first status from `teamlead:<slug>`, and a second holder-driven turn after root wake. The install root's `SessionStart` hook ran. `live.E5Q8vs` showed that the root project config overrode a private-home `hooks = false`, and that the child MCP entry could not read the teamlead's root mailbox; its holder still started and completed the wake turn. `live.rVcwVK` showed no foreign hook marker with `features.hooks = false` in `thread/start`, and the separate root MCP entry read the root message as the teamlead. Its script stopped at a server-name assertion before the second lift or a worker lift.
+
+The proposed Codex path copies skills into the teamlead's own `CODEX_HOME`, writes no project layer at the install root, binds a second MCP entry to the root teamlead address, and uses holder-driven turns. At codex-cli 0.156.1, [app-server makes request config a CLI override](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/config_manager.rs#L355-L382), and [session flags follow project config](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/config/src/loader/mod.rs#L395-L416). The original Claude-only admission remains in force: PB-286.1 must prove the second lift, a worker lift and result on another harness, and reviews under that teamlead before Codex is admitted. Cursor remains refused under ADR-015.

@@ -44,10 +44,11 @@ store.createTask(home, { id: task, title: 'Root', owner: 'root-session' });
 const opts = { task, brief, slug: 'group-one' };
 const planned = await planTeamlead(host, opts);
 const dry = await captureSplit(() => spawnTeamlead(host, { ...opts, dryRun: true }));
+const dryChild = dry.out.match(/child task: ([a-z0-9-]+)/)?.[1];
 check('teamlead dry-run names the child, root, address and install cwd without starting',
-  dry.out.includes(planned.childTask) && dry.out.includes(task)
+  dryChild && dry.out.includes(task)
   && dry.out.includes('teamlead:group-one') && dry.out.includes(root)
-  && !existsSync(marker) && !store.taskExists(home, planned.childTask), dry.out);
+  && !existsSync(marker) && !store.taskExists(home, dryChild), dry.out);
 const firstStatusInstruction = 'In your first status to the root orchestrator, list every rule file you read by path.';
 check('teamlead prompt instructs first status to list rule files read',
   planned.prompt.includes(firstStatusInstruction)
@@ -65,6 +66,12 @@ let modelRefusal = '';
 try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); } catch (error) { modelRefusal = error.message; }
 check('teamlead refuses a Cursor-only model before start',
   modelRefusal.includes('ADR-015') && modelRefusal.includes('PB-222') && !existsSync(marker), modelRefusal);
+let codexModelRefusal = '';
+try { await planTeamlead(host, { ...opts, model: 'gpt-5.6-sol' }); }
+catch (error) { codexModelRefusal = error.message; }
+check('teamlead refuses a Codex-only model before start',
+  codexModelRefusal.includes('PB-286.1') && codexModelRefusal.includes('reviews')
+  && !existsSync(marker), codexModelRefusal);
 const routed = await planTeamlead(host, { ...opts, strategy: 'quality', dryRun: true });
 check('teamlead strategy restricts the routed choice to Claude Code',
   routed.driver.id === 'claude' && routed.decision?.chosen?.harness === 'claude',
@@ -75,8 +82,9 @@ for (const harness of ['cursor', 'codex']) {
     '--brief', brief, '--slug', 'group-one', '--harness', harness], {
     cwd: root, encoding: 'utf8', env: process.env,
   });
-  check(`teamlead --harness ${harness} exits non-zero before start with ADR-015 reason`,
-    ran.status !== 0 && ran.stderr.includes('ADR-015') && ran.stderr.includes('PB-222')
+  check(`teamlead --harness ${harness} exits non-zero before start with its return condition`,
+    ran.status !== 0 && ran.stderr.includes(harness === 'cursor' ? 'ADR-015' : 'PB-286.1')
+    && ran.stderr.includes(harness === 'cursor' ? 'PB-222' : 'worker lift')
     && !existsSync(marker) && !store.taskExists(home, planned.childTask), ran.stderr);
 }
 
@@ -208,7 +216,9 @@ try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); }
 catch (error) { pendingRefusals.push(error.message); }
 check('pending rebind dry-run and unsupported choices leave journals and intent untouched',
   pendingDry.out.includes('dry-run: nothing written') && pendingRefusals.length === 3
-  && pendingRefusals.every((message) => message.includes('ADR-015'))
+  && pendingRefusals[0].includes('ADR-015')
+  && pendingRefusals[1].includes('PB-286.1')
+  && pendingRefusals[2].includes('ADR-015')
   && [store.taskFile(home, task), store.taskFile(home, child.id), intentFile]
     .every((file, index) => readFileSync(file, 'utf8') === pendingSnapshot[index])
   && readFileSync(marker, 'utf8').length === pendingLaunches,
