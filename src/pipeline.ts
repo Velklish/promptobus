@@ -2,7 +2,7 @@
 // declaration obeys. The prose is 02-host § The pipeline declaration.
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import type { PromptobusHost } from './host.js';
+import type { HostPipelineStep, PromptobusHost } from './host.js';
 import {
   defaultFloor, EDITS_TREE, SHIPPED_REGISTRY, STEP_KINDS, withSteps, WRITES_MAIN_TREE,
 } from './registry.js';
@@ -54,15 +54,16 @@ export const DEFAULT_PIPELINE: Pipeline = Object.freeze({
   gates: Object.freeze(SHIPPED_STEPS.filter((e) => e.kind !== EDITS_TREE).map(shipped)),
 });
 
-/** The steps a host answers: the owner first, then the gates, `{ name, kind }` each. */
-export function pipelineSteps(pipeline: Pipeline): readonly DeclaredStep[] {
-  return Object.freeze([pipeline.owner, ...pipeline.gates].map(({ name, kind, declaredQualityFloor }) => Object.freeze({
-    name, kind, ...(declaredQualityFloor === undefined ? {} : { qualityFloor: declaredQualityFloor }),
+/** The steps a host answers: the owner first, then the gates, with declared lift fields. */
+export function pipelineSteps(pipeline: Pipeline): readonly HostPipelineStep[] {
+  return Object.freeze([pipeline.owner, ...pipeline.gates].map(({ name, kind, instructions, declaredQualityFloor }) => Object.freeze({
+    name, kind, ...(instructions === null ? {} : { instructions }),
+    ...(declaredQualityFloor === undefined ? {} : { qualityFloor: declaredQualityFloor }),
   })));
 }
 
 /** The steps of a host's pipeline in order; the default ones while it declares none, or with no host. */
-export function pipelineOf(host: PromptobusHost | null | undefined): readonly DeclaredStep[] {
+export function pipelineOf(host: PromptobusHost | null | undefined): readonly HostPipelineStep[] {
   return host?.pipeline?.() ?? pipelineSteps(DEFAULT_PIPELINE);
 }
 

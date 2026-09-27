@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sends nothing. Disallowed pairs and assignment types name the root orchestrator route.
   [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
 
+- **Declared gate instructions reach their lift** (PB-274.2). A gate's file is resolved from the install
+  root and read before routing preflight or a new `reads-diff` or `writes-main-tree` participant starts.
+  Its text joins the initial assignment and repeat review assignment; a live reviewer keeps the first
+  text across rounds. A new session reads the file again, including when liveness turns dead during
+  planning. A missing or unreadable file refuses the new lift with its path named and leaves the
+  availability cache and task files untouched.
+  [02-host § The pipeline declaration](docs/reference/02-host.md#the-pipeline-declaration).
+
 - **A named gate lift and declared recipient lists** (PB-274). `step <name> <path> --task <id>` lifts a gate
   when the preceding participant's result is recorded for that subject and current assignment; a
   `writes-main-tree` gate also requires the owner's result. `review` and `review --approver` select the

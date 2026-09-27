@@ -8,6 +8,11 @@ import { ROOT_DIR } from './v1/layout.js';
 /** Host object marker: the suite uses it to tell a host from a root string. */
 export const HOST_KIND = 'promptobus-host';
 
+/** A host's gate may carry an absolute install-root path to its standing instructions. */
+export interface HostPipelineStep extends DeclaredStep {
+  readonly instructions?: string;
+}
+
 export interface HostRepo {
   nsPath: string;
   abs: string;
@@ -158,9 +163,9 @@ export interface PromptobusHost {
   participantServers(): HostServers;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
   participantDenyTools?(role: HostDenyRole): HostMcpToolClassification;
-  /** Optional declared pipeline: owner then gates, with a qualityFloor only where declared.
+  /** Optional declared pipeline: owner then gates, with an absolute instructions path and a qualityFloor only where declared.
    * Absent, the pipeline is the default; an invalid declaration throws `pipeline-invalid`. */
-  pipeline?(): readonly DeclaredStep[];
+  pipeline?(): readonly HostPipelineStep[];
   memorySection(toolName: (server: string, name: string) => string): string | null;
 
   resolveRepo(query: string): Promise<HostRepo>;

@@ -3,14 +3,14 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { captureSplit } from './console.mjs';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, resetCliCaches, stubCommand, withStubPath, writeHostConfig } from './sandbox.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin', 'promptobus.js');
@@ -23,6 +23,9 @@ const { hostOf } = await import('../lib/host.js');
 const { models } = await import('../lib/models.js');
 const { status } = await import('../lib/status.js');
 const { serve } = await import('../lib/server.js');
+const { planReview, step } = await import('../lib/review.js');
+const { cacheFileOf } = await import('../lib/model-routing/cache.js');
+const { claudeDriver } = await import('../lib/driver-claude.js');
 
 const SHIPPED = bus.SHIPPED_REGISTRY;
 const GOVERNANCE = SHIPPED.entries.filter((e) => e.layer === 'governance').map((e) => e.name);
@@ -105,7 +108,8 @@ test('a declaration with security between reviewer and approver loads, in order,
   const host = hostOf(dir);
   const four = [
     { name: 'worker', kind: 'edits-tree' }, { name: 'reviewer', kind: 'reads-diff' },
-    { name: 'security', kind: 'reads-diff' }, { name: 'approver', kind: 'writes-main-tree' },
+    { name: 'security', kind: 'reads-diff', instructions: path.join(dir, 'security.md') },
+    { name: 'approver', kind: 'writes-main-tree' },
   ];
   assert.deepEqual(host.pipeline(), four);
   assert.deepEqual(pipe.pipelineOf(host), four);
@@ -129,6 +133,232 @@ test('a declaration with security between reviewer and approver loads, in order,
   const said = await captureSplit(() => models(host, { subcommand: 'validate' }));
   assert.equal(said.value, 0);
   assert.match(noAnsi(said.out), /pipeline: worker → reviewer → security → approver/);
+});
+
+test('gate instructions reach real lifts, live re-review, and dead-session relifts without partial refusals', async () => {
+  const declared = {
+    owner: { name: 'worker', kind: 'edits-tree' },
+    gates: [
+      { name: 'security', kind: 'reads-diff', instructions: 'security.md' },
+      { name: 'plain', kind: 'reads-diff' },
+      { name: 'release', kind: 'writes-main-tree', instructions: 'release.md' },
+    ],
+  };
+  const dir = realpathSync(workspace(declared));
+  const securityFile = path.join(dir, 'security.md');
+  const releaseFile = path.join(dir, 'release.md');
+  writeFileSync(securityFile, 'SECURITY-INITIAL\n');
+  writeFileSync(releaseFile, 'RELEASE-INITIAL\n');
+  const repo = path.join(dir, 'repos', 'team', 'app');
+  mkdirSync(repo, { recursive: true });
+  const git = (...args) => {
+    const run = spawnSync('git', ['-C', repo, '-c', 'user.name=test', '-c', 'user.email=test@example.invalid', ...args], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    return run.stdout.trim();
+  };
+  git('init', '-b', 'main');
+  writeFileSync(path.join(repo, 'a.txt'), 'before\n');
+  git('add', '.');
+  git('commit', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(path.join(repo, 'a.txt'), 'after\n');
+  const host = hostOf(dir);
+  const home = host.promptobusHome();
+  const task = 'gate-instructions-t20260927-000001';
+  store.bus(home, { cli: '0.5.1' });
+  store.createTask(home, { id: task, title: 'gate instructions', owner: null });
+  const assigned = '2020-01-01T00:00:00.000Z';
+  const recordResult = (address, metadata, taskId = task) => {
+    store.upsertParticipant(home, taskId, store.participantRecord(address, {
+      harness: 'claude', repo: 'repos/team/app', repoAbs: repo, started: assigned,
+      ...metadata,
+    }, bus.registryOf(host)));
+    store.sendMessage(home, taskId, { from: address, to: 'orchestrator', type: 'result', body: 'done' });
+  };
+  recordResult('worker:app', { worktree: repo, baseSha: base });
+  const standDir = path.join(dir, 'stand');
+  const launched = path.join(standDir, 'launched.jsonl');
+  const live = path.join(standDir, 'live.json');
+  stubCommand(standDir, 'claude', `import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--bg') {
+  const name = args[args.indexOf('--name') + 1];
+  appendFileSync(${JSON.stringify(launched)}, JSON.stringify(args) + '\\n');
+  const names = existsSync(${JSON.stringify(live)}) ? JSON.parse(readFileSync(${JSON.stringify(live)}, 'utf8')) : [];
+  writeFileSync(${JSON.stringify(live)}, JSON.stringify([...names, name]));
+  process.stdout.write('backgrounded · cafe34 · ' + name + '\\n');
+  process.exit(0);
+}
+if (args[0] === 'agents') {
+  const names = existsSync(${JSON.stringify(live)}) ? JSON.parse(readFileSync(${JSON.stringify(live)}, 'utf8')) : [];
+  process.stdout.write(JSON.stringify(names.map((name, i) => ({ id: 'sess-' + i, name, status: 'running' }))));
+  process.exit(0);
+}
+process.exit(0);`);
+  const restorePath = withStubPath(standDir);
+  const priorWarden = process.env.PROMPTOBUS_WARDEN;
+  process.env.PROMPTOBUS_WARDEN = 'off';
+  const tool = { ok: true, bin: path.join(standDir, 'claude'), version: '2.1.280' };
+  const lift = (stepName, taskId = task, extra = {}) => step(host, {
+    target: repo, task: taskId, stepName, harness: 'claude', tool, ...extra,
+  });
+  const launches = () => existsSync(launched)
+    ? readFileSync(launched, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
+  const snapshotTree = (root) => {
+    if (!existsSync(root)) return null;
+    const visit = (at) => {
+      const stat = lstatSync(at);
+      if (stat.isSymbolicLink()) return `link:${readlinkSync(at)}`;
+      if (stat.isDirectory()) return Object.fromEntries(readdirSync(at).sort()
+        .map((name) => [name, visit(path.join(at, name))]));
+      return readFileSync(at).toString('hex');
+    };
+    return visit(root);
+  };
+  const withLivenessFlip = async (fn) => {
+    const inspect = claudeDriver.inspect;
+    let reads = 0;
+    claudeDriver.inspect = (ref, sessions) => {
+      reads += 1;
+      if (reads === 1) return inspect(ref, [{ id: 'first-alive', name: ref, status: 'running' }]);
+      if (reads === 2) return inspect(ref, []);
+      return inspect(ref, sessions);
+    };
+    try {
+      const result = await fn();
+      assert.ok(reads >= 2, `expected two liveness reads, got ${reads}`);
+      return result;
+    } finally {
+      claudeDriver.inspect = inspect;
+    }
+  };
+  try {
+    const firstReview = (await captureSplit(() => lift('security'))).value;
+    assert.match(launches()[0].join(' '), /## Gate instructions[\s\S]*SECURITY-INITIAL/);
+    assert.equal(firstReview.instructions.text, 'SECURITY-INITIAL\n');
+    assert.equal(store.participantOf(store.readTask(home, task), 'security:app').metadata.gateInstructions.text,
+      'SECURITY-INITIAL\n');
+
+    store.sendMessage(home, task, { from: 'security:app', to: 'orchestrator', type: 'result', body: 'done' });
+    const plainPrompt = planReview(host, { target: repo, task, stepName: 'plain', dryRun: true });
+    assert.doesNotMatch(plainPrompt.prompt, /## Gate instructions/);
+    assert.doesNotMatch(plainPrompt.reReview, /## Gate instructions/);
+    assert.match(plainPrompt.prompt, /## Review subject[\s\S]*\n\n## Isolation — hold it yourself/);
+    recordResult('plain:app', { reviewSubject: repo, reviewAssignedAt: assigned });
+
+    const firstApproval = (await captureSplit(() => lift('release'))).value;
+    assert.match(launches()[1].join(' '), /## Gate instructions[\s\S]*RELEASE-INITIAL/);
+    assert.equal(firstApproval.instructions.text, 'RELEASE-INITIAL\n');
+    assert.equal(store.participantOf(store.readTask(home, task), 'release:app').metadata.gateInstructions.text,
+      'RELEASE-INITIAL\n');
+
+    writeFileSync(securityFile, 'SECURITY-CHANGED\n');
+    writeFileSync(releaseFile, 'RELEASE-CHANGED\n');
+    const repeatReview = (await captureSplit(() => lift('security'))).value;
+    assert.equal(repeatReview.reuse, true);
+    assert.equal(launches().length, 2);
+    const reReview = store.peekInbox(home, task, 'security:app').messages.filter((m) => m.type === 'task').at(-1);
+    assert.match(reReview.body, /## Gate instructions[\s\S]*SECURITY-INITIAL/);
+    assert.doesNotMatch(reReview.body, /SECURITY-CHANGED/);
+    const repeatApproval = (await captureSplit(() => lift('release'))).value;
+    assert.equal(repeatApproval.reuse, true);
+    assert.equal(repeatApproval.instructions.text, 'RELEASE-INITIAL\n');
+    assert.equal(launches().length, 2);
+
+    writeFileSync(live, '[]');
+    resetCliCaches();
+    const deadReview = (await captureSplit(() => lift('security'))).value;
+    const deadApproval = (await captureSplit(() => lift('release'))).value;
+    assert.equal(deadReview.reuse, false);
+    assert.equal(deadApproval.reuse, false);
+    assert.match(launches()[2].join(' '), /## Gate instructions[\s\S]*SECURITY-CHANGED/);
+    assert.match(launches()[3].join(' '), /## Gate instructions[\s\S]*RELEASE-CHANGED/);
+    assert.equal(store.participantOf(store.readTask(home, task), 'security:app').metadata.gateInstructions.text,
+      'SECURITY-CHANGED\n');
+    assert.equal(store.participantOf(store.readTask(home, task), 'release:app').metadata.gateInstructions.text,
+      'RELEASE-CHANGED\n');
+
+    writeFileSync(securityFile, 'SECURITY-TRANSITION\n');
+    writeFileSync(live, '[]');
+    resetCliCaches();
+    const transitionReview = (await withLivenessFlip(() => captureSplit(() => lift('security')))).value;
+    assert.equal(transitionReview.reuse, false);
+    assert.match(launches()[4].join(' '), /## Gate instructions[\s\S]*SECURITY-TRANSITION/);
+    assert.equal(store.participantOf(store.readTask(home, task), 'security:app').metadata.gateInstructions.text,
+      'SECURITY-TRANSITION\n');
+
+    writeFileSync(releaseFile, 'RELEASE-TRANSITION\n');
+    writeFileSync(live, '[]');
+    resetCliCaches();
+    const transitionApproval = (await withLivenessFlip(() => captureSplit(() => lift('release')))).value;
+    assert.equal(transitionApproval.reuse, false);
+    assert.match(launches()[5].join(' '), /## Gate instructions[\s\S]*RELEASE-TRANSITION/);
+    assert.equal(store.participantOf(store.readTask(home, task), 'release:app').metadata.gateInstructions.text,
+      'RELEASE-TRANSITION\n');
+
+    const freshTask = 'gate-instructions-t20260927-000002';
+    store.createTask(home, { id: freshTask, title: 'missing instructions', owner: null });
+    recordResult('worker:app', { worktree: repo, baseSha: base }, freshTask);
+    const freshApprovalTask = 'gate-instructions-t20260927-000003';
+    store.createTask(home, { id: freshApprovalTask, title: 'unreadable approval instructions', owner: null });
+    recordResult('worker:app', { worktree: repo, baseSha: base }, freshApprovalTask);
+    recordResult('security:app', { reviewSubject: repo, reviewAssignedAt: assigned }, freshApprovalTask);
+    recordResult('plain:app', { reviewSubject: repo, reviewAssignedAt: assigned }, freshApprovalTask);
+    const cacheFile = cacheFileOf(host);
+    mkdirSync(path.dirname(cacheFile), { recursive: true });
+    writeFileSync(cacheFile, 'cache sentinel\n');
+    const worktrees = path.join(repo, '.claude', 'worktrees');
+    const refusesWithoutWrites = async (stepName, taskId, file) => {
+      const before = { journal: snapshotTree(home), worktrees: snapshotTree(worktrees),
+        cache: readFileSync(cacheFile), launches: launches().length };
+      let probes = 0;
+      await assert.rejects(() => captureSplit(() => lift(stepName, taskId, {
+        strategy: 'balanced', refresh: true,
+        adapterFor: () => ({ probe: () => { probes += 1; return { state: 'available' }; } }),
+      })), (error) => error.message.includes(file) && /cannot be read/.test(error.message));
+      assert.equal(probes, 0);
+      assert.deepEqual({ journal: snapshotTree(home), worktrees: snapshotTree(worktrees),
+        cache: readFileSync(cacheFile), launches: launches().length }, before);
+    };
+    chmodSync(securityFile, 0);
+    try {
+      assert.throws(() => readFileSync(securityFile, 'utf8'));
+      writeFileSync(live, '[]');
+      resetCliCaches();
+      await withLivenessFlip(() => refusesWithoutWrites('security', task, securityFile));
+    } finally {
+      chmodSync(securityFile, 0o644);
+    }
+    chmodSync(releaseFile, 0);
+    try {
+      assert.throws(() => readFileSync(releaseFile, 'utf8'));
+      writeFileSync(live, '[]');
+      resetCliCaches();
+      await withLivenessFlip(() => refusesWithoutWrites('release', task, releaseFile));
+    } finally {
+      chmodSync(releaseFile, 0o644);
+    }
+    unlinkSync(securityFile);
+    await refusesWithoutWrites('security', freshTask, securityFile);
+    unlinkSync(releaseFile);
+    writeFileSync(live, '[]');
+    resetCliCaches();
+    await refusesWithoutWrites('release', freshApprovalTask, releaseFile);
+    await refusesWithoutWrites('release', task, releaseFile);
+    writeFileSync(releaseFile, 'RELEASE-UNREADABLE\n');
+    chmodSync(releaseFile, 0);
+    try {
+      assert.throws(() => readFileSync(releaseFile, 'utf8'));
+      await refusesWithoutWrites('release', freshApprovalTask, releaseFile);
+    } finally {
+      chmodSync(releaseFile, 0o644);
+    }
+  } finally {
+    restorePath();
+    if (priorWarden === undefined) delete process.env.PROMPTOBUS_WARDEN;
+    else process.env.PROMPTOBUS_WARDEN = priorWarden;
+  }
 });
 
 // Each case: the declaration, the field the refusal must name, and the words that say why.
