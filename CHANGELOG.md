@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the declared-step case of `role-unknown`.
   [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
 
+- **Model-routing fixture arithmetic uses the current rating scale** (PB-297). The
+  fixture guide now shows the ten-point score formula, resolver scores and balance
+  spend penalties, and describes the implemented models command check. The CLI
+  reference gives the matching `quotaCost` examples.
+  [Fixture guide](test/fixtures/model-routing/README.md).
+
 ## [0.19.0] — 2026-09-27
 
 ### Added

@@ -32,9 +32,19 @@ Where its numbers come from, on the same frozen clock (`2026-09-05T09:00:12.000Z
 | cursor | `composer-2.5` → the `auto` pool, which names it | 62 | 47.92 % | **−14.08** |
 | cursor | `gpt-5.6-via-cursor` → the `api` pool, the complement: every model in no `auto` list falls there | 72 | 47.92 % | **−24.08** |
 
-With the default `spendUnit` of 5 the penalties are `5 × (quotaCost − 1) / 4`, so the effective numbers are +5.48, −0.02, +12.75, −15.33 and −29.08. Codex leads by more than the band of 5, and it is chosen.
+With the default `spendUnit` of 5 the spend penalty is `5 × (quotaCost − 1) / 9`. The resolver subtracts it from each tuple's underspend before comparing harnesses:
 
-**The point of the pair is that the two strategies disagree on one snapshot.** `balanced` picks `claude-fable` at 68.05 — the best-rated tuple. `balance` picks `codex-sol` at 65.60, because Cursor's auto pool is fourteen points ahead of its own cycle while Codex is sixteen behind its week. That is the behaviour ADR-004 exists for, and a fixture on which both strategies agreed would not show it.
+| Tuple | `quotaCost` | Spend penalty | Effective pace |
+|---|---:|---:|---:|
+| `claude-opus` | 10 | 5.00 | +5.48 |
+| `claude-fable` | 6 | 2.78 | −0.30 |
+| `codex-sol` | 8 | 3.89 | +12.61 |
+| `cursor-composer` | 3 | 1.11 | −15.19 |
+| `cursor-api` | 10 | 5.00 | −29.08 |
+
+Codex leads by more than the band of 5, and it is chosen.
+
+**The point of the pair is that the two strategies disagree on one snapshot.** `balanced` picks `claude-fable` at 68.74 — the best-rated tuple. `balance` picks `codex-sol` at 66.43, because Cursor's auto pool is fourteen points ahead of its own cycle while Codex is sixteen behind its week. That is the behaviour ADR-004 exists for, and a fixture on which both strategies agreed would not show it.
 
 ## The run these outputs come from
 
@@ -59,14 +69,14 @@ Two kinds of field cannot be compared raw, and both are normalised before the di
 
 1. **Paths.** The overlay paths in `decision.json` are written as `~/.promptobus/model-routing.json` and `<workspaceRoot>/.promptobus/model-routing.json`. The comparison replaces the home directory with `~` and the workspace root with `<workspaceRoot>`, longest prefix first, then compares. The placeholders stay in the fixture: a fixture holding one machine's home directory is a fixture only that machine can read.
 
-   Two checks do that replacement, and the paths they replace differ because what they run differs. The command check (`test/model-routing.test.mjs`, pending until the `models` command exists) runs the real command and substitutes the run's real `os.homedir()` and workspace root — that is the end-to-end claim, and only the real paths test it. The resolver check (`test/model-routing-resolver.test.mjs`) calls a pure function and hands it synthetic paths no machine has, then substitutes those: with the host mocked out there is no real home in the document to find, and driving the substitution with paths the machine does not own is what keeps the check from passing by accident on a machine whose home happens to be absent from the output.
+   Two checks do that replacement, and the paths they replace differ because what they run differs. The command check (`test/model-routing.test.mjs`) runs the real command and substitutes the run's real `os.homedir()` and workspace root — that is the end-to-end claim, and only the real paths test it. The resolver check (`test/model-routing-resolver.test.mjs`) calls a pure function and hands it synthetic paths no machine has, then substitutes those: with the host mocked out there is no real home in the document to find, and driving the substitution with paths the machine does not own is what keeps the check from passing by accident on a machine whose home happens to be absent from the output.
 2. **Clock.** `takenAt` and every `checkedAt` come from `snapshot.json` and travel through the run unchanged, so they compare as they are. `ageSec` is the only value the clock produces, and the run that reproduces these files freezes the clock at the timestamp above.
 
 Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runtime rows and every character of `models.txt` are compared exactly.
 
 ## Where the numbers come from
 
-`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–5 scale normalises as `(r − 1) / 4 × 100`, and `quotaCost` inverted as `(5 − r) / 4 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 69, `other-steady` 66.25 − 10 = 56.25, `example-deep-high` 55.25. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
+`balanced` weights are 40 / 25 / 20 / 15. A rating `r` on the 1–10 scale normalises as `(r − 1) / 9 × 100`, and `quotaCost` is inverted as `(10 − r) / 9 × 100`. `remaining` is `100 − max(usedPercent)` over the **applicable** windows of each tuple — the account-wide ones plus the scope covering it (ADR-004) — and 50 when none apply, plus the −10 `unknown-availability` adjustment. `example`'s largest applicable window is the session one at 40 for both of its tuples, so `remaining` is 60 for both: the model-scoped weekly window applies to `example-deep-high` and sits below the session window at 12, so it binds nothing and moves no score. It is here to pin the SHAPE of a scope, and the balance pair above is where a scope actually changes an answer. That gives `example-quick` 71.78, `other-steady` 56.94 (66.94 − 10 for unknown availability), and `example-deep-high` 54.56. The rules are [ADR-003](../../../docs/adr/adr-003-model-routing.md); `model-routing.test.mjs` checks the fixture against them rather than trusting the arithmetic.
 
 The pair also carries a **`near-limit`** warning, and it was not put there on purpose — the numbers already in it produce one. `example`'s session window is 40 % used with 20.1 % of it elapsed, which is 19.93 points ahead of its own pace, past the `nearLimit.underspend` default of −15. It is the level-and-rate distinction in one line: 40 % used is nowhere near the 80 % threshold, and the account is still spending twice as fast as the window refills. Under the amended rule, the single paced harness is short, so the set is short as a whole and `economy` is proposed.
 
