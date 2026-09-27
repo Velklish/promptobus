@@ -238,7 +238,7 @@ Reading the default costs the overlay files and no probe, so a `spawn` that rout
 
 **One question the tool cannot answer, and no command writes it.** Today there is one — Cursor's plan name, which no method returns. It lives in the **user** overlay under `account: { "<harness>": { "plan": "<name>" } }`. `models` prints the key, the value where a person set one and the layer it came from, and the path to add it to where they have not; a person or an agent adds the line. There is no writer for two reasons: the writable layer is per-workspace, so a tool-written answer would be given again in every workspace, which is the opposite of "asked once"; and declaring a second writable layer to carry one string would make "exactly one writable layer" false the first time it was used. The value is **display only and enters no score**, and the snapshot keeps what was measured — a typed string never reaches the cache.
 
-`--allow-payg` admits pay-as-you-go tuples, which are otherwise excluded from automatic selection.
+`--allow-payg` admits pay-as-you-go tuples, which are otherwise excluded from automatic selection. The shipped catalog currently has no pay-as-you-go tuple, so the flag admits no shipped candidate today; an overlay's `payg.allow` has the same limit.
 
 `--harness`, `--model` and `--effort` remain **constraints, not wishes**: a named value is never replaced. If the named combination is unavailable or exhausted, the command ends with diagnostics. A tuple whose binding window is nearly spent is not refused when `--harness` or `--model` names it: it is scored, and the decision carries `window-nearly-spent-named` — the person named it, the person spends it.
 

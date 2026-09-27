@@ -129,6 +129,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidate deny spellings was proven on a connected tool. File and shell denies
   remain mechanical. [03-cli § Review](docs/reference/03-cli.md#review).
 
+- **The PAYG flag's current limit is explicit** (PB-13.2). The CLI reference now says the shipped
+  catalog has no pay-as-you-go tuple, so `--allow-payg` and `payg.allow` admit no shipped candidate
+  today. [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
+
 - **The Codex and Cursor MCP child mailbox paths have a live measurement** (PB-178.1).
   Codex 0.156.1 `thread/start` and `cursor-agent` 2026.09.26-dd393fe `mcp list-tools` each
   started a configured server without a model turn. With no session variable or record pointer

@@ -167,7 +167,7 @@ Queued assignments: [PB-64](archive/LOG.md#pb-64), [PB-79](archive/LOG.md#pb-79)
 Every deferred item has its own return condition. This is a future track, not part of the executable batch; PB-120 stays mapped to D and PB-38.2 to R.
 
 
-Deferred assignments: [PB-81](archive/LOG.md#pb-81), [PB-95](archive/LOG.md#pb-95), [PB-117](archive/LOG.md#pb-117), [PB-118](archive/LOG.md#pb-118), [PB-127](archive/LOG.md#pb-127), [PB-129](archive/LOG.md#pb-129), [PB-130](archive/LOG.md#pb-130), [PB-133](archive/LOG.md#pb-133), [PB-134](archive/LOG.md#pb-134), [PB-139](archive/LOG.md#pb-139), [PB-13.2](backlog/minor/PB-13.2-catalog-has-no-payg-row.md), [PB-16.1](backlog/deferred/PB-16.1-cursor-start-path-names-no-limit.md), [PB-24.1](backlog/deferred/PB-24.1-codex-notification-window-duration.md), [PB-24.2](backlog/deferred/PB-24.2-snapshot-model-has-no-efforts-or-speed-tiers.md).
+Deferred assignments: [PB-81](archive/LOG.md#pb-81), [PB-95](archive/LOG.md#pb-95), [PB-117](archive/LOG.md#pb-117), [PB-118](archive/LOG.md#pb-118), [PB-127](archive/LOG.md#pb-127), [PB-129](archive/LOG.md#pb-129), [PB-130](archive/LOG.md#pb-130), [PB-133](archive/LOG.md#pb-133), [PB-134](archive/LOG.md#pb-134), [PB-139](archive/LOG.md#pb-139), [PB-13.2](archive/LOG.md#pb-13.2), [PB-16.1](backlog/deferred/PB-16.1-cursor-start-path-names-no-limit.md), [PB-24.1](backlog/deferred/PB-24.1-codex-notification-window-duration.md), [PB-24.2](archive/LOG.md#pb-24.2).
 
 ## Verification of this triage
 

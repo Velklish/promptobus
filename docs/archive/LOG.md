@@ -424,3 +424,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-275"></a>`PB-275-step-kind-rights` · 2026-09-27 · completed · — · A step's kind decides its cwd, deny list and direct route
 - <a id="pb-222.1"></a>`PB-222.1-cursor-approver-live-proof` · 2026-09-27 · completed · — · Prove Cursor approver launch layer in a live worktree
 - <a id="pb-87.2"></a>`PB-87.2-cursor-mcp-deny-syntax-live-lift` · 2026-09-27 · completed · — · Cursor's MCP deny-pattern syntax for the reviewer needs one live lift, deferred until the Cursor window is restored
+- <a id="pb-288"></a>`PB-288-minor-batch-backlog-upkeep` · 2026-09-27 · completed · — · Minor batch: backlog upkeep after the 2026-09-27 audit
+- <a id="pb-13.2"></a>`PB-13.2-catalog-has-no-payg-row` · 2026-09-27 · batch PB-288 · — · No pay-as-you-go tuple ships, so the PAYG filter has nothing to act on
+- <a id="pb-228"></a>`PB-228-mixed-e2e-red-under-sibling-load` · 2026-09-27 · batch PB-288 · — · test/promptobus-mixed.test.mjs went red once under measured sibling-worker load, not reproduced on base
+- <a id="pb-264.1"></a>`PB-264.1-tmux-teardown-list-line` · 2026-09-27 · batch PB-288 · — · tmux-teardown-list-line
+- <a id="pb-24.2"></a>`PB-24.2-snapshot-model-has-no-efforts-or-speed-tiers` · 2026-09-27 · rejected · — · The snapshot's model object carries no efforts or speed tiers, so PB-28 cannot record what the catalog would rate ultra and fast from

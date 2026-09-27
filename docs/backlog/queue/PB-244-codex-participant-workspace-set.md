@@ -8,7 +8,7 @@
 
 ## Context
 
-The owner requires a Codex worker and reviewer to receive the workspace skill and MCP set with workspace entries taking precedence over personal entries of the same name, as in the Claude Code participant contract. Outside-workspace sessions keep their usual personal set. `lib/driver-codex.js:372-384` currently copies `<workspace>/.codex/skills` into the participant directory. `lib/driver-codex.js:760-815` builds an isolated `CODEX_HOME` with the mechanism MCP set, but `:855` says `~/.agents/skills` remains visible because it follows `HOME`. The copy therefore does not establish precedence for colliding skills.
+The owner requires a Codex worker and reviewer to receive the workspace skill and MCP set with workspace entries taking precedence over personal entries of the same name, as in the Claude Code participant contract. Outside-workspace sessions keep their usual personal set. `workspaceSkillsDir` (`lib/driver-codex.js:502`) finds `<workspace>/.codex/skills`; `prepare` (`:588`, `:602`) copies it into the participant directory. `mcpConfig` (`:544-569`) assembles the mechanism MCP set and `makeParticipantHome` (`:407-432`) writes the isolated `CODEX_HOME`, but the lift note (`:1095`) says `~/.agents/skills` remains visible because it follows `HOME`. The copy therefore does not establish precedence for colliding skills.
 
 ## Work to do
 
@@ -32,7 +32,7 @@ The owner requires a Codex worker and reviewer to receive the workspace skill an
 
 Checked on `39316bc2` from the repository root. **Cost `major`**: for a skill name that exists both in the workspace set and under `~/.agents/skills`, nothing establishes which copy a Codex participant uses — and the owner requires the workspace one.
 
-- The cited lines hold: the copy is `lib/driver-codex.js:372-384` (`workspaceSkillsDir`, `:284-291`, is `<root>/.codex/skills`); the isolated `CODEX_HOME` block runs `:758-822` today (the card's `:760-815` sits inside it); `:855` prints that `~/.agents/skills` follows `HOME`. The same statement stands in `docs/reference/05-drivers.md:373` and `docs/reference/03-cli.md:49`.
-- The reviewer boundary exists: `disabled_tools` at `lib/driver-codex.js:340`. The ADR the Out of scope names exists: `docs/adr/adr-007-codex-participant-isolated-home.md`.
+- Line references refreshed 2026-09-27 on `7be4c880`: `workspaceSkillsDir` is `lib/driver-codex.js:502-510`; `prepare` reads and copies it at `:588` and `:602`; `makeParticipantHome` is `:407-432`, `mcpConfig` is `:544-569`, and `:1095` prints that `~/.agents/skills` follows `HOME`. The same statement stands in `docs/reference/05-drivers.md:637-638` and `docs/reference/03-cli.md:65`.
+- The reviewer boundary exists: `disabled_tools` at `lib/driver-codex.js:558`. The ADR the Out of scope names exists: `docs/adr/adr-007-codex-participant-isolated-home.md`.
 - **Blocked outside this repository:** both dependencies are the consumer's work and leave no trace in this tree, so the card cannot start until they land. It is therefore ordered last among the `major` cards, after the ones that can start. The owner's requirement is recorded here without a date.
 - Its Verification lifts a Codex worker and reviewer live and records the Codex version. On this machine that is 0.156.1 while PB-196, deferred, has not re-measured; the measurement belongs with PB-196's.
