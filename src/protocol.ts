@@ -216,6 +216,10 @@ export function sessionIdOf(p: WithMetadata | null | undefined): string | null {
   return field(p, 'sessionId');
 }
 
+function sessionRecordOf(p: WithMetadata | null | undefined): string | null {
+  return field(p, 'sessionRecord');
+}
+
 function norm(v: string | null | undefined): string {
   return typeof v === 'string' ? v.trim().toLowerCase() : '';
 }
@@ -241,11 +245,11 @@ export function foreignSessionOf(p: WithMetadata | null | undefined, session: st
   return sameSession(short, writer) ? null : short;
 }
 
-/** The session a participant record is bound to: the owner for the orchestrator, the lift's session
+/** The participant binding: owner for the orchestrator; harness id or session-record pointer
  * for every other address. `null` — an unbound record, legal to read and never sent as. */
 export function boundSessionOf(p: WithMetadata | null | undefined): string | null {
   if (addressOf(p) === ORCHESTRATOR) return ownerOf(p);
-  return sessionIdOf(p) ?? sessionOf(p);
+  return sessionIdOf(p) ?? sessionOf(p) ?? sessionRecordOf(p);
 }
 
 /** Whether this session PROVABLY holds the record — a positive proof, where `foreignSessionOf` answers
@@ -254,6 +258,7 @@ export function holdsSession(p: WithMetadata | null | undefined, session: string
   const writer = typeof session === 'string' ? session.trim() : '';
   if (!writer) return false;
   if (addressOf(p) === ORCHESTRATOR) return ownerOf(p)?.trim() === writer;
+  if (sessionRecordOf(p) === writer) return true;
   const full = sessionIdOf(p);
   if (full) return norm(full) === norm(writer);
   return sameSession(sessionOf(p), writer);

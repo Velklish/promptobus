@@ -4,6 +4,7 @@ import { check } from './check.mjs';
 import { HARNESS_IDENTITY_VARS } from './hygiene.mjs';
 import { identityCandidates, resolveSessionIdentity, REGISTRY } from '../lib/drivers.js';
 import { bindSessionIdentity, sessionIdentity } from '../lib/store.js';
+import { boundSessionOf, holdsSession } from '../dist/protocol.js';
 
 const VARS = Object.fromEntries(
   Object.entries(REGISTRY.drivers).map(([h, d]) => [h, d.options.identityVar]),
@@ -11,6 +12,21 @@ const VARS = Object.fromEntries(
 const MCP_RECORDS = Object.fromEntries(
   Object.entries(REGISTRY.drivers).map(([h, d]) => [h, d.options.mcpIdentity]),
 );
+
+{
+  const pointer = '/state/sessions/worker.json';
+  const participant = { metadata: { address: 'worker:one', sessionRecord: pointer } };
+  check(': a prelaunch pointer binds the participant before any harness id exists',
+    boundSessionOf(participant) === pointer && holdsSession(participant, pointer)
+    && !holdsSession(participant, pointer.slice(0, -1))
+    && !holdsSession(participant, `${pointer}.copy`),
+    JSON.stringify(participant));
+  const lifted = { metadata: { ...participant.metadata, sessionId: 'thread-one' } };
+  check(': the pointer remains an exact binding after the harness id arrives',
+    holdsSession(lifted, pointer) && holdsSession(lifted, 'thread-one')
+    && !holdsSession(lifted, '/state/sessions/other.json'),
+    JSON.stringify(lifted));
+}
 
 {
   check(': every declared driver answers the identity member — none is left out of the contract',

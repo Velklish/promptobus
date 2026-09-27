@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Participant records bind before launch** (PB-265.1). Claude Code receives a recorded
+  `--session-id` UUID; Codex and Cursor record their session pointer before starting.
+  MCP children can send on turn 0 while the harness id is still null, after the pointer
+  proves the same home, task and address. The direct worker–approver guard accepts that
+  same proof while the pointer is active. The stands send without a binding wait.
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
 - **Two root tasks can link as peers** (PB-271). `link` registers reciprocal peer addresses bound to
   the other task's owner session, and `unlink` removes the records while keeping earlier mail.
   A question to a peer enters the other root's orchestrator mailbox under the source peer address;

@@ -414,3 +414,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-274.2"></a>`PB-274.2-gate-instructions-delivery` · 2026-09-27 · completed · — · Deliver declared gate instructions to its lift
 - <a id="pb-269"></a>`PB-269-teamlead-lift` · 2026-09-27 · completed · — · spawn --teamlead lifts a child orchestrator at the install root on Claude Code
 - <a id="pb-271"></a>`PB-271-link-peer-tasks` · 2026-09-27 · completed · — · promptobus link pairs two root tasks as peers; unlinked tasks cannot write to each other
+- <a id="pb-265.1"></a>`PB-265.1-bind-before-launch` · 2026-09-27 · completed · — · A lifted participant's first send can land before its lift binds the record: bind it before launch

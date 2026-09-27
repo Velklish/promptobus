@@ -410,7 +410,7 @@ export async function claudeMain(argv, env = process.env) {
     process.exitCode = 1;
     return;
   }
-  const sessionId = randomUUID();
+  const sessionId = argValue(argv, '--session-id') ?? randomUUID();
   const id = shortId(sessionId);
   const socket = String(env[SOCK_BASE_VAR] ?? '').replace('@', id);
   const token = randomUUID();

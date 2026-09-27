@@ -42,7 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { awaitBinding, diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
+import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -988,11 +988,6 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
   if (!cfg) {
     note(home, address, { kind: 'no-bus', workspace });
     return 'error';
-  }
-  if ((plan.do ?? []).some((a) => a.tool === 'promptobus_send')) {
-    await awaitBinding({
-      home: cfg.env?.PROMPTOBUS_HOME, task: cfg.env?.PROMPTOBUS_TASK, address, note: (e) => note(home, address, e),
-    });
   }
   const bus = await openBus(cfg);
   for (const action of plan.do ?? []) {

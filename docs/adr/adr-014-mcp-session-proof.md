@@ -60,17 +60,29 @@ different path. Codex declares `PROMPTOBUS_CODEX_SESSION`/`threadId`; Cursor dec
 path uses the ordinary harness identity.
 
 The registry considers the record proof only when the environment supplies no command-path
-identity candidate. A record proves a session only when its id is non-empty, its `home`
-and the MCP process's declared home resolve through the same physical-path normalizer,
-and its `task` and `address` match exactly. Path normalization applies only to `home`:
-task ids and addresses have closed grammars and no path aliases. Missing, unreadable,
-stale or differently bound records produce no identity, so the existing route refusal
+identity candidate. A record proves its pointer when its `home` and the MCP process's
+declared home resolve through the same physical-path normalizer, and its `task` and
+`address` match exactly. Its harness id may still be null. Path normalization applies only
+to `home`: task ids and addresses have closed grammars and no path aliases. Missing,
+unreadable or differently bound records produce no identity, so the existing route refusal
 remains. Two valid record proofs are contested and refused, the same rule ADR-010 applies
 to two environment claimants.
 
+The lift writes that exact pointer as the participant's `sessionRecord` before launch, and
+keeps it when the harness id is added to `sessionId`. `holdsSession` accepts either the
+validated pointer or the existing id binding. Claude Code instead receives a chosen UUID
+through `--session-id`, which is written on its participant record before launch. A record
+with none of these bindings still cannot send.
+
+While the driver record's id does not match the participant's id binding, the MCP
+resolver presents the pointer. Once they match, it presents the id, so a session holding
+another task's record by that id keeps its per-task route. The participant accepts both
+during the transition; a tool call cannot lose its binding between the two writes.
+Direct worker–approver traffic uses that same positive session proof for its sender.
+
 The MCP connection resolves its stable coordinates at handshake, then refreshes identity
-for every `tools/call`. This lets a record gain its harness id after the child connected
-without allowing a tool call to rely on the earlier null. Task selection remains per call,
+for every `tools/call`. This checks the record's coordinates even if the child connected
+before the harness id appeared. Task selection remains per call,
 as before; the proof is bound to the MCP process's declared task rather than to whichever
 foreign task an argument asks to reach.
 
@@ -82,12 +94,13 @@ prevents a driver from silently weakening it.
 ## Consequences
 
 - Real-shape Codex and Cursor MCP children can use direct worker–approver traffic when their
-  session holds the registered address.
+  session holds the registered address, including through the pointer before or after id persistence.
 - Cursor's generated bus MCP entry now carries its session-record pointer explicitly; the
   harness's replaced child environment no longer loses it.
 - Canonical and symlink spellings of one existing home prove the same binding; another
   physical home, task or address does not.
-- Removing the pointer or presenting a record before its id exists leaves the route closed.
+- Removing the pointer, or pointing it at a record for another home, task or address, leaves
+  the route closed. A matching record with a null harness id can prove the pointer.
 - A future harness must declare both identity paths independently. It can use
   `mcpIdentity: null`, but cannot disappear from the contract by omission.
 - Record field renames now cross a declared contract. Contract and integration tests cover

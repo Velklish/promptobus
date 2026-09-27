@@ -21,8 +21,9 @@ lifts them yet, and the texts that list addresses do not print them. Once regist
 routes are the closed table below. `addrDir` is injective only over admitted addresses —
 `reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
-default routing rule keeps participant traffic with the orchestrator. The existing direct
-worker↔approver route stays open; worker↔worker and reviewer↔participant routes remain refused.
+default routing rule keeps participant traffic with the orchestrator. The direct
+worker↔approver route opens after a reviewer result is on record; worker↔worker and
+reviewer↔participant routes remain refused.
 
 | Sender | Recipient | Types | Decision |
 |---|---|---|---|
@@ -48,8 +49,9 @@ is delivered to the other root's `orchestrator` mailbox with the sender recorded
 warden wakes its owner. A direct send into the other root as its bound peer address uses
 the same reciprocal-link rule. See [03-cli § Link](03-cli.md#link).
 Other pairs are refused with the root orchestrator as the route. A direct sender must
-already be registered in that task and its recorded session must match the calling
-harness session. Direct messages
+already be registered in that task and its recorded binding must positively hold the
+calling session, including an exact session-record pointer before or after the harness id
+is written. Direct messages
 bypass the orchestrator's unread mailbox but remain canonical in the task's
 `messages/` journal and the addressed histories. The CLI and MCP surface pass one
 recipient. The engine can fan out to many; that path is not exposed on
@@ -59,9 +61,15 @@ recipient. The engine can fan out to many; that path is not exposed on
 `promptobus send` and `promptobus_send` — ask `senderFor` (`lib/store.js`): among the
 participants of the task the call names, the sender is the one whose record the calling
 session PROVABLY holds (`holdsSession`, `src/protocol.ts`). The `orchestrator` record is held
-by its recorded owner; any other record by the `sessionId` its lift wrote, or by its short
-`session` as a prefix when no full id is on record. A record with neither is unbound: it may be
-read and is never sent as. `foreignSessionOf` stays the reading rule — it answers `null` for an
+by its recorded owner; any other record by the `sessionId` its lift wrote, by its short
+`session` as a prefix when no full id is on record, or by its exact `sessionRecord` pointer.
+The pointer is accepted only after the driver record proves the same physical home and exact
+task and address. Claude Code receives its chosen `--session-id` UUID before launch; Codex and
+Cursor bind their record pointers before launch and keep them when the harness id arrives.
+The MCP resolver uses the pointer until the driver record id matches the participant's
+full or short id binding, then uses that id for a session's other task records.
+A record with none of those bindings may be read and is never sent as. `foreignSessionOf`
+stays the reading rule — it answers `null` for an
 unbound record, which is right for "is this proved foreign" and wrong for "is this mine".
 `PROMPTOBUS_ROLE` is a hint. When it names a record the session holds, it picks that record
 on any task — it grants nothing, it chooses among what is already proven. On a call to

@@ -264,13 +264,14 @@ declares `PROMPTOBUS_CODEX_SESSION`/`threadId`; Cursor declares
 entry because Cursor replaces the child's environment. Claude declares `null` and keeps
 using its command-path identity.
 
-**A readable record is not sufficient.** Its non-empty id is accepted only when the
+**A readable record is not sufficient.** Its pointer is accepted only when the
 record's `home` and the process declaration pass through the shared physical path
 canonicalizer to the same place; `task` and `address` remain exact identifiers with no
 path aliases. Normalizing at the read boundary admits existing records written through a
 symlink without weakening the refusal for another physical home. Missing, unreadable or
-differently bound records leave identity null. The server refreshes proof for each tool
-call because Codex can connect before `thread/start` patches `threadId`. [ADR-014](../adr/adr-014-mcp-session-proof.md)
+differently bound records leave identity null. The harness id may still be null: the
+participant record already carries the pointer before launch. The server refreshes proof
+for each tool call. [ADR-014](../adr/adr-014-mcp-session-proof.md)
 
 ## Passing the host
 

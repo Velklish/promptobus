@@ -7,6 +7,17 @@ gets is the workspace's call, and how a task is journalled is the engine's.
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
+## Participant binding before launch
+
+Every lift writes a participant binding before starting the harness. Claude Code 2.1.280
+advertises `--session-id <uuid>` in `claude --help` as “Use a specific session ID for the
+conversation”; the driver generates that UUID, records it, and passes it with `--bg`.
+Codex and Cursor write their session-record pointer on the participant record before the
+holder or persist session starts. Their MCP children use that pointer even while `threadId`
+or `chatId` is null. The pointer must name a readable driver record for the same home,
+task and address; the recorded pointer stays alongside the harness id after lift. See
+[04-protocol § Addresses](04-protocol.md#addresses) and [ADR-014](../adr/adr-014-mcp-session-proof.md).
+
 ## Approver: lift after a reviewer result
 
 The task orchestrator lifts `approver:<slug>` with `promptobus review <path> --task <id> --approver`

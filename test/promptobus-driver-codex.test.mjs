@@ -1689,6 +1689,9 @@ check('step 1: the record carries harness codex and a capabilities snapshot',
 
 const ref = wp?.sessionRef ?? '';
 const record = readSession(ref, env);
+check('step 1: the prelaunch Codex pointer stays bound beside the thread id',
+  wp?.metadata?.sessionRecord === sessionFile(ref, env) && wp?.metadata?.sessionId === record?.threadId,
+  JSON.stringify({ pointer: wp?.metadata?.sessionRecord, thread: wp?.metadata?.sessionId }));
 let holderJournal = '';
 try { holderJournal = readFileSync(holderLogFile(ref, env), 'utf8'); } catch { /* not yet */ }
 const holderFirstLine = holderJournal.split('\n')[0];

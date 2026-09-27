@@ -1018,6 +1018,9 @@ check('step 1: the session landed in the mechanism registry — persist-session 
 check('step 1: the human session handle is its name, the full id is the chat',
   wp?.metadata?.session === record?.sessionName && wp?.metadata?.sessionId === record?.chatId,
   `${wp?.metadata?.session} · ${wp?.metadata?.sessionId} · ${record?.sessionName} · ${record?.chatId}`);
+check('step 1: the prelaunch Cursor pointer stays bound beside the chat id',
+  wp?.metadata?.sessionRecord === sessionFile(ref, env),
+  String(wp?.metadata?.sessionRecord));
 
 check(': the Cursor holder journal starts with launch provenance',
   typeof record?.provenance === 'string'

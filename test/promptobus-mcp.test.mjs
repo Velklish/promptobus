@@ -542,6 +542,11 @@ directCrossTask.notify('notifications/initialized');
 writeFileSync(codexMcpRecord, `${JSON.stringify({
   home: HOME_ALIAS, task: TASK, address: 'worker:cargos-api', threadId: 'direct-worker-session',
 })}\n`);
+const sourceWorker = store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api');
+store.upsertParticipant(HOME, TASK, {
+  ...sourceWorker,
+  metadata: { ...sourceWorker.metadata, session: 'direct-worker', sessionId: null, sessionRecord: codexMcpRecord },
+});
 // The session names itself now, and holds nothing in the foreign task: the sender rule refuses it.
 const unknownDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
@@ -597,6 +602,68 @@ check('PB-206.6 review: a symlink-spelled Codex home proves the same physical he
   && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 1,
   text(heldDirectCrossTask));
 directCrossTask.stop();
+store.upsertParticipant(HOME, TASK, sourceWorker);
+
+const POINTER_DIRECT_TASK = 'pointer-direct-t20260926-235800';
+store.createTask(HOME, { id: POINTER_DIRECT_TASK, title: 'direct pointer binding' });
+const pointerDirectRecord = path.join(ROOT, 'pointer-direct-session.json');
+writeFileSync(pointerDirectRecord, `${JSON.stringify({
+  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:cargos-api', threadId: null,
+})}\n`);
+store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('worker:cargos-api', {
+  session: null, sessionId: null, sessionRecord: pointerDirectRecord,
+}));
+store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('approver:cargos-api', {
+  sessionId: 'direct-pointer-approver',
+}));
+const pointerDirect = startServer('worker:cargos-api', {
+  task: POINTER_DIRECT_TASK,
+  baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: pointerDirectRecord, PROMPTOBUS_WARDEN: 'off' },
+});
+await pointerDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+pointerDirect.notify('notifications/initialized');
+const beforePointerTurnZero = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const pointerTurnZero = await pointerDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'pointer before id', task: POINTER_DIRECT_TASK },
+});
+check('send: a same-task pointer reaches the approver before the harness id exists',
+  pointerTurnZero.result?.isError !== true
+  && /sent question/.test(text(pointerTurnZero))
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforePointerTurnZero + 1,
+  text(pointerTurnZero));
+const pointerWorker = store.participantOf(store.readTask(HOME, POINTER_DIRECT_TASK), 'worker:cargos-api');
+store.upsertParticipant(HOME, POINTER_DIRECT_TASK, {
+  ...pointerWorker,
+  metadata: { ...pointerWorker.metadata, session: 'direct-pointer', sessionId: 'direct-pointer-thread' },
+});
+// The participant id is now stored, while the driver record still presents only the pointer.
+const beforePointerAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const pointerAfterId = await pointerDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'pointer after id', task: POINTER_DIRECT_TASK },
+});
+check('send: the resolved pointer still reaches the approver after participant id persistence',
+  pointerAfterId.result?.isError !== true
+  && /sent question/.test(text(pointerAfterId))
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforePointerAfterId + 1,
+  text(pointerAfterId));
+writeFileSync(pointerDirectRecord, `${JSON.stringify({
+  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:cargos-api', threadId: 'direct-pointer-thread',
+})}\n`);
+const beforeDirectAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const directAfterId = await pointerDirect.call('tools/call', {
+  name: 'promptobus_send',
+  arguments: { to: 'approver:cargos-api', type: 'question', body: 'id after pointer', task: POINTER_DIRECT_TASK },
+});
+check('send: direct traffic keeps the harness id alternative when the driver record catches up',
+  directAfterId.result?.isError !== true
+  && /sent question/.test(text(directAfterId))
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforeDirectAfterId + 1,
+  text(directAfterId));
+pointerDirect.stop();
+store.closeTask(HOME, POINTER_DIRECT_TASK);
 
 const pointerlessDirect = startServer('worker:cargos-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
@@ -677,9 +744,9 @@ check('PB-206.6: an otherwise valid relative record pointer proves no direct sen
 relativePointerDirect.stop();
 
 for (const [label, record] of [
-  ['home', { home: WRONG_HOME, task: TASK, address: 'worker:cargos-api', chatId: 'cursor-worker-session' }],
-  ['task', { home: HOME, task: SECOND, address: 'worker:cargos-api', chatId: 'cursor-worker-session' }],
-  ['address', { home: HOME, task: TASK, address: 'worker:other', chatId: 'cursor-worker-session' }],
+  ['home', { home: WRONG_HOME, task: TASK, address: 'worker:cargos-api', chatId: null }],
+  ['task', { home: HOME, task: SECOND, address: 'worker:cargos-api', chatId: null }],
+  ['address', { home: HOME, task: TASK, address: 'worker:other', chatId: null }],
 ]) {
   const file = path.join(ROOT, `cursor-mcp-wrong-${label}.json`);
   writeFileSync(file, `${JSON.stringify(record)}\n`);
@@ -707,6 +774,10 @@ writeFileSync(cursorMcpRecord, `${JSON.stringify({
   address: 'worker:cargos-api',
   chatId: 'cursor-worker-session',
 })}\n`);
+store.upsertParticipant(HOME, TASK, {
+  ...sourceWorker,
+  metadata: { ...sourceWorker.metadata, sessionId: 'cursor-worker-session', sessionRecord: cursorMcpRecord },
+});
 store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
   sessionId: 'cursor-worker-session',
 }));
@@ -726,6 +797,7 @@ check('PB-206.6: a real-shape Cursor MCP child proves its held address through t
   && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 2,
   text(cursorHeldDirect));
 cursorDirect.stop();
+store.upsertParticipant(HOME, TASK, sourceWorker);
 const inboxSecond = await loose.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } });
 check('inbox: the task argument fetches the mailbox of the named task',
   text(inboxSecond).includes('отчёт по второй задаче') && text(inboxSecond).includes(`task=${SECOND}`),
@@ -1527,6 +1599,55 @@ check(': promptobus_send answers "start a new session", not "journal does not ma
 check(': promptobus_mailbox answers with the same text — there is one path for the refusal',
   mixedBox.result?.isError === true && /start a new session/.test(boxText)
   && /the bus MCP server starts from the installed release/.test(boxText), boxText);
+
+const EARLY = 'early-t20260926-000000';
+const earlyPointer = path.join(ROOT, 'codex-early-session.json');
+store.createTask(HOME, { id: EARLY, title: 'prelaunch binding', owner: SUITE_ORCHESTRATOR });
+store.upsertParticipant(HOME, EARLY, store.participantRecord('worker:cargos-api', {
+  sessionRecord: earlyPointer,
+}));
+writeFileSync(earlyPointer, `${JSON.stringify({ home: HOME_ALIAS, task: EARLY, address: 'worker:cargos-api', threadId: null })}\n`);
+const earlyChild = startServer('worker:cargos-api', {
+  task: EARLY, baseEnv: MCP_CHILD_BASE_ENV,
+  env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: earlyPointer, PROMPTOBUS_WARDEN: 'off' },
+});
+await earlyChild.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+earlyChild.notify('notifications/initialized');
+const earlySend = await earlyChild.call('tools/call', {
+  name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body: 'turn zero' },
+});
+check('send: a matching Codex record pointer binds turn 0 while threadId is null',
+  earlySend.result?.isError !== true && /sent status/.test(text(earlySend))
+  && store.countInbox(HOME, EARLY, 'orchestrator') === 1,
+  text(earlySend));
+earlyChild.stop();
+const earlyParticipant = store.participantOf(store.readTask(HOME, EARLY), 'worker:cargos-api');
+for (const [label, other] of [
+  ['home', { home: WRONG_HOME, task: EARLY, address: 'worker:cargos-api' }],
+  ['task', { home: HOME, task: TASK, address: 'worker:cargos-api' }],
+  ['address', { home: HOME, task: EARLY, address: 'worker:other' }],
+]) {
+  const pointer = path.join(ROOT, `codex-early-wrong-${label}.json`);
+  writeFileSync(pointer, `${JSON.stringify({ ...other, threadId: null })}\n`);
+  store.upsertParticipant(HOME, EARLY, {
+    ...earlyParticipant, metadata: { ...earlyParticipant.metadata, sessionRecord: pointer },
+  });
+  const child = startServer('worker:cargos-api', {
+    task: EARLY, baseEnv: MCP_CHILD_BASE_ENV,
+    env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: pointer, PROMPTOBUS_WARDEN: 'off' },
+  });
+  await child.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+  child.notify('notifications/initialized');
+  const refused = await child.call('tools/call', {
+    name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body: `wrong ${label}` },
+  });
+  check(`send: a pointer to another ${label} proves no turn-0 sender`,
+    refused.result?.isError === true && /cannot name its own session|no session identity/.test(text(refused))
+    && store.countInbox(HOME, EARLY, 'orchestrator') === 1,
+    text(refused));
+  child.stop();
+}
+store.upsertParticipant(HOME, EARLY, earlyParticipant);
 
 orch.stop();
 worker.stop();

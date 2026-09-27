@@ -1171,8 +1171,7 @@ check(': the session list isn\'t parsed — not a refusal, but an unconfirmed st
   /reviewer reviewer:cargos-api started/.test(unverified)
   && /lift of session .* is not confirmed/.test(unverified), unverified);
 
-// Neither the list nor the output names the session: the lift binds nothing, and a record
-// bound to nothing never sends — so the lift is refused while the session stays up.
+// Neither the list nor the output names the session. The chosen prelaunch id still binds it.
 claudeStub("if (args[0] === 'agents') process.exit(1);\nprocess.stdout.write('backgrounded');");
 const unboundTask = store.createTask(home, { id: 't20260926-110000', title: 'ревью без id сессии' });
 const unboundLift = liftoffRun(
@@ -1183,13 +1182,11 @@ const unboundPart = store.participantOf(store.readTask(home, unboundTask.id), 'r
 const unboundSend = expectThrow(() => store.senderFor(home, unboundTask.id, {
   session: 'the-live-session', hint: 'reviewer:cargos-api', declaredTask: unboundTask.id,
 }));
-check(': a lift that reads no session id is refused; its record stays unbound and pending, and nothing is sent as it',
-  unboundLift.status === 1 && /is alive and working, but no session id was read/.test(unboundLift.text)
-  && /it cannot report/.test(unboundLift.text)
-  && unboundLift.text.includes(`promptobus stop reviewer:cargos-api --task ${unboundTask.id}`)
-  && !!unboundPart && unboundPart.session === null && !Object.hasOwn(unboundPart, 'sessionId')
-  && unboundPart.pending === true
-  && unboundSend.threw && /carries no session binding/.test(unboundSend.msg),
+check(': a Claude lift uses its preselected id when neither agents nor bg output names the session',
+  unboundLift.status === 0 && /reviewer reviewer:cargos-api started/.test(unboundLift.text)
+  && !!unboundPart && /^[0-9a-f-]{36}$/.test(unboundPart.sessionId)
+  && unboundPart.session === unboundPart.sessionId && unboundPart.pending !== true
+  && unboundSend.threw && /held by session/.test(unboundSend.msg),
   `status=${unboundLift.status} · ${JSON.stringify(unboundPart)} · ${unboundSend.msg} · ${unboundLift.text}`);
 
 // The order of id sources is the same as the worker's (`spawnedSessionId`): a record

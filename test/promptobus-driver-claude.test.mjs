@@ -62,6 +62,15 @@ const planFor = (permissionMode) => claudeDriver.prepare({
   guardCommand: 'promptobus guard',
 });
 
+const preboundPlan = planFor(null);
+const sessionFlag = preboundPlan.argv.indexOf('--session-id');
+check(': Claude receives its recorded UUID before the prompt in the launch argv',
+  sessionFlag >= 0
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(preboundPlan.prelaunchBinding?.sessionId ?? '')
+  && preboundPlan.argv[sessionFlag + 1] === preboundPlan.prelaunchBinding.sessionId
+  && preboundPlan.argv.at(-1) === 'work',
+  JSON.stringify(preboundPlan.argv));
+
 const settingsOf = (mode) => planFor(mode).settings;
 
 check('PB-165: the measured list of prompt-bypassing modes is a subset of the modes the flag takes',

@@ -14,6 +14,7 @@
 // MCP server. Only the binary is substituted.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
@@ -103,7 +104,12 @@ liveHarness: {
     skip('live harness socket integration', socketPermission.reason);
     break liveHarness;
   }
-const bg = claude('--bg', '--name', NAME, '--mcp-config', CFG, '--model', 'opus', 'participant prompt');
+const preboundSessionId = randomUUID();
+const prebound = store.participantOf(store.readTask(HOME, TASK), ADDR);
+store.upsertParticipant(HOME, TASK, {
+  ...prebound, metadata: { ...prebound.metadata, sessionId: preboundSessionId },
+});
+const bg = claude('--bg', '--name', NAME, '--mcp-config', CFG, '--model', 'opus', '--session-id', preboundSessionId, 'participant prompt');
 check('claude --bg reported in the form the mechanism parses the session id from',
   bg.status === 0 && /backgrounded · [0-9a-f]{6,} · /.test(bg.stdout), `${bg.status}: ${bg.stdout}${bg.stderr}`);
 
@@ -120,11 +126,8 @@ check('the stub writes startedAt as epoch milliseconds',
 check('the record is found by the same findSession the mechanism uses, and is judged alive',
   findSession(listed, NAME)?.id === record?.id && sessionLiveness(findSession(listed, NAME), listed) === 'alive',
   JSON.stringify(record));
-// What a lift's persist writes: the journal record bound to the session that was lifted.
-const unbound = store.participantOf(store.readTask(HOME, TASK), ADDR);
-store.upsertParticipant(HOME, TASK, {
-  ...unbound, metadata: { ...unbound.metadata, session: record?.id ?? null, sessionId: record?.sessionId ?? null },
-});
+check('the stub honors the session id chosen before launch',
+  record?.sessionId === preboundSessionId, JSON.stringify(record?.sessionId));
 
 const wake = await waitFor(() => {
   const w = store.readWake(HOME, TASK, ADDR);
@@ -141,6 +144,10 @@ const first = await waitFor(() => {
 check('the first participant turn reached the orchestrator by a real send',
   first?.[0]?.sender === store.addrDir(ADDR) && first?.[0]?.body === 'первый ход участника',
   `${JSON.stringify(first)} · trace: ${JSON.stringify(readTrace(HARNESS, ADDR))} · log: ${readLog(HARNESS, record?.id)}`);
+const lifted = store.participantOf(store.readTask(HOME, TASK), ADDR);
+store.upsertParticipant(HOME, TASK, {
+  ...lifted, metadata: { ...lifted.metadata, session: record?.id ?? null, sessionId: record?.sessionId ?? null },
+});
 
 // --- end of turn --------------------------------------------------------------
 
