@@ -188,13 +188,13 @@ A layer carries `writable?: boolean`, and **exactly one layer carries it wheneve
 
 The refusal is at the DECLARATION and not at the write, for the reason `harnessStateHome` refuses instead of guessing: a host that names layers and no writable one has an incomplete declaration, and a person who learns that from `models strategy --set` learns it after making the edit it refuses to keep. Two is the same fault from the other side — with two, which file the tool writes would depend on iteration order, and the loser's copy would sit on disk saying something nobody set.
 
-**The writable layer is state, not configuration, so it must not be a file anybody commits.** That is what moved the standalone `workspace` layer out of the repository root: its content is written by the tool ([ADR-004](../adr/adr-004-subscription-balance.md), decision 6 — PB-32 adds `models strategy --set`, which will record there the strategy an agent proposed and a person agreed to), and a file the tool rewrites cannot live where a person's edits and a repository's `.gitignore` are the contract. It is now `<promptobusHome>/model-routing.json`, which is per-workspace exactly as the old path was — what changed is which per-workspace directory. `<workspaceRoot>/model-routing.local.json` is **no longer read, and there is no fallback**: two paths under one layer id would make the file a person edits depend on which of them exists. A consumer keeps the layer wherever its own state lives, under the same one condition.
+**The writable layer is state, not configuration, so it must not be a file anybody commits.** The standalone `workspace` layer lives at `<promptobusHome>/model-routing.json`: `models strategy --set` writes its default there and `--clear` removes that key (`lib/models.js` `strategyCommand`). The file is per-workspace, outside the repository root. `<workspaceRoot>/model-routing.local.json` is **no longer read, and there is no fallback**: two paths under one layer id would make the file a person edits depend on which of them exists. A consumer keeps the layer wherever its own state lives, under the same one condition.
 
 The cache and the `user` overlay are untouched by this and stay account-scoped: `promptobusHome()` names the workspace layer and nothing else.
 
 **One command writes a layer that is not the writable one, and it is named here so the rule above stays readable.** `promptobus models calibrate --write` merges calibrated `ratings` into the layer whose id is `user` ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), superseding one sentence of ADR-004's host contract for this command alone). It is deliberately not the writable layer: a rating is a property of the account, which runs the same models in every workspace, while the writable layer is per-workspace state. The exception is that narrow — only that command, only the `ratings` block, and only after its text proposal has been printed and the person has agreed to those exact lines — and it changes nothing about "exactly one writable layer", which still governs everything the tool writes on its own. If a higher layer already names a tuple/rating pair being written, a successful write warns with that layer and pair because the `user` value is shadowed; the JSON outcome reports the same pairs in `write.shadowedBy`. Without a terminal, `--write` without `--yes` refuses even when no rating would move; in text mode that refusal follows the proposal, while `--json` raises it before its document. A host that declares no `user` layer refuses that write, naming the layers it does declare.
 
-A host should mark the **highest-precedence** layer, or the tool would write a value a layer above it overrides; the writer PB-32 adds will warn when that happens rather than leave the person to wonder why their default did not take. `models validate` prints which layer is writable beside its path, and reports a declaration that is not exactly-one-writable as a finding — the command a person runs to check their stack must not say it holds while `models` refuses to run on it.
+A host should mark the **highest-precedence** layer. When a higher layer already names a strategy default, a successful `--set` warns that the new value is shadowed and names that higher layer. `models validate` prints which layer is writable beside its path, and reports a declaration that is not exactly-one-writable as a finding — the command a person runs to check their stack must not say it holds while `models` refuses to run on it.
 
 See [adr-003-model-routing.md](../adr/adr-003-model-routing.md) and [adr-004-subscription-balance.md](../adr/adr-004-subscription-balance.md).
 
@@ -376,12 +376,13 @@ named `claude --version`. A host that already fills `version` from
 
 ### The layer the tool writes
 
-Source: `src/host.ts`.
+Source: `src/host.ts` (`HostRoutingOverlay.writable`), `lib/models.js`
+(`strategyCommand`).
 
-Whether this is the layer the TOOL writes (ADR-004, decision 6). PB-32 adds
-the writer, `models strategy --set`; until then the flag is a declaration
-with no caller, which is the order this package takes everywhere — the
-contract first, then what runs on it.
+The writable flag names the layer that `models strategy --set` and `--clear` write.
+`--set` records `defaults.strategy`; `--clear` removes just that key and does
+not create a file when there is nothing to clear. Both preserve other keys in
+the writable document. A changed file is written atomically with mode `0600`.
 
 Exactly one layer carries it whenever any layer is declared; `readLayers`
 refuses zero and refuses two, naming the layers it found. The refusal is at
@@ -395,10 +396,11 @@ anybody commits. Under the standalone host it is `workspace`, and it lives at
 `<promptobusHome>/model-routing.json` for exactly that reason — a consumer
 keeps it wherever its own state lives, under the same one condition.
 
-A host should mark the HIGHEST-precedence layer, or the tool would write a
-value a layer above it overrides; the writer PB-32 adds will warn when that
-happens rather than leave the person to wonder why their default did not
-take.
+A host should mark the HIGHEST-precedence layer. If a layer above the writable
+one already names `defaults.strategy`, a successful `--set` prints
+`what was just written is shadowed` and names the higher layer whose value
+takes effect. `--clear` removes only the writable layer's value; a higher
+layer's effective default remains in force.
 
 ### `harnessStateHome` — the harness session registry, and the refusal when nobody says
 
@@ -427,12 +429,14 @@ the reader is not left to find out which of the two to set.
 
 Source: `src/host.ts`, `HostRoutingPaths`.
 
-Where model routing keeps its files. Both are ACCOUNT-scoped, not workspace-
-scoped, and that is why they do not come from `promptobusHome()`: that home is
-the task store of one workspace, while auth, model inventory and the remaining
-subscription limit belong to the account the harness binary is logged into. A
-per-store cache would re-probe three harnesses for every checkout of the same
-account.
+Where model routing keeps its files. The cache and `user` overlay are account-scoped:
+auth, model inventory and the remaining subscription limit belong to the
+account the harness binary is logged into. They do not derive from
+`promptobusHome()`, the task store of one workspace. A per-store cache would
+re-probe three harnesses for every checkout of the same account. Under the
+standalone host, the `workspace` overlay is per-workspace and lives at
+`<promptobusHome>/model-routing.json`; it is the writable layer, independent
+of the account paths (`src/standalone.ts` `routingPaths`).
 
 `overlays` is ordered LOWEST precedence first, and the order is the host's to
 choose. One method with a list rather than a getter per layer, because a

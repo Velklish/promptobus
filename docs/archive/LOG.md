@@ -447,3 +447,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-292"></a>`PB-292-docs-portable-package-and-installed-links` · 2026-09-27 · completed · — · Keep documentation links usable in the packed package and installed skills
 - <a id="pb-293"></a>`PB-293-docs-entry-contract-alignment` · 2026-09-27 · completed · — · Align both READMEs, overview and glossary with the current hooks and role contract
 - <a id="pb-293.1"></a>`PB-293.1-docs-cli-workflow-conditions` · 2026-09-27 · batch PB-293 · — · Correct unconditional CLI claims in review and orchestration recipes
+- <a id="pb-300"></a>`PB-300-docs-host-routing-path-contract` · 2026-09-27 · completed · — · Align HostRoutingPaths scope and writable-layer behavior with the implementation

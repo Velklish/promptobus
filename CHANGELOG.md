@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend penalties, and describes the implemented models command check. The CLI
   reference gives the matching `quotaCost` examples.
   [Fixture guide](test/fixtures/model-routing/README.md).
+- **Host routing paths describe their distinct scopes and active writer** (PB-300).
+  The host reference now identifies account files and the workspace overlay separately,
+  and documents strategy set, clear and shadow warnings as current behavior.
+  [Host § HostRoutingPaths](docs/reference/02-host.md#hostroutingpaths--where-model-routing-keeps-its-files).
+
 - **CLI recipes state their selection conditions** (PB-293.1). The send recipe
   names the existing CLI command, and orchestration and review guidance explains
   routed harness choice and task binding before their fallbacks.

@@ -276,3 +276,21 @@ check('PB-293.1 CLI recipes state routed and task-selection conditions',
     && overviewEntry.includes('Without `--harness`, a new routed lift takes the selected harness, and a new lift with no strategy reaches the Claude Code fallback')
     && overviewEntry.includes('A repeat `spawn` uses its participant\'s recorded driver; a repeat `review` uses its reviewer\'s recorded driver unless an allowed explicit rebind takes effect'),
   'Send, harness fallback and task selection must retain their actual conditions');
+
+const host = read('docs/reference/02-host.md');
+const hostWritable = section(host, '## The writable layer', '## Harness state homes');
+const hostWriterContract = section(host, '### The layer the tool writes', '### `harnessStateHome`');
+const hostPaths = section(host, '### `HostRoutingPaths` — where model routing keeps its files', '### The binary version a host read');
+check('PB-300 host routing paths and writable behavior agree',
+  hostPaths.includes('The cache and `user` overlay are account-scoped:')
+    && hostPaths.includes('They do not derive from\n`promptobusHome()`, the task store of one workspace.')
+    && hostPaths.includes('the `workspace` overlay is per-workspace and lives at\n`<promptobusHome>/model-routing.json`; it is the writable layer, independent\nof the account paths')
+    && hostWriterContract.includes('The writable flag names the layer that `models strategy --set` and `--clear` write.')
+    && hostWriterContract.includes('`--set` records `defaults.strategy`; `--clear` removes just that key and does\nnot create a file when there is nothing to clear.')
+    && hostWriterContract.includes('Both preserve other keys in\nthe writable document. A changed file is written atomically with mode `0600`.')
+    && hostWriterContract.includes('Exactly one layer carries it whenever any layer is declared; `readLayers`\nrefuses zero and refuses two')
+    && hostWriterContract.includes('If a layer above the writable\none already names `defaults.strategy`, a successful `--set` prints\n`what was just written is shadowed`')
+    && hostWritable.includes('The standalone `workspace` layer lives at `<promptobusHome>/model-routing.json`: `models strategy --set` writes its default there and `--clear` removes that key')
+    && hostWritable.includes('The cache and the `user` overlay are untouched by this and stay account-scoped')
+    && ![hostPaths, hostWriterContract, hostWritable].some((doc) => /PB-32 adds|the writer PB-32 adds|Both are ACCOUNT-scoped/.test(doc)),
+  'HostRoutingPaths must distinguish scopes and describe the current writer');
