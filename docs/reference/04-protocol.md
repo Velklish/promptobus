@@ -48,7 +48,12 @@ the messages already in either journal. An orchestrator send to its `peer:<slug>
 is delivered to the other root's `orchestrator` mailbox with the sender recorded as
 `peer:<source-slug>`. Its artifact belongs to the destination task, and that task's
 warden wakes its owner. A direct send into the other root as its bound peer address uses
-the same reciprocal-link rule. See [03-cli § Link](03-cli.md#link).
+the same reciprocal-link rule. Each routed peer message records `originTask`, the source
+root's id, beside `task`, the destination root's id. The field is optional in the v1
+message schema so journals written before it remain readable; new peer sends always write it.
+It persists through unlink and later links to roots with the same slug. See
+[03-cli § Link](03-cli.md#link).
+
 Other pairs are refused with the root orchestrator as the route. A direct sender must
 already be registered in that task and its recorded binding must positively hold the
 calling session, including an exact session-record pointer before or after the harness id

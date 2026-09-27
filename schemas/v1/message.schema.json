@@ -17,6 +17,11 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
+    "originTask": {
+      "description": "The root task that sent a routed peer message. Absent on messages written before this field.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
     "sender": {
       "description": "The sending participant's ID. A role is not derived from it.",
       "type": "string",

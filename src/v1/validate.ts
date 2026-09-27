@@ -61,7 +61,7 @@ const CAPABILITY_KEYS = [
 const CAPABILITY_OPTIONAL = ['denyTools', 'mcpDenyTools', 'systemPrompt', 'sessionList', 'enter', 'approverLift'] as const;
 const PARTICIPANT_KEYS = ['id', 'role', 'harness', 'mode', 'sessionRef', 'capabilities', 'metadata'] as const;
 const TASK_KEYS = ['schemaVersion', 'id', 'title', 'status', 'parent', 'owner', 'created', 'updated', 'participants', 'adapter'] as const;
-const MESSAGE_KEYS = ['protocolVersion', 'id', 'task', 'sender', 'recipients', 'type', 'body', 'artifact', 'ts'] as const;
+const MESSAGE_KEYS = ['protocolVersion', 'id', 'task', 'originTask', 'sender', 'recipients', 'type', 'body', 'artifact', 'ts'] as const;
 const ARTIFACT_KEYS = ['schemaVersion', 'id', 'sha256', 'filename', 'size', 'blob'] as const;
 
 function capabilities(value: unknown, at: string): Verdict | null {
@@ -162,12 +162,16 @@ function message(value: unknown): Verdict {
   const extra = extras(value, MESSAGE_KEYS);
   if (extra.length) return bad('', `extra fields: ${extra.join(', ')}`, 'schema-invalid', extra);
   for (const key of MESSAGE_KEYS) {
-    if (key !== 'artifact' && !Object.hasOwn(value, key)) return bad(key, 'field is required');
+    if (key !== 'artifact' && key !== 'originTask' && !Object.hasOwn(value, key)) return bad(key, 'field is required');
   }
   const id = text(value.id, 'id', RECORD_ID_RE);
   if (id) return id;
   const taskId = text(value.task, 'task', TASK_ID_RE);
   if (taskId) return taskId;
+  if (Object.hasOwn(value, 'originTask')) {
+    const origin = text(value.originTask, 'originTask', TASK_ID_RE);
+    if (origin) return origin;
+  }
   const sender = text(value.sender, 'sender', PARTICIPANT_ID_RE);
   if (sender) return sender;
   if (!Array.isArray(value.recipients) || !value.recipients.length) {

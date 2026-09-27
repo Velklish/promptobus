@@ -92,6 +92,7 @@ export interface MessageV1 {
   protocolVersion: number;
   id: string;
   task: string;
+  originTask?: string;
   sender: string;
   recipients: string[];
   type: string;

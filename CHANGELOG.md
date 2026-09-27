@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status to list the rule files it read. The reporter lift remains a separate delivery task.
   [Orchestrate skill](skills/orchestrate/SKILL.md#choosing-a-flat-task-or-a-tree), [03-cli § Spawn](docs/reference/03-cli.md#spawn).
 
+- **A digest prints task trees from the journal without a model turn** (PB-280). `digest [--task <id>]`
+  shows status first lines, questions, answer debts, stalls and pieces by pipeline step.
+  Routed peer messages record their origin root id; only an answer to that root from the
+  question's destination closes it, even after a same-slug link. Legacy peer mail without
+  origin is marked unresolved. `--json` has a schema; status bodies enter only through
+  the first-line accessor, and answer debt uses header projection.
+  [03-cli § Digest](docs/reference/03-cli.md#digest), [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
 - **Two root tasks can link as peers** (PB-271). `link` registers reciprocal peer addresses bound to
   the other task's owner session, and `unlink` removes the records while keeping earlier mail.
   A question to a peer enters the other root's orchestrator mailbox under the source peer address;

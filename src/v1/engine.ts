@@ -18,7 +18,7 @@ import {
 import type {
   ActivationEvent, BrokenNote, FaultHook, HistoryPage, HistoryQuery, RecoverFailure, Repair,
 } from './messages.js';
-import { MESSAGE_TYPES_V1 } from './model.js';
+import { MESSAGE_TYPES_V1, TASK_ID_RE } from './model.js';
 import type { ArtifactV1, MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import {
   addParticipant, claimOwner, closeTask, createTask, listTasks, patchParticipant, putParticipant,
@@ -76,6 +76,7 @@ export interface SendInput {
   to: string[];
   type: string;
   body: string;
+  originTask?: string;
   artifact?: ArtifactSource;
 }
 
@@ -90,6 +91,7 @@ export interface SendSyncInput {
   to: string[];
   type: string;
   body: string;
+  originTask?: string;
   artifact?: { path: string; name?: (sha256: string, size: number) => string };
   /** Metadata id of a prior artifact message; sets `message.artifact` without a new attachment. */
   linkArtifact?: string;
@@ -214,7 +216,8 @@ export function openEngine({
 
   /** Step 1: everything checked BEFORE the first side effect. One for both send branches. */
   function prepare(task: string, input: {
-    from: string; to: string[]; type: string; body: string; artifact?: unknown; linkArtifact?: string;
+    from: string; to: string[]; type: string; body: string; originTask?: string;
+    artifact?: unknown; linkArtifact?: string;
   }): {
     meta: TaskV1; sender: ParticipantV1; recipients: ParticipantV1[];
   } {
@@ -233,6 +236,10 @@ export function openEngine({
     }
     if (typeof input.body !== 'string' || !input.body) {
       fail('schema-invalid', 'body is empty — a message with no text is not sent', { task });
+    }
+    if (input.originTask !== undefined
+      && (typeof input.originTask !== 'string' || !TASK_ID_RE.test(input.originTask))) {
+      fail('schema-invalid', 'originTask must be a task id', { task });
     }
     // At the WRITE and not in `validate`: reading is retroactive, and records of this shape
     // sit in live journals ([04-protocol](../../docs/reference/04-protocol.md) § Validation).
@@ -253,9 +260,10 @@ export function openEngine({
 
   /** Steps 2–5: the commit point, fan-out, and "who to wake" events. Also one for both send branches. */
   function finish(task: string, sender: ParticipantV1, recipients: ParticipantV1[],
-    input: { to: string[]; type: string; body: string; linkArtifact?: string }, artifact: ArtifactV1 | null): SendResult {
+    input: { to: string[]; type: string; body: string; originTask?: string; linkArtifact?: string },
+    artifact: ArtifactV1 | null): SendResult {
     const draft = newMessage(task, sender.id, input.to, input.type, input.body,
-      artifact?.id ?? input.linkArtifact ?? null, now());
+      artifact?.id ?? input.linkArtifact ?? null, now(), input.originTask);
     requireValid('message', draft, { task });
     const message = commitIntent(home, task, draft, now());
     faults('intent', { task, message: message.id });

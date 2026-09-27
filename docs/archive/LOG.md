@@ -432,3 +432,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-272"></a>`PB-272-governance-instructions` · 2026-09-27 · completed · — · The package skill and lift texts describe TGM, teamlead and reporter, with the thresholds for raising a tree
 - <a id="pb-289"></a>`PB-289-done-fails-on-user-address` · 2026-09-27 · completed · — · promptobus done fails on a task where the user asked
 - <a id="pb-286"></a>`PB-286-codex-teamlead-lift` · 2026-09-27 · completed · — · A teamlead lifts on Codex: the bus launches it, so wake and session identity already exist
+- <a id="pb-280"></a>`PB-280-digest` · 2026-09-27 · completed · — · promptobus digest prints the tree without a model

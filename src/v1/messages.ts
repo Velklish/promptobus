@@ -209,11 +209,13 @@ export function eventFor(home: string, task: string, participant: ParticipantV1,
 }
 
 /** Assemble a canonical message. Validation is on the caller's side, before the first write. */
-export function newMessage(task: string, sender: string, recipients: string[], type: string, body: string, artifact: string | null, now: Date): MessageV1 {
+export function newMessage(task: string, sender: string, recipients: string[], type: string, body: string,
+  artifact: string | null, now: Date, originTask?: string): MessageV1 {
   return {
     protocolVersion: MESSAGE_PROTOCOL_VERSION,
     id: newRecordId(now),
     task,
+    ...(originTask ? { originTask } : {}),
     sender,
     recipients: [...recipients],
     type,
