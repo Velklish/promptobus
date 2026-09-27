@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demands an owner or an approver.
   [ADR-005](docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md), [ADR-017](docs/adr/adr-017-the-owner-gate-is-a-positive-proof.md).
 
+- **Published documentation stands without task records** (PB-294). Consumer
+  guides, the reference, the roadmap, the skills, the project skill tree and
+  the fixture READMEs state the contract, the measured limit, or the code they
+  rest on. A same-repository archive link is that dependency, and a captured
+  path counts only when the file is tracked. The planning snapshot leaves the
+  index; its history stays in Git.
+  [Reference](docs/reference/README.md).
+
 - **Codex home and thread configuration reflect the launch code** (PB-302).
   The references include conditional linked-worktree `hooks.json`, optional
   copied authentication, and the three `thread/start` overrides, while keeping

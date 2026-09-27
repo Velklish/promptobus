@@ -13,9 +13,8 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
 | [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
 | [ROADMAP.md](ROADMAP.md) | Direction and goals; tasks are in the backlog | Living |
-| [TRACKS.md](TRACKS.md) | Triage decisions, subsystem assignments and shared-file execution order | Planning snapshot |
-| [backlog/](backlog/README.md) | Task tracker: one file per task, status is the directory, summary is `npx github:Velklish/backslop#v0.10.1 status` | Living |
-| [archive/](archive/README.md) | Closed tasks: one `LOG.md` journal line each, the body in history; a task not yet folded keeps its definition and result in separate files | Living |
+| `backlog/` | Task tracker: one file per task, status is the directory, summary is `npx github:Velklish/backslop#v0.10.1 status` | Living |
+| `archive/` | Closed tasks: one `LOG.md` journal line each, the body in history; a task not yet folded keeps its definition and result in separate files | Living |
 | [adr/adr-001-process.md](adr/adr-001-process.md) | Tasks and decisions are managed with backslop | Accepted |
 | [adr/adr-002-standalone-host-contract.md](adr/adr-002-standalone-host-contract.md) | The bus does not know the workspace; the caller passes a host | Accepted |
 | [adr/adr-005-ten-point-scale-absolute-bands-calibrate.md](adr/adr-005-ten-point-scale-absolute-bands-calibrate.md) | Model routing: five strategies including balance, subscription windows, and ratings on a 1–10 absolute scale with local calibration | Accepted |

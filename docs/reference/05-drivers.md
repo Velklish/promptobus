@@ -248,7 +248,7 @@ Persist-session machinery of Cursor — the inside of the Cursor driver
 is for Claude. Nobody outside imports this file: the adapter-boundary gate
 ([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)) holds it too.
 
-**What `agent persist` is.** A wrapper over tmux (spike, REPORT §2): the subcommand
+**What `agent persist` is.** A wrapper over tmux: the subcommand
 lifts an ordinary interactive TUI in a pane of the `cursor-agent` tmux server
 (`TMUX_TMPDIR=/tmp tmux -u -L cursor-agent -f /dev/null`), stamps the session with its
 options (`@cursor_managed`, `@cursor_workspace_hash`, `@cursor_session_version`,
@@ -402,7 +402,7 @@ a tool is a separate process. Editing a file is neither: the agent writes it its
 inside one long call, and spawns nothing. A live Cursor participant was reported
 stalled twice on 2026-09-04 and 2026-09-05 while it was doing exactly that — the owner
 opened the panel and saw sixteen files edited, and the participant named a commit from
-the same window (PB-7).
+the same window.
 
 Two questions to git, both about the participant's own directory: the newest mtime
 among the files git calls changed or untracked, and the commit time of HEAD. The first
@@ -423,7 +423,7 @@ Source: `lib/cursor-persist.js`, `injectText`.
 
 Deliver text into a live session.
 
-The protocol is the one the spike measured (REPORT §4.3), and each step pays for a
+Each step of the protocol pays for a
 live miss:
 
   1. **the input field is cleared**, otherwise leftover from a previous failure
@@ -437,7 +437,7 @@ live miss:
      means it went.
 
 Delivery also goes into a RUNNING turn. The text queues in the TUI and runs as a
-separate turn right after the current one (REPORT §4.3): the running turn does not
+separate turn right after the current one: the running turn does not
 see it, the injection does not interrupt the turn, a second parallel turn does not
 appear. There is no longer a reason to refuse “a turn is running” here — the
 message is not lost, it waits.
@@ -514,13 +514,13 @@ the participant on another harness. The end-of-turn channel is
 
 **Codex teamlead at the install root.** `spawn --teamlead --harness codex` uses the Codex driver. It writes no `.codex` project file under the install root: skills copy into the isolated `CODEX_HOME/skills`, beside its bus MCP entries and copied authentication. The child-task entry keeps `PROMPTOBUS_ROLE=orchestrator`; a separate `promptobus-root` entry names the root task and `teamlead:<slug>` with a root-scoped session pointer in the private home. A worker or reviewer keeps its existing project hooks and prelaunch binding. `--permission-mode full-access` is accepted only for a Codex teamlead and maps to `danger-full-access` in its launch plan; the live proof did not retain a direct record of the applied sandbox mode.
 
-The teamlead home config sets `[features] hooks = false`, and `thread/start` sets `features.hooks = false` in the session-flags layer for that role only. The home setting alone did not protect a live teamlead: the install root's `.codex/config.toml` enabled hooks over it in `live.E5Q8vs`. Codex-cli 0.156.1 [converts request config into CLI overrides](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/config_manager.rs#L355-L382), and its [loader places session flags after project config](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/config/src/loader/mod.rs#L395-L416). The [hook registry](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/hooks/src/registry.rs#L304-L309) skips discovery when hooks are off. `live.rVcwVK` showed no foreign hook marker, root mailbox access and a holder wake, but stopped before its second lift. `live.XtOh7N` stopped on a proof-repository layout outside the install root; `live.3Acln1` completed a Cursor worker result and three review dry-runs but handled them in one holder turn. The corrected `live.ej1Piv` completed two lifts with byte-identical install-root snapshots, root status and wake, a Cursor worker lift and result, and three `review --dry-run` calls from the Codex teamlead, each exiting 0 on a clean tracked tree. The worker result woke a second holder turn. No live reviewer session was started in that run. The holder's turn completion and wake route is the teamlead loop guard, without a Stop hook.
+The teamlead home config sets `[features] hooks = false`, and `thread/start` sets `features.hooks = false` in the session-flags layer for that role only. The home setting alone did not protect a live teamlead: measured 2026-09-27 on codex-cli 0.156.1, the install root's `.codex/config.toml` enabled hooks over the private home. Codex-cli 0.156.1 [converts request config into CLI overrides](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/config_manager.rs#L355-L382), and its [loader places session flags after project config](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/config/src/loader/mod.rs#L395-L416). The [hook registry](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/hooks/src/registry.rs#L304-L309) skips discovery when hooks are off. A following run that day showed no foreign hook marker, root mailbox access and a holder wake, but stopped before its second lift. Another run stopped on a proof-repository layout outside the install root; another completed a Cursor worker result and three review dry-runs but handled them in one holder turn. The corrected run completed two lifts with byte-identical install-root snapshots, root status and wake, a Cursor worker lift and result, and three `review --dry-run` calls from the Codex teamlead, each exiting 0 on a clean tracked tree. The worker result woke a second holder turn. No live reviewer session was started in that run. The holder's turn completion and wake route is the teamlead loop guard, without a Stop hook.
 
-The `live.ej1Piv` holder logs also say project-local config and hooks were disabled because the install root was untrusted. The absent foreign-hook marker proves the outcome in that run, but does not isolate the contribution of `features.hooks = false`. The proof skill was copied and read as a file; Codex rejected it for missing YAML frontmatter, so the run does not prove skill loading. The worker lift and dry-runs completed after a `full-access` request; that run did not test `workspace-write` for participant lifts.
+That corrected run's holder logs also say project-local config and hooks were disabled because the install root was untrusted. The absent foreign-hook marker proves the outcome in that run, but does not isolate the contribution of `features.hooks = false`. The proof skill was copied and read as a file; Codex rejected it for missing YAML frontmatter, so the run does not prove skill loading. The worker lift and dry-runs completed after a `full-access` request; that run did not test `workspace-write` for participant lifts.
 
-The later `live.6c7hS6` attempted Claude Code, Cursor and Codex worker lifts under `workspace-write`. All three refused: Claude Code on `EPERM` creating its job directory, Cursor on `EPERM` writing a session file, and Codex on `listen EPERM` for its session socket, with a model-refresh connection failure also logged. Reviews were not attempted in that profile. Under `full-access`, `live.Tz69RX` lifted all three workers, each of which committed a one-line file and sent a result. Real Claude Code and Cursor reviews returned results. The Codex review lift succeeded but its reviewer asked for file access: the old shared prompt said command starts were disabled, while the Codex reviewer had no separate file-reading tool. The run timed out waiting for its result.
+A later run the same day attempted Claude Code, Cursor and Codex worker lifts under `workspace-write`. All three refused: Claude Code on `EPERM` creating its job directory, Cursor on `EPERM` writing a session file, and Codex on `listen EPERM` for its session socket, with a model-refresh connection failure also logged. Reviews were not attempted in that profile. Under `full-access`, another run lifted all three workers, each of which committed a one-line file and sent a result. Real Claude Code and Cursor reviews returned results. The Codex review lift succeeded but its reviewer asked for file access: the old shared prompt said command starts were disabled, while the Codex reviewer had no separate file-reading tool. The run timed out waiting for its result.
 
-A direct Codex review under the same standalone host returned a result in the `live.aLXxuF` control; the missing reader was therefore not a host property. With the Codex-specific reviewer prompt, `live.Ezz5vp` lifted a Codex reviewer from a `full-access` Codex teamlead against a pre-committed one-line diff. The reviewer read the snapshot and current file, sent a result, and woke the teamlead's second holder turn. Its session record and `config.toml` were captured. Both runs left the install-root snapshot and git status unchanged, with no foreign hook marker. `full-access` is the narrowest profile measured that completed the participant and review matrix. No live artifact directly records the teamlead's applied `danger-full-access` sandbox mode.
+A direct Codex review under the same standalone host returned a result in a control run measured the same day; the missing reader was therefore not a host property. With the Codex-specific reviewer prompt, a following run lifted a Codex reviewer from a `full-access` Codex teamlead against a pre-committed one-line diff. The reviewer read the snapshot and current file, sent a result, and woke the teamlead's second holder turn. Its session record and `config.toml` were captured. Both runs left the install-root snapshot and git status unchanged, with no foreign hook marker. `full-access` is the narrowest profile measured that completed the participant and review matrix. No live artifact directly records the teamlead's applied `danger-full-access` sandbox mode.
 
 The worker preamble names its absolute worktree path and the session roots (`cwd` and
 `addDirs`) before the assignment. Holder approvals still use those recorded roots.
@@ -535,7 +535,7 @@ writes; listen on 127.0.0.1 was refused separately. The ordinary git commit --al
 also returned rc=128 at index.lock. Successful worktree and Git metadata writes used the escalated
 exec_command route, including an independent generated git apply that exited 0 and the reversible
 empty-commit/reset probe, which returned rc=0 for both operations. The result is measured for those
-participants and version, not universal (PB-191, PB-194).
+participants and version, not universal.
 
 **On codex-cli 0.156.1 the plain shell writes the worktree.** Measured 2026-09-25 on one worker
 lifted by this mechanism with `workspace-write`, in one paid turn, with no escalation: `test -w .`
@@ -879,9 +879,7 @@ window below 100 %, or a limit the snapshot does not carry — is not known.
 
 ## A lift that fails on a spent limit
 
-Source: `lib/driver-claude.js`. The symbol is not named here: the
-code edit is in another branch and this page could not read it.
-
+Source: `lib/driver-claude.js`, `markLimitAtStart`.
 
 A lift refused because the limit was spent marks the harness exhausted in the availability cache
 and returns the line the refusal appends — empty when there was nothing to mark.

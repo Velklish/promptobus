@@ -44,7 +44,7 @@ The documentation check compares every such tag with `package.json`. On `main` b
 The `.` entry point exports `Engine` and its public input and result types, including
 `SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.
 
-`src/` is TypeScript. `npm run build` emits `dist/`. `lib/*.js` is the JS runtime and the three harness drivers. `tsconfig.json`'s `include` stays `["src"]` — `lib/` is not type-checked at all, by any gate — but `tsc` runs with `noUnusedLocals`/`noUnusedParameters` for `src/` (PB-139).
+`src/` is TypeScript. `npm run build` emits `dist/`. `lib/*.js` is the JS runtime and the three harness drivers. `tsconfig.json`'s `include` stays `["src"]` — `lib/` is not type-checked at all, by any gate — but `tsc` runs with `noUnusedLocals`/`noUnusedParameters` for `src/`.
 
 ## Store home
 

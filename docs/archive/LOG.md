@@ -452,3 +452,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-295"></a>`PB-295-docs-link-validation-coverage` · 2026-09-27 · completed · — · Repair dead anchors and add complete documentation-link verification
 - <a id="pb-295.1"></a>`PB-295.1-docs-comment-gate-description` · 2026-09-27 · batch PB-295 · — · Describe the existing comment gates and their actual coverage consistently
 - <a id="pb-303"></a>`PB-303-docs-adr-consolidation` · 2026-09-27 · completed · — · Consolidate chained ADRs into their current decisions
+- <a id="pb-294"></a>`PB-294-docs-independent-of-task-history` · 2026-09-27 · completed · — · Make published documentation independent of tracker entries and private run artifacts

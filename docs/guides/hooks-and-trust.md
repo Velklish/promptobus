@@ -69,8 +69,7 @@ status `completed`, then `turn/completed completed`. The worker's two Stop lines
 Codex home's `hooks.json`; the reviewer's name its sandbox's `.codex/hooks.json`. Each file was read
 before its session was stopped and contains a `Stop` guard command with that participant's `--role`.
 The worker Stop lines are at 21:05:53.154Z and 21:05:53.307Z; the reviewer's are at 21:07:22.989Z
-and 21:07:23.146Z. The full command exits, hook paths and journal lines are in the task's
-`codex-stop-live-evidence.json` artifact. This proves the hook fires for these two finished turns;
+and 21:07:23.146Z. This proves the hook fires for these two finished turns;
 it does not measure a turn that the guard returns for follow-up or a Codex approver.
 
 ## What is never touched
@@ -172,7 +171,7 @@ turn without sending anything on the bus after their last activation.
 `limit` is not subject to this check at all — time lifts it, not a message
 on the bus.
 
-`permission` has a check of its own, and PB-165 is why. A harness reports a
+`permission` has a check of its own. A harness reports a
 dialog through ONE field, and it puts two different dialogs behind it: a
 permission prompt of the session's own work, and a peer message the session
 HELD rather than delivered — which is what the bus's own postcard becomes
@@ -253,7 +252,7 @@ session, and it cannot be blamed.
 Source: `src/supervisor.ts`, `promptStands`.
 
 Whether a dialog mark is a permission prompt the participant is standing at,
-or the bus's own postcard held behind the same field (PB-165).
+or the bus's own postcard held behind the same field.
 
 **Two marks have to agree, and neither alone lifts the stall.** A participant
 whose dialog is the held postcard never saw the message: it carried on with
@@ -429,8 +428,7 @@ a fresh un-answered knock has had no answer. The consequence belongs to
 whoever writes a check. **A verdict that asserts "this participant is not
 stalled" owes itself the precondition `sent >= since`, waited for and
 asserted on its own line** — without it the verdict races the warden and
-goes red on sound code, which is the first of the two classes `PB-159.3`
-separated in step 7 of the scenario. Measured by hand on a store with the
+goes red on sound code. Measured by hand on a store with the
 stamps set, 2026-09-17: one reply, one end of turn, and the answer flips
 with the knock's stamp alone — a knock 60 s after the reply gives `true`,
 a knock 60 s before it gives `false`.

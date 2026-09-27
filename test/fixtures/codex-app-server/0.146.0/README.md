@@ -47,7 +47,7 @@ that answers nothing says nothing about the tools it was offered.
 `TokenUsage-0.146.0-2026-09-12.json` is a normalized `event_msg.token_count.info`
 record from a Codex rollout. It retains both usage objects, their six token
 fields, `model_context_window`, and `rate_limits`; private home, thread, and
-timestamp values are omitted and numeric values are normalized. PB-202 records
-the usage finding but refuses this participant-owned rollout as a
+timestamp values are omitted and numeric values are normalized. The usage
+finding is recorded, and this participant-owned rollout is refused as a
 throughput-sidecar source because it is outside the bus, coupled to the harness
 layout, and lacks model-active generation time.

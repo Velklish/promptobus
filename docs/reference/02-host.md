@@ -238,7 +238,7 @@ The flags of `buildCmdLine` are load-bearing: `/v:off` turns off delayed expansi
 
 ## Consumer identity inside a harness
 
-`commandName` is not only what a printed command line says. For Codex it is the namespace the participant's own MCP tools live in: the `config.mcp_servers` override merges with the operator's personal config **by field**, so one name carrying two transports fails the whole config load, and the package moves its records into a namespace the personal file does not use. That namespace is `<commandName>-`. The tool name the participant is told is the key **as Codex exposes it**: Codex sanitizes the key, every character outside `[A-Za-z0-9_]` becomes `_`, so under a CLI named `acme-tools` the config key is `acme-tools-promptobus` and the participant reads `mcp__acme_tools_promptobus__promptobus_send` (PB-160, measured on codex-cli 0.146.0). Told the raw key, a participant calls `tools.mcp__acme-tools-promptobus__promptobus_send(...)` inside Codex's `exec` harness — a subtraction, not a property — and the call fails in 0 ms with no text before any server is reached.
+`commandName` is not only what a printed command line says. For Codex it is the namespace the participant's own MCP tools live in: the `config.mcp_servers` override merges with the operator's personal config **by field**, so one name carrying two transports fails the whole config load, and the package moves its records into a namespace the personal file does not use. That namespace is `<commandName>-`. The tool name the participant is told is the key **as Codex exposes it**: Codex sanitizes the key, every character outside `[A-Za-z0-9_]` becomes `_`, so under a CLI named `acme-tools` the config key is `acme-tools-promptobus` and the participant reads `mcp__acme_tools_promptobus__promptobus_send` (measured on codex-cli 0.146.0). Told the raw key, a participant calls `tools.mcp__acme-tools-promptobus__promptobus_send(...)` inside Codex's `exec` harness — a subtraction, not a property — and the call fails in 0 ms with no text before any server is reached.
 
 Two values have to agree: the config key the detached holder writes, and the tool name the prompt tells the participant to call — the second is the first passed through Codex's sanitization. They are one function called twice — the driver builds both from `codexMcpPrefix(host)`, and `codexToolSegment` is the only place the sanitization lives. The prefix reaches the holder through the **session record**, not through a host: the holder is a separate process handed one record file, and there is no host in it to ask.
 
@@ -262,7 +262,7 @@ The manually registered orchestrator MCP entry in [Install § MCP server](../gui
 
 **Two claimants are refused, never picked.** `resolveSessionIdentity` gives the id when exactly one declared variable is set; `null` when none is; and `null` naming both claimants and their variables when two are — that pair is the leaked shape above, and choosing between them would hand out someone else's id. A silent preference for one variable would be worse than the refusal: it would hand the participant an identity that is not theirs. The contested case is warned once per process so the leak is readable; an environment that names no harness is a legal state and is not warned about, its reason staying on the resolver's `why`.
 
-**The two nulls are different states and carry different names.** `reason` is `resolved` when there is an id, `none` when nothing in the environment names a session, `contested` when more than one variable does, and `contested-records` when more than one MCP session record does. Nothing and too much take opposite repairs, and until PB-218 a caller had only `why` prose to tell them apart: the direct `worker` ↔ `approver` route refused two variables with the words “the calling harness supplied no session identity”, and its reader went looking for a variable that was there twice over. Both contested reasons now name the variables found and say to **clear the environment down to one of them** — what is missing is nothing, what is extra is a variable. The `none` wording is unchanged: there, identity really is absent.
+**The two nulls are different states and carry different names.** `reason` is `resolved` when there is an id, `none` when nothing in the environment names a session, `contested` when more than one variable does, and `contested-records` when more than one MCP session record does. Nothing and too much take opposite repairs, A caller used to have only `why` prose to tell them apart: the direct `worker` ↔ `approver` route refused two variables with the words “the calling harness supplied no session identity”, and its reader went looking for a variable that was there twice over. Both contested reasons now name the variables found and say to **clear the environment down to one of them** — what is missing is nothing, what is extra is a variable. The `none` wording is unchanged: there, identity really is absent.
 
 **The resolver is injected, not imported, and the registry injects itself.** `lib/drivers.js` binds it with `bindSessionIdentity` at import — the shape a driver already uses to bind participant-home removal into the session store — so whoever loads the registry can answer. `lib/cli.js` binds it explicitly too, beside `bindHarnessHomes`: its command modules are imported dynamically and not all of them load the registry. Every driver imports `lib/store.js`, so the back edge is a real cycle — with a direct import the package loads when `store.js` is the entry module and dies with `ReferenceError: Cannot access 'CLAUDE' before initialization` when a driver module is. Unbound, the core answers `null` and says once that no registry is bound; it never falls back to reading a variable itself.
 
@@ -300,7 +300,7 @@ It used to be `PROMPTOBUS_<HARNESS>_HOME` or, failing that, `~/.promptobus/<harn
 left the package seeing neither, so the Cursor and Codex registries wrote into the
 operator's REAL home while `inspect` read the sandbox: two halves of one test looking
 at different directories, with no error anywhere and nothing in either log to say so.
-Found because a test behaved oddly, not by a gate (PB-2).
+Found because a test behaved oddly, not by a gate.
 
 So the answer now comes from one of two places that were ASKED, and otherwise it is a
 refusal that names both of them:
@@ -419,7 +419,7 @@ environment variable was unset. A consumer that had named its own
 variables instead therefore had two harness registries writing into the
 operator's REAL home while `inspect` read the sandbox — two halves of one
 test looking at different directories, with no error anywhere and nothing
-in either log to say so (PB-2). A named refusal costs one message; a
+in either log to say so. A named refusal costs one message; a
 silent guess cost a day.
 
 Precedence at the call site: `PROMPTOBUS_<HARNESS>_HOME` from the
