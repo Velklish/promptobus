@@ -1408,6 +1408,42 @@ const liftedQuiet = asHook(stopEvent(LIFT_SID), {
 check('PB-233: with the lifted mailbox drained the turn goes through — the hold was for it alone',
   liftedQuiet.status === 0 && liftedQuiet.stdout === '' && liftedQuiet.stderr === '',
   `status=${liftedQuiet.status} out=${JSON.stringify(liftedQuiet.stdout)} err=${JSON.stringify(liftedQuiet.stderr)}`);
+store.upsertParticipant(HOME, LIFT_B, store.participantRecord('user'));
+store.sendMessage(HOME, LIFT_B, {
+  from: 'user', to: 'orchestrator', type: 'question', body: 'Can you answer this?', session: null,
+});
+const liftedUserUnread = asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LIFT_A, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('a user question in another owned task holds the bound turn while unread',
+  liftedUserUnread.status === 2 && liftedUserUnread.stderr.includes(LIFT_B)
+    && liftedUserUnread.stderr.includes("the person's question"),
+  liftedUserUnread.stderr || JSON.stringify(liftedUserUnread));
+store.readInbox(HOME, LIFT_B, 'orchestrator');
+store.sendMessage(HOME, LIFT_B, {
+  from: 'orchestrator', to: 'user', type: 'status', body: 'Still working', session: LIFT_SID,
+});
+const liftedUserStatus = await captureSplit(() => status(quietHost, { task: LIFT_B, sessions: null }));
+const liftedUserDebt = guardVerdict(HOME, LIFT_A, 'orchestrator', LIFT_SID);
+const liftedUserHeld = asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LIFT_A, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('reading and status leave the other task user debt on the bound turn',
+  liftedUserStatus.out.includes(UNANSWERED_MARK)
+    && liftedUserDebt?.key.includes(LIFT_B)
+    && liftedUserDebt?.reason.includes('answer to user')
+    && liftedUserDebt?.reason.includes(LIFT_B)
+    && liftedUserHeld.status === 2 && liftedUserHeld.stderr.includes(LIFT_B),
+  `${liftedUserStatus.out}\n${JSON.stringify(liftedUserDebt)}\n${liftedUserHeld.stderr}`);
+store.sendMessage(HOME, LIFT_B, {
+  from: 'orchestrator', to: 'user', type: 'answer', body: 'Yes.', session: LIFT_SID,
+});
+const liftedUserEven = asHook(stopEvent(LIFT_SID), {
+  PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LIFT_A, PROMPTOBUS_ROLE: 'orchestrator',
+});
+check('an answer in the other task releases the bound orchestrator turn',
+  guardVerdict(HOME, LIFT_A, 'orchestrator', LIFT_SID) === null
+    && liftedUserEven.status === 0, liftedUserEven.stderr || JSON.stringify(liftedUserEven));
 
 // PB-233: the GUARD door of handOverContactPoints — the one that keeps the socket fresh across a
 // session restart. Only a run carrying the messaging variables reaches it: the suite drops them.

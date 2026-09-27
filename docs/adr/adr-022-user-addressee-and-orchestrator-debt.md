@@ -17,7 +17,7 @@ The loop guard holds a participant that owes an answer; `answerOwedSince` in `li
 
 **The debt's reach.** The orchestrator owes an answer to `question` from `user` only; questions from teamleads and peers create no debt — the owner chose the narrow form.
 
-**How the person asks.** From a terminal, by command; the answer lands in the `user` mailbox and is printed by the digest and by the command. The command refuses inside a session that carries a harness identity, so a participant cannot ask as the person.
+**How the person asks.** From a terminal, by command; the answer lands in the `user` mailbox and is printed by the digest and by the command. `--to teamlead:<slug>` selects that teamlead's child task and asks its orchestrator. The command refuses inside a session that carries a harness identity or bus address, so a participant cannot ask as the person.
 
 ## Decision
 
@@ -27,4 +27,5 @@ A, B and C together; D rejected. The reporter is a governance participant, `repo
 
 - `ANSWER_EXPECTED` keeps its table; the orchestrator's exemption gains exactly one exception, and `status` prints `UNANSWERED` for an orchestrator owing the person.
 - A digest can be read without spending a model turn; a reporter costs a session and is optional.
-- On a harness whose shell inherits the parent's identity, `ask` from inside a participant is refused by construction and named in the refusal.
+- On a harness whose shell inherits the parent's identity, or whose MCP child proves its session through a record, `ask` from inside a participant is refused by construction and named in the refusal.
+- A session orchestrating several tasks keeps the user question's debt in the task where it landed, even after that mailbox is read; its bound turn stays held until it answers in that task.

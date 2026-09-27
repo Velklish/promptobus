@@ -16,9 +16,9 @@ the orchestrator and the shipped pipeline of the role registry ([§ The role
 registry](#the-role-registry)). The grammar admits the slugless `orchestrator`, `reporter`
 and `user` and `<name>:<slug>` under any other step-shaped name; which of those names exist
 is the registry's answer, asked where a participant is written or addressed. The governance
-addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it; nothing
-lifts them yet, and the texts that list addresses do not print them. Once registered, their
-routes are the closed table below. `addrDir` is injective only over admitted addresses —
+addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it. Teamlead
+lifts, `link` and `ask` register their respective addresses; nothing registers `reporter` yet.
+Once registered, their routes are the closed table below. `addrDir` is injective only over admitted addresses —
 `reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
 default routing rule keeps participant traffic with the orchestrator. The direct
@@ -31,8 +31,8 @@ reviewer↔participant routes remain refused.
 | any participant | `orchestrator` of its task | all seven | unchanged |
 | `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
 | `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign; delivery enters the other root's orchestrator mailbox as its peer sender |
-| `user` | `orchestrator` | `question` | the person asks the top of the tree |
-| `orchestrator` | `user` | `answer`, `status` | the answer and progress lines |
+| `user` | `orchestrator` of a root or child task | `question` | the person asks that task's orchestrator; `teamlead:<slug>` selects its child task |
+| `orchestrator` of a root or child task | `user` | `answer`, `status` | the answer and progress lines in the same task |
 | `reporter` | nobody | none | the reporter reads |
 
 The specific `peer:<slug>` rule takes priority over the generic participant-to-orchestrator row:
@@ -51,8 +51,7 @@ the same reciprocal-link rule. See [03-cli § Link](03-cli.md#link).
 Other pairs are refused with the root orchestrator as the route. A direct sender must
 already be registered in that task and its recorded binding must positively hold the
 calling session, including an exact session-record pointer before or after the harness id
-is written. Direct messages
-bypass the orchestrator's unread mailbox but remain canonical in the task's
+is written. Direct messages bypass the orchestrator's unread mailbox but remain canonical in the task's
 `messages/` journal and the addressed histories. The CLI and MCP surface pass one
 recipient. The engine can fan out to many; that path is not exposed on
 `promptobus_send`.
@@ -84,19 +83,22 @@ registers one ([ADR-019](../adr/adr-019-session-address-per-task-lands.md)).
 
 `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` (`MESSAGE_TYPES`). The exported `MESSAGE_TYPES` and `MESSAGE_TYPES_V1` names are the same frozen readonly list: consumers can enumerate or copy it, but cannot add, remove, or replace a type and thereby change validation for the process.
 
-**Whether a type asks its recipient for an answer is part of the protocol, not a habit.** The table is `ANSWER_EXPECTED` in `lib/answers.js`, and it is one list with two readers: the loop guard holds a turn that ends owing an answer, and `promptobus status` prints `UNANSWERED`.
+**Whether a type asks its recipient for an answer is part of the protocol, not a habit.** The ordinary type rows come from `ANSWER_EXPECTED` in `lib/answers.js`; its two readers are the loop guard and `promptobus status`. The `user` row is the orchestrator's narrow exception, read by `unansweredUserQuestions` in the same module.
 
 | type | answer expected | what the answer is |
 |---|---|---|
 | `task` | yes | the hand-over of work: a `status` on taking it, a `result` when it is done |
 | `question` | yes | an `answer` |
+| `question` from `user` to `orchestrator` | yes, for the root or child orchestrator | an `answer` to `user`; a `status` or another send does not settle it |
 | `review` | yes | a `result` with the notes closed |
 | `result` | yes | the hand-over that asks for acceptance: a `review` with notes, or silence once accepted |
 | `status` | **no** | nothing. A status is one-way — the sender must not end its turn waiting for an acknowledgement |
 | `answer` | **no** | nothing; it is itself the answer to a `question` |
 | `artifact` | **no** | nothing; the file is named in the message that carries it |
 
-Two limits on reading that table. It says what a TYPE asks for, not what any particular participant owes: the orchestrator is outside it by decision, and the edge that leaves is named in [03-cli.md](03-cli.md) § Guard and warden. And "no answer expected" never means "no need to read": the warden escalates an unread mailbox to `SILENT` for every address including the orchestrator, and that is unchanged.
+Two limits on reading that table. It says what a TYPE asks for, not what any particular participant owes: the orchestrator owes only the `user` question named above, while other addresses follow the ordinary rule ([03-cli.md](03-cli.md) § Guard and warden). And "no answer expected" never means "no need to read": the warden escalates an unread mailbox to `SILENT` for every address including the orchestrator, and that is unchanged.
+
+When one session orchestrates several tasks, a user question in any of them holds that session's bound turn after its mailbox is read. Only an `answer` to `user` in the task where the question landed clears that debt.
 
 Stored v1 messages carry `sender` and `recipients` as normalized participant IDs, the same values used for mailbox directories; they do not carry the caller's bus address spelling. For example, `worker:demo` is stored as `worker-demo`. Match a stored message by converting the address with the same normalization before comparing it.
 

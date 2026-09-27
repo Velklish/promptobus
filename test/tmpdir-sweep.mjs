@@ -107,7 +107,7 @@ export const SUITE_PREFIXES = [
   'mutation-probe-',
   // schema-skew.test.mjs writes `schema-skew-` and `schema-skew-missing-`; one entry covers both.
   'schema-skew-',
-  'promptobus-ambient-', 'promptobus-codex-',
+  'promptobus-ambient-', 'promptobus-ask-', 'promptobus-codex-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-driver-',
   'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-', 'promptobus-link-',

@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is pruned, its matching peer record can still be unlinked by the surviving root's owner.
   [03-cli § Link](docs/reference/03-cli.md#link), [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
 
+- **A person can ask a task orchestrator through the bus** (PB-279). `promptobus ask "<text>" --task <id>` sends a `question` from a sessionless `user`; `--to teamlead:<slug>` selects the linked child task. `ask --answers` prints and consumes the user mailbox. A harness identity, including a proven MCP session record, or a bus address refuses both commands. The root or child orchestrator owes the latest user question until it sends an `answer` to `user`; guard and status name the debt, including in another task owned by the same session. [03-cli § Ask](docs/reference/03-cli.md#ask), [04-protocol § Message types](docs/reference/04-protocol.md#message-types).
+
 - **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
   declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;
   sweep removes their files and blobs while protecting the owner tree, including a physical-path

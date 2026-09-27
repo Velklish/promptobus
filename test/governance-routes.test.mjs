@@ -109,7 +109,13 @@ test('user asks the orchestrator by question and receives answer or status only'
   }
   denied('user', 'worker:w', 'question', /root orchestrator/);
   store.upsertParticipant(home, childA.id, store.participantRecord('user'));
-  denied('user', 'orchestrator', 'question', new RegExp(`root orchestrator of task ${rootA.id}$`), childA.id);
+  assert.equal(send('user', 'orchestrator', 'question', childA.id).message.type, 'question');
+  assert.equal(send('orchestrator', 'user', 'answer', childA.id).message.type, 'answer');
+  assert.equal(send('orchestrator', 'user', 'status', childA.id).message.type, 'status');
+  denied('user', 'orchestrator', 'status', /user asks the orchestrator by question/, childA.id);
+  denied('orchestrator', 'user', 'task', /receives answer or status/, childA.id);
+  store.upsertParticipant(home, childA.id, store.participantRecord('peer:root-b'));
+  denied('orchestrator', 'peer:root-b', 'question', /reciprocal link/, childA.id);
 });
 
 test('reporter sends nothing; other absent pairs take the vertical route', () => {
