@@ -127,6 +127,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The mini row remains a hypothesis; no quality band moved.
   [Model routing guide](docs/guides/model-routing.md#re-rating-a-row).
 
+### Fixed
+
+- **Closing a task after a user question cleans up participants** (PB-289). `done`
+  removes the contact point of a sessionless `user` without deriving a participant
+  file name for it, then continues to remove the files of dead participants later
+  in the task journal. The question and answer remain in the journal.
+  [03-cli § Status, done, sweep, dismiss, history, prune](docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune).
+
 ### Documentation
 
 - **Cursor reviewer MCP writes remain prompt-guarded after a live syntax check** (PB-87.2).

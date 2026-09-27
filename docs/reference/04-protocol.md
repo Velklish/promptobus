@@ -131,6 +131,9 @@ Participant settings and launch sidecars use `participantFileStem`: a worker kee
 step's. A worker name that begins with one of those prefixes, or that equals a slugless
 address — `orchestrator`, `reporter`, `user` — is refused and the refusal names the role,
 so two addresses cannot name the same sidecar.
+Those three slugless addresses have no participant file stem. `done` can remove their
+contact points by address, but skips the mcp-config, settings and participant-directory
+paths that require a stem. Their participant records and mail remain in the task journal.
 
 Canonical messages, intent records and inbox or history references are hard links to one inode. The blob is also immutable: multiple artifact metadata records may name one content-addressed payload, and `prune` removes the task and its blobs together.
 

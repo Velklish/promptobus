@@ -131,7 +131,7 @@ Close the task when the work is accepted:
 promptobus done
 ```
 
-`done` stops the sessions the bus started (keep them with `--keep-sessions`), removes a mechanism-created worktree and its branch once the work is proven merged, and appends one local telemetry record per participant.
+`done` stops the sessions the bus started (keep them with `--keep-sessions`), removes a mechanism-created worktree and its branch once the work is proven merged, and appends one local telemetry record per participant. It removes contact points for closed tasks and the files of dead, slugged participants; a sessionless `user` keeps its journal and mail without needing participant files.
 
 An approver does its squash, gates, archive and acceptance commit in a separate worktree based on local main. Cursor loads its approver MCP entry, permission rules and hooks from `.cursor/` in that worktree. If its session is gone or stale, `status` gives the relift command for the recorded review subject with `--approver`. After the final commit, it verifies the clone root is on main and runs `promptobus lease --key <clone> -- git -C <clone> merge --ff-only <approver branch>`. The keyed lease keeps bus publishers out of the same clone index at once, even if a lease wrapper dies while its publication command runs. If main moved, it redoes the squash on current main and reruns gates before retrying. `sweep` and `done` remove the approver's worktree and branch after the branch is taken and its session has stopped.
 
