@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A person can ask a task orchestrator through the bus** (PB-279). `promptobus ask "<text>" --task <id>` sends a `question` from a sessionless `user`; `--to teamlead:<slug>` selects the linked child task. `ask --answers` prints and consumes the user mailbox. A harness identity, including a proven MCP session record, or a bus address refuses both commands. The root or child orchestrator owes the latest user question until it sends an `answer` to `user`; guard and status name the debt, including in another task owned by the same session. [03-cli § Ask](docs/reference/03-cli.md#ask), [04-protocol § Message types](docs/reference/04-protocol.md#message-types).
 
+- **Never-checked harnesses report an unknown limit source** (PB-282.1). The
+  `unknown-remaining` warning distinguishes an epoch-stamped stale cache entry from a
+  harness that answered without a limit source; scoring is unchanged.
+  [03-cli § Model routing](docs/reference/03-cli.md#model-routing).
+
+- **Live reviewer address scan uses the role registry** (PB-266.2). The mixed live script
+  selects addresses by the `reads-diff` step kind, and the registry parity test scans
+  `scripts/` alongside `lib/` and `src/` for copied role prefixes.
+  [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
+
+- **Declared owner track titles reach the task title** (PB-274.3). Title assembly reads the
+  active `edits-tree` owner from the role registry, so a declared owner contributes its
+  track title during preview and after the participant is written. The default pipeline
+  keeps its existing worker title. [04-protocol § The role registry](docs/reference/04-protocol.md#the-role-registry).
+
 - **Declared step addresses in status, cleanup and handover records** (PB-277). `status` prints
   declared steps in pipeline order by piece. `stop`, `dismiss` and `sweep` accept gate addresses;
   sweep removes their files and blobs while protecting the owner tree, including a physical-path

@@ -261,11 +261,15 @@ git(REPO, 'merge', '-q', '--squash', 'worktree-a2a-squashed-2');
 // the BRANCH's own paths, so a wider commit must still be recognised as carrying it; an
 // unrestricted comparison would not match this commit at all.
 writeFileSync(path.join(REPO, 'unrelated'), 'правка рядом с мержем\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'unrelated');
 git(REPO, 'commit', '-qm', 'squash: работа второй ветки и правка рядом');
+const squashGitlinks = git(REPO, 'ls-tree', '-r', 'HEAD').stdout.split('\n')
+  .filter((line) => line.startsWith('160000 '));
+check('fixture: the squash commit carries no worker worktree gitlink',
+  squashGitlinks.length === 0, squashGitlinks.join(' | '));
 // The next worker lands on the same file, in the same place.
 writeFileSync(path.join(REPO, 'shared'), 'общий файл\nстрока ветки\nстрока следующего воркера\n');
-git(REPO, 'add', '.'); git(REPO, 'commit', '-qm', 'следующая работа в том же файле');
+git(REPO, 'add', 'shared'); git(REPO, 'commit', '-qm', 'следующая работа в том же файле');
 const sq2 = inspectWorktree(REPO, SQ2, 'master');
 check('fixture: the base moved over the same file, and the merge measurement can no longer answer',
   sq2.unmerged === 1 && sq2.adds === null, JSON.stringify(sq2));
@@ -285,7 +289,7 @@ git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-conflict', CF);
 writeFileSync(path.join(CF, 'f'), 'версия ветки\n');
 git(CF, 'add', '.'); git(CF, 'commit', '-qm', 'своя версия общего файла');
 writeFileSync(path.join(REPO, 'f'), 'версия master\n');
-git(REPO, 'add', '.'); git(REPO, 'commit', '-qm', 'другая версия того же файла');
+git(REPO, 'add', 'f'); git(REPO, 'commit', '-qm', 'другая версия того же файла');
 const cf = inspectWorktree(REPO, CF, 'master');
 check('merge conflict — "don\'t know", not "nothing to merge in"', cf.adds === null, String(cf.adds));
 check('a branch the base never took: patch identity does not find its patch either',
@@ -443,7 +447,7 @@ check('a clean squash is still proven by merge-tree first, in the same words', (
 // which a past worker never saw the orchestrator's code.
 const OLD = git(REPO, 'rev-parse', 'master').stdout.trim();
 writeFileSync(path.join(REPO, 'f'), 'незапушенная работа\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'f');
 git(REPO, 'commit', '-qm', 'локальный коммит поверх origin');
 const AHEAD_SHA = git(REPO, 'rev-parse', 'master').stdout.trim();
 git(REPO, 'update-ref', 'refs/remotes/origin/master', OLD);

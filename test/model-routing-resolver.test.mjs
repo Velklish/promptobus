@@ -325,6 +325,18 @@ test('unknown availability is penalised, never blocking, and it says so once per
   // this code is what the test is about, not the length of the list.
   assert.deepEqual(decision.warnings.filter((w) => w.code === 'unknown-remaining').map((w) => w.code),
     ['unknown-remaining']);
+  assert.equal(decision.warnings.find((w) => w.code === 'unknown-remaining').message,
+    'other exposes no limit source — remaining counted as 50 % and the candidate penalised 10 points');
+});
+
+test('a never-checked harness reports an unknown limit source with the same score', () => {
+  const snapshot = clone(SNAPSHOT);
+  snapshot.harnesses.other.reason = 'stale_cache';
+  snapshot.harnesses.other.checkedAt = '1970-01-01T00:00:00.000Z';
+  const decision = decide({ snapshot });
+  assert.equal(decision.warnings.find((w) => w.code === 'unknown-remaining').message,
+    'other has never been checked, so its limit source is unknown — remaining counted as 50 % and the candidate penalised 10 points');
+  assert.equal(byId(decision, 'other-steady').score.total, byId(decide(), 'other-steady').score.total);
 });
 
 test('remaining is what the most spent window leaves, not the roomiest one', () => {

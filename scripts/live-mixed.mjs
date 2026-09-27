@@ -51,6 +51,8 @@ import { addrKey } from '../test/harness-cursor.mjs';
 
 const { cursorDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const { codexDriver, DEFAULT_MODEL: CODEX_DEFAULT } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
+const { hostOf } = await import(path.join(MECHANISM_ROOT, 'lib', 'host.js'));
+const { READS_DIFF, registryOf, roleEntry } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
 const cursorPersist = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 const codexSession = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
 
@@ -171,6 +173,7 @@ const MARK = {
 
 const { ws, repoAbs, repo } = buildWorkspace(SB);
 writeHostConfig(ws, { tools: ['claude', 'cursor', 'codex'] });
+const roleRegistry = registryOf(hostOf(ws));
 const home = path.join(ws, '.promptobus');
 
 const workerBrief = path.join(SB, 'worker-brief.md');
@@ -384,7 +387,8 @@ try {
   // the session reference did not change, and a second reviewer address did not
   // appear on the task. Any one of them would go green on a reviewer raised
   // again.
-  const reviewerAddrs = store.addressesOf(store.readTask(home, TASK)).filter((a) => String(a).startsWith('reviewer:'));
+  const reviewerAddrs = store.addressesOf(store.readTask(home, TASK))
+    .filter((a) => roleEntry(roleRegistry, String(a).split(':')[0])?.kind === READS_DIFF);
   check('step 6: the second diff went to the SAME reviewer — no second session appeared',
     reReview.status === 0 && /already on the bus — new diff sent/.test(reReview.out)
     && rp2?.sessionRef === reviewerRef && reviewerAddrs.length === 1,

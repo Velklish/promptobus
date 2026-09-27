@@ -777,6 +777,11 @@ Both are pure — no disk, no harness, no clock of their own — because determi
 
 A harness that is `unknown`, or for which no window applies, has no remaining limit to read: it counts as a neutral 50 % and the candidate loses the `unknown-availability` points. Penalised, never blocked — that is the fourth row of the ADR's decision table.
 
+The `unknown-remaining` warning distinguishes a harness the cache has never checked from
+one that answered without a limit source. A never-checked `stale_cache` entry has an epoch
+`checkedAt`; its limit source is unknown. Both cases keep the same neutral remaining value
+and penalty.
+
 **Hidden rows are not inventory.** A model the harness lists and declines to offer carries `hidden: true`, and the resolver's inventory is the rows without it. So a catalog tuple naming a hidden model is excluded as `model-not-in-inventory` — which is true of it from the resolver's side — and a hidden unrated row is not a `runtime` row either: it is not something a person could pick.
 
 **The extra rules** are the ADR's: `live-participant` costs points for each participant already up on that harness and is capped; `reviewer-diversity` adds points to a reviewer whose harness or model differs from every live worker's — with no live worker there is nothing to differ from and no bonus; and a quality floor is a **choice rule, not a filter**. The merged policy supplies the kind's floor, defaulting to `qualityFloor: { worker: 5, reviewer: 9, approver: 7 }`; `reviewerQualityFloor` remains an alias for `qualityFloor.reviewer`. A step's explicit declared `qualityFloor` takes precedence over that kind floor. A candidate below its floor keeps its place in the list with its score, and only the pick moves past it; when nothing reaches it the best remaining candidate is taken with a `reviewer-floor-not-met`, `approver-floor-not-met` or `worker-floor-not-met` warning rather than the run refusing. If a scored floor-meeting candidate has no paced window and `balance` takes a below-floor representative, the same warning code names both tuples and harnesses and says that the floor candidate's binding window was not paced.

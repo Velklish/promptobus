@@ -2135,6 +2135,10 @@ check('spawn lifts the declared edits-tree owner under its name and keeps the wo
   && ownerRecord?.metadata.worktree === ownerPlan.worktreePath
   && !store.participantOf(store.readTask(HOME, OWNER_TASK), 'worker:named-owner'),
   JSON.stringify({ plan: ownerPlan.address, record: ownerRecord }));
+check('a declared owner track title reaches the task title',
+  ownerPlan.retitle?.preview === ownerPlan.workTitle
+  && store.readTask(HOME, OWNER_TASK).title === ownerPlan.workTitle,
+  JSON.stringify({ preview: ownerPlan.retitle?.preview, title: store.readTask(HOME, OWNER_TASK).title }));
 
 process.env.PATH = PATH0;
 rmSync(SB, { recursive: true, force: true });

@@ -416,3 +416,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-271"></a>`PB-271-link-peer-tasks` · 2026-09-27 · completed · — · promptobus link pairs two root tasks as peers; unlinked tasks cannot write to each other
 - <a id="pb-265.1"></a>`PB-265.1-bind-before-launch` · 2026-09-27 · completed · — · A lifted participant's first send can land before its lift binds the record: bind it before launch
 - <a id="pb-279"></a>`PB-279-user-ask` · 2026-09-27 · completed · — · promptobus ask writes as user, and the orchestrator owes that question an answer
+- <a id="pb-287"></a>`PB-287-minor-batch-owner-title-registry-limit-fixtures` · 2026-09-27 · completed · — · Minor batch: owner track title, live-script registry, never-checked limit source, fixture gitlink
+- <a id="pb-266.2"></a>`PB-266.2-live-script-role-literal` · 2026-09-27 · batch PB-287 · — · A live script keeps its own reviewer: prefix outside the role registry
+- <a id="pb-274.3"></a>`PB-274.3-renamed-owner-track-title` · 2026-09-27 · batch PB-287 · — · renamed-owner-track-title
+- <a id="pb-282.1"></a>`PB-282.1-never-checked-reads-as-no-limit-source` · 2026-09-27 · batch PB-287 · — · A never-checked harness still reads as "exposes no limit source" in unknown-remaining
+- <a id="pb-284.1"></a>`PB-284.1-fixture-add-all-commits-worktree-gitlink` · 2026-09-27 · batch PB-287 · — · squash fixtures run git add . at the clone root and commit the worker worktree as an embedded gitlink

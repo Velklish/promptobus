@@ -68,8 +68,12 @@ git(ACCEPTED, 'commit', '-qm', 'the accepted work');
 // while the content measurements say the work is in.
 git(REPO, 'checkout', '-q', 'master');
 writeFileSync(path.join(REPO, 'accepted.txt'), 'the accepted work\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'accepted.txt');
 git(REPO, 'commit', '-qm', 'squash of the accepted work');
+const acceptedGitlinks = git(REPO, 'ls-tree', '-r', 'HEAD').stdout.split('\n')
+  .filter((line) => line.startsWith('160000 '));
+check('fixture: the squash commit carries no worker worktree gitlink',
+  acceptedGitlinks.length === 0, acceptedGitlinks.join(' | '));
 
 // The second proof. Master takes the same patch and then edits those very lines, so
 // `merge-tree` conflicts and stops answering — and `patch-id --stable` still finds the
@@ -79,10 +83,10 @@ writeFileSync(path.join(SQUASHED, 'moved.txt'), 'the line as the worker wrote it
 git(SQUASHED, 'add', '.');
 git(SQUASHED, 'commit', '-qm', 'the line as the worker wrote it');
 writeFileSync(path.join(REPO, 'moved.txt'), 'the line as the worker wrote it\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'moved.txt');
 git(REPO, 'commit', '-qm', 'squash of the moved line');
 writeFileSync(path.join(REPO, 'moved.txt'), 'and then the base moved over it\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'moved.txt');
 git(REPO, 'commit', '-qm', 'the base moves over the same lines');
 
 const OPEN = worktreeAt('open', 'worktree-promptobus-open');
@@ -485,7 +489,7 @@ writeFileSync(path.join(OFF_TREE, 'offpath.txt'), 'swept from a lifted session\n
 git(OFF_TREE, 'add', '.');
 git(OFF_TREE, 'commit', '-qm', 'swept from a lifted session');
 writeFileSync(path.join(REPO, 'offpath.txt'), 'swept from a lifted session\n');
-git(REPO, 'add', '.');
+git(REPO, 'add', 'offpath.txt');
 git(REPO, 'commit', '-qm', 'squash of the off-PATH piece');
 store.upsertParticipant(HOME, OFFPATH, store.participantRecord('worker:offpath', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-offpath', started: ago(60),

@@ -80,8 +80,8 @@ test('the shipped pipeline is today\'s three roles, stems, deny lists and floors
 
 // The card's own grep, widened to the `'<role>:'` and `<role>:<slug>` shapes and to every quote: a
 // role word spelled outside the registry is a second copy of the contract, and this names its line.
-test('no role word is spelled as a literal in lib/ or src/ outside the registry', () => {
-  const { files } = trackedCode(ROOT, ['lib', 'src']);
+test('no role word is spelled as a literal in lib/, src/ or scripts/ outside the registry', () => {
+  const { files } = trackedCode(ROOT, ['lib', 'src', 'scripts']);
   const LITERAL = /(['"`])(?:worker|reviewer|approver):?\1|\b(?:worker|reviewer|approver):<slug>/;
   const hits = [];
   for (const rel of files.filter((f) => f !== 'src/registry.ts')) {
@@ -89,7 +89,8 @@ test('no role word is spelled as a literal in lib/ or src/ outside the registry'
       if (LITERAL.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
     });
   }
-  assert.ok(files.includes('lib/store.js') && files.includes('src/protocol.ts'), 'the walk read lib/ and src/');
+  assert.ok(files.includes('lib/store.js') && files.includes('src/protocol.ts')
+    && files.includes('scripts/live-mixed.mjs'), 'the walk read lib/, src/ and scripts/');
   assert.deepEqual(hits, [], 'surfaces that keep their own copy of a role word');
 });
 

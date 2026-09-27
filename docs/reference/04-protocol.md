@@ -528,14 +528,16 @@ the default floors and `DEFAULT_ROLE`, the grammar, and the address list of a re
 **What a kind does not carry yet.** The behaviour that differs by role compares the shipped step
 names, so a declared step inherits the fields above and none of these rights: the routing policy's
 direct worker–approver exception (`lib/store.js`), the approver and title lookups over the task
-record (`approverHere`, `unprovenApproverLine`, `titleFromLines`, and the approver seat in
+record (`approverHere`, `unprovenApproverLine`, and the approver seat in
 `lib/review.js`), `readableName` (it drops a shipped step's prefix and prints any other address
 whole), the guard's participant prefixes (`lib/guard.js`), the Codex
 holder's approval split (`lib/codex-session.js`), the resolver's live workers and reviewer bonus,
 the drivers' sandbox and cwd choices, their re-lift routes and parts of `status`'s recovery hints.
+`titleFromLines` takes the active `edits-tree` owner from the registry value when assembling
+the task title from track titles.
 
 **The parity test.** The schemas are static JSON, so `test/registry.test.mjs` fails when a
-model-routing role enum or the overlay example's floors disagree with the shipped registry, and when a role word is spelled as a literal anywhere in `lib/` or `src/` outside it. It pins the records' generic `by` grammar separately and walks declared steps through send admission, status order and cleanup.
+model-routing role enum or the overlay example's floors disagree with the shipped registry, and when a role word is spelled as a literal anywhere in `lib/`, `src/` or `scripts/` outside it. It pins the records' generic `by` grammar separately and walks declared steps through send admission, status order and cleanup.
 
 ### The bus contract constants
 
