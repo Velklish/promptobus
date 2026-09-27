@@ -438,3 +438,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-297"></a>`PB-297-docs-routing-fixture-arithmetic` · 2026-09-27 · completed · — · Recompute model-routing fixture documentation with the current rating scale
 - <a id="pb-286.1"></a>`PB-286.1-codex-teamlead-final-proof` · 2026-09-27 · completed · — · Complete Codex teamlead proof and admission
 - <a id="pb-298"></a>`PB-298-docs-adr-current-resolutions` · 2026-09-27 · completed · — · Expose current resolutions and supersession in accepted architecture decisions
+- <a id="pb-299"></a>`PB-299-docs-legacy-fixture-provenance` · 2026-09-27 · completed · — · Make legacy fixture provenance and recovery instructions usable from the public repository

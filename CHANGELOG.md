@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Legacy fixture provenance is self-contained** (PB-299). The manifest names
+  both current consumers and explains why the frozen snapshot cannot be
+  regenerated from the public checkout. It no longer offers a Git command
+  for historical objects that are not present there.
+  [Legacy snapshot](test/fixtures/promptobus/MANIFEST.md).
+
 - **Accepted decisions point to the current contract** (PB-298). Resolutions in the
   Codex, session-address, approver and cleanup ADRs distinguish dated observations
   from current capabilities. The documentation index names the registered send

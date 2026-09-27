@@ -1,65 +1,91 @@
-# Fixture `legacy-v061` — обезличенный срез store шины Promptobus
+# Fixture `legacy-v061` — anonymized legacy store snapshot
 
-Baseline для миграции Promptobus ([], постановка []). Читает её [promptobus-legacy-fixture.test.mjs](../../promptobus-legacy-fixture.test.mjs), а после  будет читать и миграция.
+This frozen `v0.61.0` snapshot is the input to both the
+[legacy reader test](../../promptobus-legacy-fixture.test.mjs) and the
+[migration test](../../promptobus-migration.test.mjs). The tests read a copy
+of the snapshot; they do not regenerate it.
 
-## Происхождение
+## Provenance
 
-| Что | Значение |
+| Item | Recorded origin |
 |---|---|
-| Формат store | `v0.61.0` (tag `v0.61.0`, commit `8ca22be`) |
-| Снята чем | [store.js](../../../lib/store.js) этого чекаута — `createTask`, `upsertParticipant`, `bindSession`, `sendMessage`, `readInbox`, `closeTask`, `writeWake`, `claimWarden`, `logWarden`; health и журнал надзирателя — `wardenRound` из [warden.js](../../../lib/warden.js) |
-| Генератор | `scripts/make-promptobus-fixture.mjs` — снят вместе с cutover'ом |
-| Состояние | **срез заморожен**: пересъёмке он больше не подлежит |
+| Store format | `v0.61.0`, recorded at capture time as commit `8ca22be` |
+| Store records | The former `scripts/make-promptobus-fixture.mjs` called `createTask`, `upsertParticipant`, `bindSession`, `sendMessage`, `readInbox`, `closeTask`, `writeWake`, `claimWarden` and `logWarden` in the legacy store |
+| Health and warden log | The former generator drove `wardenRound` from [warden.js](../../../lib/warden.js) with fixed time and socket outcomes |
+| Current state | Frozen compatibility input; no recapture is performed |
 
-**Рукописного JSON в fixture нет: и раскладку, и содержимое файлов пишет механизм.** Раскладку — store, health и журнал надзирателя — `wardenRound`, настоящий круг присмотра со швом `knock`, тем же, которым его гоняет набор. Генератор задаёт кругу только время и ответ сокета: удался стук или отказал. Собирать те же записи аргументами `writeHealth` значило бы их сочинить — у health одиннадцать полей, три из них (`channel`, `wake`, `knockError`) ставит только ветка стука, а формат строк журнала живёт в самом надзирателе; источник истины по обоим — [warden.js](../../../lib/warden.js).
+The original generator and the recorded baseline revision are not preserved
+in this complete public repository. There is no working Git recovery command
+for either one here. The snapshot itself and its current consumers are the
+reproducible sources: run the linked tests to check how the legacy reader and
+migration handle these bytes. Changes to today's reader or migration should
+update their tests while leaving this snapshot intact. A new snapshot would
+need its own generator and provenance; it would not replace this one.
 
-Записей мимо API ровно две, и обе названы: повреждённое сообщение (ниже) — исправного битого файла store не пишет по построению — и первая строка журнала `надзиратель поднят · pid … · CLI …`, которую в жизни пишет команда `promptobus warden`, а не круг; шаблон взят у неё дословно.
+The historical capture notes say that the generator wrote the store layout
+through the legacy API and produced health and log entries through a real
+`wardenRound`, using the `knock` seam only to fix time and socket outcomes.
+That matters because `channel`, `wake` and `knockError` came from the
+knock branch, while the log format came from the warden. Reconstructing these
+records by hand through `writeHealth` would create different evidence.
 
-## Почему срез заморожен
+Two entries were intentionally outside the normal API: a truncated message
+(described below), and the first log line, written from the `promptobus
+warden` command's startup format rather than by a warden round.
 
-Пересъёмка была смыслом генератора: правка store давала дифф, и по нему было видно, что изменилось. С cutover'ом  этот смысл исчерпан. Store `v0.61.0` перестал быть production'ом и остался в package только на чтение — писать в этом формате механизму больше нечем, а круг присмотра, которым снимались `health.json` и `supervisor.log`, читает уже новый store. Собрать те же записи аргументами `writeHealth` значило бы их сочинить — ровно то, против чего генератор и заводился.
+## Why the snapshot is frozen
 
-Поэтому генератор снят, а срез остаётся историческим эталоном: он показывает, что механизм писал на диск в `v0.61.0`, и служит входом миграции. Дрейфовать ему не от чего — код, который его писал, дальше не меняется.
+When the generator was available, a second capture produced the same 17 file
+hashes. It fixed the clock because the store stamped `created`, `ts`,
+`beat` and message filenames with real time. Warden pid `424242` is a
+deliberately dead stand-in. These are historical capture notes, not a claim
+that the missing generator can be run from this checkout.
 
-**Пересъёмка шла байт в байт**, пока генератор был жив: замер — `shasum` всех 17 файлов до и после повторного прогона, расхождений ноль. Держалось это подменой часов: store штампует `created`, `ts`, `beat` и имена файлов сообщений настоящим временем. Pid надзирателя (`424242`) подставной и заведомо мёртвый: живым надзирателем fixture притворяться не должна. Сам генератор жил в `scripts/make-promptobus-fixture.mjs` и снят коммитом `e2ea30a` («cutover на protocol v1 и миграция `legacy/a2a` → `.promptobus`»). Понадобится — доставать так: `git show e2ea30a^:scripts/make-promptobus-fixture.mjs`.
+After the protocol v1 cutover, the legacy store remains for reading and
+migration. The current warden writes to the new store, so recapturing the old
+health and log records with current code would not reproduce the original
+input. The 17 tracked fixture files therefore remain byte-for-byte frozen.
 
-## Состав
+## Contents
 
-| Предмет | Где |
+| Item | Path or property |
 |---|---|
-| active task | `tasks/t20260831-090000/task.json` |
-| done task | `tasks/t20260830-140000/task.json` (`status: done`, `closed`) |
-| participants | обе задачи: `orchestrator` с owner, `worker:*`, `reviewer:demo` |
-| owner/session binding | `sessions/00000000-0000-4000-8000-000000000001.json` — только у активной задачи: закрытую `bindSession` не привязывает |
-| inbox | `tasks/t20260831-090000/inbox/orchestrator` (1), `inbox/worker-demo` (3, из них одно битое) |
-| `read/` | `tasks/t20260831-090000/read/orchestrator` (3) и `read/reviewer-demo` (1), обе стороны закрытой задачи |
-| artifact | `tasks/t20260831-090000/artifacts/demo-diff.patch`, ссылка — поле `artifact` сообщения `20260831T094000000-0005-worker-demo.json` |
-| health | `tasks/t20260831-090000/health.json` — три адреса и оба канала надзирателя: удавшийся стук (`socket`), откат (`self-wake` с `knockError`) и доставленный mailbox, сохранивший поля прежнего стука; у всех трёх — отпечаток contact point'а, у двоих молчащих — отметка эскалации |
-| warden state | `tasks/t20260831-090000/supervisor.json` и `supervisor.log` (11 строк: подъём, стуки, доставка, откат на self-wake, молчание) |
-| повреждённое message | `tasks/t20260831-090000/inbox/worker-demo/20260831T095500000-0009-orchestrator.json` |
+| Active task | `tasks/t20260831-090000/task.json` |
+| Closed task | `tasks/t20260830-140000/task.json`, with `status: done` and `closed` |
+| Participants | Both tasks contain an orchestrator with an owner, workers and `reviewer:demo` |
+| Session binding | `sessions/00000000-0000-4000-8000-000000000001.json` belongs only to the active task |
+| Inbox | One message for the orchestrator; three for `worker:demo`, including one truncated file |
+| Read mail | Three messages for the active orchestrator, one for `reviewer:demo`, and the closed task's read mail |
+| Artifact | `tasks/t20260831-090000/artifacts/demo-diff.patch`, named by message `20260831T094000000-0005-worker-demo.json` |
+| Health | `tasks/t20260831-090000/health.json` covers socket delivery, self-wake fallback and a collected mailbox |
+| Warden state | `tasks/t20260831-090000/supervisor.json` and an eleven-line `supervisor.log` |
+| Damaged message | `tasks/t20260831-090000/inbox/worker-demo/20260831T095500000-0009-orchestrator.json` |
 
-**Повреждение — обрезка записанного файла до 96 байт**, то есть ровно та порча, которую даёт смерть процесса посреди записи. Читатель обязан отложить такой файл в `broken/<адрес>/`, назвать его предупреждением и отдать остальные сообщения — это и проверяет тест.
+The damaged message is a written file truncated to 96 bytes. The legacy
+reader moves it to `broken/<address>/`, warns, and returns the other messages.
+The legacy reader test checks this behavior.
 
-**Пустых каталогов в fixture нет: git их не хранит.** В живом store остаются `artifacts/` задачи без артефактов и `inbox/<адрес>/` вычитанного mailbox'а; здесь они исчезают при коммите. Читателю это безразлично — отсутствие каталога store трактует как пустой mailbox, — но миграция обязана вести себя так же.
+Git does not preserve empty directories. A live store can retain an empty
+`artifacts/` or a read mailbox's empty `inbox/<address>/`; they are absent
+from this committed snapshot. The reader treats an absent inbox directory as
+empty, and the migration test covers that input.
 
-## Обезличивание
+## Anonymization and maintenance
 
-Настоящих данных в fixture нет ни одного поля:
+- Repository and worktree paths use the fictional `/workspace` root.
+- Session ids are fixed UUID-shaped values.
+- Message bodies and the artifact contain demonstration text.
+- Contact points under `wake/<address>.json` are absent: a real one would
+  carry a socket address and a live session token. The recorded health entries
+  retain only fingerprints of placeholder `/tmp/promptobus-demo/` sockets.
+- `waits/`, `stalls.json` and `.lock/` were not captured. The migration
+  test adds the adapter files it needs to a copy through the store API.
 
-- пути репозиториев и worktree — несуществующий корень `/workspace`;
-- сессии — UUID-подобные константы вида `00000000-0000-4000-8000-…`;
-- тела сообщений и артефакт — демонстрационные, в две строки;
-- contact point'ы (`wake/<адрес>.json`) **в fixture не остаются**: в них адрес messaging-сокета и токен живой сессии. Кругу присмотра они нужны — без сокета он пишет откат на self-wake, и ветки удавшегося стука срез не показал бы вовсе, — поэтому генератор кладёт их подставными (сокет `/tmp/promptobus-demo/<адрес>.sock`, токена нет ни у одного) и сносит каталог сразу после последнего круга. В health от них остаётся отпечаток `<сокет>#<время сдачи>` — токена в нём нет по построению, надзиратель кладёт туда только адрес и время;
-- `waits/`, `stalls.json` и `.lock/` не снимаются: они заводятся по ходу и в git от них не остаётся ничего.
-
-**Срез намеренно не покрывает файлы adapter'а** — `wake/`, `waits/` и `stalls.json`. Это не пробел: миграция переносит их байт в байт, и проверять их на срезе, снятом пересъёмкой, нечем. Дописывает их себе сам миграционный набор ([promptobus-migration.test.mjs](../../promptobus-migration.test.mjs)) — тем же store API, каким их пишет живой механизм, в копию среза. Правкой самого среза этого делать нельзя: он снят байт в байт, и правка меняет его смысл.
-
-Проверка перед коммитом, из корня репозитория:
+Before changing a consumer, check the frozen input from the repository root:
 
 ```sh
-grep -rn '/Users/' test/fixtures/promptobus/legacy-v061
-grep -rni 'token\|secret' test/fixtures/promptobus/legacy-v061
-grep -rno '/[^"#]*\.sock' test/fixtures/promptobus/legacy-v061
+node test/promptobus-legacy-fixture.test.mjs
+node test/promptobus-migration.test.mjs
 ```
 
-Первые две обязаны не найти ничего. Третья — не «пусто», а ровно три отпечатка под `/tmp/promptobus-demo/`: слово `socket` в срезе законно (`channel` его значением и есть), а вот адрес сокета — только подставной.
+The snapshot files themselves are not edited to make either test pass.

@@ -381,6 +381,13 @@ Differences from the legacy store are not cosmetic, and both were named by a dec
    silence. There is no such invariant here: the patch touches the named
    fields and checks the schema after the merge.
 
+The frozen [legacy store snapshot](../../test/fixtures/promptobus/MANIFEST.md)
+is current input to both the [legacy reader test](../../test/promptobus-legacy-fixture.test.mjs)
+and the [migration test](../../test/promptobus-migration.test.mjs). Its original
+generator and recorded baseline revision are absent from the public repository;
+the manifest describes the available provenance and how to maintain this
+compatibility input without recapturing it.
+
 ### Validation of a v1 record
 
 Source: `src/v1/validate.ts`.
