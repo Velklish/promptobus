@@ -9,6 +9,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [guides/hooks-and-trust.md](guides/hooks-and-trust.md) | Hooks, trust, and troubleshooting for Claude Code, Cursor, and Codex | Living |
 | [guides/model-routing.md](guides/model-routing.md) | The model catalog, the overlay layers, and the file a person copies | Living |
 | [guides/contributing.md](guides/contributing.md) | Contribution workflow through backslop | Living |
+| [guides/releasing.md](guides/releasing.md) | How a release is cut, including the technical-writer pass | Living |
 | [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
 | [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
 | [ROADMAP.md](ROADMAP.md) | Direction and goals; tasks are in the backlog | Living |

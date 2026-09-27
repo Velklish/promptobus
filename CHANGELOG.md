@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **A release has a written procedure and a technical-writer pass** (PB-304). The pass
+  runs before the release commit. It loads two vendored writing skills and a project
+  overlay that states which documents are in scope. The release guide records the
+  steps used for 0.18.0 and 0.19.0.
+  [Releasing](docs/guides/releasing.md).
+
 - **Model-routing documentation describes the current contract** (PB-296). The guide now
   explains cache reads and clearing, the Claude inventory, telemetry generations and
   declared routed steps. The CLI reference names optional near-limit warning fields

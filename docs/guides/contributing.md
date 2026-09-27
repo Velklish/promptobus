@@ -77,6 +77,8 @@ A task reaches the default branch as one commit. Intermediate worker and review 
 | [orchestrate](../../skills/orchestrate/SKILL.md) | Split work across worker sessions on this bus |
 | [solo-review](../../skills/solo-review/SKILL.md) | Isolated read-only review of one diff |
 
+A release follows [releasing](releasing.md).
+
 ## Suite isolation
 
 The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. Six rules keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.
