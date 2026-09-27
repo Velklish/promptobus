@@ -592,10 +592,10 @@ the neutral 50 % an unknown remaining limit counts as. The overlay schema has
 no key for either, so an overlay cannot move them and neither can this file.
 
 **The filter steps are in the ADR's order, and the first one that matches is
-the exclusion reported.** ADR-005 gave nine and ADR-005 added the `flags`
-selector after the inventory step, because that is where the snapshot row it
-reads arrives. Order is what makes an explanation stable: a tuple the account
-cannot run AND that is rated for the other role must always give the same
+the exclusion reported.** The `flags` selector runs after the inventory step
+(`flagExclusion` in `lib/model-routing/resolver.js`), because that is where
+the snapshot row it reads arrives. Order is what makes an explanation stable: a tuple
+the account cannot run AND that is rated for the other role must always give the same
 answer, or two runs would disagree about why.
 
 **A harness the snapshot does not carry is filtered, not excluded.** The
@@ -1139,8 +1139,8 @@ as a duplicate.
 
 **`is_active` is read by nothing here, and that is not an oversight.** It marks
 the row that binds RIGHT NOW, which is a question the snapshot does not ask an
-adapter: every window is carried, ADR-005 takes `remaining` as the largest
-`usedPercent` over the applicable ones and ADR-005 names the binding window per
+adapter: every window is carried. ADR-005 takes `remaining` as the largest
+`usedPercent` over the applicable windows and names the binding window per
 candidate tuple. A flag saying which row binds the account as a whole would be a
 second, coarser answer to a question two consumers already answer per tuple.
 

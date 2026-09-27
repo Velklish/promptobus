@@ -80,6 +80,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Routing prose matches the filter order and the Claude availability verdict** (PB-305).
+  The flags selector is described after the inventory step, where the resolver
+  reads the snapshot row. One decision names both `remaining` and the per-tuple
+  binding window. Claude `available` is the state returned when a usage response
+  places a window; an adapter that cannot read a limit still answers `unknown`.
+  [Model routing guide](docs/guides/model-routing.md#the-resolver-one-decision-and-the-three-rules-that-shape-it),
+  [03-cli § Claude Code](docs/reference/03-cli.md#claude-code-what-its-adapter-asks).
+
+- **The hooks guide states feed-hook removal in the present** (PB-305). Install removes
+  a `PostToolUse` line an earlier install wrote. The Stop guard, the mailbox reply
+  and the warden remain the working path.
+  [Hooks and trust](docs/guides/hooks-and-trust.md).
+
 - **A release has a written procedure and a technical-writer pass** (PB-304). The pass
   runs before the release commit. It loads two vendored writing skills and a project
   overlay that states which documents are in scope. The release guide records the

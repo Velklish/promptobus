@@ -2,7 +2,7 @@
 
 Current project hooks run one loop guard: Stop and SessionStart on Claude Code and Codex, and stop on Cursor. It refuses to end a turn with unread mail or an owed answer. Drivers also prepare participant hook files — see [A participant's hooks are not the workspace's](#a-participants-hooks-are-not-the-workspaces). This guide is for Claude Code, Cursor, and Codex.
 
-There used to be a second one — a `PostToolUse` line echoing each bus call back into the session. It is gone, and an install removes it where an earlier one wrote it. Nothing of the working machinery ran through it: the turn is returned by the Stop guard, unread counts ride in the MCP reply itself, and delivery to a participant is the warden's over its own channel.
+Install removes a `PostToolUse` line that echoed each bus call into the session, wherever an earlier install wrote it. Nothing of the working machinery ran through that line: the turn is returned by the Stop guard, unread counts ride in the MCP reply itself, and delivery to a participant is the warden's over its own channel.
 
 Install first: [install.md](install.md).
 
