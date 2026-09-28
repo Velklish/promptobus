@@ -65,7 +65,7 @@ For a consumer policy layer that is the intended behaviour: its bans hold whatev
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
-The top layer is the command line. `--harness`, `--model` and `--effort` are carried through untouched — they are constraints the resolver applies, and the CLI never silently replaces a value a person named. `--allow-payg` is different: it is a policy change and is applied at this layer. It is **opt-in only**, so its absence does not undo an overlay that opted pay-as-you-go in.
+The top layer is the command line. `--harness`, `--model` and `--effort` are carried through untouched — they are constraints the resolver applies, and the CLI never silently replaces a value a person named. A lift whose `--model` no tuple of the merged catalog names is not routed at all: it runs the id as typed, still under the allow and deny lists in force for every spelling of it, so a newly released model works before the catalog rates it ([reference/03-cli.md § An explicit model the catalog does not rate](../reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate)). `--allow-payg` is different: it is a policy change and is applied at this layer. It is **opt-in only**, so its absence does not undo an overlay that opted pay-as-you-go in.
 
 ## The catalog file
 

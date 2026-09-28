@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **An explicit `--model` the catalog does not rate lifts instead of refusing** (PB-306).
+  Under `--strategy` or a `defaults.strategy` overlay, a lift whose `--model` names no tuple
+  of the merged catalog ran into `constraint-unknown`, so a newly released model needed a
+  package update first. Now `spawn`, `spawn --teamlead`, `review`, `review --approver`,
+  `step` and `report` lift that id unrouted, on `--harness` or the default harness, and warn
+  that the strategy routed nothing. The allow and deny lists in force still apply, to the
+  typed id and to the id a driver alias resolves to. Flag rules read the model's availability
+  snapshot row, and a missing row leaves `deny.flags` unchecked with a warning. `allow.tuples`
+  refuses such a lift as `candidates-empty`. [03-cli § An explicit model the catalog does not rate](docs/reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate),
+  [ADR-005](docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md).
+
 ## [0.20.0] — 2026-09-27
 
 ### Added

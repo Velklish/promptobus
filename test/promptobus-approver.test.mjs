@@ -350,6 +350,19 @@ const briefNames = (home, taskId) => (existsSync(store.filesDir(home, taskId))
 await capture(() => approverLift(WS, { target: REPO, task: TASK, dryRun: true, brief: ASSIGN }));
 check(': a dry-run approver lift keeps no brief',
   briefNames(HOME, TASK).length === 0, briefNames(HOME, TASK).join(', '));
+let unratedApprover;
+try {
+  unratedApprover = await capture(() => approverLift(WS, {
+    target: REPO, task: TASK, dryRun: true, strategy: 'balanced', model: 'claude-next-9',
+  }));
+} catch (e) {
+  unratedApprover = e.message ?? String(e);
+}
+check(': a routed approver with an unrated --model lifts that id without a decision',
+  /model: claude-next-9/.test(unratedApprover)
+  && /no tuple of the merged catalog rates it/.test(unratedApprover)
+  && !/routing decision:/.test(unratedApprover),
+  unratedApprover);
 
 const NO_REVIEWER = 'pb250-no-reviewer';
 store.createTask(HOME, {

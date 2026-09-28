@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 33,
-    "citation": 44,
+    "citation": 45,
     "crossFile": 6,
     "fileLevel": 55,
     "bound": 53,
@@ -170,6 +170,7 @@
     "lib/models.js": [
       "../docs/guides/model-routing.md#the-models-command-what-each-subcommand-reads-and-writes",
       "../docs/guides/model-routing.md#agedsnapshot--where-the-decision-takes-the-moment-its-snapshot-was-assembled",
+      "../docs/reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate",
       "../docs/guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant",
       "../docs/guides/model-routing.md#availabilityof--the-decision-with-the-availability-facts-it-was-made-on-attached"
     ],

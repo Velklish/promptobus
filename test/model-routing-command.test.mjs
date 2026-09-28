@@ -620,6 +620,151 @@ test('a --model no tuple names is constraint-unknown, and the refusal lists what
   assert.equal(probes.probes, 0, 'the constraint gate must refuse before the preflight runs');
 });
 
+// --- an explicit --model the catalog does not rate lifts unrouted --------------
+
+test('a lift context for a --model no tuple names routes nothing, says so, and probes nothing', async () => {
+  seedCache(HEALTHY());
+  const probes = counter();
+  const said = await captureSplit(() => routingContext(WS, {
+    strategy: 'balanced',
+    role: 'worker',
+    model: 'claude-next-9',
+    refresh: true,
+    adapterFor: probeSet(probes),
+    liftUnrated: true,
+  }));
+  assert.equal(said.value, null, 'an unrated model leaves nothing for the resolver to choose from');
+  assert.match(said.err, /--model claude-next-9: no tuple of the merged catalog rates it/);
+  assert.match(said.err, /strategy "balanced" routes nothing/);
+  assert.match(said.err, /the lift runs on claude \(the default harness/);
+  assert.equal(probes.probes, 0, 'an unrouted lift pays no preflight');
+});
+
+test('a routed spawn with an unrated --model lifts that id as typed, without a decision', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('unrated-t20260928-090001');
+  const before = treeOf(HOME);
+  const probes = counter();
+  const said = await captureSplit(() => spawnRaw(WS, routedOpts({
+    task, worker: 'unrated', dryRun: true, model: 'claude-next-9', refresh: true, adapterFor: probeSet(probes),
+  })));
+  assert.equal(/routing decision:/.test(said.out), false, 'nothing is routed');
+  assert.match(said.out, /model: claude-next-9/, 'the typed id reaches the lift unchanged');
+  assert.match(said.err, /--model claude-next-9: no tuple of the merged catalog rates it/);
+  assert.equal(probes.probes, 0);
+  assert.deepEqual(treeOf(HOME), before, 'a dry run still writes nothing');
+});
+
+test('an unrated --model is still held to the allow and deny lists in force', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  const task = freshTask('unrated-t20260928-090002');
+  const before = treeOf(HOME);
+  const cases = [
+    [{ allow: { models: ['claude-opus-5'] } }, {}, /not named by allow\.models of overlay "user"/],
+    [{ deny: { harnesses: ['claude'] } }, {}, /denied by deny\.harnesses of overlay "user"/],
+    [{ allow: { tuples: ['claude-opus-high'] } }, {}, /not named by allow\.tuples/],
+    [{ deny: { byRole: { worker: { harnesses: ['codex'] } } } }, { harness: 'codex' }, /rates it on codex, .*denied by deny\.byRole\.worker\.harnesses/],
+  ];
+  try {
+    for (const [overlay, extra, pattern] of cases) {
+      writeOverlay(USER_OVERLAY(), { schemaVersion: 2, ...overlay });
+      await assert.rejects(() => quiet(() => spawnRaw(WS, routedOpts({
+        task, worker: 'unrated-denied', model: 'claude-next-9', ...extra,
+      }))), (e) => e.code === 'candidates-empty' && pattern.test(e.message), JSON.stringify(overlay));
+    }
+  } finally {
+    dropOverlays();
+  }
+  assert.deepEqual(treeOf(HOME), before, 'a refused unrated lift leaves the store as it was');
+});
+
+/** A lift context for an unrated `--model` under the overlay given, its output split. */
+async function unratedContext(overlay, extra = {}, probes = counter()) {
+  dropOverlays();
+  if (overlay) writeOverlay(USER_OVERLAY(), { schemaVersion: 2, ...overlay });
+  try {
+    return await captureSplit(() => routingContext(WS, {
+      strategy: 'balanced', role: 'worker', dryRun: true, adapterFor: probeSet(probes), liftUnrated: true, ...extra,
+    }));
+  } finally {
+    dropOverlays();
+  }
+}
+
+test('an alias is held to the lists under the id it resolves to as well as its own spelling', async () => {
+  seedCache(HEALTHY());
+  await assert.rejects(() => unratedContext({ deny: { models: ['claude-opus-5-5'] } }, { model: 'opus' }),
+    (e) => e.code === 'candidates-empty' && /denied by deny\.models/.test(e.message));
+  const admitted = await unratedContext({ allow: { models: ['claude-sonnet-5'] } }, { model: 'sonnet' });
+  assert.equal(admitted.value, null, 'an allow list naming the id the alias resolves to admits the alias');
+});
+
+test('a named --harness is where the lift runs, and a model rated elsewhere is unrated there', async () => {
+  seedCache(HEALTHY());
+  const said = await unratedContext(null, { harness: 'codex', model: 'claude-opus-5' });
+  assert.equal(said.value, null);
+  assert.match(said.err, /rates it on codex, so strategy "balanced" routes nothing — the lift runs on codex with the id/);
+  assert.doesNotMatch(said.err, /the default harness/);
+});
+
+test('an allow.efforts list refuses a lift that names no --effort, and says which flag admits it', async () => {
+  seedCache(HEALTHY());
+  await assert.rejects(() => unratedContext({ allow: { efforts: ['high'] } }, { model: 'claude-next-9' }),
+    (e) => e.code === 'candidates-empty' && /not named by allow\.efforts/.test(e.message)
+      && /An --effort the list names admits it/.test(e.message));
+  const named = await unratedContext({ allow: { efforts: ['high'] } }, { model: 'claude-next-9', effort: 'high' });
+  assert.equal(named.value, null);
+});
+
+test('a flag rule reads the snapshot row of an unrated model, and says when there is none', async () => {
+  seedCache({
+    ...HEALTHY(),
+    cursor: entry('available', null, { models: [{ model: 'cursor-next', flags: ['no-zdr'] }, { model: 'cursor-clean' }] }),
+  });
+  const deny = { deny: { flags: ['no-zdr'] } };
+  await assert.rejects(() => unratedContext(deny, { harness: 'cursor', model: 'cursor-next' }),
+    (e) => e.code === 'candidates-empty' && /denied by deny\.flags/.test(e.message));
+  const clean = await unratedContext(deny, { harness: 'cursor', model: 'cursor-clean' });
+  assert.equal(clean.value, null);
+  assert.doesNotMatch(clean.err, /could not be checked/);
+  const unlisted = await unratedContext(deny, { harness: 'cursor', model: 'cursor-unlisted' });
+  assert.equal(unlisted.value, null);
+  assert.match(unlisted.err, /lists no such model on cursor, so its marks are unknown and deny\.flags could not be checked/);
+  await assert.rejects(() => unratedContext({ allow: { flags: ['no-zdr'] } }, { harness: 'cursor', model: 'cursor-clean' }),
+    (e) => e.code === 'candidates-empty' && /not named by allow\.flags/.test(e.message));
+});
+
+test('a flag rule finds the row under the id an alias resolves to', async () => {
+  seedCache({
+    ...HEALTHY(),
+    claude: entry('available', null, { models: [{ model: 'claude-opus-5-5', flags: ['no-zdr'] }] }),
+  });
+  await assert.rejects(() => unratedContext({ deny: { flags: ['no-zdr'] } }, { model: 'opus' }),
+    (e) => e.code === 'candidates-empty' && /denied by deny\.flags/.test(e.message));
+});
+
+test('a flag rule asks only the harness the lift runs on, and a dry run asks nothing', async () => {
+  seedCache(HEALTHY());
+  const deny = { deny: { flags: ['no-zdr'] } };
+  const dry = counter();
+  await unratedContext(deny, { model: 'claude-next-9', refresh: false }, dry);
+  assert.equal(dry.probes, 0, 'a dry run reads the cache and probes nothing');
+  const live = counter();
+  await unratedContext(deny, { model: 'claude-next-9', refresh: true, dryRun: false }, live);
+  assert.equal(live.probes, 1, 'only the lift\'s own harness is probed');
+  const none = counter();
+  await unratedContext(null, { model: 'claude-next-9', refresh: true, dryRun: false }, none);
+  assert.equal(none.probes, 0, 'with no flag rule in force nothing is probed');
+});
+
+test('an unrated --model with an undeclared --harness is still harness-unknown', async () => {
+  await assert.rejects(() => routingContext(WS, {
+    strategy: 'balanced', role: 'worker', harness: 'no-such-harness', model: 'claude-next-9', liftUnrated: true,
+  }), (e) => e.code === 'harness-unknown');
+});
+
 test('an unknown --strategy is strategy-unknown and says auto is not a value here', async () => {
   await assert.rejects(() => routingContext(WS, { strategy: 'auto', role: 'worker' }),
     (e) => e.code === 'strategy-unknown' && /"auto" is not one of them/.test(e.message));
@@ -920,6 +1065,24 @@ test('a routed review dry run prints the decision, writes nothing, and measures 
   assert.equal(probes.probes, 0, 'a dry run without --refresh asks no harness anything');
   assert.deepEqual(treeOf(HOME), before, 'a review dry run must write no task state');
   assert.equal(cacheBytes(), cache, 'a review dry run must not touch the availability cache');
+});
+
+test('a routed review with an unrated --model lifts that id without a decision', async () => {
+  seedCache(HEALTHY());
+  const before = treeOf(HOME);
+  const said = await captureSplit(() => review(WS, {
+    target: REPO,
+    task: 'routed-t20260905-090006',
+    strategy: 'balanced',
+    model: 'claude-next-9',
+    dryRun: true,
+    adapterFor: probeSet(counter()),
+    tool: { ok: true, bin: path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude') },
+  }));
+  assert.equal(/routing decision:/.test(said.out), false);
+  assert.match(said.out, /model: claude-next-9/);
+  assert.match(said.err, /--model claude-next-9: no tuple of the merged catalog rates it/);
+  assert.deepEqual(treeOf(HOME), before);
 });
 
 test('a routed review with no path refuses for the path, not after probing three harnesses', async () => {

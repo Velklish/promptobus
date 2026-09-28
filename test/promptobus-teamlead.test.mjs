@@ -93,6 +93,20 @@ check('teamlead strategy considers Claude Code and Codex but cannot choose Curso
   && routed.decision?.chosen?.harness !== 'cursor',
   JSON.stringify(routed.decision?.chosen));
 
+const unratedTeamlead = await captureSplit(() => planTeamlead(host, {
+  ...opts, strategy: 'quality', model: 'claude-next-9', dryRun: true,
+}));
+check('teamlead strategy lifts an unrated --model as typed on Claude Code, without a decision',
+  unratedTeamlead.value.driver.id === 'claude' && unratedTeamlead.value.model === 'claude-next-9'
+  && !unratedTeamlead.value.decision && /no tuple of the merged catalog rates it/.test(unratedTeamlead.err),
+  unratedTeamlead.err);
+const unratedCodexTeamlead = await captureSplit(() => planTeamlead(host, {
+  ...opts, strategy: 'quality', harness: 'codex', model: 'gpt-next-9', dryRun: true,
+}));
+check('teamlead strategy lifts an unrated --model on the named --harness',
+  unratedCodexTeamlead.value.driver.id === 'codex' && unratedCodexTeamlead.value.model === 'gpt-next-9'
+  && !unratedCodexTeamlead.value.decision, unratedCodexTeamlead.err);
+
 for (const harness of ['cursor']) {
   const ran = spawnSync(process.execPath, [cli, 'spawn', '--teamlead', '--task', task,
     '--brief', brief, '--slug', 'group-one', '--harness', harness], {

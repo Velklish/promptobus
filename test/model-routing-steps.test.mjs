@@ -223,3 +223,18 @@ test('calibration separates identical step names by catalog role and reads legac
     { step: 'security', role: 'reviewer', runs: 1, acceptedPieces: 1 },
   ]);
 });
+
+test('an unrated --model on a declared step is held to that step\'s own lists', async () => {
+  const host = workspace(null);
+  const overlay = host.routingPaths().overlays.find((layer) => layer.writable);
+  mkdirSync(path.dirname(overlay.path), { recursive: true });
+  writeFileSync(overlay.path, JSON.stringify({
+    schemaVersion: 2, deny: { byRole: { security: { harnesses: ['claude'] } } },
+  }));
+  const lift = (role) => routeLift(host, {
+    role, strategy: 'economy', model: 'next-9', dryRun: true, adapterFor, catalogFile, now,
+  });
+  await assert.rejects(() => lift('security'),
+    (e) => e.code === 'candidates-empty' && /deny\.byRole\.security\.harnesses/.test(e.message));
+  assert.equal(await lift('worker'), null, 'the step block binds that step alone');
+});

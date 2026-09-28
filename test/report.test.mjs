@@ -49,6 +49,13 @@ for (const harness of ['cursor', 'codex']) {
     refused.threw && /ADR-024/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
 }
 const planned = await planReport(host, { task: TASK, dryRun: true });
+let unratedReport = null;
+const unratedReportSaid = await capture(async () => {
+  unratedReport = await planReport(host, { task: TASK, dryRun: true, strategy: 'balanced', model: 'claude-next-9' });
+});
+check('a routed reporter with an unrated --model lifts that id without a decision',
+  unratedReport?.model === 'claude-next-9' && !unratedReport?.decision
+  && /no tuple of the merged catalog rates it/.test(unratedReportSaid), unratedReportSaid);
 check('reporter MCP entry carries the root task and reporter address',
   planned.launch.mcpConfig.mcpServers.promptobus.env.PROMPTOBUS_TASK === TASK
     && planned.launch.mcpConfig.mcpServers.promptobus.env.PROMPTOBUS_ROLE === 'reporter');
