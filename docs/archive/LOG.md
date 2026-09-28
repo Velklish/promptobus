@@ -455,3 +455,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-294"></a>`PB-294-docs-independent-of-task-history` · 2026-09-27 · completed · — · Make published documentation independent of tracker entries and private run artifacts
 - <a id="pb-305"></a>`PB-305-docs-technical-writer-pass-0-20` · 2026-09-27 · completed · — · Run the first technical-writer pass before release 0.20.0
 - <a id="pb-306"></a>`PB-306-explicit-unrated-model` · 2026-09-28 · completed · — · An explicit --model the catalog does not rate lifts unrouted instead of refusing as constraint-unknown
+- <a id="pb-309"></a>`PB-309-teamlead-help-names-codex` · 2026-09-28 · completed · — · Name the Codex teamlead in the spawn help and the orchestration skill

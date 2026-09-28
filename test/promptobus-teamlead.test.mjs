@@ -11,7 +11,8 @@ import { hostOf } from '../lib/host.js';
 import { planTeamlead, recoverTeamleadRebind, spawnTeamlead } from '../lib/spawn.js';
 import { participantSession, status } from '../lib/status.js';
 import { snapshotOf } from '../lib/drivers.js';
-import { liveWatched } from '../dist/index.js';
+import { GateError, liveWatched } from '../dist/index.js';
+import { TEAMLEAD_HARNESSES, harnessName } from '../lib/contract.js';
 import { send } from '../lib/send.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-teamlead-'));
@@ -106,6 +107,25 @@ const unratedCodexTeamlead = await captureSplit(() => planTeamlead(host, {
 check('teamlead strategy lifts an unrated --model on the named --harness',
   unratedCodexTeamlead.value.driver.id === 'codex' && unratedCodexTeamlead.value.model === 'gpt-next-9'
   && !unratedCodexTeamlead.value.decision, unratedCodexTeamlead.err);
+
+const admitted = [];
+const refusals = [];
+for (const harness of host.declaredTools()) {
+  try {
+    await planTeamlead(host, { ...opts, harness });
+    admitted.push(harness);
+  } catch (error) {
+    refusals.push({ harness, gate: error instanceof GateError, message: error.message });
+  }
+}
+check('planTeamlead admits exactly the harnesses the help names, and refuses the rest as a gate',
+  JSON.stringify(admitted.sort()) === JSON.stringify([...TEAMLEAD_HARNESSES].sort())
+  && refusals.every((refusal) => refusal.gate), JSON.stringify({ admitted, refusals }));
+
+let otherRefusal = '';
+try { await planTeamlead(host, { ...opts, harness: 'other' }); } catch (error) { otherRefusal = error.message; }
+check('a harness outside the list is refused with the list named',
+  otherRefusal.endsWith(`supported only on ${TEAMLEAD_HARNESSES.map(harnessName).join(' and ')}`), otherRefusal);
 
 for (const harness of ['cursor']) {
   const ran = spawnSync(process.execPath, [cli, 'spawn', '--teamlead', '--task', task,

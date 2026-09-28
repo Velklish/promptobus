@@ -591,7 +591,10 @@ and the list of tools to deny moved to the driver ([driver-claude.js](../../lib/
 that is ONE harness's dictionary, and the second driver has its own — a shared home
 would mean the bus knows Claude Code values by heart. Contract citations in the docs
 still stand on them: `lint` takes the value from the new home, and the
-`<!-- contract:… -->` keys did not change.
+`<!-- contract:… -->` keys did not change. Two harness-shaped values do live here:
+`TEAMLEAD_HARNESSES`, the harnesses a teamlead lifts on, and `harnessName`, the display
+name of each harness id. They describe the bus's own admission rather than one driver's
+dictionary, and the command help reads them before any driver is loaded.
 
 Its one dependency is the compiled, dependency-free contract source — the same
 lib→dist boundary used by the host adapters. Command help reads this module before

@@ -70,7 +70,7 @@ A foreign-mailbox header means the originals stay with the owner. If the mail is
 
 ```bash
 promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
-promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude] [--dry-run]
+promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude|codex] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
 promptobus done [--task <id>] [--keep-sessions]
 promptobus dismiss <address> [--task <id>]
@@ -81,9 +81,9 @@ promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refres
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
 
-`--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. Teamlead and reporter lifts use Claude Code by their own contract.
+`--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. A teamlead lifts on Claude Code or Codex; Cursor is refused. With no `--harness`, no Codex-only `--model` and no strategy, a new teamlead lifts on Claude Code; a relift keeps its harness. A reporter lifts on Claude Code only.
 
-For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its child task is the default in the lifted session's MCP entry; the teamlead reports upward by naming the root task explicitly. The teamlead runs at the install root on Claude Code. `--dry-run` shows the child task and session plan before starting it.
+For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its child task is the default in the lifted session's MCP entry; the teamlead reports upward by naming the root task explicitly. The teamlead runs at the install root on Claude Code or Codex. Give a Codex teamlead `--permission-mode full-access`: it is the narrowest profile under which its own workers and reviewers lifted in the measured proof. `--dry-run` shows the child task and session plan before starting it.
 
 `--strategy` is one of `quality`, `balanced`, `speed`, `economy`, `balance`. Without it the command takes the recorded default if there is one, and otherwise routes nothing and takes the defaults. See [Model routing](#model-routing).
 

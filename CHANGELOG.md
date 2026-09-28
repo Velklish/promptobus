@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The `spawn --teamlead` help and the orchestration skill name the Codex teamlead** (PB-309).
+  Both still said a teamlead lifts only on Claude Code, while the code admits Codex too.
+  The help now builds its harness list from `TEAMLEAD_HARNESSES`, the list `planTeamlead`
+  checks, and names Cursor's refusal, `--permission-mode full-access`, `--allow-payg` and
+  `--refresh`; the refusal of another harness names the same list. `README.ru.md` gains the
+  Codex teamlead and the flag list. Tests tie the help, the skill, the refusal and the lift to
+  that one list. [03-cli § Spawn](docs/reference/03-cli.md#spawn).
+
 ## [0.21.0] — 2026-09-28
 
 ### Changed

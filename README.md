@@ -134,7 +134,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | Command | What it does |
 |---|---|
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. A worker name that shares files with an existing task participant is refused. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
-| `promptobus spawn --teamlead --brief <file> --task <root>` | Start a child-task orchestrator at the install root on Claude Code or Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--dry-run` |
+| `promptobus spawn --teamlead --brief <file> --task <root>` | Start a child-task orchestrator at the install root on Claude Code or Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--allow-payg`, `--refresh`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Lift the named declared gate when the preceding participant's result is on record for this subject; a main-tree writer also needs the owner's result. `--base <ref>`, `--brief <file>` for a writer, routing flags, `--dry-run` |
 | `promptobus review <path>` | Lift the first `reads-diff` gate on a snapshot of the diff; `--approver` selects the first `writes-main-tree` gate. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus report --task <root>` | Lift one read-only Claude Code reporter at the install root. Routing flags and `--dry-run` are supported; a child task or second live reporter is refused |

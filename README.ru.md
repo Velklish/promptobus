@@ -122,7 +122,7 @@ promptobus done
 | Команда | Что делает |
 |---|---|
 | `promptobus spawn --repo <path> --brief <file>` | Поднять worker'а в изолированном git worktree. `--new-task` или `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
-| `promptobus spawn --teamlead --brief <file> --task <root>` | Поднять оркестратора дочерней задачи в корне установки на Claude Code |
+| `promptobus spawn --teamlead --brief <file> --task <root>` | Поднять оркестратора дочерней задачи в корне установки на Claude Code или Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--allow-payg`, `--refresh`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Поднять объявленный гейт: первому гейту чтения диффа предшествующий результат не нужен; следующим нужен текущий результат предшествующего объявленного гейта для того же объекта проверки, а гейту записи — также результат владельца |
 | `promptobus review <path>` | Поднять первый гейт чтения диффа; `--approver` выбирает первый гейт записи в основное дерево. `--title` или `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
 | `promptobus report --task <root>` | Поднять одного read-only reporter в корне установки; дочерняя задача и вторая живая сессия отказываются |

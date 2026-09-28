@@ -253,6 +253,13 @@ check('PB-293 entry points match current hooks tools roles and package',
 const cli = read('docs/reference/03-cli.md');
 const orchestrate = read('skills/orchestrate/SKILL.md');
 const soloReview = read('skills/solo-review/SKILL.md');
+const { TEAMLEAD_HARNESSES } = await import('../lib/contract.js');
+check('the orchestration skill names the harnesses a teamlead lifts on',
+  orchestrate.includes(`promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness ${TEAMLEAD_HARNESSES.join('|')}] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]`)
+    && orchestrate.includes('The teamlead runs at the install root on Claude Code or Codex.')
+    && orchestrate.includes('`--permission-mode full-access`')
+    && !orchestrate.includes('The teamlead runs at the install root on Claude Code.'),
+  'the teamlead usage line and paragraph follow TEAMLEAD_HARNESSES');
 const cliWakeRecipe = section(cli, '**Re-proving it costs one lift and one message.**', '**Nothing runs `claude` with a bare word.**');
 const englishWorkspace = section(english, '### 1. Declare the workspace', '### 2. Give the orchestrator the MCP server');
 const russianWorkspace = section(russian, '### 1. Объявить рабочее место', '### 2. Дать оркестратору MCP-сервер');

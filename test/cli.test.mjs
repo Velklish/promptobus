@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { GateError as ProtocolGateError, PromptobusError } from '../dist/index.js';
 import { HostResolveError } from '../dist/host.js';
 import { helpText, runPromptobus } from '../lib/cli.js';
+import { TEAMLEAD_HARNESSES } from '../lib/contract.js';
 import { expectFail } from './console.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -81,6 +82,18 @@ test('helpText takes the command name from the host, not a literal', () => {
   const banned = ['ati', 'agents'].join('-');
   assert.match(text, /--role <worker\|reviewer\|approver\|step-name>/);
   assert.equal(text.includes(banned), false);
+});
+
+test('the spawn --teamlead help names every harness a teamlead lifts on, and nothing else', () => {
+  const text = helpText(fakeHost('gamma'));
+  const start = text.indexOf('gamma spawn --teamlead');
+  const block = text.slice(start, text.indexOf('gamma report', start));
+  assert.ok(start >= 0, 'the teamlead usage is in the help');
+  assert.match(block, new RegExp(`\\[--harness ${TEAMLEAD_HARNESSES.join('\\|')}\\]`));
+  for (const name of ['Claude Code', 'Codex']) assert.ok(block.includes(name), `${name} is named`);
+  assert.match(block, /Cursor is refused before start/);
+  assert.match(block, /--permission-mode full-access/);
+  assert.doesNotMatch(block, /Codex (?:is|are) refused/);
 });
 
 test('CLI recognizes expected errors by class, not constructor name', async () => {
