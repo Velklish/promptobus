@@ -185,7 +185,7 @@ Re-spawn that track. Name the step-up and its reason in the run's result: a run 
 
 A consumer layers its own policy on top of this rubric — which models it forbids, where its reviewer runs. That belongs in the consumer's own skills, not here.
 
-Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.20.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.20.0/docs/guides/model-routing.md).
+Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/guides/model-routing.md).
 
 ## Mail
 
@@ -226,4 +226,4 @@ A participant who sent you mail and then ended the turn is waiting, not stopped.
 ## Not this skill
 
 - One diff, no workers: [solo-review](../solo-review/SKILL.md)
-- Contribution tracker: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.20.0/docs/guides/contributing.md)
+- Contribution tracker: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/guides/contributing.md)
