@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The release writer pass checks the CLI help and the shipped skills for currency** (PB-307).
+  The pass of 0.20.0 missed a stale `spawn --teamlead` help and a stale orchestration skill,
+  because only documentation files were in its scope. The overlay skill and the release guide
+  now put `helpText` in `lib/cli.js` and every skill under `skills/` in the currency check, with
+  one ledger row each; the style part covers the CLI help and leaves skills alone, since they
+  are written for agents. `test/release-writer.test.mjs` turns red if either file drops them.
+  [Releasing § Technical-writer pass](docs/guides/releasing.md#technical-writer-pass).
+
 ### Fixed
 
 - **The `spawn --teamlead` help and the orchestration skill name the Codex teamlead** (PB-309).

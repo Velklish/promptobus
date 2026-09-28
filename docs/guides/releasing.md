@@ -8,7 +8,7 @@ Cut a release the way 0.18.0 and 0.19.0 were cut.
 
 Run this pass before the release commit.
 
-Input: the diff since the previous release tag, and the human-facing documentation. Load [`.agents/skills/tech-writer/SKILL.md`](../../.agents/skills/tech-writer/SKILL.md) first. Output: a commit of documentation fixes. Review that commit the way any other piece is reviewed.
+Input: the diff since the previous release tag, the human-facing documentation including `docs/adr/` and `docs/ROADMAP.md`, the terminal help text in `lib/cli.js`, and the shipped skills under `skills/`. The currency part checks the documentation, the CLI help and the skills against that diff. The style part covers the documentation and the CLI help; skills are written for agents and get no style pass. Load [`.agents/skills/tech-writer/SKILL.md`](../../.agents/skills/tech-writer/SKILL.md) first. Output: a commit of fixes to the documentation, the CLI help and the skills, and the currency ledger in that commit's message body. The currency ledger is a table with one row per document group of the overlay's Style list, one row each for `docs/adr/` and `docs/ROADMAP.md`, one row for the CLI help and one row per shipped skill; each row names the change it was checked against, or states that no change touches it. Review that commit the way any other piece is reviewed.
 
 ## Version and pins
 
