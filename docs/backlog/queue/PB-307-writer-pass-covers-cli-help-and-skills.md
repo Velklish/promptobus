@@ -8,7 +8,7 @@
 
 ## Context
 
-The release procedure runs a technical-writer pass before each release. Its currency part checks the documentation against the code changed since the previous tag. The pass of 0.20.0 found three stale sentences, yet it missed a stale `spawn --teamlead` help and a stale orchestration skill (PB-306): both still refuse a Codex teamlead that the code admits. Neither was in the pass's scope.
+The release procedure runs a technical-writer pass before each release. Its currency part checks the documentation against the code changed since the previous tag. The pass of 0.20.0 found three stale sentences, yet it missed a stale `spawn --teamlead` help and a stale orchestration skill (PB-309): both still refuse a Codex teamlead that the code admits. Neither was in the pass's scope.
 
 Evidence: the overlay limits the walk to documentation files.
 
@@ -27,7 +27,7 @@ The terminal help in `lib/cli.js` is text a person reads. The shipped skills und
 ## Out of scope
 
 - Vendored third-party skills under `.agents/skills/` other than the overlay.
-- Fixing the stale help and skill themselves (PB-306).
+- Fixing the stale help and skill themselves (PB-309).
 
 ## Verification
 
