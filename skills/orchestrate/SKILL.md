@@ -172,7 +172,7 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 ### Constraints the user named
 
-An explicit `--harness`, `--model` or `--effort` from the user travels to the CLI unweakened. **Never rewrite a named model into a strategy**, and never pass a strategy as its alternative: a named value is a constraint the resolver applies, and the CLI ends with diagnostics rather than substituting when it cannot be met. Report those diagnostics to the user; do not pick something else for them.
+An explicit `--harness`, `--model` or `--effort` from the user travels to the CLI unweakened. **Never rewrite a named model into a strategy**, and never pass a strategy as its alternative: a named value is a constraint the resolver applies, and the CLI ends with diagnostics rather than substituting when it cannot be met. Report those diagnostics to the user; do not pick something else for them. A named model the catalog does not rate is not routed: the lift runs that id as typed under the policy in force, on `--harness` or else on Claude Code, and warns that the strategy routed nothing. Name `--harness` with it when it is not a Claude Code model.
 
 ### Step up after two rounds
 
