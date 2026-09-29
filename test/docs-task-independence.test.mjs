@@ -21,7 +21,8 @@ const roots = [
   'docs/GLOSSARY.md',
   'docs/ROADMAP.md',
 ];
-const projectSkills = `${['.', 'agents'].join('')}/skills/`;
+const agentsDir = ['.', 'agents'].join('');
+const projectSkills = `${agentsDir}/skills/`;
 const trees = ['docs/guides/', 'docs/reference/', 'skills/', projectSkills];
 const fixtureReadme = (file) => file.startsWith('test/fixtures/') && file.endsWith('/README.md');
 
@@ -106,19 +107,29 @@ function isTrackedPath(cands) {
   });
 }
 
-function isPlaceholder(clean) {
+// Templates (`<…>`, `*`) are skipped in isPrivateEvidence; an untracked concrete name passes only
+// as a product file, a listed location, or a naming example below.
+const namingExamples = new Map([
+  ['docs/reference/04-protocol.md', new Set(['.gates-t2.json', 'gates-t2.json', 'gates-x-2.json'])],
+]);
+const productLocations = new Set([
+  '~/.promptobus/model-routing.json', '~/.promptobus/model-routing/cache.json',
+  `~/${agentsDir}/model-routing/cache.json`, '.promptobus/manifest.json',
+  '.claude/settings.json', '~/.claude/.credentials.json',
+  '.cursor/mcp.json', '.cursor/cli.json', '.cursor/hooks.json', '~/.cursor/cli-config.json',
+  '.codex/hooks.json', '~/.codex/hooks.json', '$CODEX_HOME/hooks.json',
+  'waits/warden.exit.json', 'waits/warden.gen.json',
+]);
+
+function isPlaceholder(clean, fromRel) {
   if (clean.includes('/')) return false;
-  const base = clean.replace(/^\.+/, '');
   if (/^\.(?:json|jsonl|txt)$/.test(clean)) return true;
-  if (/^(?:gates|handover)-/.test(base)) return true;
+  if (namingExamples.get(fromRel)?.has(clean)) return true;
   return productJson.has(clean) || clean === '.mcp.json';
 }
 
 function isDocumentedProductLocation(clean) {
-  if (clean.startsWith('../') || clean.startsWith('./')) return false;
-  const productRoot = /^(?:~\/\.(?:promptobus|claude|cursor|codex|agents)|\$[A-Za-z0-9_]+|\.(?:claude|cursor|codex|promptobus)|waits)(?:\/|$)/;
-  if (productRoot.test(clean) && /\.json$/i.test(clean)) return true;
-  return clean === '.mcp.json' || clean.endsWith('/.mcp.json');
+  return productLocations.has(clean);
 }
 
 function isPrivateEvidence(raw, fromRel) {
@@ -126,7 +137,7 @@ function isPrivateEvidence(raw, fromRel) {
   if (clean == null || /[\s*<>{}]/.test(clean)) return false;
   if (!/\.(?:json|jsonl|txt)$/i.test(clean)) return false;
   if (isTrackedPath(candidates(fromRel, clean))) return false;
-  if (isPlaceholder(clean) || isDocumentedProductLocation(clean)) return false;
+  if (isPlaceholder(clean, fromRel) || isDocumentedProductLocation(clean)) return false;
   return true;
 }
 
@@ -208,10 +219,26 @@ check('docs: a product placeholder is not a missing artifact',
   && evidenceIn('`.cursor/hooks.json`', fromGuide).length === 0
   && evidenceIn('`waits/warden.exit.json`', fromGuide).length === 0);
 check('docs: a relative product-named capture is refused',
-  evidenceIn('`../runs/proof/state.json`', fromGuide).includes('../runs/proof/state.json'));
+  evidenceIn('`../runs/proof/state.json`', fromGuide).includes('../runs/proof/state.json')
+  && evidenceIn('`../runs/.mcp.json`', fromGuide).includes('../runs/.mcp.json'));
 check('docs: a concrete gates or handover path is refused',
   evidenceIn('`../runs/gates-review.json`', fromGuide).includes('../runs/gates-review.json')
   && evidenceIn('`../runs/handover-note.json`', fromGuide).includes('../runs/handover-note.json'));
+check('docs: a bare gates or handover capture is refused',
+  evidenceIn('`gates-review.json`', fromGuide).includes('gates-review.json')
+  && evidenceIn('[record](handover-review.json)', fromGuide).includes('handover-review.json'));
+check('docs: a concrete capture under a product root is refused',
+  evidenceIn('`.promptobus/tasks/run-20260927/files/evidence.json`', fromGuide)
+    .includes('.promptobus/tasks/run-20260927/files/evidence.json')
+  && evidenceIn('`~/.promptobus/tasks/run-20260927/files/gates-w.json`', fromGuide)
+    .includes('~/.promptobus/tasks/run-20260927/files/gates-w.json'));
+check('docs: a record template and a documented product location are not captures',
+  evidenceIn('`gates-<slug>.json` `handover-*.json` `.promptobus/manifest.json`', fromGuide).length === 0
+  && evidenceIn('`~/.claude/jobs/<id>/state.json` `$CODEX_HOME/hooks.json` `.mcp.json`', fromGuide).length === 0);
+check('docs: the gate-record naming examples are legal in 04-protocol only',
+  evidenceIn('`.gates-t2.json` `gates-t2.json` `gates-x-2.json`', 'docs/reference/04-protocol.md').length === 0
+  && ['.gates-t2.json', 'gates-t2.json', 'gates-x-2.json']
+    .every((name) => evidenceIn(`\`${name}\``, fromGuide).includes(name)));
 check('docs: consumer set cites no unidentified report section', reports.length === 0, show(reports));
 check('docs: the planning snapshot is not a tracked file',
   !trackedSet.has('docs/TRACKS.md') && !existsSync(path.join(root, 'docs/TRACKS.md')),

@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   journal and the `unreachable` postcard; the gate and handover records before `result`. Nine
   statements were narrowed to what the code does. `skills/solo-review/SKILL.md` tells the
   reviewer to open each finding's file in the working copy before reporting it.
+- **The documentation check refuses a concrete run capture that looks like a template or a product path** (PB-294.2).
+  `test/docs-task-independence.test.mjs` passed any bare `gates-`/`handover-` file name and any JSON path
+  under a product root such as `.promptobus/`, so a capture like a one-run gate record or a file
+  under `.promptobus/tasks/` was never reported. A concrete name must now be tracked; a template
+  that spells its variable part, a bare product file name, a location from the test's
+  `productLocations` list and the gate-record naming examples of 04-protocol stay legal.
+  [Reference](docs/reference/README.md).
 
 ### Fixed
 
