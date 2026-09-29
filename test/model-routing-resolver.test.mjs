@@ -186,7 +186,7 @@ test('a component is its weight over 100 times the normalised rating, and quotaC
   assert.deepEqual(quick.components, { quality: 22.22, speed: 25, quotaCost: 15.56, remaining: 9 });
   assert.equal(quick.base, 71.78);
   assert.equal(quick.total, 71.78);
-  // The inversion is the half a mutation would flip: quotaCost 2 is CHEAP, so it
+  // The inversion is the half a mutation would flip: quotaCost 3 is CHEAP, so it
   // contributes 15.56 of its 20 points. Read as a plain rating it would contribute less.
   const deep = byId(decide(), 'example-deep-high').score;
   assert.equal(deep.components.quotaCost, 0, 'quotaCost 10 is the dearest and contributes nothing');
@@ -249,7 +249,7 @@ test('constraints.applied is false when nothing was narrowed', () => {
 test('PAYG is dropped by default and admitted by the flag', () => {
   assert.equal(excludedOf(decide(), 'other-metered').code, 'payg-not-allowed');
   const opted = decide({ constraints: { allowPayg: true } });
-  // ratings 5 / 4 / 1 on a harness whose remaining is unknown: 40 + 18.75 + 20 + 7.5 − 10.
+  // ratings 10 / 8 / 1 on a harness whose remaining is unknown: 40 + 19.44 + 20 + 7.5 − 10.
   assert.equal(byId(opted, 'other-metered').score.total, 76.94);
   assert.equal(opted.chosen.tupleId, 'other-metered');
   assert.equal(opted.constraints.allowPayg, true);
@@ -422,8 +422,8 @@ test('a reviewer is routed from the tuples rated for it', () => {
   assert.equal(excludedOf(decision, 'example-quick').code, 'role-not-allowed');
   assert.equal(excludedOf(decision, 'example-quick').detail, 'rated for worker only');
   assert.deepEqual(scoredIds(decision), ['other-steady', 'example-deep-high', 'example-deep-max']);
-  // The pick is not the top scorer, and the reviewer floor of 5 (ADR-005,
-  // raised from ADR-005's 4) is why: `other-steady` rates 4 and keeps its place
+  // The pick is not the top scorer, and the reviewer floor of 9 (ADR-005) is
+  // why: `other-steady` rates 8 and keeps its place
   // at the head of the list with its score — the floor is a choice rule.
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
   assert.equal(byId(decision, 'other-steady').excluded, null, 'the floor is a choice rule, not a filter');
@@ -441,7 +441,7 @@ test('a reviewer that differs from the live worker gains the diversity bonus', (
     [{ code: 'live-participant', points: -5 }]);
   assert.deepEqual(byId(decision, 'other-steady').score.adjustments,
     [{ code: 'unknown-availability', points: -10 }, { code: 'reviewer-diversity', points: 5 }]);
-  // The bonus puts other-steady at the head of the list; the floor of 5 still
+  // The bonus puts other-steady at the head of the list; the floor of 9 still
   // moves the pick past it, which is the two rules composing as ADR-005 says.
   assert.equal(scoredIds(decision)[0], 'other-steady');
   assert.equal(decision.chosen.tupleId, 'example-deep-high');
@@ -507,9 +507,7 @@ test('nothing reaching the floor is a warning and the best remaining one, not a 
 });
 
 test('the worker has a floor too, and its own warning code', () => {
-  // ADR-005 gives the worker a floor of 5 —
-  // "a worker on a cheap model where the task needed the expensive one is paid
-  // for in review rounds" describes one. Same shape as the reviewer's: a choice
+  // ADR-005 gives the worker a floor of 5. Same shape as the reviewer's: a choice
   // rule, and a soft fallback with a warning of its own.
   const catalog = catalogOf([
     { id: 'alpha-cheap', harness: 'alpha', model: 'cheap', ratings: { quality: 4, speed: 10, quotaCost: 1 }, priority: 10 },
@@ -570,10 +568,9 @@ test('reviewerQualityFloor is still read, as an alias for qualityFloor.reviewer'
 });
 
 test('a role rating override is what the role being routed is scored on', () => {
-  // The shipped catalog uses this (`claude-opus-max` rates its quotaCost one
-  // point lower for a reviewer), and the golden fixture has no row that carries
-  // one — so without these two checks the override could be dropped and every
-  // other check would stay green.
+  // The catalog schema admits this, and neither the shipped catalog nor the
+  // golden fixture has a row that carries one — so without these two checks
+  // the override could be dropped and every other check would stay green.
   const catalog = catalogOf([
     { id: 'alpha-generalist', harness: 'alpha', model: 'generalist', ratings: { quality: 4, speed: 5, quotaCost: 3 }, priority: 10 },
     {
@@ -613,9 +610,9 @@ test('a role rating override is what the reviewer floor reads too', () => {
   ]);
   const worker = decide({ catalog, snapshot: TIE_SNAPSHOT, strategy: 'speed' });
   assert.equal(worker.chosen.tupleId, 'alpha-fast',
-    'no override for a worker: it is scored at quality 5 and clears the worker floor of 3');
+    'no override for a worker: it is scored at quality 5 and clears the worker floor of 5');
 
-  // The reviewer floor is pinned at 4 here rather than left at ADR-005's 5,
+  // The reviewer floor is pinned at 4 here rather than left at ADR-005's 9,
   // because the arrangement needs exactly one of the two tuples above it —
   // with nothing above the floor the soft fallback fires and the check would
   // pass for the wrong reason.
@@ -728,7 +725,7 @@ test('tie-break 1: the higher effective score wins, adjustments included', () =>
 });
 
 test('tie-break 2: at an equal score, confirmed availability wins', () => {
-  // Built to tie exactly at 15.00: alpha keeps its full allowance, beta pays the
+  // Built to tie exactly at 26.11: alpha keeps its full allowance, beta pays the
   // unknown penalty and makes it up on speed and quotaCost.
   const catalog = catalogOf([
     { id: 'beta-two', harness: 'beta', model: 'beta-two', ratings: { quality: 1, speed: 3, quotaCost: 4 }, priority: 10 },
@@ -854,8 +851,8 @@ test('the pace of a candidate is its binding window, in percentage points', () =
 
   // Codex: the weekly window is the more spent of the two, so it binds. 46 % of
   // it is gone and 62.5 % of it has elapsed, so the account is 16.5 POINTS
-  // behind its own pace and has that much room. quotaCost 4 gives up
-  // 5 × (4 − 1) / 4 = 3.75 of them before harnesses are compared.
+  // behind its own pace and has that much room. quotaCost 8 gives up
+  // 5 × (8 − 1) / 9 = 3.89 of them before harnesses are compared.
   assert.deepEqual(paceOf(decision, 'codex-sol'), {
     window: { id: 'secondary', kind: 'weekly', scope: null },
     usedShare: 0.46,
@@ -1002,18 +999,18 @@ test('balance warns only when no scored representative reaches the quality floor
 });
 
 test('the reviewer is inside the balance, and nothing pins it to one harness', () => {
-  // ADR-005 decision 4. The reviewer is routed by pace like a worker, with the
-  // floor of 5 above it, and the harness it lands on is whichever is furthest
-  // behind its own pace — here Codex, not Claude.
+  // ADR-005 decisions 7 and 8. The reviewer is routed by pace like a worker,
+  // with the floor of 9 above it, and the harness it lands on is whichever is
+  // furthest behind its own pace — here Codex, not Claude.
   const decision = paced({ strategy: 'balance', role: 'reviewer' });
   assert.equal(decision.chosen.tupleId, 'codex-sol');
   assert.equal(decision.chosen.harness, 'codex');
   assert.equal(decision.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false,
-    'codex-sol rates 5 and reaches the floor');
+    'codex-sol rates 10 and reaches the floor of 9');
 });
 
 test('the band ties two harnesses and the balanced score then decides', () => {
-  // Codex leads on pace at +12.75 and Claude's representative is at −0.02, so
+  // Codex leads on pace at +12.61 and Claude's representative is at −0.30, so
   // nothing is tied at the default band of 5. Widened past the gap, the two are
   // equal-spent by policy and the better-scoring tuple wins — which is exactly
   // what the band is for: "these accounts are about equally spent, so take the
@@ -1035,7 +1032,7 @@ test('the band ties two harnesses and the balanced score then decides', () => {
 test('the spend penalty is what keeps a heavy tuple from oscillating the strategy', () => {
   // ADR-005 option C2: the discount is in the units of the underspend. With the
   // unit at zero the penalty vanishes and the raw underspend decides; the
-  // default makes a quotaCost of 5 give up exactly one band against a 1.
+  // default unit of 5 makes a quotaCost of 10 give up exactly one band against a 1.
   const free = paced({ strategy: 'balance', workspace: overlay({ balance: { spendUnit: 0 } }) });
   for (const c of free.candidates.filter((x) => x.pace)) assert.equal(c.pace.spendPenalty, 0);
   assert.equal(paceOf(free, 'codex-sol').effective, paceOf(free, 'codex-sol').underspend);
@@ -1057,7 +1054,7 @@ test('the spend penalty reads the ROLE\'s quotaCost, the same rating the score c
   const asWorker = decide({
     catalog, snapshot: BALANCE_SNAPSHOT, strategy: 'balance', role: 'worker',
   });
-  assert.equal(paceOf(asWorker, 'claude-opus').spendPenalty, 5, 'quotaCost 5 as a worker');
+  assert.equal(paceOf(asWorker, 'claude-opus').spendPenalty, 5, 'quotaCost 10 as a worker');
   assert.equal(paceOf(asWorker, 'claude-opus').effective, 5.48);
 
   const asReviewer = decide({
@@ -1073,9 +1070,9 @@ test('the spend penalty reads the ROLE\'s quotaCost, the same rating the score c
 
 test('the representative is named in the document, and the renderer marks that row', () => {
   // The rule is the resolver's — best eligible tuple meeting the role's floor —
-  // and the renderer reads the answer rather than repeating the rule. Under the
-  // reviewer floor of 5 the two would part: claude-opus represents Claude, and
-  // it is not the harness's best-scoring eligible tuple in the worker's list.
+  // and the renderer reads the answer rather than repeating the rule. Here the
+  // two part: claude-fable is worker-only, so claude-opus represents Claude,
+  // and it is not the harness's best-scoring eligible tuple in the worker's list.
   const decision = paced({ strategy: 'balance', role: 'reviewer' });
   const named = decision.candidates.filter((c) => c.pace?.representative).map((c) => c.tupleId);
   assert.deepEqual([...named].sort(), ['claude-opus', 'codex-sol', 'cursor-api']);
@@ -1473,7 +1470,7 @@ test('the pace table prints one row per harness/pool representative, with the nu
   assert.equal(rows.length, 4, `one row per harness/pool representative, not per candidate:\n${rows.join('\n')}`);
   assert.match(rows.find((r) => r.includes('codex')),
     /\* codex .*codex-sol · secondary weekly · 46\.0% used · 62\.5% elapsed · underspend \+16\.50 · penalty -3\.89 · effective \+12\.61/);
-  // Two decimals, because one would print an underspend of −0.02 as "-0.0".
+  // Two decimals, so Claude's −0.30 prints as "-0.30"; one would print a −0.02 as "-0.0".
   assert.match(rows.find((r) => r.includes('claude')), /effective -0\.30/);
   assert.match(rows.find((r) => r.includes('pool auto')), /cursor-composer · cycle-auto monthly/);
   assert.match(rows.find((r) => r.includes('pool api')), /cursor-api · cycle-api monthly/);

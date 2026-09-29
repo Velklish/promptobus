@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--refresh`; the refusal of another harness names the same list. `README.ru.md` gains the
   Codex teamlead and the flag list. Tests tie the help, the skill, the refusal and the lift to
   that one list. [03-cli § Spawn](docs/reference/03-cli.md#spawn).
+- **The Cursor teamlead refusal, the `stop` and `dismiss` help, and the Cursor reviewer's MCP
+  surface say what is true** (PB-294.1, PB-308.1, PB-87.4). The refusal of a Cursor teamlead
+  named a tracker task as its return condition; it now says the refusal stands until Cursor's
+  project layer can be seated without writing the shared install root. The `stop` and `dismiss`
+  help named only the task mailbox owner; both now name an approver of this task too, as
+  `sweep` already did and both commands already admitted. 05-drivers records that a Cursor
+  reviewer also sees the MCP servers named in the person's own `~/.cursor/mcp.json`, measured on
+  `cursor-agent` 2026.09.26-dd393fe, and that the reviewer deny layer does not reach them.
+  [05-drivers § Cursor: reviewer deny layer](docs/reference/05-drivers.md#cursor-reviewer-deny-layer).
 
 ## [0.21.0] — 2026-09-28
 

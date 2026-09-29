@@ -239,6 +239,20 @@ pointwise, but all fixture and bus MCP calls returned `Not connected`. Neither l
 showed a connected tool being denied, so no mechanical MCP rule is claimed.
 [03-cli § Review](03-cli.md#review) states the resulting reviewer boundary.
 
+A Cursor reviewer also sees MCP servers named in the person's own
+`~/.cursor/mcp.json`: Cursor merges the project and home MCP files, the nearer entry
+winning a shared name (`lib/driver-cursor.js`). Measured on 2026-09-27 with a live `cursor-agent`
+2026.09.26-dd393fe reviewer on a disposable stand: the generated MCP plan named only
+the fixture server and the bus, yet each fixture-tool refusal listed four more
+servers, and a read-only comparison of keys with `~/.cursor/mcp.json` found those
+same four names. The deny layer does not reach them: the driver writes its MCP and
+CLI configuration only under the sandbox's `.cursor/`, its `Write(**)` and `Shell(**)`
+rules name no MCP tool, and nothing edits or disables the personal file. The lift
+reports a personal entry only when it shares a name with a delivered server
+(`shadowedUserServers`); differently named personal servers go unreported. Whether
+those servers were connected, and which of their tools a reviewer could call, was
+not measured.
+
 ## Cursor: the persist session
 
 Source: `lib/cursor-persist.js`.

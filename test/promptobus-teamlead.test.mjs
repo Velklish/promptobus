@@ -66,7 +66,8 @@ check('teamlead dry-run MCP entry defaults to child and names reporting root',
 let modelRefusal = '';
 try { await planTeamlead(host, { ...opts, model: 'grok-4.7-medium' }); } catch (error) { modelRefusal = error.message; }
 check('teamlead refuses a Cursor-only model before start',
-  modelRefusal.includes('ADR-024') && modelRefusal.includes('PB-222') && !existsSync(marker), modelRefusal);
+  modelRefusal.includes('ADR-024') && modelRefusal.includes('without writing the shared install root')
+  && !/PB-\d/.test(modelRefusal) && !existsSync(marker), modelRefusal);
 const codexModelPlan = await planTeamlead(host, { ...opts, model: 'gpt-5.6-sol' });
 check('teamlead admits a Codex-only model without a harness flag',
   codexModelPlan.driver.id === 'codex' && codexModelPlan.model === 'gpt-5.6-sol'
@@ -134,7 +135,8 @@ for (const harness of ['cursor']) {
   });
   check(`teamlead --harness ${harness} exits non-zero before start with its return condition`,
     ran.status !== 0 && ran.stderr.includes('ADR-024')
-    && ran.stderr.includes('PB-222')
+    && ran.stderr.includes('without writing the shared install root')
+    && !/PB-\d/.test(ran.stderr)
     && !existsSync(marker) && !store.taskExists(home, planned.childTask), ran.stderr);
 }
 

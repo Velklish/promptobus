@@ -116,7 +116,8 @@ const productLocations = new Set([
   '~/.promptobus/model-routing.json', '~/.promptobus/model-routing/cache.json',
   `~/${agentsDir}/model-routing/cache.json`, '.promptobus/manifest.json',
   '.claude/settings.json', '~/.claude/.credentials.json',
-  '.cursor/mcp.json', '.cursor/cli.json', '.cursor/hooks.json', '~/.cursor/cli-config.json',
+  '.cursor/mcp.json', '~/.cursor/mcp.json', '.cursor/cli.json', '.cursor/hooks.json',
+  '~/.cursor/cli-config.json',
   '.codex/hooks.json', '~/.codex/hooks.json', '$CODEX_HOME/hooks.json',
   'waits/warden.exit.json', 'waits/warden.gen.json',
 ]);

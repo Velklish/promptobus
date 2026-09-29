@@ -459,3 +459,9 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-307"></a>`PB-307-writer-pass-covers-cli-help-and-skills` · 2026-09-28 · completed · — · Extend the technical-writer currency check to CLI help and shipped skills
 - <a id="pb-308"></a>`PB-308-orchestrate-skill-states-mechanism` · 2026-09-29 · completed · — · Complete the orchestration skill with the mechanism behaviour consumers still restate
 - <a id="pb-294.2"></a>`PB-294.2-docs-evidence-placeholder-gap` · 2026-09-29 · completed · — · Stop treating concrete run captures as placeholders in the documentation task-independence check
+- <a id="pb-310"></a>`PB-310-minor-batch-routing-help-cursor` · 2026-09-29 · completed · — · Minor batch: resolver and balance test comments, Cursor teamlead refusal, stop and dismiss help, Cursor reviewer MCP surface
+- <a id="pb-294.1"></a>`PB-294.1-cursor-teamlead-refusal-names-a-task` · 2026-09-29 · batch PB-310 · — · cursor-teamlead-refusal-names-a-task
+- <a id="pb-297.1"></a>`PB-297.1-stale-balance-test-comments` · 2026-09-29 · batch PB-310 · — · Refresh stale balance test comments
+- <a id="pb-305.1"></a>`PB-305.1-resolver-comment-doubled-adr` · 2026-09-29 · batch PB-310 · — · Resolver comment says one decision refined itself
+- <a id="pb-308.1"></a>`PB-308.1-cli-help-stop-dismiss-approver` · 2026-09-29 · batch PB-310 · — · The stop and dismiss help names the approver beside the mailbox owner
+- <a id="pb-87.4"></a>`PB-87.4-cursor-reviewer-personal-mcp-surface` · 2026-09-29 · batch PB-310 · — · Document the Cursor reviewer's inherited personal MCP servers
