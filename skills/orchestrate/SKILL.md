@@ -64,7 +64,13 @@ Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
 Without `task`, the server uses `PROMPTOBUS_TASK`, else this session's binding, else the only active task. If the reply names another title, you joined the wrong task. Pass `task`.
 
-A foreign-mailbox header means the originals stay with the owner. If the mail is yours and this session is new, `promptobus_mailbox { claim: true }`. Then read again without `claim`.
+A foreign-mailbox header names both session ids and means the originals stay with the owner. If the mail is yours and this session is new, `promptobus_mailbox { claim: true }`; the reply `MAILBOX CLAIMED` names the previous owner. Then read again without `claim`. A task an earlier CLI created has no owner and nothing to claim (`src/mcp/server.ts`).
+
+A session has one live binding: the active task its calls use without `task`. `spawn` and `review --approver` write it for the task's owner, `review` only when it joins an existing task, and `claim` rewrites it (`lib/store.js`).
+
+`promptobus_send` refuses a non-participant address, listing the participants, an `artifact` without `artifactPath`, and an undeclared key (`lib/store.js`, `src/mcp/server.ts`). `promptobus_task` returns the task's id, title, status, parent, children, pipeline, artifacts directory and your unread count, and per participant its owner, repository, worktree, git branch, session, diff snapshot and unread count (`lib/server.js`, `src/mcp/render.ts`).
+
+A participant's prompt spells the bus tools per harness: `promptobus_send` on Claude Code, `promptobus-promptobus_send` on Cursor, `mcp__<command>_promptobus__promptobus_send` on Codex, with characters of `<command>` other than letters, digits and `_` turned into `_` (`lib/driver-claude.js`, `lib/driver-cursor.js`, `lib/driver-codex.js`).
 
 ## CLI
 
@@ -73,6 +79,8 @@ promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--titl
 promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude|codex] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
 promptobus done [--task <id>] [--keep-sessions]
+promptobus stop <address> [--task <id>]
+promptobus sweep <address> [--task <id>]
 promptobus dismiss <address> [--task <id>]
 promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
@@ -89,7 +97,29 @@ For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its 
 
 `--repo` is a path on disk. `spawn`'s `--brief` is required. `review --approver` takes `--brief <file>` for the approver's assignment: the lift prompt carries it, and after the lift the bus keeps `brief-approver-<slug>.md` in the task files, beside the worker's `brief-<slug>.md` rather than under that name. Do not send that assignment as a separate message for the approver to race its first turn. A later message to the approver stays legal. `--brief` without `--approver` is refused, because a reviewer's subject is the diff.
 
-Read the worker branch from `promptobus status` or `promptobus_task`. Do not rebuild it from a name template. The worker may have switched branches. Publish the branch git reports.
+Read the worker's worktree path and branch from `promptobus status` or `promptobus_task`. Do not rebuild them from a name template. The worker may have switched branches: the line then says `WORKER CHANGED BRANCH` (`lib/worktree.js`). Publish the branch git reports.
+
+Lead a root task from Claude Code. Its owner record names no harness, so the bus wakes the owner through Claude Code's messaging socket; a hand-registered orchestrator entry on Codex or Cursor has no session identity, so its mailbox reads return copies (`lib/store.js`, `lib/driver-claude.js`, [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/02-host.md#session-identity)). A teamlead's lift records the teamlead's own session and harness as the owner of its child task, so a Codex teamlead leads its child task (`lib/spawn.js`).
+
+Names: task id `<task-slug>-t<YYYYMMDD>-<HHMMSS>` (UTC), slug from `--slug` or the task title; worker slug `--worker`, else the repository directory, numbered `-2`, `-3` when another repository already holds it; worktree `<clone>/.claude/worktrees/promptobus-<task-slug>-<worker-slug>-t<date>-<time>` on branch `worktree-<that name>`; session `Worker: <slice title> (<MMDD-HHMM>)`, or `Review:` and `Accept:`, with the slug added on a name collision; Cursor names its own persist session (`lib/spawn.js`, `src/protocol.ts`).
+
+`--title` names the slice and its session, and defaults to the brief's first line. `--task-title` names and pins the task; without it the task title joins the slice titles with ` · ` (`lib/spawn.js`).
+
+Without `--task`, `spawn` joins the bound task, else the only active one, else creates one, and refuses to join a task another session owns. A second `spawn` into one repository without `--worker` reuses the first worker's address: it restarts a dead session and refuses a live one (`lib/spawn.js`).
+
+`--effort` and `--permission-mode` are checked against the chosen harness before any write; a `--model` of another harness is refused by its binary only after the task and worktree exist; `spawn --teamlead` refuses a catalog-rated model with no tuple on the named `--harness` before any write (`lib/spawn.js`, 03-cli § An explicit model the catalog does not rate).
+
+`status` prints the warden line, `warden: alive` or `NO WARDEN`, and only reads; the next `spawn`, `review`, `send`, bus tool call or turn end starts a missing warden (`lib/status.js`, `lib/warden.js`).
+
+`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. `sweep <address>` removes one accepted piece's worktree, branch and sent artifacts once its session is dead and its merge is proven. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
+
+`done` closes the task, stops the sessions the bus started unless `--keep-sessions`, removes the worktree and `worktree-` branch of each closed task whose session is dead and whose work is proven merged, and last removes journals of tasks closed over 14 days ago; `prune` without `--yes` only previews (`lib/done.js`, `lib/prune.js`).
+
+`review <path>` without `--task` picks up the single active task that records the path. The diff base is `--base`. Otherwise, in a worker worktree, it is the merge base with the local default branch, except that the recorded branch point is used when the worker branch is already merged or the default branch was rewritten, and the repository default branch when neither exists; in the main clone it is the repository default branch. The command prints it (`lib/review.js`). A repeat `review` sends the new diff to the live reviewer: `--strategy` is ignored, and another `--harness` is refused until `promptobus stop <address>`.
+
+A `review` that opened a task and failed to start its reviewer leaves an active orphan that no call without `--task` picks up, and prints `promptobus done --task <id>`. A failed `spawn` keeps its task and record for a repeat of the same command (`lib/review.js`, `lib/spawn.js`).
+
+A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md#the-codex-holder)).
 
 ## Model routing
 
@@ -109,7 +139,11 @@ Read the worker branch from `promptobus status` or `promptobus_task`. Do not reb
 
 Classify each track on its own. One run may spawn `quality` and `economy` side by side.
 
+Role quality floors are soft; on the ten-point scale they default to worker 5, approver 7, reviewer 9; a pick below one carries `<role>-floor-not-met` (`src/registry.ts`). The shipped catalog rates no Anthropic model on Cursor (`models/catalog.json`).
+
 `balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
+
+Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band; under `balance` alone, `caps.liveParticipants.<harness>` is the ceiling (03-cli § `balance`: which account to spend from).
 
 ### When `models` says an account is running short
 
@@ -195,6 +229,12 @@ A lost knock loses nothing. The mail stays in the mailbox.
 
 `PROMPTOBUS_WARDEN=off` disables the warden. Then participants must poll `promptobus_mailbox`.
 
+Each driver declares one activation, `push` (the warden knocks) or `pull` (the participant polls); all three shipped drivers push (`src/driver.ts`). A knock during a turn is queued for the next turn, not steered into the running one (`activate` in `lib/driver-*.js`). A repeat knock previews only messages that arrived after the previous knock; the first knock, and the first after the session behind the contact point changed, carry the whole list. A contact point held by a session other than the address's own gets no knock, and `status` shows self-wake (`src/supervisor.ts`).
+
+`self-wake — starting up; clears on the first knock` in `status`, the orchestrator's line included, means no contact point was handed over yet, not a broken channel (`lib/status.js`).
+
+A Claude Code session in `bypassPermissions` without `"crossSessionInbound": "accept"` holds a postcard as a dialog; the lift writes that key for such a participant (`lib/driver-claude.js`).
+
 The Stop guard (`promptobus guard`) returns the turn when the mailbox is unread. Same unread set twice, then it warns and lets the turn end. Empty the mailbox. Do not remove the hook.
 
 ## Worker protocol
@@ -204,6 +244,8 @@ A worker's first bus message is `status`: what it read, what it will do. Further
 The spawn preamble reports repository dependency state. On a fresh worktree, the repository generator runs before dependency installation, and dependency installation runs before launch files are written; the launch files are written once with both outcomes. The preamble says when installation succeeded and need not be repeated, when it refused and which command to run by hand, or when there is no lock to install. A repeat spawn does not rerun or check dependencies in the surviving worktree, so the worker must look before relying on them. If installation is interrupted, the worktree can temporarily have its journal record but no launch files; a repeat spawn rewrites the launch files without checking dependencies.
 
 A worker that cannot continue sends `question` and ends the turn. You answer with `answer`. Do not guess for the user.
+
+Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/04-protocol.md#the-gate-record)).
 
 When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). You review. Findings go back as `review`. The worker fixes and sends `result` again.
 
@@ -217,7 +259,9 @@ It replaces orchestrator-issued slots. Do not hand out "the test slot" and do no
 
 ## Stops
 
-`promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read.
+`promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read. `status`, `spawn`, `review`, `done` and `stop` fill the harness's own commands, such as `claude attach <id>`, into their routes from its driver (`lib/driver-claude.js`).
+
+A stall goes to the warden journal once per sighting, to `status` and to the orchestrator's `promptobus_mailbox` reply, with no postcard; a refusal naming a reset sends the orchestrator one `unreachable` postcard and holds knocks to that participant until the named reset (`src/supervisor.ts`, `lib/server.js`).
 
 A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
 

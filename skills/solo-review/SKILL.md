@@ -17,7 +17,7 @@ The path is required. There is no resolve from the current directory. An error w
 
 `--title` is required when the command opens a new task. The title becomes the task name and the reviewer session name.
 
-The diff file the reviewer gets is a snapshot taken at the call: you keep committing, the file does not follow. The command prints the snapshot time next to the diff base, `promptobus status` shows it on the reviewer's line, and the reviewer's brief tells it to check the working copy before reporting. Refresh it with a repeat of the command (`--task <id>`) — that is what a re-review is.
+The diff file the reviewer gets is a snapshot taken at the call: you keep committing, the file does not follow. The command prints the snapshot time next to the diff base, `promptobus status` shows it on the reviewer's line, and the reviewer's brief tells it to open each finding's file in the working copy and check the line before reporting it. On a contradiction it files no finding and hands you `git show <sha> -- <path>` (`lib/review.js`). Refresh the file with a repeat of the command (`--task <id>`) — that is what a re-review is.
 
 Default diff base is the repository default branch. In a worker worktree it is the merge base with that branch, recomputed at review time. Set `--base <sha|ref>` when you review work on top of another accepted branch.
 

@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one ledger row each; the style part covers the CLI help and leaves skills alone, since they
   are written for agents. `test/release-writer.test.mjs` turns red if either file drops them.
   [Releasing § Technical-writer pass](docs/guides/releasing.md#technical-writer-pass).
+- **The orchestration skill states the bus behaviour a lead otherwise restates** (PB-308).
+  A consumer's orchestration skill still carried 37 statements about the package's own
+  behaviour that `skills/orchestrate/SKILL.md` gave only as a signature or not at all. Each was
+  checked against the code and written into its section, citing the file or reference section
+  it rests on. Among them: the `promptobus_send` refusals, what `promptobus_task` returns and who binds a
+  session; `stop` and `sweep` in the command list, who may call `stop`, `sweep` and `dismiss`,
+  the naming of tasks, worktrees, branches and sessions, the diff base of `review`, an orphan
+  task after a failed reviewer lift, and what `done` removes; the role quality floors and the
+  live-participant penalty; push activation, knocks during a turn and self-wake; the stall
+  journal and the `unreachable` postcard; the gate and handover records before `result`. Nine
+  statements were narrowed to what the code does. `skills/solo-review/SKILL.md` tells the
+  reviewer to open each finding's file in the working copy before reporting it.
 
 ### Fixed
 
