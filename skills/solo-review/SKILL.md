@@ -44,7 +44,8 @@ The report arrives as `type=result` on the bus.
 1. End the turn. The warden knocks when the report is in the mailbox.
 2. Read with `promptobus_mailbox`, even if the knock looks complete.
 3. If the reviewer is alive and sends `type=question`, answer with `promptobus_send` to that address.
-4. After you fix findings, rerun the command that `promptobus review` printed. Directory pickup recognizes the reviewer's own active record, while `--task <id>` remains an explicit alternative when the target is ambiguous. The same reviewer gets the new diff.
+4. After you fix findings, rerun the command that `promptobus review` printed. Directory pickup recognizes the reviewer's own active record, while `--task <id>` remains an explicit alternative when the target is ambiguous. The same reviewer gets the new diff and checks its own findings against it.
+5. Repeat until the reviewer returns a pass with no new finding and no kept one still open. A pass that returned findings calls for another one after they are fixed. Before the rerun, name to the reviewer in a `status` message each finding you filed in your tracker instead of fixing (with its id) and each one the person ruled out; the next pass does not count those as open. A finding you think is wrong goes to the person, not into silence. Keep the reviewer session alive until the change is accepted. You do not confirm your own fix — not by reading the diff, not on a one-line change: the author of a fix is the one reader who cannot check it. If the reviewer session died, the same command starts a new reviewer with the full prompt (`lib/review.js`); it has no memory of the earlier findings and reads the diff from a clean slate. Nothing then confirms that those findings were closed; only the new reviewer's own clean pass ends the loop. It may bring filed or ruled-out findings back: name them to it the same way and rerun.
 
 ## Close
 
@@ -60,4 +61,3 @@ Commands using `resolveTaskId` try an explicit `--task` or `PROMPTOBUS_TASK`, th
 ## Not this skill
 
 - Workers, several repositories, a full run: [orchestrate](../orchestrate/SKILL.md)
-- A diff you can read in one screen: read it yourself

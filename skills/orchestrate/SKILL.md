@@ -19,10 +19,10 @@ Launch workers only after the user says yes to a named split. Silence is not app
 
 | Role | Who | Does | Does not |
 |---|---|---|---|
-| Orchestrator (TGM on a root task) | you | Cut the work, write briefs, spawn, accept results; hold contracts between groups on a root task | Edit a worker's tree |
+| Orchestrator (TGM on a root task) | you | Cut the work, write briefs, spawn, accept results; hold contracts between groups on a root task | Edit a worker's tree or confirm a finding closed |
 | Teamlead | one session with `teamlead:<slug>` in the root and `orchestrator` in its child task | Run one group's workers and delivery pipeline; report upward | Decide a change of logic or requirements for the root |
 | Worker | a session in a worktree | Change that tree, send `status` / `question` / `result` | Decide for you, open tracker files, talk to the user |
-| Reviewer | `promptobus review` | Read a diff, send findings | Fix the findings |
+| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement for a dead reviewer starts from a clean slate | Fix the findings |
 | Reporter | optional read-only session on a root task | Answer the person from the task journals | Send as `reporter` or treat a result as accepted |
 
 ## Choosing a flat task or a tree
@@ -210,7 +210,7 @@ An explicit `--harness`, `--model` or `--effort` from the user travels to the CL
 
 ### Step up after two rounds
 
-`promptobus status` prints the review-round count on each participant line. When it reaches two, inspect the rounds for progress: two review rounds on one worker with no progress — the same findings return, or a fix breaks what it fixed — mean the model is under the task. Step up once, and only once, without asking again if it stays inside the envelope:
+`promptobus status` prints the review-round count on each participant line. When it reaches two, inspect the rounds for progress: two review rounds on one worker with no progress — the same findings return, or a fix breaks what it fixed — mean the model is under the task. A finding you filed, or the user ruled out, and named to the reviewer is not a returning one. Step up once, and only once, without asking again if it stays inside the envelope:
 
 1. the next strategy up the rubric, or
 2. an explicit `--harness` / `--model` / `--effort` tuple you name.
@@ -247,7 +247,7 @@ A worker that cannot continue sends `question` and ends the turn. You answer wit
 
 Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/04-protocol.md#the-gate-record)).
 
-When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). You review. Findings go back as `review`. The worker fixes and sends `result` again.
+When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). Check its gate and handover records, then run `promptobus review` on its worktree. The reviewer's findings come to you: validate each — keep it for the worker this round, file it in the tracker, or take a fork to the user — and send the kept ones to the worker as `review`. You do not reject a finding yourself: a dispute over one goes to the user. The worker fixes and sends `result` again; check the records of the fix, tell the reviewer in a `status` message which findings you filed (with their ids) and which ones the user ruled out, and run the same `review` again. The loop ends when the reviewer returns a pass with no new finding and no kept one still open, never on your own reading of the diff, however small ([solo-review](../solo-review/SKILL.md) § Collect the report); only then lift the approver. Keep the reviewer alive until the piece is accepted: the same session reads every new version with its earlier findings in mind.
 
 You do not merge the worker branch until you accept the result. The worker does not push and does not edit the main tree.
 

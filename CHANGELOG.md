@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The review loop runs until the reviewer returns a pass without findings** (PB-312).
+  `solo-review` no longer sends a one-screen diff past the reviewer, and its "Collect the
+  report" says the author does not confirm its own fix and that a repeat command replaces a dead
+  reviewer. In `orchestrate` the orchestrator checks a result's records, runs
+  `promptobus review`, validates the findings and hands the kept ones to the worker, and a
+  dispute over a finding goes to the user; a fixed result goes back to the same reviewer, which
+  stays alive until the piece is accepted, and the approver comes in only after a clean pass. A
+  finding filed in the tracker, or ruled out by the user, is named to the reviewer in a `status`
+  message before the rerun, so the next pass does not count it as open and a step-up does not
+  count it as returning. The Quick start in both READMEs says the same. The owner's decision of
+  2026-09-30, from a consumer's run.
+  [solo-review § Collect the report](skills/solo-review/SKILL.md#collect-the-report).
 - **The release writer pass checks the CLI help and the shipped skills for currency** (PB-307).
   The pass of 0.20.0 missed a stale `spawn --teamlead` help and a stale orchestration skill,
   because only documentation files were in its scope. The overlay skill and the release guide
