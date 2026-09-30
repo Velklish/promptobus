@@ -12,10 +12,10 @@ The owner could not follow a bus run of the backslop backlog (2026-09-30). The o
 The owner's standing requirements for questions to them:
 1. a question is self-contained: it can be answered without context that is not in the question;
 2. it uses no term or abbreviation the agent introduced itself; a new definition is used only after the owner has confirmed it;
-3. a task is named by its number and its title, never by the number alone;
+3. a task is named by its number and its title, never by the number alone. Owner decision (2026-10-01): the title goes with the first mention in a message, every heading and every table row; later mentions in the same paragraph may use the number alone;
 4. the goal is a question the owner can actually answer, not one where they press the recommended option; they must see what is asked and why.
 
-`skills/orchestrate/SKILL.md` tells the orchestrator when to ask the user (the split approval at :16, the shape choice at :34, the envelope at :191) and gives the reporter its role (:26, :42), but says nothing about how a question or a status to the person is worded. The owner decided (2026-10-01) that the rule goes into this skill, into the ati-agents base rules and into backslop.
+`skills/orchestrate/SKILL.md` tells the orchestrator when to ask the user (the split approval at :16, the shape choice at :34, the envelope at :191) and gives the reporter its role (:26, :42), but says nothing about how a question or a status to the person is worded. The owner decided (2026-10-01) that the rule goes into this skill, into the Agent Workspace base rules and into backslop.
 
 ## Work to do
 
@@ -27,7 +27,7 @@ The owner's standing requirements for questions to them:
 ## Out of scope
 
 - The delivery of questions (`promptobus_ask`, the survey tool): the rule is about the words.
-- The ATI contour policy in ati-agents `workspace-orchestrate`: its own task there.
+- The ATI contour policy in Agent Workspace's `workspace-orchestrate`: its own task there.
 
 ## Verification
 
