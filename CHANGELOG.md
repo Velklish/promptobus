@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reviewer also sees the MCP servers named in the person's own `~/.cursor/mcp.json`, measured on
   `cursor-agent` 2026.09.26-dd393fe, and that the reviewer deny layer does not reach them.
   [05-drivers § Cursor: reviewer deny layer](docs/reference/05-drivers.md#cursor-reviewer-deny-layer).
+- **The Codex home and thread notes no longer read as if a Codex teamlead were refused**
+  (PB-309.1). Four sentences in 03-cli and 05-drivers and two in ADR-008 called the teamlead's
+  `skills/` copy and `features.hooks = false` an "internal preparation" that "does not itself
+  admit" one. They now say this is what a Codex teamlead's lift does, and that admission comes
+  from `TEAMLEAD_HARNESSES`; `test/documentation-contract.test.mjs` pins the new wording.
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn).
 
 ## [0.21.0] — 2026-09-28
 

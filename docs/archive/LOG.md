@@ -466,3 +466,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-308.1"></a>`PB-308.1-cli-help-stop-dismiss-approver` · 2026-09-29 · batch PB-310 · — · The stop and dismiss help names the approver beside the mailbox owner
 - <a id="pb-87.4"></a>`PB-87.4-cursor-reviewer-personal-mcp-surface` · 2026-09-29 · batch PB-310 · — · Document the Cursor reviewer's inherited personal MCP servers
 - <a id="pb-312"></a>`PB-312-review-loop-until-clean-pass` · 2026-09-30 · completed · — · The review loop runs until the reviewer returns a pass without findings; the author does not confirm its own fix
+- <a id="pb-309.1"></a>`PB-309.1-codex-teamlead-admission-wording` · 2026-09-30 · completed · — · Teamlead-preparation sentences read as if a Codex teamlead were not admitted

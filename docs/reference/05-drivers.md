@@ -605,9 +605,10 @@ harness in [02-host](02-host.md)).
 `ThreadStartParams.config` is built by `threadStartConfig`: it always sets
 `bypass_hook_trust = true` for app-server hook trust, adds
 `model_reasoning_effort` when the lift names an effort, and sets
-`features.hooks = false` only on the internal teamlead preparation path. That
-last branch does not itself admit Codex teamlead in production. The MCP set
-remains in the home, not in this request. Measured on codex-cli 0.146.0
+`features.hooks = false` only on a Codex teamlead's thread. Admission itself
+comes from `TEAMLEAD_HARNESSES`, not from that branch
+([03-cli § Spawn](03-cli.md#spawn)). The MCP set remains in the home, not in
+this request. Measured on codex-cli 0.146.0
 without a paid turn, the thread echoed the asked effort as
 `ThreadStartResponse.reasoningEffort`; the first `turn/start` sends effort as
 well, and that value persists across later wakes. Worker and reviewer turns
@@ -737,10 +738,10 @@ A linked worktree with a planned guard hooks file also gets `hooks.json` in
 the participant home at lift. Codex otherwise resolves the project's hooks
 file in the main checkout, which the lift does not trust. A directory that
 is not a linked worktree keeps its planned hook file in its own `.codex/`.
-The internal teamlead preparation path can instead copy `skills/` into the
-home and set `[features] hooks = false`; this home layout does not establish
-production admission for Codex teamlead. App-server may subsequently write
-its session rollout into the home.
+A Codex teamlead's lift instead copies `skills/` into the home and sets
+`[features] hooks = false`. Admission itself comes from `TEAMLEAD_HARNESSES`,
+not from this home layout ([03-cli § Spawn](03-cli.md#spawn)). App-server
+may subsequently write its session rollout into the home.
 
 One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical skill
 roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the
