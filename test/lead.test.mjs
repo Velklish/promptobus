@@ -121,6 +121,11 @@ check('resume refuses a thread that does not match the task owner',
 writeSession(retained);
 const engine = bus(host.promptobusHome(), { cli: host.version });
 const originalOwner = engine.readTask(opts.task).participants[0];
+writeSession({ ...retained, threadId: null });
+upsertParticipant(host.promptobusHome(), opts.task, { ...originalOwner, metadata: { ...originalOwner.metadata, owner: null } });
+check('resume refuses an ownerless managed record instead of opening a fresh thread',
+  /no matching.*managed Codex root owner/.test(await resumeRefusal()));
+writeSession(retained);
 upsertParticipant(host.promptobusHome(), opts.task, { ...originalOwner, mode: 'attached' });
 check('resume refuses an attached Desktop owner', /no matching/.test(await resumeRefusal()));
 upsertParticipant(host.promptobusHome(), opts.task, { ...originalOwner, metadata: {
