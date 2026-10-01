@@ -12,3 +12,7 @@ files, top-level requests and responses, and `v1/` and `v2/` modules are the com
 capture. Live evidence JSON files beside them are curated observations, not schemas.
 `node test/codex-fixtures.test.mjs` validates the holder's request parameters against
 both versions. Historical 0.156.1 evidence remains under its original directory.
+
+[Git metadata write evidence](GitMetadataWrite-0.159.2-2026-10-01.json) records native
+worker commits and approver acceptance through the public entry points under default
+`workspace-write`, with unchanged owner auth/config and a read-only negative control.

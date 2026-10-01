@@ -1,0 +1,92 @@
+{
+  "kind": "curated actual native role probes",
+  "capturedAt": "2026-10-01",
+  "codexVersion": "0.159.2",
+  "requestedModel": "gpt-6-astra",
+  "sourceCommit": "bc6e1ef1393db23af49375490c371b76f9bf06f1",
+  "permissionMode": "default workspace-write",
+  "fullAccessRequested": false,
+  "privilegeEscalationRequested": false,
+  "gitMetadataRoots": "Only canonical git rev-parse --absolute-git-dir and --git-common-dir, for writable worker/approver",
+  "approver": {
+    "entry": "approverLift",
+    "commands": [
+      {
+        "command": "git commit -m 'Accept disposable marker'",
+        "exit": 0
+      },
+      {
+        "command": "'<NODE>' '<PROMPTOBUS_BIN>' lease --as approver:acceptance --task native-approver-accept-t20261001-070000 -- node verify.mjs",
+        "exit": 0
+      },
+      {
+        "command": "'<NODE>' '<PROMPTOBUS_BIN>' lease --as approver:acceptance --task native-approver-accept-t20261001-070000 --key <FIXTURE>/root/repos/fixture/acceptance -- git -C <FIXTURE>/root/repos/fixture/acceptance merge --ff-only worktree-promptobus-native-approver-accept-approver-acceptance-t20261001-070000",
+        "exit": 0
+      }
+    ],
+    "acceptedSha": "f7ca88e3c6c9214888a8cc7e9a77037554b91a38",
+    "mainSha": "f7ca88e3c6c9214888a8cc7e9a77037554b91a38",
+    "mainFastForward": true,
+    "gate": {
+      "tests": 1,
+      "passed": 1,
+      "exit": 0
+    },
+    "result": {
+      "id": "20261001T041032660-0006-d0feeb",
+      "type": "result",
+      "verdict": "APPROVE"
+    },
+    "exit": 0
+  },
+  "worker": {
+    "entry": "spawn",
+    "commands": [
+      {
+        "command": "git add marker.txt && git commit -m 'Complete native worker marker' && git rev-parse HEAD && git status --porcelain",
+        "exit": 0
+      },
+      {
+        "command": "'<NODE>' '<PROMPTOBUS_BIN>' lease --as worker:acceptance --task native-worker-git-t20261001-080000 -- node verify.mjs",
+        "exit": 0
+      },
+      {
+        "command": "'<NODE>' '<PROMPTOBUS_BIN>' lease --as worker:acceptance --task native-worker-git-t20261001-080000 -- node verify.mjs",
+        "exit": 1
+      },
+      {
+        "command": "'<NODE>' '<PROMPTOBUS_BIN>' lease --as worker:acceptance --task native-worker-git-t20261001-080000 -- node verify.mjs",
+        "exit": 0
+      }
+    ],
+    "workerCommit": "4a71259a681f36e4bbb8d34883df087d762b0d7b",
+    "mainUnchanged": true,
+    "gate": {
+      "tests": 1,
+      "passed": 1,
+      "exit": 0
+    },
+    "mutation": {
+      "mutatedExit": 1,
+      "restoredExit": 0
+    },
+    "nativeGateAndHandoverArtifacts": true,
+    "result": {
+      "id": "20261001T041114208-0008-523245",
+      "type": "result"
+    },
+    "exit": 0
+  },
+  "readOnlyApprover": {
+    "mode": "read-only",
+    "gitMetadataRoots": [],
+    "actualNativeApplyPatchRefused": true,
+    "projectMcpWriteToolHidden": true,
+    "exit": 0
+  },
+  "ownerAuthConfigUnchanged": true,
+  "privateAuthUnchanged": true,
+  "subscriptionRefreshTokenBlank": true,
+  "fixturesRemoved": true,
+  "boundary": "Disposable standalone hosts. Approver copied one existing canonical ls-code-review skill; this does not prove complete workspace MCP delivery."
+}

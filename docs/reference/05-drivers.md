@@ -646,9 +646,9 @@ left twelve holder processes alive into the next day, each holding a session fil
 directory that no longer existed.
 
 The record IS the session: `dropSession` removes it on stop, and so does whoever removes the
-tree it lives in, so gone means there is nothing left to hold. The watch tests with
-`existsSync` rather than a read — the record is replaced by rename and is never transiently
-absent, while an unreadable file is a reason to keep holding rather than to die. The
+tree it lives in, so gone means there is nothing left to hold. The watch checks record
+presence and the original launch identity: a replacement record cannot authorize the old
+holder. Records without a launch nonce keep their legacy presence check. The
 app-server is killed FIRST and the exit is immediate, because the child's own exit handler
 writes to the holder log and that write would recreate the tree that was just removed. The
 interval is `unref`ed, so the watch is never the reason the process is alive.
@@ -673,6 +673,24 @@ these two captured versions. An unknown installed version needs a fresh capture 
 measurement. Historical 0.156.1 MCP and token-usage records remain under their original date;
 they are not evidence from the newer binaries. The unrouted default is `gpt-6-astra`, tested
 with subscription credentials on both current binaries.
+
+### Writable Git metadata
+
+For a writable worker or approver, the driver resolves `git rev-parse --absolute-git-dir`
+and `--git-common-dir` after the worktree exists and adds those exact real paths to its
+sandbox roots. Codex otherwise protects Git metadata inside a writable worktree, so a
+commit or squash can fail on `ORIG_HEAD.lock`. Read-only participants receive no Git
+metadata write roots. This does not change the permission profile to full access.
+
+Measured 2026-10-01 on codex-cli 0.159.2, public `spawn` and `approverLift` completed
+native model turns in the default `workspace-write` profile. The worker committed only
+its assigned change, ran a 1/1 gate and a failing/restored mutation, sent gate and handover
+artifacts, and left main unchanged. The approver committed the squash, ran its 1/1 gate,
+and fast-forwarded main through the keyed publication lease. Both returned `result` and
+exited 0; owner auth and config were unchanged. The narrower read-only approver refused
+a native file edit and exposed no classified project MCP write tool. This Git write
+measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
+[Curated evidence](../../test/fixtures/codex-app-server/0.159.2/GitMetadataWrite-0.159.2-2026-10-01.json).
 
 ## Codex participant authentication
 

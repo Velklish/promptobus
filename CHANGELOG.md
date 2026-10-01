@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files through a bounded read-only MCP helper. Rule files are exact grants; canonical, personal
   and declared review skills have separate roots without configuration or rule ancestors.
   Other roles keep their existing profiles.
+- **Writable Codex workers and approvers receive exact Git metadata roots** (PB-315).
+  The linked-worktree Git directory and common Git directory come from `git rev-parse`;
+  read-only participants receive neither. Native 0.159.2 worker commits and approver
+  squash, gate and keyed-lease fast-forward completed under default `workspace-write`.
 - **Codex protocol captures cover 0.158.0 and Desktop's 0.159.2** (PB-315): 314 generated
   schemas per binary, holder request checks for both, and native hook/skill/reporter turns
   on 0.159.2. The current fixture baseline is 0.159.2; the measured minimum is 0.158.0.
