@@ -523,9 +523,11 @@ Reads and search output are bounded; listings skip Git, dependency and build dir
 includes the authentication home. The review prompt still forbids builds, tests and
 analyzers and names the MCP reads. Existing bus and classified external read tools remain.
 
-A native 0.159.2 reviewer completed all three MCP reads, retrieved a file marker absent
-from its assignment, reported neither `exec_command` nor `write_stdin` in the inspected
-metadata, and produced zero command-execution items. [Live evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFiles-0.159.2-2026-10-01.json).
+Native reviewers on both supported binaries completed all three MCP reads, retrieved a
+file marker absent from the assignment, reported neither `exec_command` nor `write_stdin`
+in the inspected metadata, and produced zero command-execution items.
+[0.158.0 evidence](../../test/fixtures/codex-app-server/0.158.0/ReviewerFiles-0.158.0-2026-10-01.json)
+and [0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFiles-0.159.2-2026-10-01.json).
 
 `bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own

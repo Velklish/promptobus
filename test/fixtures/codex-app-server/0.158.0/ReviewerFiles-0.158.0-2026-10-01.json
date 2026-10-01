@@ -1,0 +1,39 @@
+{
+  "version": "0.158.0",
+  "model": "gpt-6-astra",
+  "threadId": "01a0f52b-8e42-7282-98da-b6c8a34750be",
+  "sandbox": "read-only",
+  "completed": "completed",
+  "readerInventory": [
+    "list_files",
+    "search_text",
+    "read_file"
+  ],
+  "calls": [
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "list_files",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "search_text",
+      "status": "completed"
+    }
+  ],
+  "messages": [
+    "I\u2019ll inspect the tool metadata, then use only the reviewer_files tools to read, list, and search the source.",
+    "- Exact comment: `// FILE-READ-MARKER-7108`\n- `Compute()` returns `42`.\n- NO_EXECUTION_TOOL \u2014 neither `exec_command` nor `write_stdin` exists.\n- reviewer_files `read_file`, `list_files`, and `search_text` all succeeded."
+  ],
+  "commandExecutionItems": 0,
+  "exitCode": 0,
+  "threadConfig": {
+    "features.shell_tool": false,
+    "features.unified_exec": false
+  }
+}

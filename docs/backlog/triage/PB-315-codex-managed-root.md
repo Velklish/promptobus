@@ -29,4 +29,5 @@ The owner requires a Codex root orchestrator after losing Claude Code access. An
 
 - Native 0.158.0 root: task metadata on first turn, warden wake, user answer, managed owner stopped on close. [Evidence](../../../test/fixtures/codex-app-server/0.158.0/ManagedRoot-0.158.0-2026-10-01.json).
 - Native 0.159.2 resume: same thread, owner and creation time; original brief removed; model remembered its first-turn marker; four successful bus reads, exit 0. [Evidence](../../../test/fixtures/codex-app-server/0.159.2/ManagedRootResume-0.159.2-2026-10-01.json).
+- Native reviewers on both 0.158.0 and 0.159.2 completed all three local MCP reads with zero command-execution items and no native execution tools.
 - Focused lifecycle, identity and CLI regressions, full suite and mutation outcomes are reported on the worker commit; acceptance remains the approver's pass.
