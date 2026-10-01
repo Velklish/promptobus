@@ -32,7 +32,9 @@ lease until native binding completes; a competing launcher refuses before touchi
 A dead launcher does not make its detached holder dead: a retained live unbound root also
 refuses retry, even under a different title. Once its owned processes are gone, a retry
 removes the dead unbound registry record before reusing its private home. Rollback changes
-only the record of its own launch. This command does not
+only the record of its own launch. The holder lock covers startup before process ids are
+published, and an immutable launch nonce prevents a delayed child from adopting a replacement
+record. This command does not
 claim or convert an existing Desktop chat.
 
 On Codex 0.158.0, a live managed owner read its task metadata on the first turn, received

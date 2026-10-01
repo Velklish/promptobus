@@ -11,6 +11,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [guides/contributing.md](guides/contributing.md) | Contribution workflow through backslop | Living |
 | [guides/releasing.md](guides/releasing.md) | How a release is cut, including the technical-writer pass | Living |
 | [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
+| [reference/reporter-channel.md](reference/reporter-channel.md) | Human questions to the retained read-only Codex reporter | Living |
 | [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
 | [ROADMAP.md](ROADMAP.md) | Direction and goals; tasks are in the backlog | Living |
 | `backlog/` | Task tracker: one file per task, status is the directory, summary is `npx github:Velklish/backslop#v0.10.1 status` | Living |

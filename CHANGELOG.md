@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Concurrent launches reserve their task before touching session files.
   A retained live unbound holder also refuses retry after its launcher dies; rollback
   only changes its own launch record. Dead unbound records are removed before home reuse.
+  A live holder lock protects the interval before PID publication; immutable child launch
+  ownership refuses a replacement record before native startup.
   `stop orchestrator` cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
   Existing tasks cannot be taken over. Status names the owner's actual delivery
   harness. CLI help, both READMEs and installed orchestration/review skills include Codex owner,

@@ -9,6 +9,7 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [03-cli.md](03-cli.md) | Commands, harness flags, warden and guard |
 | [04-protocol.md](04-protocol.md) | Addresses, message types, engine, artifacts, when a new record field can be sent, and what `send` refuses in a handover record |
 | [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |
+| [reporter-channel.md](reporter-channel.md) | Human questions to the retained read-only Codex reporter |
 
 The [contributing guide](../guides/contributing.md) describes the verification gates; `npm run audit` also enforces the English runtime-output claim in the [roadmap](../ROADMAP.md).
 [test/docs-links.test.mjs](../../test/docs-links.test.mjs) resolves every tracked Markdown link in the checkout, in the files `npm pack` ships and at the skill paths `install` writes. `npm run docs-links:external` classifies an auth, rate-limit or transport failure as unverified and is not a gate. Task links and delivery misses are held by [the baseline](../../test/fixtures/docs-links-baseline.json), which can only shrink.

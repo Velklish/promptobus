@@ -22,7 +22,7 @@ English is canonical. The Russian README is the only other language in this repo
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
 - **Managed Codex root owner.** `promptobus lead --brief ./task.md` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
 - **Teamleads for child tasks.** `promptobus spawn --teamlead --brief ./group.md --task <root>` lifts a Claude Code or Codex orchestrator at the install root. It owns one child task, reports to the root as `teamlead:<slug>`, and repairs an interrupted lift on retry. A relift updates both addresses to the new session; a dry-run leaves a pending repair untouched. A Codex teamlead completed worker lifts on all three harnesses and real Claude Code, Cursor and Codex reviews with `full-access`; their `workspace-write` lifts refused. Cursor teamleads remain refused.
-- **Reporter for the person.** `promptobus report --task <root>` lifts one read-only Claude Code or Codex session at the install root. It answers from the tree digest and journals in its own window, or asks the root orchestrator as `user` through its restricted MCP tool.
+- **Reporter for the person.** `promptobus report --task <root>` lifts one read-only Claude Code or Codex session at the install root. It answers from the tree digest and journals, or asks the root orchestrator as `user` through its restricted MCP tool. Ask an existing Codex reporter with `report --task <root> --question <text>`; its completed reply prints in the terminal.
 - **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate after the required earlier results are on record. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
 - **Addressed acceptance.** `review <path> --task <id> --approver` lifts the first `writes-main-tree` gate after the preceding participant and owner have reported. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to the owner step in that task while the calling session holds it through a session id or validated record pointer, and the canonical exchange stays in the task journal.
 - **Three harnesses, one contract.** Drivers for Claude Code, Cursor and Codex; `promptobus.json` lists which of them a workspace may spawn.
@@ -109,8 +109,9 @@ promptobus status --task <id>
 The command prints the new task id. The holder continues the owner in the background;
 from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it and
 `promptobus ask --answers --task <id>` reads its replies. Its private home avoids a shared
-project layer. Access credentials have a bounded lifetime; sign in again and relift after
-expiry. See [Lead](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md).
+project layer. Before idle turns, the holder reloads fresh owner access in the same native
+thread. If owner access expires, renew the normal owner login and retry. Participants never
+receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md).
 
 From an existing orchestrator session, lift a worker:
 
