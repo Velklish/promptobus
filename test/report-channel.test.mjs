@@ -2,9 +2,11 @@ import './home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture } from './console.mjs';
+import { capture, expectFail } from './console.mjs';
+import { runPromptobus } from '../lib/cli.js';
 import { hostOf } from '../lib/host.js';
 import { closeTask, createTask, participantRecord, upsertParticipant } from '../lib/store.js';
 import { socketPath, writeSession } from '../lib/codex-session.js';
@@ -112,4 +114,53 @@ test('question mode refuses a missing reporter, another harness, a child and a c
   await assert.rejects(reporting.reportQuestion(host, { task: child, question: 'Question' }), /root task/);
   closeTask(home, missing);
   await assert.rejects(reporting.reportQuestion(host, { task: missing, question: 'Question' }), /closed/);
+});
+
+
+test('participant role and inherited native identities cannot ask the reporter', async () => {
+  const before = calls.length;
+  for (const env of [{ PROMPTOBUS_ROLE: 'worker:one' },
+    { CODEX_THREAD_ID: 'participant-thread' }, { CLAUDE_CODE_SESSION_ID: 'participant-session' },
+    { CURSOR_CONVERSATION_ID: 'participant-chat' }]) {
+    const refusal = await expectFail(() => reporting.reportQuestion(host, { task, question: 'Borrowed human question' }, { env, cwd: root }));
+    assert.equal(refusal.failed, true, JSON.stringify(env));
+    assert.match(refusal.out, /person at a terminal/);
+    assert.equal(calls.length, before, 'participant must be refused before any holder RPC');
+  }
+});
+
+test('resolved MCP session identities and contested records cannot ask the reporter', async () => {
+  const before = calls.length;
+  const env = { PROMPTOBUS_TASK: task };
+  for (const [harness, variable, idField] of [
+    ['codex', 'PROMPTOBUS_CODEX_SESSION', 'threadId'],
+    ['cursor', 'PROMPTOBUS_CURSOR_SESSION', 'chatId'],
+  ]) {
+    const file = path.join(root, `${harness}-caller.json`);
+    writeFileSync(file, JSON.stringify({ home, task, address: 'orchestrator', [idField]: 'owner' }));
+    env[variable] = file;
+    const refusal = await expectFail(() => reporting.reportQuestion(host, { task, question: 'Borrowed question' }, { env: { PROMPTOBUS_TASK: task, [variable]: file }, cwd: root }));
+    assert.equal(refusal.failed, true, variable);
+    assert.match(refusal.out, new RegExp(variable));
+    assert.equal(calls.length, before, 'record identity must be refused before holder RPC');
+  }
+  const contested = await expectFail(() => reporting.reportQuestion(host, { task, question: 'Borrowed question' }, { env, cwd: root }));
+  assert.equal(contested.failed, true);
+  assert.match(contested.out, /PROMPTOBUS_CODEX_SESSION/);
+  assert.match(contested.out, /PROMPTOBUS_CURSOR_SESSION/);
+  assert.equal(calls.length, before);
+});
+
+test('CLI passes caller env and cwd to question mode; a plain terminal still works', async () => {
+  const before = calls.length;
+  const refusal = await expectFail(() => runPromptobus(['report', '--task', task, '--question', 'Borrowed'],
+    { host, cwd: root, env: { CODEX_THREAD_ID: 'participant-thread' } }));
+  assert.equal(refusal.failed, true);
+  assert.match(refusal.out, /CODEX_THREAD_ID/);
+  assert.equal(calls.length, before);
+  const output = await capture(() => runPromptobus(['report', '--task', task, '--question', 'Human'],
+    { host, cwd: root, env: {} }));
+  assert.match(output, /Answer from source message msg-42/);
+  assert.equal(calls.filter((call) => call.method === 'turn/start').length,
+    calls.slice(0, before).filter((call) => call.method === 'turn/start').length + 1);
 });

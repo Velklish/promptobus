@@ -11,7 +11,9 @@ This starts one user turn on the reporter's existing native thread and waits up
 to three minutes for that turn's answer. It prints the answer in the terminal.
 It neither lifts another reporter nor resumes the thread in a different Codex
 home. If the reporter is already working, the native app-server queues the new
-input. Launch flags cannot be combined with `--question`.
+input. Launch flags cannot be combined with `--question`. Run it from a plain
+terminal: a participant bus address, inherited harness identity or resolved
+MCP session record is refused before the holder receives the question.
 
 The reporter reads the root-tree digest and names its source message ids. When
 the records cannot answer, it uses `promptobus_ask` to ask the root orchestrator
