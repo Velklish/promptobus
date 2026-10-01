@@ -56,6 +56,19 @@ try {
   const refreshed = await f.sync();
   check('owner refresh-token-only rotation does not trigger a private reload', !refreshed.changed && !refreshed.reloaded && f.calls.length === 1);
 
+  const rewritten = fixture();
+  rewritten.setOwner(updated);
+  writeFileSync(rewritten.privateFile, participantAuthSnapshot(JSON.stringify(updated), rewritten.ownerHome));
+  const rewrittenResult = await rewritten.sync();
+  check('externally rewritten private auth still reloads an older native cache',
+    !rewrittenResult.changed && rewrittenResult.reloaded && rewritten.turn() === 'MODEL_OK' && rewritten.calls.length === 1);
+  const switched = fixture();
+  const other = { ...updated, tokens: { ...updated.tokens, account_id: 'other-account' } };
+  switched.setOwner(other);
+  writeFileSync(switched.privateFile, participantAuthSnapshot(JSON.stringify(other), switched.ownerHome));
+  check('rewriting both files cannot bypass the original participant identity',
+    /identity/.test(await refusal(() => switched.sync())) && switched.calls.length === 0 && switched.turn() === 'HTTP_401');
+
   const active = fixture();
   const before = readFileSync(active.privateFile, 'utf8');
   active.setOwner(updated);
