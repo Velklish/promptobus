@@ -413,7 +413,15 @@ legacy store and protocol v1.
 The lock is a directory, not a file: `mkdir` is atomic on every FS and does
 not need a descriptor cleaned up; a second process gets `EEXIST` instead of
 a quiet overwrite. A foreign lock is dropped only on a dead pid, never on a
-guess about age.
+guess about age. Reclamation takes an exclusive `.reclaim/` claim inside that
+lock generation and rechecks its owner before removal. Release checks the
+original owner nonce, so an old holder cannot remove a replacement generation.
+
+If a reclaimer dies while holding `.reclaim/`, automatic recovery refuses.
+Inspect the lock's `owner` and `.reclaim/owner` and verify that both recorded
+processes have exited before removing only the claim named by the refusal.
+Never remove a live or replacement claim. Retry then recovers the ordinary
+dead-owner lock.
 
 Refusal wording did not move here and will not: the legacy store has its own
 (`GateError` with a path for a person), v1 has its own (a typed code). The

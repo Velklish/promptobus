@@ -98,12 +98,13 @@ promptobus uninstall                                # снять только с
 Для ведущей сессии на Codex напишите бриф — файл Markdown с заданием, — затем:
 
 ```bash
-promptobus lead --brief ./brief.md --task-title "Rename the billing module" --model gpt-6-astra
-promptobus status
-promptobus ask "What remains before acceptance?"
+promptobus lead --brief ./brief.md --title "Rename the billing module" --model gpt-6-astra
+promptobus status --task <id>
+promptobus ask "What remains before acceptance?" --task <id>
+promptobus ask --answers --task <id>
 ```
 
-`lead` поднимает управляемого оркестратора на Codex. Его holder принимает почту и вопросы, а `lead --resume --task <id>` восстанавливает неактивную управляемую сессию с тем же native thread id. Перед новым ходом holder копирует свежий access token того же аккаунта из домашнего каталога владельца и обновляет native cache через `account/read` с `refreshToken: false`. Участники не обновляют общий refresh token; если у владельца нет свежей авторизации, нужен обычный `codex login`, затем повтор команды. Пока идёт ход модели, замена авторизации запрещена.
+`lead` печатает id новой задачи; подставьте его вместо `<id>`. Команда поднимает управляемого оркестратора на Codex. Его holder принимает почту и вопросы, а `lead --resume --task <id>` восстанавливает неактивную управляемую сессию с тем же native thread id. Перед новым ходом holder копирует свежий access token того же аккаунта из домашнего каталога владельца и обновляет native cache через `account/read` с `refreshToken: false`. Участники не обновляют общий refresh token; если у владельца нет свежей авторизации, нужен обычный `codex login`, затем повтор команды. Пока идёт ход модели, замена авторизации запрещена.
 
 Для отдельного worker:
 

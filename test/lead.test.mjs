@@ -207,3 +207,18 @@ check('visible unrelated personal skills remain readable without granting their 
 
 check('a natively injected original assignment resumes by continuation without duplication',
   recoveryPrompt({ ...recovery, initialAssignmentInjected: true }, { thread: { turns: [] } }) === recovery.prompt);
+
+for (const file of ['README.md', 'README.ru.md']) {
+  const doc = readFileSync(path.resolve(file), 'utf8');
+  const line = doc.match(/^promptobus lead --brief[^\n]+/m)?.[0];
+  const args = line?.match(/"[^"]*"|[^\s]+/g)?.slice(1).map(value => value.replace(/^"|"$/g, '')) ?? [];
+  const index = args.indexOf('--brief');
+  if (index >= 0) args[index + 1] = brief;
+  const ran = await expectFail(() => runPromptobus([...args, '--dry-run'], { host, cwd: root, env: {} }));
+  check(`${file}: the first managed lead recipe reaches a real CLI dry run`,
+    !ran.failed && ran.value === 0 && args[0] === 'lead', ran.out);
+  const from = doc.indexOf(line);
+  const end = doc.indexOf('promptobus spawn', from);
+  const question = doc.slice(from, end).match(/promptobus ask "[^"]*"[^\n`]*--task <id>/)?.[0];
+  check(`${file}: the quickstart human question selects the task printed by lead`, !!question);
+}

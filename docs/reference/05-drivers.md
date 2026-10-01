@@ -676,10 +676,12 @@ with subscription credentials on both current binaries.
 
 ### Writable Git metadata
 
-For a writable worker or approver, the driver resolves `git rev-parse --absolute-git-dir`
+For a writable pipeline step of kind `edits-tree` or `writes-main-tree`, the driver resolves `git rev-parse --absolute-git-dir`
 and `--git-common-dir` after the worktree exists and adds those exact real paths to its
 sandbox roots. Codex otherwise protects Git metadata inside a writable worktree, so a
-commit or squash can fail on `ORIG_HEAD.lock`. Read-only participants receive no Git
+commit or squash can fail on `ORIG_HEAD.lock`. The kind comes from the validated
+pipeline declaration, so a custom worker name such as `builder` receives the same
+grant as `worker`. Read-only participants receive no Git
 metadata write roots. This does not change the permission profile to full access.
 
 Measured 2026-10-01 on codex-cli 0.159.2, public `spawn` and `approverLift` completed

@@ -33,8 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Other roles keep their existing profiles.
 - **Writable Codex workers and approvers receive exact Git metadata roots** (PB-315).
   The linked-worktree Git directory and common Git directory come from `git rev-parse`;
-  read-only participants receive neither. Native 0.159.2 worker commits and approver
+  the validated pipeline execution kind covers custom worker names such as `builder`.
+  Read-only participants receive neither. Native 0.159.2 worker commits and approver
   squash, gate and keyed-lease fast-forward completed under default `workspace-write`.
+- **Stale-lock reclamation preserves a replacement generation** (PB-315).
+  An exclusive reclamation claim and owner recheck serialize stale removal; nonce-bound
+  release cannot remove a new holder. An interrupted reclamation claim refuses automatic
+  removal and names the targeted cleanup after both owner processes have exited.
+  The Russian managed-root recipe now uses `lead --title` and scopes each `ask` to its task.
 - **Codex protocol captures cover 0.158.0 and Desktop's 0.159.2** (PB-315): 314 generated
   schemas per binary, holder request checks for both, and native hook/skill/reporter turns
   on 0.159.2. The current fixture baseline is 0.159.2; the measured minimum is 0.158.0.
