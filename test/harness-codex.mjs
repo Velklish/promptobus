@@ -60,6 +60,7 @@ export const ELICIT_TOOL_VAR = 'CODEX_STUB_ELICIT_TOOL';
 export const ELICIT_TOOL_LATE = 'late_server';
 export const FAIL_TURN_VAR = 'CODEX_STUB_FAIL_TURN';
 export const ORPHAN_VAR = 'CODEX_STUB_ORPHAN';
+export const THREAD_DELAY_VAR = 'CODEX_STUB_THREAD_DELAY_MS';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
 export const HANG_AFTER_START_VAR = 'CODEX_STUB_HANG_AFTER_START';
@@ -531,6 +532,7 @@ async function appServer() {
       return;
     }
     if (method === 'thread/start') {
+      await new Promise((resolve) => setTimeout(resolve, Number(process.env[THREAD_DELAY_VAR] ?? 0)));
       const t = writeThread(home, {
         id: newId(),
         cwd: params.cwd,
@@ -576,7 +578,7 @@ async function appServer() {
         fail(id, -32600, `no rollout found for thread id ${params.threadId}`);
         return;
       }
-      reply(id, { thread: { id: t.id, status: { type: 'idle' } } });
+      reply(id, { thread: { id: t.id, status: { type: 'idle' }, turns: params.excludeTurns ? [] : t.turns ?? [] } });
       return;
     }
     if (method === 'thread/name/set') {
@@ -623,6 +625,7 @@ async function appServer() {
       t.turnId = turnId;
       t.status = 'active';
       t.firstRpc ??= { method, params };
+      t.turns = [...(t.turns ?? []), { id: turnId, items: [{ type: 'userMessage', content: params.input ?? [] }] }];
       writeThread(home, t);
       reply(id, { turn: { id: turnId, status: 'inProgress' } });
       setTimeout(() => playTurn(home, t, turnId, params, ask, notify), 40);

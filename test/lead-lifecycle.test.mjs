@@ -60,6 +60,22 @@ check('resume preserves the original native owner and journal creation',
   && ownerOf(owner()) === ownerOf(originalOwner) && core().readTask(task).created === creation);
 await holderAsk(ref, 'shutdown', {}, env);
 await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
+const nativeThreadFile = path.join(harness.home, 'threads', first.threadId + '.json');
+const emptyHistory = JSON.parse(readFileSync(nativeThreadFile, 'utf8'));
+emptyHistory.turns = [];
+writeFileSync(nativeThreadFile, JSON.stringify(emptyHistory));
+const recovered = cli(['lead', '--resume', '--task', task]);
+const third = await waitFor(() => {
+  const record = readSession(ref, env);
+  return record?.turns >= 3 && record.busy === false ? record : null;
+}, { timeoutMs: 15000 });
+const restoredHistory = JSON.parse(readFileSync(nativeThreadFile, 'utf8'));
+check('an owner bound before assignment delivery replays immutable scope from its retained record',
+  recovered.status === 0 && third?.initialPrompt === first.initialPrompt
+  && restoredHistory.turns[0].items[0].content[0].text.includes('Recover this root')
+  && restoredHistory.turns[0].items[0].content[0].text.includes('Recovery continuation'));
+await holderAsk(ref, 'shutdown', {}, env);
+await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
 const retainedBefore = readFileSync(path.join(second.codexHome, 'config.toml'), 'utf8');
 const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 20 })).toString('base64url');
 writeFileSync(path.join(ownerHome, 'auth.json'), JSON.stringify({ tokens: {
@@ -72,7 +88,10 @@ check('resume refuses short-lived owner auth without deleting retained history o
   && readFileSync(path.join(second.codexHome, 'config.toml'), 'utf8') === retainedBefore
   && ownerOf(owner()) === ownerOf(originalOwner),
   `${expired.status} ${expired.stdout} ${expired.stderr}`);
-await codexDriver.stop(ref);
+const stopped = cli(['stop', 'orchestrator', '--task', task], { CODEX_THREAD_ID: first.threadId });
+check('stop cleans a dead managed Codex root home without closing its task',
+  stopped.status === 0 && !existsSync(second.codexHome) && !readSession(ref, env)
+  && core().readTask(task).status === 'active', `${stopped.status} ${stopped.stdout}${stopped.stderr}`);
 writeFileSync(path.join(ownerHome, 'auth.json'), '{"stub":"credentials"}\n');
 writeFileSync(brief, '# Failed first turn\nKeep recovery history.\n');
 const failedTask = 'lead-lifecycle-t20261001-000002';

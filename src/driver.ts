@@ -176,6 +176,10 @@ export interface SpawnContext {
   permissionMode?: string | null;
   /** Directories outside `cwd` that the participant may read. */
   addDirs?: string[];
+  /** Exact read-only files outside the reviewed tree; parents are not granted. */
+  readFiles?: string[];
+  /** Review procedure directories and their shared references. */
+  readSkillDirs?: string[];
   /** Directory with workspace skills for one session. */
   pluginDir?: string | null;
   /** Where the driver puts its MCP config and its settings file. */

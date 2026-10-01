@@ -516,11 +516,13 @@ keep their own profiles. A reviewer cannot read local files through a native Rea
 so the mechanism also supplies `reviewer_files`, a dependency-free stdio MCP server.
 
 Its `read_file`, `list_files` and literal `search_text` tools accept only declared absolute
-paths inside the reviewed tree, canonical rules/skills, the private review directory and
-task artifacts. Realpath checks reject escaping symlinks. No tool launches a subprocess.
+paths inside the reviewed tree, exact rule files, canonical and visible personal skill
+directories, declared review skill/shared directories and task artifacts. Realpath checks reject escaping symlinks. No tool launches a subprocess.
 Reads and search output are bounded; listings skip Git, dependency and build directories.
 `PROMPTOBUS_REVIEW_READ_ROOTS` carries the JSON root list to this one server. It never
-includes the authentication home. The review prompt still forbids builds, tests and
+includes the authentication home. Rule-file parent directories, the shared workspace
+ancestor and the private configuration directory are not read roots. The isolated canonical
+skill copy is granted separately from its configuration directory. The review prompt still forbids builds, tests and
 analyzers and names the MCP reads. Existing bus and classified external read tools remain.
 
 Native reviewers on both supported binaries completed all three MCP reads, retrieved a

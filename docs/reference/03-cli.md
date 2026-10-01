@@ -25,7 +25,8 @@ The holder and warden wake this owner when mail arrives. From a plain terminal, 
 <id>` sends a question as `user`, and `ask --answers --task <id>` consumes its replies.
 `status` and `digest` inspect progress. `done --task <id>` stops the managed owner alongside
 other managed participants, unless `--keep-sessions` is explicit. `--dry-run` prints the
-plan without creating a task, a participant home or a model turn. This command does not
+plan without creating a task, a participant home or a model turn. Actual launches hold a task-scoped
+lease until native binding completes; a competing launcher refuses before touching session files. This command does not
 claim or convert an existing Desktop chat.
 
 On Codex 0.158.0, a live managed owner read its task metadata on the first turn, received
@@ -34,7 +35,10 @@ question and close outcomes all have exit code 0. [Live evidence](../../test/fix
 `lead --resume --task <id>` continues an active managed Codex root with its recorded native
 thread and private home. It refuses a live holder, app-server or launcher, a closed task,
 an attached Desktop owner, and any identity or workspace mismatch. With no new `--brief`,
-the next turn continues the prior assignment from history. A supplied brief is a continuation,
+the next turn continues the prior assignment from history. The original assignment is also
+retained immutably in the private session record. Resume checks native user-message history
+and replays that assignment when it was never submitted, retaining any new continuation.
+A supplied brief is a continuation,
 not a new task. The task creation time, mailbox owner and native thread identity stay the same.
 
 A root bound before a failed first model turn retains its record and private rollout for
@@ -1007,7 +1011,7 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 
 `dismiss <address>` drops a finished participant from watch. The task mailbox owner does it, or an approver of this task holding its own recorded session — the proof `sweep` and `stop` share.
 
-`stop <address>` closes ONE participant's session and leaves the task open. The task mailbox owner stops it, or an approver of this task holding its own recorded session — the same proof `dismiss` and `sweep` use; `done` stays the owner's alone. It refuses an address that is not a participant of this task, the orchestrator — which has no session this mechanism started, being the one that started the others — and a participant lifted `attached`, whose session is a person's own window the mechanism never owned. A participant with no live session is not an error: there is nothing to stop and the task is still open. **A session whose state could not be read is not that**, and `stop` refuses it with exit 1, on any harness, and says why: the harness binary was not found or does not start (the line names what was looked for), tmux could not be run for a Cursor participant (named the same way), the harness registry could not be read, the harness's registry home is named by nobody (the Cursor and Codex refusal), or there is nobody to ask. A record with no session reference never gets this far — it was not started by this mechanism, and the command refuses it earlier. The line says nothing was stopped and the session may still be running; exit 0 there used to report success over a state nobody read. **The session record goes with the process**, because the stop runs through the driver's own `stop`, which retires the record — `dropSession` for Codex and Cursor, the registry entry leaving for Claude. That is the whole reason the command exists: a hand `kill` of the holder pid frees the memory and leaves the record reading `state: alive`, which only `done` on that task would ever clear, and anything reading the registry for liveness then reads a lie. A stop the driver could not confirm is **not** reported as success: the record may still read alive, and the line says so and names the harness's registry to look in.
+`stop <address>` closes ONE participant's session and leaves the task open. The task mailbox owner stops it, or an approver of this task holding its own recorded session — the same proof `dismiss` and `sweep` use; `done` stays the owner's alone. It refuses an address that is not a participant of this task and a participant lifted `attached`, whose session is a person's own window the mechanism never owned. A managed root orchestrator is stopped through its driver; even an already-dead root invokes cleanup for its retained private home. A participant with no live session is not an error: there is nothing to stop and the task is still open. **A session whose state could not be read is not that**, and `stop` refuses it with exit 1, on any harness, and says why: the harness binary was not found or does not start (the line names what was looked for), tmux could not be run for a Cursor participant (named the same way), the harness registry could not be read, the harness's registry home is named by nobody (the Cursor and Codex refusal), or there is nobody to ask. A record with no session reference never gets this far — it was not started by this mechanism, and the command refuses it earlier. The line says nothing was stopped and the session may still be running; exit 0 there used to report success over a state nobody read. **The session record goes with the process**, because the stop runs through the driver's own `stop`, which retires the record — `dropSession` for Codex and Cursor, the registry entry leaving for Claude. That is the whole reason the command exists: a hand `kill` of the holder pid frees the memory and leaves the record reading `state: alive`, which only `done` on that task would ever clear, and anything reading the registry for liveness then reads a lie. A stop the driver could not confirm is **not** reported as success: the record may still read alive, and the line says so and names the harness's registry to look in.
 
 `sweep <address>` cleans up after ONE accepted piece and leaves the task active. It is the verb [ADR-017](../adr/adr-017-the-owner-gate-is-a-positive-proof.md) chose over a flag on `done`, for the reason [ADR-012](../adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md) gave: `done` promises the whole task, and a subset flag makes every one of its promises conditional on a flag the reader has to notice.
 
@@ -1064,6 +1068,10 @@ If the journal does not answer, `promptobus_ask` sends a question as
 `promptobus_ask` call with `answers: true` and `after: <id>` reads later
 answers without taking them from the user mailbox. It never forwards or
 filters worker status for the orchestrator.
+
+For a Codex reporter, `report --task <root> --question <text>` sends a human follow-up to
+the existing restricted thread and prints that exact completed turn. It refuses launch flags
+and never starts another reporter. See [Reporter question channel](reporter-channel.md).
 
 `status` lists the reporter beneath its root. `done` of that root stops
 the reporter with the other managed sessions, unless `--keep-sessions` was

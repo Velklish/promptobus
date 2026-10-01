@@ -247,3 +247,17 @@ check(': the stop finds claude where the host says — the lift\'s door — and 
   lifted.out.trim());
 check(': through the host\'s binary: it listed the session and ran claude stop on its id',
   /^agents --json$/m.test(calls()) && /^stop off-1$/m.test(calls()), calls());
+
+store.upsertParticipant(HOME, TASK, store.participantRecord('orchestrator', { harness: 'claude', mode: 'managed', sessionRef: 'sess-root' }));
+live.add('sess-root');
+const rootStop = fakeRegistry();
+await capture(() => stop(HOST, { task: TASK, address: 'orchestrator' }, { registry: rootStop.registry }));
+check(': a managed root holder is stopped while its task and workers stay active',
+  rootStop.calls[0] === 'sess-root' && !live.has('sess-root') && store.readTask(HOME, TASK).status === 'active');
+const deadRootStop = fakeRegistry(() => ({ ok: true, stopped: false, note: 'retained private home cleaned' }));
+await capture(() => stop(HOST, { task: TASK, address: 'orchestrator' }, { registry: deadRootStop.registry }));
+check(': a dead managed root still invokes driver cleanup for its retained home', deadRootStop.calls[0] === 'sess-root');
+store.upsertParticipant(HOME, TASK, store.participantRecord('orchestrator', { harness: 'claude', mode: 'attached', sessionRef: 'human-window' }));
+const attachedRootStop = fakeRegistry();
+const rootRefusal = await expectFail(() => stop(HOST, { task: TASK, address: 'orchestrator' }, { registry: attachedRootStop.registry }));
+check(': an attached human root remains outside the stop lifecycle', rootRefusal.failed && attachedRootStop.calls.length === 0 && /not ours to close/.test(rootRefusal.out));

@@ -128,6 +128,7 @@ promptobus done
 | `promptobus spawn --teamlead --brief <file> --task <root>` | Поднять оркестратора дочерней задачи в корне установки на Claude Code или Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--allow-payg`, `--refresh`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Поднять объявленный гейт: первому гейту чтения диффа предшествующий результат не нужен; следующим нужен текущий результат предшествующего объявленного гейта для того же объекта проверки, а гейту записи — также результат владельца |
 | `promptobus review <path>` | Поднять первый гейт чтения диффа; `--approver` выбирает первый гейт записи в основное дерево. `--title` или `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
+| `promptobus report --task <root> --question <text>` | Задать вопрос существующему Codex reporter и получить ответ в терминале |
 | `promptobus report --task <root>` | Поднять одного read-only reporter в корне установки; дочерняя задача и вторая живая сессия отказываются |
 | `promptobus models` | Что резолвер выбрал бы сейчас и сколько осталось у каждого аккаунта. Подкоманды `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | Аренда машины, затем корневые и дочерние задачи: участники по частям и шагам, почта, сессии, маршрут и счёт проходов ревью |

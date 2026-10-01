@@ -1,14 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture } from './console.mjs';
+import { capture, expectFail } from './console.mjs';
 import { hostOf } from '../lib/host.js';
 import { planLead, lead } from '../lib/lead.js';
 import { bus, claimWarden, clearWarden, participantRecord, taskExists, taskFile, upsertParticipant } from '../lib/store.js';
 import { wardenLine } from '../lib/status.js';
 import { runPromptobus, helpText } from '../lib/cli.js';
-import { dropSession, readSession, writeSession, threadStartConfig } from '../lib/codex-session.js';
+import { dropSession, readSession, writeSession, threadStartConfig, recoveryPrompt } from '../lib/codex-session.js';
 import { codexDriver, participantCodexHome } from '../lib/driver-codex.js';
 
 const root = makeSandbox('promptobus-lead-');
@@ -155,6 +156,51 @@ check('reviewer disables native command execution while other roles retain it',
   && threadStartConfig({ role: 'reporter' })['features.shell_tool'] === undefined);
 check('reviewer receives only the bounded file-reader helper and declared source roots',
   reader.command === process.execPath && /reviewer-files\.js$/.test(reader.args[0])
-  && roots.includes(root) && roots.includes(reviewer.cwd)
+  && roots.includes(root) && !roots.includes(reviewer.cwd)
   && roots.includes(path.join(host.promptobusHome(), 'tasks', opts.task, 'files'))
   && !roots.includes(reviewer.codexHome) && reviewer.settings.sandbox === 'read-only');
+
+const recovery = { initialPrompt: 'ORIGINAL SCOPE MARKER', prompt: 'Continue with current instructions' };
+check('empty native history replays immutable original assignment and the continuation',
+  recoveryPrompt(recovery, { thread: { turns: [] } }) === 'ORIGINAL SCOPE MARKER\n\n## Recovery continuation\nContinue with current instructions');
+check('native user history containing the assignment avoids replaying it',
+  recoveryPrompt(recovery, { thread: { turns: [{ items: [{ type: 'userMessage', content: [{ type: 'text', text: recovery.initialPrompt }] }] }] } }) === recovery.prompt);
+check('model output quoting assignment is not proof that its user input was delivered',
+  recoveryPrompt(recovery, { thread: { turns: [{ items: [{ type: 'agentMessage', text: recovery.initialPrompt }] }] } }) !== recovery.prompt);
+const outsideRules = path.join(root, 'outside-rules', 'AGENTS.md');
+mkdirSync(path.dirname(outsideRules), { recursive: true });
+writeFileSync(outsideRules, 'Declared rule file only');
+const externalSkill = path.join(root, 'external-review-skill');
+mkdirSync(externalSkill);
+writeFileSync(path.join(externalSkill, 'SKILL.md'), '---\nname: external-review\n---\nRead references.');
+const bounded = codexDriver.prepare({ ref: 'bounded-review', role: 'reviewer', task: opts.task,
+  address: 'reviewer:bounds', root, cwd: path.join(root, 'source'),
+  settingsPath: path.join(root, 'bounded-settings.json'), prompt: 'Review', model: 'gpt-6-astra',
+  addDirs: [path.dirname(outsideRules)], readFiles: [outsideRules], readSkillDirs: [externalSkill],
+  mcp: { servers: {} },
+});
+const boundedRoots = JSON.parse(bounded.mcpConfig.mcpServers.reviewer_files.env.PROMPTOBUS_REVIEW_READ_ROOTS);
+check('reviewer grants exact rule files and external review skills without their ancestors',
+  boundedRoots.includes(outsideRules) && boundedRoots.includes(externalSkill)
+  && !boundedRoots.includes(path.dirname(outsideRules)) && !boundedRoots.includes(root)
+  && !boundedRoots.includes(bounded.cwd) && !boundedRoots.includes(bounded.codexHome));
+
+let incompatibleCode;
+const incompatibleOutput = await expectFail(async () => {
+  incompatibleCode = await runPromptobus(['report', '--task', opts.task, '--question', 'What changed?', '--model', 'other'], { host, cwd: root, env: {} });
+});
+check('report question CLI rejects launch flags before looking for a reporter',
+  incompatibleOutput.failed && /report --question cannot use launch options: --model/.test(incompatibleOutput.out));
+check('report help documents the follow-up channel', /report --task <root> --question <text>/.test(helpText(host)));
+
+const personalSkill = path.join(homedir(), '.agents', 'skills', 'visible-personal-reader');
+mkdirSync(personalSkill, { recursive: true });
+writeFileSync(path.join(personalSkill, 'SKILL.md'), '---\nname: visible-personal-reader\n---\nRead nearby references.');
+const personalPlan = codexDriver.prepare({ ref: 'personal-review', role: 'reviewer', root,
+  cwd: path.join(root, 'source'), settingsPath: path.join(root, 'personal-settings.json'),
+  prompt: 'Review', model: 'gpt-6-astra', mcp: { servers: {} },
+});
+const personalRoots = JSON.parse(personalPlan.mcpConfig.mcpServers.reviewer_files.env.PROMPTOBUS_REVIEW_READ_ROOTS);
+check('visible unrelated personal skills remain readable without granting their home ancestor',
+  personalRoots.includes(realpathSync(personalSkill)) && !personalRoots.includes(homedir())
+  && !personalRoots.includes(path.join(homedir(), '.agents', 'skills')));

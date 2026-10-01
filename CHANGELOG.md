@@ -13,10 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binds its native thread before the first model turn, receives warden wake, and is stopped
   by `done`. `lead --resume` restores a retained inactive managed root with the same native
   thread and journal; closed, attached, mismatched and live owners refuse. Bound first-turn
-  failures retain history. Existing tasks cannot be taken over. Status names the owner's actual delivery
+  failures retain immutable assignments and history, replaying an undelivered assignment on recovery.
+  Concurrent launches reserve their task before touching session files. `stop orchestrator`
+  cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
+  Existing tasks cannot be taken over. Status names the owner's actual delivery
   harness. CLI help, both READMEs and installed orchestration/review skills include Codex owner,
   reporter and recovery paths. Codex reviewers disable native execution tools and inspect
-  files through a bounded read-only MCP helper; other roles keep their existing profiles.
+  files through a bounded read-only MCP helper. Rule files are exact grants; canonical, personal
+  and declared review skills have separate roots without configuration or rule ancestors.
+  Other roles keep their existing profiles.
 - **Codex protocol captures cover 0.158.0 and Desktop's 0.159.2** (PB-315): 314 generated
   schemas per binary, holder request checks for both, and native hook/skill/reporter turns
   on 0.159.2. The current fixture baseline is 0.159.2; the measured minimum is 0.158.0.
@@ -32,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact-path session overrides before the first turn. Owner files remain unchanged.
 - **A Codex reporter runs read-only at the install root** (PB-314).
   Its private home disables project hooks, omits bus send and denies classified external writes.
+  `report --question` prints follow-up answers from that same restricted Codex thread.
   Install-root participants bind their bus identity before the first model turn.
 - **Codex teamlead hook, skill and applied-sandbox limits were measured** (PB-286.3).
   On 0.158.0 a trusted control ran two hooks, the teamlead ran none, the home skill was used,
