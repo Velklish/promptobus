@@ -67,9 +67,8 @@ export function dropDeadLock(lock: string): boolean {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw e;
   } finally {
-    // Only the original DEAD parent is stable under our claim. A claim made in
-    // a replacement live parent must stay there for that holder's normal release:
-    // that parent can disappear between our stat and rm, exposing another claim.
+    // Only the original dead parent is stable under our claim. A replacement live parent
+    // may disappear between stat and rm; leave its claim for the holder's normal release.
     let currentClaim;
     try {
       const parent = statSync(lock, { bigint: true });
