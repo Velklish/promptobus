@@ -1,6 +1,7 @@
 // The lock: what it guards and what it cannot.
 // [reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot](../../docs/reference/01-overview.md#the-lock-what-it-guards-and-what-it-cannot)
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { pidAlive, sleepSync } from './proc.js';
@@ -13,6 +14,7 @@ export interface LockHolder {
   pid: number | null;
   session: string | null;
   since: string | null;
+  nonce?: string;
 }
 
 /** Who holds the lock. A former-CLI lock holds the pid as a string and is read too: the only process
@@ -29,15 +31,62 @@ export function lockHolder(lock: string): LockHolder | null {
   return { pid: Number(raw) || null, session: null, since: null };
 }
 
-/** An orphaned lock, by pid liveness. Taken aside with `rename` rather than deleted in place, or a
- * neighbour would slip in between; a holder with no pid is a live grab and is left alone. */
+/** An orphaned lock, by pid liveness. An exclusive claim inside its generation serializes
+ * reclamation; an old read alone cannot license renaming a replacement directory. */
 export function dropDeadLock(lock: string): boolean {
+  let generation;
+  try { generation = statSync(lock, { bigint: true }); } catch { return false; }
   const held = lockHolder(lock);
   if (!held?.pid || pidAlive(held.pid)) return false;
-  const tomb = `${lock}.dead.${process.pid}`;
-  try { renameSync(lock, tomb); } catch { return false; }
-  rmSync(tomb, { recursive: true, force: true });
-  return true;
+  const claim = path.join(lock, '.reclaim');
+  try { mkdirSync(claim); } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST' || code === 'ENOENT') return false;
+    throw e;
+  }
+  let claimed;
+  try { claimed = statSync(claim, { bigint: true }); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw e;
+  }
+  try {
+    writeFileSync(path.join(claim, 'owner'), `${JSON.stringify({
+      pid: process.pid, session: null, since: new Date().toISOString(), nonce: randomUUID(),
+    })}\n`);
+    const current = statSync(lock, { bigint: true });
+    const owner = lockHolder(lock);
+    if (current.dev !== generation.dev || current.ino !== generation.ino
+      || JSON.stringify(owner) !== JSON.stringify(held) || !owner?.pid || pidAlive(owner.pid)) return false;
+    const tomb = `${lock}.dead.${process.pid}.${randomUUID()}`;
+    try { renameSync(lock, tomb); } catch { return false; }
+    rmSync(tomb, { recursive: true, force: true });
+    return true;
+  } catch (e) {
+    // A claim created in a replacement generation does not stop that live
+    // holder from releasing its own directory before our recheck.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw e;
+  } finally {
+    // The original parent may already be gone and a new generation may have its
+    // own claim at this path. Never release that other reclaimer's claim.
+    let currentClaim;
+    try { currentClaim = statSync(claim, { bigint: true }); } catch { /* already removed with the tomb */ }
+    if (currentClaim?.dev === claimed.dev && currentClaim.ino === claimed.ino) {
+      rmSync(claim, { recursive: true, force: true });
+    }
+  }
+}
+
+function reclamationRefusal(lock: string): Error | null {
+  const claim = path.join(lock, '.reclaim');
+  try { statSync(claim); } catch { return null; }
+  const held = lockHolder(claim);
+  if (held?.pid && pidAlive(held.pid)) {
+    return new Error(`lock ${lock} has a live reclamation holder pid ${held.pid}; retry after it finishes`);
+  }
+  const quoted = `'${claim.replaceAll("'", "'\\''")}'`;
+  return new Error(`lock ${lock} has an interrupted reclamation claim${held?.pid ? ` pid ${held.pid}` : ' with no owner'}; `
+    + `automatic removal is refused. After verifying the lock owner and reclaimer have exited, remove only this claim: rm -r -- ${quoted}`);
 }
 
 /** How the lock answers its two lawful refusals. The words are the caller's business. */
@@ -71,22 +120,23 @@ function selfAsyncError(lock: string): Error {
     + 'wait would block the loop that must release it, so there is nothing to wait for');
 }
 
-// One attempt at the directory: `true` — it is ours, `false` — a live holder has it. A
+// One attempt at the directory: its nonce — it is ours, `null` — a live holder has it. A
 // dead holder is dropped and the attempt repeats; only the waiting differs between callers.
-function tryGrabDirLock(lock: string, session: string | null, onMissing: () => Error): boolean {
+function tryGrabDirLock(lock: string, session: string | null, onMissing: () => Error): string | null {
   for (;;) {
     try {
       mkdirSync(lock);
+      const nonce = randomUUID();
       writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({
-        pid: process.pid, session, since: new Date().toISOString(),
+        pid: process.pid, session, since: new Date().toISOString(), nonce,
       })}\n`);
-      return true;
+      return nonce;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') throw onMissing();
       if (code !== 'EEXIST') throw e;
       if (dropDeadLock(lock)) continue;
-      return false;
+      return null;
     }
   }
 }
@@ -95,12 +145,13 @@ function tryGrabDirLock(lock: string, session: string | null, onMissing: () => E
 // out for `waitMs` and then refused in the caller's words.
 function grabDirLock(lock: string, {
   waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
-}: DirLockOptions): void {
+}: DirLockOptions): string {
   const started = Date.now();
   const deadline = started + waitMs;
   for (;;) {
-    if (tryGrabDirLock(lock, session, onMissing)) return;
-    if (Date.now() >= deadline) throw onBusy(lockHolder(lock), Date.now() - started);
+    const nonce = tryGrabDirLock(lock, session, onMissing);
+    if (nonce) return nonce;
+    if (Date.now() >= deadline) throw reclamationRefusal(lock) ?? onBusy(lockHolder(lock), Date.now() - started);
     sleepSync(retryMs);
   }
 }
@@ -109,17 +160,19 @@ function grabDirLock(lock: string, {
 // the loop of THIS process for the whole of a foreign hold — the send waits, not the loop.
 async function grabDirLockAsync(lock: string, {
   waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
-}: DirLockOptions): Promise<void> {
+}: DirLockOptions): Promise<string> {
   const started = Date.now();
   const deadline = started + waitMs;
   for (;;) {
-    if (tryGrabDirLock(lock, session, onMissing)) return;
-    if (Date.now() >= deadline) throw onBusy(lockHolder(lock), Date.now() - started);
+    const nonce = tryGrabDirLock(lock, session, onMissing);
+    if (nonce) return nonce;
+    if (Date.now() >= deadline) throw reclamationRefusal(lock) ?? onBusy(lockHolder(lock), Date.now() - started);
     await new Promise((resolve) => { setTimeout(resolve, retryMs); });
   }
 }
 
-function releaseDirLock(lock: string): void {
+function releaseDirLock(lock: string, nonce: string): void {
+  if (lockHolder(lock)?.nonce !== nonce) return;
   rmSync(lock, { recursive: true, force: true });
 }
 
@@ -128,24 +181,24 @@ function releaseDirLock(lock: string): void {
 export function withDirLock<T>(lock: string, fn: () => T, options: DirLockOptions): T {
   if (heldSync.has(lock)) return fn();
   if (heldAsync.has(lock)) throw (options.onSelfAsync ?? selfAsyncError)(lock);
-  grabDirLock(lock, options);
+  const nonce = grabDirLock(lock, options);
   heldSync.add(lock);
   try {
     return fn();
   } finally {
     heldSync.delete(lock);
-    releaseDirLock(lock);
+    releaseDirLock(lock, nonce);
   }
 }
 
 async function underDirLock<T>(lock: string, fn: () => Promise<T>, options: DirLockOptions): Promise<T> {
-  await grabDirLockAsync(lock, options);
+  const nonce = await grabDirLockAsync(lock, options);
   heldAsync.add(lock);
   try {
     return await fn();
   } finally {
     heldAsync.delete(lock);
-    releaseDirLock(lock);
+    releaseDirLock(lock, nonce);
   }
 }
 
