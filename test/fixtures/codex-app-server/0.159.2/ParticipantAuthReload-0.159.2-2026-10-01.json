@@ -1,0 +1,24 @@
+{
+  "version": "0.159.2",
+  "model": "gpt-6-astra",
+  "firstStatus": "failed",
+  "invalidAccessStatus": "failed",
+  "invalidAccessError": "workspace routing discovery unauthorized (401)",
+  "recoveredStatus": "completed",
+  "sameThread": true,
+  "sameAppServer": true,
+  "sameHolder": true,
+  "threadId": "01a0f575-00ad-7533-8e18-17593161e4cc",
+  "turns": 2,
+  "messages": [
+    "AUTH_RELOAD_RECOVERED"
+  ],
+  "publicReloadMethod": "account/read",
+  "refreshToken": false,
+  "durableOwnerSource": true,
+  "participantRefreshTokenBlank": true,
+  "realOwnerAuthUnchanged": true,
+  "disposableOwnerUnchangedAfterRecovery": true,
+  "command": "node sandbox/codex-parity-20261001/measure-auth-reload-159.mjs",
+  "exitCode": 0
+}

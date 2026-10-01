@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import path from 'node:path';
 import os from 'node:os';
 import { check } from './check.mjs';
-import { makeParticipantHome, participantCodexHome } from '../lib/driver-codex.js';
+import { applyHygiene } from './hygiene.mjs';
+import { codexDriver, makeParticipantHome, ownerCodexHome, participantCodexHome } from '../lib/driver-codex.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-auth-'));
 const owner = path.join(scratch, 'owner');
@@ -19,6 +20,13 @@ const lift = (name, value) => {
 };
 const now = Math.floor(Date.now() / 1000);
 try {
+  check('durable owner override takes precedence over a scoped CODEX_HOME',
+    ownerCodexHome({ PROMPTOBUS_CODEX_OWNER_HOME: owner, CODEX_HOME: '/temporary-scoped-home' }) === owner);
+  const participantEnv = codexDriver.sessionEnv({ CODEX_HOME: owner });
+  check('participant env captures the durable owner before dropping parent CODEX_HOME',
+    participantEnv.PROMPTOBUS_CODEX_OWNER_HOME === owner && participantEnv.CODEX_HOME === undefined);
+  check('suite hygiene drops inherited durable owner authentication paths',
+    applyHygiene({ PROMPTOBUS_CODEX_OWNER_HOME: '/real-owner' }).PROMPTOBUS_CODEX_OWNER_HOME === undefined);
   const original = auth(now + 3600);
   const a = lift('one', original), b = lift('two', original);
   const copies = [a, b].map(x => JSON.parse(readFileSync(path.join(x.dir, 'auth.json'), 'utf8')));
@@ -39,6 +47,11 @@ try {
   const apiHome = lift('apikey', api);
   check('API-key credentials preserve the native file format',
     JSON.stringify(JSON.parse(readFileSync(path.join(apiHome.dir, 'auth.json'), 'utf8'))) === JSON.stringify(api));
+  const scopedDir = participantCodexHome({ task: 'auth-proof', address: 'worker:scoped' }, env);
+  homes.push(scopedDir);
+  makeParticipantHome({ dir: scopedDir, env: { ...env, PROMPTOBUS_CODEX_OWNER_HOME: owner, CODEX_HOME: '/missing-scoped-home' } });
+  check('participant home resolves its authentication source from the supplied host environment',
+    JSON.parse(readFileSync(path.join(scopedDir, 'auth.json'), 'utf8')).OPENAI_API_KEY === api.OPENAI_API_KEY);
 } finally {
   for (const home of homes) rmSync(home, { recursive: true, force: true });
   rmSync(scratch, { recursive: true, force: true });

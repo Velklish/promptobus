@@ -67,8 +67,7 @@
       "../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review",
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
-      "../docs/guides/hooks-and-trust.md",
-      "../docs/reference/05-drivers.md#codex-participant-authentication"
+      "../docs/guides/hooks-and-trust.md"
     ],
     "lib/driver-cursor.js": [
       "cursor-persist.js",
@@ -345,6 +344,9 @@
     ],
     "lib/reviewer-files.js": [
       "../docs/reference/05-drivers.md#execution-free-codex-review"
+    ],
+    "lib/codex-participant-auth.js": [
+      "../docs/reference/05-drivers.md#codex-participant-authentication"
     ]
   }
 }

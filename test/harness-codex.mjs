@@ -64,6 +64,7 @@ export const THREAD_DELAY_VAR = 'CODEX_STUB_THREAD_DELAY_MS';
 export const FIRST_DELAY_VAR = 'CODEX_STUB_FIRST_DELAY_MS';
 export const HANG_FIRST_VAR = 'CODEX_STUB_HANG_FIRST';
 export const HANG_AFTER_START_VAR = 'CODEX_STUB_HANG_AFTER_START';
+export const AUTH_RELOAD_DELAY_VAR = 'CODEX_STUB_AUTH_RELOAD_DELAY_MS';
 export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 
 // What the availability probe meets before any thread exists. One variable with a
@@ -423,6 +424,11 @@ async function appServer() {
             rateLimitReachedType: exhausted ? 'primary' : null,
           });
       }, 20);
+      return;
+    }
+    if (method === 'account/read') {
+      await new Promise(resolve => setTimeout(resolve, Number(process.env[AUTH_RELOAD_DELAY_VAR] ?? 0)));
+      reply(id, { account: { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }, requiresOpenaiAuth: true });
       return;
     }
     if (method === 'account/rateLimits/read') {

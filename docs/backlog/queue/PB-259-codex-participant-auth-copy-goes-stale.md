@@ -30,3 +30,19 @@ Measured on 2026-09-25 during a backlog run, codex-cli 0.156.1, installed prompt
 
 - The rotation measured, or the hypothesis refuted by the measurement that refutes it.
 - After the owner's session has refreshed, a lift either works or refuses before any turn with the reason above.
+
+## Measured mitigation · 2026-10-01
+
+The migration scope uses access-only private snapshots; no participant receives an owner
+refresh token. Unknown or near expiry refuses before a model turn. Before each idle turn,
+the holder accepts a fresh snapshot from its original owner account and reloads its existing
+app-server through public `account/read(refreshToken: false)`. Changed auth during active
+turns refuses before writes. A durable owner-home path survives host scoped-home cleanup.
+
+On native 0.159.2 an invalid cached access failed HTTP 401; after a disposable owner received
+fresh access, the same thread, holder and app-server completed the next turn. Both owner
+files remained unchanged. [Evidence](../../../test/fixtures/codex-app-server/0.159.2/ParticipantAuthReload-0.159.2-2026-10-01.json).
+Focused tests cover stale private expiry, missing owner files, identity changes, pending
+reload retry and serialized overlapping turns. The destructive OAuth rotation hypothesis
+was not forced on the user's real account; this mitigation prevents participants from
+rotating that token rather than claiming to have measured which process rotated it historically.

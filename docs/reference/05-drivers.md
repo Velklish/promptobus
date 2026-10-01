@@ -681,11 +681,28 @@ They cannot rotate the owner's OAuth refresh token. A lift requires a decodable 
 expiry at least ten minutes ahead; otherwise it refuses before starting a model turn and
 names the owner's Codex home and sign-in. API-key files retain their native format.
 
-This is a bounded snapshot, not an independent renewable login. A long-lived holder can
-outlive its access token and fail; refresh the owner's login and relift it. A new lift
-reads the latest owner credentials. The mechanism does not refresh the owner's login or
-use the internal-only `chatgptAuthTokens` API. The real OAuth token-rotation hypothesis
-was not forced on the owner's account. The pinned 0.158.0 auth implementation reloads
+Before each new model turn, the holder compares the latest owner access snapshot with
+its private file and last loaded snapshot. A changed snapshot from the original account
+is copied without its refresh token, then public `account/read(refreshToken: false)` reloads
+the existing app-server before that turn. Turn requests serialize this check and RPC;
+an active or accepted turn refuses a changed snapshot before any private write. Failed
+reloads remain pending for a later retry. A changed account or auth mode refuses.
+
+The session record stores the durable owner-home path, never credentials. A host can name
+`PROMPTOBUS_CODEX_OWNER_HOME` to keep that source separate from an ephemeral `CODEX_HOME`;
+without it, `CODEX_HOME` or `~/.codex` supplies the source. The participant never writes there.
+If the owner has no fresh access token, the ten-minute expiry guard refuses another turn;
+renew the owner through its normal login, then retry. The mechanism does not refresh the
+owner's login, interrupt an active turn to change auth, or use the internal-only
+`chatgptAuthTokens` API. An inactive retained managed root can instead use `lead --resume`
+with the same native identity. A lift reads the latest owner credentials.
+
+On Codex 0.159.2, an initial invalid cached access failed with HTTP 401. After the disposable
+owner received fresh access, the next turn returned `AUTH_RELOAD_RECOVERED` in the same
+thread, holder and app-server; both owner files stayed unchanged and the private refresh
+token stayed empty. [Native reload evidence](../../test/fixtures/codex-app-server/0.159.2/ParticipantAuthReload-0.159.2-2026-10-01.json).
+The real OAuth token-rotation hypothesis was not forced on the owner's account.
+The pinned 0.158.0 auth implementation reloads
 before refreshing, but its refresh semaphore is process-local; copying a renewable token
 to separate participant homes cannot provide shared refresh coordination.
 

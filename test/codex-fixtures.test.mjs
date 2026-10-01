@@ -42,6 +42,7 @@ const samples = {
     approvalPolicy: 'on-request', model: 'gpt-6-astra', excludeTurns: true,
     config: { 'features.hooks': false, 'skills.config': [{ path: '/fixture/personal/SKILL.md', enabled: false }] } },
   SkillsListParams: { cwds: ['/fixture/root'], forceReload: true },
+  GetAccountParams: { refreshToken: false },
   TurnStartParams: { threadId: 'fixture-thread', input: [{ type: 'text', text: 'Read mailbox' }], effort: 'low' },
   TurnSteerParams: { threadId: 'fixture-thread', expectedTurnId: 'fixture-turn', input: [{ type: 'text', text: 'Mail arrived' }] },
   ThreadReadParams: { threadId: 'fixture-thread', includeTurns: true },

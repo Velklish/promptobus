@@ -28,7 +28,11 @@ The holder and warden wake this owner when mail arrives. From a plain terminal, 
 `status` and `digest` inspect progress. `done --task <id>` stops the managed owner alongside
 other managed participants, unless `--keep-sessions` is explicit. `--dry-run` prints the
 plan without creating a task, a participant home or a model turn. Actual launches hold a task-scoped
-lease until native binding completes; a competing launcher refuses before touching session files. This command does not
+lease until native binding completes; a competing launcher refuses before touching session files.
+A dead launcher does not make its detached holder dead: a retained live unbound root also
+refuses retry, even under a different title. Once its owned processes are gone, a retry
+removes the dead unbound registry record before reusing its private home. Rollback changes
+only the record of its own launch. This command does not
 claim or convert an existing Desktop chat.
 
 On Codex 0.158.0, a live managed owner read its task metadata on the first turn, received
@@ -60,7 +64,9 @@ and owner stayed unchanged. [Cold-root evidence](../../test/fixtures/codex-app-s
 The same public assignment injection materialized an empty native thread on
 [0.158.0](../../test/fixtures/codex-app-server/0.158.0/ManagedRootAssignment-0.158.0-2026-10-01.json).
 
-Subscription credentials have the bounded lifetime described in
+Long-lived holders accept fresh owner access before an idle turn through the same native
+app-server; they never rotate the owner's refresh token. Expired owner access requires
+normal owner login and a retry. The source, guards and evidence are in
 [participant authentication](05-drivers.md#codex-participant-authentication).
 
 ## Spawn
@@ -127,7 +133,7 @@ So the participant settings file the Claude driver writes carries `"crossSession
 
 At lift, `config.toml` at mode 0600 contains the mechanism's `[mcp_servers]` entries, `[features] apps = false` and, for worker, reviewer and approver, the trusted realpath of their own working directory. The lift writes an `auth.json` snapshot at mode 0600 when present, with the subscription refresh token removed; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`. A Codex teamlead's lift instead copies `skills/` into the home and disables hooks there; admission itself comes from `TEAMLEAD_HARNESSES`, not from this layout ([Spawn](#spawn)). App-server may later write its session rollout here. The conditional hook copy and role boundaries are in [05-drivers](05-drivers.md#codex-the-phrases-a-participant-is-addressed-by).
 
-The owner's `~/.codex` is read once, for that credentials file, and the PARTICIPANT path never writes to it: no `[projects]` record and no session rollout land there. One part of the mechanism does still start `codex app-server --stdio` in the owner's home — the availability probe, before any participant exists, to read the account's limit — and `initialize` loads that home's configuration, so the marketplace snapshot refresh is NOT something the isolation stops. That is why the integrity check below is per section and not a file hash. `stop` removes the home with the session record, a failed lift removes it too, and the removal only ever touches a direct child of the homes root, so a record naming the owner's home cannot take it with it. A home with no `auth.json` to copy is not a refusal — an account driven by an API key in the environment lifts without one — but the lift says so.
+The owner's Codex home is read for its latest access snapshot before model turns, and the PARTICIPANT path never writes to it: no `[projects]` record and no session rollout land there. One part of the mechanism does still start `codex app-server --stdio` in the owner's home — the availability probe, before any participant exists, to read the account's limit — and `initialize` loads that home's configuration, so the marketplace snapshot refresh is NOT something the isolation stops. That is why the integrity check below is per section and not a file hash. `stop` removes the home with the session record, a failed lift removes it too, and the removal only ever touches a direct child of the homes root, so a record naming the owner's home cannot take it with it. A home with no `auth.json` to copy is not a refusal — an account driven by an API key in the environment lifts without one — but the lift says so.
 
 That trust record is what opens the project's own `.codex/config.toml` and `.codex/agents` to the participant, and it is written to the home rather than to the project: codex-cli 0.146.0 has no command for it, and neither does 0.156.1 (`codex --help`, 2026-09-25). The key must be the RESOLVED path. Measured on one stand, three runs: with `[projects."<realpath>"]` the project's own MCP server came up in the thread; with the unresolved `/var/…` spelling of the same directory it did not, and app-server wrote `Project-local config, hooks, and exec policies are disabled … until the project is trusted`. What is trusted is the participant's OWN working directory — a worker's worktree, a reviewer's own directory, or an approver's worktree. The tree under review never is: it reaches a reviewer as a read among the thread's `runtimeWorkspaceRoots` and no further, because a repository must not hand MCP servers to the session judging it ([ADR-008](../adr/adr-008-codex-reviewer-working-directory.md)).
 

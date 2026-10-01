@@ -284,6 +284,7 @@ export function applyHygiene(env, { home, seal } = {}) {
   env[WARDEN_SWITCH] = WARDEN_OFF;
   env[CURSOR_INSTALL_DIRS_VAR] = CURSOR_INSTALL_DIRS_SEALED;
   dropSessionLeaks(env);
+  delete env.PROMPTOBUS_CODEX_OWNER_HOME;
   for (const name of HARNESS_IDENTITY_VARS) delete env[name];
   for (const name of Object.keys(env)) {
     if (name.startsWith(CONTEXT_STORE_PREFIX) || name.startsWith(E2E_PREFIX)) delete env[name];

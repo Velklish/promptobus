@@ -16,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures retain immutable assignments and history. A new root stores its original assignment
   through public native user-message injection before binding; its first model input continues
   that assignment. A hard kill before first input resumes the same native thread and scope.
-  Concurrent launches reserve their task before touching session files. `stop orchestrator`
-  cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
+  Concurrent launches reserve their task before touching session files.
+  A retained live unbound holder also refuses retry after its launcher dies; rollback
+  only changes its own launch record. Dead unbound records are removed before home reuse.
+  `stop orchestrator` cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
   Existing tasks cannot be taken over. Status names the owner's actual delivery
   harness. CLI help, both READMEs and installed orchestration/review skills include Codex owner,
   reporter and recovery paths. Codex reviewers disable native execution tools and inspect
@@ -33,7 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Codex subscription participants cannot rotate the owner's refresh token** (PB-259).
   They receive a private access-token snapshot without a refresh token. Unknown expiry or
   less than ten minutes remaining refuses before a model turn and names the owner's sign-in.
-  Long-lived holders can outlive the snapshot; refresh the owner and relift them.
+  Before idle model turns, long-lived holders reload fresh access from the original account
+  through public `account/read(refreshToken: false)` in the same native thread and app-server.
+  Changed snapshots during active or accepted turns refuse before writes; reload failures
+  remain pending. A durable owner-home override survives host scoped-home cleanup.
+  The owner renews its normal login; participants never receive its refresh token.
 - **Canonical Codex skills override colliding personal copies per participant thread** (PB-244).
   The holder reads the actual skills inventory, preserves unrelated personal skills and applies
   exact-path session overrides before the first turn. Owner files remain unchanged.
