@@ -1,6 +1,6 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -71,6 +71,17 @@ test('refuses mutation or execution tool names before touching filesystem', () =
 test('requires explicit roots and absolute paths', () => {
   for (const roots of [[], null, ['relative'], [42]]) assert.throws(() => reviewerFiles(roots), /non-empty array of absolute paths/);
   assert.throws(() => read('read_file', { path: 'src/Example.cs' }), /path must be absolute/);
+});
+test('an exact external rule file grant does not authorize its parent or sibling credentials', () => {
+  const rule = path.join(outside, 'AGENTS.md');
+  writeFileSync(rule, 'External review rules\n');
+  const bounded = reviewerFiles([repo, rule]);
+  assert.equal(bounded('read_file', { path: rule }).lines[0].text, 'External review rules');
+  assert.throws(() => bounded('list_files', { path: outside }), /outside the declared review roots/);
+  assert.throws(() => bounded('read_file', { path: path.join(outside, 'private.txt') }), /outside the declared review roots/);
+  unlinkSync(rule); mkdirSync(rule);
+  writeFileSync(path.join(rule, 'private.txt'), 'PRIVATE\n');
+  assert.throws(() => bounded('read_file', { path: path.join(rule, 'private.txt') }), /outside the declared review roots/);
 });
 test('binary reads and invalid bounds are reported as errors', () => {
   assert.throws(() => read('read_file', { path: path.join(repo, 'binary.dat') }), /Binary files/);
