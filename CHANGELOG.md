@@ -20,7 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A retained live unbound holder also refuses retry after its launcher dies; rollback
   only changes its own launch record. Dead unbound records are removed before home reuse.
   A live holder lock protects the interval before PID publication; immutable child launch
-  ownership refuses a replacement record before native startup.
+  ownership refuses a replacement record before native startup. Cleanup and holder acquisition
+  share a launch-transition mutex; late native callbacks cannot rewrite a replacement launch
+  or remove its lock or socket. A delayed completion only releases its own accepted turn,
+  so queued turns keep their authentication reservation before their start notification.
   `stop orchestrator` cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
   Existing tasks cannot be taken over. Status names the owner's actual delivery
   harness. CLI help, both READMEs and installed orchestration/review skills include Codex owner,

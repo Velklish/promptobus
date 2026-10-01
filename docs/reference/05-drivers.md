@@ -685,7 +685,9 @@ Before each new model turn, the holder compares the latest owner access snapshot
 its private file and last loaded snapshot. A changed snapshot from the original account
 is copied without its refresh token, then public `account/read(refreshToken: false)` reloads
 the existing app-server before that turn. Turn requests serialize this check and RPC;
-an active or accepted turn refuses a changed snapshot before any private write. Failed
+an active or accepted turn refuses a changed snapshot before any private write. Reservations
+track accepted and started turn ids: a delayed completion releases only its own turn,
+and an idle notification cannot clear a queued turn's reservation. Failed
 reloads remain pending for a later retry. A changed account or auth mode refuses.
 
 The session record stores the durable owner-home path, never credentials. A host can name

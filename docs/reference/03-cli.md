@@ -34,8 +34,10 @@ refuses retry, even under a different title. Once its owned processes are gone, 
 removes the dead unbound registry record before reusing its private home. Rollback changes
 only the record of its own launch. The holder lock covers startup before process ids are
 published, and an immutable launch nonce prevents a delayed child from adopting a replacement
-record. This command does not
-claim or convert an existing Desktop chat.
+record. Stale cleanup and holder acquisition hold the same launch-transition mutex. A live
+retained sibling prevents cleanup of their shared private home. Native callbacks patch only
+their own launch and remove only their own lock and socket. This command does not claim or
+convert an existing Desktop chat.
 
 On Codex 0.158.0, a live managed owner read its task metadata on the first turn, received
 mail through warden wake, answered `user`, and stopped on `done`; the recorded launch,
