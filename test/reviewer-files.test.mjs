@@ -1,3 +1,4 @@
+import './home.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
 import os from 'node:os';
@@ -47,6 +48,13 @@ test('declared result limit bounds returned matches', () => {
   const result = read('search_text', { path: repo, query: 'Compute', limit: 1 });
   assert.equal(result.matches.length, 1);
   assert.equal(result.truncated, true);
+});
+test('lists and searches source entry points in bin directories', () => {
+  mkdirSync(path.join(repo, 'cli', 'bin'), { recursive: true });
+  const entry = path.join(repo, 'cli', 'bin', 'entry.js');
+  writeFileSync(entry, 'export const CLI_ENTRY_POINT = true;\n');
+  assert.deepEqual(read('list_files', { path: repo, pattern: '**/bin/*.js' }).matches.map((x) => x.path), [entry]);
+  assert.deepEqual(read('search_text', { path: repo, query: 'CLI_ENTRY_POINT' }).matches.map((x) => x.path), [entry]);
 });
 test('refuses path traversal, similarly prefixed siblings and escaping symlinks', () => {
   for (const target of [path.join(repo, '..', 'repo-sibling', 'private.txt'), path.join(outside, 'private.txt'), path.join(repo, 'outside.txt')]) {
