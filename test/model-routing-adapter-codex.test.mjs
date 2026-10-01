@@ -257,7 +257,7 @@ test('an authenticated account is available, with both windows and the model inv
   assert.equal(verdict.state, 'available');
   assert.equal(verdict.reason, null, verdict.message);
   assert.equal(verdict.version, HARNESS_VERSION);
-  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini']);
+  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.4-mini']);
   assert.deepEqual(windowById(verdict, 'primary'),
     { id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 12, resetAt: '2100-01-01T00:00:00.000Z', scope: null });
   assert.deepEqual(windowById(verdict, 'secondary'),
@@ -293,11 +293,12 @@ test('a model app-server hides is KEPT, with the mark on it', async () => {
   // Mutation probe: put `.filter((m) => !m.hidden)` back and this reddens.
   const verdict = await probe({ flags: 'hidden' });
   assert.equal(verdict.state, 'available');
-  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini', 'gpt-5.6-internal']);
+  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.4-mini', 'gpt-5.6-internal']);
   // The mark is written only where it is true: the absent case and the
   // explicit-false case are one fact, and one spelling of a fact is the rule.
   assert.deepEqual(verdict.models, [
     { model: 'gpt-5.6-sol' },
+    { model: 'gpt-6-astra' },
     { model: 'gpt-5.4-mini' },
     { model: 'gpt-5.6-internal', hidden: true },
   ]);
@@ -460,7 +461,7 @@ test('no limit source at all is unknown / quota_unknown, and the inventory still
   assert.equal(verdict.state, 'unknown');
   assert.equal(verdict.reason, 'quota_unknown');
   assert.equal(verdict.windows, undefined, 'no stable limit source means no windows, not invented ones');
-  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-5.4-mini']);
+  assert.deepEqual(names(verdict), ['gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.4-mini']);
 });
 
 test('an app-server that never answers ends on the budget as unknown / probe_timeout', async () => {

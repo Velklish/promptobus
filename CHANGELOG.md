@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A managed Codex root can start from a brief** (PB-315). `lead` opens a new root task,
+  binds its native thread before the first model turn, receives warden wake, and is stopped
+  by `done`. `lead --resume` restores a retained inactive managed root with the same native
+  thread and journal; closed, attached, mismatched and live owners refuse. Bound first-turn
+  failures retain history. Existing tasks cannot be taken over. Status names the owner's actual delivery
+  harness. CLI help, both READMEs and installed orchestration/review skills include Codex owner,
+  reporter and recovery paths. Codex reviewers disable native execution tools and inspect
+  files through a bounded read-only MCP helper; other roles keep their existing profiles.
+- **Codex protocol captures cover 0.158.0 and Desktop's 0.159.2** (PB-315): 314 generated
+  schemas per binary, holder request checks for both, and native hook/skill/reporter turns
+  on 0.159.2. The current fixture baseline is 0.159.2; the measured minimum is 0.158.0.
+  Older captures keep their original version and date. The unrouted default is the
+  subscription-tested `gpt-6-astra`.
+
 - **Codex subscription participants cannot rotate the owner's refresh token** (PB-259).
   They receive a private access-token snapshot without a refresh token. Unknown expiry or
   less than ten minutes remaining refuses before a model turn and names the owner's sign-in.

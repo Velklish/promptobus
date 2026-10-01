@@ -41,7 +41,7 @@ Sibling teamleads under the same root may settle small coordination directly wit
 
 ## Reporter for the person
 
-When a reporter is present on a root task, it reads the whole tree's journals through `promptobus_digest`, live session state through `promptobus_status`, and task metadata through `promptobus_task`. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the records do not answer, it calls `promptobus_ask { body, task: <root> }` on the person's behalf as `user`, then reads later answers with `promptobus_ask { answers: true, after: <question id>, task: <root> }` and brings the orchestrator's answer back with its message id. A pending answer stays pending. The terminal `promptobus ask` refuses a participant identity; the reporter uses its restricted MCP tool. It never sends as `reporter`, writes files, uses Bash, or forwards or filters worker status for the orchestrator.
+When a reporter is present on a root task, it reads the whole tree's journals through `promptobus_digest`, live session state through `promptobus_status`, and task metadata through `promptobus_task`. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the records do not answer, it calls `promptobus_ask { body, task: <root> }` on the person's behalf as `user`, then reads later answers with `promptobus_ask { answers: true, after: <question id>, task: <root> }` and brings the orchestrator's answer back with its message id. A pending answer stays pending. The terminal `promptobus ask` refuses a participant identity; the reporter uses its restricted MCP tool. It never sends as `reporter`, writes files, runs builds or tests, or forwards or filters worker status for the orchestrator. Claude Code denies Bash as a tool. Codex reviewers disable shell execution tools and read local files through the bounded reviewer_files MCP tools; its reporters keep a read-only filesystem sandbox with native shell reads available. Both roles forbid builds and tests.
 
 ## Tools
 
@@ -75,6 +75,11 @@ A participant's prompt spells the bus tools per harness: `promptobus_send` on Cl
 ## CLI
 
 ```bash
+promptobus lead --brief <file> [--task <new-id>] [--title <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--strategy <s>] [--dry-run]
+promptobus lead --resume --task <active-id> [--brief <continuation>] [--dry-run]
+promptobus report --task <root> [--harness claude|codex] [--model <m>] [--effort <e>] [--strategy <s>] [--dry-run]
+promptobus ask --task <root> "<question>"
+promptobus ask --answers --task <root>
 promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
 promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude|codex] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
@@ -89,7 +94,7 @@ promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refres
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
 
-`--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. A teamlead lifts on Claude Code or Codex; Cursor is refused. With no `--harness`, no Codex-only `--model` and no strategy, a new teamlead lifts on Claude Code; a relift keeps its harness. A reporter lifts on Claude Code only.
+`--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. A teamlead lifts on Claude Code or Codex; Cursor is refused. With no `--harness`, no Codex-only `--model` and no strategy, a new teamlead lifts on Claude Code; a relift keeps its harness. A reporter lifts on Claude Code or Codex; name `--harness codex` for a Codex-only workspace. Its Codex private home disables project hooks and bus send, without writing the shared root.
 
 For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its child task is the default in the lifted session's MCP entry; the teamlead reports upward by naming the root task explicitly. The teamlead runs at the install root on Claude Code or Codex. Give a Codex teamlead `--permission-mode full-access`: it is the narrowest profile under which its own workers and reviewers lifted in the measured proof. `--dry-run` shows the child task and session plan before starting it.
 
@@ -99,7 +104,11 @@ For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its 
 
 Read the worker's worktree path and branch from `promptobus status` or `promptobus_task`. Do not rebuild them from a name template. The worker may have switched branches: the line then says `WORKER CHANGED BRANCH` (`lib/worktree.js`). Publish the branch git reports.
 
-Lead a root task from Claude Code. Its owner record names no harness, so the bus wakes the owner through Claude Code's messaging socket; a hand-registered orchestrator entry on Codex or Cursor has no session identity, so its mailbox reads return copies (`lib/store.js`, `lib/driver-claude.js`, [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/02-host.md#session-identity)). A teamlead's lift records the teamlead's own session and harness as the owner of its child task, so a Codex teamlead leads its child task (`lib/spawn.js`).
+Lead a new Codex root with `promptobus lead --brief <file> --permission-mode full-access`. The full-access profile is explicit because orchestration launches workers and reviewers; the ordinary default is workspace-write. The managed holder binds the complete native thread as the root owner before its first model turn, then receives warden postcards. Worker, reviewer, teamlead and approver commands use that root task id. The person can inspect `status` and ask through `ask`; `done` stops the managed root too. `lead` refuses an existing task rather than taking over its mailbox.
+
+An active managed Codex root whose holder and app-server are both dead can continue with `lead --resume --task <id>`. It must retain its recorded private home and native thread; resume uses `thread/resume`, preserves the owner and journal, and refuses a closed task, an attached Desktop session, a mismatched thread or a live launcher. Normal `stop` and `done` retire the private home, so they are not a pause-and-resume mechanism. A bound root whose first model turn fails retains its record and history for recovery. Subscription access snapshots expire: sign in through the ordinary owner login before relaunching; participants never refresh the owner's credentials.
+
+A root already owned by a Claude Code session continues to use its messaging socket. `lead` does not convert an arbitrary Desktop chat into a managed owner. A teamlead lift records its own harness and native session as the child task owner, so Codex can lead both roots and children.
 
 Names: task id `<task-slug>-t<YYYYMMDD>-<HHMMSS>` (UTC), slug from `--slug` or the task title; worker slug `--worker`, else the repository directory, numbered `-2`, `-3` when another repository already holds it; worktree `<clone>/.claude/worktrees/promptobus-<task-slug>-<worker-slug>-t<date>-<time>` on branch `worktree-<that name>`; session `Worker: <slice title> (<MMDD-HHMM>)`, or `Review:` and `Accept:`, with the slug added on a name collision; Cursor names its own persist session (`lib/spawn.js`, `src/protocol.ts`).
 
@@ -263,7 +272,7 @@ It replaces orchestrator-issued slots. Do not hand out "the test slot" and do no
 
 A stall goes to the warden journal once per sighting, to `status` and to the orchestrator's `promptobus_mailbox` reply, with no postcard; a refusal naming a reset sends the orchestrator one `unreachable` postcard and holds knocks to that participant until the named reset (`src/supervisor.ts`, `lib/server.js`).
 
-A line that says the process is gone is not a stop. Re-spawn by role: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
+A line that says the process is gone is not a stop. Recover a retained dead managed Codex root with `promptobus lead --resume --task <id>`. Re-spawn other roles: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
 
 A participant who sent you mail and then ended the turn is waiting, not stopped.
 

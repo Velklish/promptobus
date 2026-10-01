@@ -1,0 +1,99 @@
+{
+  "base": "/private/tmp/pb-teamlead-parity-72WQnN",
+  "version": "0.159.2",
+  "runs": [
+    {
+      "role": "worker",
+      "model": "gpt-6.1-sol",
+      "threadId": "01a0f4fd-a6ae-7640-99b2-506bf6c0c6f8",
+      "sandbox": {
+        "type": "dangerFullAccess"
+      },
+      "skillNames": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-teamlead-parity-72WQnN/worker/skills/root-proof/SKILL.md"
+        }
+      ],
+      "messages": [
+        "PARITY-SKILL-CANONICAL-7193"
+      ],
+      "completed": {
+        "threadId": "01a0f4fd-a6ae-7640-99b2-506bf6c0c6f8",
+        "turn": {
+          "id": "01a0f4fd-a6dc-7121-bf9a-300ad10d1327",
+          "items": [
+            {
+              "type": "agentMessage",
+              "id": "msg_08f28f1eaf288e44016abdb19672e887d2a1cc1f1e9ea3eafd",
+              "text": "PARITY-SKILL-CANONICAL-7193",
+              "phase": "final_answer",
+              "memoryCitation": null,
+              "delivery": null,
+              "questions": null
+            }
+          ],
+          "itemsView": "summary",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1790816659,
+          "completedAt": 1790816663,
+          "durationMs": 3840
+        }
+      },
+      "hookCount": 2,
+      "untrusted": false,
+      "hookEvents": [
+        "hook/started",
+        "hook/completed",
+        "hook/started",
+        "hook/completed"
+      ]
+    },
+    {
+      "role": "teamlead",
+      "model": "gpt-6.1-sol",
+      "threadId": "01a0f4fd-b8a6-7ba3-adf2-05eb089d4b2a",
+      "sandbox": {
+        "type": "dangerFullAccess"
+      },
+      "skillNames": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-teamlead-parity-72WQnN/teamlead/skills/root-proof/SKILL.md"
+        }
+      ],
+      "messages": [
+        "PARITY-SKILL-CANONICAL-7193"
+      ],
+      "completed": {
+        "threadId": "01a0f4fd-b8a6-7ba3-adf2-05eb089d4b2a",
+        "turn": {
+          "id": "01a0f4fd-b8c8-72b2-b0f3-73c22f4f8f20",
+          "items": [
+            {
+              "type": "agentMessage",
+              "id": "msg_0cea88c0649e21ae016abdb1a072e487d2846b1cd67d30a0f2",
+              "text": "PARITY-SKILL-CANONICAL-7193",
+              "phase": "final_answer",
+              "memoryCitation": null,
+              "delivery": null,
+              "questions": null
+            }
+          ],
+          "itemsView": "summary",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1790816663,
+          "completedAt": 1790816673,
+          "durationMs": 9284
+        }
+      },
+      "hookCount": 0,
+      "untrusted": false,
+      "hookEvents": []
+    }
+  ],
+  "command": "node sandbox/codex-parity-20261001/measure-teamlead-159.mjs",
+  "exitCode": 0
+}

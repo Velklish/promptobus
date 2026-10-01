@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 33,
-    "citation": 45,
+    "citation": 47,
     "crossFile": 6,
     "fileLevel": 55,
     "bound": 53,
@@ -67,7 +67,8 @@
       "../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review",
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
-      "../docs/guides/hooks-and-trust.md"
+      "../docs/guides/hooks-and-trust.md",
+      "../docs/reference/05-drivers.md#codex-participant-authentication"
     ],
     "lib/driver-cursor.js": [
       "cursor-persist.js",
@@ -341,6 +342,9 @@
     "src/v1/validate.ts": [
       "../../docs/reference/04-protocol.md#validation-of-a-v1-record",
       "../../docs/reference/04-protocol.md"
+    ],
+    "lib/reviewer-files.js": [
+      "../docs/reference/05-drivers.md#execution-free-codex-review"
     ]
   }
 }

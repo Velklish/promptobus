@@ -1,0 +1,43 @@
+{
+  "command": "node sandbox/codex-parity-20261001/measure-reporter-159.mjs",
+  "version": "0.159.2",
+  "model": "gpt-6-astra",
+  "task": "reporter-parity-t20261001-040000",
+  "threadId": "01a0f4fd-b19a-7c72-b302-5308d30c9a29",
+  "sandbox": "read-only",
+  "firstTurn": {
+    "id": "01a0f4fd-b394-70a1-8cfc-c4ad07f63331",
+    "status": "completed",
+    "at": "2026-10-01T01:04:37.142Z"
+  },
+  "mcpInventory": [
+    "promptobus_mailbox",
+    "promptobus_status",
+    "promptobus_ask",
+    "promptobus_digest",
+    "promptobus_task"
+  ],
+  "mcpReads": [
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_task",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_digest",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_status",
+      "status": "completed"
+    }
+  ],
+  "messages": [
+    "I\u2019ll read the reporter rules and task records before answering.",
+    "Ready as the read-only reporter. I\u2019ve read AGENTS.md and checked the task records. I\u2019ll cite source message IDs, distinguish reports from accepted outcomes, and ask the orchestrator when the records don\u2019t answer your question."
+  ],
+  "installRootUnchanged": true,
+  "exitCode": 0
+}

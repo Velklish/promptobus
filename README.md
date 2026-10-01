@@ -20,6 +20,7 @@ English is canonical. The Russian README is the only other language in this repo
 - **Task digest.** `digest` prints the root and child tasks, each participant's latest status first line, questions and their age across linked roots, answer debts, and pieces by their current pipeline step. Peer messages record their origin task, so a later same-slug link cannot answer an older root's question. A legacy question whose origin is unknown is marked `UNRESOLVED PROVENANCE`. `--json` carries the same page for scripts without starting a harness.
 - **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. `link` registers two root tasks as peers; a send to one peer enters the other root's orchestrator mailbox under the source peer address. `user` asks a root or child orchestrator by `question`, receives `answer` or `status`, and `reporter` never sends as itself. Its restricted ask tool writes as `user`. Other traffic follows the root orchestrator. The [route table](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/04-protocol.md#addresses) gives each decision; `ask` registers `user` on first use.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
+- **Managed Codex root owner.** `promptobus lead --brief ./task.md` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
 - **Teamleads for child tasks.** `promptobus spawn --teamlead --brief ./group.md --task <root>` lifts a Claude Code or Codex orchestrator at the install root. It owns one child task, reports to the root as `teamlead:<slug>`, and repairs an interrupted lift on retry. A relift updates both addresses to the new session; a dry-run leaves a pending repair untouched. A Codex teamlead completed worker lifts on all three harnesses and real Claude Code, Cursor and Codex reviews with `full-access`; their `workspace-write` lifts refused. Cursor teamleads remain refused.
 - **Reporter for the person.** `promptobus report --task <root>` lifts one read-only Claude Code or Codex session at the install root. It answers from the tree digest and journals in its own window, or asks the root orchestrator as `user` through its restricted MCP tool.
 - **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate after the required earlier results are on record. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
@@ -98,6 +99,21 @@ The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/ho
 
 Write a brief — a Markdown file with the assignment — then:
 
+For a managed Codex root, start coordination from the brief:
+
+```bash
+promptobus lead --brief ./task.md --model gpt-6-astra
+promptobus status --task <id>
+```
+
+The command prints the new task id. The holder continues the owner in the background;
+from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it and
+`promptobus ask --answers --task <id>` reads its replies. Its private home avoids a shared
+project layer. Access credentials have a bounded lifetime; sign in again and relift after
+expiry. See [Lead](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md).
+
+From an existing orchestrator session, lift a worker:
+
 ```bash
 promptobus spawn --repo ./my-repo --brief ./brief.md --task-title "Rename the billing module"
 promptobus status
@@ -117,7 +133,7 @@ The path is required, `--title` opens a new review task, and `--task <id>` sends
 promptobus step security ./my-repo --task <id>
 ```
 
-A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer reads files through read-only shell commands in its read-only sandbox. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md#review).
+A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.21.0/docs/reference/03-cli.md#review).
 
 Close the task when the work is accepted:
 
@@ -133,11 +149,13 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 
 | Command | What it does |
 |---|---|
+| `promptobus lead --resume --task <id>` | Resume an active retained managed Codex root; its native thread, owner and journal stay the same; live or closed owners refuse |
+| `promptobus lead --brief <file>` | Start a managed Codex root orchestrator. `--task`, `--title`, routing flags, `--permission-mode workspace-write|full-access`, `--dry-run`; existing tasks are refused |
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. A worker name that shares files with an existing task participant is refused. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus spawn --teamlead --brief <file> --task <root>` | Start a child-task orchestrator at the install root on Claude Code or Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--allow-payg`, `--refresh`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Lift the named declared gate when the preceding participant's result is on record for this subject; a main-tree writer also needs the owner's result. `--base <ref>`, `--brief <file>` for a writer, routing flags, `--dry-run` |
 | `promptobus review <path>` | Lift the first `reads-diff` gate on a snapshot of the diff; `--approver` selects the first `writes-main-tree` gate. `--title` or `--task <id>`, `--base <ref>`, `--strategy`, `--dry-run` |
-| `promptobus report --task <root>` | Lift one read-only Claude Code reporter at the install root. Routing flags and `--dry-run` are supported; a child task or second live reporter is refused |
+| `promptobus report --task <root>` | Lift one read-only Claude Code or Codex reporter at the install root. Routing flags and `--dry-run` are supported; a child task or second live reporter is refused |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | The machine lease, then active roots with their child tasks: participants by piece and declared step order, unread mail, session state, missing-session diagnostics, routing and review-round counts |
 | `promptobus digest [--task <id>] [--json]` | A read-only page of active task trees or the selected task's root tree: latest status lines, questions with open or unresolved provenance state, stalls, `SILENT` and `UNANSWERED`, and pieces by current pipeline step |

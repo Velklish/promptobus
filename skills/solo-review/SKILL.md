@@ -10,8 +10,12 @@ description: Isolated review of your own diff. A read-only Promptobus reviewer s
 The reviewer is a separate background session. Your context does not flow into it. Orchestration is not required. One command is enough.
 
 ```bash
-promptobus review <path-to-clone-or-worktree> --title "<whose work, what changed>"
+promptobus review <path-to-clone-or-worktree> --title "<whose work, what changed>" --strategy quality
 ```
+
+For a Codex-only workspace, add `--harness codex` to that command. An unrouted review with neither a strategy nor a harness defaults to Claude Code; do not rely on that fallback when Claude Code is unavailable. Keep a model or effort explicitly named by the person as a constraint.
+
+The Codex reviewer uses a private review directory, a read-only filesystem sandbox, and disabled shell execution tools. Read the snapshot and working copy with reviewer_files read_file, list_files and search_text MCP tools, bounded to the reviewed tree, canonical rule/skill directories and task artifacts. Write approvals and classified external MCP writes are denied. Builds, tests and analyzers remain forbidden. Claude Code denies Bash as a tool.
 
 The path is required. There is no resolve from the current directory. An error without a path names the repository of `cwd` and prints a ready command.
 

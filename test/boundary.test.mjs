@@ -129,6 +129,11 @@ test('src and its own suite have no names of another contour', () => {
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
     for (const needle of needles) {
+      // Global skill discovery is Codex's own layout, not a workspace consumer dependency.
+      const codexSkills = needle === CONTOUR.layout && (
+        file === path.join(ROOT, 'test', 'harness-codex.mjs')
+        || /[/\\]fixtures[/\\]codex-app-server[/\\][^/\\]+[/\\]CanonicalSkills-/.test(file));
+      if (codexSkills) continue;
       if (text.includes(needle)) hits.push(`${path.relative(ROOT, file)}: ${needle}`);
     }
   }

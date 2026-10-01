@@ -62,7 +62,7 @@ check(': Codex diagnosis surfaces scenario errors before the later red verdict',
   diagnosis);
 
 const {
-  codexDriver, PHRASES, PROVEN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
+  codexDriver, PHRASES, PROVEN_CODEX_VERSION, MIN_CODEX_VERSION, DEFAULT_MODEL, REVIEWER_DENY, codexToolSegment,
   codexHomeConfig, makeParticipantHome, participantHomesRoot, projectHooksDir, removeParticipantHome,
   writeRedirectedHooks, hooksDocument,
   reviewSandbox, skillsNoteOf, sweepParticipantHomes, trustPath, workspaceSkillsDir,
@@ -179,7 +179,7 @@ const codexServerRequest = codexFixtureAjv.compile(
   JSON.parse(readFileSync(path.join(codexFixtureDir, 'ServerRequest.json'), 'utf8')),
 );
 const mcpDenyCapture = JSON.parse(readFileSync(
-  path.join(codexFixtureDir, 'McpServerStatusList-0.156.1-2026-09-25.json'), 'utf8',
+  path.join(here, 'fixtures', 'codex-app-server', '0.156.1', 'McpServerStatusList-0.156.1-2026-09-25.json'), 'utf8',
 ));
 const mcpCaptureMessages = mcpDenyCapture.exchange.map(({ message }) => message);
 const mcpThreadStart = mcpCaptureMessages.find((message) => message.method === 'thread/start');
@@ -200,7 +200,7 @@ check('PB-87.1: the Codex MCP capture accepts disabled_tools without a model tur
 // and that the MCP server itself was told to hand over both, which is what makes the
 // filtering app-server's rather than the server's.
 const enforcement = JSON.parse(readFileSync(
-  path.join(codexFixtureDir, 'DisabledToolsEnforcement-0.156.1-2026-09-25.json'), 'utf8',
+  path.join(here, 'fixtures', 'codex-app-server', '0.156.1', 'DisabledToolsEnforcement-0.156.1-2026-09-25.json'), 'utf8',
 ));
 check('PB-87.3: a disabled tool is absent from the thread inventory and present without the key',
   enforcement.decisive.turnStarted === false
@@ -880,7 +880,10 @@ check(': without a host home, Codex sessions phrase names its source',
 if (previousCodexHome === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
 else process.env.PROMPTOBUS_CODEX_HOME = previousCodexHome;
 
-check(': a binary older than the proven version — refuse before lift',
+check(': the measured 0.158 compatibility floor lifts while 0.157 refuses',
+  codexDriver.optionRefusal({}, { version: MIN_CODEX_VERSION }) === null
+  && codexDriver.optionRefusal({}, { version: '0.157.0' }) !== null);
+check(': a binary older than the measured minimum — refuse before lift',
   /0\.140/.test(String(codexDriver.optionRefusal({}, { version: '0.140.0' })))
   && codexDriver.optionRefusal({}, { version: PROVEN_CODEX_VERSION }) === null
   && codexDriver.optionRefusal({}, { version: null }) === null,
@@ -2100,9 +2103,16 @@ check('PB-161.2: the trust record names the reviewer directory, never the tree u
   revThread?.codexHome?.dir === codexDriver.participantCodexHome({ task: TASK, address: REVIEWER })
     && revThread.codexHome.dir !== callerCodexHome
     && revThread.codexHome.config.includes(`[projects."${realpathSync(reviewerSandboxDir)}"]`)
-    && !revThread.codexHome.config.includes(realpathSync(wt))
+    && !revThread.codexHome.config.includes(`[projects."${realpathSync(wt)}"]`)
     && /trust_level = "trusted"/.test(revThread.codexHome.config),
   JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300), timedOut: revThread?.__timedOut }));
+
+check('reviewer thread disables execution and carries a bounded local file reader',
+  revThread?.config?.['features.shell_tool'] === false
+    && revThread?.config?.['features.unified_exec'] === false
+    && revThread?.codexHome?.config.includes('reviewer-files.js')
+    && revThread.codexHome.config.includes('PROMPTOBUS_REVIEW_READ_ROOTS'),
+  JSON.stringify({ config: revThread?.config, home: revThread?.codexHome?.config?.slice(-700) }));
 
 // Read the way the binary reads it: without the key, codex_apps and its account write tools
 // join the thread inventory of either role.

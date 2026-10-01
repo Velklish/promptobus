@@ -397,6 +397,11 @@ export interface Driver {
   /** What was said about the launch after success: unconfirmed check, unparsed id. */
   saidLiftoff?(result: unknown): void;
   inspect?(ref: string): SessionView | null;
+  /** Validate an inactive retained managed owner before native thread resumption. */
+  resumeState?(ref: string, context: {
+    home: string; cwd: string; task: string; address: string; threadId: string;
+    launcherPid?: number; env?: Record<string, string | undefined>;
+  }): { threadId: string; sandbox: string };
   /** Remove the harness state of one closed participant that does NOT live in its worktree — the
    * one leak with no other cleanup path, and it may hold credentials. Must not throw. */
   sweepParticipant?(participant: unknown, taskId: string): unknown;

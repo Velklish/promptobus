@@ -1,0 +1,33 @@
+{
+  "threadId": "01a0f4e9-aee9-70a2-a95d-1e174b28e16f",
+  "turns": 2,
+  "holderPid": 48307,
+  "lastEvent": "turn/completed",
+  "state": "alive",
+  "rootMarkerSeen": true,
+  "wakeMarkerSeen": true,
+  "rolloutTypes": {
+    "message": 11,
+    "custom_tool_call": 6,
+    "custom_tool_call_output": 6,
+    "reasoning": 1
+  },
+  "commands": [
+    {
+      "command": "node bin/promptobus.js lead --brief brief.md --task lead-proof-t20261001-005000 --model gpt-6-astra --effort low --permission-mode full-access",
+      "exitCode": 0
+    },
+    {
+      "command": "env -u CODEX_THREAD_ID -u CLAUDE_CODE_SESSION_ID -u CURSOR_CONVERSATION_ID -u PROMPTOBUS_CODEX_SESSION node bin/promptobus.js ask <probe> --task lead-proof-t20261001-005000",
+      "exitCode": 0
+    }
+  ],
+  "cleanup": {
+    "holderStopped": true,
+    "closeExitCode": 0,
+    "ownerStoppedCount": 1,
+    "busAnswerSeen": "LEAD_ANSWER_OK"
+  },
+  "version": "0.158.0",
+  "model": "gpt-6-astra"
+}

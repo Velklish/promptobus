@@ -512,6 +512,7 @@ async function appServer() {
           additionalSpeedTiers: ['fast'],
           isDefault: true,
         },
+        { id: 'gpt-6-astra', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
         { id: 'gpt-5.4-mini', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
       ];
       if (probe.has('hidden') && params.includeHidden === true) {

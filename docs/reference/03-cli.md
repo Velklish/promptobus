@@ -1,8 +1,53 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `spawn`, `step`, `review`, `report`, `models`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
+
+## Lead
+
+`promptobus lead --brief <file> [--task <new-id>] [--title <text>] [routing flags] [--dry-run]`
+starts a managed Codex root orchestrator at the install root. It creates a new root task,
+not a child, and accepts only Codex. An invalid task id or an existing task refuses before
+session preparation; the existing owner and journal remain unchanged. The first brief
+heading supplies the title when `--title` is absent. Without `--task`, the command generates
+an id. The unrouted Codex default is `gpt-6-astra`; `--model` or routing can select another
+model exposed by the account.
+
+The root owner receives canonical skills and the mechanism MCP set in a private home,
+without writing a project layer at the shared root. Its ordinary sandbox is `workspace-write`;
+`--permission-mode full-access` explicitly selects `danger-full-access`. Project hooks are
+disabled in its thread. The holder waits after `thread/start` until the complete native
+thread identity is recorded as the task owner, then begins the first model turn. Worker,
+reviewer, approver and teamlead commands use the same task id and their existing role gates.
+
+The holder and warden wake this owner when mail arrives. From a plain terminal, `ask --task
+<id>` sends a question as `user`, and `ask --answers --task <id>` consumes its replies.
+`status` and `digest` inspect progress. `done --task <id>` stops the managed owner alongside
+other managed participants, unless `--keep-sessions` is explicit. `--dry-run` prints the
+plan without creating a task, a participant home or a model turn. This command does not
+claim or convert an existing Desktop chat.
+
+On Codex 0.158.0, a live managed owner read its task metadata on the first turn, received
+mail through warden wake, answered `user`, and stopped on `done`; the recorded launch,
+question and close outcomes all have exit code 0. [Live evidence](../../test/fixtures/codex-app-server/0.158.0/ManagedRoot-0.158.0-2026-10-01.json).
+`lead --resume --task <id>` continues an active managed Codex root with its recorded native
+thread and private home. It refuses a live holder, app-server or launcher, a closed task,
+an attached Desktop owner, and any identity or workspace mismatch. With no new `--brief`,
+the next turn continues the prior assignment from history. A supplied brief is a continuation,
+not a new task. The task creation time, mailbox owner and native thread identity stay the same.
+
+A root bound before a failed first model turn retains its record and private rollout for
+recovery. `stop` and `done` retire the home, so they do not leave a resumable root. An interrupted
+holder that has exited with its app-server leaves history available; verify both processes
+are dead before resuming. Renew expired owner credentials with the normal owner sign-in;
+resume copies a fresh access snapshot and never rotates a refresh token.
+
+On Codex 0.159.2, the resumed model remembered an initial marker after the original brief was
+removed; `thread/resume`, the same thread id, unchanged task creation and owner, and four
+successful MCP reads are recorded in the [native resume evidence](../../test/fixtures/codex-app-server/0.159.2/ManagedRootResume-0.159.2-2026-10-01.json).
+Subscription credentials have the bounded lifetime described in
+[participant authentication](05-drivers.md#codex-participant-authentication).
 
 ## Spawn
 
@@ -20,7 +65,7 @@ Claude Code and Codex lift teamleads at the shared install root. That list is `T
 
 The Codex teamlead's `full-access` profile completed real Claude Code, Cursor and Codex worker lifts and real reviews on all three harnesses on 2026-09-27. All three participant lifts refused under `workspace-write`: Claude Code could not create its job directory, Cursor could not write its session file, and Codex could not listen on its session socket. Reviews were not attempted in that profile. A later Codex reviewer, lifted by the Codex teamlead after its prompt named read-only shell access, returned a result. The install-root snapshot and git status stayed unchanged and no foreign hook marker appeared. These runs establish `full-access` as the narrowest completing profile measured; the requested sandbox mode's application was not captured directly.
 
-For Claude Code, child creation needs the full session id from `claude agents --json`; a short id from the launch output does not bind the child owner, so that lift is refused. Codex binds the app-server thread id. The child link is written as soon as the session id is observed. A first tool call made before that write may need to be retried. The kept brief is `brief-teamlead-<slug>.md` in the child task's files directory. Initial creation places the complete root teamlead and child owner in the pending parent link, so recovery of that link restores both addresses with their session references. A relift writes a separate rebind intent in the root task store before changing either journal. It replaces the child owner's session reference and launch id along with its full owner id; if the brief heading changes, status and the child warden inspect the new live session. Replay holds the root task lock from reading that intent through updating the child and root journals and deleting that same intent. A stale retry leaves a newer intent alone. If interrupted, repeating the same `spawn --teamlead` replays the bindings before checking liveness; a still-live launched session then causes the normal already-running refusal instead of starting another session.
+For Claude Code, child creation needs the full session id from `claude agents --json`; a short id from the launch output does not bind the child owner, so that lift is refused. Codex binds the app-server thread id and its holder waits for that binding before the first model turn. The child link is written as soon as the session id is observed. The kept brief is `brief-teamlead-<slug>.md` in the child task's files directory. Initial creation places the complete root teamlead and child owner in the pending parent link, so recovery of that link restores both addresses with their session references. A relift writes a separate rebind intent in the root task store before changing either journal. It replaces the child owner's session reference and launch id along with its full owner id; if the brief heading changes, status and the child warden inspect the new live session. Replay holds the root task lock from reading that intent through updating the child and root journals and deleting that same intent. A stale retry leaves a newer intent alone. If interrupted, repeating the same `spawn --teamlead` replays the bindings before checking liveness; a still-live launched session then causes the normal already-running refusal instead of starting another session.
 
 `--harness` must be in `host.declaredTools()` when present. Without the flag the registry fallback is `claude` (`lib/drivers.js`). Unknown harness names fail before any disk write.
 
@@ -120,7 +165,7 @@ The worker goes on committing after the call: from that moment the file only age
 
 **The reviewer is given no second immovable artefact, and that is a decision rather than an omission.** The candidate was the worktree's `HEAD` content of every changed path, taken by the package beside the diff (`git show <sha>:<path>`), so that a reviewer meeting "the working copy contradicts the snapshot" could tell a snapshot the author has outrun from one taken over a dirty tree, without running Git. It is refused for three reasons, written here so the option is not re-proposed as new. It would close the discrepancy only on the diff's own paths, while the prompt sends the reviewer into the working copy far wider than that — call sites of changed methods, neighbouring code, tests — where an artefact of the changed paths helps with nothing. It is expensive in the one budget that matters: measured 2026-09-12 on a seven-file branch of this repository, the diff was 22 422 bytes against 306 067 bytes of full `HEAD` content for the same files — 13.6× — written on every review and every re-review, and read by a model whose context is the budget. And it guards a report that is already forbidden: on a contradiction the reviewer files no finding at all, so "a closed finding reported as open" is closed by the instruction and not by an artefact.
 
-**Reviewer file access follows the harness boundary.** `Bash` stays in the Claude reviewer's deny list (`REVIEWER_DENY` in `lib/driver-claude.js`), and Cursor keeps `Shell(**)` denied. A Codex reviewer uses its read-only sandbox: it can run read-only shell commands such as `cat`, `sed -n`, `rg`, `git show`, `git diff` and `git log` to inspect the diff and working copy. Its prompt forbids writes, builds, tests and analyzers. The discrepancy rule above still sends resolution to the orchestrator rather than making the reviewer run Git to settle it.
+**Reviewer file access follows the harness boundary.** `Bash` stays in the Claude reviewer's deny list and Cursor keeps `Shell(**)` denied. Codex disables `features.shell_tool` and `features.unified_exec` at thread scope; the read-only sandbox remains in force. Its `reviewer_files` MCP server supplies bounded `read_file`, `list_files` and literal `search_text`, without launching subprocesses. The reviewed tree, canonical rule/skill paths, private review directory and task artifacts are readable. Classified external writes remain disabled. See [execution-free Codex review](05-drivers.md#execution-free-codex-review).
 
 **So a discrepancy is resolved by the orchestrator, which already holds both halves of the answer.** The reviewer's report carries the exact verification command — `git show <sha> -- <path>`, with the worktree HEAD the prompt named — so the check is a paste rather than a reconstruction; and `promptobus review --task <id>` re-snapshots, which is the remedy whenever the answer turns out to be that the file has aged. The reviewer reports the discrepancy without trying to resolve it in its own session.
 

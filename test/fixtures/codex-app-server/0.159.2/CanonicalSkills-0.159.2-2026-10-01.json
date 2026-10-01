@@ -1,0 +1,87 @@
+{
+  "version": "0.159.2",
+  "runs": [
+    {
+      "role": "worker",
+      "threadId": "01a0f4fd-9dce-7ec1-b5f2-5834e85481fe",
+      "sandbox": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+      },
+      "suppressed": [
+        {
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/alias/SKILL.md",
+          "enabled": false
+        }
+      ],
+      "before": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/worker/.codex/skills/canonical/SKILL.md",
+          "scope": "repo"
+        },
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/alias/SKILL.md",
+          "scope": "user"
+        },
+        {
+          "name": "unrelated-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/unrelated/SKILL.md",
+          "scope": "user"
+        }
+      ],
+      "messages": [
+        "I\u2019m using the root-proof skill.\n",
+        "PARITY-SKILL-CANONICAL-7193."
+      ],
+      "completed": "completed",
+      "canonicalDescriptorCount": 7,
+      "personalDescriptorCount": 0,
+      "unrelatedDescriptorCount": 2
+    },
+    {
+      "role": "reviewer",
+      "threadId": "01a0f4fd-bfa3-7bf0-bccd-b27276446299",
+      "sandbox": {
+        "type": "readOnly",
+        "networkAccess": false
+      },
+      "suppressed": [
+        {
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/alias/SKILL.md",
+          "enabled": false
+        }
+      ],
+      "before": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/reviewer/.codex/skills/canonical/SKILL.md",
+          "scope": "repo"
+        },
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/alias/SKILL.md",
+          "scope": "user"
+        },
+        {
+          "name": "unrelated-proof",
+          "path": "/private/tmp/pb-canonical-parity-E8lklh/personal/.agents/skills/unrelated/SKILL.md",
+          "scope": "user"
+        }
+      ],
+      "messages": [
+        "PARITY-SKILL-CANONICAL-7193"
+      ],
+      "completed": "completed",
+      "canonicalDescriptorCount": 3,
+      "personalDescriptorCount": 0,
+      "unrelatedDescriptorCount": 2
+    }
+  ],
+  "command": "node sandbox/codex-parity-20261001/measure-canonical-skills-159.mjs",
+  "exitCode": 0
+}

@@ -6,7 +6,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js'
+import { MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FIXTURES = path.join(ROOT, 'test', 'fixtures', 'codex-app-server')
@@ -34,9 +34,14 @@ if (!version) {
   process.exit(1)
 }
 
-if (version === PROVEN_CODEX_VERSION) {
-  const files = readdirSync(dir).length
-  say(`✔ codex ${version} matches the fixtures (${files} schema files in ${path.relative(ROOT, dir)})`)
+if ([MIN_CODEX_VERSION, PROVEN_CODEX_VERSION].includes(version)) {
+  const measured = path.join(FIXTURES, version)
+  if (!existsSync(path.join(measured, 'ClientRequest.json')) || !existsSync(path.join(measured, 'ServerRequest.json'))) {
+    say(`✖ codex ${version} has no complete request schema capture`)
+    process.exit(1)
+  }
+  const files = readdirSync(measured, { recursive: true }).filter(name => name.endsWith('.json')).length
+  say(`✔ codex ${version} matches the fixtures (${files} JSON fixtures in ${path.relative(ROOT, measured)})`)
   process.exit(0)
 }
 

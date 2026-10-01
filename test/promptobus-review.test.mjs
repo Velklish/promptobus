@@ -491,9 +491,9 @@ check('PB-87: Cursor does not consume Claude MCP deny ids',
 const codexClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Codex tools', harness: 'codex',
 });
-check('reviewer prompt: Codex reads by read-only shell and cannot run checks',
-  codexClassifiedPlan.prompt.includes('The read-only sandbox blocks file writes.')
-  && codexClassifiedPlan.prompt.includes('Read files with read-only shell commands (`cat`, `sed -n`, `rg`, `git show`, `git diff`, `git log`)')
+check('reviewer prompt: Codex reads through MCP without native execution or checks',
+  codexClassifiedPlan.prompt.includes('Shell execution tools are disabled and the sandbox is read-only.')
+  && codexClassifiedPlan.prompt.includes('reviewer_files read_file, list_files and search_text MCP tools')
   && codexClassifiedPlan.prompt.includes('do not run builds, tests or analyzers')
   && skillPrompts.codex.includes('Skip steps that need a write, a command that builds, tests or runs an analyzer')
   && codexClassifiedPlan.prompt.includes('not run, because a reviewer runs no gates or mechanical checks')

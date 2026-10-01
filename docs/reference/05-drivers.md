@@ -507,12 +507,25 @@ codex-cli 0.156.1 recorded `hook/started stop` and `hook/completed stop` before
 `turn/completed` for a worker and a reviewer on turns needing no follow-up; the
 journal and hooks-file evidence is in [hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces).
 
-The reviewer prompt names Codex's file access separately from Claude and Cursor:
-the read-only sandbox blocks writes, while read-only shell commands inspect files.
-It lists `cat`, `sed -n`, `rg`, `git show`, `git diff` and `git log` as reads and
-still forbids builds, tests and analyzers. The `reviewerCommands` driver phrase
-also gives its review procedure and Gate line their harness-specific wording;
-Claude and Cursor keep their command-start denial.
+### Execution-free Codex review
+
+The reviewer thread sets `features.shell_tool = false` and `features.unified_exec = false`.
+These flags remove native command execution tools; the read-only filesystem sandbox and
+write-approval denials remain. Workers, approvers, teamleads, root owners and reporters
+keep their own profiles. A reviewer cannot read local files through a native Read tool,
+so the mechanism also supplies `reviewer_files`, a dependency-free stdio MCP server.
+
+Its `read_file`, `list_files` and literal `search_text` tools accept only declared absolute
+paths inside the reviewed tree, canonical rules/skills, the private review directory and
+task artifacts. Realpath checks reject escaping symlinks. No tool launches a subprocess.
+Reads and search output are bounded; listings skip Git, dependency and build directories.
+`PROMPTOBUS_REVIEW_READ_ROOTS` carries the JSON root list to this one server. It never
+includes the authentication home. The review prompt still forbids builds, tests and
+analyzers and names the MCP reads. Existing bus and classified external read tools remain.
+
+A native 0.159.2 reviewer completed all three MCP reads, retrieved a file marker absent
+from its assignment, reported neither `exec_command` nor `write_stdin` in the inspected
+metadata, and produced zero command-execution items. [Live evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFiles-0.159.2-2026-10-01.json).
 
 `bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own
@@ -641,7 +654,20 @@ and either can arrive inside the five seconds between the tree going and the rec
 firing. A write with nowhere to go is dropped, because this is diagnostics and the holder
 must not fall over its own log.
 
-### Codex participant authentication
+### Codex protocol versions
+
+The fixture baseline is codex-cli 0.159.2. Full captures from the bundled Desktop binary
+and the PATH 0.158.0 binary contain 314 generated JSON schemas each. The holder's initialize,
+thread/start, thread/resume, skills/list, turn/start, turn/steer and thread/read shapes validate against
+both. Native 0.159.2 turns also repeat the trusted-root hook control, canonical worker and
+reviewer skills, and reporter MCP reads: [capture and evidence](../../test/fixtures/codex-app-server/0.159.2/README.md).
+The participant minimum is the measured 0.158.0, and the local schema gate accepts only
+these two captured versions. An unknown installed version needs a fresh capture and
+measurement. Historical 0.156.1 MCP and token-usage records remain under their original date;
+they are not evidence from the newer binaries. The unrouted default is `gpt-6-astra`, tested
+with subscription credentials on both current binaries.
+
+## Codex participant authentication
 
 Subscription participants receive the owner's access credentials with an empty refresh token.
 They cannot rotate the owner's OAuth refresh token. A lift requires a decodable access-token

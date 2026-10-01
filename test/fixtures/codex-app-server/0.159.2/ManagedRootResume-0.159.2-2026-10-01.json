@@ -1,0 +1,59 @@
+{
+  "command": "node <disposable-native-lead-resume-probe.mjs>",
+  "version": "0.159.2",
+  "model": "gpt-6-astra",
+  "initialThread": "01a0f512-a23e-78f2-98ee-79a02deb4f02",
+  "resumedThread": "01a0f512-a23e-78f2-98ee-79a02deb4f02",
+  "turns": 2,
+  "createdPreserved": true,
+  "ownerPreserved": true,
+  "methodsCalled": [
+    "initialize",
+    "remoteControl/status/changed",
+    "account/updated",
+    "model/list",
+    "thread/resume",
+    "warning",
+    "thread/status/changed",
+    "thread/name/set",
+    "thread/tokenUsage/updated",
+    "thread/goal/cleared",
+    "thread/name/updated",
+    "turn/start",
+    "turn/started",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "mcpServer/elicitation/request",
+    "srv:mcpServer/elicitation/request",
+    "serverRequest/resolved",
+    "account/rateLimits/updated",
+    "turn/completed"
+  ],
+  "messages": [
+    "Workspace rules: `/private/tmp/pb-lead-resume-8hZMKz/root/AGENTS.md`. I\u2019ll read those rules and the task metadata.\n",
+    "INITIAL_READY ROOT-RESUME-MEMORY-9517",
+    "Workspace rules: `/private/tmp/pb-lead-resume-8hZMKz/root/AGENTS.md`, already read in this thread. I\u2019ll check the mailbox and task metadata.\n",
+    "RESUMED_READY ROOT-RESUME-MEMORY-9517"
+  ],
+  "reads": [
+    {
+      "tool": "promptobus_mailbox",
+      "status": "completed"
+    },
+    {
+      "tool": "promptobus_task",
+      "status": "completed"
+    },
+    {
+      "tool": "promptobus_mailbox",
+      "status": "completed"
+    },
+    {
+      "tool": "promptobus_task",
+      "status": "completed"
+    }
+  ],
+  "usedThreadResume": true,
+  "exitCode": 0
+}
