@@ -132,7 +132,8 @@ test('src and its own suite have no names of another contour', () => {
       // Global skill discovery is Codex's own layout, not a workspace consumer dependency.
       const codexSkills = needle === CONTOUR.layout && (
         file === path.join(ROOT, 'test', 'harness-codex.mjs')
-        || /[/\\]fixtures[/\\]codex-app-server[/\\][^/\\]+[/\\]CanonicalSkills-/.test(file));
+        || file === path.join(ROOT, 'test', 'lead.test.mjs')
+        || /[/\\]fixtures[/\\]codex-app-server[/\\][^/\\]+[/\\](?:CanonicalSkills|ReviewerReadRoots)-/.test(file));
       if (codexSkills) continue;
       if (text.includes(needle)) hits.push(`${path.relative(ROOT, file)}: ${needle}`);
     }

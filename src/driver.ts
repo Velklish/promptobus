@@ -406,6 +406,10 @@ export interface Driver {
     home: string; cwd: string; task: string; address: string; threadId: string;
     launcherPid?: number; env?: Record<string, string | undefined>;
   }): { threadId: string; sandbox: string };
+  /** Refuse live unbound roots and remove dead unbound state before a new root launch. */
+  prepareRootLaunch?(context: {
+    home: string; task: string; env?: Record<string, string | undefined>;
+  }): void;
   /** Remove the harness state of one closed participant that does NOT live in its worktree — the
    * one leak with no other cleanup path, and it may hold credentials. Must not throw. */
   sweepParticipant?(participant: unknown, taskId: string): unknown;
