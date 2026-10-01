@@ -45,6 +45,8 @@ const samples = {
   TurnStartParams: { threadId: 'fixture-thread', input: [{ type: 'text', text: 'Read mailbox' }], effort: 'low' },
   TurnSteerParams: { threadId: 'fixture-thread', expectedTurnId: 'fixture-turn', input: [{ type: 'text', text: 'Mail arrived' }] },
   ThreadReadParams: { threadId: 'fixture-thread', includeTurns: true },
+  ThreadInjectItemsParams: { threadId: 'fixture-thread', items: [{ type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: 'Original authorized assignment' }] }] },
 };
 for (const version of [MIN_CODEX_VERSION, PROVEN_CODEX_VERSION]) {
   const base = path.join(here, 'fixtures', 'codex-app-server', version);

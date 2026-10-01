@@ -9,7 +9,7 @@ import { hostOf } from '../lib/host.js';
 import { bus, participantOf } from '../lib/store.js';
 import { ownerOf } from '../dist/index.js';
 import { codexDriver } from '../lib/driver-codex.js';
-import { holderAsk, holderAlive, pidAlive, readSession } from '../lib/codex-session.js';
+import { holderAsk, holderAlive, pidAlive, readSession, writeSession } from '../lib/codex-session.js';
 
 const root = makeSandbox('promptobus-lead-lifecycle-');
 writeHostConfig(root, { tools: ['codex'] });
@@ -44,6 +44,11 @@ const first = await waitFor(() => {
   return record?.turns >= 1 && record.busy === false ? record : null;
 }, { timeoutMs: 15000 });
 check('managed root completes its first task-metadata turn', first?.lastTurn?.status === 'completed');
+const initialHistory = JSON.parse(readFileSync(path.join(harness.home, 'threads', first.threadId + '.json'), 'utf8'));
+check('new root persists its original assignment as a user message before binding without duplicate first input',
+  first.initialAssignmentInjected === true && initialHistory.injectedItems[0].content[0].text === first.initialPrompt
+  && !initialHistory.firstRpc.params.input[0].text.includes('Recover this root'));
+
 const creation = core().readTask(task).created;
 await holderAsk(ref, 'shutdown', {}, env);
 await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
@@ -63,6 +68,8 @@ await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.a
 const nativeThreadFile = path.join(harness.home, 'threads', first.threadId + '.json');
 const emptyHistory = JSON.parse(readFileSync(nativeThreadFile, 'utf8'));
 emptyHistory.turns = [];
+emptyHistory.injectedItems = [];
+writeSession({ ...second, initialAssignmentInjected: false }, env);
 writeFileSync(nativeThreadFile, JSON.stringify(emptyHistory));
 const recovered = cli(['lead', '--resume', '--task', task]);
 const third = await waitFor(() => {

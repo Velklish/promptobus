@@ -528,6 +528,9 @@ analyzers and names the MCP reads. Existing bus and classified external read too
 Native reviewers on both supported binaries completed all three MCP reads, retrieved a
 file marker absent from the assignment, reported neither `exec_command` nor `write_stdin`
 in the inspected metadata, and produced zero command-execution items.
+A further native turn read an external rule file, external review reference and synthetic
+unrelated personal skill, while an adjacent undeclared authentication fixture was refused.
+[Exact-root evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerReadRoots-0.159.2-2026-10-01.json).
 [0.158.0 evidence](../../test/fixtures/codex-app-server/0.158.0/ReviewerFiles-0.158.0-2026-10-01.json)
 and [0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFiles-0.159.2-2026-10-01.json).
 

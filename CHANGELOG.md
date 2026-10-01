@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binds its native thread before the first model turn, receives warden wake, and is stopped
   by `done`. `lead --resume` restores a retained inactive managed root with the same native
   thread and journal; closed, attached, mismatched and live owners refuse. Bound first-turn
-  failures retain immutable assignments and history, replaying an undelivered assignment on recovery.
+  failures retain immutable assignments and history. A new root stores its original assignment
+  through public native user-message injection before binding; its first model input continues
+  that assignment. A hard kill before first input resumes the same native thread and scope.
   Concurrent launches reserve their task before touching session files. `stop orchestrator`
   cleans live or retained dead managed roots; attached owners remain outside this lifecycle.
   Existing tasks cannot be taken over. Status names the owner's actual delivery

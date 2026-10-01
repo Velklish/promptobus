@@ -1,0 +1,16 @@
+{
+  "binary": "/opt/homebrew/bin/codex",
+  "threadId": "01a0f55a-7a15-7fc3-afe2-0b53ad5d858e",
+  "pathExistsBeforeStop": false,
+  "path": "/private/tmp/codex-empty-resume-lq6DP0/sessions/2026/10/01/rollout-2026-10-01T05-45-43-01a0f55a-7a15-7fc3-afe2-0b53ad5d858e.jsonl",
+  "assignmentInjection": {
+    "id": 3,
+    "result": {}
+  },
+  "pathExistsAfterInjection": true,
+  "pathExistsAfterStop": true,
+  "resume": {
+    "id": "01a0f55a-7a15-7fc3-afe2-0b53ad5d858e",
+    "turns": 0
+  }
+}

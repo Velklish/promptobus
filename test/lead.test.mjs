@@ -204,3 +204,6 @@ const personalRoots = JSON.parse(personalPlan.mcpConfig.mcpServers.reviewer_file
 check('visible unrelated personal skills remain readable without granting their home ancestor',
   personalRoots.includes(realpathSync(personalSkill)) && !personalRoots.includes(homedir())
   && !personalRoots.includes(path.join(homedir(), '.agents', 'skills')));
+
+check('a natively injected original assignment resumes by continuation without duplication',
+  recoveryPrompt({ ...recovery, initialAssignmentInjected: true }, { thread: { turns: [] } }) === recovery.prompt);

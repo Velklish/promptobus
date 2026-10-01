@@ -581,6 +581,15 @@ async function appServer() {
       reply(id, { thread: { id: t.id, status: { type: 'idle' }, turns: params.excludeTurns ? [] : t.turns ?? [] } });
       return;
     }
+    if (method === 'thread/inject_items') {
+      const t = readThread(home, params.threadId);
+      if (!t || !params.items?.length) { fail(id, -32600, 'items must not be empty'); return; }
+      t.injectedItems = [...(t.injectedItems ?? []), ...params.items];
+      t.rollout = true;
+      writeThread(home, t);
+      reply(id, {});
+      return;
+    }
     if (method === 'thread/name/set') {
       const t = readThread(home, params.threadId);
       if (!t) {

@@ -1,0 +1,53 @@
+{
+  "version": "0.159.2",
+  "model": "gpt-6-astra",
+  "bindingState": "binding",
+  "shutdown": "SIGKILL app-server and holder before any model input",
+  "durability": {
+    "threadId": "01a0f55c-0e4f-7962-9ba6-fe1e46d4f3a9",
+    "pathExistsBeforeBinding": true,
+    "headerMatches": true,
+    "originalAssignmentPresent": true
+  },
+  "shutdownMs": 0,
+  "priorTurns": 0,
+  "rolloutDirectoryBeforeShutdown": true,
+  "initialThread": "01a0f55c-0e4f-7962-9ba6-fe1e46d4f3a9",
+  "resumedThread": "01a0f55c-0e4f-7962-9ba6-fe1e46d4f3a9",
+  "ownerPreserved": true,
+  "createdPreserved": true,
+  "immutableAssignmentPreserved": true,
+  "turns": 1,
+  "status": "completed",
+  "methodsCalled": [
+    "initialize",
+    "remoteControl/status/changed",
+    "account/updated",
+    "model/list",
+    "thread/resume",
+    "deprecationNotice",
+    "warning",
+    "thread/status/changed",
+    "thread/name/set",
+    "thread/goal/cleared",
+    "thread/name/updated",
+    "turn/start",
+    "turn/started",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "thread/tokenUsage/updated",
+    "account/rateLimits/updated",
+    "mcpServer/elicitation/request",
+    "srv:mcpServer/elicitation/request",
+    "serverRequest/resolved",
+    "turn/completed"
+  ],
+  "messages": [
+    "I\u2019ll read `/private/tmp/pb-lead-empty-recovery-7q6xob/root/AGENTS.md`, check the mailbox, and recover the original assignment from `promptobus_task`.\n",
+    "ORIGINAL_SCOPE_RECOVERED EMPTY-ASSIGNMENT-9314"
+  ],
+  "successfulTaskReads": 1,
+  "command": "node sandbox/codex-parity-20261001/measure-lead-empty-recovery-159.mjs",
+  "exitCode": 0
+}

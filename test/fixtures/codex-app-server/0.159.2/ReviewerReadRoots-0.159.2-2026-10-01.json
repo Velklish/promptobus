@@ -1,0 +1,61 @@
+{
+  "version": "0.159.2",
+  "model": "gpt-6-astra",
+  "roots": [
+    "/private/tmp/pb-native-reader-IAC0uO/root/source",
+    "/private/tmp/pb-native-reader-IAC0uO/declared/AGENTS.md",
+    "/private/tmp/pb-native-reader-IAC0uO/external-skill",
+    "/private/tmp/pb-native-reader-IAC0uO/synthetic-home/.agents/skills/unrelated-fixture",
+    "/private/tmp/pb-native-reader-IAC0uO/root/.promptobus/tasks/native-reader-t20261001-050000/files"
+  ],
+  "threadId": "01a0f549-ab87-7050-aba0-d67e036cce34",
+  "sandbox": "read-only",
+  "completed": "completed",
+  "readerInventory": [
+    "read_file",
+    "list_files",
+    "search_text"
+  ],
+  "calls": [
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "read_file",
+      "status": "failed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "list_files",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-reviewer_files",
+      "tool": "search_text",
+      "status": "completed"
+    }
+  ],
+  "messages": [
+    "I\u2019ll inspect the tool metadata, then use only reviewer_files to read, list, and search the requested fixtures.",
+    "- Exact comment: `// FILE-READ-MARKER-7108`\n- `Compute()` returns `42`.\n- AGENTS.md: `OUTSIDE-RULE-MARKER-9221`\n- reference.md: `EXTERNAL-SKILL-MARKER-9232`\n- SKILL.md: `PERSONAL-FIXTURE-MARKER-9243`\n- Listing found `Example.cs`; search found `Compute` on line 2.\n- `NO_EXECUTION_TOOL`: neither `exec_command` nor `write_stdin` exists. All three reviewer_files tools are available.\n- `ROOT_BOUNDARY_REFUSED`: reading `auth.json` was rejected: \u201cPath is outside the declared review roots\u201d.\n\nNo commands executed or files written."
+  ],
+  "commandExecutionItems": 0
+}

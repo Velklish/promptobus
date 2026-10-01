@@ -17,7 +17,9 @@ model exposed by the account.
 The root owner receives canonical skills and the mechanism MCP set in a private home,
 without writing a project layer at the shared root. Its ordinary sandbox is `workspace-write`;
 `--permission-mode full-access` explicitly selects `danger-full-access`. Project hooks are
-disabled in its thread. The holder waits after `thread/start` until the complete native
+disabled in its thread. Before binding, the holder preserves the original assignment as a
+native user message with `thread/inject_items`; this starts no model turn. The first model
+input continues that stored assignment. The holder waits after `thread/start` until the complete native
 thread identity is recorded as the task owner, then begins the first model turn. Worker,
 reviewer, approver and teamlead commands use the same task id and their existing role gates.
 
@@ -36,8 +38,9 @@ question and close outcomes all have exit code 0. [Live evidence](../../test/fix
 thread and private home. It refuses a live holder, app-server or launcher, a closed task,
 an attached Desktop owner, and any identity or workspace mismatch. With no new `--brief`,
 the next turn continues the prior assignment from history. The original assignment is also
-retained immutably in the private session record. Resume checks native user-message history
-and replays that assignment when it was never submitted, retaining any new continuation.
+retained immutably in the private session record and the native injected history. Resume
+continues that history; legacy records without an injected assignment check user-message
+history and replay an undelivered assignment, retaining any new continuation.
 A supplied brief is a continuation,
 not a new task. The task creation time, mailbox owner and native thread identity stay the same.
 
@@ -50,6 +53,13 @@ resume copies a fresh access snapshot and never rotates a refresh token.
 On Codex 0.159.2, the resumed model remembered an initial marker after the original brief was
 removed; `thread/resume`, the same thread id, unchanged task creation and owner, and four
 successful MCP reads are recorded in the [native resume evidence](../../test/fixtures/codex-app-server/0.159.2/ManagedRootResume-0.159.2-2026-10-01.json).
+Before a native root's first model input, the rollout already held its matching session
+header and exact original user assignment. After `SIGKILL` of both owned processes,
+`lead --resume` restored the same id and the model recovered that scope; task creation
+and owner stayed unchanged. [Cold-root evidence](../../test/fixtures/codex-app-server/0.159.2/ManagedRootEmptyRecovery-0.159.2-2026-10-01.json).
+The same public assignment injection materialized an empty native thread on
+[0.158.0](../../test/fixtures/codex-app-server/0.158.0/ManagedRootAssignment-0.158.0-2026-10-01.json).
+
 Subscription credentials have the bounded lifetime described in
 [participant authentication](05-drivers.md#codex-participant-authentication).
 
