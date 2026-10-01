@@ -1,0 +1,88 @@
+{
+  "version": "0.158.0",
+  "runs": [
+    {
+      "role": "worker",
+      "threadId": "01a0f4e9-352e-7bb0-9707-4db5be3b680b",
+      "sandbox": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+      },
+      "suppressed": [
+        {
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/alias/SKILL.md",
+          "enabled": false
+        }
+      ],
+      "before": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/worker/.codex/skills/canonical/SKILL.md",
+          "scope": "repo"
+        },
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/alias/SKILL.md",
+          "scope": "user"
+        },
+        {
+          "name": "unrelated-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/unrelated/SKILL.md",
+          "scope": "user"
+        }
+      ],
+      "messages": [
+        "I\u2019m using the root-proof skill.",
+        "PARITY-SKILL-CANONICAL-7193"
+      ],
+      "completed": "completed",
+      "canonicalDescriptorCount": 7,
+      "personalDescriptorCount": 0,
+      "unrelatedDescriptorCount": 2
+    },
+    {
+      "role": "reviewer",
+      "threadId": "01a0f4e9-5ce5-7290-96d1-d2174f6635cc",
+      "sandbox": {
+        "type": "readOnly",
+        "networkAccess": false
+      },
+      "suppressed": [
+        {
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/alias/SKILL.md",
+          "enabled": false
+        }
+      ],
+      "before": [
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/reviewer/.codex/skills/canonical/SKILL.md",
+          "scope": "repo"
+        },
+        {
+          "name": "root-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/alias/SKILL.md",
+          "scope": "user"
+        },
+        {
+          "name": "unrelated-proof",
+          "path": "/private/tmp/pb-canonical-parity-H8J3Fx/personal/.agents/skills/unrelated/SKILL.md",
+          "scope": "user"
+        }
+      ],
+      "messages": [
+        "I\u2019m using the root-proof skill.\n",
+        "PARITY-SKILL-CANONICAL-7193"
+      ],
+      "completed": "completed",
+      "canonicalDescriptorCount": 7,
+      "personalDescriptorCount": 0,
+      "unrelatedDescriptorCount": 2
+    }
+  ],
+  "command": "node sandbox/codex-parity-20261001/measure-canonical-skills.mjs",
+  "exitCode": 0
+}

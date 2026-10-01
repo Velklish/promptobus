@@ -110,13 +110,13 @@ const spawn = section(cli, '## Spawn');
 const codexPhrases = section(drivers, '### Codex: the phrases a participant is addressed by');
 check('docs: Codex home inventory includes conditional hooks and auth',
   has(spawn,
-    "The lift copies the owner's `auth.json` at mode 0600 when present; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`.")
+    "The lift writes an `auth.json` snapshot at mode 0600 when present, with the subscription refresh token removed; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`.")
   && has(codexPhrases,
-    "The lift copies the owner's `auth.json` at mode 0600 when it exists; a missing file is reported and an API key in the environment can still authenticate the participant.")
+    "The lift writes an `auth.json` snapshot at mode 0600 when it exists, with the subscription refresh token removed; a missing file is reported and an API key in the environment can still authenticate the participant.")
   && has(codexPhrases,
     "A linked worktree with a planned guard hooks file also gets `hooks.json` in the participant home at lift. Codex otherwise resolves the project's hooks file in the main checkout, which the lift does not trust. A directory that is not a linked worktree keeps its planned hook file in its own `.codex/`.")
   && has(decision(adr008, '1B', '2B'),
-    "The owner's `auth.json` is copied at mode 0600 when present. A linked worktree with a planned guard hooks file also gets `hooks.json` in this home; other working directories keep that file in their own `.codex/`."),
+    "An `auth.json` snapshot is written at mode 0600 when present, with the subscription refresh token removed. A linked worktree with a planned guard hooks file also gets `hooks.json` in this home; other working directories keep that file in their own `.codex/`."),
   'a Codex home passage changed the linked-worktree or optional-auth boundary');
 
 const workerConfig = threadStartConfig({ role: 'worker', effort: 'high' });
@@ -131,9 +131,9 @@ check('docs: Codex thread/start overrides match the holder and role boundary',
   && teamleadConfig.bypass_hook_trust === true
   && teamleadConfig['features.hooks'] === false
   && has(holder,
-    '`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. A Codex teamlead\'s thread also carries `features.hooks = false`, which disables project hook discovery even if project config enables it; admission itself comes from `TEAMLEAD_HARNESSES`, not from this branch ([Spawn](#spawn)).')
+    '`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. A Codex install-root role (teamlead, reporter or orchestrator) also carries `features.hooks = false`, which disables project hook discovery even if project config enables it; admission itself comes from `TEAMLEAD_HARNESSES`, not from this branch ([Spawn](#spawn)).')
   && has(transports,
-    '`ThreadStartParams.config` is built by `threadStartConfig`: it always sets `bypass_hook_trust = true` for app-server hook trust, adds `model_reasoning_effort` when the lift names an effort, and sets `features.hooks = false` only on a Codex teamlead\'s thread. Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch ([03-cli § Spawn](03-cli.md#spawn)). The MCP set remains in the home, not in this request.')
+    '`ThreadStartParams.config` is built by `threadStartConfig`: it always sets `bypass_hook_trust = true` for app-server hook trust, adds `model_reasoning_effort` when the lift names an effort, and sets `features.hooks = false` on Codex install-root roles (teamlead, reporter and orchestrator). Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch ([03-cli § Spawn](03-cli.md#spawn)). The MCP set remains in the home, not in this request.')
   && has(decision(adr008, '2B', '3C'),
-    '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and a Codex teamlead\'s thread adds `features.hooks = false`. Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
+    '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and a Codex install-root role (teamlead, reporter or orchestrator) adds `features.hooks = false`. Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
   JSON.stringify({ workerConfig, teamleadConfig }));

@@ -470,6 +470,30 @@ async function appServer() {
       });
       return;
     }
+    if (method === 'skills/list') {
+      const data = (params?.cwds ?? [process.cwd()]).map((cwd) => {
+        const skills = [];
+        const roots = [
+          [path.join(cwd, '.codex', 'skills'), 'repo'],
+          [path.join(process.env.CODEX_HOME ?? '', 'skills'), 'user'],
+          [path.join(os.homedir(), '.agents', 'skills'), 'user'],
+        ];
+        for (const [root, scope] of roots) {
+          let names = [];
+          try { names = readdirSync(root); } catch { continue; }
+          for (const name of names) {
+            const file = path.join(root, name, 'SKILL.md');
+            try {
+              const text = readFileSync(file, 'utf8');
+              skills.push({ name: text.match(/^name:\s*(.+)$/m)?.[1] ?? name, path: file, scope });
+            } catch { /* not a skill directory */ }
+          }
+        }
+        return { cwd, skills, errors: [] };
+      });
+      reply(id, { data });
+      return;
+    }
     if (method === 'model/list') {
       if (probe.has('no-models')) {
         fail(id, -32000, 'the model catalog is unavailable');

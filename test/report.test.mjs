@@ -43,11 +43,21 @@ const child = await refusal({ task: CHILD, dryRun: true });
 check('report refuses a child task before writing a reporter record',
   child.threw && /needs a root task/.test(child.msg)
     && !store.participantOf(store.readTask(HOME, CHILD), 'reporter'), child.msg);
-for (const harness of ['cursor', 'codex']) {
+for (const harness of ['cursor']) {
   const refused = await refusal({ task: TASK, harness, dryRun: true });
   check(`report refuses ${harness} with the install-root project-layer reason`,
     refused.threw && /ADR-024/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
 }
+const codexPlan = await planReport(host, { task: TASK, harness: 'codex', dryRun: true });
+check('Codex reporter uses a read-only private home without an install-root project write',
+  codexPlan.launch.cwd === ROOT && codexPlan.launch.files.length === 0
+  && codexPlan.launch.settings.sandbox === 'read-only'
+  && codexPlan.launch.trustProject === false && codexPlan.launch.codexHome);
+check('Codex reporter omits bus send from its MCP inventory',
+  codexPlan.launch.mcpConfig.mcpServers.promptobus.disabled_tools.includes('promptobus_send'));
+check('Codex reporter prompt permits read-only journal reads and prohibits builds and writes',
+  /File writes, builds and tests are forbidden/.test(codexPlan.prompt)
+  && /Read journal files with read-only shell commands/.test(codexPlan.prompt));
 const planned = await planReport(host, { task: TASK, dryRun: true });
 let unratedReport = null;
 const unratedReportSaid = await capture(async () => {

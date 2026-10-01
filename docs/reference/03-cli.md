@@ -66,13 +66,13 @@ So the participant settings file the Claude driver writes carries `"crossSession
 
 **A Codex participant lifts in a `CODEX_HOME` of its own** ([ADR-008](../adr/adr-008-codex-reviewer-working-directory.md)). The driver builds one directory per participant under `$TMPDIR/promptobus-codex-homes` at mode 0700, named by task and address plus `_` and the sha1 of the resolved `harnessStateHome('codex', env)` (`PROMPTOBUS_CODEX_HOME`, or the bound host), deterministic so `--dry-run` prints the path a real lift will use. A sweep removes only names that carry the suffix of the registry it is reading; a home of another registry, and a home an older version left with no suffix, stay where they are ([05-drivers](05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names)).
 
-At lift, `config.toml` at mode 0600 contains the mechanism's `[mcp_servers]` entries, `[features] apps = false` and, for worker, reviewer and approver, the trusted realpath of their own working directory. The lift copies the owner's `auth.json` at mode 0600 when present; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`. A Codex teamlead's lift instead copies `skills/` into the home and disables hooks there; admission itself comes from `TEAMLEAD_HARNESSES`, not from this layout ([Spawn](#spawn)). App-server may later write its session rollout here. The conditional hook copy and role boundaries are in [05-drivers](05-drivers.md#codex-the-phrases-a-participant-is-addressed-by).
+At lift, `config.toml` at mode 0600 contains the mechanism's `[mcp_servers]` entries, `[features] apps = false` and, for worker, reviewer and approver, the trusted realpath of their own working directory. The lift writes an `auth.json` snapshot at mode 0600 when present, with the subscription refresh token removed; a missing copy is reported and an environment API key can still authenticate. A linked worktree with a planned guard hook also receives `hooks.json` in this home, while an ordinary working directory keeps the hook in its own `.codex/`. A Codex teamlead's lift instead copies `skills/` into the home and disables hooks there; admission itself comes from `TEAMLEAD_HARNESSES`, not from this layout ([Spawn](#spawn)). App-server may later write its session rollout here. The conditional hook copy and role boundaries are in [05-drivers](05-drivers.md#codex-the-phrases-a-participant-is-addressed-by).
 
 The owner's `~/.codex` is read once, for that credentials file, and the PARTICIPANT path never writes to it: no `[projects]` record and no session rollout land there. One part of the mechanism does still start `codex app-server --stdio` in the owner's home — the availability probe, before any participant exists, to read the account's limit — and `initialize` loads that home's configuration, so the marketplace snapshot refresh is NOT something the isolation stops. That is why the integrity check below is per section and not a file hash. `stop` removes the home with the session record, a failed lift removes it too, and the removal only ever touches a direct child of the homes root, so a record naming the owner's home cannot take it with it. A home with no `auth.json` to copy is not a refusal — an account driven by an API key in the environment lifts without one — but the lift says so.
 
 That trust record is what opens the project's own `.codex/config.toml` and `.codex/agents` to the participant, and it is written to the home rather than to the project: codex-cli 0.146.0 has no command for it, and neither does 0.156.1 (`codex --help`, 2026-09-25). The key must be the RESOLVED path. Measured on one stand, three runs: with `[projects."<realpath>"]` the project's own MCP server came up in the thread; with the unresolved `/var/…` spelling of the same directory it did not, and app-server wrote `Project-local config, hooks, and exec policies are disabled … until the project is trusted`. What is trusted is the participant's OWN working directory — a worker's worktree, a reviewer's own directory, or an approver's worktree. The tree under review never is: it reaches a reviewer as a read among the thread's `runtimeWorkspaceRoots` and no further, because a repository must not hand MCP servers to the session judging it ([ADR-008](../adr/adr-008-codex-reviewer-working-directory.md)).
 
-**Workspace skills reach a Codex participant as files.** The driver copies `<workspace root>/.codex/skills` into the working directory's `.codex/skills`, the way the Cursor driver copies `.cursor/skills`, and writes a self-ignoring `.gitignore` beside it so the copy stays out of a worktree's diff and goes away with the worktree at `done`. Codex reads a project's `.codex/skills` whether or not the project is trusted, so the copy alone is enough. Worker, reviewer and approver roles get it on Codex. The lift also says which skills the home does NOT isolate: the roots under `~/.agents/skills` follow `HOME`, not `CODEX_HOME`, and reach the participant regardless.
+**Workspace skills reach a Codex participant as files.** The driver copies `<workspace root>/.codex/skills` into the working directory's `.codex/skills`, the way the Cursor driver copies `.cursor/skills`, and writes a self-ignoring `.gitignore` beside it so the copy stays out of a worktree's diff and goes away with the worktree at `done`. Codex reads a project's `.codex/skills` whether or not the project is trusted, so the copy alone is enough. Worker, reviewer and approver roles get it on Codex. The roots under `~/.agents/skills` follow `HOME`, not `CODEX_HOME`. Before `thread/start`, the holder reads `skills/list` and suppresses only user-scoped copies colliding with loaded canonical names through exact-path `skills.config` session overrides. Unrelated personal skills remain visible; the owner's files and settings stay unchanged.
 
 **A repository that generates its process skills** rather than committing them declares the command in its own `promptobus.json`, in the optional `generate` field, as an argv array and never a shell line:
 
@@ -803,7 +803,7 @@ and penalty.
 
 ### An explicit model the catalog does not rate
 
-A vendor releases models faster than this package ships catalog rows, so a lift does not refuse a model it has no rating for. When a strategy is in force — `--strategy` or `defaults.strategy` — and the `--model` of a `spawn`, `spawn --teamlead`, `review`, `review --approver`, `step` or `report` names no tuple of the merged catalog, the lift is **not routed**. With `--harness`, the test is narrower: no tuple **on that harness** names the model, so `--harness cursor --model gpt-6-sol` is unrated even though Codex rows rate that id. Two lifts refuse before that test, with or without a strategy: `spawn --teamlead` refuses a `--model` whose tuples are all on another harness than `--harness`, and `report` refuses a `--model` rated only outside Claude Code. A driver alias such as `--model opus` is never a tuple model, so it is unrated too: it lifts unrouted even when the id behind it is rated. So is a model rated on another harness than the named one, which means a mismatch such as `--harness claude --model gpt-6-sol` is refused by the harness binary after the task and worktree are written, as it is with no strategy. `routingContext` in `lib/models.js` then returns no context, and the command runs the path it takes with no strategy at all:
+A vendor releases models faster than this package ships catalog rows, so a lift does not refuse a model it has no rating for. When a strategy is in force — `--strategy` or `defaults.strategy` — and the `--model` of a `spawn`, `spawn --teamlead`, `review`, `review --approver`, `step` or `report` names no tuple of the merged catalog, the lift is **not routed**. With `--harness`, the test is narrower: no tuple **on that harness** names the model, so `--harness cursor --model gpt-6-sol` is unrated even though Codex rows rate that id. Two lifts refuse before that test, with or without a strategy: `spawn --teamlead` refuses a `--model` whose tuples are all on another harness than `--harness`, and `report` refuses a `--model` rated only outside Claude Code and Codex. A driver alias such as `--model opus` is never a tuple model, so it is unrated too: it lifts unrouted even when the id behind it is rated. So is a model rated on another harness than the named one, which means a mismatch such as `--harness claude --model gpt-6-sol` is refused by the harness binary after the task and worktree are written, as it is with no strategy. `routingContext` in `lib/models.js` then returns no context, and the command runs the path it takes with no strategy at all:
 
 - the model is the id as typed, and the harness binary is what accepts or refuses it. Claude Code 2.1.263 answered an id its build did not carry with a 400 naming the version it needed ([Claude Code: what its adapter asks](#claude-code-what-its-adapter-asks));
 - the harness is `--harness`, or the default harness when none is named — Claude Code; nothing infers a harness from an unrated id. A named harness that cannot lift the role is `harness-refused`, as on the routed path;
@@ -985,20 +985,22 @@ It also sweeps the worktrees of every closed task, and a directory goes only whe
 ## Report
 
 `promptobus report --task <root> [routing flags] [--dry-run]` lifts one `reporter`
-on Claude Code at the install root. It refuses a child task, a closed task,
-or a second live reporter. Cursor and Codex are refused for the same
-install-root project-layer reason as the teamlead lift. `--dry-run` prints
+on Claude Code or Codex at the install root. It refuses a child task, a closed task,
+or a second live reporter. Cursor is refused because its project layer would
+mutate the install root. Codex uses a private home, a read-only sandbox,
+and a thread override disabling project hooks; no project file is written. `--dry-run` prints
 the session, MCP, deny list and prompt plan without writing a participant
 or starting a harness. Routing uses the reviewer catalog role and is
-constrained to Claude Code.
+constrained to Claude Code and Codex.
 
 Before writing launch files, `report` records a pending reporter under the
 task journal lock. A second command refuses if the reporter changed while it
 planned or the first launcher is still alive. A pending record can be retried
 after its launcher exits and the harness confirms that its session is gone.
-The lock is released before Claude starts, so messages to the task continue
+The lock is released before the harness starts, so messages to the task continue
 during the lift. Each reporter `promptobus_status` call refreshes the harness
-session list before printing it. The lift matches the session id printed by
+session list before printing it. A Codex reporter is bound to its native thread
+before its first model turn. A Claude lift matches the session id printed by
 its own `claude --bg` against the harness list, even when another reporter
 session has the same name. If the launch prints no id, `report` refuses and
 warns that an orphaned session may remain; it stops no session by name. If
@@ -1007,7 +1009,7 @@ launch's matched id.
 
 The reporter's settings deny the reviewer's Edit, Write, NotebookEdit, Bash,
 WebFetch and WebSearch tools, plus `mcp__promptobus__promptobus_send` and
-host-classified external MCP writes. Its MCP entry names the root task.
+host-classified external MCP writes. Its MCP entry names the root task. For Codex, the read-only sandbox and server `disabled_tools` replace Claude-specific tool denials. File mutation approval requests are denied too. A 0.158.0 live reporter completed digest, status and task reads, listed five bus tools with send absent, and left the install-root snapshot unchanged. [Live evidence](../../test/fixtures/codex-app-server/0.158.0/Reporter-0.158.0-2026-10-01.json).
 The reporter reads `promptobus_digest` for the same JSON page as
 `digest --json` and `promptobus_status` for live session state, then answers
 the person in its own window with the source message id. A `result` in that
@@ -1250,7 +1252,7 @@ The session record carries the launch metadata and holder state, but it does not
 
 `thread/start` carries no `config.mcp_servers` override. It did until the isolated home, to namespace the mechanism's entries away from the owner's personal set, which app-server merged into every thread by field — one name with two transports killed the whole config load. With no personal set in the home there is nothing to merge with, so the entries have one source. The override key prefix stays: the tool name the model sees is derived from the config key, and moving the key would rename every bus tool a participant was told about.
 
-`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. A Codex teamlead's thread also carries `features.hooks = false`, which disables project hook discovery even if project config enables it; admission itself comes from `TEAMLEAD_HARNESSES`, not from this branch ([Spawn](#spawn)). The values come from `threadStartConfig` in `lib/codex-session.js`.
+`ThreadStartParams.config` always carries `bypass_hook_trust = true`, the hook-trust override for app-server threads. It adds `model_reasoning_effort` when the lift names an effort; the first `turn/start` also carries that effort. A Codex install-root role (teamlead, reporter or orchestrator) also carries `features.hooks = false`, which disables project hook discovery even if project config enables it; admission itself comes from `TEAMLEAD_HARNESSES`, not from this branch ([Spawn](#spawn)). The values come from `threadStartConfig` in `lib/codex-session.js`.
 
 The operator-facing Codex `participant threads` phrase resolves this same `sessions` directory from the host-selected home; if neither the environment nor the host names a home, it names that source rather than printing a guessed default.
 

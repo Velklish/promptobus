@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Codex subscription participants cannot rotate the owner's refresh token** (PB-259).
+  They receive a private access-token snapshot without a refresh token. Unknown expiry or
+  less than ten minutes remaining refuses before a model turn and names the owner's sign-in.
+  Long-lived holders can outlive the snapshot; refresh the owner and relift them.
+- **Canonical Codex skills override colliding personal copies per participant thread** (PB-244).
+  The holder reads the actual skills inventory, preserves unrelated personal skills and applies
+  exact-path session overrides before the first turn. Owner files remain unchanged.
+- **A Codex reporter runs read-only at the install root** (PB-314).
+  Its private home disables project hooks, omits bus send and denies classified external writes.
+  Install-root participants bind their bus identity before the first model turn.
+- **Codex teamlead hook, skill and applied-sandbox limits were measured** (PB-286.3).
+  On 0.158.0 a trusted control ran two hooks, the teamlead ran none, the home skill was used,
+  and the protocol recorded `dangerFullAccess`. Narrower participant profiles remain unmeasured.
+
 - **The review loop runs until the reviewer returns a pass without findings** (PB-312).
   `solo-review` no longer sends a one-screen diff past the reviewer, and its "Collect the
   report" says the author does not confirm its own fix and that a repeat command replaces a dead

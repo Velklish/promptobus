@@ -1,0 +1,43 @@
+{
+  "command": "node sandbox/codex-parity-20261001/measure-reporter.mjs",
+  "version": "0.158.0",
+  "model": "gpt-6-astra",
+  "task": "reporter-parity-t20261001-040000",
+  "threadId": "01a0f4eb-268a-7122-b78f-1a2a444d999d",
+  "sandbox": "read-only",
+  "firstTurn": {
+    "id": "01a0f4eb-288b-72e2-a6a3-952334d6beb9",
+    "status": "completed",
+    "at": "2026-10-01T00:44:21.006Z"
+  },
+  "mcpInventory": [
+    "promptobus_status",
+    "promptobus_mailbox",
+    "promptobus_task",
+    "promptobus_digest",
+    "promptobus_ask"
+  ],
+  "mcpReads": [
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_digest",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_status",
+      "status": "completed"
+    },
+    {
+      "server": "promptobus-promptobus",
+      "tool": "promptobus_task",
+      "status": "completed"
+    }
+  ],
+  "messages": [
+    "I\u2019ll read the reporter rules and root task records, then report what they establish with source message IDs.",
+    "Ready to report from the task journal and cite source message IDs. No question has been asked yet."
+  ],
+  "installRootUnchanged": true,
+  "exitCode": 0
+}

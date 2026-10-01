@@ -583,6 +583,7 @@ A registry-home refusal propagates from `readSession` through activation, inspec
 stop. The `gone` outcome therefore means a named registry was read and contained no
 record; it is never an alias for missing configuration.
 
+Measured 2026-10-01 on codex-cli 0.158.0 in disposable stand `pb-teamlead-parity-gMo2Qj`: a trusted install root enabled project hooks. The control thread ran both SessionStart and Stop hooks (two marker lines), while the teamlead with the driver thread override ran neither (zero marker lines). Both completed a turn using the valid-frontmatter home skill and returned its proof token. `thread/start` reported the applied sandbox `{ "type": "dangerFullAccess" }`. The two model turns completed on `gpt-6-astra`; the command exited 0 and every process and stand was removed. [Protocol evidence](../../test/fixtures/codex-app-server/0.158.0/TeamleadIsolation-0.158.0-2026-10-01.json). This resolves the earlier hook, skill and applied-sandbox limits; it does not extend the participant matrix to narrower permission profiles.
 #### The two `mcp_servers` transports, and the field that kills the config load
 
 The workspace MCP set is written into the `[mcp_servers]` tables of the participant home's
@@ -605,7 +606,7 @@ harness in [02-host](02-host.md)).
 `ThreadStartParams.config` is built by `threadStartConfig`: it always sets
 `bypass_hook_trust = true` for app-server hook trust, adds
 `model_reasoning_effort` when the lift names an effort, and sets
-`features.hooks = false` only on a Codex teamlead's thread. Admission itself
+`features.hooks = false` on Codex install-root roles (teamlead, reporter and orchestrator). Admission itself
 comes from `TEAMLEAD_HARNESSES`, not from that branch
 ([03-cli § Spawn](03-cli.md#spawn)). The MCP set remains in the home, not in
 this request. Measured on codex-cli 0.146.0
@@ -639,6 +640,21 @@ with. The window is real: the app-server's stderr and the protocol notifications
 and either can arrive inside the five seconds between the tree going and the record watch
 firing. A write with nowhere to go is dropped, because this is diagnostics and the holder
 must not fall over its own log.
+
+### Codex participant authentication
+
+Subscription participants receive the owner's access credentials with an empty refresh token.
+They cannot rotate the owner's OAuth refresh token. A lift requires a decodable access-token
+expiry at least ten minutes ahead; otherwise it refuses before starting a model turn and
+names the owner's Codex home and sign-in. API-key files retain their native format.
+
+This is a bounded snapshot, not an independent renewable login. A long-lived holder can
+outlive its access token and fail; refresh the owner's login and relift it. A new lift
+reads the latest owner credentials. The mechanism does not refresh the owner's login or
+use the internal-only `chatgptAuthTokens` API. The real OAuth token-rotation hypothesis
+was not forced on the owner's account. The pinned 0.158.0 auth implementation reloads
+before refreshing, but its refresh semaphore is process-local; copying a renewable token
+to separate participant homes cannot provide shared refresh coordination.
 
 ### `reviewSandbox` — reviewer working directory: the mechanism's own, not the tree under review
 
@@ -728,8 +744,8 @@ codex-cli 0.146.0 by the consumer, with no paid turn).
 
 At lift, `config.toml` holds the mechanism's `[mcp_servers]` entries and
 `[features] apps = false` for every role. Worker, reviewer and approver homes
-also carry a trust record for their own working directory. The lift copies
-the owner's `auth.json` at mode 0600 when it exists; a missing file is reported
+also carry a trust record for their own working directory. The lift writes
+an `auth.json` snapshot at mode 0600 when it exists, with the subscription refresh token removed; a missing file is reported
 and an API key in the environment can still authenticate the participant.
 With that copy, `codex login status` answered `Logged in using ChatGPT`
 without a turn in the isolated-home measurement.
@@ -743,10 +759,7 @@ A Codex teamlead's lift instead copies `skills/` into the home and sets
 not from this home layout ([03-cli § Spawn](03-cli.md#spawn)). App-server
 may subsequently write its session rollout into the home.
 
-One channel this does NOT isolate: `~/.agents/skills`, the workspace's canonical skill
-roots, are bound to `HOME` and not to `CODEX_HOME`, so the owner's 29 of them reach the
-participant anyway. The owner accepted that as the boundary — those are the skills the
-participant is meant to have.
+Personal `~/.agents/skills` follows `HOME`, not `CODEX_HOME`. The holder reads `skills/list` before `thread/start` and suppresses only user-scoped copies whose names collide with a skill loaded from its canonical directory, using exact-path `skills.config` session overrides. The private canonical copy is retained even when it has user scope. Unrelated personal skills remain visible, and no personal file or global config is changed. On codex-cli 0.158.0 both worker and read-only reviewer turns used canonical content; their rollouts carried zero colliding personal descriptors and retained the unrelated personal descriptor. [Live evidence](../../test/fixtures/codex-app-server/0.158.0/CanonicalSkills-0.158.0-2026-10-01.json).
 
 #### The built-in `codex_apps` server stays off in the participant home
 
