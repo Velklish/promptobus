@@ -50,13 +50,13 @@ export function dropDeadLock(lock: string): boolean {
     throw e;
   }
   try {
-    writeFileSync(path.join(claim, 'owner'), `${JSON.stringify({
-      pid: process.pid, session: null, since: new Date().toISOString(), nonce: randomUUID(),
-    })}\n`);
     const current = statSync(lock, { bigint: true });
     const owner = lockHolder(lock);
     if (current.dev !== generation.dev || current.ino !== generation.ino
       || JSON.stringify(owner) !== JSON.stringify(held) || !owner?.pid || pidAlive(owner.pid)) return false;
+    writeFileSync(path.join(claim, 'owner'), `${JSON.stringify({
+      pid: process.pid, session: null, since: new Date().toISOString(), nonce: randomUUID(),
+    })}\n`);
     const tomb = `${lock}.dead.${process.pid}.${randomUUID()}`;
     try { renameSync(lock, tomb); } catch { return false; }
     rmSync(tomb, { recursive: true, force: true });
@@ -67,10 +67,17 @@ export function dropDeadLock(lock: string): boolean {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw e;
   } finally {
-    // The original parent may already be gone and a new generation may have its
-    // own claim at this path. Never release that other reclaimer's claim.
+    // Only the original DEAD parent is stable under our claim. A claim made in
+    // a replacement live parent must stay there for that holder's normal release:
+    // that parent can disappear between our stat and rm, exposing another claim.
     let currentClaim;
-    try { currentClaim = statSync(claim, { bigint: true }); } catch { /* already removed with the tomb */ }
+    try {
+      const parent = statSync(lock, { bigint: true });
+      if (parent.dev === generation.dev && parent.ino === generation.ino
+        && JSON.stringify(lockHolder(lock)) === JSON.stringify(held)) {
+        currentClaim = statSync(claim, { bigint: true });
+      }
+    } catch { /* already removed with the tomb or released by a replacement holder */ }
     if (currentClaim?.dev === claimed.dev && currentClaim.ino === claimed.ino) {
       rmSync(claim, { recursive: true, force: true });
     }

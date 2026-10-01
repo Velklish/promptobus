@@ -1,7 +1,8 @@
 import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { dropDeadLock, withDirLock, withDirLockAsync } from '../dist/fs/lock.js';
@@ -106,3 +107,74 @@ let partialRefusal = '';
 try { withDirLock(missingOwner, () => {}, words); } catch (error) { partialRefusal = error.message; }
 check('a crash before the claim owner write also refuses without deleting the generation',
   /reclamation/.test(partialRefusal) && existsSync(path.join(missingOwner, '.reclaim')), partialRefusal);
+
+// A claim made in a replacement LIVE parent cannot protect that parent's
+// lifetime: its ordinary holder may release while a delayed cleanup is pending.
+{
+  const control = path.join(root, 'cleanup-control');
+  mkdirSync(control);
+  const lock = path.join(control, 'lock'), claim = path.join(lock, '.reclaim');
+  owner(lock, deadPid, 'old-dead');
+  const moduleUrl = pathToFileURL(path.resolve('dist/fs/lock.js')).href;
+  const wait = condition => {
+    const deadline = Date.now() + 10000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error('cleanup fixture control timed out');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  };
+  const childBase = `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+import {withDirLock,dropDeadLock} from ${JSON.stringify(moduleUrl)};
+const lock=${JSON.stringify(lock)};
+const wait=condition=>{const end=Date.now()+10000;while(!condition()){if(Date.now()>end)throw Error('child timeout');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}};
+const words={waitMs:0,onMissing:()=>Error('missing'),onBusy:()=>Error('busy')};`;
+  const liveReady = path.join(control, 'live-ready'), liveRelease = path.join(control, 'live-release');
+  const reaperReady = path.join(control, 'reaper-ready'), reaperRelease = path.join(control, 'reaper-release');
+  const mkdir = fs.mkdirSync, stat = fs.statSync;
+  const actors = [];
+  let armed = true, claimStats = 0, otherClaimPid = null;
+  fs.mkdirSync = (dir, options) => {
+    if (armed && dir === claim) {
+      armed = false;
+      dropDeadLock(lock);
+      claimStats = 0;
+      actors.push(spawn(process.execPath, ['--input-type=module', '-e', childBase
+        + `withDirLock(lock,()=>{fs.writeFileSync(${JSON.stringify(liveReady)},'ready');wait(()=>fs.existsSync(${JSON.stringify(liveRelease)}))},words);`], {stdio:'ignore'}));
+      wait(() => existsSync(liveReady));
+    }
+    return mkdir(dir, options);
+  };
+  fs.statSync = (file, options) => {
+    const result = stat(file, options);
+    if (file === claim && ++claimStats === 2) {
+      writeFileSync(liveRelease, 'release');
+      wait(() => !existsSync(lock));
+      const acquired = spawnSync(process.execPath, ['--input-type=module', '-e', childBase
+        + 'withDirLock(lock,()=>process.exit(0),words);']);
+      if (acquired.status !== 0) throw new Error('new dead holder did not acquire');
+      const reaper = spawn(process.execPath, ['--input-type=module', '-e', childBase
+        + `const rename=fs.renameSync;fs.renameSync=(from,to)=>{if(from===lock){fs.writeFileSync(${JSON.stringify(reaperReady)},'ready');wait(()=>fs.existsSync(${JSON.stringify(reaperRelease)}))}return rename(from,to)};syncBuiltinESMExports();dropDeadLock(lock);`], {stdio:'ignore'});
+      actors.push(reaper);
+      wait(() => existsSync(reaperReady));
+      otherClaimPid = JSON.parse(readFileSync(path.join(claim, 'owner'), 'utf8')).pid;
+    }
+    return result;
+  };
+  syncBuiltinESMExports();
+  try {
+    dropDeadLock(lock);
+    check('cleanup never removes a newer generation live reclaimer claim',
+      otherClaimPid === null || existsSync(claim), JSON.stringify({otherClaimPid,claimStats}));
+    check('a misplaced claim remains with its live parent until that holder releases',
+      otherClaimPid === null && existsSync(claim), JSON.stringify({otherClaimPid,claimStats}));
+  } finally {
+    fs.mkdirSync = mkdir; fs.statSync = stat; syncBuiltinESMExports();
+    writeFileSync(liveRelease, 'release'); writeFileSync(reaperRelease, 'release');
+    for (const actor of actors) await new Promise(resolve => {
+      if (actor.exitCode !== null || actor.signalCode !== null) return resolve();
+      const timer = setTimeout(() => actor.kill('SIGKILL'), 1000);
+      actor.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+  }
+  check('ordinary live parent release removes its misplaced claim too', !existsSync(lock) && !existsSync(claim));
+}
