@@ -43,17 +43,18 @@ for (const [index, title] of ['Original root', 'Different root'].entries()) {
   const retry = spawnSync(process.execPath, [cli, ...args, '--title', title], {
     cwd: root, env, encoding: 'utf8', timeout: 20000,
   });
-  const after = JSON.parse(readFileSync(sessionFile(retained.ref, env), 'utf8'));
+  const file = sessionFile(retained.ref, env);
+  const after = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
   const original = JSON.parse(before);
   check(`${title}: dead launcher lease cannot replace its live unbound holder`,
     retry.status === 1 && /live unbound Codex root/.test(retry.stdout + retry.stderr)
     && ['ref', 'launchId', 'launcherPid', 'holderPid', 'codexHome', 'prompt', 'startedAt'].every(key => after[key] === original[key])
-    && readFileSync(path.join(privateHome, 'auth.json'), 'utf8') === auth
+    && existsSync(path.join(privateHome, 'auth.json')) && readFileSync(path.join(privateHome, 'auth.json'), 'utf8') === auth
     && pidAlive(retained.holderPid) && pidAlive(retained.appPid)
     && registrySessions(env).filter(record => record.task === task).length === 1,
     `${retry.status} ${retry.stdout}${retry.stderr}`);
-  process.kill(retained.appPid, 'SIGKILL');
-  process.kill(retained.holderPid, 'SIGKILL');
+  if (pidAlive(retained.appPid)) process.kill(retained.appPid, 'SIGKILL');
+  if (pidAlive(retained.holderPid)) process.kill(retained.holderPid, 'SIGKILL');
   await waitFor(() => !pidAlive(retained.appPid) && !pidAlive(retained.holderPid), { timeoutMs: 10000 });
   const replacement = spawnSync(process.execPath, [cli, ...args, '--title', title], {
     cwd: root, env, encoding: 'utf8', timeout: 30000,
