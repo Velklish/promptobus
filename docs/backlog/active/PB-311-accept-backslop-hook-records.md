@@ -3,6 +3,8 @@
 - **Scope:** [05. Drivers](../../reference/05-drivers.md)
 - **Created:** 2026-09-30
 - **Dependencies:** none
+- **Previous order:** 172
+- **Taken:** 2026-10-03
 
 ## Context
 
