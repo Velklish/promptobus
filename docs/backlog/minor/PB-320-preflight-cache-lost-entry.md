@@ -5,7 +5,7 @@
 - **Dependencies:** none
 - **Cost:** minor
 
-## Context
+## Evidence
 
 On 2026-10-03 an approver ran the repository gates three times on one tree (`63ae05ab`, docs-only on top of the PB-311 acceptance). The machine load average was 58–64 on 8 cores. The second run failed one test, `test/model-routing-preflight.test.mjs:823`, "four preflights writing at once all land, each with its own harness":
 
@@ -22,6 +22,8 @@ Two explanations, neither verified:
 
 - **The test.** The test collects each child's stderr in `data` handlers and resolves on `exit` (`test/model-routing-preflight.test.mjs:809`). Node documents that the stdio streams of a child can still be open when `exit` fires. Under load the fallthrough warning can then arrive after the assertion, and an allowed, reported loss reads as a silent one.
 - **The product.** The cache lock in `lib/model-routing/cache.js` (`LOCK_WAIT_MS` 2000) has a window in which an entry is lost although every writer took the lock.
+
+Evidence: Measured by the approver who filed it, 2026-10-03: one loaded full gate run on 63ae05ab (load 58–64 on 8 cores) failed test/model-routing-preflight.test.mjs, 'every writer took the lock and one still lost its entry', with no WITHOUT the lock warning; the file passed standalone twice on 63ae05ab and twice on 77d63620 (38/38), and the next full run passed 111/111. Checked at triage on 724c46af: the test resolves each writer on 'exit' (test/model-routing-preflight.test.mjs:809) and asserts at :823; the warning is lib/model-routing/preflight.js:233.
 
 ## Work to do
 
