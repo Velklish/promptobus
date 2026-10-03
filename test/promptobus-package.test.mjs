@@ -547,16 +547,13 @@ const workflow = readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'),
 const astGrepVersion = workflow.match(/^\s+run: npm install -g @ast-grep\/cli@(\d+\.\d+\.\d+)$/m)?.[1] ?? null;
 check('CI pins ast-grep to an exact version',
   astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
-// Not a duplicate of `npm run pins`: this asserts the two files agree with EACH OTHER,
-// the gate asserts each agrees with backslop.json. Two files wrong together pass only one.
-// Spec assembled from fragments so this file does not itself carry one for that gate to
-// find — the reason scripts/audit-public.mjs builds its forbidden strings the same way.
-const backslopRef = new RegExp(`${['github:Velklish', 'backslop'].join('/')}#[^\\s'"\`]+`);
-const workflowBackslopRef = workflow.match(backslopRef)?.[0] ?? null;
-const packageBackslopRef = pkg.scripts?.['lint:backslop']?.match(backslopRef)?.[0] ?? null;
-check('CI and package lint use the same backslop ref',
-  workflowBackslopRef !== null && workflowBackslopRef === packageBackslopRef,
-  `CI says ${workflowBackslopRef ?? 'no ref'}, package.json says ${packageBackslopRef ?? 'no ref'}`);
+// The pin gate checks the devDependency; this check covers CI's use of that installation.
+const installedBackslop = 'npx --no-install backslop';
+check('CI initializes and lints with the installed backslop',
+  workflow.includes(`run: ${installedBackslop} init --hooks claude`)
+    && workflow.includes('run: npm run lint:backslop')
+    && pkg.scripts?.['lint:backslop'] === `${installedBackslop} lint`,
+  `package lint: ${pkg.scripts?.['lint:backslop'] ?? 'missing'}`);
 const buildStep = workflow.match(/^\s+- name: Build\n\s+run: npm run build$/m);
 const testStep = workflow.indexOf('- name: Test');
 check('CI names the build before the test step',

@@ -10,7 +10,7 @@ import { CLAUDE_SKILLS_REL, CODEX_SKILLS_REL, CURSOR_SKILLS_REL } from '../lib/d
 import { packageSkills } from '../lib/install.js';
 import {
   INSTALL_LAYOUT, anchorsOf, audit, classifyHttpStatus, classifyTransportFailure,
-  collect, multisetDiff, packedPaths, skillFiles, uniqueSlugs,
+  collect, isConsumerDoc, multisetDiff, packedPaths, skillFiles, uniqueSlugs,
 } from '../scripts/docs-links.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,6 +43,15 @@ check('local links resolve in the source tree', live.sourceFailures.length === 0
 const taskDiff = multisetDiff(BASELINE.taskDependencies, live.taskDependencies);
 check('task dependencies match the baseline', taskDiff.stale.length === 0 && taskDiff.added.length === 0,
   `added ${taskDiff.added.join(' | ')} stale ${taskDiff.stale.join(' | ')}`);
+
+const roles = collect(
+  [{ rel: 'docs/ROLES.md', text: '[tracker](backlog/README.md)\n' }],
+  ctxFor([{ rel: 'docs/ROLES.md' }, { rel: 'docs/backlog/README.md', text: '# Tracker\n' }]),
+);
+check('ROLES is tracker documentation, not a consumer dependency',
+  !isConsumerDoc('docs/ROLES.md') && roles.sourceFailures.length === 0
+  && roles.taskDependencies.length === 0,
+  roles.taskDependencies.join(' | '));
 
 const deliveryDiff = multisetDiff(BASELINE.delivery, live.deliveryMisses);
 check('delivery links match the baseline', deliveryDiff.stale.length === 0 && deliveryDiff.added.length === 0,

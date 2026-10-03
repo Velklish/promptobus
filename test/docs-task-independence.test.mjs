@@ -180,13 +180,20 @@ const foreignUrl = destinations('[codex](https://github.com/openai/codex/blob/ma
 const fromGuide = 'docs/guides/example.md';
 
 check('docs: the consumer set is non-empty', consumerDocs.length >= 8, String(consumerDocs.length));
-check('docs: the consumer set includes fixture READMEs and project skills',
+check('docs: the consumer set includes fixture READMEs and shipped skills',
   consumerDocs.includes('test/fixtures/codex-app-server/0.146.0/README.md')
   && consumerDocs.includes('docs/guides/model-routing.md')
   && consumerDocs.includes('docs/guides/releasing.md')
-  && consumerDocs.includes(`${projectSkills}tech-writer/SKILL.md`)
+  && consumerDocs.includes('skills/orchestrate/SKILL.md')
   && !consumerDocs.some((file) => file.startsWith('docs/adr/')),
   String(consumerDocs.length));
+const archiveRow = texts.get('docs/README.md')?.split('\n')
+  .find((line) => line.startsWith('| `archive/` |')) ?? '';
+check('docs: archive index preserves bulk-fold provenance and date facts',
+  archiveRow.includes('The first 312 journal entries, ending at task 249, are in number order')
+  && archiveRow.includes('each names the last commit touching the task directory')
+  && archiveRow.includes('uses the fold date if `result.md` had no closing date'),
+  archiveRow);
 check('docs: consumer set has no task identifier', taskIds.length === 0, show(taskIds));
 check('docs: consumer set does not link into the tracker', trackerLinks.length === 0,
   show(trackerLinks, (row) => ` -> ${row.target}`));

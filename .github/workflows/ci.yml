@@ -53,8 +53,7 @@ jobs:
       - name: Publicity audit
         run: npm run audit
 
-      # Ahead of init: that step runs backslop at the pin THIS file names and rewrites
-      # AGENTS.md to it, so after it the gate would blame AGENTS.md instead of ci.yml.
+      # Check the package and lockfile pin before init regenerates adapter output.
       - name: Pin gate
         run: npm run pins
 
@@ -62,7 +61,7 @@ jobs:
       # fresh checkout has none of them and the gate would fail on their absence.
       # Regenerating first is what the tool expects: templates are the only source.
       - name: backslop init
-        run: npx --yes github:Velklish/backslop#v0.10.1 init --prefix PB --lang en --tools claude,cursor,codex
+        run: npx --no-install backslop init --hooks claude
 
       - name: backslop lint
         run: npm run lint:backslop

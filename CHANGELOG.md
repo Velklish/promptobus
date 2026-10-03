@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upstream change of that file needs the bit cleared first.
   [ADR-025](docs/adr/adr-025-foreign-project-hook-records.md),
   [hooks and trust](docs/guides/hooks-and-trust.md#a-projects-own-hook-records).
+- **Repository workflow uses backslop v0.20.0 as a project development dependency.**
+  Project commands use the installed CLI; Claude Code runs the backslop project hooks.
+  Backslop supplies the writing skills for every selected adapter; its writer reviews
+  CLI help and shipped skills alongside the documentation before a release.
 
 ## [0.22.0] — 2026-10-01
 

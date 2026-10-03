@@ -272,6 +272,7 @@ function posixRel(fromRel, filePart) {
 export function isConsumerDoc(rel) {
   if (rel === 'README.md' || rel === 'README.ru.md') return true;
   if (rel.startsWith('skills/')) return true;
+  if (rel === 'docs/ROLES.md') return false;
   if (!rel.startsWith('docs/')) return false;
   return !TASK_ROOTS.some((root) => rel === root || rel.startsWith(`${root}/`));
 }

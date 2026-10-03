@@ -1,92 +1,158 @@
-// Pin gate: red when a tracked file names a backslop release disagreeing with `cli`
-// in backslop.json. Why it exists and what it skips: docs/guides/contributing.md.
+// Pin gate: the local command must resolve the declared backslop release.
+// Historical tracker records keep the command that was current then.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = 'backslop.json';
-const say = (s) => process.stdout.write(`${s}\n`);
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const PACKAGE = 'package.json';
+const LOCK = 'package-lock.json';
+const SPEC = ['github:Velklish', 'backslop'].join('/');
+const CLI = ['npx', '--no-install', 'backslop'].join(' ');
+const say = (line) => process.stdout.write(line + '\n');
+const escape = (value) => value.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+const readJson = (rel) => JSON.parse(readFileSync(path.join(ROOT, rel), 'utf8'));
 
-const cfg = JSON.parse(readFileSync(path.join(ROOT, CONFIG), 'utf8'));
+const cfg = readJson(CONFIG);
+const pkg = readJson(PACKAGE);
+const lock = readJson(LOCK);
+const failures = [];
+const declared = pkg.devDependencies?.backslop;
+const version = typeof declared === 'string'
+  ? declared.match(new RegExp('^' + escape(SPEC) + '#v(\\d+\\.\\d+\\.\\d+)$'))?.[1]
+  : null;
 
-// Spec and separator read off `cli`, the way backslop's own `parseCli` reads them.
-// An unpinned `cli` has nothing to compare against and is reported, not passed over.
-const parsed = String(cfg.cli ?? '').match(/^npx\s+(?:-\S+\s+)*(\S+?)(#v|@)(\d+\.\d+\.\d+)$/);
-if (!parsed) {
-  say(`✖ ${CONFIG}: “cli” is not an npx spec with a pinned version: ${JSON.stringify(cfg.cli ?? null)}`);
-  process.exit(1);
+if (!version) {
+  failures.push(PACKAGE + ': devDependencies.backslop must be an exact ' + SPEC
+    + '#vX.Y.Z release, got ' + JSON.stringify(declared ?? null));
 }
-const [, SPEC, SEP, EXPECTED] = parsed;
-// Any ref, not only a semver one: `#main`, `#v0.6` and a sha are divergences too, and a
-// gate blind to them is green while two live files agree with each other on the wrong ref.
-const SEPCHAR = SEP[0];
-const WANT = `${SEP.slice(1)}${EXPECTED}`;
-const PIN = new RegExp(`${escape(SPEC)}${escape(SEPCHAR)}([^\\s'"\`)\\],;]+)`, 'g');
+if (cfg.cli !== CLI) {
+  failures.push(CONFIG + ': cli must be ' + JSON.stringify(CLI)
+    + ', got ' + JSON.stringify(cfg.cli ?? null));
+}
+if (version && cfg.version !== version) {
+  failures.push(CONFIG + ': version ' + JSON.stringify(cfg.version ?? null)
+    + ' differs from ' + PACKAGE + ' backslop v' + version);
+}
+if (!cfg.gates?.some((entry) => (typeof entry === 'string' ? entry : entry?.command) === CLI + ' lint')) {
+  failures.push(CONFIG + ': gates do not contain ' + JSON.stringify(CLI + ' lint'));
+}
 
-// Restated from backslop's `liveMarkdown`, not imported: the CLI arrives by npx.
+const lockedSpec = lock.packages?.['']?.devDependencies?.backslop;
+if (lockedSpec !== declared || !version) {
+  failures.push(LOCK + ': root devDependencies.backslop ' + JSON.stringify(lockedSpec ?? null)
+    + ' differs from ' + PACKAGE + ' ' + JSON.stringify(declared ?? null));
+}
+const locked = lock.packages?.['node_modules/backslop'];
+const resolved = locked?.resolved;
+const resolvedCommit = typeof resolved === 'string'
+  ? resolved.match(/^git\+(?:ssh:\/\/git@|https:\/\/)github\.com\/Velklish\/backslop(?:\.git)?#([0-9a-f]{40}|[0-9a-f]{64})$/)?.[1]
+  : null;
+if (version && locked?.version !== version) {
+  failures.push(LOCK + ': node_modules/backslop version ' + JSON.stringify(locked?.version ?? null)
+    + ' differs from declared v' + version);
+}
+if (!resolvedCommit) {
+  failures.push(LOCK + ': node_modules/backslop resolved must name a commit of ' + SPEC
+    + ', got ' + JSON.stringify(resolved ?? null));
+}
+
+const installedPackage = path.join(ROOT, 'node_modules', 'backslop', 'package.json');
+const installedLock = path.join(ROOT, 'node_modules', '.package-lock.json');
+let installed = 'not checked (node_modules/backslop absent)';
+if (existsSync(installedPackage) || existsSync(installedLock)) {
+  if (!existsSync(installedPackage)) {
+    failures.push('node_modules/backslop/package.json: missing while the installed lock exists');
+  } else {
+    const installedVersion = JSON.parse(readFileSync(installedPackage, 'utf8')).version;
+    if (version && installedVersion !== version) {
+      failures.push('node_modules/backslop/package.json: version '
+        + JSON.stringify(installedVersion) + ' differs from declared v' + version);
+    }
+    installed = existsSync(installedLock)
+      ? 'manifest and resolved commit checked'
+      : 'version checked; resolved commit not checked (node_modules/.package-lock.json absent)';
+  }
+  if (existsSync(installedLock)) {
+    const entry = JSON.parse(readFileSync(installedLock, 'utf8')).packages?.['node_modules/backslop'];
+    if (entry?.resolved !== resolved || !resolvedCommit) {
+      failures.push('node_modules/.package-lock.json: backslop resolved '
+        + JSON.stringify(entry?.resolved ?? null) + ' differs from ' + LOCK
+        + ' ' + JSON.stringify(resolved ?? null));
+    }
+    if (version && entry?.version !== version) {
+      failures.push('node_modules/.package-lock.json: backslop version '
+        + JSON.stringify(entry?.version ?? null) + ' differs from declared v' + version);
+    }
+  }
+}
+
+// ADRs, task cards and archive records retain citations to their own time.
+// The archive rules and journal header are live instructions.
 const DOCS = cfg.docs ?? 'docs';
 const PREFIX = cfg.prefix ?? '';
-const ARCHIVE = new RegExp(`^${escape(DOCS)}/archive/${escape(PREFIX)}-\\d`);
-const CARD = new RegExp(`^${escape(PREFIX)}-\\d+(?:\\.\\d+)?-.+\\.md$`);
+const ARCHIVE = new RegExp('^' + escape(DOCS) + '/archive/' + escape(PREFIX) + '-\\d');
+const ARCHIVE_LOG = DOCS + '/archive/LOG.md';
+const CARD = new RegExp('^' + escape(PREFIX) + '-\\d+(?:\\.\\d+)?-.+\\.md$');
 const historical = (rel) => rel === 'CHANGELOG.md'
-  || rel.startsWith(`${DOCS}/adr/`)
+  || rel.startsWith(DOCS + '/adr/')
   || ARCHIVE.test(rel)
   || CARD.test(path.posix.basename(rel));
-
+const legacy = new RegExp(escape(SPEC) + '(?:\\.git)?(?:#[^\\s\\x27\\x22\\x60)\\],;]+)?', 'g');
+const localCall = /\bnpx\s+--no-install\s+backslop\b/g;
 const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
   .split('\n').filter(Boolean);
 
-const failures = [];
-const live = { pins: 0, files: 0 };
-const kept = { pins: 0, files: 0 };
-// The floor discounts CONFIG: it holds the spec this gate reads, so it matches
-// itself whatever the walk does, and a floor it satisfies alone is no floor.
-let guarded = 0;
-
-// A file this gate could not read is a failure, never a skip: it cannot vouch for what it
-// did not open, and a silent skip is the shape of divergence it exists to catch.
 let read = 0;
+let guarded = 0;
+let historicalRefs = 0;
 for (const rel of tracked) {
-  let text;
+  let content;
   try {
-    text = readFileSync(path.join(ROOT, rel), 'utf8');
-  } catch (e) {
-    failures.push(`${rel}: unreadable (${e.code ?? e.message}) — the gate cannot vouch for it`);
+    content = readFileSync(path.join(ROOT, rel), 'utf8');
+  } catch (error) {
+    failures.push(rel + ': unreadable (' + (error.code ?? error.message)
+      + ') — the gate cannot vouch for it');
     continue;
   }
   read += 1;
-  const hits = [...text.matchAll(PIN)];
-  if (!hits.length) continue;
-  const bucket = historical(rel) ? kept : live;
-  bucket.pins += hits.length;
-  bucket.files += 1;
-  if (bucket === kept) continue;
-  if (rel !== CONFIG) guarded += hits.length;
-  for (const m of hits) {
-    if (m[1] === WANT) continue;
-    const line = text.slice(0, m.index).split('\n').length;
-    failures.push(`${rel}:${line}: names ${SPEC}${SEPCHAR}${m[1]}, expected ${SEPCHAR}${WANT} from ${CONFIG} “cli”`);
+  const old = [...content.matchAll(legacy)];
+  if (historical(rel)) {
+    historicalRefs += old.length;
+    continue;
+  }
+  if (![CONFIG, PACKAGE, LOCK, 'scripts/check-pins.mjs'].includes(rel)) {
+    guarded += [...content.matchAll(localCall)].length;
+  }
+  let dependencyAllowance = rel === PACKAGE || rel === LOCK ? 1 : 0;
+  const firstLogRow = rel === ARCHIVE_LOG ? content.search(/^- <a id=/m) : -1;
+  for (const match of old) {
+    if (rel === ARCHIVE_LOG && firstLogRow >= 0 && match.index >= firstLogRow) {
+      historicalRefs += 1;
+      continue;
+    }
+    if (dependencyAllowance && match[0] === declared) {
+      dependencyAllowance -= 1;
+      continue;
+    }
+    const line = content.slice(0, match.index).split('\n').length;
+    failures.push(rel + ':' + line + ': live GitHub backslop ref ' + match[0]
+      + ' — use ' + CLI + '; the dependency pin belongs in ' + PACKAGE);
   }
 }
-
-const seen = `${read} of ${tracked.length} tracked file(s) read · ${live.pins} live ref(s) in ${live.files} file(s), ${kept.pins} historical ref(s) in ${kept.files} record(s) left alone`;
-
-// Findings print before either verdict: an empty live set and an unreadable file happen
-// together exactly when the second explains the first, and that is when it is needed.
-for (const f of failures) say(`✖ ${f}`);
-
 if (!guarded) {
-  say(`✖ pin gate: nothing outside ${CONFIG} names ${SPEC}${SEPCHAR}<ref> — the spec moved or the walk read the wrong tree`);
-  say(`✖ pin gate: ${seen}`);
-  process.exit(1);
+  failures.push('pin gate: no live ' + CLI
+    + ' call outside the config, dependency files and this gate — the scan may have missed the project');
 }
 
+const seen = read + ' of ' + tracked.length + ' tracked file(s) read · '
+  + guarded + ' local call(s) outside config/dependency files · '
+  + historicalRefs + ' historical GitHub ref(s) left alone · installed: ' + installed;
+for (const failure of failures) say('✖ ' + failure);
 if (failures.length) {
-  say(`✖ pin gate: ${failures.length} finding(s) · ${seen}`);
+  say('✖ pin gate: ' + failures.length + ' finding(s) · ' + seen);
   process.exit(1);
 }
-
-say(`✔ pin gate: ${SEPCHAR}${WANT} throughout · ${seen}, ${guarded} live ref(s) outside ${CONFIG}`);
+say('✔ pin gate: ' + declared + ', lock commit ' + resolvedCommit + ' · ' + seen);

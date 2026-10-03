@@ -1,20 +1,32 @@
 {
   "prefix": "PB",
   "docs": "docs",
-  "cli": "npx github:Velklish/backslop#v0.10.1",
+  "cli": "npx --no-install backslop",
   "gates": [
     "npm test",
-    "npx github:Velklish/backslop#v0.10.1 lint",
+    "npx --no-install backslop lint",
     "npm run audit",
     "npm run pins",
     "npm run codex-schema"
   ],
   "probe": "npm run probe",
-  "version": "0.10.1",
+  "writer": {
+    "style": [
+      "lib/cli.js"
+    ],
+    "currency": [
+      "skills/**"
+    ]
+  },
+  "version": "0.20.0",
+  "source": "https://github.com/Velklish/backslop.git",
   "lang": "en",
   "tools": [
     "claude",
     "cursor",
     "codex"
+  ],
+  "hooks": [
+    "claude"
   ]
 }

@@ -23,7 +23,7 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 const accepts = ajv.compile(schema);
 
 const record = (over = {}) => ({
-  command: 'npx github:Velklish/backslop#v0.10.1 gates',
+  command: 'npx --no-install backslop gates',
   exit: 0,
   counts: { gates: 4, green: 4 },
   tree: '93c140dc3c583bb74ec5c1ad8b7f26e6187c45c9',
@@ -152,11 +152,11 @@ const withoutCounts = (over) => { const one = record(over); delete one.counts; r
 const counted = doc(
   record({ command: 'npm test', exit: 1, at: '2026-09-25T20:04:26.811Z', counts: { files: 72, passed: 70 }, tail: '70/72' }),
   record({ command: 'npm test', exit: 0, at: '2026-09-25T20:08:31.463Z', counts: { files: 72, passed: 72 }, tail: '72/72' }),
-  withoutCounts({ command: 'npx github:Velklish/backslop#v0.10.1 lint', at: '2026-09-25T20:11:36.492Z', tail: 'lint: no errors' }),
+  withoutCounts({ command: 'npx --no-install backslop lint', at: '2026-09-25T20:11:36.492Z', tail: 'lint: no errors' }),
   record({ command: 'npm run audit', at: '2026-09-25T20:11:39.344Z', counts: { files: 416, packed: 137 } }),
   record({ command: 'npm run pins', at: '2026-09-25T20:11:41.010Z', counts: { files: 416 } }),
   record({ command: 'npm run codex-schema', at: '2026-09-25T20:11:41.346Z', counts: { files: 15 } }),
-  record({ command: 'npx github:Velklish/backslop#v0.10.1 gates', at: '2026-09-25T20:11:41.866Z', counts: { gates: 5, green: 5 }, tail: 'gates 5, green 5' }),
+  record({ command: 'npx --no-install backslop gates', at: '2026-09-25T20:11:41.866Z', counts: { gates: 5, green: 5 }, tail: 'gates 5, green 5' }),
   withoutCounts({ command: 'node test/gate-record.test.mjs', exit: 1, kind: 'verification', at: '2026-09-25T20:12:00.000Z' }),
 );
 const runner = counted.records.find((r) => r.counts && Object.hasOwn(r.counts, 'gates'));

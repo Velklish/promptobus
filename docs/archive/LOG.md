@@ -1,8 +1,8 @@
 # Closed task journal
 
-One line per task: number with slug, closing date, outcome, the commit the body is read from, and title. The body is not in the tree — the definition and the result live in git, and `npx github:Velklish/backslop#v0.10.1 show N` retrieves them. The lines of the mass fold of 2026-09-23, PB-1 to PB-249, are in number order; later lines follow the order of closing.
+One line per task: number with slug, closing date, outcome, closing commit, and title. The body is not in the tree — the definition and the result live in git, and `npx --no-install backslop show N` retrieves them. Lines are appended at the end: a single fold adds its own line, a bulk fold adds its lines by closing date, equal dates by number.
 
-An `—` outcome means that `result.md` did not name one. An `—` commit means that the body went into the message of the folding commit, and `show` looks it up by the `PB-N:` subject. A mass-fold line whose `result.md` names no closing date carries the fold date, 2026-09-23.
+An `—` outcome means that `result.md` did not name one. An `—` commit means that the body is in no revision the line could name. After `npx --no-install backslop fold N` it is only in the message of the fold commit, so commit the draft, and `show` finds it by the task section in a commit message, then by the `PB-N:` subject. After a bulk fold the body was not in history: it is in the draft if `--embed-missing` was given, and otherwise it is lost.
 
 - <a id="pb-1"></a>`PB-1-tools-add-hint-has-no-command` · 2026-09-05 · completed · `6717eeb622` · Spawn error points at a tools subcommand that does not exist
 - <a id="pb-1.1"></a>`PB-1.1-spawn-group-hint-names-a-clone-subcommand` · 2026-09-05 · completed · `f5eb0c6105` · The group-address refusal names a `clone` subcommand the package does not have
@@ -468,3 +468,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-312"></a>`PB-312-review-loop-until-clean-pass` · 2026-09-30 · completed · — · The review loop runs until the reviewer returns a pass without findings; the author does not confirm its own fix
 - <a id="pb-309.1"></a>`PB-309.1-codex-teamlead-admission-wording` · 2026-09-30 · completed · — · Teamlead-preparation sentences read as if a Codex teamlead were not admitted
 - <a id="pb-311"></a>`PB-311-accept-backslop-hook-records` · 2026-10-03 · completed · — · Accept backslop's hook records in a project's Codex and Cursor hook files instead of refusing or overwriting them
+- <a id="pb-317"></a>`PB-317-backslop-0-20-migration` · 2026-10-03 · completed · — · Move the tracker to backslop v0.20.0 and use its writer skills instead of the vendored copies
