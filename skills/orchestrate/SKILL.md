@@ -58,7 +58,7 @@ promptobus_status { task? }
 promptobus_ask { body?, answers?, after?, task? }
 ```
 
-`to` names an address registered in that task. The shipped delivery steps are `worker:<slug>`, `reviewer:<slug>` and `approver:<slug>`; governance routes also admit registered teamleads, linked peers and `user` under their message-type rules. The reporter has no send route.
+`to` names an address registered in that task. The shipped delivery steps are `worker:<slug>`, `reviewer:<slug>` and `approver:<slug>`; governance routes also admit registered teamleads, a child task's `root:<root slug>`, linked peers and `user` under their message-type rules. The reporter has no send route.
 
 Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
