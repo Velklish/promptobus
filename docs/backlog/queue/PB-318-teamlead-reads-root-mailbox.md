@@ -21,11 +21,16 @@ The workaround was by hand. The root orchestrator moved the files the teamlead h
 
 The [orchestrate skill](../../../skills/orchestrate/SKILL.md) describes upward `status` from a teamlead to the root, but not how the root's mail to the teamlead reaches it.
 
+## Decision
+
+The owner decided on 2026-10-03: a teamlead has one mailbox. Mail the root sends to `teamlead:<slug>` is delivered into the child task's `orchestrator` mailbox, which the teamlead already reads and marks with `promptobus_mailbox`. A second readable address in the root task is not added.
+
 ## Work to do
 
-- Reproduce: lift a teamlead, send it a message from the root, call `promptobus_mailbox` from the teamlead session with and without `task: <root>`; record the replies.
-- Give the teamlead a way to read and mark read its root-task address through the bus tools, or route root-to-teamlead mail into the child task's `orchestrator` mailbox; record the choice in the reference.
-- Check what the Stop guard does with unread mail at the teamlead's root address.
+- Reproduce first: lift a teamlead, send it a message from the root, call `promptobus_mailbox` from the teamlead session with and without `task: <root>`; record the replies.
+- Deliver root-to-teamlead mail into the child task's `orchestrator` mailbox. The message keeps its origin: the teamlead sees that it came from the root, and its reply goes back to the root. Unread mail never piles up at `teamlead:<slug>` in the root task, and nothing left there knocks the teamlead again.
+- Record the routing in the reference and in the orchestrate skill's section on teamleads.
+- Check the Stop guard and the warden on the new path: one knock per message, none for mail already read.
 
 ## Out of scope
 
@@ -33,5 +38,5 @@ The [orchestrate skill](../../../skills/orchestrate/SKILL.md) describes upward `
 
 ## Verification
 
-- A message from the root to `teamlead:<slug>` is read through a bus tool in the teamlead session and is no longer counted unread.
+- A message from the root to `teamlead:<slug>` arrives in the child task's `orchestrator` mailbox. `promptobus_mailbox` in the teamlead session reads it and marks it read. No unread count remains for it in either task.
 - `npm test` and the repository gates exit 0.
