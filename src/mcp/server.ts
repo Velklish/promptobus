@@ -247,7 +247,7 @@ export function createMcpServer(options: McpOptions): {
       case 'promptobus_send': {
         const to = args?.to as string;
         const from = service.senderFor(home, task, identity);
-        const { message, artifact, sameContent, deliveredTask } = service.send(home, task, {
+        const { message, artifact, sameContent, deliveredTask, deliveredFrom } = service.send(home, task, {
           from,
           to,
           type: args?.type as string,
@@ -261,7 +261,7 @@ export function createMcpServer(options: McpOptions): {
         const unread = from === role ? service.unreadNote(home, task, role, session) : null; // mailbox reads `role`
         const landedTask = deliveredTask ?? task;
         const landedTo = deliveredTask ? ORCHESTRATOR : to;
-        const landedFrom = deliveredTask ? `peer:${service.readTask(home, task).adapter.slug}` : from;
+        const landedFrom = deliveredFrom ?? from;
         return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, landedTask), landedTo)}`
           + `${ADDR_MARK}${landedTo}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`

@@ -86,6 +86,7 @@ export const SHIPPED_REGISTRY: RoleRegistry = Object.freeze({
   entries: Object.freeze([
     governance(ORCHESTRATOR, false),
     governance('teamlead', true),
+    governance('root', true),
     governance('peer', true),
     governance('reporter', false),
     governance('user', false),

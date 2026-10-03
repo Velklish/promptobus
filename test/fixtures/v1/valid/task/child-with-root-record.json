@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-child",
+  "title": "child",
+  "status": "active",
+  "owner": "owner",
+  "created": "2026-09-02T10:11:12.345Z",
+  "updated": "2026-09-02T10:11:12.345Z",
+  "participants": [
+    {
+      "id": "owner",
+      "role": "owner",
+      "harness": "fake",
+      "mode": "attached",
+      "sessionRef": "sess-owner",
+      "capabilities": {
+        "spawn": true,
+        "attach": true,
+        "activation": "push",
+        "inspect": true,
+        "stop": true
+      },
+      "metadata": {}
+    },
+    {
+      "id": "root-fixture-root",
+      "role": "root",
+      "harness": "undeclared",
+      "mode": "attached",
+      "sessionRef": null,
+      "capabilities": null,
+      "metadata": {
+        "address": "root:fixture-root",
+        "rootTask": "fixture-root"
+      }
+    }
+  ],
+  "adapter": {},
+  "parent": "fixture-root"
+}

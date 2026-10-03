@@ -137,3 +137,19 @@ check('docs: Codex thread/start overrides match the holder and role boundary',
   && has(decision(adr008, '2B', '3C'),
     '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and a Codex install-root role (teamlead, reporter or orchestrator) adds `features.hooks = false`. Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
   JSON.stringify({ workerConfig, teamleadConfig }));
+
+const addresses = section(protocol, '## Addresses');
+const teamleadSkill = section(read('skills/orchestrate/SKILL.md'), '## Teamleads and siblings');
+check('docs: a teamlead reads root mail in its child task, and the drain is documented',
+  has(addresses, '**A teamlead has one mailbox: the `orchestrator` mailbox of its child task.**')
+  && has(addresses, '| `orchestrator` of a root task | `teamlead:<slug>` whose child task is active | all seven | delivery enters that child\'s `orchestrator` mailbox as `root:<root slug>` |')
+  && has(addresses, '| `orchestrator` of a child task | `root:<root slug>` of that task | all seven | delivery enters the root\'s `orchestrator` mailbox as the bound `teamlead:<slug>` |')
+  && has(spawn, 'Root mail to `teamlead:<slug>` lands in the child task\'s `orchestrator` mailbox from `root:<root slug>`')
+  && has(spawn, 'It re-delivers before it marks read, so an interruption between the two leaves a duplicate, not a loss.')
+  && has(teamleadSkill, 'A teamlead has one mailbox: the `orchestrator` mailbox of its child task. Root mail sent to `teamlead:<slug>` lands there from `root:<root slug>`')
+  && has(spawn, 'A message that cannot move — its artifact record does not read, or its file is gone from the root\'s files folder — stays unread there and is named on stderr.')
+  && has(spawn, 'either way the read returns the child mailbox, and the next read retries the drain.')
+  && JSON.parse(read('schemas/v1/message.schema.json')).properties.originTask.description
+    .includes('the root whose orchestrator\'s mail was delivered into this child task')
+  && has(adr('026', 'teamlead-one-mailbox'), '1A, 2A, 3B and 4A, decided by the owner on 2026-10-03.'),
+  'the protocol, the CLI reference, the orchestrate skill or ADR-026 lost the teamlead mailbox route');

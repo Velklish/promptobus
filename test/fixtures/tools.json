@@ -1,7 +1,7 @@
 [
   {
     "name": "promptobus_send",
-    "description": "Send a message to a task participant. Address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>. Workers and approvers in one task may write directly. Registered sibling teamleads and linked peers exchange question, answer, status or artifact; user asks the orchestrator by question, and reporter only reads. Other participant traffic goes through the root orchestrator. The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, and if your mailbox has unread mail — its count.",
+    "description": "Send a message to a task participant. Address: orchestrator, worker:<slug>, reviewer:<slug> or approver:<slug>. Workers and approvers in one task may write directly. Registered sibling teamleads and linked peers exchange question, answer, status or artifact; user asks the orchestrator by question, and reporter only reads. A child task's orchestrator reaches its root orchestrator at root:<slug>. Other participant traffic goes through the root orchestrator. The reply names PROMPTOBUS_HOME, your address, and the task the message landed in — by id and by name, and if your mailbox has unread mail — its count.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -53,7 +53,7 @@ const FOUR_REG = bus.registryOf(FOUR_HOST);
 test('the governance roles are the closed set the package fixes, and each has its address shape', () => {
   const governance = SHIPPED.entries.filter((e) => e.layer === 'governance');
   assert.deepEqual(governance.map((e) => [e.name, e.slug]), [
-    ['orchestrator', false], ['teamlead', true], ['peer', true], ['reporter', false], ['user', false],
+    ['orchestrator', false], ['teamlead', true], ['root', true], ['peer', true], ['reporter', false], ['user', false],
   ]);
   for (const e of governance) {
     assert.deepEqual(
@@ -138,6 +138,8 @@ test('the door refuses a name a declaration may not use, and never touches the r
   refused('9lives', 'reads-diff');
   refused('security', 'reviews');
   refused('teamlead', 'reads-diff');
+  refused('root', 'reads-diff');
+  refused('root-cause', 'reads-diff');
   refused('reviewer', 'writes-main-tree');
   refused('reviewer-two', 'reads-diff');
   refused('peer-review', 'reads-diff');
@@ -151,7 +153,7 @@ test('the door refuses a name a declaration may not use, and never touches the r
     for (const x of slugged) for (const y of slugged) assert.ok(x === y || !y.startsWith(`${x}-`), `${y} overlaps ${x}`);
   }
   assert.equal(bus.withSteps(SHIPPED, [{ name: 'reviewer', kind: 'reads-diff' }]).entries.length, SHIPPED.entries.length);
-  assert.equal(SHIPPED.entries.length, 8, 'the shipped value is unchanged by every call above');
+  assert.equal(SHIPPED.entries.length, 9, 'the shipped value is unchanged by every call above');
 });
 
 test('a host that declares no pipeline, or no host, answers the shipped registry; a declaring host adds its steps', () => {

@@ -32,8 +32,10 @@ export interface SameContent {
 export interface SentMessage {
   message: MessageV1;
   artifact: ArtifactV1 | null;
-  /** Destination root when a peer address delivered into its orchestrator mailbox. */
+  /** Destination task when a peer, a teamlead or a child's root address delivered into its orchestrator mailbox. */
   deliveredTask?: string;
+  /** The address the message was sent as in `deliveredTask`. */
+  deliveredFrom?: string;
   /** The file these bytes already landed under; `null` or absent — they are new here. */
   sameContent?: SameContent | null;
 }

@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **A teamlead has one mailbox: root mail lands in its child task.** A root orchestrator's
+  send to `teamlead:<slug>` is written into the teamlead's active child task as
+  `root:<root slug> → orchestrator`, with the root id as `originTask`, so the teamlead reads
+  and marks it with `promptobus_mailbox` on its child task, and the root slot no longer
+  collects unread mail that keeps the warden knocking. A send from the child's
+  orchestrator to `root:<root slug>` reaches the root orchestrator from `teamlead:<slug>`;
+  naming the root task still works. `root` is a new governance address: the lift writes
+  the child's `root:<root slug>` record, a host step named `root` is refused, and so is a
+  worker slug that starts with `root-`. On the teamlead's next read, mail an earlier
+  version left unread at the root slot moves into the child under new ids; sibling mail
+  stays in the root slot. `status`, the MCP `task` reply and the teamlead prompt name the
+  route, and the digest pairs a question and its answer across the two journals.
+  [ADR-026](docs/adr/adr-026-teamlead-one-mailbox.md),
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses).
+
+### Fixed
+
+- `createTask` with a parent and no teamlead address no longer fails with
+  `ReferenceError: slugify is not defined`; the store now imports the helper it names.
+
 ## [0.23.0] — 2026-10-03
 
 ### Changed

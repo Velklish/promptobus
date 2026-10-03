@@ -469,3 +469,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-309.1"></a>`PB-309.1-codex-teamlead-admission-wording` · 2026-09-30 · completed · — · Teamlead-preparation sentences read as if a Codex teamlead were not admitted
 - <a id="pb-311"></a>`PB-311-accept-backslop-hook-records` · 2026-10-03 · completed · — · Accept backslop's hook records in a project's Codex and Cursor hook files instead of refusing or overwriting them
 - <a id="pb-317"></a>`PB-317-backslop-0-20-migration` · 2026-10-03 · completed · — · Move the tracker to backslop v0.20.0 and use its writer skills instead of the vendored copies
+- <a id="pb-318"></a>`PB-318-teamlead-reads-root-mailbox` · 2026-10-04 · completed · — · A teamlead cannot read its root-task mailbox through the bus tools

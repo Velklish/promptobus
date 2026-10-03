@@ -164,7 +164,7 @@ If a session becomes dead while the lift plans a repeat assignment, the plan dro
 - a second `edits-tree` step: a gate of that kind, because two writers in one worktree are refused;
 - a name declared twice;
 - a name outside `[a-z][a-z0-9-]{0,31}`;
-- the name of a governance role — `orchestrator`, `teamlead`, `peer`, `reporter`, `user`, read from the registry;
+- the name of a governance role — `orchestrator`, `teamlead`, `root`, `peer`, `reporter`, `user`, read from the registry;
 - an `instructions` path outside the install root, or not a file there;
 - a kind outside the three, an owner of another kind, a floor outside 1–10, and a field the shape does not name.
 

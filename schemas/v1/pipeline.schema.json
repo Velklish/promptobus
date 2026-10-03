@@ -28,7 +28,7 @@
       "description": "The step's address prefix: `<name>:<slug>`. A governance role's name is never a step's.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}$",
-      "not": { "enum": ["orchestrator", "teamlead", "peer", "reporter", "user"] }
+      "not": { "enum": ["orchestrator", "teamlead", "root", "peer", "reporter", "user"] }
     },
     "gate": {
       "type": "object",

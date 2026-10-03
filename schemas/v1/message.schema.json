@@ -18,7 +18,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
     "originTask": {
-      "description": "The root task that sent a routed peer message. Absent on messages written before this field.",
+      "description": "The root task that sent a routed peer message, or the root whose orchestrator's mail was delivered into this child task. Absent on messages written before this field.",
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },

@@ -54,6 +54,9 @@ const firstStatusInstruction = 'In your first status to the root orchestrator, l
 check('teamlead prompt instructs first status to list rule files read',
   planned.prompt.includes(firstStatusInstruction)
   && planned.rules.length > 0 && planned.rules.every((file) => planned.prompt.includes(`- ${file}`)), planned.prompt);
+check('teamlead prompt names the child-side root address for root mail and replies',
+  planned.prompt.includes(`arrives in your child task mailbox from root:${task}`)
+  && planned.prompt.includes(`a send to:"root:${task}" reaches the root orchestrator as teamlead:group-one`), planned.prompt);
 check('teamlead lift keeps sibling assignments vertical',
   planned.prompt.includes('The bus refuses task, result and review to a sibling.')
   && planned.prompt.includes('Raise a change of logic, a change of requirements')
@@ -85,6 +88,10 @@ check('Codex teamlead dry-run names its driver, hook override and root MCP entry
   && codexDry.out.includes('promptobus-root · stdio')
   && codexDry.out.includes('codex --dangerously-bypass-hook-trust app-server --stdio')
   && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexDry.out);
+check('Codex teamlead prompt sends sibling mail, not root mail, to its root MCP entry',
+  codexPlan.prompt.includes('Read sibling teamlead messages with')
+  && !codexPlan.prompt.includes('Read root messages with')
+  && codexPlan.prompt.includes(`arrives in your child task mailbox from root:${task}`), codexPlan.prompt);
 check('Codex teamlead full access dry-run names its sandbox',
   codexFull.out.includes('Codex sandbox: danger-full-access')
   && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexFull.out);
@@ -156,6 +163,9 @@ const launched = await quiet(() => spawnTeamlead(host, { ...opts, tool: tool() }
 const child = store.readTask(home, launched.childTask);
 const rootTask = store.readTask(home, task);
 const lead = store.participantOf(rootTask, 'teamlead:group-one');
+check('teamlead lift writes the child-side root record before the first root mail',
+  store.addressOf(store.rootRecordOf(child)) === `root:${task}`
+  && store.rootRecordOf(child).metadata.rootTask === task, JSON.stringify(child.participants));
 check('teamlead lift links child and binds both addresses to one session',
   child.parent === task && child.participants[0].metadata.owner === sid1
   && lead.metadata.sessionId === sid1 && lead.metadata.childTask === child.id,

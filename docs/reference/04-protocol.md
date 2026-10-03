@@ -16,7 +16,7 @@ the orchestrator and the shipped pipeline of the role registry ([§ The role
 registry](#the-role-registry)). The grammar admits the slugless `orchestrator`, `reporter`
 and `user` and `<name>:<slug>` under any other step-shaped name; which of those names exist
 is the registry's answer, asked where a participant is written or addressed. The governance
-addresses `teamlead:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it. Teamlead
+addresses `teamlead:<slug>`, `root:<slug>`, `peer:<slug>`, `reporter` and `user` are known to it. Teamlead
 lifts and `link` register their addresses; `ask` registers `user` in the addressed task on
 first use, and `report` registers `reporter` in a root task. Once registered, their routes are the closed table
 below. `addrDir` is injective only over admitted addresses —
@@ -32,10 +32,41 @@ result is on record; `reads-diff` and other step pairs stay on the orchestrator 
 | any participant | `orchestrator` of its task | all seven | unchanged |
 | declared owner | declared `writes-main-tree` step of its task | all seven | the one direct step pair |
 | `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
+| `orchestrator` of a root task | `teamlead:<slug>` whose child task is active | all seven | delivery enters that child's `orchestrator` mailbox as `root:<root slug>` |
+| `orchestrator` of a child task | `root:<root slug>` of that task | all seven | delivery enters the root's `orchestrator` mailbox as the bound `teamlead:<slug>` |
 | `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign; delivery enters the other root's orchestrator mailbox as its peer sender |
 | `user` | `orchestrator` of a root or child task | `question` | the person asks that task's orchestrator; `teamlead:<slug>` selects its child task |
 | `orchestrator` of a root or child task | `user` | `answer`, `status` | the answer and progress lines in the same task |
 | `reporter` | nobody | none | the reporter reads |
+
+**A teamlead has one mailbox: the `orchestrator` mailbox of its child task.** Its bus entry
+reads that mailbox and no other, so the two teamlead rows take priority over the generic
+`orchestrator` rows. A root orchestrator's send to `teamlead:<slug>` whose record names an
+active child (`childTask`, with that child's `parent` naming the root) is written into the
+child as `root:<root slug> → orchestrator`; the root journal does not carry it. The message
+records the root id as `originTask`, its artifact belongs to the child, the child's warden
+knocks the teamlead as for any other mail of that mailbox — once for new unread mail, never
+for mail already read — and the reply names the child as the task it landed in and the
+teamlead address it went `via`. A teamlead whose child is closed keeps
+root mail in the root task as before. The child's `root:<root slug>` record stands for the
+root orchestrator: `spawn --teamlead` writes it after the child link, and a delivery or a
+drain writes it into a child lifted earlier. It carries `rootTask` and no session, so no
+session sends as it; the routing policy lets it talk to the child's `orchestrator` only. A
+send from the child's `orchestrator` to it is written into the root as
+`teamlead:<slug> → orchestrator` while the root record and the child owner are bound to one
+session, the same proof the sibling route asks. The address carries the root task's
+`adapter.slug`, or the slugified root id when there is none. It is slugged, not a bare
+`root`, because a reader that predates the address still runs during an upgrade — a
+participant's MCP server, a warden — and that grammar admits only `orchestrator`, `reporter`
+and `user` bare. Measured with the 0.22.0 CLI on a child journal carrying each form: a bare
+`root` record printed `MAILBOX UNREAD: the record address is invalid` in `status`, a
+`root:root` record printed an ordinary `root:root · unread 0` line, and the MCP `task` and
+`mailbox` calls and a warden round completed on both. Sibling traffic is unchanged:
+`teamlead:a → teamlead:b` still lands in the root task's `teamlead-b` mailbox, which a Claude
+Code teamlead's tools do not read. The digest pairs a question in one of the two journals
+with its answer in the other ([03-cli § Digest](03-cli.md#digest)), and a teamlead's read of
+its mailbox first moves root mail an earlier version left in the root
+([03-cli § Spawn](03-cli.md#spawn)).
 
 The specific `peer:<slug>` rule takes priority over the generic participant-to-orchestrator row:
 peer-to-orchestrator sends also need a reciprocal link and use only the four types in the peer row.
@@ -507,13 +538,15 @@ Source: `src/registry.ts`.
 
 One table declares every addressed role and what each carries. It has two layers: the
 governance roles the package fixes ([ADR-021](../adr/adr-021-task-tree-and-governance-routes.md),
-[ADR-022](../adr/adr-022-user-addressee-and-orchestrator-debt.md)) and the pipeline steps, each an
+[ADR-022](../adr/adr-022-user-addressee-and-orchestrator-debt.md),
+[ADR-026](../adr/adr-026-teamlead-one-mailbox.md)) and the pipeline steps, each an
 instance of one of three step kinds ([ADR-020](../adr/adr-020-role-registry-and-declared-pipeline.md)).
 
 | Entry | Layer, kind | Address | File stem | Package deny list | Floor | Catalog role | Routed | Lift text |
 |---|---|---|---|---|---|---|---|---|
 | `orchestrator` | governance | `orchestrator` | none; the name is reserved | none | — | — | no | — |
 | `teamlead` | governance | `teamlead:<slug>` | `teamlead-<slug>` | none | — | — | no | — |
+| `root` | governance | `root:<slug>` | `root-<slug>` | none | — | — | no | — |
 | `peer` | governance | `peer:<slug>` | `peer-<slug>` | none | — | — | no | — |
 | `reporter` | governance | `reporter` | `reporter` | reviewer writes plus bus send at lift | — | — | no | reporter |
 | `user` | governance | `user` | none; the name is reserved | none | — | — | no | — |
