@@ -42,13 +42,13 @@ Promptobus даёт одной агентской сессии — оркест�
 Пакета нет в реестре npm. Локальную зависимость ставят с GitHub, закрепив текущий тег релиза:
 
 ```bash
-npm install github:Velklish/promptobus#v0.23.0
+npm install github:Velklish/promptobus#v0.24.0
 ```
 
 Для глобальной CLI-команды в `PATH` используйте тот же тег:
 
 ```bash
-npm install -g github:Velklish/promptobus#v0.23.0
+npm install -g github:Velklish/promptobus#v0.24.0
 promptobus --version
 ```
 
@@ -72,11 +72,11 @@ node bin/promptobus.js --version
 }
 ```
 
-`tools` — это список разрешённых к подъёму: `--harness` обязан назвать одного из них. При новом подъёме `spawn` или `review` без этого флага явная или записанная стратегия может выбрать инструмент, если работает маршрутизация; без стратегии новый участник получает запасной `claude`. Повторный `spawn` использует записанный инструмент участника. Повторный `review` использует записанный инструмент ревьюера, кроме разрешённой явной смены инструмента. Необязательные ключи, которые читает host: `commandName`, `locale`, `version`, `rules` (дополнительные файлы правил участнику), `mcp` (серверы, копируемые участнику), `skills` (каталог процессных скиллов), `pipeline` (шаг-владелец и гейты, которые часть проходит после него, — [install § 2](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md#the-pipeline)). Репозиторий, который генерирует свои процессные скиллы, объявляет команду в своём `promptobus.json` под ключом `generate` массивом argv.
+`tools` — это список разрешённых к подъёму: `--harness` обязан назвать одного из них. При новом подъёме `spawn` или `review` без этого флага явная или записанная стратегия может выбрать инструмент, если работает маршрутизация; без стратегии новый участник получает запасной `claude`. Повторный `spawn` использует записанный инструмент участника. Повторный `review` использует записанный инструмент ревьюера, кроме разрешённой явной смены инструмента. Необязательные ключи, которые читает host: `commandName`, `locale`, `version`, `rules` (дополнительные файлы правил участнику), `mcp` (серверы, копируемые участнику), `skills` (каталог процессных скиллов), `pipeline` (шаг-владелец и гейты, которые часть проходит после него, — [install § 2](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/install.md#the-pipeline)). Репозиторий, который генерирует свои процессные скиллы, объявляет команду в своём `promptobus.json` под ключом `generate` массивом argv.
 
 ### 2. Дать оркестратору MCP-сервер
 
-Подъём участника пишет ему собственную запись MCP. Для оркестратора stdio-сервер регистрируют отдельно в project-файле его инструмента: `.mcp.json` для Claude Code, `.cursor/mcp.json` для Cursor, `.codex/config.toml` для Codex. [Руководство по установке](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md#3-mcp-server-for-the-orchestrator) даёт фрагмент нужного формата, условия доверия и команды проверки без отправки сообщений. `promptobus install` пишет хуки и скиллы, но не эту запись MCP.
+Подъём участника пишет ему собственную запись MCP. Для оркестратора stdio-сервер регистрируют отдельно в project-файле его инструмента: `.mcp.json` для Claude Code, `.cursor/mcp.json` для Cursor, `.codex/config.toml` для Codex. [Руководство по установке](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/install.md#3-mcp-server-for-the-orchestrator) даёт фрагмент нужного формата, условия доверия и команды проверки без отправки сообщений. `promptobus install` пишет хуки и скиллы, но не эту запись MCP.
 
 ### 3. Поставить project hooks
 
@@ -89,7 +89,7 @@ promptobus install --dry-run                        # напечатать бу�
 promptobus uninstall                                # снять только свои хуки
 ```
 
-Установщик правит `.claude/settings.json`, `.cursor/hooks.json` и `.codex/hooks.json`, сохраняет чужие хуки и незнакомые поля и записывает поставленный список в `promptobus.json` под ключом `harnesses` — это не список разрешённых к подъёму. После установки выдайте project hooks доверие в своём инструменте: [Хуки, доверие и разбор неполадок](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/hooks-and-trust.md).
+Установщик правит `.claude/settings.json`, `.cursor/hooks.json` и `.codex/hooks.json`, сохраняет чужие хуки и незнакомые поля и записывает поставленный список в `promptobus.json` под ключом `harnesses` — это не список разрешённых к подъёму. После установки выдайте project hooks доверие в своём инструменте: [Хуки, доверие и разбор неполадок](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/hooks-and-trust.md).
 
 ## Как пользоваться
 
@@ -191,7 +191,7 @@ promptobus models calibrate                                 # предложит
 
 `ROUTED_ROLES` в каталоге — единый неизменяемый источник словаря маршрутизации; его используют resolver, validation, учёт live-троек и telemetry, а JSON-схемы остаются статическими артефактами, сверяемыми с ним parity-тестом model-routing. `orchestrator` и другие адресуемые, но немаршрутизируемые роли отклоняются, когда роль названа в политике или выборе, и явно исключаются из проекций маршрутизации.
 
-`models` читает кэш доступности и ничего не спрашивает у инструментов; пробует только `--refresh`. Когда у аккаунта остаётся мало, печатается строка `near-limit` со стратегией, на которую стоит перейти, и ничего не переключается само. Модель, у которой самое израсходованное из её окон лимита занято на 90 % и больше, выходит из автоматического выбора (`window-nearly-spent`), если её не назвали через `--harness` или `--model`. Кэш и файл телеметрии лежат в домашнем каталоге с правами `0600`, не содержат ни промптов, ни токенов и никуда не отправляются. Запись телеметрии не обещает расход для присоединённой сессии; расход токенов из rollout Codex намеренно не импортируется в sidecar пропускной способности, потому что rollout находится вне шины и не содержит времени активной работы модели. Команды, коды причин и коды ошибок — [reference/03-cli.md § Model routing](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/03-cli.md#model-routing); каталог и overlay-файл для копирования — [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/model-routing.md).
+`models` читает кэш доступности и ничего не спрашивает у инструментов; пробует только `--refresh`. Когда у аккаунта остаётся мало, печатается строка `near-limit` со стратегией, на которую стоит перейти, и ничего не переключается само. Модель, у которой самое израсходованное из её окон лимита занято на 90 % и больше, выходит из автоматического выбора (`window-nearly-spent`), если её не назвали через `--harness` или `--model`. Кэш и файл телеметрии лежат в домашнем каталоге с правами `0600`, не содержат ни промптов, ни токенов и никуда не отправляются. Запись телеметрии не обещает расход для присоединённой сессии; расход токенов из rollout Codex намеренно не импортируется в sidecar пропускной способности, потому что rollout находится вне шины и не содержит времени активной работы модели. Команды, коды причин и коды ошибок — [reference/03-cli.md § Model routing](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/03-cli.md#model-routing); каталог и overlay-файл для копирования — [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/model-routing.md).
 
 `import { telemetryStats } from 'promptobus/telemetry'` — типизированная описательная сводка запуска по ролям: из сохранённых строк она выводит wall-clock, счётчик сообщений шины, close-time ожидание почты и называет роль, ставшую узким местом. Сдвиги окон лимита остаются свидетельством всего запуска в `quotaEvidence` с покрытием по harness/window; у роли `quotaCostPercent` всегда null, а состояние `ambiguous` или `unavailable`, потому что расход нельзя распределить между пересекающимися участниками, причём `ambiguous` появляется только при валидном измеренном покрытии quota; запись того же harness без подходящего окна считается недоступной, невалидное окно не даёт свидетельства расхода, а отсутствующий или невалидный scope не считается всем аккаунтом. Числовые итоги роли требуют полного покрытия записей, а при неполном wall-clock bottleneckRole равен null. Расход присоединённой сессии, model turns и model-active time остаются недоступны; CLI по-прежнему печатает только число и размер записей телеметрии.
 
@@ -222,9 +222,9 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
 | `promptobus/schemas/*` | JSON-схемы задачи, участника, сообщения, артефакта, записи о гейтах и документов маршрутизации |
 
-`openEngine` принимает расположение хранилища (`root` или `home`) и политику маршрутизации; диск в поисках рабочего места он не обходит. Исходники пакета импортируют только встроенные модули Node и никогда не читают `process.env` и не пишут в stdout — диагностика, идентичность сессии и имя инструмента приходят аргументами, так что окружение и вывод остаются у потребителя. Подробности — [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/04-protocol.md).
+`openEngine` принимает расположение хранилища (`root` или `home`) и политику маршрутизации; диск в поисках рабочего места он не обходит. Исходники пакета импортируют только встроенные модули Node и никогда не читают `process.env` и не пишут в stdout — диагностика, идентичность сессии и имя инструмента приходят аргументами, так что окружение и вывод остаются у потребителя. Подробности — [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/04-protocol.md).
 
-Если инструмент не передаёт MCP-процессу переменную сессии, драйвер вместо неё называет указатель на запись сессии; адаптер принимает его, только когда запись и процесс ведут в один физический home и называют точные задачу и адрес, и обновляет перед каждым вызовом инструмента, потому что id может появиться уже после handshake. См. [ADR-019](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/adr/adr-019-session-address-per-task-lands.md).
+Если инструмент не передаёт MCP-процессу переменную сессии, драйвер вместо неё называет указатель на запись сессии; адаптер принимает его, только когда запись и процесс ведут в один физический home и называют точные задачу и адрес, и обновляет перед каждым вызовом инструмента, потому что id может появиться уже после handshake. См. [ADR-019](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/adr/adr-019-session-address-per-task-lands.md).
 
 ## Разработка
 
@@ -242,22 +242,22 @@ npm run lint:backslop
 
 Набору нужны `git`, `tmux` и `ast-grep` (`npm install -g @ast-grep/cli@0.45.3` — версия, которую пинит CI). Он гоняет файлы пулом процессов, держа файлы с замером настенного времени в серийной группе в конце, даёт каждому файлу свой дом и свой временный каталог, запечатывает `PATH` каталогом заглушек, чтобы ни один настоящий бинарь инструмента не был вызван, и отказывает прогону, оставившему за собой процесс. На той же границе он снимает все известные идентификаторы инструментов до того, как фикстура установит свой, поэтому запуск из участника другого инструмента не создаёт вторую личность сессии. Живые прогоны инструментов в CI не запускаются никогда. `lint:backslop` нужен сгенерированный adapter output, которого в свежем чекауте нет, — после `npm ci` запусти `npx --no-install backslop init --hooks claude`.
 
-CI гоняет те же шаги на Node 20 и 22, на Ubuntu и macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.23.0/.github/workflows/ci.yml)). Гейты, которые обязана пройти правка, перечислены под ключом `gates` в [backslop.json](https://github.com/Velklish/promptobus/blob/v0.23.0/backslop.json).
+CI гоняет те же шаги на Node 20 и 22, на Ubuntu и macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.24.0/.github/workflows/ci.yml)). Гейты, которые обязана пройти правка, перечислены под ключом `gates` в [backslop.json](https://github.com/Velklish/promptobus/blob/v0.24.0/backslop.json).
 
 ## Как участвовать
 
-Задачи и решения живут в `docs/` и ведутся через [backslop](https://github.com/Velklish/backslop); `npx --no-install backslop status` печатает очередь. Правка завершена, когда вместе с ней переехали справочник, затронутый README и `CHANGELOG.md`, и каждый гейт выше вышел с кодом 0. Тема коммита начинается с номера задачи: `PB-N: <что сделано>`. Новые строки, комментарии и проверки в `bin/`, `lib/`, `src/`, `schemas/` и `templates/` пишутся по-английски, и ничто не называет внутренний продукт и не ссылается в чужой репозиторий. Полная процедура — [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/contributing.md).
+Задачи и решения живут в `docs/` и ведутся через [backslop](https://github.com/Velklish/backslop); `npx --no-install backslop status` печатает очередь. Правка завершена, когда вместе с ней переехали справочник, затронутый README и `CHANGELOG.md`, и каждый гейт выше вышел с кодом 0. Тема коммита начинается с номера задачи: `PB-N: <что сделано>`. Новые строки, комментарии и проверки в `bin/`, `lib/`, `src/`, `schemas/` и `templates/` пишутся по-английски, и ничто не называет внутренний продукт и не ссылается в чужой репозиторий. Полная процедура — [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md).
 
 ## Документация
 
-- [Install](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md) — пакет, файл рабочего места, MCP-сервер, project hooks
-- [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/hooks-and-trust.md)
-- [Model routing: the catalog and overlays](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/model-routing.md)
-- [Reference](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/README.md) — обзор, host, CLI, протокол
-- [Glossary](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/GLOSSARY.md) и [Roadmap](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/ROADMAP.md)
-- [Documentation index](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/README.md) — гайды, справочник и журнал решений
+- [Install](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/install.md) — пакет, файл рабочего места, MCP-сервер, project hooks
+- [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/hooks-and-trust.md)
+- [Model routing: the catalog and overlays](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/model-routing.md)
+- [Reference](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/README.md) — обзор, host, CLI, протокол
+- [Glossary](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/GLOSSARY.md) и [Roadmap](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/ROADMAP.md)
+- [Documentation index](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/README.md) — гайды, справочник и журнал решений
 - Процессные скиллы: [orchestrate](skills/orchestrate/SKILL.md), [solo-review](skills/solo-review/SKILL.md)
-- [CHANGELOG.md](https://github.com/Velklish/promptobus/blob/v0.23.0/CHANGELOG.md)
+- [CHANGELOG.md](https://github.com/Velklish/promptobus/blob/v0.24.0/CHANGELOG.md)
 
 ## Лицензия
 
