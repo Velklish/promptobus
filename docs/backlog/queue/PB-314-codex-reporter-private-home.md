@@ -1,5 +1,6 @@
 # PB-314 · Admit a read-only Codex reporter without an install-root project layer
 
+- **Order:** 115
 - **Scope:** [reference/03-cli § Report](../../reference/03-cli.md#report), [reference/05-drivers](../../reference/05-drivers.md), `lib/report.js`, `lib/driver-codex.js`
 - **Created:** 2026-10-01
 - **Dependencies:** none
@@ -8,6 +9,8 @@
 ## Context
 
 The owner requires the reporter workflow on Codex after losing access to Claude Code. `lib/report.js` on `6f834e2c` explicitly refuses Codex. The existing Codex teamlead private-home mechanism avoids writing a project layer at the install root and can seat a read-only reporter there.
+
+The work landed on main before release 0.22.0 (`b58bbce0`, `248511b8`, `f451a3e3`, `cbe43394`; CHANGELOG `[0.22.0]`, "A Codex reporter runs read-only at the install root"). What remains is the approver's acceptance pass: review, archive and fold.
 
 ## Work to do
 

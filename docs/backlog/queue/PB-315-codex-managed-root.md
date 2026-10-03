@@ -1,5 +1,6 @@
 # PB-315 · Start and resume a managed Codex root orchestrator with native wake and owner binding
 
+- **Order:** 172
 - **Scope:** [reference/03-cli § Lead](../../reference/03-cli.md#lead), [reference/05-drivers](../../reference/05-drivers.md), `lib/lead.js`, `lib/codex-session.js`, installed skills
 - **Created:** 2026-10-01
 - **Dependencies:** none
@@ -8,6 +9,8 @@
 ## Context
 
 The owner requires a Codex root orchestrator after losing Claude Code access. An arbitrary Desktop chat has no supported autonomous wake contract through the bus. The existing managed Codex holder can bind a native root owner, receive postcards and preserve thread history on recovery.
+
+The work landed on main before release 0.22.0 (`fa1b5a18` … `a7c76f98`; CHANGELOG `[0.22.0]`, "A managed Codex root can start from a brief"). What remains is the approver's acceptance pass: review, archive and fold.
 
 ## Work to do
 

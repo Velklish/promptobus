@@ -1,5 +1,6 @@
 # PB-318 · A teamlead cannot read its root-task mailbox through the bus tools
 
+- **Order:** 610
 - **Scope:** [03. CLI](../../reference/03-cli.md)
 - **Created:** 2026-10-03
 - **Dependencies:** none
