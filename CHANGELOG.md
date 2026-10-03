@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Codex and Cursor participants run beside a project tracker's own hook records.**
+  A project whose `backslop.json` names a `cli` may commit records
+  `<cli> hook session-start|stop --harness <id>` in `.codex/hooks.json` and
+  `.cursor/hooks.json`. A Codex worker or approver now lifts when the main checkout's
+  file holds only such records: Codex runs them itself beside the guard, and the guard
+  goes only to the participant home, so a tracked `.codex/hooks.json` in the worktree
+  stays as committed. Any other record still refuses the lift, and the refusal names each
+  one. A Cursor lift merges the guard with those records into the worktree's
+  `.cursor/hooks.json`, leaves every other record out with a warning, and sets
+  `skip-worktree` on a tracked path, so `git status` stays clean; a rebase across an
+  upstream change of that file needs the bit cleared first.
+  [ADR-025](docs/adr/adr-025-foreign-project-hook-records.md),
+  [hooks and trust](docs/guides/hooks-and-trust.md#a-projects-own-hook-records).
+
 ## [0.22.0] — 2026-10-01
 
 ### Changed

@@ -203,6 +203,8 @@ export interface LaunchFile {
   text: string;
   /** The file holds a secret (tokens) — write it with `0600` permissions. */
   secret: boolean;
+  /** Index content of a tracked path the text was merged from: the write sets `skip-worktree` on it. */
+  tracked?: string;
 }
 
 /** Launch plan: the harness-neutral context as argv, configs and files. Assembled by ONE `prepare`

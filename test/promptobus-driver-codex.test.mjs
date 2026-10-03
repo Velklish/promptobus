@@ -76,6 +76,7 @@ const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-
 const { status: printStatus, stallStands, justSpawned, SPAWN_GRACE_SEC } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, toolName, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 
 // The override key prefix is the CONSUMER's name, so it comes from a host and not from
@@ -1103,19 +1104,21 @@ check(': a linked worktree reads project hooks from the main checkout',
 const linkedPlan = codexDriver.prepare({
   ...ctx, cwd: hooksWt, guardCommand: GUARD_CMD, task: 'hooks-link', address: 'worker:link',
 });
-const linkedWorktreeFile = linkedPlan.files.find((f) => f.path === path.join(hooksWt, '.codex', 'hooks.json'));
-const linkedWorktreeHooks = hooksOf(linkedPlan, hooksWt);
-check(': a linked worktree writes the working-directory hooks and not a home file in the plan',
-  linkedWorktreeHooks?.hooks?.Stop?.[0]?.hooks?.[0]?.command === GUARD_CMD
-  && !linkedPlan.files.some((f) => f.path === path.join(linkedPlan.codexHome, 'hooks.json')),
-  JSON.stringify(linkedPlan.files.map((f) => f.path)));
+// Codex reads a linked worktree's hooks from the main checkout, and a tracked copy in the
+// worktree must stay clean: the guard document rides on the plan to the home alone.
+check(': a linked worktree plans no hooks file in the worktree or as a launch file, and carries the guard for the home',
+  hooksOf(linkedPlan, hooksWt) === null
+  && !linkedPlan.files.some((f) => f.path === path.join(linkedPlan.codexHome, 'hooks.json'))
+  && JSON.parse(linkedPlan.homeHooks ?? 'null')?.hooks?.Stop?.[0]?.hooks?.[0]?.command === GUARD_CMD
+  && hookedWorker.homeHooks === null,
+  JSON.stringify({ files: linkedPlan.files.map((f) => f.path), homeHooks: linkedPlan.homeHooks }));
 const rebuiltHome = path.join(SB, 'rebuilt-home');
 const plainHome = path.join(SB, 'plain-home');
 mkdirSync(rebuiltHome);
 mkdirSync(plainHome);
 check(': lift writes the home hooks file into a home that was rebuilt empty',
   writeRedirectedHooks(linkedPlan, hooksWt, rebuiltHome) === path.join(rebuiltHome, 'hooks.json')
-  && readFileSync(path.join(rebuiltHome, 'hooks.json'), 'utf8') === linkedWorktreeFile.text);
+  && readFileSync(path.join(rebuiltHome, 'hooks.json'), 'utf8') === linkedPlan.homeHooks);
 check(': lift does not copy hooks into the home of a directory that is not a linked worktree',
   writeRedirectedHooks(hookedWorker, ctx.cwd, plainHome) === null
   && !existsSync(path.join(plainHome, 'hooks.json')));
@@ -2834,7 +2837,60 @@ check(': a log write under a removed registry does not rebuild the tree',
     && rewritten.includes('--role reviewer:fplain')
     && !rewritten.includes('old-guard'),
     `${revOwn.out.slice(-500)}\n${rewritten.slice(0, 300)}`);
-  for (const addr of ['worker:fplain', 'reviewer:fplain']) {
+  // The tracker's own records in a committed main-checkout file lift a worker; Codex runs that
+  // file itself, so the worktree's tracked copy is left alone and the guard goes to the home.
+  const trackerCli = 'npx --no-install backslop';
+  const trackerDoc = (extra = []) => `${JSON.stringify({ hooks: {
+    SessionStart: [{ hooks: [{ type: 'command', command: `${trackerCli} hook session-start --harness codex` }] }],
+    Stop: [{ hooks: [{ type: 'command', command: `${trackerCli} hook stop --harness codex` }] }, ...extra],
+  } }, null, 2)}\n`;
+  writeFileSync(path.join(fbox.repoAbs, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
+  writeFileSync(mainHooks, trackerDoc());
+  const trackerCommitted = gitOk(['add', 'backslop.json', '.codex/hooks.json'], fbox.repoAbs)
+    && gitOk(['-c', 'user.email=hooks@example.com', '-c', 'user.name=hooks', 'commit', '-qm', 'tracker hooks'], fbox.repoAbs);
+  planParticipant(HARNESS, 'worker:faccept', {
+    turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'FACCEPT' } }] }],
+  });
+  const acceptUp = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'faccept', '--harness', 'codex'], { cwd: fbox.ws, env: fenv });
+  const acceptPart = store.participantOf(store.readTask(fhome, FTASK), 'worker:faccept');
+  const acceptWt = acceptPart?.metadata?.worktree ?? '';
+  const acceptHome = codexDriver.participantCodexHome({ task: FTASK, address: 'worker:faccept' }, fenv);
+  const acceptPorc = spawnSync('git', ['-C', acceptWt, 'status', '--porcelain'], { encoding: 'utf8' });
+  const acceptHomeHooks = existsSync(path.join(acceptHome, 'hooks.json'))
+    ? readFileSync(path.join(acceptHome, 'hooks.json'), 'utf8') : '';
+  check(': a main-checkout hooks file holding only the tracker records lifts a Codex worker',
+    trackerCommitted && acceptUp.status === 0 && /worker worker:faccept lifted/.test(acceptUp.out),
+    acceptUp.out.slice(-500));
+  check(': the worker tree with a tracked .codex/hooks.json stays clean, the guard is in the home only',
+    acceptPorc.status === 0 && acceptPorc.stdout === ''
+    && readFileSync(path.join(acceptWt, '.codex', 'hooks.json'), 'utf8') === trackerDoc()
+    && acceptHomeHooks.includes('--role worker:faccept') && !acceptHomeHooks.includes(trackerCli),
+    `${acceptPorc.status} [${acceptPorc.stdout}] home: ${acceptHomeHooks.slice(0, 300)}`);
+  const acceptSent = await waitFor(() => store.glanceInbox(fhome, FTASK, 'orchestrator')
+    .find((m) => String(m.body ?? '').includes('FACCEPT')) ?? null, { timeoutMs: 20000 });
+  check(': the worker lifted beside the tracker records finished a turn', !!acceptSent, JSON.stringify(acceptSent));
+  const approverWt = path.join(SB, 'faccept-approver-wt');
+  const approverAdded = gitOk(['worktree', 'add', '--detach', approverWt], fbox.repoAbs);
+  const approverPlan = codexDriver.prepare({
+    ...ctx, cwd: approverWt, guardCommand: GUARD_CMD, role: 'approver', task: FTASK, address: 'approver:faccept',
+  });
+  const approverLaunch = thrown(() => approverLayer(approverPlan, approverWt));
+  check(': a Codex approver worktree with a tracked .codex/hooks.json passes the launch-file check',
+    approverAdded && existsSync(path.join(approverWt, '.codex', 'hooks.json'))
+    && !approverLaunch.threw && approverPlan.homeHooks !== null, approverLaunch.msg);
+  writeFileSync(mainHooks, trackerDoc([{ hooks: [{ type: 'command', command: 'echo foreign-record' }] }]));
+  const foreignRecord = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'frecord', '--harness', 'codex', '--dry-run'], { cwd: fbox.ws, env: fenv });
+  check(': a foreign record beside the tracker ones still refuses, and the refusal names that record',
+    foreignRecord.status !== 0
+    && foreignRecord.out.includes(mainHooks)
+    && foreignRecord.out.includes('echo foreign-record')
+    && foreignRecord.out.includes(`${trackerCli} hook stop --harness codex`)
+    && !store.participantOf(store.readTask(fhome, FTASK), 'worker:frecord'),
+    foreignRecord.out.slice(-600));
+  gitOk(['checkout', '--', '.codex/hooks.json'], fbox.repoAbs);
+  for (const addr of ['worker:fplain', 'reviewer:fplain', 'worker:faccept']) {
     const part = store.participantOf(store.readTask(fhome, FTASK), addr);
     if (part?.sessionRef) await codexDriver.stop(part.sessionRef);
   }

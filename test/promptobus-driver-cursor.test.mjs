@@ -64,6 +64,8 @@ const {
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
+const { APPROVER } = await import(path.join(here, '..', 'dist', 'index.js'));
 
 const TASK = 'cursorbus-t20260903-000000';
 const WORKER = 'worker:cur';
@@ -638,6 +640,79 @@ writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: tracked, root: null }).file
 console.warn = unclaimedWarn0;
 check('PB-161.1: a driver that claims no directory is asked nothing',
   unclaimedWarns === '', unclaimedWarns || '(silent)');
+
+// A tracked .cursor/hooks.json with the tracker's records: the lift writes the guard beside them
+// over it, keeps a foreign record out, and hides the path from the worker's index.
+const trackerCli = 'npx --no-install backslop';
+const hooksClone = path.join(SB, 'tracker-hooks-clone');
+mkdirSync(path.join(hooksClone, '.cursor'), { recursive: true });
+gitAt(hooksClone, 'init', '-q', '-b', 'master');
+const trackedHooks = `${JSON.stringify({
+  version: 1,
+  hooks: {
+    sessionStart: [{ command: `${trackerCli} hook session-start --harness cursor` }],
+    stop: [{ command: `${trackerCli} hook stop --harness cursor` }, { command: 'echo foreign-record' }],
+  },
+}, null, 2)}\n`;
+writeFileSync(path.join(hooksClone, '.cursor', 'hooks.json'), trackedHooks);
+writeFileSync(path.join(hooksClone, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
+gitAt(hooksClone, 'add', '.');
+gitAt(hooksClone, 'commit', '-qm', 'tracker hooks');
+const hooksWt = path.join(SB, 'tracker-hooks-wt');
+gitAt(hooksClone, 'worktree', 'add', '-q', '--detach', hooksWt);
+let mergeWarns = '';
+const mergeWarn0 = console.warn;
+console.warn = (m) => { mergeWarns += `${m}\n`; };
+writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: hooksWt, root: null }).files, cursorDriver.options.launchDirs);
+console.warn = mergeWarn0;
+const mergedHooks = JSON.parse(readFileSync(path.join(hooksWt, '.cursor', 'hooks.json'), 'utf8'));
+const mergedPorc = gitAt(hooksWt, 'status', '--porcelain');
+check(': a tracked .cursor/hooks.json — the guard stands beside the tracker records, a foreign record is kept out',
+  mergedHooks.hooks.stop.map((r) => r.command).join('|') === `${ctx.guardCommand}|${trackerCli} hook stop --harness cursor`
+  && mergedHooks.hooks.sessionStart?.[0]?.command === `${trackerCli} hook session-start --harness cursor`
+  && !JSON.stringify(mergedHooks).includes('echo foreign-record')
+  && mergeWarns.includes('echo foreign-record'),
+  `${JSON.stringify(mergedHooks)} · ${mergeWarns}`);
+check(': git status --porcelain of a worker tree with a tracked .cursor/hooks.json is empty after the lift',
+  mergedPorc.status === 0 && mergedPorc.stdout === ''
+  && !/the tree will be dirty/.test(mergeWarns)
+  && gitAt(hooksWt, 'show', ':.cursor/hooks.json').stdout === trackedHooks,
+  `[${mergedPorc.stdout}] ${mergeWarns}`);
+const reliftHooks = JSON.parse(cursorDriver.prepare({ ...ctx, cwd: hooksWt, root: null }).files
+  .find((f) => path.basename(f.path) === 'hooks.json').text);
+check(': a relift merges from the tracked bytes, not from its own earlier write — one guard',
+  reliftHooks.hooks.stop.length === 2 && reliftHooks.hooks.stop[0].command === ctx.guardCommand,
+  JSON.stringify(reliftHooks));
+const approverHooksWt = path.join(SB, 'tracker-hooks-approver');
+gitAt(hooksClone, 'worktree', 'add', '-q', '--detach', approverHooksWt);
+const approverHooksPlan = cursorDriver.prepare({ ...ctx, cwd: approverHooksWt, root: null, role: APPROVER });
+const approverOverTracked = thrown(() => approverLayer(approverHooksPlan, approverHooksWt));
+writeFileSync(path.join(approverHooksWt, '.cursor', 'hooks.json'), '{"version":1,"hooks":{}}\n');
+const approverOverEdited = thrown(() => approverLayer(approverHooksPlan, approverHooksWt));
+check(': an approver builds on the tracked .cursor/hooks.json, and still refuses bytes that are not the tracked ones',
+  !approverOverTracked.threw && approverOverEdited.threw && approverOverEdited.msg.includes('hooks.json'),
+  `${approverOverTracked.msg} · ${approverOverEdited.msg}`);
+// A checkout conversion is not an edit: with `eol=crlf` the fresh worktree holds CRLF bytes while
+// the index holds LF, and the approver still builds on that file; a real edit still refuses.
+const crlfClone = path.join(SB, 'tracker-hooks-crlf');
+mkdirSync(path.join(crlfClone, '.cursor'), { recursive: true });
+gitAt(crlfClone, 'init', '-q', '-b', 'master');
+writeFileSync(path.join(crlfClone, '.gitattributes'), '.cursor/hooks.json text eol=crlf\n');
+writeFileSync(path.join(crlfClone, '.cursor', 'hooks.json'), trackedHooks);
+writeFileSync(path.join(crlfClone, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
+gitAt(crlfClone, 'add', '.');
+gitAt(crlfClone, 'commit', '-qm', 'tracker hooks with crlf checkout');
+const crlfWt = path.join(SB, 'tracker-hooks-crlf-approver');
+gitAt(crlfClone, 'worktree', 'add', '-q', '--detach', crlfWt);
+const crlfOnDisk = readFileSync(path.join(crlfWt, '.cursor', 'hooks.json'), 'utf8');
+const crlfPlan = cursorDriver.prepare({ ...ctx, cwd: crlfWt, root: null, role: APPROVER });
+const crlfLayer = thrown(() => approverLayer(crlfPlan, crlfWt));
+check(': an approver builds on a tracked .cursor/hooks.json that checkout wrote with CRLF',
+  crlfOnDisk.includes('\r\n') && !crlfLayer.threw, `${JSON.stringify(crlfOnDisk.slice(0, 40))} · ${crlfLayer.msg}`);
+writeFileSync(path.join(crlfWt, '.cursor', 'hooks.json'), crlfOnDisk.replace('echo foreign-record', 'echo edited-record'));
+const crlfEdited = thrown(() => approverLayer(crlfPlan, crlfWt));
+check(': an approver still refuses an edit of that CRLF working copy',
+  crlfEdited.threw && crlfEdited.msg.includes('hooks.json'), crlfEdited.msg);
 
 const trackedCursorTrace = path.join(SB, 'tracked-cursor-trace.tsv');
 const savedExecTrace = process.env.PROMPTOBUS_EXEC_TRACE;

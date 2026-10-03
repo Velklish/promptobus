@@ -31,6 +31,7 @@ The canonical project documentation. For current work, use `npx github:Velklish/
 | [adr/adr-022-user-addressee-and-orchestrator-debt.md](adr/adr-022-user-addressee-and-orchestrator-debt.md) | The person is the address `user`, asks by `promptobus ask` from a terminal, and the orchestrator owes that question an answer; a model-free digest and a read-only reporter beside it | Accepted |
 | [adr/adr-023-install-owns-process-skills.md](adr/adr-023-install-owns-process-skills.md) | `promptobus install` lays out the package's process skills into each harness's project skill location and owns them: drift is a `--check` failure, `uninstall` removes owned files only | Accepted |
 | [adr/adr-024-approver-acceptance-in-own-worktree.md](adr/adr-024-approver-acceptance-in-own-worktree.md) | The approver is the fourth addressed role, lifted on Claude Code, Cursor and Codex after a reviewer result, and accepts in its own worktree; Cursor stays refused as a teamlead | Accepted |
+| [adr/adr-025-foreign-project-hook-records.md](adr/adr-025-foreign-project-hook-records.md) | A participant lift accepts the tracker's own hook records in a project's Codex and Cursor hook files: which records, Codex accepting in place, Cursor merging under `skip-worktree` | Accepted |
 
 ## Cross-cutting principles
 

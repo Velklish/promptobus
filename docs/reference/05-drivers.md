@@ -67,10 +67,13 @@ Claude Code continues to take its MCP and settings files from the task store. It
 background worktree isolation now permits writes in the approver worktree, so the driver
 does not set worktree.bgIsolation to none. Cursor and Codex place their project layer
 inside the approver worktree, the directory each harness selects as its workspace. Codex
-also copies the hooks document into the participant home when hook discovery redirects a
-linked worktree to the main checkout. A pre-existing destination for a launch file or
-skills copy is refused before any file is overwritten; a relift may rewrite only the
-byte-identical layer recorded from the previous lift.
+writes its hooks document into the participant home instead of the worktree, because hook
+discovery redirects a linked worktree to the main checkout. A pre-existing destination for
+a launch file or skills copy is refused before any file is overwritten; a relift may
+rewrite only the byte-identical layer recorded from the previous lift. The one exception is
+an unedited tracked `.cursor/hooks.json`: Cursor's hooks file is merged over it, and the
+check hashes the working copy as `git add` would, so a checkout conversion is not an edit
+([hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records)).
 
 The final acceptance commit is made in the approver worktree after gates, archive and
 fold. The approver verifies that the clone root is on the default branch and advances it
@@ -87,16 +90,17 @@ sweep or done removes the approver worktree and branch through the same content 
 used for a worker.
 
 Codex's return to the approver role follows a live SessionStart event from a hooks file
-naming the approver address and a byte-identical clone root after the lift. A foreign
-clone-root `.codex/hooks.json` or malformed `.codex/config.toml` refuses Codex approver
-and worker lifts before worktree creation; a malformed config there stopped a measured
+naming the approver address and a byte-identical clone root after the lift. A
+clone-root `.codex/hooks.json` holding a record other than the project tracker's own, or a
+malformed `.codex/config.toml`, refuses Codex approver and worker lifts before worktree creation; a malformed config there stopped a measured
 lift before its isolated home could protect it. In a controlled `config/read` probe with
 the approver worktree as cwd, an isolated participant home, and a valid clone-root config
 setting `features.apps` and an extra MCP server, the effective config kept the home's
 `features.apps` value and did not add the server. A malformed `.codex/config.toml` one
 level above the clone's Git root was not loaded in the same probe. Cursor's approver
 layer places its MCP entry, permission configuration and hooks in the approver worktree.
-The launch refuses a pre-existing project file there before overwriting it.
+The launch refuses a pre-existing project file there before overwriting it, except an
+unedited tracked `.cursor/hooks.json` that its hooks file is merged over.
 If a Cursor approver's persist session is gone or stale, status supplies a
 relift command for the recorded review subject with `--approver`; it keeps the
 approver's harness and does not substitute another one.
@@ -330,6 +334,18 @@ Cursor reads project-level skills from `.cursor/skills/<name>/SKILL.md`. Measure
 rules listed `.cursor/skills/<name>/SKILL.md` alongside rules in `.cursor/rules/`, and obeyed
 instructions from that skill file during subsequent turns.
 
+### Cursor: a tracked project hooks file
+
+Source: `lib/driver-cursor.js` (`prepare`), `lib/project-hooks.js`.
+
+Cursor reads `.cursor/hooks.json` at the root of the worktree it runs in. When that
+path is tracked, the plan merges the index content into its hooks file: the guard on
+`stop` first, then the records the project tracker owns, and every other record is left
+out with a warning that names it. The launch file carries the tracked text as `tracked`,
+so the write sets `skip-worktree` on the path and the worker's `git status --porcelain`
+stays empty. The rule, the measurements and the cost of `skip-worktree` are in
+[hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records).
+
 ### Cursor: tmux by absolute path
 
 Source: `lib/cursor-persist.js` (`tmuxBin`, `tmux`, `readTmuxSessions`, `findSession`).
@@ -400,7 +416,8 @@ of drivers whose binaries do not need this normalization.
 plan time without a binary and again with the selected binary before the first write of
 the lift. It throws GateError naming the file, and returns nothing when there is nothing
 to refuse. A string return is not a refusal: spawn does not read one. The Codex driver
-throws when Codex would run foreign hooks from the clone root or cannot parse the
+throws when Codex would run a clone-root hook record other than the project tracker's own
+([ADR-025](../adr/adr-025-foreign-project-hook-records.md)) or cannot parse the
 clone-root config. A harness without that project-layer concern leaves the operation
 absent, and spawn does not ask it.
 
@@ -480,6 +497,11 @@ subtree.
 Optional: a driver whose launch files land outside the repository claims none and is
 asked nothing.
 
+A launch file that carries `tracked` — the index content of a tracked path its text
+was merged from — is not named in that warning. After writing it, the caller sets
+`git update-index --skip-worktree` on the path, so the merged bytes stay out of
+`git status` and out of the worker's commits.
+
 ### `CODEX` — codex harness driver — the third production bus driver
 
 Source: `lib/driver-codex.js`, `CODEX`.
@@ -498,8 +520,8 @@ app-server thread is the `thread/start` override `bypass_hook_trust`, not the CL
 that flag is parsed and then dropped by the app-server subcommand. The feature `hooks`
 is stable and on by default, and a handler is enabled unless its state says otherwise.
 A linked worktree reads project `hooks.json` from the main checkout, so a worker's
-copy is written to the participant home after that home is built, and not among the
-launch files. A reviewer sandbox is not a worktree and keeps the single file in its
+guard document is written only to the participant home after that home is built: not
+among the launch files and not into the worktree, where a tracked copy stays as committed. A reviewer sandbox is not a worktree and keeps the single file in its
 working directory. The approver uses the same redirected participant-home hook
 document; its live evidence is in the approver section above. The 2026-09-25
 journals recorded SessionStart but ended before `turn/completed`. On 2026-09-26,
@@ -536,10 +558,14 @@ and [0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFile
 
 `bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own
-and is rewritten, whatever its bytes; the reviewer sandbox is that path. Any file
-in the main checkout refuses, including one with the same bytes, because that
-path is not one this lift writes and Codex would load it beside the home copy.
-The refusal is before the worktree exists, so a dry run refuses too. An ancestor
+and is rewritten, whatever its bytes; the reviewer sandbox is that path. A file
+in the main checkout lifts only when it holds nothing but the project tracker's own
+records, which Codex then runs beside the home copy
+([hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records)). Any
+other record refuses, including a guard with the same bytes, because that path is not
+one this lift writes and Codex would load it beside the home copy. The refusal is
+before the worktree exists, so a dry run refuses too, and it names every record it
+did not accept. An ancestor
 `.codex` is disabled unless that folder, the project root, or the repo root is
 trusted. The home trusts only the working directory, so those layers are not
 loaded, and the bypass does not enable them. Remove or move the file, or lift
