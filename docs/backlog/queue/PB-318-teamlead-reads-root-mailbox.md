@@ -1,6 +1,6 @@
 # PB-318 · A teamlead cannot read its root-task mailbox through the bus tools
 
-- **Order:** 610
+- **Order:** 57
 - **Scope:** [03. CLI](../../reference/03-cli.md)
 - **Created:** 2026-10-03
 - **Dependencies:** none
@@ -12,6 +12,12 @@ On 2026-10-03 a root orchestrator (a Claude Code session) lifted two Claude Code
 
 - `promptobus_mailbox { task: <root> }` from the teamlead session answered `FOREIGN MAILBOX: the orchestrator address … bound to session <root owner>`: the tool reads the `orchestrator` address of the named task, and has no argument to name the caller's own address in it.
 - Both read the messages as files under `.promptobus/tasks/<root>/inbox/teamlead-<slug>/`, so the mailbox still counts them unread; one teamlead expects the Stop guard to keep returning its turn on them.
+
+Later the same day the cost became measurable. The teamlead's bus server runs with `PROMPTOBUS_ROLE=orchestrator` and `PROMPTOBUS_TASK=<child>` (`.promptobus/tasks/<root>/workers/teamlead-<slug>.mcp.json`). The tools therefore reach the child task's `orchestrator` address and never the root task's `teamlead:<slug>`.
+
+Mail on that address is delivered, but nothing ever marks it read. By the evening the two root-task inboxes held 26 and 24 messages. After both teamleads were relifted, the warden knocked one of them seven times in 17 minutes with «has unread: 26». Every knock took a turn of a Claude session and spent the shared 5-hour window.
+
+The workaround was by hand. The root orchestrator moved the files the teamlead had read from `inbox/teamlead-<slug>/` to `history/teamlead-<slug>/`, the same rename `readInbox` does. The teamlead's own Stop guard held its turn on such a reply until it did the same.
 
 The [orchestrate skill](../../../skills/orchestrate/SKILL.md) describes upward `status` from a teamlead to the root, but not how the root's mail to the teamlead reaches it.
 
