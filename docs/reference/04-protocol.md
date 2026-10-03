@@ -170,7 +170,7 @@ The engine receives either a workspace `root`, which resolves to `<root>/.prompt
 
 Participant settings and launch sidecars use `participantFileStem`: a worker keeps
 `<slug>`, while every other slugged address of the registry uses `<name>-<slug>` —
-`reviewer-<slug>`, `approver-<slug>`, `teamlead-<slug>`, `peer-<slug>` and a declared
+`reviewer-<slug>`, `approver-<slug>`, `teamlead-<slug>`, `root-<slug>`, `peer-<slug>` and a declared
 step's. `reporter` is the sole bare address with a participant file stem:
 `participantFileStem('reporter')` returns `reporter`. A worker name that begins with one of those prefixes, or that equals a slugless
 address — `orchestrator`, `reporter`, `user` — is refused and the refusal names the role,
