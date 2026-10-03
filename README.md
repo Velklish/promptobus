@@ -18,7 +18,7 @@ English is canonical. The Russian README is the only other language in this repo
 
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. A task may have a root parent; `status` shows its children and `done` waits for each child to close. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
 - **Task digest.** `digest` prints the root and child tasks, each participant's latest status first line, questions and their age across linked roots, answer debts, and pieces by their current pipeline step. Peer messages record their origin task, so a later same-slug link cannot answer an older root's question. A legacy question whose origin is unknown is marked `UNRESOLVED PROVENANCE`. `--json` carries the same page for scripts without starting a harness.
-- **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. `link` registers two root tasks as peers; a send to one peer enters the other root's orchestrator mailbox under the source peer address. `user` asks a root or child orchestrator by `question`, receives `answer` or `status`, and `reporter` never sends as itself. Its restricted ask tool writes as `user`. Other traffic follows the root orchestrator. The [route table](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/04-protocol.md#addresses) gives each decision; `ask` registers `user` on first use.
+- **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. `link` registers two root tasks as peers; a send to one peer enters the other root's orchestrator mailbox under the source peer address. `user` asks a root or child orchestrator by `question`, receives `answer` or `status`, and `reporter` never sends as itself. Its restricted ask tool writes as `user`. Other traffic follows the root orchestrator. The [route table](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/04-protocol.md#addresses) gives each decision; `ask` registers `user` on first use.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched.
 - **Managed Codex root owner.** `promptobus lead --brief ./task.md` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
 - **Teamleads for child tasks.** `promptobus spawn --teamlead --brief ./group.md --task <root>` lifts a Claude Code or Codex orchestrator at the install root. It owns one child task, reports to the root as `teamlead:<slug>`, and repairs an interrupted lift on retry. A relift updates both addresses to the new session; a dry-run leaves a pending repair untouched. A Codex teamlead completed worker lifts on all three harnesses and real Claude Code, Cursor and Codex reviews with `full-access`; their `workspace-write` lifts refused. Cursor teamleads remain refused.
@@ -44,13 +44,13 @@ English is canonical. The Russian README is the only other language in this repo
 The package is not on the npm registry. Install the current GitHub release as a local library dependency:
 
 ```bash
-npm install github:Velklish/promptobus#v0.22.0
+npm install github:Velklish/promptobus#v0.23.0
 ```
 
 For a global CLI on `PATH`, use the same pinned tag:
 
 ```bash
-npm install -g github:Velklish/promptobus#v0.22.0
+npm install -g github:Velklish/promptobus#v0.23.0
 promptobus --version
 ```
 
@@ -74,11 +74,11 @@ Create `promptobus.json` at the workspace root. The standalone host walks up fro
 }
 ```
 
-`tools` is the spawn allow-list: `--harness` must name one of them. On a new `spawn` or `review` lift without that flag, an explicit or recorded strategy can select a harness when routing applies; without a strategy, the new lift uses the `claude` fallback. A repeat `spawn` reuses its participant's recorded harness. A repeat `review` reuses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. Optional keys the host reads: `commandName`, `locale`, `version`, `rules` (extra rule files for participants), `mcp` (servers copied to a participant), `skills` (a directory of process skills), `pipeline` (the owner step and the gates a piece passes after it — [install § 2](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/install.md#the-pipeline)). A repository that generates its own process skills declares the command in its own `promptobus.json` under `generate`, as an argv array.
+`tools` is the spawn allow-list: `--harness` must name one of them. On a new `spawn` or `review` lift without that flag, an explicit or recorded strategy can select a harness when routing applies; without a strategy, the new lift uses the `claude` fallback. A repeat `spawn` reuses its participant's recorded harness. A repeat `review` reuses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. Optional keys the host reads: `commandName`, `locale`, `version`, `rules` (extra rule files for participants), `mcp` (servers copied to a participant), `skills` (a directory of process skills), `pipeline` (the owner step and the gates a piece passes after it — [install § 2](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md#the-pipeline)). A repository that generates its own process skills declares the command in its own `promptobus.json` under `generate`, as an argv array.
 
 ### 2. Give the orchestrator the MCP server
 
-Participant lifts write their own MCP entries. Register the orchestrator's stdio server separately in the project file for its harness: Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, or Codex `.codex/config.toml`. The [install guide](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/install.md#3-mcp-server-for-the-orchestrator) gives valid snippets, trust prerequisites and read-only verification commands for each. `promptobus install` writes hooks and skills, not this MCP entry.
+Participant lifts write their own MCP entries. Register the orchestrator's stdio server separately in the project file for its harness: Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, or Codex `.codex/config.toml`. The [install guide](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md#3-mcp-server-for-the-orchestrator) gives valid snippets, trust prerequisites and read-only verification commands for each. `promptobus install` writes hooks and skills, not this MCP entry.
 
 ### 3. Install the project hooks
 
@@ -91,7 +91,7 @@ promptobus install --dry-run                        # print the pending writes, 
 promptobus uninstall                                # remove owned hooks only
 ```
 
-The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json`, keeps foreign hooks and unknown fields, and records the installed list as `harnesses` in `promptobus.json` — that field is not the spawn allow-list. Trust the project hooks in your harness afterwards: [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/hooks-and-trust.md).
+The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json`, keeps foreign hooks and unknown fields, and records the installed list as `harnesses` in `promptobus.json` — that field is not the spawn allow-list. Trust the project hooks in your harness afterwards: [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/hooks-and-trust.md).
 
 ## Usage
 
@@ -111,7 +111,7 @@ from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it 
 `promptobus ask --answers --task <id>` reads its replies. Its private home avoids a shared
 project layer. Before idle turns, the holder reloads fresh owner access in the same native
 thread. If owner access expires, renew the normal owner login and retry. Participants never
-receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/03-cli.md).
+receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/03-cli.md).
 
 From an existing orchestrator session, lift a worker:
 
@@ -134,7 +134,7 @@ The path is required, `--title` opens a new review task, and `--task <id>` sends
 promptobus step security ./my-repo --task <id>
 ```
 
-A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/03-cli.md#review).
+A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/03-cli.md#review).
 
 Close the task when the work is accepted:
 
@@ -183,7 +183,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 
 | Tool | Input | Does |
 |---|---|---|
-| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message to a registered participant. The tool description lists the installation's active pipeline steps; the [route table](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/04-protocol.md#addresses) decides which pair and type are allowed. The sender is the address this session holds in that task |
+| `promptobus_send` | `{ to, type, body, artifactPath?, task? }` | Send a typed message to a registered participant. The tool description lists the installation's active pipeline steps; the [route table](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/04-protocol.md#addresses) decides which pair and type are allowed. The sender is the address this session holds in that task |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Without `message` it lists headers and marks them read; with `message` it returns that one body and marks nothing. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
 | `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
 | `promptobus_digest` | `{ task? }` | Reporter only: the root tree as `digest --json` |
@@ -210,7 +210,7 @@ The cache and `user` overlay are account-scoped; the standalone host's writable 
 
 `ROUTED_ROLES` in the catalog is the runtime source for catalog roles; the host's role registry adds declared step names to routing and overlay validation. Routing decisions and telemetry records carry both names, while calibration shows per-step counts without adding step-specific catalog ratings. `orchestrator` and other addressed-but-unrouted roles are rejected where routing policy or selection names a role and excluded from routing projections.
 
-`models` reads the availability cache and asks no harness anything; `--refresh` is the only flag that probes. When an account runs short it prints a `near-limit` line with the strategy to switch to, and nothing switches on its own — that line is a pace measurement and falls silent under the strategy it would propose, which is not the same fact as `unknown-remaining`, the harness exposing no limit source at all or its cached windows having expired. A tuple whose binding window is 90 % used or more leaves automatic selection as `window-nearly-spent`, unless `--harness` or `--model` names it. The cache and the telemetry file live under your home directory with mode `0600`, hold no prompt or token contents, and are never sent anywhere. The telemetry record does not promise spend for an attached session; Codex rollout token usage is deliberately not imported into the throughput sidecar because the rollout is outside the bus and lacks model-active time. Commands, reason codes and error codes: [reference/03-cli.md § Model routing](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/03-cli.md#model-routing); the catalog and the overlay file to copy: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/model-routing.md).
+`models` reads the availability cache and asks no harness anything; `--refresh` is the only flag that probes. When an account runs short it prints a `near-limit` line with the strategy to switch to, and nothing switches on its own — that line is a pace measurement and falls silent under the strategy it would propose, which is not the same fact as `unknown-remaining`, the harness exposing no limit source at all or its cached windows having expired. A tuple whose binding window is 90 % used or more leaves automatic selection as `window-nearly-spent`, unless `--harness` or `--model` names it. The cache and the telemetry file live under your home directory with mode `0600`, hold no prompt or token contents, and are never sent anywhere. The telemetry record does not promise spend for an attached session; Codex rollout token usage is deliberately not imported into the throughput sidecar because the rollout is outside the bus and lacks model-active time. Commands, reason codes and error codes: [reference/03-cli.md § Model routing](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/03-cli.md#model-routing); the catalog and the overlay file to copy: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/model-routing.md).
 
 `import { telemetryStats } from 'promptobus/telemetry'` exposes the typed descriptive per-role run summary: it derives wall-clock time, bus-message counts, close-time mailbox timing and the bottleneck role from persisted rows. Run-wide quota deltas stay in `quotaEvidence` with harness/window coverage; a role's `quotaCostPercent` remains null and its state is `ambiguous` or `unavailable` because overlapping participants cannot be assigned that delta, with `ambiguous` coming only from validated measured quota coverage; a same-harness record with no matching window counts as unavailable, malformed windows contribute no quota evidence, and a missing or invalid scope is not treated as account-wide. Per-role numeric totals require complete record coverage, and bottleneckRole is null when wall-clock coverage is incomplete. Missing attached-session spend, model turns and model-active time remain unavailable; the CLI still prints only telemetry count and size.
 
@@ -241,9 +241,9 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
 | `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record, the handover record and the model-routing documents |
 
-`openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/04-protocol.md).
+`openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/04-protocol.md).
 
-For a participant's MCP child whose harness omits its session variable, the driver puts a session-record pointer in the generated bus entry and binds the participant to it before launch. The adapter accepts the pointer only when record and process resolve to the same physical home and name the exact task and address, even if the harness id is still null. Claude Code receives a preselected session UUID through `--session-id`. An orchestrator entry without a pointer has no session identity in the measured Codex and Cursor MCP child paths, so its mailbox call returns a copy and leaves the originals unread. See [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/02-host.md#session-identity) and [ADR-019](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/adr/adr-019-session-address-per-task-lands.md).
+For a participant's MCP child whose harness omits its session variable, the driver puts a session-record pointer in the generated bus entry and binds the participant to it before launch. The adapter accepts the pointer only when record and process resolve to the same physical home and name the exact task and address, even if the harness id is still null. Claude Code receives a preselected session UUID through `--session-id`. An orchestrator entry without a pointer has no session identity in the measured Codex and Cursor MCP child paths, so its mailbox call returns a copy and leaves the originals unread. See [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/02-host.md#session-identity) and [ADR-019](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/adr/adr-019-session-address-per-task-lands.md).
 
 ## Development
 
@@ -266,22 +266,22 @@ The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its tw
 
 Socket-dependent groups probe their local listener before starting child processes. A sandbox refusal is a named skip only when the failure is the `listen` syscall with `EACCES` or `EPERM`; another error stays red. Skips never count as passes: the runner lists their checks and files, and its final summary calls out every file with zero passed checks so a wholly skipped suite cannot look fully exercised. Where local sockets are available, the probe succeeds and the original integration assertions run.
 
-CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.22.0/.github/workflows/ci.yml)). The gates a change must pass are listed under `gates` in [backslop.json](https://github.com/Velklish/promptobus/blob/v0.22.0/backslop.json).
+CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.23.0/.github/workflows/ci.yml)). The gates a change must pass are listed under `gates` in [backslop.json](https://github.com/Velklish/promptobus/blob/v0.23.0/backslop.json).
 
 ## Contributing
 
-Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx --no-install backslop status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. New strings, comments and checks in `bin/`, `lib/`, `src/`, `schemas/` and `templates/` are English, and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/contributing.md).
+Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx --no-install backslop status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. New strings, comments and checks in `bin/`, `lib/`, `src/`, `schemas/` and `templates/` are English, and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/contributing.md).
 
 ## Documentation
 
-- [Install](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/install.md) — package, workspace file, MCP server, project hooks
-- [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/hooks-and-trust.md)
-- [Model routing: the catalog and overlays](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/guides/model-routing.md)
-- [Reference](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/reference/README.md) — overview, host, CLI, protocol
-- [Glossary](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/GLOSSARY.md) and [Roadmap](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/ROADMAP.md)
-- [Documentation index](https://github.com/Velklish/promptobus/blob/v0.22.0/docs/README.md) — guides, reference and the decision records
+- [Install](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/install.md) — package, workspace file, MCP server, project hooks
+- [Hooks, trust, and troubleshooting](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/hooks-and-trust.md)
+- [Model routing: the catalog and overlays](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/guides/model-routing.md)
+- [Reference](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/reference/README.md) — overview, host, CLI, protocol
+- [Glossary](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/GLOSSARY.md) and [Roadmap](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/ROADMAP.md)
+- [Documentation index](https://github.com/Velklish/promptobus/blob/v0.23.0/docs/README.md) — guides, reference and the decision records
 - Process skills: [orchestrate](skills/orchestrate/SKILL.md), [solo-review](skills/solo-review/SKILL.md)
-- [CHANGELOG.md](https://github.com/Velklish/promptobus/blob/v0.22.0/CHANGELOG.md)
+- [CHANGELOG.md](https://github.com/Velklish/promptobus/blob/v0.23.0/CHANGELOG.md)
 
 ## License
 
