@@ -24,7 +24,7 @@ backslop, from its v0.20.0, writes agent hook records into a project's own hook 
 
 **The trust bypass trusts whatever is accepted.** `bypass_hook_trust` runs every enabled handler from an enabled layer without the review `/hooks` asks of a person ([hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces)). A Cursor participant is lifted with `--trust`, and in the live Cursor turn above that flag was enough for the worktree's hooks to run without a prompt. An accepted record is therefore a command the participant runs at every session start and every stop with the participant's own permissions, chosen by the project's tracked files rather than by the owner. The project already chooses code a worker runs: the lift runs `npm ci` in the worktree with lifecycle scripts, and a worker runs the project's gates.
 
-**The public audit does not stand in the way.** `npm run audit` exited 0 with a probe file in `lib/` naming `backslop.json`, `npx --no-install backslop` and one of the tracker's task identifiers: its forbidden list is the origin project's names, not those of the tools a consumer uses. Not naming the tool is a choice of the rule, not a constraint of the gate.
+**The public audit does not stand in the way.** `npm run audit` exited 0 with a probe file in `lib/` naming `backslop.json`, `npx --no-install backslop` and one of the tracker's task identifiers: its forbidden list is the origin project's names, not those of the tools a consumer uses. Whether the code names the tool is therefore a choice of the rule, and the gate allows either.
 
 ## Options
 
