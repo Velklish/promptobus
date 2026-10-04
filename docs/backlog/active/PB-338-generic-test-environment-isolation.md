@@ -1,10 +1,11 @@
 # PB-338 · Move private memory-service policy out of the product test harness
 
-- **Order:** 40
 - **Scope:** [Contributing](../../guides/contributing.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 40
+- **Taken:** 2026-10-04
 
 ## Context
 
