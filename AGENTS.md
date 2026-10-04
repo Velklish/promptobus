@@ -46,4 +46,4 @@ The reason is measurable rather than stylistic: this code is read by agents, and
 
 ## Public surface
 
-A card, a CHANGELOG line or a comment written up from a consumer's run names that consumer and its tracker in words — whose tracker, what date — never by its CLI name or its task ids. `npm run audit` refuses both in every tracked file, cards included, and `backslop lint` does not see them. The rule and its reasons: [contributing § Public surface](docs/guides/contributing.md#public-surface).
+A card, a CHANGELOG line or a comment written up from a consumer's run names that consumer and its tracker in words — whose tracker, what date — never by its CLI name or its task ids. `npm run audit` refuses both in every tracked file, cards included, and `backslop lint` does not see them. The rule and its reasons: [contributing § Public surface](docs/guides/contributing.md#public-surface). This repository's own tracker name, task ids and links to its contributor procedure appear in no packed entry, except the manifest's `devDependencies.backslop` and a release-pinned link outside `skills/`; `npm run audit` refuses every other occurrence there.

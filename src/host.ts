@@ -149,7 +149,7 @@ export interface PromptobusHost {
   skillsDir(): string | null;
   pluginDir(): string | null;
   pluginManifestRel(): string;
-  /** No longer written: the path `install` recognises an older feed hook by (PB-173). */
+  /** No longer written: the path `install` recognises an older feed hook by. */
   busHookRel(): string;
   installManifestRel(): string;
   pluginSkillsRel(): string;

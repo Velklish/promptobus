@@ -440,7 +440,8 @@ check('tarball contains the model catalog',
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
 const {
-  absoluteOwnerHomePath, authoringFindings, isTextContent, organizationLeaks, staleAuthoringSnapshots,
+  absoluteOwnerHomePath, authoringFindings, isTextContent, MANIFEST_REMAINDER, organizationLeaks,
+  staleAuthoringSnapshots, trackerLeaks,
 } = await import(
   pathToFileURL(path.join(REPO, 'scripts', 'audit-public.mjs')).href);
 const homePath = (...parts) => parts.join('');
@@ -540,6 +541,65 @@ const neutralHits = neutralSamples
   .filter((line) => !line.endsWith(': '));
 check('publicity audit passes the fictional workspace and fragment-built detectors',
   neutralHits.length === 0, neutralHits.join(' · '));
+// The tracker boundary reads packed entries: the samples are the README, skill and manifest lines
+// that once shipped, and the shipped code comments and schema descriptions that carried task ids.
+const manifest = (fields) => JSON.stringify({ name: 'promptobus', ...fields }, null, 2);
+const trackerSamples = [
+  ['tarball:package/README.md', 'npm run audit\nnpm run lint:backslop\n',
+    ['tracker name in a packed entry: tarball:package/README.md:2']],
+  ['tarball:package/README.md', 'run `npx --no-install backslop init --hooks claude` after `npm ci`.',
+    ['tracker name in a packed entry: tarball:package/README.md:1']],
+  ['tarball:package/README.md',
+    'The gates are listed under `gates` in [backslop.json](https://github.com/Velklish/promptobus/blob/v0.24.0/backslop.json).',
+    ['tracker name in a packed entry: tarball:package/README.md:1']],
+  ['tarball:package/README.md', 'Commit subjects start with the task number: `PB-N: <what was done>`.',
+    ['tracker task id in a packed entry: tarball:package/README.md:1']],
+  ['tarball:package/skills/orchestrate/SKILL.md',
+    '## Not this skill\n\n- Contribution tracker: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md)\n',
+    ['contributor procedure in an installed skill: tarball:package/skills/orchestrate/SKILL.md:3']],
+  ['tarball:package/package.json', manifest({ scripts: { 'lint:backslop': 'npx --no-install backslop lint' } }),
+    ['tracker name in a packed entry: tarball:package/package.json scripts.lint:backslop']],
+  ['tarball:package/package.json', manifest({ dependencies: { backslop: '1.0.0' } }),
+    ['tracker name in a packed entry: tarball:package/package.json dependencies.backslop']],
+  ['tarball:package/lib/install.js', '// an install that finds one deletes it (PB-173).\n',
+    ['tracker task id in a packed entry: tarball:package/lib/install.js:1']],
+  ['tarball:package/dist/host.d.ts', '/** the path `install` recognises an older feed hook by (PB-161.4). */\n',
+    ['tracker task id in a packed entry: tarball:package/dist/host.d.ts:1']],
+  ['tarball:package/schemas/model-routing/catalog.schema.json', '"evidence": "the shipped catalog is PB-13"',
+    ['tracker task id in a packed entry: tarball:package/schemas/model-routing/catalog.schema.json:1']],
+  ['tarball:package/lib/exec.js',
+    '// Resolve trace: the sealed-PATH gate reads\n// it — [contributing.md § Suite isolation](../docs/guides/contributing.md#suite-isolation).\n',
+    ['unshipped contributor procedure in a packed entry: tarball:package/lib/exec.js:2']],
+  ['tarball:package/README.md', 'Full procedure: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md).',
+    ['unshipped contributor procedure in a packed entry: tarball:package/README.md:1']],
+  ['tarball:package/package.json', '{ "name": "promptobus",', ['unreadable manifest in a packed entry: tarball:package/package.json']],
+];
+const trackerMisses = trackerSamples
+  .filter(([name, text, expected]) => trackerLeaks(name, text).join() !== expected.join())
+  .map(([name, text]) => `${name}: ${trackerLeaks(name, text).join(', ') || '(none)'}`);
+check('publicity audit refuses the tracker in a packed README, installed skill, manifest, comment and schema',
+  trackerMisses.length === 0, trackerMisses.join(' · '));
+const trackerNeutral = [
+  ['tarball:package/package.json', manifest({ devDependencies: { backslop: '1.0.0' } })],
+  ['tarball:package/README.md', 'Full procedure: [contributing guide](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md).'],
+  ['tarball:package/skills/solo-review/SKILL.md', 'name each finding you filed in your tracker (with its id)'],
+  ['tarball:package/skills/orchestrate/SKILL.md', '- One diff, no workers: [solo-review](../solo-review/SKILL.md)'],
+  ['tarball:package/lib/x.js', "const SUBJECT = 'PB-NOTE'; // PBX-12, APB-3"],
+];
+const trackerHits = trackerNeutral
+  .map(([name, text]) => `${name}: ${trackerLeaks(name, text).join(', ')}`)
+  .filter((line) => !line.endsWith(': '));
+check('publicity audit passes the manifest remainder, a contributor pointer in the README and a consumer tracker',
+  trackerHits.length === 0, trackerHits.join(' · '));
+check('the manifest remainder is the one tracker field the source manifest carries',
+  MANIFEST_REMAINDER === 'devDependencies.backslop' && typeof pkg.devDependencies?.backslop === 'string'
+    && Object.keys(pkg.scripts ?? {}).concat(Object.values(pkg.scripts ?? {})).every((s) => !/backslop/i.test(s)),
+  `remainder ${MANIFEST_REMAINDER}; devDependencies ${JSON.stringify(pkg.devDependencies ?? {})}`);
+const packedSurface = publicityAudit.slice(publicityAudit.indexOf('// --- surface 2'));
+const trackedSurface = publicityAudit.slice(publicityAudit.indexOf('// --- surface 1'), publicityAudit.indexOf('// --- surface 2'));
+check('publicity audit reads the tracker boundary in packed entries and not in tracked files',
+  /scanTracker\('tarball:' \+ entry, text\)/.test(packedSurface) && !trackedSurface.includes('scanTracker('),
+  'scanTracker must run in the packed-entry loop alone');
 // English authoring is read under every directory alike; Cyrillic passes only in a named
 // snapshot or, outside the runtime paths, inside a region whose marker says why.
 // english-authoring: input — the Russian review instruction a live harness script carried, and a Russian note
@@ -608,6 +668,15 @@ check('contributing guide and README hold every tracked surface to English, with
   && !/README\.ru|\[Russian\]/.test(readmeRule)
   && !existsSync(path.join(REPO, 'README.ru.md')) && !pkg.files.includes('README.ru.md'),
   'contributing, README or package.json still carry the runtime-only rule or the translated README');
+const declaredGates = JSON.parse(readFileSync(path.join(REPO, 'backslop.json'), 'utf8')).gates
+  .map((entry) => (typeof entry === 'string' ? entry : entry.command));
+const gateStep = contributingRule.split('\n').find((line) => line.startsWith('4. **Gates on an unchanged tree.**')) ?? '';
+const gateList = gateStep.match(/must exit 0: (.*?)\.(?: |$)/u)?.[1] ?? '';
+const unlistedGates = declaredGates.filter((command) => !gateList.includes(`\`${command}\``));
+check('the contributing guide lists every declared gate the README points to',
+  declaredGates.length > 0 && unlistedGates.length === 0
+    && readmeRule.includes('every gate the contributing guide lists exits 0'),
+  `unlisted: ${unlistedGates.join(', ') || '(none)'}`);
 check('publicity audit derives its root through import.meta.url',
   /path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/.test(publicityAudit),
   'audit-public.mjs must use path.dirname(fileURLToPath(import.meta.url))');
@@ -666,11 +735,11 @@ check('CI pins ast-grep to an exact version',
   astGrepVersion === '0.45.3', `CI says ${astGrepVersion ?? 'no exact version'}, wanted 0.45.3`);
 // The pin gate checks the devDependency; this check covers CI's use of that installation.
 const installedBackslop = 'npx --no-install backslop';
-check('CI initializes and lints with the installed backslop',
+check('CI initializes and lints with the installed backslop, and no package script calls it',
   workflow.includes(`run: ${installedBackslop} init --hooks claude`)
-    && workflow.includes('run: npm run lint:backslop')
-    && pkg.scripts?.['lint:backslop'] === `${installedBackslop} lint`,
-  `package lint: ${pkg.scripts?.['lint:backslop'] ?? 'missing'}`);
+    && workflow.includes(`run: ${installedBackslop} lint`)
+    && !Object.values(pkg.scripts ?? {}).some((script) => script.includes(installedBackslop)),
+  `package scripts: ${JSON.stringify(pkg.scripts ?? {})}`);
 const buildStep = workflow.match(/^\s+- name: Build\n\s+run: npm run build$/m);
 const testStep = workflow.indexOf('- name: Test');
 check('CI names the build before the test step',
@@ -752,6 +821,18 @@ const runtimeFiles = ['bin', 'dist', 'lib'].flatMap((dir) => {
 const namesTracker = runtimeFiles.filter((rel) => readFileSync(path.join(installedPkg, rel), 'utf8').includes('backslop'));
 check('installed runtime files name no development tracker',
   runtimeFiles.length > 0 && namesTracker.length === 0, namesTracker.join(', ') || `${runtimeFiles.length} files`);
+// What a consumer receives, every text file of it, judged by the audit's own tracker boundary.
+const installedTexts = existsSync(installedPkg)
+  ? readdirSync(installedPkg, { recursive: true }).map((rel) => String(rel).split(path.sep).join('/'))
+    .filter((rel) => statSync(path.join(installedPkg, rel)).isFile()
+      && isTextContent(readFileSync(path.join(installedPkg, rel))))
+  : [];
+const installedLeaks = installedTexts.flatMap((rel) => trackerLeaks(`tarball:package/${rel}`,
+  readFileSync(path.join(installedPkg, rel), 'utf8')));
+check('the installed package carries no tracker name, task id or contributor procedure',
+  installedTexts.includes('package.json') && installedTexts.includes('skills/orchestrate/SKILL.md')
+    && installedLeaks.length === 0,
+  installedLeaks.join(' · ') || `${installedTexts.length} text files`);
 
 const exportedSpecifiers = [
   'promptobus',

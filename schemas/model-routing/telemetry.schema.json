@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:promptobus:model-routing:telemetry",
   "title": "Participant telemetry record",
-  "description": "One line of the JSON Lines file `telemetry.jsonl`, appended by `promptobus done` for each participant that lifted a session — the tuple it ran on, the strategy that chose it, how long it lived, how many review rounds it took, and how the account's limit windows moved around it. Local only: the file lives beside the availability cache the host names (src/host.ts routingPaths cacheFile), mode 0600, and nothing sends it anywhere. Every object here is closed for the reason the snapshot's are: the source is a participant record and a task journal, which hold a repository path, a worktree, a branch, a session ref and every message body of the run, and a record carrying one of them stops validating. The only identifier is `task`, an opaque local key rather than the id itself. Additive-only from version 1: PB-37 reads rows written by every build after this one.",
+  "description": "One line of the JSON Lines file `telemetry.jsonl`, appended by `promptobus done` for each participant that lifted a session — the tuple it ran on, the strategy that chose it, how long it lived, how many review rounds it took, and how the account's limit windows moved around it. Local only: the file lives beside the availability cache the host names (src/host.ts routingPaths cacheFile), mode 0600, and nothing sends it anywhere. Every object here is closed for the reason the snapshot's are: the source is a participant record and a task journal, which hold a repository path, a worktree, a branch, a session ref and every message body of the run, and a record carrying one of them stops validating. The only identifier is `task`, an opaque local key rather than the id itself. Additive-only from version 1: a reader of this file reads rows written by every build after this one.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -41,7 +41,7 @@
       "minLength": 1
     },
     "strategySource": {
-      "description": "Where the strategy came from when the lift did not name one on the command line — `overlay:<layer>` (PB-32). null when the command named it, or when the build that wrote the record did not carry the field.",
+      "description": "Where the strategy came from when the lift did not name one on the command line — `overlay:<layer>`. null when the command named it, or when the build that wrote the record did not carry the field.",
       "type": ["string", "null"],
       "minLength": 1
     },
@@ -127,7 +127,7 @@
       "items": { "$ref": "urn:promptobus:model-routing:telemetry#/$defs/windowDelta" }
     },
     "concurrentParticipants": {
-      "description": "How many other participants of this task were live on the same harness at the moment this one spawned. It is why a positive window delta is the spend of the RUN and not of one participant: several overlap in time, and the split is PB-37's decision. null when this participant's spawn moment is unknown.",
+      "description": "How many other participants of this task were live on the same harness at the moment this one spawned. It is why a positive window delta is the spend of the RUN and not of one participant: several overlap in time, and splitting it is left to the reader of these rows. null when this participant's spawn moment is unknown.",
       "oneOf": [
         { "type": "integer", "minimum": 0 },
         { "type": "null" }

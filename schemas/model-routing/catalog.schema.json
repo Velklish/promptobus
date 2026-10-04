@@ -257,7 +257,7 @@
           "priority": 10,
           "assessedAt": "2026-09-05T00:00:00.000Z",
           "source": "schema example — not a rating of any real model",
-          "evidence": "placeholder row; the shipped catalog is PB-13"
+          "evidence": "placeholder row; the shipped catalog is models/catalog.json"
         },
         {
           "id": "example-quick",

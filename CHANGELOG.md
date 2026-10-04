@@ -78,6 +78,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cyrillic on purpose — multibyte bodies and artifact contents, non-ASCII file names, a
   Windows prompt, a Unicode source line — are marked regions.
   [Contributing](docs/guides/contributing.md).
+- **The package no longer carries this repository's development tracker.** The README drops
+  the tracker's commands, its config file and its commit-subject convention; the orchestration
+  skill drops its link to the contributor guide; the `lint:backslop` script is gone, and CI
+  now calls `npx --no-install backslop lint` directly, as the gates already did. Shipped code comments and the
+  model-routing schema descriptions no longer cite task ids. The publicity audit now refuses, in
+  every packed entry, the tracker's name, a task id and a contributor-procedure path that is not
+  a release-pinned link, and in a packed skill any contributor-procedure path. One field still ships: `devDependencies.backslop`, because a GitHub
+  release tag installs the committed `package.json` as it is and the source checkout needs the
+  field. The audit exempts no other manifest field.
+  [Contributing § Public surface](docs/guides/contributing.md#public-surface).
 
 ### Fixed
 

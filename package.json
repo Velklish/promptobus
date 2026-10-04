@@ -25,8 +25,7 @@
     "pins": "node scripts/check-pins.mjs",
     "probe": "node scripts/mutation-probe.mjs",
     "codex-schema": "node scripts/check-codex-schema.mjs",
-    "schema-skew": "node scripts/check-schema-skew.mjs",
-    "lint:backslop": "npx --no-install backslop lint"
+    "schema-skew": "node scripts/check-schema-skew.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -281,4 +281,3 @@ A participant who sent you mail and then ended the turn is waiting, not stopped.
 ## Not this skill
 
 - One diff, no workers: [solo-review](../solo-review/SKILL.md)
-- Contribution tracker: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md)

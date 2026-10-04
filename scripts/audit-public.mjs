@@ -218,6 +218,55 @@ function scanAuthoring(name, text) {
   failures.push(...authoringFindings(name, text));
 }
 
+// --- Tracker boundary --------------------------------------------------------
+// Read in packed entries only: the development tracker stays in this checkout and its contributor docs.
+const TRACKER_NAME = /\bbackslop\b/iu;
+const TRACKER_TASK_ID = /\bPB-(?:\d+(?:\.\d+)*|N)\b/u;
+const PROCEDURE_PATH = '\\bdocs/(?:guides/contributing\\.md|backlog/|archive/|ROLES\\.md)';
+const RELEASE_PIN = 'https://github\\.com/Velklish/promptobus/blob/v\\d+\\.\\d+\\.\\d+/';
+const CONTRIBUTOR_PROCEDURE = new RegExp(PROCEDURE_PATH, 'u');
+const UNPINNED_PROCEDURE = new RegExp(`(?<!${RELEASE_PIN})${PROCEDURE_PATH}`, 'u');
+const INSTALLED_SKILL = /^skills\//u;
+// A git-tag install packs the committed manifest as it is, and `npm ci` needs this field there.
+const MANIFEST_REMAINDER = 'devDependencies.backslop';
+const TRACKER_BOUNDARY = [
+  ['tracker name in a packed entry', () => true, TRACKER_NAME],
+  ['tracker task id in a packed entry', () => true, TRACKER_TASK_ID],
+  ['contributor procedure in an installed skill', (rel) => INSTALLED_SKILL.test(rel), CONTRIBUTOR_PROCEDURE],
+  ['unshipped contributor procedure in a packed entry', (rel) => !INSTALLED_SKILL.test(rel), UNPINNED_PROCEDURE],
+];
+const manifestFields = (value, at = '') => (value !== null && typeof value === 'object'
+  ? Object.entries(value).flatMap(([key, inner]) => manifestFields(inner, at ? `${at}.${key}` : key))
+  : [[` ${at}`, `${at} ${value}`]]);
+const parsedManifest = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+/** [where, text] units of a packed entry: manifest fields bar the remainder, or numbered lines; null for an unreadable manifest. */
+const boundaryUnits = (rel, text) => {
+  if (rel !== 'package.json') return text.split('\n').map((line, index) => [`:${index + 1}`, line]);
+  const manifest = parsedManifest(text);
+  return manifest === null ? null
+    : manifestFields(manifest).filter(([where]) => where !== ` ${MANIFEST_REMAINDER}`);
+};
+/** Findings for one packed entry, each at the first unit that crosses the boundary. */
+const trackerLeaks = (name, text) => {
+  const rel = normalizedName(name);
+  const units = boundaryUnits(rel, text);
+  if (units === null) return [`unreadable manifest in a packed entry: ${name}`];
+  return TRACKER_BOUNDARY.filter(([, applies]) => applies(rel)).flatMap(([label, , needle]) => {
+    const hit = units.find(([, unit]) => needle.test(unit));
+    return hit ? [`${label}: ${name}${hit[0]}`] : [];
+  });
+};
+export { MANIFEST_REMAINDER, trackerLeaks };
+function scanTracker(name, text) {
+  failures.push(...trackerLeaks(name, text));
+}
+
 if (IS_MAIN) {
 // --- surface 1: what git tracks -------------------------------------------
   const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
@@ -289,6 +338,7 @@ if (IS_MAIN) {
       for (const [label, needle] of FORBIDDEN) scan(label, 'tarball:' + entry, text, needle);
       scanOrganization('tarball:' + entry, text);
       scanAuthoring('tarball:' + entry, text);
+      scanTracker('tarball:' + entry, text);
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });

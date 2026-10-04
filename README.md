@@ -252,21 +252,20 @@ npm test             # test/run.mjs runs every test/*.test.mjs
 npm run audit        # publicity audit over tracked files and the packed tarball
 npm run docs-links:external  # http(s) documentation links; not a gate
 npm run schema-skew  # record schemas against the installed package; not a project gate
-npm run lint:backslop
 ```
 
 `src/` is TypeScript compiled to `dist/`; `lib/` is the JavaScript runtime and the three drivers; `skills/`, `schemas/` and `models/` ship in the tarball.
 
-The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. At the same boundary it removes every known harness identity before fixtures install their own, so running the suite from a participant of another harness does not create a second session identity. Live harness runs are never started in CI. `lint:backslop` needs the generated adapter output, which a fresh checkout does not have — run `npx --no-install backslop init --hooks claude` after `npm ci`.
+The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. At the same boundary it removes every known harness identity before fixtures install their own, so running the suite from a participant of another harness does not create a second session identity. Live harness runs are never started in CI.
 The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its two stub replies, so its `ticks` check does not depend on process startup speed; this delay is test-only.
 
 Socket-dependent groups probe their local listener before starting child processes. A sandbox refusal is a named skip only when the failure is the `listen` syscall with `EACCES` or `EPERM`; another error stays red. Skips never count as passes: the runner lists their checks and files, and its final summary calls out every file with zero passed checks so a wholly skipped suite cannot look fully exercised. Where local sockets are available, the probe succeeds and the original integration assertions run.
 
-CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.24.0/.github/workflows/ci.yml)). The gates a change must pass are listed under `gates` in [backslop.json](https://github.com/Velklish/promptobus/blob/v0.24.0/backslop.json).
+CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.24.0/.github/workflows/ci.yml)).
 
 ## Contributing
 
-Tasks and decisions live in `docs/` and are managed with [backslop](https://github.com/Velklish/backslop); `npx --no-install backslop status` prints the queue. A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate above exits 0. Commit subjects start with the task number: `PB-N: <what was done>`. Everything the repository tracks and ships is English — Cyrillic stays only in named snapshots and marked test inputs — and nothing names an internal product or links into another repository. Full procedure: [docs/guides/contributing.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md).
+A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate the contributing guide lists exits 0. Everything the repository tracks and ships is English — Cyrillic stays only in named snapshots and marked test inputs — and nothing names an internal product or links into another repository. Full procedure: [contributing guide](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/guides/contributing.md).
 
 ## Documentation
 

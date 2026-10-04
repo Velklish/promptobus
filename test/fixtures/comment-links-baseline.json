@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 33,
-    "citation": 47,
+    "citation": 46,
     "crossFile": 6,
     "fileLevel": 55,
     "bound": 53,
@@ -80,8 +80,7 @@
     ],
     "lib/exec.js": [
       "../docs/reference/02-host.md#launching-a-process",
-      "../docs/reference/02-host.md#launching-a-process",
-      "../docs/guides/contributing.md#suite-isolation"
+      "../docs/reference/02-host.md#launching-a-process"
     ],
     "lib/guard.js": [
       "../docs/reference/03-cli.md"

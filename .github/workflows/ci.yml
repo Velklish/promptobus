@@ -64,7 +64,7 @@ jobs:
         run: npx --no-install backslop init --hooks claude
 
       - name: backslop lint
-        run: npm run lint:backslop
+        run: npx --no-install backslop lint
 
       # Live harness runs are never started in CI: they spend account limits
       # and write into the home directory. When a harness exists, keep it
