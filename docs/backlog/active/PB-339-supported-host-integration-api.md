@@ -1,10 +1,11 @@
 # PB-339 · Provide supported host integration and diagnostic contracts
 
-- **Order:** 30
 - **Scope:** [Host contract](../../reference/02-host.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 30
+- **Taken:** 2026-10-04
 
 ## Context
 
