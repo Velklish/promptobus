@@ -1,6 +1,6 @@
 # PB-244 · Give Codex workers and reviewers the workspace skill and MCP set without collisions
 
-- **Order:** 230
+- **Order:** 110
 - **Scope:** [reference/03-cli](../../reference/03-cli.md), [reference/05-drivers](../../reference/05-drivers.md), `lib/driver-codex.js`
 - **Created:** 2026-09-23
 - **Dependencies:** the consumer's measurement of Codex skill and MCP precedence and its workspace plugin change define the canonical Codex skill source and precedence

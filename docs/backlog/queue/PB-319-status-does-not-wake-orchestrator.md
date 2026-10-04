@@ -1,6 +1,6 @@
 # PB-319 · A progress status wakes the orchestrator like a result does
 
-- **Order:** 600
+- **Order:** 180
 - **Scope:** [01. Overview § Warden](../../reference/01-overview.md#warden)
 - **Created:** 2026-10-03
 - **Dependencies:** none

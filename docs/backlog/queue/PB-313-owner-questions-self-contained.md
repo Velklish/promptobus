@@ -1,6 +1,6 @@
 # PB-313 · The orchestrator's questions to the owner are self-contained, and a task is named with its title
 
-- **Order:** 590
+- **Order:** 170
 - **Scope:** [01. Overview](../../reference/01-overview.md)
 - **Created:** 2026-10-01
 - **Dependencies:** none

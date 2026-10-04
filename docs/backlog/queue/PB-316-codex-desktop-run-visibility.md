@@ -1,6 +1,6 @@
 # PB-316 · Show Promptobus run activity in the Codex Desktop chat and measure idle-chat wake support
 
-- **Order:** 620
+- **Order:** 200
 - **Scope:** [Codex driver](../../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver), [the Codex holder](../../reference/03-cli.md#the-codex-holder), [Digest](../../reference/03-cli.md#digest), [Report](../../reference/03-cli.md#report)
 - **Created:** 2026-10-01
 - **Dependencies:** none

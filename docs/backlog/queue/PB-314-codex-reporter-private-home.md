@@ -1,6 +1,6 @@
 # PB-314 · Admit a read-only Codex reporter without an install-root project layer
 
-- **Order:** 115
+- **Order:** 90
 - **Scope:** [reference/03-cli § Report](../../reference/03-cli.md#report), [reference/05-drivers](../../reference/05-drivers.md), `lib/report.js`, `lib/driver-codex.js`
 - **Created:** 2026-10-01
 - **Dependencies:** none

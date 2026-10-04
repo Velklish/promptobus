@@ -1,6 +1,6 @@
 # PB-285 · Move the Codex driver to codex-cli 0.157.1
 
-- **Order:** 350
+- **Order:** 130
 - **Scope:** `lib/driver-codex.js`, `test/fixtures/codex-app-server/`, [05-drivers § CODEX](../../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver)
 - **Created:** 2026-09-27
 - **Dependencies:** none
