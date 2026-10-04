@@ -504,3 +504,23 @@ connection — `mailbox {claim: true}` — and the mark would keep
 owner, or a participant address may hand over the contact point; a
 `no-identity` or `foreign` call may not, and neither is marked entered: the
 next call on this connection is asked again.
+
+**A handover the binding gate refused is not an entry either.** `onJoin`
+returns what the driver's `registerWake` answered: the written contact point,
+`null` when there was nothing to hand over, and `false` when the gate refused
+because the participant record names another session — or, for Claude Code, when
+the handover threw. `join` marks the task entered on anything but `false`, so
+the next tool call asks again — once the record names this session, by the
+post-launch persist or a rebind, or once the write goes through, that call hands
+the point over instead of leaving it to the Stop guard at turn end.
+
+**An address alias hands over its primary's contact point.** A teamlead that
+enters the root task as `teamlead:<slug>` writes the contact point of its child
+task's `orchestrator`, not a `wake/<address>.json` of its own in the root: `registerWake` in each
+driver checks the binding of the record the handover names, then writes where
+`wakeAddressOf` (`lib/store.js`) names, and the child warden, which knocks for
+both slots of that mailbox, reads that point. An address alias is judged at its
+primary address, by `join` and by the Stop guard alike: a session that does not
+own the child's `orchestrator`, or names none, hands over nothing and marks no
+turn. The root warden reads no point for the alias and never knocks it
+(04-protocol § Addresses).

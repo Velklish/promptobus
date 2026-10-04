@@ -229,6 +229,9 @@ check(': a directory outside git — a refusal with no ready-made command',
   && !notARepo.msg.includes('repeat with it'), notARepo.msg);
 const plan = planReview(WS, { target: REPO, title: 'orchestrator work in orders-api' });
 check(`plan: the reviewer's address comes from the repository name`, plan.address === 'reviewer:orders-api', plan.address);
+check('prompt: the reviewer is told it may write only the orchestrator of its new task',
+  plan.prompt.includes(`## Whom you may write\n\n- orchestrator (all seven types) in task ${plan.taskId}\n\nThe bus refuses`),
+  plan.prompt.slice(plan.prompt.indexOf('## Whom you may write'), plan.prompt.indexOf('## Communication protocol')));
 check('plan: the task is opened with the name the person gave it',
   plan.createNew?.id === plan.taskId && plan.createNew.title === 'orchestrator work in orders-api',
   plan.createNew?.title);

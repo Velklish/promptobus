@@ -119,6 +119,16 @@ check('docs: Codex home inventory includes conditional hooks and auth',
     "An `auth.json` snapshot is written at mode 0600 when present, with the subscription refresh token removed. A linked worktree with a planned guard hooks file also gets `hooks.json` in this home; other working directories keep that file in their own `.codex/`."),
   'a Codex home passage changed the linked-worktree or optional-auth boundary');
 
+const sessionIdentity = section(read('docs/reference/02-host.md'), '## Session identity');
+const afterLift = section(cli, '### The session id after a lift');
+check('docs: a Claude Code lift binds the session\'s own id at its handshake through a session-record pointer',
+  has(sessionIdentity, "**Claude Code's pointer proves a binding, not an identity.**")
+  && has(sessionIdentity, 'The first proven handshake binds and nothing rebinds after it')
+  && has(sessionIdentity, '**The order the pointer relies on was measured, not assumed.**')
+  && has(afterLift, '**The post-launch persist keeps a handshake binding and checks it against the harness alone.**')
+  && has(afterLift, '`claude --bg` 2.1.284 ignores that flag'),
+  '02-host § Session identity or 03-cli § The session id after a lift lost the Claude Code session-record pointer');
+
 const workerConfig = threadStartConfig({ role: 'worker', effort: 'high' });
 const teamleadConfig = threadStartConfig({ role: 'teamlead' });
 const holder = section(cli, '## The Codex holder');
@@ -189,16 +199,25 @@ check('docs: this checkout restores its generated adapters with the command its 
 
 const addresses = section(protocol, '## Addresses');
 const teamleadSkill = section(read('skills/orchestrate/SKILL.md'), '## Teamleads and siblings');
-check('docs: a teamlead reads root mail in its child task, and the drain is documented',
-  has(addresses, '**A teamlead has one mailbox: the `orchestrator` mailbox of its child task.**')
-  && has(addresses, '| `orchestrator` of a root task | `teamlead:<slug>` whose child task is active | all seven | delivery enters that child\'s `orchestrator` mailbox as `root:<root slug>` |')
+check('docs: a teamlead has one mailbox over its child and root slots, and no drain is documented',
+  has(addresses, '**A participant has one mailbox, and its addresses in tasks are address aliases of it**')
+  && has(addresses, '| `orchestrator` of a root task | `teamlead:<slug>` | all seven | lands in the root slot `teamlead-<slug>`, part of the teamlead\'s one mailbox |')
   && has(addresses, '| `orchestrator` of a child task | `root:<root slug>` of that task | all seven | delivery enters the root\'s `orchestrator` mailbox as the bound `teamlead:<slug>` |')
-  && has(spawn, 'Root mail to `teamlead:<slug>` lands in the child task\'s `orchestrator` mailbox from `root:<root slug>`')
-  && has(spawn, 'It re-delivers before it marks read, so an interruption between the two leaves a duplicate, not a loss.')
-  && has(teamleadSkill, 'A teamlead has one mailbox: the `orchestrator` mailbox of its child task. Root mail sent to `teamlead:<slug>` lands there from `root:<root slug>`')
-  && has(spawn, 'A message that cannot move — its artifact record does not read, or its file is gone from the root\'s files folder — stays unread there and is named on stderr.')
-  && has(spawn, 'either way the read returns the child mailbox, and the next read retries the drain.')
+  && has(spawn, 'The teamlead has one mailbox: the slot of its child task\'s `orchestrator` and the slot of `teamlead:<slug>` in the root')
+  && !has(spawn, 're-delivers before it marks read')
+  && has(teamleadSkill, 'A teamlead has one mailbox: its child task\'s `orchestrator` slot and its root `teamlead:<slug>` slot, read as one.')
   && JSON.parse(read('schemas/v1/message.schema.json')).properties.originTask.description
     .includes('the root whose orchestrator\'s mail was delivered into this child task')
-  && has(adr('026', 'teamlead-one-mailbox'), '1A, 2A, 3B and 4A, decided by the owner on 2026-10-03.'),
-  'the protocol, the CLI reference, the orchestrate skill or ADR-026 lost the teamlead mailbox route');
+  && has(adr('028', 'participant-mailbox'), '1A, 2C, 3A, 4A, 5B, 6A, 7B and 8A, approved by the owner on 2026-10-04.')
+  && has(adr('026', 'teamlead-one-mailbox'), '1A and 2B, decided by the owner on 2026-10-03.'),
+  'the protocol, the CLI reference, the orchestrate skill, ADR-026 or ADR-028 lost the participant mailbox route');
+check('docs: the Codex teamlead\'s two entries read one mailbox, and ADR-028 states the gate and handover order the code has',
+  has(drivers, 'Root and sibling mail to `teamlead:<slug>` land in the root slot, both MCP entries read the one participant mailbox, and the root entry still sends as `teamlead:<slug>`')
+  && !has(drivers, 'Root mail reaches the child entry\'s mailbox')
+  && has(adr('028', 'participant-mailbox'), 'a call that resolves to an address alias is gated at its primary address')
+  && has(adr('028', 'participant-mailbox'), '`registerWake` checks the binding of the record the handover names, then resolves the address alias and writes at the primary'),
+  '05-drivers or ADR-028 describes the teamlead mailbox, its owner gate or its handover otherwise than the code');
+check('docs: 01-overview § join says an address alias is judged at its primary, by join and by the Stop guard',
+  has(section(read('docs/reference/01-overview.md'), '### `join` — entering a task: hand over the contact point and lift a listener'),
+    'An address alias is judged at its primary address, by `join` and by the Stop guard alike: a session that does not own the child\'s `orchestrator`, or names none, hands over nothing and marks no turn.'),
+  '01-overview § join does not state that an address alias hands over only through its primary\'s owner gate');

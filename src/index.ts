@@ -75,10 +75,10 @@ export type {
   McpEvent, McpIdentity, McpInput, McpJoin, McpOptions, McpOutput, McpServerInfo, McpStalls,
 } from './mcp/server.js';
 export type {
-  MailboxRead, OutgoingMessage, PromptobusService, SameContent, SenderCaller, SentMessage,
+  Mailbox, MailboxRead, MailboxSlot, OutgoingMessage, PromptobusService, SameContent, SenderCaller, SentMessage,
 } from './mcp/service.js';
 export {
-  ADDR_MARK, MAILBOX_EMPTY, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages,
+  ADDR_MARK, MAILBOX_EMPTY, mailboxPart, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages,
 } from './mcp/render.js';
 export type { DecorateParticipant } from './mcp/render.js';
 

@@ -33,7 +33,7 @@ import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from '
 import path from 'node:path';
 import process from 'node:process';
 import {
-  HARNESS_HOME_VAR, claudeConfigDir, readSession, scriptFile, traceFile, writeSession,
+  HARNESS_HOME_VAR, claudeConfigDir, handshakeMark, readSession, scriptFile, traceFile, writeSession,
 } from './harness.mjs';
 
 const argv = process.argv.slice(2);
@@ -88,7 +88,7 @@ mkdirSync(path.dirname(trace), { recursive: true });
 
 function note(entry) {
   try {
-    appendFileSync(trace, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n');
+    appendFileSync(trace, JSON.stringify({ at: new Date().toISOString(), session: id, ...entry }) + '\n');
   } catch {
     // The trace is test diagnosis, and a write failure is no reason to crash the
     // participant.
@@ -360,6 +360,15 @@ const server = createServer((conn) => {
   });
 });
 
+function wakeSession() {
+  try {
+    const file = path.join(busHome, 'tasks', task, 'wake', `${String(address).replace(':', '-')}.json`);
+    return JSON.parse(readFileSync(file, 'utf8')).session ?? 'none';
+  } catch {
+    return null;
+  }
+}
+
 function farewell(code) {
   try { server.close(); } catch { /* already closed */ }
   try { rmSync(socketPath, { force: true }); } catch { /* the socket may not have existed */ }
@@ -372,6 +381,8 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => farewel
 
 server.listen(socketPath, async () => {
   note({ kind: 'up', address, task, home: busHome, socket: socketPath, prompt: (prompt ?? '').length });
+  // Which session the contact point named when this one came up — a relift stand reads it.
+  note({ kind: 'wake-before-handshake', held: wakeSession() });
   // The handshake is the same as Claude Code's: `initialize`, then a ready
   // notification. With it the participant also hands over its contact point (the
   // server's `onJoin`), and without it there would be nothing to wake it with.
@@ -381,6 +392,7 @@ server.listen(socketPath, async () => {
     clientInfo: { name: 'promptobus-e2e-participant', version: '1' },
   });
   note({ kind: 'initialize', protocol: hello?.result?.protocolVersion ?? null, server: hello?.result?.serverInfo?.name ?? null });
+  try { writeFileSync(handshakeMark(home, id), new Date().toISOString()); } catch { /* the mark only paces `--bg` */ }
   mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   await playTurn('start');
 });

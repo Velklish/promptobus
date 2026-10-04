@@ -50,6 +50,31 @@ export const SPAWN_GRACE_SEC = 30;
 
 const NO_FAULT: FaultHook = () => {};
 
+/** The slots one participant record's mailbox reads; `alias` — the record is an address alias that the
+ * warden of its primary task knocks for (ADR-028). */
+export interface ParticipantSlots {
+  alias: boolean;
+  slots: { task: string; participant: string }[];
+}
+
+/** The adapter's answer per participant record of the task; without it each record is its own slot. */
+export type MailboxesOf = (participant: ParticipantV1) => ParticipantSlots;
+
+function slotsOf(task: string, p: ParticipantV1, mailboxes: MailboxesOf | null | undefined): ParticipantSlots {
+  return mailboxes?.(p) ?? { alias: false, slots: [{ task, participant: p.id }] };
+}
+
+// Send order across slots by the plain comparison record ids sort by; `localeCompare` depends on the locale.
+function bySendOrder(a: MessageV1, b: MessageV1): number {
+  const x = String(a?.id ?? '');
+  const y = String(b?.id ?? '');
+  return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+function unreadOf(home: string, mailbox: ParticipantSlots): number {
+  return mailbox.slots.reduce((n, slot) => n + countInbox(home, slot.task, slot.participant), 0);
+}
+
 /** Which fallback put `channel` at `self-wake`; prognosis per state in [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
 export type SelfWakeState = 'starting' | 'taken' | 'refused';
 
@@ -219,7 +244,7 @@ function awaitingUser(home: string, task: string, addr: string, driver: Driver, 
 
 /** Task participants from whom no messages are to be expected; `null` means the state is unknown,
  * which is not "everyone is alive". "Listed, but no process" is checked BEFORE the stall. */
-export function blockedParticipants(home: string, task: string, participants: ParticipantV1[] | null | undefined, sessions: SessionSnapshot): StalledParticipant[] | null {
+export function blockedParticipants(home: string, task: string, participants: ParticipantV1[] | null | undefined, sessions: SessionSnapshot, mailboxes: MailboxesOf | null = null): StalledParticipant[] | null {
   // The task store is asked on entry, not at the first stall: a call with a forgotten store would
   // stay silent until someone stalled, then throw inside a warden round or a `mailbox` reply.
   if (!home || !task) throw new Error('blockedParticipants: home and task are required — stall inspection reads the task store');
@@ -295,7 +320,8 @@ export function blockedParticipants(home: string, task: string, participants: Pa
     }
     // The session works but nothing can reach it: another session holds its contact point. Checked
     // LAST — a dead record is the larger trouble — and the registration window covers a re-spawn.
-    const taken = justSpawned(p) ? null : wakeTakenBy(home, task, p);
+    const channelless = slotsOf(task, p, mailboxes).alias;
+    const taken = justSpawned(p) || channelless ? null : wakeTakenBy(home, task, p);
     if (taken) {
       stalled.push({
         address: String(addressOf(p)),
@@ -366,7 +392,7 @@ export function liveWatched(home: string, task: string, sessions: SessionSnapsho
 }
 
 // Whether the task has unread — at any of its addresses.
-function unreadLeft(home: string, task: string): boolean {
+function unreadLeft(home: string, task: string, mailboxes: MailboxesOf | null): boolean {
   let meta;
   try {
     meta = readTask(home, task);
@@ -376,7 +402,8 @@ function unreadLeft(home: string, task: string): boolean {
   return (meta.participants ?? []).some((p) => {
     if (!p?.id) return false;
     try {
-      return countInbox(home, task, p.id) > 0;
+      const mailbox = slotsOf(task, p, mailboxes);
+      return !mailbox.alias && unreadOf(home, mailbox) > 0;
     } catch {
       return false;
     }
@@ -385,12 +412,14 @@ function unreadLeft(home: string, task: string): boolean {
 
 /** Heartbeat: renew our mark and check three reasons to exit. Lifted out of the loop for the test —
  * checking a branch inside the loop would have cost the suite half an hour of waiting. */
-export function beatRound(home: string, task: string, startedMs: number, { now = Date.now(), sessions = null as SessionSnapshot, session = null as string | null } = {}): string | null {
+export function beatRound(home: string, task: string, startedMs: number, {
+  now = Date.now(), sessions = null as SessionSnapshot, session = null as string | null, mailboxes = null as MailboxesOf | null,
+} = {}): string | null {
   // A successor intercepted the mark — two cannot watch, and they continue the work. Session
   // identity goes to the lock: whose process holds the journal is known to the environment.
   if (!beatWarden(home, task, { session })) return 'another process took the warden place';
   const live = liveWatched(home, task, sessions);
-  const unread = unreadLeft(home, task);
+  const unread = unreadLeft(home, task, mailboxes);
   const idle = !live.length && !unread;
   if (now - startedMs >= WARDEN_ABSOLUTE_SEC * 1000) {
     return `hit the absolute limit ${Math.round(WARDEN_ABSOLUTE_SEC / 3600)} h`;
@@ -443,9 +472,9 @@ function brokenPreview(note: BrokenNote, now: number): NotificationMessage {
 /** One watch round: look at all mailboxes, wake those with unread, update health. `sessions` is the
  * snapshot from the last heartbeat — the round runs once a second and gets no poll of its own. */
 export async function supervisorRound(home: string, task: string, {
-  now = Date.now(), registry, sessions = null as SessionSnapshot, faults = NO_FAULT,
+  now = Date.now(), registry, sessions = null as SessionSnapshot, faults = NO_FAULT, mailboxes = null,
 }: {
-  now?: number; registry: Registry; sessions?: SessionSnapshot; faults?: FaultHook;
+  now?: number; registry: Registry; sessions?: SessionSnapshot; faults?: FaultHook; mailboxes?: MailboxesOf | null;
 }): Promise<{ stop: string | null; events: string[]; knocked: string[] }> {
   let meta;
   try {
@@ -459,13 +488,22 @@ export async function supervisorRound(home: string, task: string, {
   const events: string[] = [];
   const knocked: string[] = [];
   let changed = false;
+  const journals = new Map<string, TaskV1>([[task, meta]]);
+  const journalOf = (id: string): TaskV1 => {
+    if (!journals.has(id)) journals.set(id, readTask(home, id));
+    return journals.get(id)!;
+  };
 
   for (const p of meta.participants ?? []) {
     const addr = addressOf(p);
     if (!addr) continue;
+    let mailbox: ParticipantSlots;
     let unread: number;
     try {
-      unread = countInbox(home, task, p.id);
+      // An address alias is knocked by the warden of its primary task, which counts this slot too.
+      mailbox = slotsOf(task, p, mailboxes);
+      if (mailbox.alias) continue;
+      unread = unreadOf(home, mailbox);
     } catch {
       // A bad participant record has no right to stop the watch over the others.
       continue;
@@ -475,7 +513,7 @@ export async function supervisorRound(home: string, task: string, {
 
     // The mailbox was taken — that is the delivery confirmation; a mailbox that was always empty is
     // not written. A take is the knocked mail gone, not a count drop: a peek sets broken refs aside too.
-    const took = Boolean(was.unread) && (!unread || leftInbox(home, task, p.id, was.knockedFirst ?? null));
+    const took = Boolean(was.unread) && (!unread || leftInbox(home, mailbox, was.knockedFirst ?? null));
     if (took) {
       events.push(`delivered ${addr}: mailbox was taken (had ${was.unread}, knocks ${was.knocks ?? 0}`
         + `${was.coalesced ? `, coalesced ${was.coalesced}` : ''})`);
@@ -618,7 +656,9 @@ export async function supervisorRound(home: string, task: string, {
       h.wake = print;
       // The mailbox is read exactly here, not every round. `glanceInbox`, not `peekInbox`: the
       // warden does not set a broken ref aside, but names its refusal or parse error in the postcard.
-      const { messages: box, broken } = glanceInbox(home, task, p.id, faults);
+      const glanced = mailbox.slots.map((slot) => glanceInbox(home, slot.task, slot.participant, faults));
+      const box = glanced.flatMap((g) => g.messages).sort(bySendOrder);
+      const broken = glanced.flatMap((g) => g.broken);
       h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
       // A retry carries only what arrived after the last knock; the full list goes where the session
       // has not seen the previous one. The cutoff is by message id — mailbox names sort by send order.
@@ -627,7 +667,7 @@ export async function supervisorRound(home: string, task: string, {
       const upTo = restarted ? null : was.knockedTo ?? null;
       const msgs = upTo === null ? box : box.filter((m) => String(m?.id ?? '') > upTo);
       const previews = [
-        ...msgs.map((m) => previewOf(home, meta, m)),
+        ...msgs.map((m) => previewOf(home, m?.task && m.task !== task ? journalOf(m.task) : meta, m)),
         ...broken.map((note) => brokenPreview(note, now)),
       ];
       const r = await activate(driver, { ref: sessionRefOf(p), endpoint }, {
@@ -694,10 +734,10 @@ export async function supervisorRound(home: string, task: string, {
   return { stop: null, events, knocked };
 }
 
-function leftInbox(home: string, task: string, participant: string, id: string | null): boolean {
+function leftInbox(home: string, mailbox: ParticipantSlots, id: string | null): boolean {
   if (!id) return false;
   try {
-    return !existsSync(inboxRef(home, task, participant, id));
+    return !mailbox.slots.some((slot) => existsSync(inboxRef(home, slot.task, slot.participant, id)));
   } catch {
     return false;
   }
@@ -719,10 +759,12 @@ async function activate(driver: Driver, target: ActivationTarget, notification: 
 
 /** Participant stall. Escalation is visibility — a status line and a journal entry, no postcard: a
  * separate notification burned orchestrator turns every round. The journal line is the adapter's. */
-export async function stallRound(home: string, task: string, { sessions = null as SessionSnapshot, now = Date.now() }: {
-  sessions?: SessionSnapshot; now?: number;
+export async function stallRound(home: string, task: string, {
+  sessions = null as SessionSnapshot, now = Date.now(), mailboxes = null as MailboxesOf | null,
+}: {
+  sessions?: SessionSnapshot; now?: number; mailboxes?: MailboxesOf | null;
 } = {}): Promise<StalledParticipant[]> {
-  const { fresh, current } = pendingStalls(home, task, (ps) => blockedParticipants(home, task, ps, sessions),
+  const { fresh, current } = pendingStalls(home, task, (ps) => blockedParticipants(home, task, ps, sessions, mailboxes),
     { now, retryMs: 0, maxTries: 1 });
   // The set may have changed even without new ones: a participant unstuck. Move the mark anyway, or
   // their next stall with the same reason would not be counted fresh.
@@ -732,8 +774,10 @@ export async function stallRound(home: string, task: string, { sessions = null a
 
 /** One report per sighting of a named reset: the orchestrator is knocked once with the time, so the run
  * decides instead of reading the journal. `fresh` is `stallRound`'s, whose mark makes a sighting once. */
-export async function reportResets(home: string, task: string, fresh: StalledParticipant[], { registry, now = Date.now() }: {
-  registry: Registry; now?: number;
+export async function reportResets(home: string, task: string, fresh: StalledParticipant[], {
+  registry, now = Date.now(), mailboxes = null,
+}: {
+  registry: Registry; now?: number; mailboxes?: MailboxesOf | null;
 }): Promise<string[]> {
   const own = fresh.filter((s) => s.address === ORCHESTRATOR && resetAhead(s.reset, now))
     .map((s) => `could not report to ${ORCHESTRATOR} (the refusal is its own): ${ORCHESTRATOR} is unreachable until ${resetText(s.reset!)}`);
@@ -741,13 +785,13 @@ export async function reportResets(home: string, task: string, fresh: StalledPar
   if (!held.length) return own;
   const lines = held.map((s) => `${s.address} is unreachable until ${resetText(s.reset!)}: ${s.reason}`);
   const orchestrator = readTask(home, task).participants.find((p) => addressOf(p) === ORCHESTRATOR);
-  const why = orchestrator ? await reportTo(home, task, orchestrator, lines, { registry, now }) : 'the task has no orchestrator';
+  const why = orchestrator ? await reportTo(home, task, orchestrator, lines, { registry, now, mailboxes }) : 'the task has no orchestrator';
   return [...own, ...lines.map((line) => (why ? `could not report to ${ORCHESTRATOR} (${why}): ${line}` : `reported to ${ORCHESTRATOR}: ${line}`))];
 }
 
 // The report rides the ordinary postcard as a preview of its own type, like an unreadable ref does.
-async function reportTo(home: string, task: string, orchestrator: ParticipantV1, lines: string[], { registry, now }: {
-  registry: Registry; now: number;
+async function reportTo(home: string, task: string, orchestrator: ParticipantV1, lines: string[], { registry, now, mailboxes }: {
+  registry: Registry; now: number; mailboxes: MailboxesOf | null;
 }): Promise<string | null> {
   let driver;
   try {
@@ -764,7 +808,7 @@ async function reportTo(home: string, task: string, orchestrator: ParticipantV1,
     kind: 'unread',
     task,
     address: ORCHESTRATOR,
-    unread: countInbox(home, task, orchestrator.id),
+    unread: unreadOf(home, slotsOf(task, orchestrator, mailboxes)),
     messages: lines.map((body) => ({
       id: null, type: 'unreachable', from: 'promptobus', ts: new Date(now).toISOString(), body, artifact: null,
       bus: true,

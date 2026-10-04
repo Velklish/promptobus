@@ -274,6 +274,10 @@ check(': routed approver --harness cursor passes harness eligibility',
 const CLI = path.join(here, '..', 'bin', 'promptobus.js');
 
 const plan = planApprover(WS, { target: REPO, task: TASK, dryRun: true });
+check(': the approver is told whom it may write — the orchestrator and the worker of its task, not the reviewer',
+  plan.prompt.includes(`## Whom you may write\n\n- orchestrator (all seven types) in task ${TASK}\n`
+    + `- worker:orders-api (all seven types) in task ${TASK}\n\nThe bus refuses`),
+  plan.prompt.slice(plan.prompt.indexOf('## Whom you may write'), plan.prompt.indexOf('## Communication protocol')));
 check(': planApprover names an approver worktree under the clone',
   plan.address === 'approver:orders-api'
   && plan.cloneRoot === REPO

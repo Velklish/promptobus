@@ -23,9 +23,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
   [02-host § The host integration entry point](docs/reference/02-host.md#the-host-integration-entry-point),
   [ADR-027](docs/adr/adr-027-host-integration-entry-point.md).
+- **A participant is told whom it may write.** The lift prompt of a worker, reviewer, approver,
+  teamlead and reporter carries a `Whom you may write` section; `promptobus_task` prints the
+  current list on a `you may write:` line, and its declaration says so; a send the routing
+  policy refuses, or one to an address the task does not list, ends with
+  ` · you may write: <list>`. The list is the routing policy asked for every recipient and type
+  (`contactsOf`), not a second rule, and a teamlead's two routes to its root orchestrator are
+  one entry. The rules themselves do not change.
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses),
+  [ADR-028](docs/adr/adr-028-participant-mailbox.md).
 
 ### Changed
 
+- **A participant owns one mailbox, and its addresses in tasks are address aliases of it.**
+  A teamlead's mailbox is its child task's `orchestrator` slot and its root `teamlead:<slug>`
+  slot, read, counted and knocked as one: `promptobus_mailbox` on either task takes both, each
+  header of mail from the other slot's task names that task, the warden of the child task knocks
+  once for the sum, and the Stop guard, `promptobus_task` and the `send` reply count both.
+  Sibling mail to a teamlead, which a Claude Code teamlead could not read before, is read and
+  marked in its own session. **Contract change:** root mail to `teamlead:<slug>` now lands in the
+  root slot and stays in the root journal from `orchestrator`, instead of being written into the
+  child as `root:<root slug> → orchestrator`; the drain that moved such mail from the root slot
+  into the child is gone, and mail an earlier version left at either slot is read in place under
+  its own id. A teamlead session still running an earlier release's bus entry reads only its
+  child slot, so after a mid-run upgrade it misses root mail until it is lifted again. The root
+  slot is part of the teamlead's mailbox only while the root record and the child owner are one
+  session; after a `claim` on the child it stays with the root record. A mailbox call that
+  resolves to the root address is judged by the owner gate of the child's `orchestrator`: a
+  session that does not own it, or names none, gets a copy of both slots and hands over no
+  contact point. `status` prints the
+  teamlead's root line as `address alias of orchestrator of task <child> · unread <N> here,
+  counted there`. A handover through an address alias writes the primary address's `wake/` file.
+  [04-protocol § Addresses](docs/reference/04-protocol.md#addresses),
+  [ADR-028](docs/adr/adr-028-participant-mailbox.md); [ADR-026](docs/adr/adr-026-teamlead-one-mailbox.md)
+  keeps only the `root:<root slug>` record and the child's route to the root.
 - **A repository's declared generator runs after the worktree's dependency install, not
   before it.** A fresh worker or approver worktree gets `npm ci` first and then the `generate`
   command of the repository's `promptobus.json`, so a generator can run a tool the repository
@@ -138,6 +169,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Contributing § Live harness scenarios](docs/guides/contributing.md#live-harness-scenarios).
 
 ### Fixed
+
+- **A Claude Code participant lifted again on its address hears the warden from its first
+  handshake.** `claude --bg` 2.1.284 ignores the `--session-id` a lift passes, so the record
+  still held the chosen UUID when the new session's MCP handshake arrived: the handover was
+  refused and not tried again, and the dead session's `wake/<address>.json` read as a point
+  held by a foreign session until the new session's first turn end — for a worker, the end of
+  its piece. A lift that binds before launch now writes a session record beside the mcp-config
+  and points the bus entry at it as `PROMPTOBUS_CLAUDE_SESSION`; the handshake binds the
+  session's own id through it once, and a later handshake with another id is refused, kept in
+  the record and printed by `status` as `HANDSHAKE REFUSED`. The lift drops the dead session's
+  contact point (a teamlead's is its child `orchestrator` point, and its relift also drops the
+  root `wake/teamlead-<slug>.json` an earlier release wrote), so `status`
+  reads `alarm: awaiting the handover of the session lifted <started>` rather than a deaf
+  channel; a Codex or Cursor lift, bound by a pointer alone, drops nothing. The post-launch
+  persist keeps a handshake binding and refuses the lift only when `claude agents --json` names
+  a different id, and that refusal clears the binding with the rest of the prelaunch one.
+  `registerWake` answers `false` for a gate refusal — and Claude Code's for a handover that
+  threw — and `null` for nothing to hand over; the bus entry tries a `false` again on its next
+  tool call. `done` and `sweep` remove the session record with the mcp-config.
+  [02-host § Session identity](docs/reference/02-host.md#session-identity),
+  [03-cli § The session id after a lift](docs/reference/03-cli.md#the-session-id-after-a-lift).
 
 - **A repository `promptobus.json` that holds only `generate` or `trustedHooks` no longer
   becomes the standalone root.** The standalone host and `install` walk past such a file to

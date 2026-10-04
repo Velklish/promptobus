@@ -2233,7 +2233,7 @@ const stolen = registerWake(HOME, TAKEN, 'worker:api', {
   CLAUDE_CODE_SESSION_ID: ALIEN,
 });
 check(': a session that isn\'t its own does not get a contact point handed over for this address — the record is unchanged',
-  stolen === null && store.readWake(HOME, TAKEN, 'worker:api')?.socket === TSOCK,
+  stolen === false && store.readWake(HOME, TAKEN, 'worker:api')?.socket === TSOCK,
   JSON.stringify(store.readWake(HOME, TAKEN, 'worker:api')));
 // A participant record with no session id has nothing to compare against: the raise may have
 // failed to parse it out of the `--bg` output. That is unknown, not someone else, and it
@@ -2318,7 +2318,7 @@ check(': with a full id in the record, ownership is recognized by equality',
 check(': half an identifier does not count as the owner — the rule is equality, not prefix',
   registerWake(HOME, TAKEN, 'worker:full', {
     CLAUDE_CODE_MESSAGING_SOCKET: sockPath('half'), CLAUDE_CODE_SESSION_ID: OWN_SHORT,
-  }) === null && store.readWake(HOME, TAKEN, 'worker:full')?.socket === sockPath('full'),
+  }) === false && store.readWake(HOME, TAKEN, 'worker:full')?.socket === sockPath('full'),
   `${OWN_SHORT} · ${JSON.stringify(store.readWake(HOME, TAKEN, 'worker:full'))}`);
 // The gate's refusal must be visible: a silent `null` is indistinguishable from working
 // correctly.

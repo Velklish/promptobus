@@ -96,17 +96,25 @@ function firstLine(body: string): string {
   return `${(space > FIRST_LINE_MAX * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
-// Sender name first, machine address after: the feed hook lifts the name.
-function heading(meta: TaskV1, m: MessageV1): string {
+// Sender name first, machine address after: the feed hook lifts the name. Mail from another slot's
+// task names that task, where its sender's address and its artifact live.
+function heading(meta: TaskV1, m: MessageV1, task: string): string {
   const from = senderAddress(meta, m);
-  return `### ${m.type}${MESSAGE_FROM}${readableName(meta, from, true)}${ADDR_MARK}${from} · ${m.ts}`;
+  const where = m.task && m.task !== task ? ` · task ${m.task}` : '';
+  return `### ${m.type}${MESSAGE_FROM}${readableName(meta, from, true)}${ADDR_MARK}${from}${where} · ${m.ts}`;
+}
+
+// The journal a message is canonical in: the call's own, or the one another mailbox slot reads.
+function journalOf(service: PromptobusService, home: string, meta: TaskV1, m: MessageV1): TaskV1 {
+  return !m.task || m.task === meta.id ? meta : service.readTask(home, m.task);
 }
 
 // A person finds an artifact by FILE NAME in the task folder: the message carries a
 // metadata-record id, and printing that would name a path that is not on disk.
 function artifactLine(service: PromptobusService, home: string, task: string, m: MessageV1): string[] {
-  const named = m.artifact ? service.artifactName(home, task, m.artifact) : undefined;
-  return named ? [`artifact: ${path.join(service.artifactsDir(home, task), named)}`] : [];
+  const at = m.task || task;
+  const named = m.artifact ? service.artifactName(home, at, m.artifact) : undefined;
+  return named ? [`artifact: ${path.join(service.artifactsDir(home, at), named)}`] : [];
 }
 
 /** Header list of a mailbox read: sender, type, time, id, size and first line — never a body. */
@@ -121,10 +129,11 @@ export function renderMessages(
   const identity = service.identityLabel(home, task, addr, session);
   if (!msgs.length) return `${MAILBOX_EMPTY} · ${identity}`;
   const meta = service.readTask(home, task);
-  const out = [`${summarizeMessages(msgs, (m) => senderAddress(meta, m))} · ${identity}`];
+  const out = [`${summarizeMessages(msgs, (m) => senderAddress(journalOf(service, home, meta, m), m))} · ${identity}`];
   for (const m of msgs) {
     const first = firstLine(m.body);
-    out.push('', heading(meta, m), `message ${m.id} · ${m.body.length} characters${first ? `: ${first}` : ''}`,
+    out.push('', heading(journalOf(service, home, meta, m), m, task),
+      `message ${m.id} · ${m.body.length} characters${first ? `: ${first}` : ''}`,
       ...artifactLine(service, home, task, m));
   }
   out.push('', BODY_ROUTE);
@@ -144,7 +153,7 @@ export function renderMessage(
   return [
     `message ${m.id} · ${service.identityLabel(home, task, addr, session)}`,
     '',
-    heading(meta, m),
+    heading(journalOf(service, home, meta, m), m, task),
     m.body,
     ...artifactLine(service, home, task, m),
   ].join('\n');
@@ -172,6 +181,7 @@ export function renderTask(
   // answers "who has what piling up", and here the addressee is the session
   // that is sure right now that it is waiting.
   const mine = service.unreadNote(home, id, addr, session);
+  const contacts = service.contactsLine?.(home, id, service.mailboxAddress?.(home, id, addr, session) ?? addr) ?? null;
   const lines = [
     `task ${meta.id} · ${meta.title}`,
     `status: ${meta.status} · created: ${meta.created}`,
@@ -180,6 +190,7 @@ export function renderTask(
     `pipeline: ${pipelineText(steps)}`,
     `artifacts: ${service.artifactsDir(home, id)}`,
     ...(mine ? [mine] : []),
+    ...(contacts ? [`you may write: ${contacts}`] : []),
     'participants:',
   ];
   for (const p of meta.participants ?? []) {
@@ -213,6 +224,15 @@ function participantLine(
   // Dismissal from watch — the same list as in `promptobus status`.
   const dismissed = dismissedOf(p);
   if (dismissed) parts.push(`DISMISSED FROM WATCH ${dismissed}`);
-  parts.push(`unread ${service.countInbox(home, id, addr as string)}`);
+  parts.push(mailboxPart(service, home, id, addr as string));
   return parts.join(' · ');
+}
+
+/** The unread part of a participant line: the participant's total on its primary address, and on an
+ * address alias the slot's own count with where it is counted — ADR-028 § The journal, the mailbox reads. */
+export function mailboxPart(service: PromptobusService, home: string, id: string, addr: string): string {
+  const box = service.mailboxOf?.(home, id, addr);
+  if (!box?.alias) return `unread ${service.countMailbox?.(home, id, addr) ?? service.countInbox(home, id, addr)}`;
+  return `address alias of ${box.primary.address} of task ${box.primary.task} · `
+    + `unread ${service.countInbox(home, id, addr)} here, counted there`;
 }

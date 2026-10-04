@@ -59,6 +59,8 @@ check('Codex reporter prompt permits read-only journal reads and prohibits build
   /File writes, builds and tests are forbidden/.test(codexPlan.prompt)
   && /Read journal files with read-only shell commands/.test(codexPlan.prompt));
 const planned = await planReport(host, { task: TASK, dryRun: true });
+check('reporter prompt says the bus lets it write nobody',
+  planned.prompt.includes('## Whom you may write\n\n- nobody: the bus refuses every send from your address'), planned.prompt);
 let unratedReport = null;
 const unratedReportSaid = await capture(async () => {
   unratedReport = await planReport(host, { task: TASK, dryRun: true, strategy: 'balanced', model: 'claude-next-9' });

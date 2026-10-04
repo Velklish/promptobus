@@ -219,6 +219,10 @@ check('prompt: worker sees its absolute worktree and the session roots',
   && plan.prompt.includes(`Allowed roots (session cwd and addDirs): ${[plan.worktreePath, ...plan.ruleDirs].join(', ')}`)
   && plan.prompt.includes(`branch ${plan.branch}`),
   plan.prompt.slice(0, 500));
+check('prompt: the worker is told whom it may write, from the routing policy at lift',
+  plan.prompt.includes(`## Whom you may write\n\n- orchestrator (all seven types) in task ${TASK}\n\nThe bus refuses a send to any other address.`)
+  && plan.prompt.includes('prints the current list on its `you may write:` line'),
+  plan.prompt.slice(plan.prompt.indexOf('## Whom you may write'), plan.prompt.indexOf('## Communication protocol')));
 const preambleHost = hostOf(WS);
 const originalPreamble = preambleHost.workerPreamble;
 let preambleCtx;

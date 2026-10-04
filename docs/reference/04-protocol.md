@@ -23,7 +23,7 @@ below. `addrDir` is injective only over admitted addresses —
 `reviewer-two:x` and `reviewer:two-x` both give `reviewer-two-x` — so injectivity lives in the registry: `withSteps`
 refuses an overlapping declaration and the registry doors refuse an unknown role. The
 default routing rule keeps step traffic with the orchestrator. The declared `edits-tree`
-owner and the one `writes-main-tree` step of a piece may write directly after a reviewer
+owner and the one `writes-main-tree` step of its task may write directly after a reviewer
 result is on record; `reads-diff` and other step pairs stay on the orchestrator route.
 
 | Sender | Recipient | Types | Decision |
@@ -32,27 +32,34 @@ result is on record; `reads-diff` and other step pairs stay on the orchestrator 
 | any participant | `orchestrator` of its task | all seven | unchanged |
 | declared owner | declared `writes-main-tree` step of its task | all seven | the one direct step pair |
 | `teamlead:a` | `teamlead:b` of the same root task | `question`, `answer`, `status`, `artifact` | small matters stay between siblings; a change of logic or requirements goes to the root orchestrator |
-| `orchestrator` of a root task | `teamlead:<slug>` whose child task is active | all seven | delivery enters that child's `orchestrator` mailbox as `root:<root slug>` |
+| `orchestrator` of a root task | `teamlead:<slug>` | all seven | lands in the root slot `teamlead-<slug>`, part of the teamlead's one mailbox |
 | `orchestrator` of a child task | `root:<root slug>` of that task | all seven | delivery enters the root's `orchestrator` mailbox as the bound `teamlead:<slug>` |
 | `orchestrator` | `peer:<slug>` | `question`, `answer`, `status`, `artifact` | peers ask, never assign; delivery enters the other root's orchestrator mailbox as its peer sender |
 | `user` | `orchestrator` of a root or child task | `question` | the person asks that task's orchestrator; `teamlead:<slug>` selects its child task |
 | `orchestrator` of a root or child task | `user` | `answer`, `status` | the answer and progress lines in the same task |
 | `reporter` | nobody | none | the reporter reads |
 
-**A teamlead has one mailbox: the `orchestrator` mailbox of its child task.** Its bus entry
-reads that mailbox and no other, so the two teamlead rows take priority over the generic
-`orchestrator` rows. A root orchestrator's send to `teamlead:<slug>` whose record names an
-active child (`childTask`, with that child's `parent` naming the root) is written into the
-child as `root:<root slug> → orchestrator`; the root journal does not carry it. The message
-records the root id as `originTask`, its artifact belongs to the child, the child's warden
-knocks the teamlead as for any other mail of that mailbox — once for new unread mail, never
-for mail already read — and the reply names the child as the task it landed in and the
-teamlead address it went `via`. A teamlead whose child is closed keeps
-root mail in the root task as before. The child's `root:<root slug>` record stands for the
-root orchestrator: `spawn --teamlead` writes it after the child link, and a delivery or a
-drain writes it into a child lifted earlier. It carries `rootTask` and no session, so no
-session sends as it; the routing policy lets it talk to the child's `orchestrator` only. A
-send from the child's `orchestrator` to it is written into the root as
+**A participant has one mailbox, and its addresses in tasks are address aliases of it**
+([ADR-028](../adr/adr-028-participant-mailbox.md)). The mailbox is the set of mailbox slots of its
+addresses — each slot is `inbox/<participant id>/` of one task with its `history/` twin — read,
+counted and knocked as one (`mailboxOf`, `lib/store.js`). It is keyed by the primary address, the
+task and address its lift bound. A teamlead's primary address is its child task's `orchestrator`,
+and the root's `teamlead:<slug>` record is an address alias of it while its `childTask` names a
+child whose `parent` is the root and the record's session and the child owner are one session, the
+proof every write route of the pair asks (`rootTeamlead`). Root mail and sibling mail to
+`teamlead:<slug>` land in the root slot and stay in the root journal with their senders; the
+teamlead's read of its child task takes them, the child's warden knocks for them, and a mailbox
+header from another slot's task names that task. A call that resolves to the address alias is
+judged by the owner gate of its primary address: a session that does not own the child's
+`orchestrator`, or names none, gets a copy of both slots, marks neither and hands over no contact
+point. Every other address is
+its own one-slot mailbox.
+After a `claim` on the child the two records name different sessions, and the root record is a
+participant of its own again: its slot is not part of the claimant's mailbox. A teamlead whose
+child is closed keeps root mail in the root slot. The child's `root:<root slug>` record stands for the
+root orchestrator: `spawn --teamlead` writes it after the child link. It carries `rootTask` and no
+session, so no session sends as it; the routing policy lets it talk to the child's `orchestrator`
+only. A send from the child's `orchestrator` to it is written into the root as
 `teamlead:<slug> → orchestrator` while the root record and the child owner are bound to one
 session, the same proof the sibling route asks. The address carries the root task's
 `adapter.slug`, or the slugified root id when there is none. It is slugged, not a bare
@@ -61,12 +68,10 @@ participant's MCP server, a warden — and that grammar admits only `orchestrato
 and `user` bare. Measured with the 0.22.0 CLI on a child journal carrying each form: a bare
 `root` record printed `MAILBOX UNREAD: the record address is invalid` in `status`, a
 `root:root` record printed an ordinary `root:root · unread 0` line, and the MCP `task` and
-`mailbox` calls and a warden round completed on both. Sibling traffic is unchanged:
-`teamlead:a → teamlead:b` still lands in the root task's `teamlead-b` mailbox, which a Claude
-Code teamlead's tools do not read. The digest pairs a question in one of the two journals
-with its answer in the other ([03-cli § Digest](03-cli.md#digest)), and a teamlead's read of
-its mailbox first moves root mail an earlier version left in the root
-([03-cli § Spawn](03-cli.md#spawn)).
+`mailbox` calls and a warden round completed on both. Earlier versions wrote root mail into the
+child as `root:<root slug> → orchestrator` with the root id as `originTask`; that mail is read in
+place in the primary slot, and the digest pairs it across the two journals
+([03-cli § Digest](03-cli.md#digest)).
 
 The specific `peer:<slug>` rule takes priority over the generic participant-to-orchestrator row:
 peer-to-orchestrator sends also need a reciprocal link and use only the four types in the peer row.
@@ -99,6 +104,23 @@ is written. Direct messages bypass the orchestrator's unread mailbox but remain 
 `messages/` journal and the addressed histories. The CLI and MCP surface pass one
 recipient. The engine can fan out to many; that path is not exposed on
 `promptobus_send`.
+
+**A participant is told whom it may write, and the list is the routing policy read, not a
+second rule** ([ADR-028](../adr/adr-028-participant-mailbox.md)). `contactsOf` (`lib/store.js`)
+asks the policy for every message type, from each address of the participant's mailbox to every
+other record of that address's task, and keeps each recipient with at least one allowed type,
+those types and the task to name. Two addresses that reach one participant form one entry: for a
+teamlead, the child's `root:<root slug>` and the root's `orchestrator`. The lift prompt of a
+worker, reviewer, approver, teamlead and reporter carries the list in a `Whom you may write`
+section, computed at lift from the records the participant will hold, its own binding taken as
+held; a participant lifted later is not in it. `promptobus_task` prints the current list on a
+`you may write:` line for the record the calling session holds in the named task. A send the
+policy refuses, or one naming an address the task does not list, ends with
+` · you may write: <list>`, for example
+`orchestrator (all seven types) in task <id>; approver:<slug> (all seven types) in task <id>`.
+The engine still refuses before the first side effect of a send, behind every door. The direct
+pair of the declared owner and the `writes-main-tree` step is a pair of roles in one task: the
+policy does not compare their slugs.
 
 **A session holds one address per task, and the sender is resolved per task.** Both doors —
 `promptobus send` and `promptobus_send` — ask `senderFor` (`lib/store.js`): among the
@@ -166,7 +188,7 @@ in `metadata.sessionId`, so either address can pass the sender gate in its own
 task. A child cannot name another child as parent. A task without `parent` is
 a root and needs no teamlead.
 
-The engine receives either a workspace `root`, which resolves to `<root>/.promptobus`, or the store `home` itself. It never searches for a root or reads an environment variable. Under `tasks/<task-id>/`, `task.json` is the journal; `messages/` holds canonical messages; `intents/` holds open fan-outs; `inbox/<participant>/` is unread mail; `history/<participant>/` is mail that was read; `blobs/` holds immutable SHA-256 payloads; and `artifacts/` holds their metadata. A task journal lock is `.lock/`. An open intent has a neighbouring `<id>.owner` lease. `broken/inbox/<participant>/`, `broken/artifacts/`, and `broken/messages/` isolate malformed records without taking the rest of the task down. The adapter's `files/` directory is a human-facing sidecar, not an engine v1 path.
+The engine receives either a workspace `root`, which resolves to `<root>/.promptobus`, or the store `home` itself. It never searches for a root or reads an environment variable. Under `tasks/<task-id>/`, `task.json` is the journal; `messages/` holds canonical messages; `intents/` holds open fan-outs; `inbox/<participant>/` is unread mail; `history/<participant>/` is mail that was read; `blobs/` holds immutable SHA-256 payloads; and `artifacts/` holds their metadata. A task journal lock is `.lock/`. An open intent has a neighbouring `<id>.owner` lease. `broken/inbox/<participant>/`, `broken/artifacts/`, and `broken/messages/` isolate malformed records without taking the rest of the task down. The adapter's `files/` directory is a human-facing sidecar, not an engine v1 path. One `inbox/<participant>/` is one mailbox slot; a participant whose addresses span tasks reads, counts and is knocked for all its slots as one mailbox ([§ Addresses](#addresses)), and the engine itself stays per task.
 
 Participant settings and launch sidecars use `participantFileStem`: a worker keeps
 `<slug>`, while every other slugged address of the registry uses `<name>-<slug>` —

@@ -423,8 +423,12 @@ export interface Driver {
   /** What a person should do with this stall, in their harness commands. The shared state words stay
    * with the adapter: they are one for all harnesses. */
   stallRoute?(stall: StalledParticipant & { task?: string | null }, id: string | null, ref: string | null): string;
-  /** Hand the contact point of ITS OWN session into the task store: only the harness knows the socket address. */
+  /** Hand the contact point of ITS OWN session into the task store: only the harness knows the socket address.
+   * The written point; `false` when the binding gate refused it or the write failed; `null` when there was nothing to hand over. */
   registerWake?(home: string, task: string, address: string, env?: unknown, session?: string | null): unknown;
+  /** Bind the participant record to this session at its MCP handshake through the lift's session-record
+   * pointer, before the binding gate: `bound`, `refused` or `null`. 02-host § Session identity. */
+  bindHandshake?(home: string, task: string, address: string, env?: unknown, session?: string | null): unknown;
   /** Whether the session transcript at this path holds a question to the user still unanswered.
    * Positive evidence only: anything unread or unrecognised is `false`. */
   awaitsUser?(transcript: string): boolean;

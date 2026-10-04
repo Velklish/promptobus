@@ -177,13 +177,15 @@ mkdirSync(workersDir, { recursive: true });
 const secretsOf = (address) => {
   const mcp = store.participantMcpPath(HOME, TASK, address);
   const settings = store.participantSettingsPath(HOME, TASK, address);
+  const session = store.participantSessionPath(HOME, TASK, address);
   const stand = path.join(workersDir, `${store.participantFileStem(address)}.codex-sandbox`);
   writeFileSync(mcp, '{"mcpServers":{}}\n');
   writeFileSync(settings, '{"hooks":{}}\n');
+  writeFileSync(session, '{"sessionId":null}\n');
   mkdirSync(stand, { recursive: true });
   writeFileSync(path.join(stand, 'AGENTS.md'), 'stand\n');
   store.writeWake(HOME, TASK, address, { socket: `/tmp/${address}.sock`, token: 'secret' });
-  return { mcp, settings, stand, wake: store.wakeFile(HOME, TASK, address) };
+  return { mcp, settings, session, stand, wake: store.wakeFile(HOME, TASK, address) };
 };
 const acceptedSecrets = secretsOf('worker:accepted');
 const neighbourSecrets = secretsOf('worker:neighbour');
@@ -471,6 +473,8 @@ check(': and of the two files-folder entries of that blob, only the swept one we
 check(': the mcp-config, the settings file, the contact point and the temporary stand are gone',
   ![acceptedSecrets.mcp, acceptedSecrets.settings, acceptedSecrets.wake, acceptedSecrets.stand].some(existsSync),
   [acceptedSecrets.mcp, acceptedSecrets.settings, acceptedSecrets.wake, acceptedSecrets.stand].filter(existsSync).join(', '));
+check(': and the Claude Code session record beside the mcp-config is gone with them',
+  !existsSync(acceptedSecrets.session), acceptedSecrets.session);
 
 // --- the second proof: patch-id where merge-tree stops answering --------------------
 //

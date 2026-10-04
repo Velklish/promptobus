@@ -32,12 +32,27 @@ export interface SameContent {
 export interface SentMessage {
   message: MessageV1;
   artifact: ArtifactV1 | null;
-  /** Destination task when a peer, a teamlead or a child's root address delivered into its orchestrator mailbox. */
+  /** Destination task when a peer or a child's root address delivered into its orchestrator mailbox. */
   deliveredTask?: string;
   /** The address the message was sent as in `deliveredTask`. */
   deliveredFrom?: string;
   /** The file these bytes already landed under; `null` or absent — they are new here. */
   sameContent?: SameContent | null;
+  /** The primary task of the recipient's mailbox, when it is not the task the message landed in. */
+  mailboxTask?: string;
+}
+
+/** One mailbox slot: an address in a task. */
+export interface MailboxSlot {
+  task: string;
+  address: string;
+}
+
+/** A participant mailbox: its primary address, the slots read as one, and whether this address is an alias. */
+export interface Mailbox {
+  primary: MailboxSlot;
+  slots: MailboxSlot[];
+  alias: boolean;
 }
 
 /** What was found in the mailbox: messages and human lines about unreadable ones. */
@@ -60,10 +75,18 @@ export interface PromptobusService {
   claimOwnership(home: string, task: string, owner: string): string | null;
   /** How much unread mail sits at the address. */
   countInbox(home: string, task: string, addr: string): number;
+  /** Whom the address may write, on one line; `null` — the address is no participant of the task. */
+  contactsLine?(home: string, task: string, addr: string): string | null;
+  /** How much unread mail the participant mailbox of the address holds, over all its slots. */
+  countMailbox?(home: string, task: string, addr: string): number;
   /** One message this address has already read, by message id; `null` — not in its history. */
   historyMessage(home: string, task: string, addr: string, id: string): MessageV1 | null;
   /** Reply heading: home, task by id and name, address, and drift from the session binding. */
   identityLabel(home: string, task: string, addr: string, session?: string | null): string;
+  /** The address a mailbox call reads: the record the session holds in the task, else the declared role. */
+  mailboxAddress?(home: string, task: string, role: string, session: string | null): string;
+  /** The participant mailbox an address belongs to. */
+  mailboxOf?(home: string, task: string, addr: string): Mailbox;
   /** Mailbox ownership: `allowed` is the right, proven; `gated` is the narrower "proved foreign". */
   ownership(home: string, task: string, addr: string, session: string | null): Ownership;
   /** Owner-gate line, the copy sentence, and `ownerRoute`; `null` for every other `right`. */

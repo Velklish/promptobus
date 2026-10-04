@@ -301,6 +301,20 @@ test('the contact point is handed over on initialize and is not handed over a se
   ]);
 });
 
+test('a handover the binding gate refused is not an entry: the next call tries again, and stops once it lands', async () => {
+  // `false` from `onJoin` is the gate's refusal; anything else — a written point or nothing to
+  // hand over — marks the task entered.
+  const answers = [false, false, null];
+  const joins = [];
+  await talk([
+    rpc(1, 'initialize', { capabilities: {} }),
+    rpc(2, 'tools/call', { name: 'promptobus_task', arguments: {} }),
+    rpc(3, 'tools/call', { name: 'promptobus_task', arguments: {} }),
+    rpc(4, 'tools/call', { name: 'promptobus_task', arguments: {} }),
+  ], { options: { onJoin: (join) => { joins.push(join); return answers.shift(); } } });
+  assert.equal(joins.length, 3);
+});
+
 test('an entry that refused on the handshake leaves no mark — the next call enters', async () => {
   // `ownership` is the first real journal read: `resolveTaskId` only checks
   // that it exists. On an unparsed journal the entry lawfully refuses, and

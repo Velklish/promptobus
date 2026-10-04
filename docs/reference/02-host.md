@@ -285,6 +285,37 @@ differently bound records leave identity null. The harness id may still be null:
 participant record already carries the pointer before launch. The server refreshes proof
 for each tool call. [ADR-019](../adr/adr-019-session-address-per-task-lands.md)
 
+**Claude Code's pointer proves a binding, not an identity.** Its MCP child carries
+`CLAUDE_CODE_SESSION_ID`, so identity stays on the command path; what the child cannot
+show at its first handshake is that the participant record names it. `claude --bg`
+2.1.284 ignores the `--session-id` a lift passes, so the record still holds the chosen
+UUID when the handshake arrives. A lift that binds before launch — the worker,
+reviewer, approver and reporter lifts — therefore writes a session record beside the
+participant's mcp-config, `workers/<file stem>.session.json` with mode `0600`, naming
+`home`, `task` and `address` with `sessionId: null`; it adds the path to the participant
+record as `metadata.sessionRecord` and to the bus entry as `PROMPTOBUS_CLAUDE_SESSION`.
+At `join`, before the binding gate, `bindHandshake` accepts the pointer only when the
+record proves the same physical home and the exact task and address, the participant
+record names the same path, and the record's `sessionId` is `null` or the session's own
+id. Under the task lock it then writes that id into the session record and into the
+participant record's `sessionId`, so the unchanged gate hands the contact point over at
+the same handshake. The first proven handshake binds and nothing rebinds after it: a
+later handshake with another id is refused, kept in the record's `refused` list, and
+printed by `status`. A relift writes the record afresh. A teamlead gets no pointer, since
+its ownership of the child `orchestrator` moves with the rebind its lift applies after
+launch; its first bus call after the rebind hands its point over.
+
+**The order the pointer relies on was measured, not assumed.** On Claude Code 2.1.284,
+on 2026-10-04, two background sessions ran with a probe MCP server that only logged.
+The probe received `initialize` 0.96 and 1.12 s before the first turn's
+`UserPromptSubmit` hook; with its reply held for 8 s, the turn started 7 s before the
+reply, so the turn does not wait for the handshake, but the request precedes it. A
+subagent's tool call reached the same probe process with no second `initialize`, and the
+subagent's shell carried the parent's `CLAUDE_CODE_SESSION_ID`: a subagent presents no
+handshake of its own. `claude agents --json` named the session's own full id in
+`sessionId`, the one the post-launch persist checks a handshake binding against
+([03-cli § The session id after a lift](03-cli.md#the-session-id-after-a-lift)).
+
 ## Passing the host
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.

@@ -223,6 +223,25 @@ export function planParticipant(home, address, script) {
   return script;
 }
 
+/** Opt-in stub behaviours: `bgIgnoresSessionId` (2.1.284's `--bg`), `listsNoSessionId` (a session list without `sessionId`), and
+ * `bgAwaitsHandshake`, which returns from `--bg` only after the session's MCP handshake. */
+export function setHarnessMode(home, mode) {
+  writeFileSync(path.join(home, 'mode.json'), JSON.stringify(mode) + '\n');
+}
+
+function harnessMode(home) {
+  try { return JSON.parse(readFileSync(path.join(home, 'mode.json'), 'utf8')); } catch { return {}; }
+}
+
+/** The mark the scripted participant leaves once its `initialize` was answered. */
+export function handshakeMark(home, id) {
+  return path.join(home, 'logs', `${id}.handshake`);
+}
+
+// The warning claude 2.1.284 prints on every `--bg` that passes `--session-id`.
+export const BG_SESSION_ID_WARNING = 'warning: --bg manages the session id; ignoring --session-id '
+  + '(use --resume <id> to continue an existing session)';
+
 // --- the binary itself ----------------------------------------------------------
 
 function argValue(argv, flag) {
@@ -377,8 +396,11 @@ export async function claudeMain(argv, env = process.env) {
     process.stdout.write(`${HARNESS_VERSION} (Claude Code)\n`);
     return;
   }
+  const mode = harnessMode(home);
   if (argv[0] === 'agents') {
-    process.stdout.write(`${JSON.stringify(harnessSessions(home))}\n`);
+    const listed = harnessSessions(home)
+      .map((s) => (mode.listsNoSessionId ? Object.fromEntries(Object.entries(s).filter(([k]) => k !== 'sessionId')) : s));
+    process.stdout.write(`${JSON.stringify(listed)}\n`);
     return;
   }
   if (argv[0] === 'stop') {
@@ -410,7 +432,9 @@ export async function claudeMain(argv, env = process.env) {
     process.exitCode = 1;
     return;
   }
-  const sessionId = argValue(argv, '--session-id') ?? randomUUID();
+  const passed = argValue(argv, '--session-id');
+  const sessionId = (mode.bgIgnoresSessionId ? null : passed) ?? randomUUID();
+  if (mode.bgIgnoresSessionId && passed) process.stderr.write(`${BG_SESSION_ID_WARNING}\n`);
   const id = shortId(sessionId);
   const socket = String(env[SOCK_BASE_VAR] ?? '').replace('@', id);
   const token = randomUUID();
@@ -455,6 +479,9 @@ export async function claudeMain(argv, env = process.env) {
   // Output format — observed on 2.1.221 («backgrounded · <id> · <name>»): `parseSessionId`
   // parses it, and the start must be checked against the form the mechanism actually
   // reads.
+  if (mode.bgAwaitsHandshake) {
+    for (let i = 0; i < 400 && !existsSync(handshakeMark(home, id)); i += 1) await settle(25);
+  }
   process.stdout.write(`backgrounded · ${id} · ${name}\n`);
 }
 

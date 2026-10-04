@@ -8,7 +8,7 @@ import { mcpTools } from './tools.js';
 import { pipelineOf } from '../pipeline.js';
 import { SHIPPED_REGISTRY } from '../registry.js';
 import type { DeclaredStep, RoleRegistry } from '../registry.js';
-import type { PromptobusService } from './service.js';
+import type { Mailbox, PromptobusService } from './service.js';
 import {
   ADDR_MARK, SENT_PREFIX, foreignNote, readableName, renderMessage, renderMessages, renderTask,
 } from './render.js';
@@ -79,8 +79,8 @@ export interface McpOptions {
   resolveIdentity: () => McpIdentity;
   /** Server name and version. */
   serverInfo: () => McpServerInfo;
-  /** A participant entered a task — before any tool work. */
-  onJoin: (join: McpJoin) => void;
+  /** A participant entered a task — before any tool work. `false` says the gate refused the handover. */
+  onJoin: (join: McpJoin) => unknown;
   /** Participant lines the store does not know: repository, worktree, background session. */
   decorateParticipant: DecorateParticipant;
   /** The host's pipeline steps in order, for the `task` reply; absent — the default pipeline. */
@@ -134,10 +134,14 @@ export function createMcpServer(options: McpOptions): {
   }
 
   // Successor claiming the mailbox. Refusals are loud: a silent refusal would read as success.
-  function claim(home: string, task: string, addr: string, session: string | null, own: Ownership): string {
+  function claim(home: string, task: string, addr: string, session: string | null, own: Ownership, box: Mailbox | undefined): string {
+    if (box?.alias) {
+      return `${addr} in task ${task} is an address alias of orchestrator of task ${box.primary.task}: claim that mailbox `
+        + `by naming task ${box.primary.task} · ${service.identityLabel(home, task, addr, session)}`;
+    }
     if (addr !== ORCHESTRATOR) {
-      return `mailbox ${addr} has no owner — there is nothing to claim: a worker gets the address `
-        + `by declaration in its mcp-config. Read with an ordinary call, without claim · ${service.identityLabel(home, task, addr, session)}`;
+      return `claim is for the orchestrator address: this call reads ${addr} in task ${task}, a mailbox that has no `
+        + `owner and needs no claim. Read with an ordinary call, without claim · ${service.identityLabel(home, task, addr, session)}`;
     }
     if (!session) {
       return 'nothing to claim the mailbox with: the harness gave no session identity — '
@@ -171,7 +175,9 @@ export function createMcpServer(options: McpOptions): {
 
   // A body by id comes from the mail this address has read; a session that only peeks also gets an
   // unread one, as a copy under the same heading its header read carries.
-  function messageById(home: string, task: string, addr: string, session: string | null, own: Ownership, asked: unknown): string {
+  function messageById(
+    home: string, task: string, addr: string, session: string | null, own: Ownership, gateTask: string, asked: unknown,
+  ): string {
     const id = typeof asked === 'string' ? asked.trim() : '';
     if (!id) throw new GateError('promptobus_mailbox: "message" is the message id a header line names — a non-empty string');
     const peek = own.gated || own.right === 'no-identity';
@@ -186,7 +192,7 @@ export function createMcpServer(options: McpOptions): {
       throw new GateError(`no message ${id} in the ${peek ? '' : 'read '}mail of ${addr} — a body is returned once `
         + 'a mailbox read has listed its header; promptobus_mailbox without message lists unread mail and marks it read');
     }
-    const copy = own.gated ? foreignNote(task, own) : peek ? service.noIdentityMailboxLine(home, task, own) : null;
+    const copy = own.gated ? foreignNote(gateTask, own) : peek ? service.noIdentityMailboxLine(home, gateTask, own) : null;
     return [alarm, copy, renderMessage(service, home, task, addr, found, session)].filter(Boolean).join('\n\n');
   }
 
@@ -214,34 +220,39 @@ export function createMcpServer(options: McpOptions): {
     }
     switch (name) {
       case 'promptobus_mailbox': {
-        const own = service.ownership(home, task, role, session);
+        // The record this session holds in the named task picks the mailbox (ADR-028).
+        const addr = service.mailboxAddress?.(home, task, role, session) ?? role;
+        // An address alias reads its primary's slot too, so the owner gate judges the primary.
+        const box = service.mailboxOf?.(home, task, addr);
+        const gate = box?.alias ? box.primary : { task, address: addr };
+        const own = service.ownership(home, gate.task, gate.address, session);
         if (args?.claim === true) {
           if (args?.message !== undefined) {
             throw new GateError('promptobus_mailbox takes "claim" or "message", not both — claim the mailbox first, '
               + 'then ask the body by its id');
           }
-          return claim(home, task, role, session, own);
+          return claim(home, task, addr, session, own, box);
         }
         // No session is not proved foreign, and this fetch still must not take the mail.
         const peek = own.gated || own.right === 'no-identity';
-        if (args?.message !== undefined) return messageById(home, task, role, session, own, args.message);
+        if (args?.message !== undefined) return messageById(home, task, addr, session, own, gate.task, args.message);
         const { messages, broken } = peek
-          ? service.peekInbox(home, task, role)
-          : service.readInbox(home, task, role);
+          ? service.peekInbox(home, task, addr)
+          : service.readInbox(home, task, addr);
         const alarm = service.brokenNote(broken);
         const head = alarm ? `${alarm}\n\n` : '';
-        const body = renderMessages(service, home, task, role, messages, session);
+        const body = renderMessages(service, home, task, addr, messages, session);
         // A foreign mailbox gets the heading even on an empty reply: without
         // it the session would read emptiness as "no messages". `mailbox` is
         // called once per turn, not in a poll loop.
-        if (own.gated) return `${head}${foreignNote(task, own)}${messages.length ? `\n\n${body}` : ''}`;
+        if (own.gated) return `${head}${foreignNote(gate.task, own)}${messages.length ? `\n\n${body}` : ''}`;
         if (own.right === 'no-identity') {
-          const why = service.noIdentityMailboxLine(home, task, own);
+          const why = service.noIdentityMailboxLine(home, gate.task, own);
           return `${head}${why ?? ''}${messages.length ? `\n\n${body}` : ''}`;
         }
         // Stall routes are asked exactly on wake: `mailbox` is called first
         // thing, and it has no other place where the report would arrive in time.
-        const stalled = stalls({ home, task, address: role });
+        const stalled = stalls({ home, task, address: addr });
         return `${head}${body}${stalled ? `\n\n${stalled}` : ''}`;
       }
       case 'promptobus_send': {
@@ -288,12 +299,16 @@ export function createMcpServer(options: McpOptions): {
     // Ownership is asked here: contact-point handoff must happen before work
     // — otherwise the first call of a foreign session would have time to
     // write its own socket.
-    const own = service.ownership(home, task, role, session);
+    const box = service.mailboxOf?.(home, task, role);
+    // An address alias hands over its primary's point, so the owner gate judges the primary.
+    const gate = box?.alias ? box.primary : { task, address: role };
+    const own = service.ownership(home, gate.task, gate.address, session);
     // A no-identity call proves nothing either way, so it may not register —
     // `gated` alone would let it through: `gated` means "proved foreign" only.
     const mayRegister = own.right !== 'no-identity' && own.right !== 'foreign';
-    onJoin({ home, task, address: role, gated: own.gated, mayRegister });
-    if (mayRegister) joined.add(task);
+    const handed = onJoin({ home, task, address: role, gated: own.gated, mayRegister });
+    // A refused handover is not an entry: the next tool call tries again.
+    if (mayRegister && handed !== false) joined.add(task);
   }
 
   // Enter by the DECLARED task — that is how enter happens on handshake, where

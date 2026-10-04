@@ -1115,8 +1115,9 @@ check(': claim with no session identity — a loud refusal, not a silent no-op',
   /nothing to claim the mailbox with/.test(text(anonClaim)) && store.taskOwner(HOME, OWNED) === STRANGER, text(anonClaim));
 
 const workerClaim = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { claim: true } });
-check(`: claim on the worker — a loud refusal: its address has no owner`,
-  /has no owner/.test(text(workerClaim)), text(workerClaim));
+check(`: claim on the worker — a loud refusal: claim is for the orchestrator, and its address has no owner`,
+  /^claim is for the orchestrator address: this call reads worker:orders-api in task \S+, a mailbox that has no owner and needs no claim/
+    .test(text(workerClaim)), text(workerClaim));
 
 store.closeTask(HOME, OWNED);
 store.closeTask(HOME, LEGACY);

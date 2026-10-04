@@ -478,7 +478,11 @@ Source: `lib/warden.js`, `wardenRound`.
 
 One watch round. A wrapper over the state machine: a session snapshot arrives here,
 the registry leaves from here. `knock` is a suite seam: a stand-in driver for one
-round.
+round. The wrapper also hands the machine `mailboxes`, the adapter's answer for each
+participant record (`participantSlots`, `lib/store.js`): which mailbox slots it counts and
+whether it is an address alias another task's warden knocks for. The machine sums and
+glances every slot of a primary address and skips an address alias; without the answer each
+record is its own slot ([ADR-028](../adr/adr-028-participant-mailbox.md)).
 
 **The round does not request a snapshot and has no right to.** It arrives as an
 argument and is held in a loop variable until the heartbeat; the round runs once a

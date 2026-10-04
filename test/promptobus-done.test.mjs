@@ -432,6 +432,8 @@ const secretFiles = {
 writeFileSync(secretFiles.mcp, '{"mcpServers":{}}\n');
 writeFileSync(secretFiles.settings, '{"hooks":{}}\n');
 store.writeWake(secretsHome, SECRETS_TASK, 'reviewer:api', { socket: '/tmp/reviewer-api.sock', token: 'secret' });
+const secretSession = store.participantSessionPath(secretsHome, SECRETS_TASK, 'reviewer:api');
+writeFileSync(secretSession, '{"sessionId":null}\n');
 check(': the participant carries all three files BEFORE the close — the precondition is stated',
   Object.values(secretFiles).every(existsSync),
   Object.entries(secretFiles).filter(([, at]) => !existsSync(at)).map(([k]) => k).join(', '));
@@ -442,6 +444,8 @@ await capture(async () => done(SECRETS, { task: SECRETS_TASK, snapshot: deadSess
 check(': the settings file leaves with the mcp-config and the contact point, not after them',
   !Object.values(secretFiles).some(existsSync),
   Object.entries(secretFiles).filter(([, at]) => existsSync(at)).map(([k]) => k).join(', '));
+check(': the Claude Code session record leaves with the mcp-config too',
+  !existsSync(secretSession), secretSession);
 
 const TREE = path.join(SB, 'tree-ws');
 const treeHome = path.join(TREE, '.promptobus');

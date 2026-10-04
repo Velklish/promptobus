@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,8 @@ import { snapshotOf } from '../lib/drivers.js';
 import { GateError, liveWatched } from '../dist/index.js';
 import { TEAMLEAD_HARNESSES, harnessName } from '../lib/contract.js';
 import { send } from '../lib/send.js';
+import { wardenRound } from '../lib/warden.js';
+import { blockedParticipants } from '../dist/index.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-teamlead-'));
 const root = path.join(scratch, 'install');
@@ -54,9 +56,12 @@ const firstStatusInstruction = 'In your first status to the root orchestrator, l
 check('teamlead prompt instructs first status to list rule files read',
   planned.prompt.includes(firstStatusInstruction)
   && planned.rules.length > 0 && planned.rules.every((file) => planned.prompt.includes(`- ${file}`)), planned.prompt);
-check('teamlead prompt names the child-side root address for root mail and replies',
-  planned.prompt.includes(`arrives in your child task mailbox from root:${task}`)
-  && planned.prompt.includes(`a send to:"root:${task}" reaches the root orchestrator as teamlead:group-one`), planned.prompt);
+check('teamlead prompt lists whom it may write, the root orchestrator by both its addresses as one entry',
+  planned.prompt.includes(`## Whom you may write\n\n- root:${task} (all seven types) in task ${planned.childTask} `
+    + `or orchestrator (all seven types) in task ${task}\n\nThe bus refuses`), planned.prompt);
+check('teamlead prompt says its one mailbox holds root and sibling mail, and names the child-side root address for replies',
+  planned.prompt.includes(`Your one mailbox also holds the mail sent to teamlead:group-one in root task ${task}`)
+  && planned.prompt.includes(`A send to:"root:${task}" reaches the root orchestrator as teamlead:group-one`), planned.prompt);
 check('teamlead lift keeps sibling assignments vertical',
   planned.prompt.includes('The bus refuses task, result and review to a sibling.')
   && planned.prompt.includes('Raise a change of logic, a change of requirements')
@@ -88,10 +93,10 @@ check('Codex teamlead dry-run names its driver, hook override and root MCP entry
   && codexDry.out.includes('promptobus-root · stdio')
   && codexDry.out.includes('codex --dangerously-bypass-hook-trust app-server --stdio')
   && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexDry.out);
-check('Codex teamlead prompt sends sibling mail, not root mail, to its root MCP entry',
-  codexPlan.prompt.includes('Read sibling teamlead messages with')
-  && !codexPlan.prompt.includes('Read root messages with')
-  && codexPlan.prompt.includes(`arrives in your child task mailbox from root:${task}`), codexPlan.prompt);
+check('Codex teamlead prompt says both its MCP entries read the one mailbox',
+  codexPlan.prompt.includes(`Your second entry is bound to teamlead:group-one in task ${task};`)
+  && codexPlan.prompt.includes('returns the same mailbox.')
+  && codexPlan.prompt.includes(`Your one mailbox also holds the mail sent to teamlead:group-one in root task ${task}`), codexPlan.prompt);
 check('Codex teamlead full access dry-run names its sandbox',
   codexFull.out.includes('Codex sandbox: danger-full-access')
   && !existsSync(marker) && !store.taskExists(home, codexPlan.childTask), codexFull.out);
@@ -232,6 +237,33 @@ check('two teamlead lifts leave install root git status clean', git('status', '-
 check('second teamlead prompt lists its sibling address', sibling.prompt.includes('teamlead:group-one'), sibling.prompt);
 
 const sid3 = '33333333-3333-3333-3333-333333333333';
+// The dead session's points, and the new session's bus entry shaking hands before the rebind lands.
+store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+store.writeWake(home, task, 'teamlead:group-one', { socket: path.join(scratch, 'dead-root.sock'), session: sid1 });
+const leadSock = path.join(scratch, 'lead-3.sock');
+const leadMcp = spawn(process.execPath, [cli, 'mcp'], {
+  cwd: root, stdio: ['pipe', 'pipe', 'ignore'],
+  env: { ...process.env, CLAUDE_CODE_SESSION_ID: sid3, CLAUDE_CODE_MESSAGING_SOCKET: leadSock,
+    PROMPTOBUS_ROLE: 'orchestrator', PROMPTOBUS_TASK: child.id, PROMPTOBUS_ROOT_TASK: task, PROMPTOBUS_HOME: home },
+});
+const leadReplies = new Map();
+let leadBuf = '';
+leadMcp.stdout.setEncoding('utf8');
+leadMcp.stdout.on('data', (chunk) => {
+  leadBuf += chunk;
+  for (let nl = leadBuf.indexOf('\n'); nl >= 0; nl = leadBuf.indexOf('\n')) {
+    const msg = JSON.parse(leadBuf.slice(0, nl));
+    leadBuf = leadBuf.slice(nl + 1);
+    leadReplies.get(msg.id)?.(msg);
+  }
+});
+const leadCall = (id, method, params) => new Promise((resolve) => {
+  leadReplies.set(id, resolve);
+  leadMcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+});
+await leadCall(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+check('a relifted teamlead\'s handshake before the rebind hands over nothing: the child owner is still the dead session',
+  store.readWake(home, child.id, 'orchestrator')?.session === sid1, JSON.stringify(store.readWake(home, child.id, 'orchestrator')));
 const reliftBrief = path.join(scratch, 'relift.md');
 writeFileSync(reliftBrief, '# Renewed Group One\n');
 const reliftOpts = { ...opts, brief: reliftBrief };
@@ -251,6 +283,32 @@ check('dead teamlead relifts into the same child task with both addresses on the
   && participantSession(reliftOwner, reliftSessions) === 'alive'
   && liveWatched(home, child.id, reliftSessions).includes('orchestrator'),
   JSON.stringify({ lead: reliftLead.metadata, owner: reliftOwner.metadata, reliftSessions }));
+check('the relift drops the dead session\'s child point and its root teamlead point',
+  store.readWake(home, child.id, 'orchestrator') === null && store.readWake(home, task, 'teamlead:group-one') === null,
+  JSON.stringify([store.readWake(home, child.id, 'orchestrator'), store.readWake(home, task, 'teamlead:group-one')]));
+// Read past the spawn grace, where a point held by another session is reported as a deaf channel.
+const pastGrace = store.readTask(home, task).participants
+  .map((p) => ({ ...p, metadata: { ...p.metadata, started: new Date(Date.now() - 120000).toISOString() } }));
+const rootStalls = blockedParticipants(home, task, pastGrace, reliftSessions) ?? [];
+check('the root warden flags no deaf channel on the relifted teamlead record',
+  !rootStalls.some((stall) => stall.address === 'teamlead:group-one'), JSON.stringify(rootStalls));
+await leadCall(2, 'tools/call', { name: 'promptobus_task', arguments: {} });
+check('the teamlead\'s first bus call after the rebind hands over its child point',
+  store.readWake(home, child.id, 'orchestrator')?.session === sid3
+  && store.readWake(home, child.id, 'orchestrator')?.socket === leadSock,
+  JSON.stringify(store.readWake(home, child.id, 'orchestrator')));
+leadMcp.stdin.end();
+leadMcp.kill();
+const rootMail = await quiet(() => send(host, { task, to: 'teamlead:group-one', type: 'question', body: 'after the relift' },
+  { env: process.env, cwd: root }));
+const childKnocks = [];
+await wardenRound(home, child.id, { knock: async (endpoint) => { childKnocks.push(endpoint); return { ok: true }; } });
+const rootKnocks = [];
+await wardenRound(home, task, { knock: async (endpoint) => { rootKnocks.push(endpoint); return { ok: true }; } });
+check('the child warden knocks the relifted teamlead once for root mail, and the root warden knocks nobody for it',
+  rootMail === 0 && childKnocks.length === 1 && childKnocks[0].session === sid3
+  && !rootKnocks.some((endpoint) => endpoint.address === 'teamlead:group-one'),
+  JSON.stringify({ rootMail, childKnocks, rootKnocks }));
 const sid4 = '44444444-4444-4444-4444-444444444444';
 installStub([{ id: 'ddeeffaa', sessionId: sid4, name: planned.name, state: 'working', pid: 4246 }]);
 let faultMessage = '';

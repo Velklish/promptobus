@@ -481,3 +481,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-338"></a>`PB-338-generic-test-environment-isolation` · 2026-10-04 · completed · — · Move private memory-service policy out of the product test harness
 - <a id="pb-339"></a>`PB-339-supported-host-integration-api` · 2026-10-04 · completed · — · Provide supported host integration and diagnostic contracts
 - <a id="pb-340"></a>`PB-340-canonical-live-harness-scenarios` · 2026-10-04 · completed · — · Own reusable live harness scenarios and consumer integration probes
+- <a id="pb-331"></a>`PB-331-participant-owns-one-mailbox` · 2026-10-04 · completed · — · A participant owns one mailbox, its addresses in tasks are aliases, and the role rules list and enforce whom it may write
+- <a id="pb-324.1"></a>`PB-324.1-bg-ignores-session-id` · 2026-10-04 · batch PB-331 · — · A Claude Code lift records the --session-id that claude --bg ignores, so the first contact-point handoff is refused

@@ -110,7 +110,7 @@ export const SUITE_PREFIXES = [
   'schema-skew-',
   // docs-links.test.mjs packs a throwaway package under this prefix.
   'docs-links-pack-',
-  'promptobus-ambient-', 'promptobus-ask-', 'promptobus-codex-',
+  'promptobus-ambient-', 'promptobus-ask-', 'promptobus-codex-', 'promptobus-contact-list-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-digest-', 'promptobus-driver-', 'promptobus-report-',
   'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-', 'promptobus-link-',
