@@ -1,5 +1,6 @@
 # PB-325 · Three test files go red under machine load: lead-lifecycle, promptobus-e2e and codex-holder-spawn
 
+- **Order:** 80
 - **Scope:** [Contributing § Suite isolation](../../guides/contributing.md#suite-isolation)
 - **Created:** 2026-10-04
 - **Dependencies:** none

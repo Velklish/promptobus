@@ -1,5 +1,6 @@
 # PB-331 · A participant owns one mailbox, its addresses in tasks are aliases, and the role rules list and enforce whom it may write
 
+- **Order:** 110
 - **Scope:** [04. Protocol § Addresses](../../reference/04-protocol.md#addresses)
 - **Created:** 2026-10-04
 - **Dependencies:** none

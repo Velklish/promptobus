@@ -1,6 +1,6 @@
 # PB-337 · Remove organization-specific content from fixtures, documents and tracker records
 
-- **Order:** 30
+- **Order:** 50
 - **Scope:** [Contributing](../../guides/contributing.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none

@@ -1,6 +1,6 @@
 # PB-326 · Restore generated development adapters through the repository generator
 
-- **Order:** 2
+- **Order:** 10
 - **Scope:** [CLI: repository generator](../../reference/03-cli.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none

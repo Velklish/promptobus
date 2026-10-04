@@ -1,5 +1,6 @@
 # PB-332 · Participant telemetry counts tokens from the harness session logs, covers teamleads and the orchestrator, and a command reports a run
 
+- **Order:** 130
 - **Scope:** [03. CLI § Participant telemetry](../../reference/03-cli.md#participant-telemetry)
 - **Created:** 2026-10-04
 - **Dependencies:** none

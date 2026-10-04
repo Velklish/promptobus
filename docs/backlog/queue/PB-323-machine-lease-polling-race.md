@@ -1,5 +1,6 @@
 # PB-323 · The machine lease is a polling race, not a queue, and a killed waiter's file stays
 
+- **Order:** 90
 - **Scope:** [03. CLI § Lease](../../reference/03-cli.md#lease)
 - **Created:** 2026-10-04
 - **Dependencies:** none

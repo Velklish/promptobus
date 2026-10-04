@@ -5,7 +5,7 @@
 - **Dependencies:** none
 - **Cost:** minor
 
-## Context
+## Evidence
 
 `npm test` builds first (`package.json`, `"pretest": "npm run build"`). A lone `node test/<file>.test.mjs` does not. The tests import `lib/*.js`, and `lib/store.js` loads the compiled `dist/` (`lib/store.js:17–19`). After a change to `src/`, a lone test file therefore runs the new `lib/` against the old `dist/`.
 

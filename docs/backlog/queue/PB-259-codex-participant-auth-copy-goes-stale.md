@@ -1,6 +1,6 @@
 # PB-259 · Codex participant homes copy the owner's auth.json, and a lift can start with a refresh token that no longer refreshes
 
-- **Order:** 120
+- **Order:** 180
 - **Scope:** `lib/driver-codex.js` (`makeParticipantHome`), [05-drivers](../../reference/05-drivers.md), [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-26
 - **Dependencies:** none

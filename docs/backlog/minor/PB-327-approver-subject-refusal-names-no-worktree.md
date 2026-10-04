@@ -5,7 +5,7 @@
 - **Dependencies:** none
 - **Cost:** minor
 
-## Context
+## Evidence
 
 On 2026-10-03 at 21:50Z the root orchestrator of run bs020 ran `review /…/external/promptobus --approver --brief … --task bs020-t20261003-125224`. It exited 1 with: "step approver requires a type=result message from reviewer:promptobus for subject /…/external/promptobus in task bs020-t20261003-125224's journal — no participant is recorded." The reviewer's result existed for the worker's worktree, `…/.claude/worktrees/promptobus-bs020-pb318-t20261003-125224`. The same command on that path lifted the approver.
 

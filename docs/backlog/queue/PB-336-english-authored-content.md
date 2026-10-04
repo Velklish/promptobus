@@ -1,6 +1,6 @@
 # PB-336 · Apply the English authoring rule to all project-owned content
 
-- **Order:** 40
+- **Order:** 60
 - **Scope:** [Contributing](../../guides/contributing.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none

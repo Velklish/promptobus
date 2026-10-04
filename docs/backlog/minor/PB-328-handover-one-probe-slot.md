@@ -5,7 +5,7 @@
 - **Dependencies:** none
 - **Cost:** minor
 
-## Context
+## Evidence
 
 `checks.mutationProbe` in the handover record is one probe object or a not-run reason (`schemas/v1/handover-record.schema.json:42–44`, the object at `:108`). PB-318's worker ran five probes on `6a1b6599`: the artifact guard, the read that goes on after a failed drain, the forward, the drain call and the digest pairing. The record could carry one of them. The other four went into a prose evidence file, and the reviewer could check from the record only the one probe it held.
 

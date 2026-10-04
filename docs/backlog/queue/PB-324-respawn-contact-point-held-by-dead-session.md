@@ -1,5 +1,6 @@
 # PB-324 · A participant lifted again on the same address stays deaf while the dead session's record holds the contact point
 
+- **Order:** 100
 - **Scope:** [02. Host § Session identity](../../reference/02-host.md#session-identity)
 - **Created:** 2026-10-04
 - **Dependencies:** none

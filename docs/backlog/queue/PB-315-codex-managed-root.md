@@ -1,6 +1,6 @@
 # PB-315 · Start and resume a managed Codex root orchestrator with native wake and owner binding
 
-- **Order:** 100
+- **Order:** 160
 - **Scope:** [reference/03-cli § Lead](../../reference/03-cli.md#lead), [reference/05-drivers](../../reference/05-drivers.md), `lib/lead.js`, `lib/codex-session.js`, installed skills
 - **Created:** 2026-10-01
 - **Dependencies:** none

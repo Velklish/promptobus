@@ -5,7 +5,7 @@
 - **Dependencies:** none
 - **Cost:** minor
 
-## Context
+## Evidence
 
 `AGENTS.md` step 3 says that a documentation fix carries a check that fails on the old text: a `quote:` block, a test or a lint rule. Releasing § Technical-writer pass does not say whether this binds the writer's fixes.
 
