@@ -1,10 +1,11 @@
 # PB-335 · Keep the development tracker out of consumer documentation and release metadata
 
-- **Order:** 70
 - **Scope:** [Contributing](../../guides/contributing.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 70
+- **Taken:** 2026-10-04
 
 ## Context
 
