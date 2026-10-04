@@ -48,7 +48,7 @@
 //   on purpose, and others only hold because they refuse before the
 //   `sync` tail — a point patch would close some of them and stay
 //   silent about the next one added;
-// - **memory-hook lever** (`CONTEXT_STORE_*`). The ATI-host
+// - **memory-hook lever** (`CONTEXT_STORE_*`). A consumer host's
 //   `extraEnv` sets `CONTEXT_STORE_STOP_GATE=0` on every bus
 //   participant — under a worker and a reviewer the variable is in
 //   the session environment before `npm test`. The suite calls real
@@ -114,7 +114,7 @@ const MESSAGING_VARS = ['CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_T
 // entirely.
 export const HOME_VARS = ['HOME', 'USERPROFILE'];
 // Memory-hook lever (`CONTEXT_STORE_STOP_GATE=0` and neighbours):
-// the ATI-host `extraEnv` sets it on every bus participant, and under
+// a consumer host's `extraEnv` sets it on every bus participant, and under
 // a worker or a reviewer it leaks into the hook child process — the
 // suite calls real hooks with `spawnSync`, not a stub binary. A
 // prefix, not one variable: the family is one (URL, HOME, DISABLE),

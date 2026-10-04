@@ -35,7 +35,7 @@ const WORKER = 'worker:api';
 const REVIEWER = 'reviewer:api';
 
 store.createTask(HOME, { id: TASK, title: 'журнал переписки', owner: 'sess-orch' });
-store.upsertParticipant(HOME, TASK, store.participantRecord(WORKER, { repo: 'loads_search/cargos-api' }));
+store.upsertParticipant(HOME, TASK, store.participantRecord(WORKER, { repo: 'demo_team/orders-api' }));
 store.upsertParticipant(HOME, TASK, store.participantRecord(REVIEWER));
 store.createTask(HOME, { id: SECOND, title: 'соседняя задача', owner: 'sess-orch' });
 store.upsertParticipant(HOME, SECOND, store.participantRecord(WORKER));

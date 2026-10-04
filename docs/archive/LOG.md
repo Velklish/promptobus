@@ -472,3 +472,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-318"></a>`PB-318-teamlead-reads-root-mailbox` · 2026-10-04 · completed · — · A teamlead cannot read its root-task mailbox through the bus tools
 - <a id="pb-322"></a>`PB-322-mutation-probe-patch-guard` · 2026-10-04 · completed · — · The mutation probe runs a file name as shell text and lets a delete or rename patch escape its restore
 - <a id="pb-334"></a>`PB-334-neutral-project-hook-contract` · 2026-10-04 · completed · — · Replace tracker-specific hook admission with a neutral project hook contract
+- <a id="pb-337"></a>`PB-337-neutral-consumer-fixtures` · 2026-10-04 · completed · — · Remove organization-specific content from fixtures, documents and tracker records

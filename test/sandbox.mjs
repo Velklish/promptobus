@@ -229,7 +229,7 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
 //
 // Measured on this machine 2026-08-29: `/tmp/adoc-XXXXXX/live.sock`
 // is 26 characters, the same socket under the run directory is 97,
-// and with the former directory name `ati-a2a-sock-` — 105, i.e. over
+// and with the former thirteen-character directory name — 105, i.e. over
 // the limit. A short directory name gives an eight-character margin
 // and is held by the length of a foreign `TMPDIR`; a short root gives
 // seventy-eight and does not depend on the machine. The helper

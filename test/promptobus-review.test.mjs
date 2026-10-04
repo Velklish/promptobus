@@ -76,7 +76,7 @@ const g = (cwd, ...args) => {
 // fixture data so that walk finds a nested tree. Expected `nsPath` values therefore
 // start with the planted `repos/` segment; that is not a dest default.
 g(WS, 'init', '-b', 'main');
-const REPO = path.join(WS, 'repos', 'loads_search', 'cargos-api');
+const REPO = path.join(WS, 'repos', 'demo_team', 'orders-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'main');
 writeFileSync(path.join(REPO, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -112,7 +112,7 @@ check('new task: a blank --title doesn\'t count as a name either',
 // The name gate doesn't take away the command's cheapest move: on a clean clone the
 // "no changes — nothing to review" answer comes before any requirement for a name,
 // because in this case no task is opened at all (review note on ).
-const CLEAN = path.join(WS, 'repos', 'loads_search', 'clean-api');
+const CLEAN = path.join(WS, 'repos', 'demo_team', 'clean-api');
 mkdirSync(CLEAN, { recursive: true });
 g(CLEAN, 'init', '-b', 'main');
 writeFileSync(path.join(CLEAN, 'a.txt'), 'v1\n');
@@ -210,7 +210,7 @@ check(': without a path the command refuses instead of taking the current direct
 // from repos/<group>/<repo>/src a person would read about a directory they aren't
 // standing in.
 check(': the refusal names the current directory\'s repository and prints a ready-made command with it',
-  noTarget.msg.includes('The repository of the current directory is repos/loads_search/cargos-api')
+  noTarget.msg.includes('The repository of the current directory is repos/demo_team/orders-api')
   && noTarget.msg.includes(`promptobus review "${REPO}"`), noTarget.msg);
 check(': the call\'s flags go into the hint — the repeat costs saying them once',
   noTargetFlags.threw
@@ -227,10 +227,10 @@ check(': a clone sitting directly on the workspace disk — the refusal names th
 check(': a directory outside git — a refusal with no ready-made command',
   notARepo.threw && /not in a git repository/.test(notARepo.msg)
   && !notARepo.msg.includes('repeat with it'), notARepo.msg);
-const plan = planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api' });
-check(`plan: the reviewer's address comes from the repository name`, plan.address === 'reviewer:cargos-api', plan.address);
+const plan = planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api' });
+check(`plan: the reviewer's address comes from the repository name`, plan.address === 'reviewer:orders-api', plan.address);
 check('plan: the task is opened with the name the person gave it',
-  plan.createNew?.id === plan.taskId && plan.createNew.title === 'работа оркестратора в cargos-api',
+  plan.createNew?.id === plan.taskId && plan.createNew.title === 'работа оркестратора в orders-api',
   plan.createNew?.title);
 // The name also produces the slug: the person copies the task id into wait and
 // re-review commands, and it becomes readable together with the name.
@@ -254,7 +254,7 @@ check('PB-157: the stat cut out of the single pass equals the stat of its own ca
 // The title goes into the session name, and the tail carries a short stamp: the raw id
 // there used to read as fifteen technical characters instead of a date and time.
 check(`reviewer's session name: role as the first word, task name, short stamp in the tail`,
-  /^Review: работа оркестратора в cargos-api \(\d{4}-\d{4}\)$/.test(plan.name)
+  /^Review: работа оркестратора в orders-api \(\d{4}-\d{4}\)$/.test(plan.name)
   && plan.argv[plan.argv.indexOf('--name') + 1] === plan.name, plan.name);
 // The reviewer is raised without its own worktree — the subject of the review sits in
 // someone else's tree, and it doesn't need a machine name at all: `--name` checks
@@ -280,7 +280,7 @@ check(`reviewer's environment: there's no bus identity in it`,
   ['PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK', 'PROMPTOBUS_HOME'].every((k) => !(k in plan.env)),
   JSON.stringify({ role: plan.env.PROMPTOBUS_ROLE, task: plan.env.PROMPTOBUS_TASK, home: plan.env.PROMPTOBUS_HOME }));
 check('plan: the diff goes into the task\'s artifacts',
-  plan.diffPath === path.join(WS, '.promptobus', 'tasks', plan.taskId, 'files', 'review-cargos-api.diff'),
+  plan.diffPath === path.join(WS, '.promptobus', 'tasks', plan.taskId, 'files', 'review-orders-api.diff'),
   plan.diffPath);
 check('plan: the standalone host does not resolve a module review skill',
   plan.skill == null, JSON.stringify(plan.skill));
@@ -597,8 +597,8 @@ check(`reviewer's settings: personal skill duplicates are suppressed by name`,
 // The reviewer's MCP set equals the worker's set (owner decision 2026-08-28).
 // Read-only is held by a deny list on editing the working copy, not by a poor toolset.
 const rsrv = plan.mcpConfig.mcpServers;
-check(`mcp-config reviewer's: the bus is there, the externally-authorized ATI canon isn't`,
-  rsrv['promptobus'] !== undefined && rsrv['teamly-mcp'] === undefined
+check(`mcp-config reviewer's: the bus is there, the externally-authorized consumer canon isn't`,
+  rsrv['promptobus'] !== undefined && rsrv['wiki-mcp'] === undefined
   && rsrv['memory-hooks'] === undefined,
   JSON.stringify(Object.keys(rsrv)));
 const rallowed = plan.argv.slice(plan.argv.indexOf('--allowedTools') + 1, plan.argv.indexOf('--add-dir'));
@@ -642,7 +642,7 @@ check(': without --permission-mode the reviewer goes on the binary\'s mode — n
   plan.permissionMode === null && !plan.argv.includes('--permission-mode'), plan.argv.join(' '));
 let withMode;
 await capture(async () => {
-  withMode = await review(WS, { target: REPO, title: 'работа оркестратора в cargos-api', dryRun: true, permissionMode: 'acceptEdits' });
+  withMode = await review(WS, { target: REPO, title: 'работа оркестратора в orders-api', dryRun: true, permissionMode: 'acceptEdits' });
 });
 check(': the reviewer\'s --permission-mode goes into the session\'s argv',
   withMode.permissionMode === 'acceptEdits' && withMode.argv[withMode.argv.indexOf('--permission-mode') + 1] === 'acceptEdits',
@@ -655,7 +655,7 @@ check(': the reviewer\'s --permission-mode goes into the session\'s argv',
 // --dry-run".
 let withEffort;
 const dryEffort = await capture(async () => {
-  withEffort = await review(WS, { target: REPO, title: 'работа оркестратора в cargos-api', dryRun: true, effort: 'high' });
+  withEffort = await review(WS, { target: REPO, title: 'работа оркестратора в orders-api', dryRun: true, effort: 'high' });
 });
 check(`command: the reviewer's --effort is passed to the session right after --model <value>`,
   withEffort.effort === 'high'
@@ -666,11 +666,11 @@ check(`command: the reviewer's --effort is passed to the session right after --m
 for (const level of EFFORT_LEVELS) {
   const p = level === 'high'
     ? withEffort
-    : planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api', effort: level });
+    : planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api', effort: level });
   check(`--effort: value "${level}" accepted`, p.effort === level);
 }
 
-const badEffort = expectThrow(() => planReview(WS, { target: REPO, title: 'работа оркестратора в cargos-api', effort: 'super-high' }));
+const badEffort = expectThrow(() => planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api', effort: 'super-high' }));
 check('--effort: unknown value → a clear refusal, not a silent default',
   badEffort.threw && /--effort: unknown value/.test(badEffort.msg) && badEffort.msg.includes('super-high')
   && EFFORT_LEVELS.every((l) => badEffort.msg.includes(l)), badEffort.msg);
@@ -733,10 +733,10 @@ const claudeFails = () => claudeStub('process.exit(1);');
 const bgArgv = () => (existsSync(BG_ARGV) ? readFileSync(BG_ARGV, 'utf8') : '');
 
 const home = path.join(WS, '.promptobus');
-const task = store.createTask(home, { id: 't20260824-100000', title: 'ревью loads_search/cargos-api' });
-const SESSION = 'a2a-t20260824-100000-reviewer-cargos-api';
-store.upsertParticipant(home, task.id, store.participantRecord('reviewer:cargos-api', { repo: 'loads_search/cargos-api', name: SESSION }));
-writeFileSync(path.join(store.filesDir(home, task.id), 'review-cargos-api.diff'), 'старый дифф\n');
+const task = store.createTask(home, { id: 't20260824-100000', title: 'ревью demo_team/orders-api' });
+const SESSION = 'a2a-t20260824-100000-reviewer-orders-api';
+store.upsertParticipant(home, task.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api', name: SESSION }));
+writeFileSync(path.join(store.filesDir(home, task.id), 'review-orders-api.diff'), 'старый дифф\n');
 
 claudeSays(JSON.stringify([{ name: SESSION, status: 'running' }]));
 
@@ -769,7 +769,7 @@ check('re-review: a live session gets a re-review — about the new diff, withou
   dryReuse.includes(again.reReview) && !dryReuse.includes('## Communication protocol')
   && again.reReview.includes('Re-review') && again.reReview.includes(again.diffPath), dryReuse);
 check('re-review: the old diff isn\'t overwritten — the name gets a number',
-  again.diffPath.endsWith('review-cargos-api-2.diff'), again.diffPath);
+  again.diffPath.endsWith('review-orders-api-2.diff'), again.diffPath);
 
 // : the record itself claims the name, not a check before it. Previously a free name
 // was searched for by an `existsSync` loop, and the caller wrote it — between the check
@@ -810,7 +810,7 @@ check('live reviewer: --harness of another tool is refused and names stop',
   liveForeign.threw
   && /was started by harness claude/.test(liveForeign.msg)
   && liveForeign.msg.includes('the session is alive')
-  && liveForeign.msg.includes(`stop reviewer:cargos-api --task ${task.id}`)
+  && liveForeign.msg.includes(`stop reviewer:orders-api --task ${task.id}`)
   && /--harness codex/.test(liveForeign.msg)
   && !/open it its own task/.test(liveForeign.msg)
   && !/--title/.test(liveForeign.msg),
@@ -822,8 +822,8 @@ check('live reviewer: --harness of another tool is refused and names stop',
 // would go into re-review and send `type=task` to an inbox behind which there's nobody
 // (review note on , a  class bug).
 const pendingTask = store.createTask(home, { id: 't20260827-230000', title: 'ревью с сорвавшимся запуском' });
-store.upsertParticipant(home, pendingTask.id, store.participantRecord('reviewer:cargos-api', { repo: 'loads_search/cargos-api',
-  name: 'a2a-t20260827-230000-reviewer-cargos-api',
+store.upsertParticipant(home, pendingTask.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api',
+  name: 'a2a-t20260827-230000-reviewer-orders-api',
   pending: true }));
 claudeStub('process.exit(1);');
 const pendingUnknown = planReview(WS, { target: REPO, task: pendingTask.id });
@@ -835,7 +835,7 @@ check('record before launch: liveness not confirmed — no re-review is sent, a 
 // The flip side of the same fix: a marked record whose session WAS FOUND alive is an
 // ordinary reviewer. Otherwise re-review would stop working every time the second
 // upsert didn't get around to clearing the mark.
-claudeSays(JSON.stringify([{ name: 'a2a-t20260827-230000-reviewer-cargos-api', status: 'running' }]));
+claudeSays(JSON.stringify([{ name: 'a2a-t20260827-230000-reviewer-orders-api', status: 'running' }]));
 const pendingAlive = planReview(WS, { target: REPO, task: pendingTask.id });
 check('record before launch: the session was found alive — this is an ordinary re-review, not a second reviewer',
   pendingAlive.sessionState === 'alive' && pendingAlive.unlaunched === false
@@ -857,7 +857,7 @@ check('dry-run on a record before launch: says the reviewer was not raised, not 
 // closed (second review-round note).
 claudeSays('[]');
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }));
-const relaunched = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:cargos-api')?.metadata;
+const relaunched = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api')?.metadata;
 check(`: a successful launch clears pending — the record becomes an ordinary reviewer`,
   !!relaunched && !('pending' in relaunched), JSON.stringify(relaunched));
 
@@ -868,10 +868,10 @@ check(`: a successful launch clears pending — the record becomes an ordinary r
 // on an empty file. The command comes from the same function that places the hook in
 // the layout: a second copy of it would have diverged silently (review note).
 const reviewerSettings = JSON.parse(readFileSync(
-  store.participantSettingsPath(home, pendingTask.id, 'reviewer:cargos-api'), 'utf8',
+  store.participantSettingsPath(home, pendingTask.id, 'reviewer:orders-api'), 'utf8',
 ));
 const reviewerGuard = reviewerSettings.hooks?.[GUARD_HOOK_EVENT]?.[0]?.hooks?.[0];
-const reviewerIdentity = { address: 'reviewer:cargos-api', taskId: pendingTask.id, home };
+const reviewerIdentity = { address: 'reviewer:orders-api', taskId: pendingTask.id, home };
 check(`: the reviewer's settings carry the loop-warden Stop hook — the same command as the layout's`,
   reviewerGuard?.type === 'command'
   && reviewerGuard?.command === guardHookCommand(hostOf(WS), reviewerIdentity),
@@ -884,7 +884,7 @@ check(`no SessionStart is placed on the participant — the detector looks at th
 // sessions of one task resolved to the same address, and the second overwrote the
 // first's contact point.
 check(`: the reviewer's hook command carries ITS OWN address, task, and home`,
-  reviewerGuard?.command?.includes(` --role reviewer:cargos-api --task ${pendingTask.id} --home ${home}`) === true,
+  reviewerGuard?.command?.includes(` --role reviewer:orders-api --task ${pendingTask.id} --home ${home}`) === true,
   String(reviewerGuard?.command));
 
 // --task and --title together: the help declares them mutually exclusive, and a name
@@ -922,13 +922,13 @@ check('spawn: hints print commands with the task id, not the session name',
 check(': the hint leads to the warden and the mailbox, not to waiting',
   /the bus warden will wake you/.test(deadOut) && !/promptobus wait/.test(deadOut), deadOut);
 check('dead session: nothing landed in the dead address\'s inbox',
-  store.countInbox(home, task.id, 'reviewer:cargos-api') === 0,
-  String(store.countInbox(home, task.id, 'reviewer:cargos-api')));
+  store.countInbox(home, task.id, 'reviewer:orders-api') === 0,
+  String(store.countInbox(home, task.id, 'reviewer:orders-api')));
 
 const unknownTask = store.createTask(home, { id: 't20260925-154800', title: 'reviewer liveness unknown' });
-store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'loads_search/cargos-api',
+  repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-unknown-reviewer',
   model: 'sonnet',
@@ -952,9 +952,9 @@ claudeSays('[]');
 
 const rebindTask = store.createTask(home, { id: 't20260925-154900', title: 'reviewer harness rebind' });
 const rebindFrom = '2026-09-17T08:00:00.000Z';
-store.upsertParticipant(home, rebindTask.id, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(home, rebindTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'codex',
-  repo: 'loads_search/cargos-api',
+  repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-rebind-reviewer-pb235',
   model: 'gpt-5.4',
@@ -962,7 +962,7 @@ store.upsertParticipant(home, rebindTask.id, store.participantRecord('reviewer:c
   reviewAssignedAt: rebindFrom,
 }));
 store.sendMessage(home, rebindTask.id, {
-  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'round before rebind',
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'round before rebind',
 });
 let reboundErr = null;
 let reboundOut = '';
@@ -973,7 +973,7 @@ try {
 } catch (e) {
   reboundErr = e;
 }
-const rebound = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api');
+const rebound = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:orders-api');
 const reboundHistory = rebound?.metadata?.harnessHistory ?? [];
 check('re-bind: a gone reviewer session lifts on the harness named by --harness',
   !reboundErr
@@ -986,14 +986,14 @@ check('re-bind: a gone reviewer session lifts on the harness named by --harness'
   reboundErr?.message ?? `${rebound?.harness} ${JSON.stringify(reboundHistory)} ${reboundOut.slice(-400)}`);
 const { reviewerResultSent } = await import(path.join(here, '..', 'lib', 'approver.js'));
 check('re-bind: a result from before the re-bind does not unlock the approver',
-  !!rebound && reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api', rebound) === false,
-  String(reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api', rebound)));
+  !!rebound && reviewerResultSent(home, rebindTask.id, 'reviewer:orders-api', rebound) === false,
+  String(reviewerResultSent(home, rebindTask.id, 'reviewer:orders-api', rebound)));
 store.sendMessage(home, rebindTask.id, {
-  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'round after rebind',
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'round after rebind',
 });
 check('re-bind: the re-bound reviewer result counts for the current generation',
-  reviewerResultSent(home, rebindTask.id, 'reviewer:cargos-api',
-    store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api')) === true);
+  reviewerResultSent(home, rebindTask.id, 'reviewer:orders-api',
+    store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:orders-api')) === true);
 const rebindStatus = await capture(() => status(WS, { task: rebindTask.id, sessions: {} }));
 check('re-bind: status keeps the earlier rounds on the earlier harness',
   /harness claude/.test(rebindStatus)
@@ -1022,7 +1022,7 @@ try {
 } catch (e) {
   reliftErr = e;
 }
-const relifted = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:cargos-api');
+const relifted = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:orders-api');
 const reliftHistory = relifted?.metadata?.harnessHistory ?? [];
 const reliftStatus = await capture(() => status(WS, { task: rebindTask.id, sessions: {} }));
 check('re-bind: a later lift of the same harness keeps the earlier harness in the history',
@@ -1034,9 +1034,9 @@ check('re-bind: a later lift of the same harness keeps the earlier harness in th
 
 const tileTask = store.createTask(home, { id: 't20260925-155100', title: 'reviewer generation windows' });
 const tileStart = '2026-09-17T08:00:00.000Z';
-store.upsertParticipant(home, tileTask.id, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(home, tileTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'loads_search/cargos-api',
+  repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-tile-reviewer-pb235',
   model: 'sonnet',
@@ -1045,7 +1045,7 @@ store.upsertParticipant(home, tileTask.id, store.participantRecord('reviewer:car
 }));
 claudeSays('[]');
 store.sendMessage(home, tileTask.id, {
-  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation one',
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation one',
 });
 let tileSameErr = null;
 try {
@@ -1053,7 +1053,7 @@ try {
 } catch (e) {
   tileSameErr = e;
 }
-const afterSame = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:cargos-api');
+const afterSame = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:orders-api');
 check('re-bind: a same-harness re-lift writes no history entry',
   !tileSameErr
   && afterSame?.harness === 'claude'
@@ -1061,10 +1061,10 @@ check('re-bind: a same-harness re-lift writes no history entry',
   && afterSame?.metadata?.started !== tileStart,
   tileSameErr?.message ?? JSON.stringify(afterSame?.metadata?.harnessHistory));
 store.sendMessage(home, tileTask.id, {
-  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation two',
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'generation two',
 });
 claudeSays('[]');
-const beforeRebind = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:cargos-api');
+const beforeRebind = store.participantOf(store.readTask(home, tileTask.id), 'reviewer:orders-api');
 store.upsertParticipant(home, tileTask.id, {
   ...beforeRebind,
   harness: 'codex',
@@ -1101,9 +1101,9 @@ check('re-bind: a same-harness re-lift then a rebind counts every earlier round'
   }))));
 
 const unlabeledTask = store.createTask(home, { id: 't20260925-155200', title: 'closed generation without a model' });
-store.upsertParticipant(home, unlabeledTask.id, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(home, unlabeledTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'loads_search/cargos-api',
+  repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-unlabeled-reviewer-pb235',
   model: 'sonnet',
@@ -1144,11 +1144,11 @@ const silent = liftoffRun(
 );
 check(`: the reviewer's session isn't in claude agents — a refusal, not a report of success`,
   silent.status === 1 && /there is no live session .* in claude agents — reviewer was NOT started/.test(silent.text)
-  && !/reviewer reviewer:cargos-api started/.test(silent.text), `status=${silent.status} ${silent.text}`);
+  && !/reviewer reviewer:orders-api started/.test(silent.text), `status=${silent.status} ${silent.text}`);
 check(`: the refusal for a session that didn't happen names the route to re-raise the reviewer`,
   /Start the reviewer again: promptobus review/.test(silent.text)
   && silent.text.includes(`--task ${silentTask.id}`), silent.text);
-const silentPart = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:cargos-api')?.metadata;
+const silentPart = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:orders-api')?.metadata;
 check(`: the reviewer's record is in place even after the refusal — a repeat will raise it under the same address`,
   !!silentPart, JSON.stringify(store.readTask(home, silentTask.id).participants));
 check(`: the silent reviewer record writes an explicit missing session reference`,
@@ -1197,7 +1197,7 @@ const unverified = await capture(() => review(WS, {
 }));
 delete process.env.STUB_SILENT_FAIL;
 check(': the session list isn\'t parsed — not a refusal, but an unconfirmed state named out loud',
-  /reviewer reviewer:cargos-api started/.test(unverified)
+  /reviewer reviewer:orders-api started/.test(unverified)
   && /lift of session .* is not confirmed/.test(unverified), unverified);
 
 // Neither the list nor the output names the session. The chosen prelaunch id still binds it.
@@ -1207,12 +1207,12 @@ const unboundLift = liftoffRun(
   { target: REPO, task: unboundTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
   { STUB_SILENT_FAIL: '1' },
 );
-const unboundPart = store.participantOf(store.readTask(home, unboundTask.id), 'reviewer:cargos-api')?.metadata;
+const unboundPart = store.participantOf(store.readTask(home, unboundTask.id), 'reviewer:orders-api')?.metadata;
 const unboundSend = expectThrow(() => store.senderFor(home, unboundTask.id, {
-  session: 'the-live-session', hint: 'reviewer:cargos-api', declaredTask: unboundTask.id,
+  session: 'the-live-session', hint: 'reviewer:orders-api', declaredTask: unboundTask.id,
 }));
 check(': a Claude lift uses its preselected id when neither agents nor bg output names the session',
-  unboundLift.status === 0 && /reviewer reviewer:cargos-api started/.test(unboundLift.text)
+  unboundLift.status === 0 && /reviewer reviewer:orders-api started/.test(unboundLift.text)
   && !!unboundPart && /^[0-9a-f-]{36}$/.test(unboundPart.sessionId)
   && unboundPart.session === unboundPart.sessionId && unboundPart.pending !== true
   && unboundSend.threw && /held by session/.test(unboundSend.msg),
@@ -1224,7 +1224,7 @@ check(': a Claude lift uses its preselected id when neither agents nor bg output
 claudeSays('[]');
 const idTask = store.createTask(home, { id: 't20260829-104500', title: 'ревью и id сессии' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: idTask.id }));
-const idPart = store.participantOf(store.readTask(home, idTask.id), 'reviewer:cargos-api')?.metadata;
+const idPart = store.participantOf(store.readTask(home, idTask.id), 'reviewer:orders-api')?.metadata;
 check(`: the reviewer's session id is taken from claude agents, not from parsing the output`,
   idPart?.session === 'sess-live', JSON.stringify(idPart));
 
@@ -1242,7 +1242,7 @@ check('dry-run unknown: effort and model are neutral, they don\'t claim the sess
   && /session liveness is not confirmed/.test(dryUnknownEffort), dryUnknownEffort);
 const unknownOut = await capture(() => review(WS, { target: REPO, task: task.id }));
 check('unknown state: the diff went to the former address with an honest warning',
-  /cannot be confirmed/.test(unknownOut) && store.countInbox(home, task.id, 'reviewer:cargos-api') === 1,
+  /cannot be confirmed/.test(unknownOut) && store.countInbox(home, task.id, 'reviewer:orders-api') === 1,
   unknownOut);
 check('re-review: the hint also names the task id',
   unknownOut.includes(`task ${task.id}`) && !/promptobus wait/.test(unknownOut), unknownOut);
@@ -1256,7 +1256,7 @@ const quietReview = await capture(() => review(WS, { target: REPO, task: task.id
 check(': the orchestrator\'s empty mailbox is not named in `promptobus review`\'s output',
   !/your mailbox|unread \d+ at the orchestrator/.test(quietReview), quietReview);
 store.sendMessage(home, task.id, {
-  from: 'reviewer:cargos-api', to: 'orchestrator', type: 'result', body: `отчёт reviewer'а лежит непрочитанным`,
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: `отчёт reviewer'а лежит непрочитанным`,
 });
 // This CLI process names no session (the suite drops the identity variables), so the
 // counter takes the owner-gate's no-identity route rather than the owner's "fetch it".
@@ -1274,7 +1274,7 @@ store.readInbox(home, task.id, 'orchestrator');
 claudeSays('backgrounded · cafe12 · a2a-reviewer');
 const effortTask = store.createTask(home, { id: 't20260825-140000', title: 'ревью effort' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: effortTask.id, effort: 'high' }));
-const effortPart = store.participantOf(store.readTask(home, effortTask.id), 'reviewer:cargos-api')?.metadata;
+const effortPart = store.participantOf(store.readTask(home, effortTask.id), 'reviewer:orders-api')?.metadata;
 check(`spawn reviewer: effort is written to the participant, same as for the worker`,
   effortPart?.effort === 'high', JSON.stringify(effortPart));
 
@@ -1283,9 +1283,9 @@ check(`spawn reviewer: effort is written to the participant, same as for the wor
 // from — and which one that is isn't known here. There's no guessing by "the single
 // active task".
 store.sendMessage(home, task.id, {
-  from: 'reviewer:cargos-api', to: 'orchestrator', type: 'result', body: 'лежит в чужой задаче',
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: 'лежит в чужой задаче',
 });
-const FRESH = path.join(WS, 'repos', 'loads_search', 'fresh-api');
+const FRESH = path.join(WS, 'repos', 'demo_team', 'fresh-api');
 mkdirSync(FRESH, { recursive: true });
 g(FRESH, 'init', '-b', 'main');
 writeFileSync(path.join(FRESH, 'a.txt'), 'v1\n');
@@ -1303,7 +1303,7 @@ store.readInbox(home, task.id, 'orchestrator');
 
 const plainTask = store.createTask(home, { id: 't20260825-150000', title: 'ревью без effort' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: plainTask.id }));
-const plainPart = store.participantOf(store.readTask(home, plainTask.id), 'reviewer:cargos-api')?.metadata;
+const plainPart = store.participantOf(store.readTask(home, plainTask.id), 'reviewer:orders-api')?.metadata;
 check('spawn without --effort: there is no effort field on the participant',
   plainPart && !('effort' in plainPart), JSON.stringify(plainPart));
 // A review joins the worker's task: the task slug is taken from its journal and goes
@@ -1354,7 +1354,7 @@ g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a', WT);
 const wt = planReview(WS, { target: WT, task: task.id });
 // nsPath includes planted `repos/` — standalone `cloneOf` walks from WS, see fixture note above.
 check('a clone\'s worktree is a legitimate target, the repository is taken from the path',
-  wt.nsPath === 'repos/loads_search/cargos-api' && wt.repoDir === realpathSync(WT),
+  wt.nsPath === 'repos/demo_team/orders-api' && wt.repoDir === realpathSync(WT),
   `${wt.nsPath} · ${wt.repoDir}`);
 
 // --- a clone in a subgroup and its worktree ---------------------------------
@@ -1362,8 +1362,8 @@ check('a clone\'s worktree is a legitimate target, the repository is taken from 
 // The namespace can be deeper than two segments, and a worktree has its own git
 // toplevel — it points inside the clone, not at its root. The second path segment used
 // to be taken as the repository, and a review of a live orchestration got an address by
-// the intermediate subgroup: `reviewer:cargo-vibe` instead of `reviewer:ls-ai-skills`.
-const SUB = path.join(WS, 'repos', 'ls', 'cargo-vibe', 'ls-ai-skills');
+// the intermediate subgroup: `reviewer:tools` instead of `reviewer:demo-skills`.
+const SUB = path.join(WS, 'repos', 'demo-group', 'tools', 'demo-skills');
 mkdirSync(SUB, { recursive: true });
 g(SUB, 'init', '-b', 'main');
 writeFileSync(path.join(SUB, 'a.txt'), 'v1\n');
@@ -1372,16 +1372,16 @@ g(SUB, 'commit', '-m', 'init', '-q');
 writeFileSync(path.join(SUB, 'a.txt'), 'v2\n');
 const sub = planReview(WS, { target: SUB, task: task.id });
 check('a clone in a subgroup: the repository is the clone itself, not the intermediate subgroup',
-  sub.nsPath === 'repos/ls/cargo-vibe/ls-ai-skills' && sub.address === 'reviewer:ls-ai-skills',
+  sub.nsPath === 'repos/demo-group/tools/demo-skills' && sub.address === 'reviewer:demo-skills',
   `${sub.nsPath} · ${sub.address}`);
 
-const SUBWT = path.join(SUB, '.claude', 'worktrees', 'a2a-ls-ai-skills-0826-0215');
-g(SUB, 'worktree', 'add', '-q', '-b', 'worktree-a2a-ls', SUBWT);
+const SUBWT = path.join(SUB, '.claude', 'worktrees', 'a2a-demo-skills-0826-0215');
+g(SUB, 'worktree', 'add', '-q', '-b', 'worktree-a2a-demo', SUBWT);
 writeFileSync(path.join(SUBWT, 'a.txt'), 'v3\n');
 const subWt = planReview(WS, { target: SUBWT, task: task.id });
 check('worktree of a clone in a subgroup: address by repository, diff by worktree',
-  subWt.nsPath === 'repos/ls/cargo-vibe/ls-ai-skills'
-  && subWt.address === 'reviewer:ls-ai-skills'
+  subWt.nsPath === 'repos/demo-group/tools/demo-skills'
+  && subWt.address === 'reviewer:demo-skills'
   && subWt.repoDir === realpathSync(SUBWT),
   `${subWt.nsPath} · ${subWt.address} · ${subWt.repoDir}`);
 
@@ -1395,7 +1395,7 @@ check('worktree of a clone in a subgroup: address by repository, diff by worktre
 // right here too: before , the reviewer's slug was taken from the clone's root, and the
 // second one's review went to the first one's live reviewer as a re-review.
 const gOut = (cwd, ...args) => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).stdout.trim();
-const OWN = path.join(WS, 'repos', 'loads_search', 'base-api');
+const OWN = path.join(WS, 'repos', 'demo_team', 'base-api');
 mkdirSync(OWN, { recursive: true });
 g(OWN, 'init', '-b', 'main');
 writeFileSync(path.join(OWN, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -1404,7 +1404,7 @@ g(OWN, 'add', '.');
 g(OWN, 'commit', '-m', 'init', '-q');
 const PUSHED = gOut(OWN, 'rev-parse', 'HEAD');
 g(OWN, 'update-ref', 'refs/remotes/origin/main', PUSHED);
-// `origin/HEAD` — for the same reason as cargos-api above: default-branch detection
+// `origin/HEAD` — for the same reason as orders-api above: default-branch detection
 // stops at the first ref. It doesn't touch the  picture — `origin/main` stays behind
 // the local `main` exactly as it was.
 g(OWN, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
@@ -1438,7 +1438,7 @@ const owned = store.createTask(home, {
 // mechanism's fields go into `metadata`, v1's own fields are the role, harness, mode,
 // session reference, and a capabilities snapshot.
 const worker = (address, worktree, wtName, title = null, extra = {}) => store.participantRecord(address, {
-  repo: 'loads_search/base-api',
+  repo: 'demo_team/base-api',
   repoAbs: OWN,
   worktree,
   worktreeName: wtName,
@@ -1729,7 +1729,7 @@ const reviewerOnly = store.createTask(home, {
   id: 'reviewer-only-t20260827-091000', title: 'ревью каталога без worker',
 });
 store.upsertParticipant(home, reviewerOnly.id, store.participantRecord('reviewer:base-api', {
-  repo: 'loads_search/base-api',
+  repo: 'demo_team/base-api',
   repoAbs: W3,
   name: 'a2a-reviewer-only-t20260827-091000',
 }));
@@ -1746,7 +1746,7 @@ const reviewerClaim = store.createTask(home, {
   id: 'reviewer-claim-t20260827-091500', title: 'второе ревью каталога',
 });
 store.upsertParticipant(home, reviewerClaim.id, store.participantRecord('reviewer:pervyy', {
-  repo: 'loads_search/a2a-pervyy',
+  repo: 'demo_team/a2a-pervyy',
   repoAbs: W1,
   name: 'a2a-reviewer-claim-t20260827-091500',
 }));
@@ -1958,7 +1958,7 @@ check('outside the workspace — a refusal, not a review without rules',
 // A group folder: a path inside the workspace, but with no .git of its own — the
 // toplevel goes up to the workspace root. The refusal must name the specific clone,
 // not lie about being "outside the workspace".
-const GROUP = path.join(WS, 'repos', 'loads_search');
+const GROUP = path.join(WS, 'repos', 'demo_team');
 const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'папка группы' }));
 check('a group folder — a refusal about the clone, not "outside the workspace"',
   group.threw && /clone not found/.test(group.msg)
@@ -2000,7 +2000,7 @@ check(': the divergence between the recorded and the computed base is named out 
 // second is false too. The base was silently taken from the default branch. Here the
 // clone has no local default branch at all — there's nowhere to compute the point
 // from, and this is the only arrangement where the base remains a guess.
-const NOLOCAL = path.join(WS, 'repos', 'loads_search', 'no-local-default');
+const NOLOCAL = path.join(WS, 'repos', 'demo_team', 'no-local-default');
 mkdirSync(NOLOCAL, { recursive: true });
 g(NOLOCAL, 'init', '-b', 'work');
 writeFileSync(path.join(NOLOCAL, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -2012,7 +2012,7 @@ g(NOLOCAL, 'worktree', 'add', '-q', '-b', 'worktree-a2a-bez-bazy', NLWT, 'work')
 writeFileSync(path.join(NLWT, 'rabota.txt'), `работа worker'а\n`);
 g(NLWT, 'add', '.');
 g(NLWT, 'commit', '-m', 'работа', '-q');
-store.upsertParticipant(home, owned.id, store.participantRecord('worker:bezbazy', { repo: 'loads_search/no-local-default', repoAbs: NOLOCAL,
+store.upsertParticipant(home, owned.id, store.participantRecord('worker:bezbazy', { repo: 'demo_team/no-local-default', repoAbs: NOLOCAL,
   worktree: NLWT, worktreeName: 'a2a-bez-bazy', branch: 'worktree-a2a-bez-bazy',
   name: 'Worker: без базы (0826-1200, bezbazy)' }));
 
@@ -2035,7 +2035,7 @@ check(': the base is honestly named a guess by the default branch in this case',
 // off `master`, while the reviewer computed the diff from `main` — and the
 // orchestrator's work sitting on `master` went into the worker's diff, i.e. the  bug
 // via a diverged guess.
-const DUAL = path.join(WS, 'repos', 'loads_search', 'dual-default');
+const DUAL = path.join(WS, 'repos', 'demo_team', 'dual-default');
 mkdirSync(DUAL, { recursive: true });
 g(DUAL, 'init', '-b', 'master');
 writeFileSync(path.join(DUAL, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -2058,7 +2058,7 @@ g(DW, 'commit', '-m', 'работа', '-q');
 // A record without baseSha (made by the previous CLI) is the only arrangement in which
 // the base is computed from the default branch instead of taken from the record: it's
 // this one that exposes the detector.
-store.upsertParticipant(home, owned.id, store.participantRecord('worker:dual', { repo: 'loads_search/dual-default', repoAbs: DUAL,
+store.upsertParticipant(home, owned.id, store.participantRecord('worker:dual', { repo: 'demo_team/dual-default', repoAbs: DUAL,
   worktree: DW, worktreeName: 'a2a-dual', branch: 'worktree-a2a-dual',
   name: 'Worker: две default-ветки (0826-1200, dual)' }));
 check('fixture: spawn would have branched off master — that\'s how the shared detector chooses it',
@@ -2097,7 +2097,7 @@ check('review note: a tracked file\'s name is not escaped in the diff body or in
 // than the recorded point: a rewritten local default branch (during the development
 // phase a commit goes straight into main, and amending while workers are live is
 // legitimate) and a worker's branch that's already been merged.
-const REB = path.join(WS, 'repos', 'loads_search', 'rebase-api');
+const REB = path.join(WS, 'repos', 'demo_team', 'rebase-api');
 mkdirSync(REB, { recursive: true });
 g(REB, 'init', '-b', 'main');
 writeFileSync(path.join(REB, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -2112,7 +2112,7 @@ g(REB, 'worktree', 'add', '-q', '-b', 'worktree-a2a-reb', RW, 'main');
 writeFileSync(path.join(RW, 'rabota.txt'), `работа worker'а\n`);
 g(RW, 'add', '.');
 g(RW, 'commit', '-m', `работа worker'а`, '-q');
-store.upsertParticipant(home, owned.id, store.participantRecord('worker:reb', { repo: 'loads_search/rebase-api', repoAbs: REB,
+store.upsertParticipant(home, owned.id, store.participantRecord('worker:reb', { repo: 'demo_team/rebase-api', repoAbs: REB,
   worktree: RW, worktreeName: 'a2a-reb', branch: 'worktree-a2a-reb', baseSha: R_FORK,
   name: 'Worker: переписанная база (0826-1200, reb)' }));
 g(REB, 'commit', '--amend', '-q', '-m', 'работа оркестратора, переписанная');
@@ -2131,7 +2131,7 @@ check('review note: dest names the rewind as already-merged, not rewritten',
 // The worker's branch was merged into the default branch — the normal end of a run.
 // The merge-base becomes equal to HEAD, and the diff would be empty: re-review after a
 // merge would stop working.
-const MRG = path.join(WS, 'repos', 'loads_search', 'merged-api');
+const MRG = path.join(WS, 'repos', 'demo_team', 'merged-api');
 mkdirSync(MRG, { recursive: true });
 g(MRG, 'init', '-b', 'main');
 writeFileSync(path.join(MRG, 'AGENTS.md'), 'Правила репозитория.\n');
@@ -2144,7 +2144,7 @@ writeFileSync(path.join(MW, 'sdelano.txt'), `работа worker'а\n`);
 g(MW, 'add', '.');
 g(MW, 'commit', '-m', `работа worker'а`, '-q');
 g(MRG, 'merge', '--ff-only', '-q', 'worktree-a2a-mrg');
-store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'loads_search/merged-api', repoAbs: MRG,
+store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'demo_team/merged-api', repoAbs: MRG,
   worktree: MW, worktreeName: 'a2a-mrg', branch: 'worktree-a2a-mrg', baseSha: M_FORK,
   name: 'Worker: слитая ветка (0826-1200, mrg)' }));
 
@@ -2160,7 +2160,7 @@ check('review note: the base line says the work is already merged',
 // The same merged branch, but there's no branch point in the journal: the diff is
 // honestly empty, and the command says why — "no changes — nothing to review" without
 // an explanation would be a lie.
-store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'loads_search/merged-api', repoAbs: MRG,
+store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'demo_team/merged-api', repoAbs: MRG,
   worktree: MW, worktreeName: 'a2a-mrg', branch: 'worktree-a2a-mrg',
   name: 'Worker: слитая ветка (0826-1200, mrg)' }));
 const mergedNoBase = planReview(WS, { target: MW, task: owned.id });
@@ -2260,10 +2260,10 @@ const SEAT_WT = path.join(REPO, '.claude', 'worktrees', 'a2a-seat');
 g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-seat', SEAT_WT, 'main');
 const seatTask = store.createTask(home, { id: 'pb250-seat', title: 'approver seat' });
 store.upsertParticipant(home, seatTask.id, store.participantRecord('worker:seat', {
-  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+  repo: 'demo_team/orders-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
 }));
 store.upsertParticipant(home, seatTask.id, store.participantRecord('approver:seat', {
-  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+  repo: 'demo_team/orders-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
 }));
 const seatEvidence = path.join(SB, 'approver-evidence.md');
 writeFileSync(seatEvidence, 'approver probe\n');
@@ -2298,7 +2298,7 @@ check('PB-250: a worker worktree stays that worker list when an approver recorde
   && !/one approver whose recorded repository/.test(String(workerSeatPlan.prompt)),
   String(workerSeatPlan.prompt).split('\n').find((line) => line.includes('recorded this worktree')) ?? String(workerSeatPlan.reviewedAddress));
 store.upsertParticipant(home, seatTask.id, store.participantRecord('approver:later', {
-  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T18:00:00.000Z',
+  repo: 'demo_team/orders-api', repoAbs: SEAT_WT, started: '2026-09-25T18:00:00.000Z',
 }));
 const laterEvidence = path.join(SB, 'later-evidence.md');
 writeFileSync(laterEvidence, 'later probe\n');
@@ -2327,7 +2327,7 @@ check('PB-250: a worktree subject lists the latest approver after the worker lis
   String(besideLatest.approverBeside?.detail));
 const tieTask = store.createTask(home, { id: 'pb250-tie', title: 'approver tie' });
 store.upsertParticipant(home, tieTask.id, store.participantRecord('worker:tie', {
-  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+  repo: 'demo_team/orders-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
 }));
 const tieWorkerFile = path.join(SB, 'tie-worker.md');
 writeFileSync(tieWorkerFile, 'worker tie\n');
@@ -2336,7 +2336,7 @@ store.sendMessage(home, tieTask.id, {
 });
 for (const slug of ['one', 'two']) {
   store.upsertParticipant(home, tieTask.id, store.participantRecord(`approver:${slug}`, {
-    repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+    repo: 'demo_team/orders-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
   }));
 }
 const tiePlan = planReview(WS, { target: REPO, task: tieTask.id });
@@ -2360,7 +2360,7 @@ check('PB-250: a tie at the worktree builds no approver list and keeps the worke
   String(tieWt.approverBeside?.detail));
 const bareTask = store.createTask(home, { id: 'pb250-bare', title: 'approver without started' });
 store.upsertParticipant(home, bareTask.id, store.participantRecord('worker:bare', {
-  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+  repo: 'demo_team/orders-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
 }));
 const bareWorkerFile = path.join(SB, 'bare-worker.md');
 writeFileSync(bareWorkerFile, 'worker bare\n');
@@ -2368,10 +2368,10 @@ store.sendMessage(home, bareTask.id, {
   from: 'worker:bare', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: bareWorkerFile,
 });
 store.upsertParticipant(home, bareTask.id, store.participantRecord('approver:stamped', {
-  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+  repo: 'demo_team/orders-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
 }));
 store.upsertParticipant(home, bareTask.id, store.participantRecord('approver:bare', {
-  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT,
+  repo: 'demo_team/orders-api', repoAbs: SEAT_WT,
 }));
 const barePlan = planReview(WS, { target: REPO, task: bareTask.id });
 check('PB-250: an approver with no started stamp does not take the seat',
@@ -2393,7 +2393,7 @@ check('PB-250: a missing started stamp at the worktree builds no approver list',
   String(bareWt.approverBeside?.detail));
 const quietTask = store.createTask(home, { id: 'pb250-quiet', title: 'approver attached nothing' });
 store.upsertParticipant(home, quietTask.id, store.participantRecord('worker:quiet', {
-  repo: 'loads_search/cargos-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
+  repo: 'demo_team/orders-api', repoAbs: REPO, worktree: SEAT_WT, branch: 'worktree-a2a-seat',
 }));
 const quietWorkerFile = path.join(SB, 'quiet-worker.md');
 writeFileSync(quietWorkerFile, 'worker quiet\n');
@@ -2401,7 +2401,7 @@ store.sendMessage(home, quietTask.id, {
   from: 'worker:quiet', to: 'orchestrator', type: 'artifact', body: 'worker', artifactPath: quietWorkerFile,
 });
 store.upsertParticipant(home, quietTask.id, store.participantRecord('approver:quiet', {
-  repo: 'loads_search/cargos-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
+  repo: 'demo_team/orders-api', repoAbs: SEAT_WT, started: '2026-09-25T12:00:00.000Z',
 }));
 const quietPlan = planReview(WS, { target: SEAT_WT, task: quietTask.id });
 check('PB-250: a worktree approver that attached nothing says so',
@@ -2539,7 +2539,7 @@ check(': a failed launch refuses instead of staying silent',
   failed.status === 1 && /claude --bg exited with code 1/.test(failText),
   `status=${failed.status} ${failText}`);
 check(': the participant is recorded before launch and the session is not fabricated',
-  !!failedReviewer && failedReviewer.repo === 'repos/loads_search/fresh-api'
+  !!failedReviewer && failedReviewer.repo === 'repos/demo_team/fresh-api'
   && failedReviewer.repoAbs === realpathSync(FRESH) && failedReviewer.name?.startsWith('Review: ')
   && Object.hasOwn(failedReviewer, 'session') && failedReviewer.session === null
   && !Object.hasOwn(failedReviewer, 'sessionId'), JSON.stringify(failedReviewer));
@@ -2688,7 +2688,7 @@ check(': a review with no tool seam still reads the binary and refuses ultracode
 // extra re-review would shift the mailbox counters of neighboring checks.
 const reuseTask = store.createTask(home, { id: 't20260828-130000', title: 'переревью и набор MCP' });
 const REUSE_SESSION = 'Review: переревью и набор MCP (0828-1300)';
-store.upsertParticipant(home, reuseTask.id, store.participantRecord('reviewer:cargos-api', { repo: 'loads_search/cargos-api', name: REUSE_SESSION,
+store.upsertParticipant(home, reuseTask.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api', name: REUSE_SESSION,
   session: 'cafe12' }));
 claudeSays(JSON.stringify([{ id: 'cafe12', name: REUSE_SESSION, state: 'working', pid: 4242 }]));
 const reuseRun = await capture(() => review(WS, { target: REPO, task: reuseTask.id }));
@@ -2708,7 +2708,7 @@ claudeSays('[]');
 // The paths are short on purpose (review note): a full path longer than MAX_PATH (260)
 // wouldn't survive Windows, and the suite would fail red there on correct code — a
 // class bug. The same overflow is reached by file count instead of path length.
-const FLOOD = path.join(WS, 'repos', 'loads_search', 'flood-api');
+const FLOOD = path.join(WS, 'repos', 'demo_team', 'flood-api');
 const FLOOD_DIR = path.join(FLOOD, 'd'.repeat(30));
 mkdirSync(FLOOD_DIR, { recursive: true });
 g(FLOOD, 'init', '-b', 'master');
@@ -2881,7 +2881,7 @@ const pb233Knock = () => {
 };
 
 const LIFT_A = 'pb233-a-t20260917-100000';
-const LIFT_REPO = path.join(WS, 'repos', 'loads_search', 'lifted-api');
+const LIFT_REPO = path.join(WS, 'repos', 'demo_team', 'lifted-api');
 mkdirSync(LIFT_REPO, { recursive: true });
 g(LIFT_REPO, 'init', '-b', 'main');
 writeFileSync(path.join(LIFT_REPO, 'a.txt'), 'v1\n');

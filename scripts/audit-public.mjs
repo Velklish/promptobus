@@ -35,7 +35,7 @@ const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
 const BRAND_FRAGMENT = ['A', 'TI'].join('');
 const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
 const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
-const BRAND_ID = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}-workspace-[0-9a-f]+\\b`, 'iu');
+const BRAND_SNAKE = new RegExp(`\\b${BRAND_FRAGMENT}_`, 'iu');
 const HOME_ROOT = ['(?:^|[^\\w])/', '(?:Users|home)', '/'].join('');
 // ONE token-boundary grammar, and both halves below are built from it
 // ([reference/README](../docs/reference/README.md)).
@@ -98,21 +98,20 @@ const absoluteOwnerHomePath = (name, text) => {
 };
 export { absoluteOwnerHomePath, isTextContent };
 const FORBIDDEN = [
-  ['host of the origin forge', ['gitlab', '.ati', '.st'].join('')],
-  ['origin CLI name', ['ati', '-agents'].join('')],
-  ['origin package scopes', ['@agent', '-workspace'].join('')],
-  ['origin package scopes', ['@ati', '-agents'].join('')],
-  ['origin environment prefix', ['ATI', '_'].join('')],
+  ['origin environment prefix', `${BRAND_FRAGMENT}_`],
   ['origin memory service', ['context', '-store'].join('')],
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
   ['absolute owner home path', absoluteOwnerHomePath],
-  ['origin brand', (name, text) => {
-    const normalized = normalizedName(name);
-    const runtime = RUNTIME_PATH.test(normalized);
-    const evidenceCard = name.startsWith('docs/archive/') || name.startsWith('docs/backlog/');
-    return (runtime && (BRAND_WORD.test(text) || BRAND_CAMEL.test(text)))
-      || (!evidenceCard && BRAND_ID.test(text));
-  }],
+];
+// The organization's identity is read in every tracked text file and packed entry alike:
+// tests, docs, the changelog and tracker records answer to it as runtime does, and no path is exempt.
+const ORGANIZATION = [
+  ['organization brand', (name, text) => [BRAND_WORD, BRAND_CAMEL, BRAND_SNAKE].some((re) => re.test(text))],
+  ['organization namespace', new RegExp(['\\bloads', '[_-]search\\b'].join(''), 'iu')],
+  ['organization service', ['cargos', '-api'].join('')],
+  ['organization forge group', ['agent', '-workspace'].join('')],
+  ['organization tracker ids', new RegExp(['\\bLS', '-[0-9]'].join(''), 'u')],
+  ['organization tools', new RegExp(['\\b(?:kai', 'ten|team', 'ly)\\b'].join(''), 'iu')],
 ];
 const CYRILLIC = /[\u0400-\u04FF]/u;
 const CYRILLIC_ALLOWLIST = [
@@ -123,11 +122,19 @@ const GENERATED_FROM = new Map([
 ]);
 const failures = [];
 
+const matches = (name, text, needle) => (typeof needle === 'function'
+  ? needle(name, text)
+  : needle instanceof RegExp ? needle.test(text) : text.includes(needle));
 function scan(label, name, text, needle) {
-  const hit = typeof needle === 'function'
-    ? needle(name, text)
-    : needle instanceof RegExp ? needle.test(text) : text.includes(needle);
-  if (hit) failures.push(`${label}: ${name}`);
+  if (matches(name, text, needle)) failures.push(`${label}: ${name}`);
+}
+
+const organizationLeaks = (name, text) => ORGANIZATION
+  .filter(([, needle]) => matches(name, text, needle))
+  .map(([label]) => label);
+export { organizationLeaks };
+function scanOrganization(name, text) {
+  for (const label of organizationLeaks(name, text)) failures.push(`${label}: ${name}`);
 }
 
 function scanCyrillic(name, text) {
@@ -150,6 +157,7 @@ if (IS_MAIN) {
     if (text === null) continue;
     trackedTextCount += 1;
     for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
+    scanOrganization(rel, text);
     scanCyrillic(rel, text);
   }
 
@@ -204,6 +212,7 @@ if (IS_MAIN) {
       if (text === null) continue;
       packedTextCount += 1;
       for (const [label, needle] of FORBIDDEN) scan(label, 'tarball:' + entry, text, needle);
+      scanOrganization('tarball:' + entry, text);
       scanCyrillic(entry, text);
     }
   } finally {

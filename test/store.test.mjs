@@ -74,7 +74,7 @@ function thrown(fn) {
 // --- bus dictionary: addresses and task identity ------------------------------
 
 test('address: orchestrator and all three participant roles are valid', () => {
-  assert.ok(['orchestrator', 'worker:cargos-api', 'reviewer:cargos-api', 'approver:cargos-api']
+  assert.ok(['orchestrator', 'worker:orders-api', 'reviewer:orders-api', 'approver:orders-api']
     .every((address) => store.isAddress(address)));
 });
 
@@ -83,26 +83,26 @@ test('address: a stranger is rejected', () => {
 });
 
 test('address → directory: the colon does not go into the file name', () => {
-  assert.equal(store.addrDir('worker:cargos-api'), 'worker-cargos-api');
+  assert.equal(store.addrDir('worker:orders-api'), 'worker-orders-api');
   assert.equal(store.addrDir('orchestrator'), 'orchestrator');
 });
 
 // The role is counted ONCE, when the participant is written: store v1 holds it
 // as a field and does not derive it from the id.
 test('address → role: counted from the address and laid as a record field', () => {
-  assert.equal(store.roleOf('worker:cargos-api'), 'worker');
-  assert.equal(store.roleOf('reviewer:cargos-api'), 'reviewer');
+  assert.equal(store.roleOf('worker:orders-api'), 'worker');
+  assert.equal(store.roleOf('reviewer:orders-api'), 'reviewer');
   assert.equal(store.roleOf('orchestrator'), 'orchestrator');
-  assert.equal(store.roleOf('approver:cargos-api'), 'approver');
-  assert.equal(store.approverAddress('cargos-api'), 'approver:cargos-api');
+  assert.equal(store.roleOf('approver:orders-api'), 'approver');
+  assert.equal(store.approverAddress('orders-api'), 'approver:orders-api');
 });
 
 // Participant file name in `workers/`: spawn lays files by it, and cleanup
 // sweeps them by it.
 test('address → participant file name: reviewer and approver differ from a worker', () => {
-  assert.equal(store.participantFileStem('worker:cargos-api'), 'cargos-api');
-  assert.equal(store.participantFileStem('reviewer:cargos-api'), 'reviewer-cargos-api');
-  assert.equal(store.participantFileStem('approver:cargos-api'), 'approver-cargos-api');
+  assert.equal(store.participantFileStem('worker:orders-api'), 'orders-api');
+  assert.equal(store.participantFileStem('reviewer:orders-api'), 'reviewer-orders-api');
+  assert.equal(store.participantFileStem('approver:orders-api'), 'approver-orders-api');
 });
 
 // An address with no slug yields no file name at all, and that used to be
@@ -461,7 +461,7 @@ test('linkBlob places the link and does not overwrite a taken name', () => {
   const task = engine.createTask({ id: 'link-t20260903-000000', title: 'ссылки', owner: participant('orchestrator') });
   engine.addParticipant(task.id, participant('worker:a'));
   const src = path.join(SB, 'contract.json');
-  writeFileSync(src, '{"event":"CargoCreated"}\n');
+  writeFileSync(src, '{"event":"OrderCreated"}\n');
   let placed = null;
   const dir = path.join(SB, 'files');
   const sent = engine.sendSync(task.id, {
@@ -479,7 +479,7 @@ test('linkBlob places the link and does not overwrite a taken name', () => {
   });
   assert.equal(sent.artifact.filename, 'contract.json');
   assert.ok(engine.linkBlob(task.id, placed, path.join(dir, 'contract.json')));
-  assert.match(readFileSync(path.join(dir, 'contract.json'), 'utf8'), /CargoCreated/);
+  assert.match(readFileSync(path.join(dir, 'contract.json'), 'utf8'), /OrderCreated/);
   // A second time under the same name — `false`, not an overwrite: the caller
   // picks the next name.
   assert.equal(engine.linkBlob(task.id, placed, path.join(dir, 'contract.json')), false);

@@ -236,7 +236,7 @@ test('parallel senders of the same content do not lose records', async (t) => {
   engine.createTask({ id: ART_TASK, title: 'гонка артефактов', owner: rec(store.ORCHESTRATOR) });
   engine.putParticipant(ART_TASK, rec('worker:a'));
   const artRace = path.join(SB, 'race-artifact.json');
-  writeFileSync(artRace, '{"event":"CargoCreated"}\n');
+  writeFileSync(artRace, '{"event":"OrderCreated"}\n');
   const kids = await racers(6,
     `const e = at(${J(atomicHome)});\n`
     + `for (let k = 0; k < 5; k += 1) e.sendSync(${J(ART_TASK)}, `

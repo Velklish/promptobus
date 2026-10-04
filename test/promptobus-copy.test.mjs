@@ -177,6 +177,6 @@ check('util.shellQuote quotes a space',
   util.shellQuote('a b'));
 
 check('fuzzy.normalize folds separators',
-  fuzzy.normalize('ATI Search') === fuzzy.normalize('ati.search')
-  && fuzzy.normalize('ati.search') === 'ati-search',
-  fuzzy.normalize('ATI Search'));
+  fuzzy.normalize('Demo Search') === fuzzy.normalize('demo.search')
+  && fuzzy.normalize('demo.search') === 'demo-search',
+  fuzzy.normalize('Demo Search'));

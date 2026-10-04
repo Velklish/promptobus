@@ -727,7 +727,7 @@ const NOWHERE = makeSandbox('promptobus-promptobus-guard-nowhere-');
 const homeless = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: NOWHERE,
   env: Object.fromEntries(Object.entries({ ...process.env, CLAUDE_CODE_SESSION_ID: SESSION })
-    .filter(([k]) => !['PROMPTOBUS_HOME', 'PROMPTOBUS_TASK', 'PROMPTOBUS_ROLE', ['ATI', 'AGENTS_ROOT'].join('_')].includes(k))),
+    .filter(([k]) => !['PROMPTOBUS_HOME', 'PROMPTOBUS_TASK', 'PROMPTOBUS_ROLE', ['A', 'TI_AGENTS_ROOT'].join('')].includes(k))),
   encoding: 'utf8',
 });
 check('outside the workspace: stays silent and exits zero instead of crashing',

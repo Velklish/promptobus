@@ -439,7 +439,7 @@ check('tarball contains the model catalog',
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
-const { absoluteOwnerHomePath, isTextContent } = await import(
+const { absoluteOwnerHomePath, isTextContent, organizationLeaks } = await import(
   pathToFileURL(path.join(REPO, 'scripts', 'audit-public.mjs')).href);
 const homePath = (...parts) => parts.join('');
 check('publicity audit rejects a bare owner-home fixture',
@@ -491,6 +491,53 @@ check('publicity audit does not mistake a nested home directory for an owner hom
   absoluteOwnerHomePath('test/promptobus-driver-cursor.test.mjs',
     homePath('/', 'tmp', '/', 'home', '/tasks/t/workers/cur.mcp.json')) === false,
   'the /home segment is nested below /tmp');
+// No fragment is the brand word alone: the publicity audit reads this file for it.
+const brand = ['A', 'TI'].join('');
+const organizationSamples = [
+  ['test/scenario.mjs', `{ ns = '${['loads', '_search'].join('')}', repo = '${['cargos', '-api'].join('')}' }`,
+    ['organization namespace', 'organization service']],
+  ['test/promptobus-driver-codex.test.mjs', `'${brand.toLowerCase()}-${['kai', 'ten'].join('')}-mcp'`,
+    ['organization brand', 'organization tools']],
+  ['test/promptobus-spawn.test.mjs', `'${['LS', '-235543'].join('')}: refresh flags'`, ['organization tracker ids']],
+  ['test/promptobus-mcp.test.mjs', `repo: '${['agent', '-workspace'].join('')}/promptobus'`, ['organization forge group']],
+  ['CHANGELOG.md', `the ${brand} host member already routes through the store door`, ['organization brand']],
+  ['docs/backlog/queue/PB-1-sample.md', `The ${brand} developer workspace's task journal`, ['organization brand']],
+  ['docs/archive/LOG.md', `two literal ${brand.toLowerCase()}-workspace-0a1b ids`, ['organization brand']],
+  ['tarball:package/dist/store.js', `export const ${brand.toLowerCase()}Routing = {};`, ['organization brand']],
+  ['test/promptobus-guard.test.mjs', `'${brand.toLowerCase()}_agents_root'`, ['organization brand']],
+  ['docs/archive/LOG.md', `the ${brand.toLowerCase()}_workspace_0a1b id`, ['organization brand']],
+];
+const organizationMisses = organizationSamples
+  .filter(([name, text, labels]) => organizationLeaks(name, text).join() !== labels.join())
+  .map(([name, text]) => `${name}: ${organizationLeaks(name, text).join(', ') || '(none)'}`);
+check('publicity audit refuses the organization in a fixture, the changelog and a tracker record',
+  organizationMisses.length === 0, organizationMisses.join(' · '));
+const everyDirectory = ['bin/x.js', 'lib/x.js', 'scripts/x.mjs', 'test/x.mjs', 'test/fixtures/x.json',
+  'docs/guides/x.md', 'docs/backlog/x.md', 'docs/archive/x.md', 'README.md', 'CHANGELOG.md',
+  'tarball:package/README.md'];
+const labelSamples = [
+  ['organization brand', `the ${brand} host`],
+  ['organization namespace', `repos/${['loads', '_search'].join('')}/x`],
+  ['organization service', `repos/x/${['cargos', '-api'].join('')}`],
+  ['organization forge group', `${['agent', '-workspace'].join('')}/x`],
+  ['organization tracker ids', `${['LS', '-1'].join('')}: x`],
+  ['organization tools', `${['team', 'ly'].join('')}-mcp`],
+];
+const exemptDirectories = everyDirectory.flatMap((name) => labelSamples
+  .filter(([label, text]) => !organizationLeaks(name, text).includes(label))
+  .map(([label]) => `${name}: ${label}`));
+check('publicity audit reads the organization under every directory alike',
+  exemptDirectories.length === 0, exemptDirectories.join(', '));
+const neutralSamples = [
+  "{ ns = 'demo_team', repo = 'orders-api' }",
+  "pkg: ['a', 'ti-agents'].join(''), gitlab: ['gitlab.a', 'ti'].join('')",
+  "'tracker-mcp': { url: 'http://tracker.invalid/mcp' } · payloads-search and uploads_search · TLS-1.3",
+];
+const neutralHits = neutralSamples
+  .map((text) => `${text}: ${organizationLeaks('test/x.mjs', text).join(', ')}`)
+  .filter((line) => !line.endsWith(': '));
+check('publicity audit passes the fictional workspace and fragment-built detectors',
+  neutralHits.length === 0, neutralHits.join(' · '));
 check('publicity audit derives its root through import.meta.url',
   /path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/.test(publicityAudit),
   'audit-public.mjs must use path.dirname(fileURLToPath(import.meta.url))');

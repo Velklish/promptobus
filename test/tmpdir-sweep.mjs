@@ -7,7 +7,7 @@
 // never reaches the hook: Ctrl-C, taken down at the file timeout,
 // process crash. The directory stays in system `$TMPDIR` forever —
 // nobody sweeps it. Measured 2026-09-03 on the owner's machine: 126
-// `ati-*`/`promptobus-*` directories, of them `promptobus-sync-` 23,
+// directories under the former and the current prefix, of them `promptobus-sync-` 23,
 // `promptobus-promptobus*` 38, `promptobus-bushook-` 9; some prefixes
 // predate the rename, so the leftovers survived more than one release.
 //

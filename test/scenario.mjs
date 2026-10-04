@@ -328,7 +328,7 @@ function startInbox(socketPath, token, listenSocket = null) {
  * a real branch. There is no git mock in the scenario at all — `promptobus done` cleanup
  * judges by what git actually says.
  */
-export function buildWorkspace(sandbox, { ns = 'loads_search', repo = 'cargos-api', root = null, tools = ['claude', 'cursor', 'codex'] } = {}) {
+export function buildWorkspace(sandbox, { ns = 'demo_team', repo = 'orders-api', root = null, tools = ['claude', 'cursor', 'codex'] } = {}) {
   // Standalone host: promptobus.json at the workspace root, clone on disk under that root.
   // Origin is a local bare repo so freshenRepo can fetch without the network.
   const ws = root ?? path.join(sandbox, 'ws');

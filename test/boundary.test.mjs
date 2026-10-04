@@ -103,12 +103,13 @@ test('package sources have no harness-specific names', () => {
   assert.deepEqual(harnessed, []);
 });
 
+// No fragment is the brand word alone: the publicity audit reads this file for it.
 const CONTOUR = {
-  pkg: ['ati', 'agents'].join('-'),
+  pkg: ['a', 'ti-agents'].join(''),
   layout: ['.', 'agents'].join(''),
-  env: ['ATI', '_'].join(''),
+  env: ['A', 'TI_'].join(''),
   memory: ['context', 'store'].join('-'),
-  gitlab: ['gitlab', 'ati'].join('.'),
+  gitlab: ['gitlab.a', 'ti'].join(''),
 };
 
 test('the standalone host source does not contain another workplace layout', () => {

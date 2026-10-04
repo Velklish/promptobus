@@ -64,7 +64,7 @@ writeHostConfig(WS);
 // unpushed, the very thing the base is computed from the LOCAL branch for. The worker's
 // branch is founded from `master`, so its branch point is the tip of `master`, and a ladder
 // miss onto `main` shows up both in the base and in the contents of the diff.
-const REPO = path.join(WS, 'repos', 'loads_search', 'ladder-api');
+const REPO = path.join(WS, 'repos', 'demo_team', 'ladder-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'master');
 writeFileSync(path.join(REPO, 'AGENTS.md'), 'Правила репозитория.\n');

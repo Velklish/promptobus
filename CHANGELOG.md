@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-025](docs/adr/adr-025-foreign-project-hook-records.md),
   [hooks and trust](docs/guides/hooks-and-trust.md#a-projects-own-hook-records).
 
+- **The publicity audit refuses the organization's identity in every tracked text file and
+  packed entry.** The brand — as a word, a camelCase prefix or a snake_case prefix — the
+  organization's team namespace, its service name, its forge group, its tracker ids and its
+  tracker and wiki products are findings in tests, scripts, docs, the changelog and tracker
+  records, as in runtime files. Before, the brand was read only under `bin/`, `lib/`, `src/`,
+  `schemas/`, `templates/` and `dist/`, and a workspace id built on it was not read in
+  tracker records at all. The forge host, CLI name and package scopes the audit refused
+  under their own labels are now reported as `organization brand` or `organization forge
+  group`. The brand rule is word-anchored where those substrings were not, so the brand
+  glued to a preceding word character is no longer a finding. A detector test that must
+  hold one of these strings builds it from fragments, none of which is the brand alone.
+  Test fixtures use the fictional `demo_team/orders-api` repository.
+
 ### Fixed
 
 - **`npm run probe` no longer runs a file name as shell text or lets a patch escape its
@@ -1352,7 +1365,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Codex dry-run output no longer treats the prompt as an app-server argument; it identifies the `turn/start` request that carries it.** (PB-121)
 - **Codex threads now use the mechanism's readable session name, with a machine-name fallback for older records.** (PB-156)
 - **Codex holder fallback sockets are isolated by registry home.** When a registry's nested session socket path is too long, the `/tmp/pb-cdx-…` fallback now hashes the registry `sessions` directory together with the session ref, so two registries cannot take over the same socket. (PB-115)
-- **Status, history, dismiss, and prune now use the task-store home declared by the host.** A host can place the bus outside `<workspaceRoot>/.promptobus` without making those four commands read an empty journal. The swap loses no former-layout migration on either shipped host: the ATI host member already routes through the migration-aware store door, while the standalone host declares no former layout. (PB-101)
+- **Status, history, dismiss, and prune now use the task-store home declared by the host.** A host can place the bus outside `<workspaceRoot>/.promptobus` without making those four commands read an empty journal. The swap loses no former-layout migration on either shipped host: the workspace host member already routes through the migration-aware store door, while the standalone host declares no former layout. (PB-101)
 - **Mixed-version task journals now name the real writer and reader releases.** CLI dispatch selects the host-home commands' version, while the guard, warden, and MCP bootstrap select the home they resolve; engines are cached per home and reader version, and new or claimed orchestrator records plus automatically registered senders carry the selected version. An unfamiliar field written by a newer plain, prerelease, or build version therefore returns `schema-version-unsupported` instead of generic journal corruption. (PB-102)
 - **Participant records no longer invent a `0.0.0` writer release.** `mechanismVersion` is present when an entry point selected the host version; low-level reads and the three adapter writers warn with their store or record when no version was selected, and leave the public metadata field absent. (PB-102)
 - **The synchronous send input type now leaves the package.** `SendSyncInput`, the parameter type of public `Engine.sendSync`, is exported from the `.` entry point beside `SendInput`, so TypeScript consumers can name the contract without copying its fields or using a deep import. (PB-135)

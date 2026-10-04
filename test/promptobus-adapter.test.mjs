@@ -182,12 +182,12 @@ check('participant record: the address lives in metadata, role and id are v1\'s 
 // before this, the concatenation returned `undefined`, and the path was assembled as
 // `undefined.mcp.json` — a file that nobody looked for and nobody cleaned up.
 check(': the participant\'s mcp-config path is assembled from its address',
-  /workers[\\/]cargos-api\.mcp\.json$/.test(store.participantMcpPath(home, task.id, 'worker:cargos-api'))
-  && /workers[\\/]reviewer-cargos-api\.settings\.json$/.test(
-    store.participantSettingsPath(home, task.id, 'reviewer:cargos-api'))
-  && /workers[\\/]approver-cargos-api\.mcp\.json$/.test(
-    store.participantMcpPath(home, task.id, 'approver:cargos-api')),
-  `${store.participantMcpPath(home, task.id, 'worker:cargos-api')} · ${store.participantSettingsPath(home, task.id, 'reviewer:cargos-api')} · ${store.participantMcpPath(home, task.id, 'approver:cargos-api')}`);
+  /workers[\\/]orders-api\.mcp\.json$/.test(store.participantMcpPath(home, task.id, 'worker:orders-api'))
+  && /workers[\\/]reviewer-orders-api\.settings\.json$/.test(
+    store.participantSettingsPath(home, task.id, 'reviewer:orders-api'))
+  && /workers[\\/]approver-orders-api\.mcp\.json$/.test(
+    store.participantMcpPath(home, task.id, 'approver:orders-api')),
+  `${store.participantMcpPath(home, task.id, 'worker:orders-api')} · ${store.participantSettingsPath(home, task.id, 'reviewer:orders-api')} · ${store.participantMcpPath(home, task.id, 'approver:orders-api')}`);
 
 const noSlug = thrown(() => store.participantMcpPath(home, task.id, store.ORCHESTRATOR));
 const noSlugSettings = thrown(() => store.participantSettingsPath(home, task.id, store.ORCHESTRATOR));
@@ -224,7 +224,7 @@ check('validation: type artifact with no artifactPath is rejected, and the refus
 check(`validation: all ${store.MESSAGE_TYPES.length} protocol types are accepted`,
   rejectedType.length === 0, rejectedType.join(', '));
 
-// --- routing policy ATI: a worker may not write to a worker ------------------------
+// --- routing policy: a worker may not write to a worker ----------------------------
 
 // The consumer sets the rule, and the mechanism has exactly one: correspondence runs only
 // with the task's orchestrator ( §3 — "routing policy is mandatory, the consumer hands over
@@ -233,16 +233,16 @@ check(`validation: all ${store.MESSAGE_TYPES.length} protocol types are accepted
 const between = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'worker:b', type: 'status', body: 'мимо оркестратора',
 }));
-check('policy ATI: worker does not write to worker — a refusal, not a silent delivery',
+check('routing policy: worker does not write to worker — a refusal, not a silent delivery',
   between.threw && /do not write to each other/.test(between.msg), `${between.threw} · ${between.msg}`);
 
-check('policy ATI: the refusal names the route — through the orchestrator',
+check('routing policy: the refusal names the route — through the orchestrator',
   /through the orchestrator/.test(between.msg) && /pass this to them/.test(between.msg), between.msg);
 
 // The refusal has no right to leave a single byte in the task: neither a link in the
 // recipient's mailbox nor a record for the sender. The order is the same as in the engine —
 // policy is asked BEFORE the side effect.
-check('policy ATI: the refusal placed nothing — the recipient\'s mailbox is empty',
+check('routing policy: the refusal placed nothing — the recipient\'s mailbox is empty',
   store.countInbox(home, task.id, 'worker:b') === 0);
 
 // Both lawful sides pass through: the rule forbids exactly "participant → participant".
@@ -252,7 +252,7 @@ const toOrch = thrown(() => store.sendMessage(home, task.id, {
 const fromOrch = thrown(() => store.sendMessage(home, task.id, {
   from: store.ORCHESTRATOR, to: 'worker:b', type: 'task', body: 'оркестратор участнику',
 }));
-check('policy ATI: "participant → orchestrator" and "orchestrator → participant" pass through',
+check('routing policy: "participant → orchestrator" and "orchestrator → participant" pass through',
   !toOrch.threw && !fromOrch.threw, `${toOrch.msg} · ${fromOrch.msg}`);
 
 // Reviewer is a participant just the same: the rule looks at the record's role, not the
@@ -261,7 +261,7 @@ store.upsertParticipant(home, task.id, store.participantRecord('reviewer:a', { r
 const workerToReviewer = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'reviewer:a', type: 'question', body: 'напрямую ревьюеру',
 }));
-check('policy ATI: worker and reviewer do not correspond with each other either',
+check('routing policy: worker and reviewer do not correspond with each other either',
   workerToReviewer.threw && /do not write to each other/.test(workerToReviewer.msg),
   workerToReviewer.msg);
 
@@ -269,7 +269,7 @@ const unknownDirect = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:ghost', to: 'approver:a', type: 'question', body: 'foreign address',
   session: 'session-worker-ghost',
 }));
-check('policy ATI: a direct sender absent from this task is refused without auto-registration',
+check('routing policy: a direct sender absent from this task is refused without auto-registration',
   unknownDirect.threw && /no sender participant/.test(unknownDirect.msg)
   && store.participantOf(store.readTask(home, task.id), 'worker:ghost') === null,
   unknownDirect.msg);
@@ -278,7 +278,7 @@ check('policy ATI: a direct sender absent from this task is refused without auto
 const ghostToOrch = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:ghost', to: store.ORCHESTRATOR, type: 'status', body: 'a first message from nowhere',
 }));
-check('policy ATI: a sender absent from this task is refused on the orchestrator route too — no message registers it',
+check('routing policy: a sender absent from this task is refused on the orchestrator route too — no message registers it',
   ghostToOrch.threw && /no sender participant/.test(ghostToOrch.msg)
   && store.participantOf(store.readTask(home, task.id), 'worker:ghost') === null,
   ghostToOrch.msg);
@@ -287,7 +287,7 @@ const borrowedDirect = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:a', to: 'approver:a', type: 'question', body: 'borrowed address',
   session: 'session-worker-stranger',
 }));
-check('policy ATI: a direct sender address held by another session is refused',
+check('routing policy: a direct sender address held by another session is refused',
   borrowedDirect.threw && /held by session session-worker-a/.test(borrowedDirect.msg)
   && /cannot borrow an address/.test(borrowedDirect.msg),
   borrowedDirect.msg);
@@ -303,7 +303,7 @@ const workerToApprover = thrown(() => store.sendMessage(home, task.id, {
   from: 'worker:b', to: 'approver:a', type: 'answer', body: 'worker to approver',
   session: PARTICIPANT_SESSIONS['worker:b'],
 }));
-check('policy ATI: approver corresponds with the orchestrator and worker in both directions',
+check('routing policy: approver corresponds with the orchestrator and worker in both directions',
   !approverToOrchestrator.threw && !approverToWorker.threw && !workerToApprover.threw
   && store.countInbox(home, task.id, store.ORCHESTRATOR) === 2
   && store.countInbox(home, task.id, 'worker:b') === 2
@@ -335,24 +335,24 @@ check('inbox: the unread counter', store.countInbox(home, task.id, 'worker:a') =
 // --- artifacts in the task files folder ------------------------------------------
 
 const artSrc = path.join(SB, 'contract.json');
-writeFileSync(artSrc, '{"event":"CargoCreated"}\n');
+writeFileSync(artSrc, '{"event":"OrderCreated"}\n');
 const withArt = store.sendMessage(home, task.id, {
   from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'контракт события', artifactPath: artSrc,
 });
 
 check('artifact: a hard link in the task files folder under its own name',
   withArt.artifact.filename === 'contract.json'
-  && /CargoCreated/.test(readFileSync(path.join(store.filesDir(home, task.id), 'contract.json'), 'utf8')),
+  && /OrderCreated/.test(readFileSync(path.join(store.filesDir(home, task.id), 'contract.json'), 'utf8')),
   withArt.artifact.filename);
 
-writeFileSync(artSrc, '{"event":"CargoUpdated"}\n');
+writeFileSync(artSrc, '{"event":"OrderUpdated"}\n');
 const withArt2 = store.sendMessage(home, task.id, {
   from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'второй контракт', artifactPath: artSrc,
 });
 
 check('artifact: a same-named one does not overwrite the previous — the link itself claims the name',
   withArt2.artifact.filename === 'contract-2.json'
-  && /CargoCreated/.test(readFileSync(path.join(store.filesDir(home, task.id), 'contract.json'), 'utf8')),
+  && /OrderCreated/.test(readFileSync(path.join(store.filesDir(home, task.id), 'contract.json'), 'utf8')),
   withArt2.artifact.filename);
 
 const noFile = thrown(() => store.sendMessage(home, task.id, {
@@ -828,7 +828,7 @@ check('resolveTaskId: a nonexistent task → refusal',
 const bl156 = path.join(SB, 'bl156', '.promptobus');
 const addressed = store.createTask(bl156, { id: 't20260827-110000', title: 'адресация', owner: null });
 store.upsertParticipant(bl156, addressed.id,
-  store.participantRecord('worker:cargos-api', { repo: 'loads_search/cargos-api' }));
+  store.participantRecord('worker:orders-api', { repo: 'demo_team/orders-api' }));
 const ghostArt = path.join(SB, 'bl156-artifact.json');
 writeFileSync(ghostArt, '{"never":"sent"}\n');
 const toGhost = thrown(() => store.sendMessage(bl156, addressed.id, {
@@ -839,7 +839,7 @@ check(': the addressee is outside the task participants — a refusal, not a sil
   toGhost.threw && toGhost.msg.includes('worker:opechatka'), toGhost.msg);
 
 check(': the refusal names the task participants — a typo in the slug is fixed at a glance',
-  toGhost.msg.includes('worker:cargos-api') && toGhost.msg.includes('orchestrator'), toGhost.msg);
+  toGhost.msg.includes('worker:orders-api') && toGhost.msg.includes('orchestrator'), toGhost.msg);
 
 check(': no ghost mailbox is created',
   !existsSync(path.join(store.taskDir(bl156, addressed.id), 'inbox', 'worker-opechatka')));
@@ -850,11 +850,11 @@ check(': the artifact of a rejected message is not copied into the task',
   !existsSync(path.join(store.filesDir(bl156, addressed.id), 'bl156-artifact.json')));
 
 const toKnown = store.sendMessage(bl156, addressed.id, {
-  from: store.ORCHESTRATOR, to: 'worker:cargos-api', type: 'task', body: 'бриф участнику',
+  from: store.ORCHESTRATOR, to: 'worker:orders-api', type: 'task', body: 'бриф участнику',
 });
 check(': a message to a task participant still goes through as before',
-  toKnown.message.recipients.join(',') === 'worker-cargos-api'
-  && store.countInbox(bl156, addressed.id, 'worker:cargos-api') === 1);
+  toKnown.message.recipients.join(',') === 'worker-orders-api'
+  && store.countInbox(bl156, addressed.id, 'worker:orders-api') === 1);
 
 // --- two channels reporting something broken ------------------------------------------------
 

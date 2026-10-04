@@ -916,7 +916,7 @@ check(': shadowedUserServers is empty — the personal set is not isolated, conf
 // checked, and at `worker:mcp` — what actually went into `thread/start`.
 const translated = codexMcpServers({
   'es-mcp-prod': { type: 'http', url: 'http://es.invalid/mcp' },
-  'ati-kaiten-mcp': { type: 'http', url: 'http://kaiten.invalid/mcp', headers: { api_key: 'TOKEN' } },
+  'tracker-mcp': { type: 'http', url: 'http://tracker.invalid/mcp', headers: { api_key: 'TOKEN' } },
   promptobus: { type: 'stdio', command: 'node', args: ['bin.js'], env: { PROMPTOBUS_ROLE: WORKER } },
   'sse-legacy': { type: 'sse', url: 'http://sse.invalid/mcp' },
   'bez-komandy': { type: 'stdio', args: [], env: {} },
@@ -925,8 +925,8 @@ const fieldsOf = (name) => Object.keys(translated.servers[codexMcpName(name, PRE
 
 check(': a url-server goes out in url form — no args, no env, no command',
   fieldsOf('es-mcp-prod') === 'url'
-  && fieldsOf('ati-kaiten-mcp') === 'http_headers,url'
-  && translated.servers[codexMcpName('ati-kaiten-mcp', PREFIX)].http_headers.api_key === 'TOKEN',
+  && fieldsOf('tracker-mcp') === 'http_headers,url'
+  && translated.servers[codexMcpName('tracker-mcp', PREFIX)].http_headers.api_key === 'TOKEN',
   JSON.stringify(translated.servers));
 
 check(': a stdio-server goes out in stdio form — no url is attached to it',

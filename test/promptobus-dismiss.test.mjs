@@ -221,7 +221,7 @@ writeHostConfig(ROOT);
 // The workspace root is itself a git repository, as in life: without that the clone
 // toplevel walks up, to the root.
 g(ROOT, 'init', '-b', 'main');
-const REPO = path.join(ROOT, 'repos', 'loads_search', 'cargos-api');
+const REPO = path.join(ROOT, 'repos', 'demo_team', 'orders-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'main');
 writeFileSync(path.join(REPO, 'a.txt'), 'v1\n');
@@ -232,10 +232,10 @@ g(REPO, 'commit', '-m', 'init', '-q');
 writeFileSync(path.join(REPO, 'a.txt'), 'v2\n');
 
 const REUSE_TASK = 'reuse-t20260830-160000';
-const REUSE_ADDR = 'reviewer:cargos-api';
+const REUSE_ADDR = 'reviewer:orders-api';
 const REUSE_SESSION = 'Review: переревью снятого (0830-1600)';
 store.createTask(HOME, { id: REUSE_TASK, title: 'переревью снятого', owner: OWNER });
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord(REUSE_ADDR, { repo: 'loads_search/cargos-api', repoAbs: REPO,
+store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord(REUSE_ADDR, { repo: 'demo_team/orders-api', repoAbs: REPO,
   name: REUSE_SESSION, session: 'cafe12', started }));
 // Live reviewer session: the plan decides from it that a second one must not be lifted
 // (`plan.reuse`). Here a `claude` PATH stub is needed for real: `promptobus review`

@@ -58,12 +58,12 @@ const { MECHANISM_VERSION_FIELD } = await import(path.join(here, '..', 'dist', '
 // session provably holds, so both records are bound to the identities the servers below present.
 const SUITE_ORCHESTRATOR = 'mcp-suite-orchestrator';
 const SUITE_WORKER = 'mcp-suite-worker';
-store.createTask(HOME, { id: TASK, title: 'событие CargoCreated в двух сервисах', owner: SUITE_ORCHESTRATOR });
+store.createTask(HOME, { id: TASK, title: 'событие OrderCreated в двух сервисах', owner: SUITE_ORCHESTRATOR });
 store.createTask(WRONG_HOME, { id: TASK, title: 'другая задача с тем же id' });
 // The worker is registered as a participant: since  a message is delivered only to
 // whoever is present in the task's journal, and it's `spawn` that registers them there — there's no live spawn in these tests.
-const joinWorker = (home, id) => store.upsertParticipant(home, id, store.participantRecord('worker:cargos-api', {
-  repo: 'cargos-api', sessionId: SUITE_WORKER,
+const joinWorker = (home, id) => store.upsertParticipant(home, id, store.participantRecord('worker:orders-api', {
+  repo: 'orders-api', sessionId: SUITE_WORKER,
 }));
 joinWorker(HOME, TASK);
 joinWorker(WRONG_HOME, TASK);
@@ -87,7 +87,7 @@ function startServer(role, { config = null, cwd = SB, task = TASK, baseEnv = pro
   const pointed = ['PROMPTOBUS_CODEX_SESSION', 'PROMPTOBUS_CURSOR_SESSION'].some((name) => Object.hasOwn(env, name));
   const sessionDefault = role === 'orchestrator' && !named
     ? { CLAUDE_CODE_SESSION_ID: SUITE_ORCHESTRATOR }
-    : role === 'worker:cargos-api' && !named && !pointed && baseEnv === process.env
+    : role === 'worker:orders-api' && !named && !pointed && baseEnv === process.env
       ? { CLAUDE_CODE_SESSION_ID: SUITE_WORKER }
       : {};
   const child = spawn(config?.command ?? process.execPath, config?.args ?? [BIN, 'mcp'], {
@@ -177,7 +177,7 @@ const text = (res) => res.result?.content?.map((c) => c.text).join('\n') ?? '';
 // didn't set PROMPTOBUS_HOME, so this server honestly looked in WRONG_HOME and answered "empty"
 // while messages were sitting in HOME.
 const orch = startServer('orchestrator', { config: canonicalPromptobus, cwd: WRONG_ROOT });
-const worker = startServer('worker:cargos-api');
+const worker = startServer('worker:orders-api');
 
 // --- handshake -------------------------------------------------------------
 
@@ -248,14 +248,14 @@ check('inbox: an empty mailbox names the home, task, and address',
   text(empty).startsWith('empty')
     && text(empty).includes(`PROMPTOBUS_HOME=${HOME}`)
     && text(empty).includes(`task=${TASK}`)
-    && text(empty).includes('address=worker:cargos-api'),
+    && text(empty).includes('address=worker:orders-api'),
   text(empty));
 
 const sent = await orch.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'worker:cargos-api', type: 'task', body: 'Добавь поле source в событие CargoCreated' },
+  arguments: { to: 'worker:orders-api', type: 'task', body: 'Добавь поле source в событие OrderCreated' },
 });
-check('send: sent', /sent task → cargos-api · address worker:cargos-api/.test(text(sent)), text(sent));
+check('send: sent', /sent task → orders-api · address worker:orders-api/.test(text(sent)), text(sent));
 
 const got = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(`inbox: the orchestrator's message reached the worker`,
@@ -271,7 +271,7 @@ check('inbox: a message already read is not delivered again', text(again).starts
 // For the reviewer, `mailbox` is the only way to get messages: Bash is stripped from it
 // by a deny-list, and it can't reach its own correspondence via the bus command at all.
 await orch.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'единственным каналом' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'task', body: 'единственным каналом' },
 });
 const onlyChannel = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 const onlyId = /^message (\S+) · /m.exec(text(onlyChannel))?.[1];
@@ -320,7 +320,7 @@ await worker.call('tools/call', {
 });
 const delivered = await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('mailbox: what came from the worker is listed by sender, type and first line',
-  text(delivered).includes('result from worker:cargos-api') && text(delivered).includes('contract.cs'),
+  text(delivered).includes('result from worker:orders-api') && text(delivered).includes('contract.cs'),
   text(delivered));
 
 const emptyBox = await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
@@ -332,10 +332,10 @@ check('mailbox: empty — with identity, not an error',
 const { guardVerdict } = await import(path.join(here, '..', 'lib', 'guard.js'));
 const { renderNotification: claudePostcard } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 const TWO_LINES = 'Short task: first line\nsecond line, only in the body';
-await orch.call('tools/call', { name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: TWO_LINES } });
-const pending = store.glanceInbox(HOME, TASK, 'worker:cargos-api').find((m) => m.body === TWO_LINES);
+await orch.call('tools/call', { name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'task', body: TWO_LINES } });
+const pending = store.glanceInbox(HOME, TASK, 'worker:orders-api').find((m) => m.body === TWO_LINES);
 const card = claudePostcard({
-  kind: 'unread', task: TASK, address: 'worker:cargos-api', unread: 1,
+  kind: 'unread', task: TASK, address: 'worker:orders-api', unread: 1,
   messages: [{ id: pending?.id, type: 'task', from: 'orchestrator', ts: pending?.ts, body: TWO_LINES, artifact: null }],
 });
 check('postcard: a short message rides as its stub — sender, type and size — never its text',
@@ -343,25 +343,25 @@ check('postcard: a short message rides as its stub — sender, type and size —
   && !card.includes('first line'), card);
 const early = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
 const toldByTask = await worker.call('tools/call', { name: 'promptobus_task', arguments: {} });
-const verdictBefore = guardVerdict(HOME, TASK, 'worker:cargos-api', null);
+const verdictBefore = guardVerdict(HOME, TASK, 'worker:orders-api', null);
 check('read marks: after the postcard alone a body asked by id is refused, and the participant is still told it has unread mail',
   early.result?.isError === true
-  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 1
+  && store.countInbox(HOME, TASK, 'worker:orders-api') === 1
   && verdictBefore?.key === 'mailbox:1'
   && text(toldByTask).includes('your mailbox: unread 1'),
-  `${text(early)} · unread ${store.countInbox(HOME, TASK, 'worker:cargos-api')} · ${JSON.stringify(verdictBefore)}`);
+  `${text(early)} · unread ${store.countInbox(HOME, TASK, 'worker:orders-api')} · ${JSON.stringify(verdictBefore)}`);
 const heads = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
-const verdictAfter = guardVerdict(HOME, TASK, 'worker:cargos-api', null);
+const verdictAfter = guardVerdict(HOME, TASK, 'worker:orders-api', null);
 check('read marks: the mailbox header read marks it read, and the header carries only the first line',
   text(heads).includes(`message ${pending?.id} · ${TWO_LINES.length} characters: Short task: first line`)
   && !text(heads).includes('only in the body')
-  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 0
+  && store.countInbox(HOME, TASK, 'worker:orders-api') === 0
   && !String(verdictAfter?.key ?? '').startsWith('mailbox:'),
   `${text(heads)} · ${JSON.stringify(verdictAfter)}`);
 const opened = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
 check('body by id: after the header read the whole body comes back, and it marks nothing',
   opened.result?.isError !== true && text(opened).includes(TWO_LINES)
-  && store.countInbox(HOME, TASK, 'worker:cargos-api') === 0, text(opened));
+  && store.countInbox(HOME, TASK, 'worker:orders-api') === 0, text(opened));
 // The orchestrator's history holds a file by that name; an id that climbs out of the worker's box must not reach it.
 const foreignRead = store.history(HOME, { task: TASK, participant: 'orchestrator', all: true }).entries[0]?.message.id;
 const climbed = await worker.call('tools/call', {
@@ -373,19 +373,19 @@ check('body by id: an id that is not a bare name reads no file outside the addre
   && nul.result?.isError === true && /no message/.test(text(nul)) && !/ERR_INVALID_ARG_VALUE/.test(text(nul)),
   `${text(climbed)} · ${text(nul)}`);
 // A history file cut short is the bus's refusal naming the record, not a parser's SyntaxError.
-const cutFile = path.join(store.historyDir(HOME, TASK, 'worker:cargos-api'), `${pending?.id}.json`);
+const cutFile = path.join(store.historyDir(HOME, TASK, 'worker:orders-api'), `${pending?.id}.json`);
 const cutWhole = readFileSync(cutFile, 'utf8');
 writeFileSync(cutFile, cutWhole.slice(0, Math.floor(cutWhole.length / 2)));
 const cut = await worker.call('tools/call', { name: 'promptobus_mailbox', arguments: { message: pending?.id } });
 writeFileSync(cutFile, cutWhole);
 check('body by id: a truncated history record is refused by the bus, naming the record',
-  cut.result?.isError === true && text(cut).includes(`history record ${pending?.id} of worker:cargos-api does not read`)
+  cut.result?.isError === true && text(cut).includes(`history record ${pending?.id} of worker:orders-api does not read`)
   && !/SyntaxError|Unexpected end/.test(text(cut)), text(cut));
 
 // --- tool errors ------------------------------------------------------
 
 const badType = await orch.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'gossip', body: 'текст' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'gossip', body: 'текст' },
 });
 check('tools/call: a foreign type — isError, the connection stays alive',
   badType.result?.isError === true && /protocol/i.test(text(badType)), text(badType));
@@ -400,17 +400,17 @@ check('tools/call: unknown tool — isError',
 // type=artifact message with a body and no file at all. The file here exists — the key is the defect.
 const wrongKeyFile = path.join(ROOT, 'attached-record.json');
 writeFileSync(wrongKeyFile, '{"schemaVersion":1}\n');
-const inboxBeforeRefusals = store.countInbox(HOME, TASK, 'worker:cargos-api');
+const inboxBeforeRefusals = store.countInbox(HOME, TASK, 'worker:orders-api');
 const artifactNoFile = await orch.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'worker:cargos-api', type: 'artifact', body: 'запись гейтов приложена' },
+  arguments: { to: 'worker:orders-api', type: 'artifact', body: 'запись гейтов приложена' },
 });
 check('send: type=artifact with no artifactPath — isError, and the refusal names the parameter',
   artifactNoFile.result?.isError === true && /artifactPath/.test(text(artifactNoFile)), text(artifactNoFile));
 const misspeltKey = await orch.call('tools/call', {
   name: 'promptobus_send',
   arguments: {
-    to: 'worker:cargos-api', type: 'artifact', body: 'запись гейтов приложена', artifactName: wrongKeyFile,
+    to: 'worker:orders-api', type: 'artifact', body: 'запись гейтов приложена', artifactName: wrongKeyFile,
   },
 });
 check('send: an undeclared top-level key — isError, and the refusal names the key',
@@ -420,7 +420,7 @@ check('send: an undeclared top-level key — isError, and the refusal names the 
 const lawfulButForKey = await orch.call('tools/call', {
   name: 'promptobus_send',
   arguments: {
-    to: 'worker:cargos-api', type: 'status', body: 'ключ с опечаткой, всё остальное законно', artifactName: wrongKeyFile,
+    to: 'worker:orders-api', type: 'status', body: 'ключ с опечаткой, всё остальное законно', artifactName: wrongKeyFile,
   },
 });
 check('send: a call lawful in everything but the key is still refused, by the key',
@@ -443,13 +443,13 @@ check('mailbox: an undeclared key is refused there too, and the refusal takes no
 // Drained deliberately: the scenario below this point starts from an empty orchestrator mailbox.
 await orch.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('send: neither refusal delivered anything — the mailbox is where it was',
-  store.countInbox(HOME, TASK, 'worker:cargos-api') === inboxBeforeRefusals,
-  `${store.countInbox(HOME, TASK, 'worker:cargos-api')} against ${inboxBeforeRefusals}`);
+  store.countInbox(HOME, TASK, 'worker:orders-api') === inboxBeforeRefusals,
+  `${store.countInbox(HOME, TASK, 'worker:orders-api')} against ${inboxBeforeRefusals}`);
 
 const stillAlive = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
 check('task: task composition after errors',
   text(stillAlive).includes(TASK) && text(stillAlive).includes('orchestrator')
-  && text(stillAlive).includes('событие CargoCreated'), text(stillAlive));
+  && text(stillAlive).includes('событие OrderCreated'), text(stillAlive));
 
 check('server: nothing stray in stdout, quiet on stderr — for both connections',
   orch.unsolicited.length === 0 && worker.unsolicited.length === 0
@@ -463,7 +463,7 @@ check('server: nothing stray in stdout, quiet on stderr — for both connections
 // anything either. The live case: a worker's `result` sat unread for six minutes. That's why
 // every bus turn names its own mailbox — and only when there's something in it.
 const quietSend = await orch.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'ящик оркестратора пуст' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'task', body: 'ящик оркестратора пуст' },
 });
 check(': send does not name an empty own mailbox — an "always" line stops being readable',
   !/your mailbox/.test(text(quietSend)), text(quietSend));
@@ -476,7 +476,7 @@ await worker.call('tools/call', {
   name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body: 'лежит и ждёт' },
 });
 const loudSend = await orch.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'task', body: 'а в ящике непрочитанное' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'task', body: 'а в ящике непрочитанное' },
 });
 check(`: send names its own mailbox's unread count and the route to it`,
   /your mailbox: unread 1 — fetch it with the promptobus_mailbox tool/.test(loudSend.result ? text(loudSend) : ''),
@@ -498,8 +498,8 @@ check(': inbox does not print the counter — it just fetched the messages',
 // changes during a live run. The task argument is the only way to reach the needed
 // task from an already-running session; without it, resolution behaves as before.
 const SECOND = 'revyu-t20260813-100000';
-store.createTask(HOME, { id: SECOND, title: 'ревью loads_search/cargos-api', slug: 'revyu', stamp: 't20260813-100000' });
-store.upsertParticipant(HOME, SECOND, store.participantRecord('approver:cargos-api', {
+store.createTask(HOME, { id: SECOND, title: 'ревью demo_team/orders-api', slug: 'revyu', stamp: 't20260813-100000' });
+store.upsertParticipant(HOME, SECOND, store.participantRecord('approver:orders-api', {
   sessionId: 'approver-second-session',
 }));
 
@@ -518,20 +518,20 @@ check('several active tasks with no argument — a refusal with a list, not a ra
 
 const picked = await loose.call('tools/call', { name: 'promptobus_task', arguments: { task: SECOND } });
 check('task: the task argument picks a task when several are active',
-  text(picked).includes(`task ${SECOND}`) && text(picked).includes('ревью loads_search/cargos-api'), text(picked));
+  text(picked).includes(`task ${SECOND}`) && text(picked).includes('ревью demo_team/orders-api'), text(picked));
 
 const codexMcpRecord = path.join(ROOT, 'codex-mcp-session.json');
 writeFileSync(codexMcpRecord, `${JSON.stringify({
   home: HOME_ALIAS,
   task: TASK,
-  address: 'worker:cargos-api',
+  address: 'worker:orders-api',
   threadId: null,
 })}\n`);
 check('PB-206.6 fixture: the measured MCP child base has eleven generic names and no harness identity',
   Object.keys(MCP_CHILD_BASE_ENV).sort().join(',') === [...MCP_CHILD_GENERIC_NAMES].sort().join(',')
   && HARNESS_IDENTITY_NAMES.every((name) => !(name in MCP_CHILD_BASE_ENV)),
   JSON.stringify(Object.keys(MCP_CHILD_BASE_ENV).sort()));
-const directCrossTask = startServer('worker:cargos-api', {
+const directCrossTask = startServer('worker:orders-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: codexMcpRecord, PROMPTOBUS_WARDEN: 'off' },
 });
@@ -540,9 +540,9 @@ directCrossTask.notify('notifications/initialized');
 // Codex starts its MCP child before thread/start returns. The pointer is already there,
 // while the id appears in the same record only after the handshake.
 writeFileSync(codexMcpRecord, `${JSON.stringify({
-  home: HOME_ALIAS, task: TASK, address: 'worker:cargos-api', threadId: 'direct-worker-session',
+  home: HOME_ALIAS, task: TASK, address: 'worker:orders-api', threadId: 'direct-worker-session',
 })}\n`);
-const sourceWorker = store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api');
+const sourceWorker = store.participantOf(store.readTask(HOME, TASK), 'worker:orders-api');
 store.upsertParticipant(HOME, TASK, {
   ...sourceWorker,
   metadata: { ...sourceWorker.metadata, session: 'direct-worker', sessionId: null, sessionRecord: codexMcpRecord },
@@ -550,17 +550,17 @@ store.upsertParticipant(HOME, TASK, {
 // The session names itself now, and holds nothing in the foreign task: the sender rule refuses it.
 const unknownDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'foreign direct', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'foreign direct', task: SECOND },
 });
 check('send: an explicit foreign task cannot auto-register a sender for direct worker↔approver traffic',
   unknownDirectCrossTask.result?.isError === true
   && /no participant of it is bound to session direct-worker-session/.test(text(unknownDirectCrossTask))
-  && store.participantOf(store.readTask(HOME, SECOND), 'worker:cargos-api') === null,
+  && store.participantOf(store.readTask(HOME, SECOND), 'worker:orders-api') === null,
   text(unknownDirectCrossTask));
 
 // The worker's record in the second task, bound the way a lift binds one: a message never
 // registers its sender, and this is the record the send below is resolved to.
-store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:orders-api', {
   sessionId: SUITE_WORKER, dismissed: new Date().toISOString(),
 }));
 const sentSecond = await worker.call('tools/call', {
@@ -574,32 +574,32 @@ check('send: the task argument overrides the declared session — the message we
 
 check(': a guest dismissed from monitoring does not appear in the stall report',
   (blockedParticipants(HOME, SECOND, store.readTask(HOME, SECOND).participants,
-    { 'worker:cargos-api': { state: 'gone', busy: false, stall: null, id: null } }) ?? []).length === 0);
+    { 'worker:orders-api': { state: 'gone', busy: false, stall: null, id: null } }) ?? []).length === 0);
 
-store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:orders-api', {
   sessionId: 'other-worker-session',
 }));
 const borrowedDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'borrowed direct', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'borrowed direct', task: SECOND },
 });
 check('send: a matching foreign-task address held by another session cannot be borrowed',
   borrowedDirectCrossTask.result?.isError === true
   && /held by session other-worker-session/.test(text(borrowedDirectCrossTask))
-  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 0,
+  && store.countInbox(HOME, SECOND, 'approver:orders-api') === 0,
   text(borrowedDirectCrossTask));
 
-store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:orders-api', {
   sessionId: 'direct-worker-session',
 }));
 const heldDirectCrossTask = await directCrossTask.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'held direct', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'held direct', task: SECOND },
 });
 check('PB-206.6 review: a symlink-spelled Codex home proves the same physical held address',
   heldDirectCrossTask.result?.isError !== true
   && /sent question/.test(text(heldDirectCrossTask))
-  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 1,
+  && store.countInbox(HOME, SECOND, 'approver:orders-api') === 1,
   text(heldDirectCrossTask));
 directCrossTask.stop();
 store.upsertParticipant(HOME, TASK, sourceWorker);
@@ -608,64 +608,64 @@ const POINTER_DIRECT_TASK = 'pointer-direct-t20260926-235800';
 store.createTask(HOME, { id: POINTER_DIRECT_TASK, title: 'direct pointer binding' });
 const pointerDirectRecord = path.join(ROOT, 'pointer-direct-session.json');
 writeFileSync(pointerDirectRecord, `${JSON.stringify({
-  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:cargos-api', threadId: null,
+  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:orders-api', threadId: null,
 })}\n`);
-store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('worker:orders-api', {
   session: null, sessionId: null, sessionRecord: pointerDirectRecord,
 }));
-store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, POINTER_DIRECT_TASK, store.participantRecord('approver:orders-api', {
   sessionId: 'direct-pointer-approver',
 }));
-const pointerDirect = startServer('worker:cargos-api', {
+const pointerDirect = startServer('worker:orders-api', {
   task: POINTER_DIRECT_TASK,
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: pointerDirectRecord, PROMPTOBUS_WARDEN: 'off' },
 });
 await pointerDirect.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 pointerDirect.notify('notifications/initialized');
-const beforePointerTurnZero = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const beforePointerTurnZero = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api');
 const pointerTurnZero = await pointerDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'pointer before id', task: POINTER_DIRECT_TASK },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'pointer before id', task: POINTER_DIRECT_TASK },
 });
 check('send: a same-task pointer reaches the approver before the harness id exists',
   pointerTurnZero.result?.isError !== true
   && /sent question/.test(text(pointerTurnZero))
-  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforePointerTurnZero + 1,
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api') === beforePointerTurnZero + 1,
   text(pointerTurnZero));
-const pointerWorker = store.participantOf(store.readTask(HOME, POINTER_DIRECT_TASK), 'worker:cargos-api');
+const pointerWorker = store.participantOf(store.readTask(HOME, POINTER_DIRECT_TASK), 'worker:orders-api');
 store.upsertParticipant(HOME, POINTER_DIRECT_TASK, {
   ...pointerWorker,
   metadata: { ...pointerWorker.metadata, session: 'direct-pointer', sessionId: 'direct-pointer-thread' },
 });
 // The participant id is now stored, while the driver record still presents only the pointer.
-const beforePointerAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const beforePointerAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api');
 const pointerAfterId = await pointerDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'pointer after id', task: POINTER_DIRECT_TASK },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'pointer after id', task: POINTER_DIRECT_TASK },
 });
 check('send: the resolved pointer still reaches the approver after participant id persistence',
   pointerAfterId.result?.isError !== true
   && /sent question/.test(text(pointerAfterId))
-  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforePointerAfterId + 1,
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api') === beforePointerAfterId + 1,
   text(pointerAfterId));
 writeFileSync(pointerDirectRecord, `${JSON.stringify({
-  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:cargos-api', threadId: 'direct-pointer-thread',
+  home: HOME_ALIAS, task: POINTER_DIRECT_TASK, address: 'worker:orders-api', threadId: 'direct-pointer-thread',
 })}\n`);
-const beforeDirectAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api');
+const beforeDirectAfterId = store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api');
 const directAfterId = await pointerDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'id after pointer', task: POINTER_DIRECT_TASK },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'id after pointer', task: POINTER_DIRECT_TASK },
 });
 check('send: direct traffic keeps the harness id alternative when the driver record catches up',
   directAfterId.result?.isError !== true
   && /sent question/.test(text(directAfterId))
-  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:cargos-api') === beforeDirectAfterId + 1,
+  && store.countInbox(HOME, POINTER_DIRECT_TASK, 'approver:orders-api') === beforeDirectAfterId + 1,
   text(directAfterId));
 pointerDirect.stop();
 store.closeTask(HOME, POINTER_DIRECT_TASK);
 
-const pointerlessDirect = startServer('worker:cargos-api', {
+const pointerlessDirect = startServer('worker:orders-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_WARDEN: 'off' },
 });
@@ -673,7 +673,7 @@ await pointerlessDirect.call('initialize', { protocolVersion: '2025-06-18', capa
 pointerlessDirect.notify('notifications/initialized');
 const pointerlessRefusal = await pointerlessDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'no proof', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'no proof', task: SECOND },
 });
 check('PB-206.6: without a driver record pointer the existing direct-route identity refusal remains',
   pointerlessRefusal.result?.isError === true
@@ -685,7 +685,7 @@ pointerlessDirect.stop();
 // another harness's variable set by hand. Both reach the child, the resolver refuses, and
 // the refusal used to say the harness supplied NO identity — sending the reader to look for
 // what was there twice.
-const contestedDirect = startServer('worker:cargos-api', {
+const contestedDirect = startServer('worker:orders-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: {
     CLAUDE_CODE_SESSION_ID: 'parent-session',
@@ -697,7 +697,7 @@ await contestedDirect.call('initialize', { protocolVersion: '2025-06-18', capabi
 contestedDirect.notify('notifications/initialized');
 const contestedRefusal = await contestedDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'two claimants', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'two claimants', task: SECOND },
 });
 check('PB-218: two identity variables at once are not reported as none — the refusal names both',
   contestedRefusal.result?.isError === true
@@ -727,7 +727,7 @@ check(': the unread tail for two identity variables names both too, and is not c
   text(contestedTail));
 contestedOrch.stop();
 
-const relativePointerDirect = startServer('worker:cargos-api', {
+const relativePointerDirect = startServer('worker:orders-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_CODEX_SESSION: path.basename(codexMcpRecord), PROMPTOBUS_WARDEN: 'off' },
 });
@@ -735,7 +735,7 @@ await relativePointerDirect.call('initialize', { protocolVersion: '2025-06-18', 
 relativePointerDirect.notify('notifications/initialized');
 const relativePointerRefusal = await relativePointerDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'relative proof', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'relative proof', task: SECOND },
 });
 check('PB-206.6: an otherwise valid relative record pointer proves no direct sender',
   relativePointerRefusal.result?.isError === true
@@ -744,13 +744,13 @@ check('PB-206.6: an otherwise valid relative record pointer proves no direct sen
 relativePointerDirect.stop();
 
 for (const [label, record] of [
-  ['home', { home: WRONG_HOME, task: TASK, address: 'worker:cargos-api', chatId: null }],
-  ['task', { home: HOME, task: SECOND, address: 'worker:cargos-api', chatId: null }],
+  ['home', { home: WRONG_HOME, task: TASK, address: 'worker:orders-api', chatId: null }],
+  ['task', { home: HOME, task: SECOND, address: 'worker:orders-api', chatId: null }],
   ['address', { home: HOME, task: TASK, address: 'worker:other', chatId: null }],
 ]) {
   const file = path.join(ROOT, `cursor-mcp-wrong-${label}.json`);
   writeFileSync(file, `${JSON.stringify(record)}\n`);
-  const mismatched = startServer('worker:cargos-api', {
+  const mismatched = startServer('worker:orders-api', {
     baseEnv: MCP_CHILD_BASE_ENV,
     env: { PROMPTOBUS_CURSOR_SESSION: file, PROMPTOBUS_WARDEN: 'off' },
   });
@@ -758,7 +758,7 @@ for (const [label, record] of [
   mismatched.notify('notifications/initialized');
   const refused = await mismatched.call('tools/call', {
     name: 'promptobus_send',
-    arguments: { to: 'approver:cargos-api', type: 'question', body: `wrong ${label}`, task: SECOND },
+    arguments: { to: 'approver:orders-api', type: 'question', body: `wrong ${label}`, task: SECOND },
   });
   check(`PB-206.6: a readable session record for another ${label} proves no direct sender`,
     refused.result?.isError === true
@@ -771,17 +771,17 @@ const cursorMcpRecord = path.join(ROOT, 'cursor-mcp-session.json');
 writeFileSync(cursorMcpRecord, `${JSON.stringify({
   home: HOME,
   task: TASK,
-  address: 'worker:cargos-api',
+  address: 'worker:orders-api',
   chatId: 'cursor-worker-session',
 })}\n`);
 store.upsertParticipant(HOME, TASK, {
   ...sourceWorker,
   metadata: { ...sourceWorker.metadata, sessionId: 'cursor-worker-session', sessionRecord: cursorMcpRecord },
 });
-store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, SECOND, store.participantRecord('worker:orders-api', {
   sessionId: 'cursor-worker-session',
 }));
-const cursorDirect = startServer('worker:cargos-api', {
+const cursorDirect = startServer('worker:orders-api', {
   baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_CURSOR_SESSION: cursorMcpRecord, PROMPTOBUS_WARDEN: 'off' },
 });
@@ -789,12 +789,12 @@ await cursorDirect.call('initialize', { protocolVersion: '2025-06-18', capabilit
 cursorDirect.notify('notifications/initialized');
 const cursorHeldDirect = await cursorDirect.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'approver:cargos-api', type: 'question', body: 'cursor held direct', task: SECOND },
+  arguments: { to: 'approver:orders-api', type: 'question', body: 'cursor held direct', task: SECOND },
 });
 check('PB-206.6: a real-shape Cursor MCP child proves its held address through the session record',
   cursorHeldDirect.result?.isError !== true
   && /sent question/.test(text(cursorHeldDirect))
-  && store.countInbox(HOME, SECOND, 'approver:cargos-api') === 2,
+  && store.countInbox(HOME, SECOND, 'approver:orders-api') === 2,
   text(cursorHeldDirect));
 cursorDirect.stop();
 store.upsertParticipant(HOME, TASK, sourceWorker);
@@ -828,7 +828,7 @@ picking.notify('notifications/initialized');
 
 const pickedInbox = await picking.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(': an empty inbox names the task by title, not just by id',
-  text(pickedInbox).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`), text(pickedInbox));
+  text(pickedInbox).includes(`task=${TASK} "событие OrderCreated в двух сервисах"`), text(pickedInbox));
 
 // The non-empty identity branch already printed this before  — what's new here is the task's name.
 await worker.call('tools/call', {
@@ -838,7 +838,7 @@ const pickedMsgs = await picking.call('tools/call', { name: 'promptobus_mailbox'
 check(': a non-empty mailbox names the home, the task with its title, and the address',
   text(pickedMsgs).includes('сообщение в подобранную задачу')
     && text(pickedMsgs).includes(`PROMPTOBUS_HOME=${HOME}`)
-    && text(pickedMsgs).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`)
+    && text(pickedMsgs).includes(`task=${TASK} "событие OrderCreated в двух сервисах"`)
     && text(pickedMsgs).includes('address=orchestrator'),
   text(pickedMsgs));
 picking.stop();
@@ -851,8 +851,8 @@ const namedSend = await worker.call('tools/call', {
 check(': send names the mailbox the message landed in',
   /sent status → orchestrator · address orchestrator/.test(text(namedSend))
     && text(namedSend).includes(`PROMPTOBUS_HOME=${HOME}`)
-    && text(namedSend).includes(`task=${TASK} "событие CargoCreated в двух сервисах"`)
-    && text(namedSend).includes('address=worker:cargos-api'),
+    && text(namedSend).includes(`task=${TASK} "событие OrderCreated в двух сервисах"`)
+    && text(namedSend).includes('address=worker:orders-api'),
   text(namedSend));
 store.readInbox(HOME, TASK, 'orchestrator');
 
@@ -889,8 +889,8 @@ const owns = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE
 const alien = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE_CODE_SESSION_ID: STRANGER } }));
 const anon = await boot(startServer('orchestrator', { task: OWNED, env: { CLAUDE_CODE_SESSION_ID: '' } }));
 // A message never registers its sender: the record stands as the removed first-message registration left it.
-store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { dismissed: new Date().toISOString() }));
-const putOwned = (body) => store.sendMessage(HOME, OWNED, { from: 'worker:cargos-api', to: 'orchestrator', type: 'result', body });
+store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:orders-api', { dismissed: new Date().toISOString() }));
+const putOwned = (body) => store.sendMessage(HOME, OWNED, { from: 'worker:orders-api', to: 'orchestrator', type: 'result', body });
 
 putOwned('оригинал владельца');
 const alienInbox = await alien.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
@@ -982,7 +982,7 @@ check(': no session identity gets a copy and the owner-gate line, and the origin
   && /from the session that owns the task/.test(text(anonInbox))
   && text(anonInbox).includes('оригинал владельца')
   && store.countInbox(HOME, OWNED, 'orchestrator') === 1, text(anonInbox));
-store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:cargos-api', { repo: 'cargos-api' }));
+store.upsertParticipant(HOME, OWNED, store.participantRecord('worker:orders-api', { repo: 'orders-api' }));
 
 // `promptobus_mailbox` without identity only hands a copy, so the tail must not say "fetch it".
 // Such a call sends nothing at all, so the tail is read where it still appears — the task reply.
@@ -995,17 +995,17 @@ check(': no session identity in the unread tail gets the owner-gate line and the
   && /from the session that owns the task/.test(text(anonSend)),
   text(anonSend));
 
-const namelessWorker = await boot(startServer('worker:cargos-api', {
+const namelessWorker = await boot(startServer('worker:orders-api', {
   task: OWNED, env: { CLAUDE_CODE_SESSION_ID: '' },
 }));
 store.sendMessage(HOME, OWNED, {
-  from: 'orchestrator', to: 'worker:cargos-api', type: 'task', body: 'свой ящик без сессии',
+  from: 'orchestrator', to: 'worker:orders-api', type: 'task', body: 'свой ящик без сессии',
 });
 const namelessWorkerInbox = await namelessWorker.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check(': a participant address with no session identity still fetches its own mailbox',
   text(namelessWorkerInbox).includes('свой ящик без сессии')
   && !/carries no session identity/.test(text(namelessWorkerInbox))
-  && store.countInbox(HOME, OWNED, 'worker:cargos-api') === 0, text(namelessWorkerInbox));
+  && store.countInbox(HOME, OWNED, 'worker:orders-api') === 0, text(namelessWorkerInbox));
 namelessWorker.stop();
 
 putOwned('второй оригинал');
@@ -1083,11 +1083,11 @@ check(': for a stranger, the counter does not call for inbox — the signal does
   && /claim/.test(text(foreignCount)), text(foreignCount));
 joinWorker(HOME, OWNED);
 const foreignSend = await owns.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'status', body: 'счётчик в ответе отправки' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'status', body: 'счётчик в ответе отправки' },
 });
 check(': a former owner cannot send as the orchestrator — the refusal names the session on record',
   foreignSend.result?.isError === true && /belongs to session stranger-3333-4444/.test(text(foreignSend))
-  && store.countInbox(HOME, OWNED, 'worker:cargos-api') === 0,
+  && store.countInbox(HOME, OWNED, 'worker:orders-api') === 0,
   text(foreignSend));
 store.readInbox(HOME, OWNED, 'orchestrator');
 
@@ -1099,8 +1099,8 @@ check(': the owner is named in the participant list — it needs no separate ren
 // switched off entirely, otherwise old tasks would become unreadable.
 const LEGACY = 'legacy-t20260827-000000';
 store.createTask(HOME, { id: LEGACY, title: 'задача прежнего CLI', owner: null });
-store.upsertParticipant(HOME, LEGACY, store.participantRecord('worker:cargos-api', { dismissed: new Date().toISOString() }));
-store.sendMessage(HOME, LEGACY, { from: 'worker:cargos-api', to: 'orchestrator', type: 'status', body: 'наследство' });
+store.upsertParticipant(HOME, LEGACY, store.participantRecord('worker:orders-api', { dismissed: new Date().toISOString() }));
+store.sendMessage(HOME, LEGACY, { from: 'worker:orders-api', to: 'orchestrator', type: 'status', body: 'наследство' });
 const legacyRead = await alien.call('tools/call', { name: 'promptobus_mailbox', arguments: { task: LEGACY } });
 check(': a task without an owner behaves as before — no copies, no warnings',
   !/FOREIGN MAILBOX/.test(text(legacyRead)) && text(legacyRead).includes('наследство')
@@ -1158,14 +1158,14 @@ check('with no active task: the tool explains how to create one',
 // from renderMessages, and the first line would go back to counting while the verdict stayed silent.
 const sameHead = text(sameInbox).split('\n')[0];
 check(': the first line of a live response names the sender and both types',
-  sameHead.startsWith('messages 2: status from worker:cargos-api, result from worker:cargos-api ·'), sameHead);
+  sameHead.startsWith('messages 2: status from worker:orders-api, result from worker:orders-api ·'), sameHead);
 // The machine-readable tail is in place — it's the reason the line is read at all.
 check(': the machine-readable tail of the first line is preserved in full',
   sameHead.includes(`PROMPTOBUS_HOME=${HOME}`) && sameHead.includes('address=orchestrator')
   && sameHead.includes(TASK), sameHead);
 // The send response names the type and recipient first — before the machine-readable tail.
 check(': the send response starts with what went where and to whom',
-  /^sent task → cargos-api · address worker:cargos-api/.test(text(sent)), text(sent).split('\n')[0]);
+  /^sent task → orders-api · address worker:orders-api/.test(text(sent)), text(sent).split('\n')[0]);
 
 // --- : the "no call" alarm is gone ---------------------------------
 //
@@ -1175,10 +1175,10 @@ check(': the send response starts with what went where and to whom',
 // now occupied by the substance of the response — what and to whom it went, which task.
 const gapSend = await orch.call('tools/call', {
   name: 'promptobus_send',
-  arguments: { to: 'worker:cargos-api', type: 'status', body: 'звонка нет и не надо' },
+  arguments: { to: 'worker:orders-api', type: 'status', body: 'звонка нет и не надо' },
 });
 check(': send starts with what went where and to whom',
-  /^sent status → cargos-api · address worker:cargos-api/.test(text(gapSend)),
+  /^sent status → orders-api · address worker:orders-api/.test(text(gapSend)),
   text(gapSend).split('\n')[0]);
 
 const gapTask = await orch.call('tools/call', { name: 'promptobus_task', arguments: {} });
@@ -1196,7 +1196,7 @@ check(': task starts with the task, not with an alarm',
 const NAMED = 'worker:gates';
 const NAMED_FULL = 'Worker: Гейты lint: слепые зоны, контрактный маркер';
 store.upsertParticipant(HOME, TASK, store.participantRecord(NAMED, {
-  repo: 'agent-workspace/promptobus', name: `${NAMED_FULL} (0829-1208)`, sessionId: 'mcp-suite-gates',
+  repo: 'demo_team/promptobus', name: `${NAMED_FULL} (0829-1208)`, sessionId: 'mcp-suite-gates',
 }));
 const toNamed = await orch.call('tools/call', {
   name: 'promptobus_send', arguments: { to: NAMED, type: 'status', body: 'проверка имени' },
@@ -1222,7 +1222,7 @@ check(`: the mailbox header names the session, with the machine address followin
 // A participant with no recorded name (a record from an older CLI, a participant added outside
 // spawn) — the address with no role prefix: that's how the hook printed it before this change too.
 check(': a participant with no recorded name is named by an address with no role prefix',
-  /sent task → cargos-api · address worker:cargos-api/.test(text(sent)), text(sent).split('\n')[0]);
+  /sent task → orders-api · address worker:orders-api/.test(text(sent)), text(sent).split('\n')[0]);
 
 
 // --- : the route for a stalled participant reaches the agent --------------------------
@@ -1233,7 +1233,7 @@ check(': a participant with no recorded name is named by an address with no role
 const STALLED = 'stalled-t20260828-150000';
 const GHOST_NAME = 'Worker: призрак';
 store.createTask(HOME, { id: STALLED, title: 'вставший участник' });
-store.upsertParticipant(HOME, STALLED, store.participantRecord('worker:cargos-api', { name: GHOST_NAME }));
+store.upsertParticipant(HOME, STALLED, store.participantRecord('worker:orders-api', { name: GHOST_NAME }));
 // A record with no pid next to a live record with a pid — "LISTED, but no process behind it"
 //: the signal is self-calibrating, and one record alone isn't enough for it.
 const STALL_BIN = path.join(ROOT, 'stall-bin');
@@ -1260,17 +1260,17 @@ await watcher.call('initialize', { protocolVersion: '2025-06-18', capabilities: 
 watcher.notify('notifications/initialized');
 const stalledInbox = text(await watcher.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
 check(': inbox reports the stalled participant — in the same words as the command',
-  /worker:cargos-api LISTED, but no process behind it/.test(stalledInbox)
+  /worker:orders-api LISTED, but no process behind it/.test(stalledInbox)
   && /claude logs ghost9/.test(stalledInbox) && /each has its own route/.test(stalledInbox), stalledInbox);
 // The report arrives in the tool's response, not only in the stdout of a finished command: it's
 // read by the agent, and the route for a stalled participant must reach it.
 check('review note: the mailbox response does not call stalled someone who just sent a message',
-  !/worker:sdal stalled/.test(stalledInbox) && /worker:cargos-api LISTED/.test(stalledInbox), stalledInbox);
+  !/worker:sdal stalled/.test(stalledInbox) && /worker:orders-api LISTED/.test(stalledInbox), stalledInbox);
 watcher.stop();
 
 // The worker has no one to watch: its counterpart isn't a bg-session but a human's session, and
 // `claude agents --json` shows nothing of its stop — the same condition the command has.
-const watcherWorker = startServer('worker:cargos-api', {
+const watcherWorker = startServer('worker:orders-api', {
   task: STALLED,
   env: { PATH: `${STALL_BIN}${path.delimiter}${process.env.PATH}` },
 });
@@ -1299,7 +1299,7 @@ const spoiled = (id, address, repo) => ({
   metadata: { address, repo },
 });
 badTask.participants.push(spoiled('worker-ne-adres', 'worker:НЕ АДРЕС', 'ns/repo'));
-badTask.participants.push(spoiled('worker-cargos-api', 'worker:cargos-api', 'loads_search/cargos-api'));
+badTask.participants.push(spoiled('worker-orders-api', 'worker:orders-api', 'demo_team/orders-api'));
 writeFileSync(store.taskFile(HOME, BADREC), JSON.stringify(badTask, null, 2) + '\n');
 const badServer = startServer('orchestrator', { task: BADREC });
 await badServer.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
@@ -1312,7 +1312,7 @@ check(': the bad record is named in the response in full — it is used to fix t
   /INVALID PARTICIPANT RECORD/.test(badText) && badText.includes('worker:НЕ АДРЕС'), badText);
 check(': the other participants survive — orchestrator and worker are present with their counters',
   /- orchestrator .*unread 0/.test(badText)
-  && /- worker:cargos-api .*unread 0/.test(badText), badText);
+  && /- worker:orders-api .*unread 0/.test(badText), badText);
 badServer.stop();
 
 // ---  and : a broken message reaches the AGENT, not just stderr ------
@@ -1324,15 +1324,15 @@ badServer.stop();
 const BROKEN = 'bitoe-t20260829-071000';
 store.createTask(HOME, { id: BROKEN, title: 'битое доходит до агента' });
 joinWorker(HOME, BROKEN);
-const brokenBox = store.inboxDir(HOME, BROKEN, 'worker:cargos-api');
+const brokenBox = store.inboxDir(HOME, BROKEN, 'worker:orders-api');
 mkdirSync(brokenBox, { recursive: true });
 // This is what a file left by a process that died mid-write under the older CLI looks like (no link/rename).
 const BROKEN_NAME = '20260829T071000000-0001-orchestrator.json';
 writeFileSync(path.join(brokenBox, BROKEN_NAME), 'не json вовсе');
 store.sendMessage(HOME, BROKEN, {
-  from: 'orchestrator', to: 'worker:cargos-api', type: 'status', body: 'целое рядом с битым',
+  from: 'orchestrator', to: 'worker:orders-api', type: 'status', body: 'целое рядом с битым',
 });
-const brokenSrv = startServer('worker:cargos-api', { task: BROKEN });
+const brokenSrv = startServer('worker:orders-api', { task: BROKEN });
 await brokenSrv.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 brokenSrv.notify('notifications/initialized');
 const brokenInbox = text(await brokenSrv.call('tools/call', { name: 'promptobus_mailbox', arguments: {} }));
@@ -1352,9 +1352,9 @@ check(': mailbox names the broken message even on an empty response',
   brokenEmpty.includes('BROKEN MESSAGE') && brokenEmpty.includes(SECOND_BROKEN)
   && brokenEmpty.includes('empty'), brokenEmpty);
 check(': both broken messages moved into broken/, the mailbox is not clogged',
-  store.countInbox(HOME, BROKEN, 'worker:cargos-api') === 0
-  && readdirSync(store.brokenDir(HOME, BROKEN, 'worker:cargos-api')).length === 2,
-  readdirSync(store.brokenDir(HOME, BROKEN, 'worker:cargos-api')).join(','));
+  store.countInbox(HOME, BROKEN, 'worker:orders-api') === 0
+  && readdirSync(store.brokenDir(HOME, BROKEN, 'worker:orders-api')).length === 2,
+  readdirSync(store.brokenDir(HOME, BROKEN, 'worker:orders-api')).join(','));
 brokenSrv.stop();
 
 // --- a batch of messages leaves in one response -----------------------------------
@@ -1364,20 +1364,20 @@ brokenSrv.stop();
 const RACE = 'pachka-t20260829-070500';
 store.createTask(HOME, { id: RACE, title: 'пачка одним ответом' });
 joinWorker(HOME, RACE);
-const racer = startServer('worker:cargos-api', { task: RACE });
+const racer = startServer('worker:orders-api', { task: RACE });
 await racer.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 racer.notify('notifications/initialized');
 
 for (const body of ['первое из пачки', 'второе из пачки', 'третье из пачки']) {
-  store.sendMessage(HOME, RACE, { from: 'orchestrator', to: 'worker:cargos-api', type: 'status', body });
+  store.sendMessage(HOME, RACE, { from: 'orchestrator', to: 'worker:orders-api', type: 'status', body });
 }
 check(`the whole batch sits in the mailbox — there's no one to split it`,
-  store.countInbox(HOME, RACE, 'worker:cargos-api') === 3,
-  String(store.countInbox(HOME, RACE, 'worker:cargos-api')));
+  store.countInbox(HOME, RACE, 'worker:orders-api') === 3,
+  String(store.countInbox(HOME, RACE, 'worker:orders-api')));
 const whole = await racer.call('tools/call', { name: 'promptobus_mailbox', arguments: {} });
 check('the whole batch arrives in one response',
   ['первое из пачки', 'второе из пачки', 'третье из пачки'].every((b) => text(whole).includes(b))
-  && store.countInbox(HOME, RACE, 'worker:cargos-api') === 0, text(whole));
+  && store.countInbox(HOME, RACE, 'worker:orders-api') === 0, text(whole));
 
 // --- response order is request order --------------------------------------
 //
@@ -1415,7 +1415,7 @@ check('the servers wrote nothing to stdout except line-delimited JSON-RPC',
 // delta, not the length: the real servers above already got their verdict, and resetting the
 // accumulator under them would mean erasing the evidence.
 const straysBefore = strays.length;
-const noisy = startServer('worker:cargos-api', {
+const noisy = startServer('worker:orders-api', {
   config: { command: process.execPath, args: ['-e', "process.stdout.write('не json вовсе\\n')"] },
 });
 for (let i = 0; i < 200 && strays.length === straysBefore; i += 1) await new Promise((r) => { setTimeout(r, 20); });
@@ -1441,7 +1441,7 @@ const noTool = await words.call('tools/call', { name: 'teleport', arguments: {} 
 check(': the unknown-tool text is unchanged, word for word',
   text(noTool) === 'error: unknown tool "teleport"', text(noTool));
 const failedTool = await words.call('tools/call', {
-  name: 'promptobus_send', arguments: { to: 'worker:cargos-api', type: 'gossip', body: 'текст' },
+  name: 'promptobus_send', arguments: { to: 'worker:orders-api', type: 'gossip', body: 'текст' },
 });
 check(': a tool failure starts with "error: " and carries no stack trace',
   text(failedTool).startsWith('error: ') && !/\n\s+at /.test(text(failedTool)), text(failedTool));
@@ -1469,9 +1469,9 @@ const MIG_LEGACY = path.join(MIG_ROOT, 'legacy', 'a2a');
 const MIG_TASK = 'pereezd-t20260902-090000';
 const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
 legacy.createTask(MIG_LEGACY, { id: MIG_TASK, title: 'задача прежнего store', owner: OWNER });
-legacy.upsertParticipant(MIG_LEGACY, MIG_TASK, { address: 'worker:cargos-api', repo: 'cargos-api' });
+legacy.upsertParticipant(MIG_LEGACY, MIG_TASK, { address: 'worker:orders-api', repo: 'orders-api' });
 legacy.sendMessage(MIG_LEGACY, MIG_TASK, {
-  from: 'worker:cargos-api', to: 'orchestrator', type: 'result', body: 'итог из прежнего store',
+  from: 'worker:orders-api', to: 'orchestrator', type: 'result', body: 'итог из прежнего store',
 });
 legacy.closeTask(MIG_LEGACY, MIG_TASK);
 
@@ -1521,7 +1521,7 @@ git('-C', DECOR_REPO, 'config', 'user.name', 'stend');
 git('-C', DECOR_REPO, 'commit', '-q', '--allow-empty', '-m', 'init');
 git('-C', DECOR_REPO, 'worktree', 'add', '-q', '-b', DECOR_BRANCH, DECOR_WT);
 store.createTask(HOME, { id: DECOR, title: 'строки участника в ответе task', owner: OWNER });
-store.upsertParticipant(HOME, DECOR, store.participantRecord('worker:cargos-api', { repo: 'loads_search/cargos-api',
+store.upsertParticipant(HOME, DECOR, store.participantRecord('worker:orders-api', { repo: 'demo_team/orders-api',
   worktree: DECOR_WT,
   branch: DECOR_BRANCH,
   session: 'ab12cd34',
@@ -1537,10 +1537,10 @@ await decorSrv.call('initialize', { protocolVersion: '2025-06-18', capabilities:
 decorSrv.notify('notifications/initialized');
 const decorOut = text(await decorSrv.call('tools/call', { name: 'promptobus_task', arguments: {} }));
 decorSrv.stop();
-const decorLine = decorOut.split('\n').find((l) => l.startsWith('- worker:cargos-api')) ?? '';
+const decorLine = decorOut.split('\n').find((l) => l.startsWith('- worker:orders-api')) ?? '';
 const bareLine = decorOut.split('\n').find((l) => l.startsWith('- worker:web')) ?? '';
 check(`: the task response prints the participant's repository`,
-  decorLine.includes('repository loads_search/cargos-api'), decorLine || decorOut);
+  decorLine.includes('repository demo_team/orders-api'), decorLine || decorOut);
 // A whole chunk of the line, not three separate includes: the order of the parts is a contract
 // shared with `promptobus status`, and a check built from separate `includes` calls would silently
 // survive a reordering.
@@ -1568,7 +1568,7 @@ check(': a participant with no repository, worktree, or session has none of thes
 // that doesn't exist yet.
 const MIXED = 'smes-t20260903-090000';
 store.createTask(HOME, { id: MIXED, title: 'смесь версий механизма', owner: OWNER });
-store.upsertParticipant(HOME, MIXED, store.participantRecord('worker:cargos-api', { repo: 'loads_search/cargos-api' }));
+store.upsertParticipant(HOME, MIXED, store.participantRecord('worker:orders-api', { repo: 'demo_team/orders-api' }));
 {
   const file = path.join(HOME, 'tasks', MIXED, 'task.json');
   const meta = JSON.parse(readFileSync(file, 'utf8'));
@@ -1584,7 +1584,7 @@ store.upsertParticipant(HOME, MIXED, store.participantRecord('worker:cargos-api'
       : p)),
   }, null, 2) + '\n');
 }
-const mixedSrv = startServer('worker:cargos-api', { task: MIXED });
+const mixedSrv = startServer('worker:orders-api', { task: MIXED });
 await mixedSrv.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
 mixedSrv.notify('notifications/initialized');
 const mixedSend = await mixedSrv.call('tools/call',
@@ -1603,11 +1603,11 @@ check(': promptobus_mailbox answers with the same text — there is one path for
 const EARLY = 'early-t20260926-000000';
 const earlyPointer = path.join(ROOT, 'codex-early-session.json');
 store.createTask(HOME, { id: EARLY, title: 'prelaunch binding', owner: SUITE_ORCHESTRATOR });
-store.upsertParticipant(HOME, EARLY, store.participantRecord('worker:cargos-api', {
+store.upsertParticipant(HOME, EARLY, store.participantRecord('worker:orders-api', {
   sessionRecord: earlyPointer,
 }));
-writeFileSync(earlyPointer, `${JSON.stringify({ home: HOME_ALIAS, task: EARLY, address: 'worker:cargos-api', threadId: null })}\n`);
-const earlyChild = startServer('worker:cargos-api', {
+writeFileSync(earlyPointer, `${JSON.stringify({ home: HOME_ALIAS, task: EARLY, address: 'worker:orders-api', threadId: null })}\n`);
+const earlyChild = startServer('worker:orders-api', {
   task: EARLY, baseEnv: MCP_CHILD_BASE_ENV,
   env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: earlyPointer, PROMPTOBUS_WARDEN: 'off' },
 });
@@ -1621,10 +1621,10 @@ check('send: a matching Codex record pointer binds turn 0 while threadId is null
   && store.countInbox(HOME, EARLY, 'orchestrator') === 1,
   text(earlySend));
 earlyChild.stop();
-const earlyParticipant = store.participantOf(store.readTask(HOME, EARLY), 'worker:cargos-api');
+const earlyParticipant = store.participantOf(store.readTask(HOME, EARLY), 'worker:orders-api');
 for (const [label, other] of [
-  ['home', { home: WRONG_HOME, task: EARLY, address: 'worker:cargos-api' }],
-  ['task', { home: HOME, task: TASK, address: 'worker:cargos-api' }],
+  ['home', { home: WRONG_HOME, task: EARLY, address: 'worker:orders-api' }],
+  ['task', { home: HOME, task: TASK, address: 'worker:orders-api' }],
   ['address', { home: HOME, task: EARLY, address: 'worker:other' }],
 ]) {
   const pointer = path.join(ROOT, `codex-early-wrong-${label}.json`);
@@ -1632,7 +1632,7 @@ for (const [label, other] of [
   store.upsertParticipant(HOME, EARLY, {
     ...earlyParticipant, metadata: { ...earlyParticipant.metadata, sessionRecord: pointer },
   });
-  const child = startServer('worker:cargos-api', {
+  const child = startServer('worker:orders-api', {
     task: EARLY, baseEnv: MCP_CHILD_BASE_ENV,
     env: { PROMPTOBUS_HOME: HOME_ALIAS, PROMPTOBUS_CODEX_SESSION: pointer, PROMPTOBUS_WARDEN: 'off' },
   });

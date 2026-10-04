@@ -1293,10 +1293,10 @@ check(`: the route for a worker's dead record calls for raising it with the same
 // A reviewer is raised by a different command, and the address `worker:<slug>` does not fit
 // it: `promptobus spawn` raises a worker, and a reviewer has no worktree at all (review
 // note). The one documented live ghost is exactly a reviewer session.
-const REVIEWER_REPO = path.join(SB, 'repos', 'loads_search', 'cargos-api');
+const REVIEWER_REPO = path.join(SB, 'repos', 'demo_team', 'orders-api');
 const rStaleReviewer = stallRoute(
   {
-    kind: 'stale', address: 'reviewer:cargos-api', repoAbs: REVIEWER_REPO, task: DIAG,
+    kind: 'stale', address: 'reviewer:orders-api', repoAbs: REVIEWER_REPO, task: DIAG,
     reviewCommand: HOST.busCommand(['review', `"${REVIEWER_REPO}"`, `--task ${DIAG}`]),
   },
   'ghost2', 'Review: X',

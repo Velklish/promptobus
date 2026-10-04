@@ -162,13 +162,13 @@ process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 const home = path.join(SB, '.promptobus');
 const TASK = 't20260813-090000';
 const OWNER = 'session-orchestrator';
-createTask(home, { id: TASK, title: 'событие CargoCreated в двух сервисах', owner: OWNER });
+createTask(home, { id: TASK, title: 'событие OrderCreated в двух сервисах', owner: OWNER });
 // A second task of the same home — so that entry by an EXPLICIT `task` is
 // lawful even in a conversation where the session has already entered its own.
 const SECOND = 't20260813-100000';
 createTask(home, { id: SECOND, title: 'вторая задача того же дома', owner: OWNER });
 upsertParticipant(home, TASK, {
-  address: 'worker:cargos-api', repo: 'loads_search/cargos-api', session: 'bg-42',
+  address: 'worker:orders-api', repo: 'demo_team/orders-api', session: 'bg-42',
 });
 
 // Protocol versions arrive as config: their home is at the consumer, and the
@@ -217,7 +217,7 @@ async function talk(lines, { role = 'orchestrator', session = OWNER, declaredTas
     },
     stalls: (ctx) => {
       calls.stalls.push(ctx);
-      return ctx.address === 'orchestrator' ? 'STALLED worker:cargos-api' : null;
+      return ctx.address === 'orchestrator' ? 'STALLED worker:orders-api' : null;
     },
     errorText,
     ...options,
@@ -399,12 +399,12 @@ test('tools/call: send puts the message and names the recipient, the address, an
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', {
       name: 'promptobus_send',
-      arguments: { to: 'worker:cargos-api', type: 'task', body: 'разбери контракт' },
+      arguments: { to: 'worker:orders-api', type: 'task', body: 'разбери контракт' },
     }),
   ]);
   const said = textOf(responses[0]);
-  assert.match(said, /^sent task → cargos-api/);
-  assert.ok(said.includes(`${ADDR_MARK}worker:cargos-api`));
+  assert.match(said, /^sent task → orders-api/);
+  assert.ok(said.includes(`${ADDR_MARK}worker:orders-api`));
   assert.ok(said.includes(`task=${TASK}`));
   // Task entry is before the tool work, and ownership is counted by the
   // package: the consumer hands over the contact point and raises the
@@ -418,13 +418,13 @@ test('tools/call: mailbox returns what arrived and glues on the stalled diagnost
       name: 'promptobus_send',
       arguments: { to: 'orchestrator', type: 'status', body: 'взял в работу' },
     }),
-  ], { role: 'worker:cargos-api', session: 'bg-42' });
+  ], { role: 'worker:orders-api', session: 'bg-42' });
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
   ]);
   const said = textOf(responses[0]);
-  assert.match(said, /^messages 1: status from worker:cargos-api/);
-  assert.ok(said.endsWith('STALLED worker:cargos-api'));
+  assert.match(said, /^messages 1: status from worker:orders-api/);
+  assert.ok(said.endsWith('STALLED worker:orders-api'));
   assert.deepEqual(calls.stalls, [{ home, task: TASK, address: 'orchestrator' }]);
 });
 
@@ -434,7 +434,7 @@ test('tools/call: an orchestrator mailbox with no session identity is a copy, an
       name: 'promptobus_send',
       arguments: { to: 'orchestrator', type: 'status', body: 'left for the owner' },
     }),
-  ], { role: 'worker:cargos-api', session: 'bg-42' });
+  ], { role: 'worker:orders-api', session: 'bg-42' });
   const before = at(home).unread(TASK, addrDir('orchestrator'));
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
@@ -459,22 +459,22 @@ test('tools/call: an orchestrator mailbox with no session identity is a copy, an
 
 test('tools/call: a participant address with no session identity still fetches its own mailbox', async () => {
   upsertParticipant(home, SECOND, {
-    address: 'worker:cargos-api', repo: 'loads_search/cargos-api', session: 'bg-42',
+    address: 'worker:orders-api', repo: 'demo_team/orders-api', session: 'bg-42',
   });
   await talk([
     rpc(1, 'tools/call', {
       name: 'promptobus_send',
-      arguments: { to: 'worker:cargos-api', type: 'task', body: 'the participant\'s own mail', task: SECOND },
+      arguments: { to: 'worker:orders-api', type: 'task', body: 'the participant\'s own mail', task: SECOND },
     }),
   ], { declaredTask: SECOND });
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { task: SECOND } }),
-  ], { role: 'worker:cargos-api', session: null, declaredTask: SECOND });
+  ], { role: 'worker:orders-api', session: null, declaredTask: SECOND });
   const said = textOf(responses[0]);
   assert.equal(said.includes('the participant\'s own mail'), true);
   assert.equal(/carries no session identity/.test(said), false);
-  assert.equal(at(home).unread(SECOND, addrDir('worker:cargos-api')), 0);
-  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:cargos-api', gated: false, mayRegister: true }]);
+  assert.equal(at(home).unread(SECOND, addrDir('worker:orders-api')), 0);
+  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:orders-api', gated: false, mayRegister: true }]);
 });
 
 test('tools/call: a foreign session mailbox is a copy with a loud heading, originals stay with the owner', async () => {
@@ -492,7 +492,7 @@ test('tools/call: a foreign session mailbox is a copy with a loud heading, origi
 // Worker mail to the orchestrator for the checks below; the id comes off the store, not the reply.
 async function statusFromWorker(body) {
   await talk([rpc(1, 'tools/call', { name: 'promptobus_send', arguments: { to: 'orchestrator', type: 'status', body } })],
-    { role: 'worker:cargos-api', session: 'bg-42' });
+    { role: 'worker:orders-api', session: 'bg-42' });
   return at(home).glance(TASK, addrDir('orchestrator')).find((m) => m.body === body);
 }
 
@@ -505,14 +505,14 @@ test('tools/call: mailbox lists headers — id, size, first line — and marks t
     rpc(3, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
   ]);
   const headers = textOf(responses[0]);
-  assert.ok(headers.includes('### status from cargos-api · address worker:cargos-api · '), headers);
+  assert.ok(headers.includes('### status from orders-api · address worker:orders-api · '), headers);
   assert.ok(headers.includes(`message ${sent.id} · ${body.length} characters: status first line`), headers);
   assert.equal(headers.includes('second line only the body carries'), false, headers);
   assert.equal(at(home).unread(TASK, addrDir('orchestrator')), 0);
   const opened = textOf(responses[1]);
   assert.equal(responses[1].result.isError, undefined, opened);
   assert.match(opened, new RegExp(`^message ${sent.id} · PROMPTOBUS_HOME=`));
-  assert.ok(opened.includes(`### status from cargos-api · address worker:cargos-api · ${sent.ts}\n${body}`), opened);
+  assert.ok(opened.includes(`### status from orders-api · address worker:orders-api · ${sent.ts}\n${body}`), opened);
   assert.equal(textOf(responses[2]), opened, 'a body read marks nothing and can be asked again');
 });
 
@@ -596,10 +596,10 @@ test('a foreign session gets no entry mark — once it becomes the owner, it ent
 test('tools/call: task prints the participants, and the workspace lines are given by the consumer', async () => {
   const { responses, calls } = await talk([rpc(1, 'tools/call', { name: 'promptobus_task', arguments: {} })]);
   const said = textOf(responses[0]);
-  assert.match(said, new RegExp(`^task ${TASK} · событие CargoCreated в двух сервисах\n`));
+  assert.match(said, new RegExp(`^task ${TASK} · событие OrderCreated в двух сервисах\n`));
   assert.ok(said.includes(`- orchestrator · owner ${OWNER} · unread 0`));
-  assert.ok(said.includes('- worker:cargos-api · repository loads_search/cargos-api · unread 1'));
-  assert.deepEqual(calls.decorated, ['orchestrator', 'worker:cargos-api']);
+  assert.ok(said.includes('- worker:orders-api · repository demo_team/orders-api · unread 1'));
+  assert.deepEqual(calls.decorated, ['orchestrator', 'worker:orders-api']);
 });
 
 test('promptobus_task reports the parent and children of a two-level task tree', async () => {
@@ -673,7 +673,7 @@ test('a tool refusal arrives in the consumer text, the connection is not lost', 
   const { responses } = await talk([
     rpc(1, 'tools/call', {
       name: 'promptobus_send',
-      arguments: { to: 'worker:cargos-api', type: 'nope', body: 'x' },
+      arguments: { to: 'worker:orders-api', type: 'nope', body: 'x' },
     }),
     rpc(2, 'ping', {}),
   ]);

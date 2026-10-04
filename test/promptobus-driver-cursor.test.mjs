@@ -497,7 +497,7 @@ writeFileSync(skillScript, '#!/bin/sh\n');
 chmodSync(skillScript, 0o755);
 writeFileSync(path.join(skillsRoot, '.cursor', 'mcp.json'), '{"from":"workspace-root"}\n');
 mkdirSync(path.join(skillsRoot, '.cursor', 'agents'), { recursive: true });
-writeFileSync(path.join(skillsRoot, '.cursor', 'agents', 'ls-reviewer.md'), 'субагент\n');
+writeFileSync(path.join(skillsRoot, '.cursor', 'agents', 'demo-reviewer.md'), 'субагент\n');
 mkdirSync(path.join(skillsRoot, '.cursor', 'rules'), { recursive: true });
 writeFileSync(path.join(skillsRoot, '.cursor', 'rules', 'x.mdc'), 'правило\n');
 
@@ -1058,7 +1058,7 @@ mkdirSync(path.join(ws, '.cursor', 'skills', '_shared'), { recursive: true });
 writeFileSync(path.join(ws, '.cursor', 'skills', '_shared', 'standards.md'), 'общие\n');
 writeFileSync(path.join(ws, '.cursor', 'mcp.json'), '{"from":"workspace-root"}\n');
 mkdirSync(path.join(ws, '.cursor', 'agents'), { recursive: true });
-writeFileSync(path.join(ws, '.cursor', 'agents', 'ls-reviewer.md'), 'субагент\n');
+writeFileSync(path.join(ws, '.cursor', 'agents', 'demo-reviewer.md'), 'субагент\n');
 const home = path.join(ws, '.promptobus');
 const brief = path.join(SB, 'worker-brief.md');
 writeFileSync(brief, '# Cursor driver probe\n\nSend the orchestrator a status and end the turn.\n');

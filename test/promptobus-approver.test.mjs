@@ -56,7 +56,7 @@ const g = (cwd, ...args) => {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
 };
 g(WS, 'init', '-b', 'main');
-const REPO = path.join(WS, 'repos', 'loads_search', 'cargos-api');
+const REPO = path.join(WS, 'repos', 'demo_team', 'orders-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'main');
 writeFileSync(path.join(REPO, 'AGENTS.md'), 'repo\n');
@@ -76,9 +76,9 @@ store.createTask(HOME, {
   participants: [],
 });
 
-const worker = store.participantRecord('worker:cargos-api', {
+const worker = store.participantRecord('worker:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   branch: 'worktree-pb2065',
   worktree: REPO,
@@ -86,7 +86,7 @@ const worker = store.participantRecord('worker:cargos-api', {
 });
 store.upsertParticipant(HOME, TASK, worker);
 const assignedAt = '2026-09-13T12:00:00.000Z';
-function recordOwnerResult(home, task, repo, slug = 'cargos-api') {
+function recordOwnerResult(home, task, repo, slug = 'orders-api') {
   const address = `worker:${slug}`;
   const existing = store.participantOf(store.readTask(home, task), address);
   store.upsertParticipant(home, task, store.participantRecord(address, {
@@ -99,9 +99,9 @@ function recordOwnerResult(home, task, repo, slug = 'cargos-api') {
     from: address, to: store.ORCHESTRATOR, type: 'result', body: 'owner done',
   });
 }
-const reviewer = store.participantRecord('reviewer:cargos-api', {
+const reviewer = store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
@@ -119,47 +119,47 @@ store.upsertParticipant(HOME, TASK, {
 recordOwnerResult(HOME, TASK, REPO);
 
 check(': reviewerResultSent is false before any reviewer result',
-  reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', reviewer) === false,
-  String(reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', reviewer)));
+  reviewerResultSent(HOME, TASK, 'reviewer:orders-api', reviewer) === false,
+  String(reviewerResultSent(HOME, TASK, 'reviewer:orders-api', reviewer)));
 
 const noResult = thrown(() => planApprover(WS, { target: REPO, task: TASK, dryRun: true }));
 check(': planApprover refuses without a reviewer result',
-  noResult.threw && /type=result message from reviewer:cargos-api/.test(noResult.msg),
+  noResult.threw && /type=result message from reviewer:orders-api/.test(noResult.msg),
   noResult.msg);
 
 store.sendMessage(HOME, TASK, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 'review done',
 });
 
 check(': reviewerResultSent is true after the reviewer result',
-  reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', reviewer) === true,
-  String(reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', reviewer)));
+  reviewerResultSent(HOME, TASK, 'reviewer:orders-api', reviewer) === true,
+  String(reviewerResultSent(HOME, TASK, 'reviewer:orders-api', reviewer)));
 
 const { tallies } = await import(path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
-const firstResultAt = tallies(HOME, TASK).get('reviewer-cargos-api')?.lastResultAt;
+const firstResultAt = tallies(HOME, TASK).get('reviewer-orders-api')?.lastResultAt;
 const nextAssignment = new Date(Date.parse(firstResultAt) + 1).toISOString();
-store.stampReviewAssignment(HOME, TASK, 'reviewer:cargos-api', null);
-store.stampSnapshot(HOME, TASK, 'reviewer:cargos-api', {
+store.stampReviewAssignment(HOME, TASK, 'reviewer:orders-api', null);
+store.stampSnapshot(HOME, TASK, 'reviewer:orders-api', {
   at: nextAssignment, head: null, clean: true, modifiedTracked: [],
 });
 check(': a prior-round result does not unlock the approver before the new assignment is sent',
-  reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:cargos-api')) === false,
+  reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === false,
   nextAssignment);
-store.stampReviewAssignment(HOME, TASK, 'reviewer:cargos-api', nextAssignment);
+store.stampReviewAssignment(HOME, TASK, 'reviewer:orders-api', nextAssignment);
 check(': a prior-round result still does not unlock after the new assignment watermark',
-  reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:cargos-api')) === false,
+  reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === false,
   nextAssignment);
 store.sendMessage(HOME, TASK, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 're-review done',
 });
 check(': a reviewer result at or after the assignment watermark unlocks the approver again',
-  reviewerResultSent(HOME, TASK, 'reviewer:cargos-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:cargos-api')) === true,
+  reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === true,
   nextAssignment);
 
 const HARNESS_TASK = 'pb235-approver-harness';
@@ -171,19 +171,19 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, HARNESS_TASK, REPO);
-store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 }));
 store.sendMessage(HOME, HARNESS_TASK, {
-  from: 'reviewer:cargos-api', to: store.ORCHESTRATOR, type: 'result', body: 'reviewed',
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'reviewed',
 });
-store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('approver:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
 }));
@@ -198,7 +198,7 @@ check(': an approver harness change names the session state and no separate task
   && !/--title/.test(approverHarness.msg),
   approverHarness.msg);
 
-const OTHER_REPO = path.join(WS, 'repos', 'other', 'cargos-api');
+const OTHER_REPO = path.join(WS, 'repos', 'other', 'orders-api');
 mkdirSync(OTHER_REPO, { recursive: true });
 g(OTHER_REPO, 'init', '-b', 'main');
 writeFileSync(path.join(OTHER_REPO, 'AGENTS.md'), 'other\n');
@@ -220,22 +220,22 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, WRONG_REUSE_TASK, OTHER_REPO);
-store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/other/cargos-api',
+  repo: 'repos/other/orders-api',
   repoAbs: OTHER_REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 }));
 store.sendMessage(HOME, WRONG_REUSE_TASK, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 'review done at other repo',
 });
-store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('approver:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   session: 'sess-wrong-reuse',
   started: assignedAt,
@@ -275,7 +275,7 @@ const CLI = path.join(here, '..', 'bin', 'promptobus.js');
 
 const plan = planApprover(WS, { target: REPO, task: TASK, dryRun: true });
 check(': planApprover names an approver worktree under the clone',
-  plan.address === 'approver:cargos-api'
+  plan.address === 'approver:orders-api'
   && plan.cloneRoot === REPO
   && plan.worktreePath.startsWith(path.join(REPO, '.claude', 'worktrees') + path.sep)
   && plan.launch.cwd === undefined,
@@ -294,10 +294,10 @@ check(': the approver preamble forbids push and force-push and leaves the push t
   claudePlan.prompt.slice(0, 700));
 
 check(': the approver runs the gates, so its preamble puts them under the machine lease at its own address',
-  claudePlan.prompt.includes(`promptobus lease --as approver:cargos-api --task ${TASK} -- <command…>`),
+  claudePlan.prompt.includes(`promptobus lease --as approver:orders-api --task ${TASK} -- <command…>`),
   claudePlan.prompt.slice(claudePlan.prompt.indexOf('## Machine lease'), claudePlan.prompt.indexOf('## Machine lease') + 300));
 check(': the approver preamble places the clone fast-forward under its canonical publication key',
-  claudePlan.prompt.includes(`promptobus lease --as approver:cargos-api --task ${TASK} --key ${REPO} -- git -C ${REPO} merge --ff-only ${claudePlan.branch}`),
+  claudePlan.prompt.includes(`promptobus lease --as approver:orders-api --task ${TASK} --key ${REPO} -- git -C ${REPO} merge --ff-only ${claudePlan.branch}`),
   claudePlan.prompt.slice(0, 800));
 
 check(': the approver preamble quotes the attachment contract',
@@ -374,7 +374,7 @@ const noReviewer = thrown(() => planApprover(WS, {
 check(': no such reviewer names the passed path and that the task has no reviewer',
   noReviewer.threw
   && noReviewer.msg.includes(REPO)
-  && /type=result message from reviewer:cargos-api/.test(noReviewer.msg)
+  && /type=result message from reviewer:orders-api/.test(noReviewer.msg)
   && /no participant is recorded/.test(noReviewer.msg),
   noReviewer.msg);
 const refusedBriefs = existsSync(store.filesDir(HOME, NO_REVIEWER))
@@ -394,7 +394,7 @@ const cursorProjectFile = (name) => JSON.parse(cursorPlan.launch.files.find((f) 
   f.path === path.join(cursorPlan.worktreePath, '.cursor', name)).text);
 check(': Cursor approver project layer names the bus and role guard with empty package denies',
   Object.hasOwn(cursorProjectFile('mcp.json').mcpServers, PROMPTOBUS_SERVER)
-  && cursorProjectFile('hooks.json').hooks.stop.some((hook) => hook.command.includes('--role approver:cargos-api'))
+  && cursorProjectFile('hooks.json').hooks.stop.some((hook) => hook.command.includes('--role approver:orders-api'))
   && cursorProjectFile('cli.json').permissions.deny.length === 0);
 const cursorCliDryRun = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--dry-run',
@@ -406,7 +406,7 @@ const cursorCliDryRun = spawnSync(process.execPath, [
 check(': CLI review --approver --harness cursor dry-runs without a participant',
   cursorCliDryRun.status === 0
   && cursorCliDryRun.stdout.includes(`approver cwd: ${cursorPlan.worktreePath}`)
-  && !store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api'),
+  && !store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api'),
   `${cursorCliDryRun.status} ${cursorCliDryRun.stderr} ${cursorCliDryRun.stdout}`);
 const cursorBrief = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--brief', ASSIGN, '--dry-run',
@@ -472,7 +472,7 @@ const codexCliRefusal = spawnSync(process.execPath, [
 check(': CLI review --approver --harness codex dry-runs without registering a participant',
   codexCliRefusal.status === 0
   && codexCliRefusal.stdout.includes(codexPlan.worktreePath)
-  && !store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api'),
+  && !store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api'),
   `${codexCliRefusal.status} ${codexCliRefusal.stderr} ${codexCliRefusal.stdout}`);
 const foreignCodexConfig = path.join(REPO, '.codex', 'config.toml');
 mkdirSync(path.dirname(foreignCodexConfig), { recursive: true });
@@ -523,15 +523,15 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, REUSE_TASK, REPO);
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 }));
 store.sendMessage(HOME, REUSE_TASK, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 'review done',
@@ -566,9 +566,9 @@ process.exit(0);`);
 writeFileSync(BG_RAISED, 'Approver: reuse');
 const PATH0 = process.env.PATH ?? '';
 process.env.PATH = `${BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${PATH0}`;
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   name: 'Approver: reuse',
   session: 'sess-reuse',
@@ -584,14 +584,14 @@ const reuseBrief = await capture(() => approverLift(WS, {
   target: REPO, task: REUSE_TASK, harness: 'claude', brief: ASSIGN,
 }));
 check(': a reused approver is told --brief is not delivered and keeps no copy',
-  /--brief is not delivered to approver:cargos-api/.test(reuseBrief)
+  /--brief is not delivered to approver:orders-api/.test(reuseBrief)
   && /already on the bus/.test(reuseBrief)
   && briefNames(HOME, REUSE_TASK).length === 0,
   `${reuseBrief} names=${briefNames(HOME, REUSE_TASK).join(',')}`);
 
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   name: 'Approver: pending',
   pending: true,
@@ -603,9 +603,9 @@ check(': repeat approver lift treats a pending unlaunched record as not reusable
   pendingAgain.unlaunched === true && pendingAgain.reuse === false,
   JSON.stringify({ unlaunched: pendingAgain.unlaunched, reuse: pendingAgain.reuse }));
 
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:cargos-api', {
+store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('approver:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   name: 'Approver: dead',
   session: 'gone',
@@ -626,22 +626,22 @@ store.createTask(HOME, {
   adapter: { slug: 'pb2065', stamp: 't20260913-120001' },
   participants: [],
 });
-store.upsertParticipant(HOME, OWNERLESS, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(HOME, OWNERLESS, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 }));
 store.sendMessage(HOME, OWNERLESS, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 'review done',
 });
 const ownerlessPlan = thrown(() => planApprover(WS, { target: REPO, task: OWNERLESS, dryRun: true }));
 check(': an ownerless piece cannot lift a writes-main-tree gate',
-  ownerlessPlan.threw && /type=result message from worker:cargos-api/.test(ownerlessPlan.msg),
+  ownerlessPlan.threw && /type=result message from worker:orders-api/.test(ownerlessPlan.msg),
   ownerlessPlan.msg);
 
 function mcpSend(role, sendArgs, { home = HOME, task = TASK, cwd = WS, env = {} } = {}) {
@@ -987,7 +987,7 @@ const CLI_PATH0 = process.env.PATH ?? '';
 const BRIEF = path.join(SB, 'brief.md');
 writeFileSync(BRIEF, 'brief\n');
 const spawnReserved = spawnSync(process.execPath, [
-  CLI, 'promptobus', 'spawn', '--repo', 'repos/loads_search/cargos-api', '--brief', BRIEF,
+  CLI, 'promptobus', 'spawn', '--repo', 'repos/demo_team/orders-api', '--brief', BRIEF,
   '--task', TASK, '--worker', 'approver-x', '--dry-run',
 ], {
   encoding: 'utf8',
@@ -1010,15 +1010,15 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, ULTRA_TASK, REPO);
-store.upsertParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:cargos-api', {
+store.upsertParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
-  repo: 'repos/loads_search/cargos-api',
+  repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 }));
 store.sendMessage(HOME, ULTRA_TASK, {
-  from: 'reviewer:cargos-api',
+  from: 'reviewer:orders-api',
   to: store.ORCHESTRATOR,
   type: 'result',
   body: 'review done',
@@ -1078,16 +1078,16 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 try {
   const liftOptions = { target: REPO, task: TASK, harness: 'claude', tool: { ok: true, bin: path.join(RETRY_BIN, 'claude'), version: '2.1.280' } };
   await capture(() => approverLift(WS, liftOptions));
-  const first = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  const first = store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api');
   const layerFile = path.join(first.metadata.worktree, '.claude', 'role-layer.txt');
   const originalBytes = readFileSync(layerFile);
   store.bindSessionIdentity(() => ({ id: first.metadata.sessionId }));
-  await capture(() => stop(WS, { task: TASK, address: 'approver:cargos-api' }));
+  await capture(() => stop(WS, { task: TASK, address: 'approver:orders-api' }));
   claudeDriver.forgetSessions();
   writeFileSync(layerFile, 'foreign edit\n');
   let refused = '';
   try { await capture(() => approverLift(WS, liftOptions)); } catch (e) { refused = e.message ?? String(e); }
-  const pending = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  const pending = store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api');
   check(': a refused relift retains the previous launch-layer ownership in its pending record',
     refused.includes(layerFile) && pending?.metadata?.pending === true
     && JSON.stringify(pending.metadata.launchLayer) === JSON.stringify(first.metadata.launchLayer)
@@ -1095,7 +1095,7 @@ try {
     `${refused} ${JSON.stringify(pending?.metadata)}`);
   writeFileSync(layerFile, originalBytes);
   await capture(() => approverLift(WS, liftOptions));
-  const restored = store.participantOf(store.readTask(HOME, TASK), 'approver:cargos-api');
+  const restored = store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api');
   check(': restoring the bytes permits relift of the same approver worktree',
     restored?.metadata?.pending !== true && !!restored?.metadata?.session
     && restored.metadata.worktree === first.metadata.worktree

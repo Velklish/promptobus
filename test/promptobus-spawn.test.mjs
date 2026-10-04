@@ -145,20 +145,20 @@ check('PB-51: a declared plugin host warning names the manifest it checks',
 // but never touches the network. With no origin at all the default branch would not
 // be resolved, and the worktree would branch from HEAD — that is, a road life does
 // not take would be checked.
-const ORIGIN = path.join(SB, 'origin', 'cargos-api.git');
+const ORIGIN = path.join(SB, 'origin', 'orders-api.git');
 const SEED = path.join(SB, 'seed');
 mkdirSync(ORIGIN, { recursive: true });
 mkdirSync(SEED, { recursive: true });
 spawnSync('git', ['init', '--bare', '-b', 'main', ORIGIN], { encoding: 'utf8' });
 g(SEED, 'init', '-b', 'main');
-writeFileSync(path.join(SEED, 'AGENTS.md'), 'Правила репозитория cargos-api.\n');
+writeFileSync(path.join(SEED, 'AGENTS.md'), 'Правила репозитория orders-api.\n');
 writeFileSync(path.join(SEED, 'a.txt'), 'v1\n');
 g(SEED, 'add', '.');
 g(SEED, 'commit', '-m', 'init', '-q');
 g(SEED, 'remote', 'add', 'origin', ORIGIN);
 g(SEED, 'push', '-q', 'origin', 'main');
 
-const REPO = path.join(WS, 'cargos-api');
+const REPO = path.join(WS, 'orders-api');
 
 // Clone worktree directories are named by the task stamp, not by an assembled name.
 // A name literal in a negative check idles in silence: half of such a pair ("worktree
@@ -173,7 +173,7 @@ const worktreesWithStamp = (stamp) => {
 spawnSync('git', ['clone', '-q', ORIGIN, REPO], { encoding: 'utf8' });
 
 const BRIEF = path.join(SB, 'brief.md');
-writeFileSync(BRIEF, '# Добавить поле source в событие CargoCreated\n\nПравки в контракте и публикации.\n');
+writeFileSync(BRIEF, '# Добавить поле source в событие OrderCreated\n\nПравки в контракте и публикации.\n');
 
 // --- stubbed claude --------------------------------------------------------
 
@@ -208,10 +208,10 @@ const TASK = 'sobytie-t20260827-120000';
 // second, and the session name computed before spawn for the stubbed `claude`
 // would diverge from the one computed inside.
 store.createTask(HOME, {
-  id: TASK, title: 'событие CargoCreated в двух сервисах', slug: 'sobytie', stamp: 't20260827-120000',
+  id: TASK, title: 'событие OrderCreated в двух сервисах', slug: 'sobytie', stamp: 't20260827-120000',
 });
 
-const opts = { repo: 'cargos-api', brief: BRIEF, task: TASK, effort: 'high' };
+const opts = { repo: 'orders-api', brief: BRIEF, task: TASK, effort: 'high' };
 const plan = await planSpawn(WS, opts);
 check('prompt: worker sees its absolute worktree and the session roots',
   path.isAbsolute(plan.worktreePath)
@@ -233,7 +233,7 @@ check('host API: workerPreamble receives the actual worktree path',
   JSON.stringify(preambleCtx));
 // The lease reaches the worker by the preamble, addressed to it: no brief carries it.
 check('prompt: the worker is told to measure under the machine lease, with its own address and task',
-  plan.prompt.includes(`promptobus lease --as worker:cargos-api --task ${TASK} -- <command…>`)
+  plan.prompt.includes(`promptobus lease --as worker:orders-api --task ${TASK} -- <command…>`)
   && !readFileSync(BRIEF, 'utf8').includes('lease'),
   plan.prompt.slice(plan.prompt.indexOf('## Machine lease'), plan.prompt.indexOf('## Machine lease') + 400));
 const SESSION_ID = 'sess-0001';
@@ -243,7 +243,7 @@ const lifted = await capture(() => spawnWorker(WS, opts));
 
 // Mechanism fields live in the v1 record `metadata`: the adapter writes them and
 // reads them.
-const record = store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api');
+const record = store.participantOf(store.readTask(HOME, TASK), 'worker:orders-api');
 const written = record?.metadata;
 check(': spawn wrote the participant into the task journal', !!written, JSON.stringify(written));
 const STUB_VERSION = '2.1.237 (Claude Code)';
@@ -317,7 +317,7 @@ check(': worktree — the absolute directory path, and the directory exists',
   written?.worktree === plan.worktreePath && path.isAbsolute(written.worktree) && existsSync(written.worktree),
   written?.worktree);
 check(': repoAbs — the absolute clone path, the repository is named by the short name too',
-  written?.repoAbs === REPO && written?.repo === 'cargos-api', `${written?.repoAbs} · ${written?.repo}`);
+  written?.repoAbs === REPO && written?.repo === 'orders-api', `${written?.repoAbs} · ${written?.repo}`);
 check(': model and effort — the ones that went into the command',
   written?.model === 'opus' && written?.effort === 'high'
   && plan.argv.includes('--effort') && plan.argv[plan.argv.indexOf('--effort') + 1] === 'high',
@@ -349,7 +349,7 @@ check(': the record agrees with git — the worktree directory is on the recorde
 // holds its own copy in the task files folder, next to the review diffs, and the lift
 // output names the path — otherwise a person reading the journal has the diff and not
 // what it was made by.
-const briefKept = path.join(store.filesDir(HOME, TASK), 'brief-cargos-api.md');
+const briefKept = path.join(store.filesDir(HOME, TASK), 'brief-orders-api.md');
 check(': the brief is kept in the task files, and the text is the one that was passed',
   existsSync(briefKept)
   && readFileSync(briefKept, 'utf8').trim() === readFileSync(BRIEF, 'utf8').trim(),
@@ -368,7 +368,7 @@ if (process.platform !== 'win32') {
   store.createTask(HOME, {
     id: RO_TASK, title: 'a files folder that cannot be written', slug: 'readonly', stamp: 't20260902-110000',
   });
-  const roOpts = { repo: 'cargos-api', brief: BRIEF, task: RO_TASK, worker: 'kept' };
+  const roOpts = { repo: 'orders-api', brief: BRIEF, task: RO_TASK, worker: 'kept' };
   const roPlan = await planSpawn(WS, roOpts);
   claudeSays([{ id: 'sess-ro', name: roPlan.name, state: 'working', pid: 4711 }]);
   resetCliCaches();
@@ -492,9 +492,9 @@ const noStack = (run) => run.status === 1 && !/\n\s+at /.test(run.text) && !/^Er
 const EMPTY_BRIEF = path.join(SB, 'empty-brief.md');
 writeFileSync(EMPTY_BRIEF, '');
 const briefRefusals = [
-  cliRun([ 'spawn', '--repo', 'cargos-api', '--dry-run']),
-  cliRun([ 'spawn', '--repo', 'cargos-api', '--brief', path.join(SB, 'net-briefa.md'), '--dry-run']),
-  cliRun([ 'spawn', '--repo', 'cargos-api', '--brief', EMPTY_BRIEF, '--dry-run']),
+  cliRun([ 'spawn', '--repo', 'orders-api', '--dry-run']),
+  cliRun([ 'spawn', '--repo', 'orders-api', '--brief', path.join(SB, 'net-briefa.md'), '--dry-run']),
+  cliRun([ 'spawn', '--repo', 'orders-api', '--brief', EMPTY_BRIEF, '--dry-run']),
 ];
 check(': --brief — missing, nonexistent, and empty file are printed without a stack',
   briefRefusals.every(noStack)
@@ -517,14 +517,14 @@ check(': prune --older-than with an invalid age is printed without a stack',
   `status=${badOlderThan.status} ${badOlderThan.text}`);
 
 const badEffort = cliRun([
-  'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, '--task', TASK,
+  'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
   '--worker', 'bad-effort', '--effort', 'turbo', '--dry-run',
 ]);
 check(': spawn --effort with an unknown value is printed without a stack',
   noStack(badEffort) && /--effort: unknown value "turbo"/.test(badEffort.text),
   `status=${badEffort.status} ${badEffort.text}`);
 const badMode = cliRun([
-  'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, '--task', TASK,
+  'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
   '--worker', 'bad-mode', '--permission-mode', 'svoy', '--dry-run',
 ]);
 check(': spawn --permission-mode with an unknown value refuses without a stack and names the list',
@@ -532,7 +532,7 @@ check(': spawn --permission-mode with an unknown value refuses without a stack a
   `status=${badMode.status} ${badMode.text}`);
 
 const badWorker = cliRun([
-  'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, '--task', TASK,
+  'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
   '--worker', '!!!', '--dry-run',
 ]);
 check(': spawn --worker with an invalid name is printed without a stack',
@@ -541,8 +541,8 @@ check(': spawn --worker with an invalid name is printed without a stack',
 
 for (const role of ['reviewer', 'approver']) {
   const reservedWorker = cliRun([
-    'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, '--task', TASK,
-    '--worker', `${role}-cargos-api`, '--dry-run',
+    'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
+    '--worker', `${role}-orders-api`, '--dry-run',
   ]);
   check(`: spawn reserves the ${role}- sidecar prefix from worker names`,
     noStack(reservedWorker) && reservedWorker.status !== 0
@@ -557,7 +557,7 @@ for (const role of ['reviewer', 'approver']) {
 // on the same text already use `GateError`. The top-level catch is only in a
 // separate CLI process, as above.
 const missingSpawnTask = cliRun([
-  'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF,
+  'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF,
   '--task', 'net-takoy-bl394', '--dry-run',
 ]);
 check(': spawn --task of a nonexistent task is printed without a stack',
@@ -570,7 +570,7 @@ store.createTask(HOME, {
 });
 store.closeTask(HOME, DONE_TASK);
 const closedSpawnTask = cliRun([
-  'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF,
+  'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF,
   '--task', DONE_TASK, '--dry-run',
 ]);
 check(': spawn --task of a closed task is printed without a stack',
@@ -589,7 +589,7 @@ const setStatus = (id, status) => {
 const activeNow = store.activeTasks(HOME).map((t) => t.id);
 for (const id of activeNow) setStatus(id, 'done');
 const cliDry = spawnSync(process.execPath, [
-  CLI, 'promptobus', 'spawn', '--repo', 'cargos-api', '--brief', BRIEF,
+  CLI, 'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF,
   '--task-title', 'Заход по бэклогу: spawn, ожидание, резолв', '--dry-run',
 ], { encoding: 'utf8', cwd: WS, env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 for (const id of activeNow) setStatus(id, 'active');
@@ -599,7 +599,7 @@ check(': --task-title travels from the command line to the task title',
   `status=${cliDry.status} ${cliText}`);
 // The SLICE title stays the slice title — the session name is assembled from it.
 check(': --task-title does not replace the work-slice title in the session name',
-  cliText.includes('Worker: Добавить поле source в событие CargoCreated'),
+  cliText.includes('Worker: Добавить поле source в событие OrderCreated'),
   cliText.split('\n').filter((l) => /session/.test(l)).join(' | '));
 
 // --- : a foreign task and a pinned title — by the real command --------
@@ -624,7 +624,7 @@ for (const id of guardOthers) setStatus(id, 'done');
 // reads `CLAUDE_CODE_SESSION_ID`, and without the substitution the check would
 // depend on who started the run.
 const guardRun = (session, ...args) => {
-  const r = spawnSync(process.execPath, [CLI, 'spawn', '--repo', 'cargos-api', '--brief', BRIEF, ...args],
+  const r = spawnSync(process.execPath, [CLI, 'spawn', '--repo', 'orders-api', '--brief', BRIEF, ...args],
     { encoding: 'utf8', cwd: WS, env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, PATH: `${BIN}${path.delimiter}${PATH0}` } });
   return { status: r.status, text: `${r.stdout}${r.stderr}` };
 };
@@ -689,7 +689,7 @@ check(': a refusal of other commands with several actives names the --new-task e
   `status=${manyForOtherCommands.status} ${manyForOtherCommands.text}`);
 
 const keptRun = guardRun('sess-gost', '--task', GUARD_TASK, '--worker', 'yavno',
-  '--task-title', 'LS-235543: флаги refresh в cargos-api', '--dry-run');
+  '--task-title', 'TASK-1024: флаги refresh в orders-api', '--dry-run');
 check(': an explicit --task passes, and --task-title prints a warning and does not touch the title',
   keptRun.status === 0 && keptRun.text.includes('--task-title ignored')
   && keptRun.text.includes(GUARD_TITLE) && !keptRun.text.includes('will be renamed')
@@ -737,7 +737,7 @@ check(': an unknown repository name names the path, not [object Object]',
 // tracks would stay the work of one.
 const BRIEF2 = path.join(SB, 'brief2.md');
 writeFileSync(BRIEF2, '# Резолв имени репозитория\n\nВторая линия того же захода.\n');
-const opts2 = { repo: 'cargos-api', brief: BRIEF2, task: TASK, worker: 'resolve' };
+const opts2 = { repo: 'orders-api', brief: BRIEF2, task: TASK, worker: 'resolve' };
 const plan2 = await planSpawn(WS, opts2);
 claudeSays([
   { id: SESSION_ID, name: plan.name, state: 'working', pid: 4242 },
@@ -751,12 +751,12 @@ claudeSays([
 // it. The fork "passed string versus recalc under the lock" is closed by the
 // direct `retitleTask` check elsewhere in this suite, and the form of the intent
 // — a check there too: one side was not enough, the second round fell on it.
-store.upsertParticipant(HOME, TASK, store.participantRecord('worker:sosed', { repo: 'cargos-api', title: 'Линия соседа',
+store.upsertParticipant(HOME, TASK, store.participantRecord('worker:sosed', { repo: 'orders-api', title: 'Линия соседа',
   name: 'Worker: Линия соседа (0827-1200)' }));
 await quiet(() => spawnWorker(WS, opts2));
 check(': the journal got the assembly from the journal, not the prediction from the caller plan',
   store.readTask(HOME, TASK).title
-    === 'Добавить поле source в событие CargoCreated · Линия соседа · Резолв имени репозитория',
+    === 'Добавить поле source в событие OrderCreated · Линия соседа · Резолв имени репозитория',
   `${store.readTask(HOME, TASK).title} · prediction was "${plan2.retitle?.preview}"`);
 check(': a track grafted after the plan was not lost from the title',
   store.readTask(HOME, TASK).title.includes('Линия соседа')
@@ -768,7 +768,7 @@ check(': the title is assembled, not set by a person — there is no explicit ma
 // Session names stay SLICE titles: renaming the task does not touch them — they
 // are already in the journal.
 check(`: track session names were not rewritten by the task title`,
-  store.participantOf(store.readTask(HOME, TASK), 'worker:cargos-api').metadata.name === plan.name
+  store.participantOf(store.readTask(HOME, TASK), 'worker:orders-api').metadata.name === plan.name
   && store.participantOf(store.readTask(HOME, TASK), 'worker:resolve').metadata.name === plan2.name);
 
 // --- : old binary — version refusal, before a write to disk ----------------
@@ -789,7 +789,7 @@ const oldTool = {
 };
 const oldRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
-  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: OLD_TASK, worker: 'staryy', tool: oldTool })});`,
+  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'orders-api', brief: BRIEF, task: OLD_TASK, worker: 'staryy', tool: oldTool })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const oldText = `${oldRun.stdout}${oldRun.stderr}`;
 check(': the refusal names the version, not an unknown flag',
@@ -828,7 +828,7 @@ check(': the declared claude minimum is strictly older than the ultracode minimu
 claudeSays([], 0, `${CLAUDE_MIN} (Claude Code)`);
 const oldEnough = { ok: true, bin: stubClaude(), version: CLAUDE_MIN };
 const ultraRun = spawnRun({
-  repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'ultracode',
+  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'ultracode',
   tool: oldEnough,
 });
 const ultraText = `${ultraRun.stdout}${ultraRun.stderr}`;
@@ -851,7 +851,7 @@ check(': the refusal leaves nothing on disk — neither a participant nor a work
     `calls=${calls} filled=${filled.version} quiet=${quiet.version}`);
 }
 const fromHost = spawnRun({
-  repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'from-host', effort: 'ultracode',
+  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'from-host', effort: 'ultracode',
 });
 const fromHostText = `${fromHost.stdout}${fromHost.stderr}`;
 check(': a lift with no tool seam still reads the binary and refuses ultracode',
@@ -860,11 +860,11 @@ check(': a lift with no tool seam still reads the binary and refuses ultracode',
 // The same binary and the same spawn without `ultracode` — the gate is not a
 // shared lift of the minimum version.
 const xhighPlan = await planSpawn(WS, {
-  repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
+  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
 });
 claudeSays([{ id: 'sess-xhigh', name: xhighPlan.name, state: 'working', pid: 4246 }], 0, `${CLAUDE_MIN} (Claude Code)`);
 const xhighRun = spawnRun({
-  repo: 'cargos-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
+  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
   tool: oldEnough,
 });
 check(': on the same binary other efforts pass — the refusal is pointed',
@@ -893,7 +893,7 @@ try {
 
 // --- : standalone host does not search install dirs ----------------------
 //
-// Origin ATI host walked ~/.local/bin. Dest resolveToolBin returns { ok, bin: name }
+// The origin consumer host walked ~/.local/bin. Dest resolveToolBin returns { ok, bin: name }
 // and does not look at HOME. A missing name is an explicit HostToolBin refusal
 // (the seam spawn already has); liftoff then never runs.
 const GITONLY = path.join(SB, 'gitonly');
@@ -903,7 +903,7 @@ const FOUND_TASK = 'naydennyy-t20260827-150000';
 store.createTask(HOME, {
   id: FOUND_TASK, title: 'spawn бинарём вне PATH', slug: 'naydennyy', stamp: 't20260827-150000',
 });
-const foundPlan = await planSpawn(WS, { repo: 'cargos-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' });
+const foundPlan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' });
 const offPathBin = path.join(SB, 'off-path');
 stubCommand(offPathBin, 'claude', `const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
@@ -914,7 +914,7 @@ const foundNote = `claude not found in PATH — taken from ${offPathBin}`;
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
-    repo: 'cargos-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy',
+    repo: 'orders-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy',
     tool: { ok: true, bin: foundBin, note: foundNote },
   })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: GITONLY } });
@@ -933,7 +933,7 @@ const noneReason = 'claude: not found in PATH. Install: npm install -g @anthropi
 const noneRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
-    repo: 'cargos-api', brief: BRIEF, task: NONE_TASK, worker: 'nekem',
+    repo: 'orders-api', brief: BRIEF, task: NONE_TASK, worker: 'nekem',
     tool: { ok: false, reason: noneReason },
   })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: GITONLY } });
@@ -959,7 +959,7 @@ store.createTask(HOME, {
 claudeSays([], 3);
 const failed = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
-  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'cargos-api', brief: BRIEF, task: FAIL_TASK, worker: 'sboy' })});`,
+  + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({ repo: 'orders-api', brief: BRIEF, task: FAIL_TASK, worker: 'sboy' })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const failText = `${failed.stdout}${failed.stderr}`;
 check(': spawn with a claude that did not come up refuses, rather than staying silent',
@@ -991,7 +991,7 @@ check(': a refused spawn keeps no brief — the copy is made after the lift, not
 let retry = null;
 let retryErr = '';
 try {
-  retry = await planSpawn(WS, { repo: 'cargos-api', brief: BRIEF, task: FAIL_TASK, worker: 'sboy', sessions: [] });
+  retry = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: FAIL_TASK, worker: 'sboy', sessions: [] });
 } catch (e) {
   retryErr = e.message;
 }
@@ -1013,7 +1013,7 @@ const DRY_TASK = 'suhoy-t20260828-160000';
 store.createTask(HOME, {
   id: DRY_TASK, title: 'spawn вхолостую', slug: 'suhoy', stamp: 't20260828-160000',
 });
-const dryPlan = await planSpawn(WS, { repo: 'cargos-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' });
+const dryPlan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' });
 const drySessions = JSON.stringify([{ id: 'sess-dry', name: dryPlan.name, state: 'working', pid: 4245 }]);
 stubCommand(BIN, 'claude', `import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
@@ -1023,7 +1023,7 @@ if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(drySessions)})
 process.stdout.write('backgrounded · sess-dry\\n');`);
 process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
 const dryOut = await capture(() => spawnWorker(WS, {
-  repo: 'cargos-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy', dryRun: true,
+  repo: 'orders-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy', dryRun: true,
 }));
 check(': --dry-run does not launch the binary at all — not a single version probe',
   !existsSync(PROBE_MARK), existsSync(PROBE_MARK) ? readFileSync(PROBE_MARK, 'utf8') : '');
@@ -1043,7 +1043,7 @@ check(': the directory in `cd` is quoted — the sandbox path has a space',
 
 // A real lift of a driver that declares readsVersion asks once. Dry-run already
 // returned with the mark absent; this call is what writes it.
-await quiet(() => spawnWorker(WS, { repo: 'cargos-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' }));
+await quiet(() => spawnWorker(WS, { repo: 'orders-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' }));
 const probeLog = existsSync(PROBE_MARK) ? readFileSync(PROBE_MARK, 'utf8') : '';
 check(': a real spawn reads --version once and still launches the bin',
   (probeLog.match(/^--version$/gm) ?? []).length === 1 && /agents/.test(probeLog),
@@ -1066,7 +1066,7 @@ claudeSays([], 0);
 const silent = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
-    repo: 'cargos-api', brief: BRIEF, task: SILENT_TASK, worker: 'tihiy', awaitOptions: { tries: 2, delayMs: 1 },
+    repo: 'orders-api', brief: BRIEF, task: SILENT_TASK, worker: 'tihiy', awaitOptions: { tries: 2, delayMs: 1 },
   })});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const silentText = `${silent.stdout}${silent.stderr}`;
@@ -1106,7 +1106,7 @@ writeFileSync(BRIEF_OLD, `# ${TITLE_OLD}\n\nВынос шины во вложе�
 const BRIEF_NEW = path.join(SB, 'brief-447.md');
 writeFileSync(BRIEF_NEW, `# ${TITLE_NEW}\n\nRecover журнала и стенд гонок.\n`);
 
-const optsOld453 = { repo: 'cargos-api', brief: BRIEF_OLD, task: TASK453, worker: 'store' };
+const optsOld453 = { repo: 'orders-api', brief: BRIEF_OLD, task: TASK453, worker: 'store' };
 const planOld453 = await planSpawn(WS, optsOld453);
 claudeSays([{ id: 'sess-0406', name: planOld453.name, state: 'working', pid: 4406 }]);
 resetCliCaches();
@@ -1127,7 +1127,7 @@ resetCliCaches();
 // the stubbed session name — spawn would refuse "the participant is alive", the
 // file would break on a refusal instead of a red check, and a mutation probe
 // would name nothing.
-const optsNew453 = { repo: 'cargos-api', brief: BRIEF_NEW, task: TASK453, worker: 'store', sessions: {} };
+const optsNew453 = { repo: 'orders-api', brief: BRIEF_NEW, task: TASK453, worker: 'store', sessions: {} };
 const dry453 = await capture(() => spawnWorker(WS, { ...optsNew453, dryRun: true }));
 resetCliCaches();
 const planNew453 = await planSpawn(WS, optsNew453);
@@ -1220,7 +1220,7 @@ check(': --dry-run prints the same session name and the same future task title',
 const TASK426 = 'storozh-t20260902-140000';
 store.createTask(HOME, { id: TASK426, title: 'сторож участника', slug: 'storozh', stamp: 't20260902-140000' });
 const ENV_MARK = path.join(SB, 'seen-env.json');
-const opts426 = { repo: 'cargos-api', brief: BRIEF, task: TASK426, worker: 'storozh' };
+const opts426 = { repo: 'orders-api', brief: BRIEF, task: TASK426, worker: 'storozh' };
 const plan426 = await planSpawn(WS, opts426);
 const sessions426 = JSON.stringify([{ id: 'sess-0426', name: plan426.name, state: 'working', pid: 4426 }]);
 stubCommand(BIN, 'claude', `import { writeFileSync } from 'node:fs';
@@ -1253,7 +1253,7 @@ check(': identity went into the settings-file hook command, not into the environ
 // --- : spawn installs dependencies from package-lock.json --------------------
 //
 // Three outcomes on a stubbed `npm` on PATH — the real binary is never called.
-// The lock is in a separate clone: cargos-api has none, and earlier spawns in
+// The lock is in a separate clone: orders-api has none, and earlier spawns in
 // this file did not touch the step.
 
 const NPM_MARK = path.join(SB, 'npm-calls.log');
@@ -1352,7 +1352,7 @@ check(': --dry-run prints the install intent and does not call npm itself',
 
 clearNpm();
 npmSays(0);
-const optsNoLock = { repo: 'cargos-api', brief: BRIEF, task: DEPS_TASK, worker: 'nolock' };
+const optsNoLock = { repo: 'orders-api', brief: BRIEF, task: DEPS_TASK, worker: 'nolock' };
 const planNoLock = await planSpawn(WS, optsNoLock);
 claudeSays([{ id: 'sess-nolock', name: planNoLock.name, state: 'working', pid: 4502 }]);
 resetCliCaches();
@@ -1424,7 +1424,7 @@ store.createTask(HOME, {
 });
 const contractHost = hostOf(WS);
 contractHost.resolveToolBin = () => ({ ok: true, bin: stubClaude() });
-const contractOpts = { repo: 'cargos-api', brief: BRIEF, task: CONTRACT_TASK, worker: 'binonly' };
+const contractOpts = { repo: 'orders-api', brief: BRIEF, task: CONTRACT_TASK, worker: 'binonly' };
 const contractPlan = await planSpawn(contractHost, contractOpts);
 claudeSays([{ id: 'sess-bin', name: contractPlan.name, state: 'working', pid: 4600 }]);
 resetCliCaches();
@@ -2072,7 +2072,7 @@ const asSpawnSession = async (fn) => {
     }
   }
 };
-const spawnLiftOpts = { repo: 'cargos-api', brief: BRIEF, task: SPAWN_LIFT_HERE, worker: 'pb233' };
+const spawnLiftOpts = { repo: 'orders-api', brief: BRIEF, task: SPAWN_LIFT_HERE, worker: 'pb233' };
 await asSpawnSession(async () => {
   const spawnLiftPlan = await planSpawn(WS, spawnLiftOpts);
   claudeSays([{ id: 'sess-pb233-w', name: spawnLiftPlan.name, state: 'working', pid: 4242 }]);
@@ -2101,7 +2101,7 @@ for (const harness of ['codex', 'claude', 'cursor']) {
   }));
   try {
     await planSpawn(WS, {
-      repo: 'cargos-api', brief: BRIEF, task: RESTART_TASK, worker: `pb252-${harness}`,
+      repo: 'orders-api', brief: BRIEF, task: RESTART_TASK, worker: `pb252-${harness}`,
       sessions: { [address]: { state: 'alive', busy: false, stall: null, id: `id-pb252-${harness}` } },
     });
     restartRefusals[harness] = 'no refusal';
@@ -2124,7 +2124,7 @@ const ownerHost = { ...hostOf(WS), pipeline: () => [
   { name: 'approver', kind: 'writes-main-tree' },
 ] };
 store.createTask(HOME, { id: OWNER_TASK, title: 'declared owner', status: 'active', participants: [] });
-const ownerOpts = { repo: 'cargos-api', brief: BRIEF, task: OWNER_TASK, worker: 'named-owner' };
+const ownerOpts = { repo: 'orders-api', brief: BRIEF, task: OWNER_TASK, worker: 'named-owner' };
 const ownerPlan = await planSpawn(ownerHost, ownerOpts);
 claudeSays([{ id: 'sess-named-owner', name: ownerPlan.name, state: 'working', pid: 4242 }]);
 await quiet(() => spawnWorker(ownerHost, ownerOpts));

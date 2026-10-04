@@ -76,7 +76,7 @@ const g = (cwd, ...args) => {
 // A bare origin on disk instead of the network, exactly as the spawn file does
 // it: `freshenRepo` runs a real fetch and `createWorktree` opens a real branch,
 // and no check here depends on a git mock.
-const ORIGIN = path.join(SB, 'origin', 'cargos-api.git');
+const ORIGIN = path.join(SB, 'origin', 'orders-api.git');
 const SEED = path.join(SB, 'seed');
 mkdirSync(ORIGIN, { recursive: true });
 mkdirSync(SEED, { recursive: true });
@@ -87,7 +87,7 @@ g(SEED, 'add', '.');
 g(SEED, 'commit', '-m', 'init', '-q');
 g(SEED, 'remote', 'add', 'origin', ORIGIN);
 g(SEED, 'push', '-q', 'origin', 'main');
-const REPO = path.join(WS, 'cargos-api');
+const REPO = path.join(WS, 'orders-api');
 spawnSync('git', ['clone', '-q', ORIGIN, REPO], { encoding: 'utf8' });
 
 const BRIEF = path.join(SB, 'brief.md');
@@ -204,7 +204,7 @@ function freshTask(id) {
  * count probes passes its own counter, and `...extra` wins.
  */
 const routedOpts = (extra = {}) => ({
-  repo: 'cargos-api',
+  repo: 'orders-api',
   brief: BRIEF,
   strategy: 'balanced',
   tool: { ok: true, bin: path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude') },
@@ -390,7 +390,7 @@ test('`spawn --dry-run` with no --strategy takes the overlay default and records
   try {
     await quiet(() => models(WS, { subcommand: 'strategy', set: 'economy' }));
     const said = await captureSplit(() => spawnRaw(WS, {
-      repo: 'cargos-api',
+      repo: 'orders-api',
       brief: BRIEF,
       task,
       worker: 'defaulted',
@@ -423,7 +423,7 @@ test('a broken overlay warns before an unrouted lift takes the legacy path', asy
     writeFileSync(workspace, contents);
     try {
       const said = await captureSplit(() => spawnRaw(WS, {
-        repo: 'cargos-api',
+        repo: 'orders-api',
         brief: BRIEF,
         task,
         worker: `broken-default-${index}`,
@@ -474,7 +474,7 @@ test('with no default anywhere, a spawn without --strategy takes the legacy path
   const task = freshTask('legacy-t20260905-090012');
   const probes = counter();
   const said = await captureSplit(() => spawnRaw(WS, {
-    repo: 'cargos-api',
+    repo: 'orders-api',
     brief: BRIEF,
     task,
     worker: 'legacy',
@@ -974,7 +974,7 @@ test('without --strategy the plan carries no decision and the record gets no rou
   const task = freshTask('legacy-t20260905-090005');
   claudeSays([{ id: 'sess-legacy', name: 'x', state: 'working', pid: 4242 }]);
 
-  const plan = await planSpawn(WS, { repo: 'cargos-api', brief: BRIEF, task, worker: 'legacy' });
+  const plan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task, worker: 'legacy' });
   assert.equal(plan.routing, null);
   assert.equal(plan.decision, null);
   assert.equal(plan.routingSkipped, null);

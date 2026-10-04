@@ -73,8 +73,9 @@ check('hook plan carries the guard, and its command follows the host bin',
   JSON.stringify(planned.settings[GUARD_HOOK_EVENT]));
 
 const standaloneSrc = readFileSync(path.join(here, '..', 'src', 'standalone.ts'), 'utf8');
-const banned = ['ati', 'agents'].join('-');
-const forbidden = [banned, ['.', 'agents/'].join(''), ['ATI', '_'].join(''), 'memory-hooks', 'gitlab.ati']
+// No fragment is the brand word alone: the publicity audit reads this file for it.
+const banned = ['a', 'ti-agents'].join('');
+const forbidden = [banned, ['.', 'agents/'].join(''), ['A', 'TI_'].join(''), 'memory-hooks', ['gitlab.a', 'ti'].join('')]
   .filter((n) => standaloneSrc.includes(n));
 check('standalone host source does not contain a foreign workspace layout',
   forbidden.length === 0, forbidden.join(', '));
