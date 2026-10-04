@@ -27,7 +27,7 @@ The owner's standing requirements for questions to them:
 ## Out of scope
 
 - The delivery of questions (`promptobus_ask`, the survey tool): the rule is about the words.
-- The ATI contour policy in Agent Workspace's `workspace-orchestrate`: its own task there.
+- A consumer workspace's own orchestration policy: its own task in that consumer.
 
 ## Verification
 
