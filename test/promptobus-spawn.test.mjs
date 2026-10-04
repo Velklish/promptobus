@@ -51,7 +51,7 @@ const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const spawnUrl = pathToFileURL(path.join(here, '..', 'lib', 'spawn.js')).href;
 const {
   liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
-  runRepoGenerator, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings, withToolVersion,
+  runRepoGenerator, sayRepoSkills, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings, withToolVersion,
 } = await import(spawnUrl);
 const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const spawnWorker = (root, opts = {}) => spawnRaw(root, {
@@ -1640,6 +1640,205 @@ check(': a generator that leaves untracked files is reported, and the lift still
   && /not-ignored\.md/.test(dirtOut)
   && /done will never sweep the directory/.test(dirtOut),
   dirtOut.slice(-500));
+
+// The generator runs AFTER the dependency install, because it may run a tool the repository
+// pins in its own lock. Before `npm ci` that tool is absent, or it is a copy an enclosing
+// directory installed. The npm stub installs the very script the generator names, so the
+// earlier order fails here with "Cannot find module" although the declaration is right.
+const ADAPTER = 'generated-adapter.md';
+const GEN_TOOL = path.join('node_modules', 'gen-tool', 'gen.js');
+const GEN_TOOL_CODE = `require('node:fs').writeFileSync(${JSON.stringify(ADAPTER)}, 'adapter');`;
+stubCommand(BIN, 'npm', `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(NPM_MARK)}, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }) + '\\n');
+mkdirSync(${JSON.stringify(path.dirname(GEN_TOOL))}, { recursive: true });
+writeFileSync(${JSON.stringify(GEN_TOOL)}, ${JSON.stringify(GEN_TOOL_CODE)});`);
+process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
+
+const DEPS_GEN_REPO = path.join(WS, 'gen-deps');
+spawnSync('git', ['clone', '-q', ORIGIN, DEPS_GEN_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(DEPS_GEN_REPO, 'package.json'), `${JSON.stringify({ name: 'gen-deps', private: true })}\n`);
+writeFileSync(path.join(DEPS_GEN_REPO, 'package-lock.json'), `${JSON.stringify({
+  name: 'gen-deps', lockfileVersion: 3, requires: true, packages: {},
+})}\n`);
+writeFileSync(path.join(DEPS_GEN_REPO, '.gitignore'), `node_modules\n${ADAPTER}\n`);
+writeFileSync(path.join(DEPS_GEN_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', GEN_TOOL],
+}, null, 2)}\n`);
+g(DEPS_GEN_REPO, 'add', '.');
+g(DEPS_GEN_REPO, 'commit', '-m', 'declare a generator that runs an installed tool', '-q');
+
+const DEPS_GEN_TASK = 'generator-deps-t20261004-000000';
+store.createTask(HOME, {
+  id: DEPS_GEN_TASK, title: 'generator after the dependency install', slug: 'generator-deps', stamp: 't20261004-000000',
+});
+clearNpm();
+const depsGenOpts = { repo: 'gen-deps', brief: BRIEF, task: DEPS_GEN_TASK, worker: 'gendeps' };
+const depsGenPlan = await planSpawn(WS, depsGenOpts);
+claudeSays([{ id: 'sess-gendeps', name: depsGenPlan.name, state: 'working', pid: 4705 }]);
+resetCliCaches();
+let depsGenRun = null;
+const depsGenOut = await capture(() => spawnWorker(WS, depsGenOpts).then((r) => { depsGenRun = r; }));
+const depsGenStatus = spawnSync('git', ['-C', depsGenPlan.worktreePath, 'status', '--porcelain'], { encoding: 'utf8' });
+check(': a generator that runs an installed tool lays out its ignored files after npm ci, and tracked files stay clean',
+  depsGenRun?.repoSkills?.kind === 'ok'
+  && npmCalls().length === 1 && npmCalls()[0].cwd === depsGenPlan.worktreePath
+  && existsSync(path.join(depsGenPlan.worktreePath, ADAPTER))
+  && depsGenStatus.status === 0 && depsGenStatus.stdout.trim() === ''
+  && depsGenOut.indexOf('worktree dependencies installed') >= 0
+  && depsGenOut.indexOf('worktree dependencies installed') < depsGenOut.indexOf('repository skills generated in the worktree'),
+  `${JSON.stringify(depsGenRun?.repoSkills)} · ${depsGenStatus.stdout} · ${depsGenOut.slice(-600)}`);
+check(': the preamble names both outcomes, and the plan says the generator follows the install',
+  /Repository process skills were laid out in this worktree/.test(String(depsGenRun?.prompt))
+  && /Worktree dependencies were installed in this worktree/.test(String(depsGenRun?.prompt))
+  && /after the checkout and any dependency install/.test(depsGenPlan.prompt),
+  String(depsGenRun?.prompt ?? '').split('\n').filter((l) => /Repository process skills|Worktree dependencies/.test(l)).join(' / '));
+// Missing configuration is a different verdict from a gap: a locked repository that declares
+// nothing gets its install and no generator, and is told there was none.
+check(': a repository with a lock and no declaration installs dependencies and runs no generator',
+  lockRun?.repoSkills?.kind === 'none'
+  && /declares no generator/.test(String(lockRun?.prompt))
+  && /Worktree dependencies were installed in this worktree/.test(String(lockRun?.prompt)),
+  JSON.stringify(lockRun?.repoSkills));
+
+// What git already saw before the generator started — an unignored `node_modules` the install
+// left — is not the generator's: only paths new since it started are reported as its own.
+const ATTR_REPO = path.join(SB, 'gen-attribution');
+spawnSync('git', ['clone', '-q', ORIGIN, ATTR_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(ATTR_REPO, '.gitignore'), `${ADAPTER}\n`);
+writeFileSync(path.join(ATTR_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', GEN_TOOL_CODE],
+}, null, 2)}\n`);
+g(ATTR_REPO, 'add', '.');
+g(ATTR_REPO, 'commit', '-m', 'declare a generator', '-q');
+mkdirSync(path.join(ATTR_REPO, 'node_modules'), { recursive: true });
+writeFileSync(path.join(ATTR_REPO, 'node_modules', 'installed.js'), '');
+const attributed = runRepoGenerator({ worktreePath: ATTR_REPO }, { fresh: true });
+check(': install leftovers git can see are not reported as the generator\'s',
+  attributed.kind === 'ok' && Array.isArray(attributed.dirt) && attributed.dirt.length === 0
+  && existsSync(path.join(ATTR_REPO, ADAPTER)),
+  JSON.stringify(attributed));
+
+// A refused install leaves the worktree without `node_modules`, and a generator that resolves its
+// tool upward — `npx --no-install` does, and so does `require` — reaches the clone root's copy and
+// succeeds. Its report must say the install refused, or that copy reads as the locked one.
+const ENCL_REPO = path.join(WS, 'gen-enclosing');
+spawnSync('git', ['clone', '-q', ORIGIN, ENCL_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(ENCL_REPO, 'package.json'), `${JSON.stringify({ name: 'gen-enclosing', private: true })}\n`);
+writeFileSync(path.join(ENCL_REPO, 'package-lock.json'), `${JSON.stringify({
+  name: 'gen-enclosing', lockfileVersion: 3, requires: true, packages: {},
+})}\n`);
+writeFileSync(path.join(ENCL_REPO, '.gitignore'), `node_modules\n${ADAPTER}\n`);
+writeFileSync(path.join(ENCL_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', "require('gen-tool/gen.js')"],
+}, null, 2)}\n`);
+g(ENCL_REPO, 'add', '.');
+g(ENCL_REPO, 'commit', '-m', 'declare a generator that resolves its tool upward', '-q');
+mkdirSync(path.join(ENCL_REPO, path.dirname(GEN_TOOL)), { recursive: true });
+writeFileSync(path.join(ENCL_REPO, GEN_TOOL), GEN_TOOL_CODE);
+npmSays(7, { stderr: 'ERESOLVE unable to resolve dependency tree\n' });
+const ENCL_TASK = 'generator-enclosing-t20261004-000000';
+store.createTask(HOME, {
+  id: ENCL_TASK, title: 'generator after a refused install', slug: 'generator-enclosing', stamp: 't20261004-000000',
+});
+const enclOpts = { repo: 'gen-enclosing', brief: BRIEF, task: ENCL_TASK, worker: 'genencl' };
+const enclPlan = await planSpawn(WS, enclOpts);
+claudeSays([{ id: 'sess-genencl', name: enclPlan.name, state: 'working', pid: 4706 }]);
+resetCliCaches();
+let enclRun = null;
+const enclOut = await capture(() => spawnWorker(WS, enclOpts).then((r) => { enclRun = r; }));
+check(': a generator that succeeds after a refused install carries the refusal to the operator and the preamble',
+  enclRun?.repoSkills?.kind === 'ok' && enclRun.repoSkills.missingDeps === 'refused'
+  && existsSync(path.join(enclPlan.worktreePath, ADAPTER))
+  && !existsSync(path.join(enclPlan.worktreePath, 'node_modules'))
+  && /repository skills generated in the worktree \(.*\), but the dependency install refused before it/.test(enclOut)
+  && /Worktree dependencies were NOT installed/.test(String(enclRun?.prompt))
+  && /But the dependency install refused before it, so this worktree has no complete node_modules: a tool it resolves/
+    .test(String(enclRun?.prompt)),
+  `${JSON.stringify(enclRun?.repoSkills)} · ${enclOut.slice(-700)}`);
+
+// A lock-less repository installs nothing, so its worktree has no `node_modules` either: the same
+// upward resolution reaches the clone root's copy, and the preamble says why that can happen.
+const NOLOCK_REPO = path.join(WS, 'gen-upward-nolock');
+spawnSync('git', ['clone', '-q', ORIGIN, NOLOCK_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(NOLOCK_REPO, '.gitignore'), `node_modules\n${ADAPTER}\n`);
+writeFileSync(path.join(NOLOCK_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', "require('gen-tool/gen.js')"],
+}, null, 2)}\n`);
+g(NOLOCK_REPO, 'add', '.');
+g(NOLOCK_REPO, 'commit', '-m', 'declare an upward-resolving generator without a lock', '-q');
+mkdirSync(path.join(NOLOCK_REPO, path.dirname(GEN_TOOL)), { recursive: true });
+writeFileSync(path.join(NOLOCK_REPO, GEN_TOOL), GEN_TOOL_CODE);
+clearNpm();
+const nolockOpts = { repo: 'gen-upward-nolock', brief: BRIEF, task: ENCL_TASK, worker: 'gennolock' };
+const nolockPlan = await planSpawn(WS, nolockOpts);
+claudeSays([{ id: 'sess-gennolock', name: nolockPlan.name, state: 'working', pid: 4707 }]);
+resetCliCaches();
+let nolockRun = null;
+await capture(() => spawnWorker(WS, nolockOpts).then((r) => { nolockRun = r; }));
+check(': a lock-less repository whose generator resolves upward is told it ran without node_modules',
+  nolockRun?.repoSkills?.kind === 'ok' && nolockRun.repoSkills.missingDeps === 'absent'
+  && npmCalls().length === 0
+  && existsSync(path.join(nolockPlan.worktreePath, ADAPTER))
+  && /But this worktree had no node_modules when it started: a tool it resolves through node_modules/
+    .test(String(nolockRun?.prompt))
+  && /Worktree dependencies: no package-lock\.json was found/.test(String(nolockRun?.prompt)),
+  `${JSON.stringify(nolockRun?.repoSkills)} · ${String(nolockRun?.prompt ?? '').split('\n').filter((l) => /Repository process skills/.test(l)).join(' / ')}`);
+
+// A generator that fails after a refused install is not sent to run itself again as if nothing
+// else were wrong: the first step is to get the install working.
+const FAILDEPS_REPO = path.join(SB, 'gen-fail-after-refusal');
+spawnSync('git', ['clone', '-q', ORIGIN, FAILDEPS_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(FAILDEPS_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', 'process.exit(3)'],
+}, null, 2)}\n`);
+g(FAILDEPS_REPO, 'add', '.');
+g(FAILDEPS_REPO, 'commit', '-m', 'declare a generator that needs dependencies', '-q');
+const failDepsState = runRepoGenerator({ worktreePath: FAILDEPS_REPO }, { fresh: true, depsRefused: true });
+const failDepsSay = await capture(() => sayRepoSkills(failDepsState));
+check(': a generator that fails after a refused install tells the worker to get the install working first',
+  failDepsState.kind === 'failed' && failDepsState.missingDeps === 'refused'
+  && /The dependency install refused before it: get npm ci working first, then run the command yourself/
+    .test(repoSkillsLine(failDepsState))
+  && !/Run it yourself before you work/.test(repoSkillsLine(failDepsState))
+  && /repository skills NOT generated: .*exited with code 3 — the dependency install refused before it/.test(failDepsSay),
+  `${repoSkillsLine(failDepsState)} · ${failDepsSay}`);
+
+// "git did not answer" is not "clean": what the generator left is then reported as unchecked.
+const NOGIT_DIR = path.join(SB, 'gen-not-a-repository');
+mkdirSync(NOGIT_DIR, { recursive: true });
+writeFileSync(path.join(NOGIT_DIR, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', GEN_TOOL_CODE],
+}, null, 2)}\n`);
+const nogitState = runRepoGenerator({ worktreePath: NOGIT_DIR }, { fresh: true });
+const nogitSay = await capture(() => sayRepoSkills(nogitState));
+check(': a generator whose leftovers git could not report says they were not checked',
+  nogitState.kind === 'ok' && nogitState.dirt === null
+  && /what the generator left was not checked: git did not answer in the worktree/.test(nogitSay)
+  && /What it left was not checked: git did not answer in this worktree/.test(repoSkillsLine(nogitState)),
+  `${JSON.stringify(nogitState)} · ${nogitSay}`);
+
+// A generator that edits a tracked file is a different fault from one that leaves untracked
+// output: a `.gitignore` entry cures only the second, and the first must not be committed.
+const TRACKED_REPO = path.join(SB, 'gen-tracked');
+spawnSync('git', ['clone', '-q', ORIGIN, TRACKED_REPO], { encoding: 'utf8' });
+writeFileSync(path.join(TRACKED_REPO, 'promptobus.json'), `${JSON.stringify({
+  generate: ['node', '-e', "const fs = require('node:fs'); fs.appendFileSync('a.txt', 'generated\\n'); "
+    + "fs.mkdirSync('loose', { recursive: true }); fs.writeFileSync('loose/skill.md', 'x');"],
+}, null, 2)}\n`);
+g(TRACKED_REPO, 'add', '.');
+g(TRACKED_REPO, 'commit', '-m', 'declare a generator that edits a tracked file', '-q');
+const trackedState = runRepoGenerator({ worktreePath: TRACKED_REPO }, { fresh: true });
+const trackedSay = (await capture(() => sayRepoSkills(trackedState))).split('\n');
+const trackedWarn = trackedSay.find((l) => /tracked file/.test(l)) ?? '';
+const looseWarn = trackedSay.find((l) => /git can see/.test(l)) ?? '';
+check(': a generator that changes a tracked file is told apart from its untracked leftovers',
+  trackedState.kind === 'ok'
+  && /the generator changed 1 tracked file\(s\) in the worktree \(a\.txt\) — do not commit them/.test(trackedWarn)
+  && !/gitignore/.test(trackedWarn)
+  && /the generator left 1 change\(s\) git can see in the worktree \(loose\/skill\.md\)/.test(looseWarn)
+  && /\.gitignore/.test(looseWarn) && !/a\.txt/.test(looseWarn)
+  && /changed tracked files \(a\.txt\) — do not commit those changes/.test(repoSkillsLine(trackedState)),
+  `${JSON.stringify(trackedState.dirt)} · ${trackedSay.join(' / ')} · ${repoSkillsLine(trackedState)}`);
 
 // And the default: a repository that declares nothing says so, so a participant that
 // SHOULD have had a generator can see there was none.

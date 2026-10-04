@@ -86,7 +86,7 @@ A worker repository may have its own `promptobus.json` — separate from the wor
 { "generate": ["npx", "--yes", "github:owner/tool", "init"] }
 ```
 
-`spawn` runs it in the fresh worktree after the checkout, and the participant preamble says whether the skills were laid out. It runs **before** dependencies are installed, so the worktree has no `node_modules`: an `npx …` generator works, an `npm run …` one does not. **Ignore what it generates** — files git can see leave the worker's branch dirty from its first second, and `promptobus done` never sweeps a dirty worktree; the lift warns when it finds them. Skills committed to git stay the default: a repository that has them in the checkout declares nothing. Details in [reference/03-cli](../reference/03-cli.md) § Spawn.
+`spawn` runs it in the fresh worktree after the checkout and after `npm ci`, when the repository has a `package-lock.json`, and the participant preamble says whether the skills were laid out. A generator may therefore run a tool the repository pins in its own lock, such as `npx --no-install <tool> init` or `npm run …`. **Ignore what it generates** — files git can see leave the worker's branch dirty from its first second, and `promptobus done` never sweeps a dirty worktree; the lift warns when it finds them. Skills committed to git stay the default: a repository that has them in the checkout declares nothing. Details in [reference/03-cli](../reference/03-cli.md) § Spawn.
 
 ## 3. MCP server for the orchestrator
 

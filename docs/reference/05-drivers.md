@@ -57,8 +57,8 @@ Source: lib/approver.js (planApprover, approverLift), lib/worktree.js
 A fresh lift creates a service worktree and branch from the clone's local default branch.
 The worktree path and branch are recorded on the approver participant, with the clone root
 in repoAbs and the reviewer subject in reviewSubject. The reviewer subject stays the
-relift argument. Dependencies are installed from package-lock.json and a declared
-repository generator runs before launch files are written. The approver reads the
+relift argument. Dependencies are installed from package-lock.json, then a declared
+repository generator runs; both precede the launch files. The approver reads the
 repository's AGENTS.md in its own checkout; if that document requires generated tracker
 adapters outside the repository's generator declaration, the approver runs that step
 before gates.

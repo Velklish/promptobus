@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A repository's declared generator runs after the worktree's dependency install, not
+  before it.** A fresh worker or approver worktree gets `npm ci` first and then the `generate`
+  command of the repository's `promptobus.json`, so a generator can run a tool the repository
+  pins in its own lock: `npx --no-install <tool>` or `npm run …`. Before, the generator ran in
+  a worktree with no `node_modules`; a locked tool was missing there, and `npx` resolved a copy
+  installed in an enclosing directory such as the clone root, at whatever version it held.
+  Both steps still follow the participant's journal record and precede the launch files.
+  What the generator leaves is read file by file, and only paths that appear while it runs
+  count as its own, so an unignored `node_modules` the install left is no longer blamed on it.
+  A tracked file the generator changed is reported apart from its untracked output: the lift
+  says not to commit the change, and sends only untracked paths to `.gitignore`. **Contract
+  change:** a generator that relied on the pre-install worktree now sees the installed
+  `node_modules`, so one that walks the worktree reads the dependencies too, and output it
+  wrote under `node_modules` is no longer removed by `npm ci`. The lock is looked for before
+  the generator runs, so a generator that writes `package.json` or `package-lock.json` gets no
+  install from them. When `npm ci` refuses, the generator still runs: one that needs the
+  dependencies either fails, or succeeds on a copy `npx --no-install` or `require` finds by
+  walking up to an enclosing directory such as the clone root; a repository without a lock,
+  where nothing is installed, meets the same copy. When the install refused, or the worktree
+  has no `node_modules` when the generator starts, the preamble says which it observed, a
+  refused install turns the operator's success line into a warning, and a generator that
+  failed after a refused install tells the participant to get `npm ci` working first. When
+  git does not answer, what the generator left is reported as not checked rather than as
+  clean. A generator that does not use the dependencies, such as `npx --yes <remote tool>`,
+  behaves as before, though a worktree with no `node_modules` still gets the preamble's
+  no-`node_modules` note.
+  [03-cli § Spawn](docs/reference/03-cli.md#spawn).
+
 - **A Codex or Cursor lift keeps a project's own hook records only when the repository's
   `promptobus.json` lists their commands.** The new `trustedHooks` field maps a harness and an
   event key of its hooks file to the exact commands the repository trusts, for example

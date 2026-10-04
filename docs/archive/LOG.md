@@ -476,3 +476,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-334.1"></a>`PB-334.1-repo-config-not-root` · 2026-10-04 · completed · — · A repository promptobus.json that holds only repository declarations does not become the standalone root
 - <a id="pb-336"></a>`PB-336-english-authored-content` · 2026-10-04 · completed · — · Apply the English authoring rule to all project-owned content
 - <a id="pb-317.1"></a>`PB-317.1-readme-ru-role-registry` · 2026-10-04 · batch PB-336 · — · README.ru.md does not translate the sentence on the host's role registry
+- <a id="pb-326"></a>`PB-326-lift-skips-tracker-adapters` · 2026-10-04 · completed · — · Restore generated development adapters through the repository generator

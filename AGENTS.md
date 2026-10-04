@@ -42,7 +42,7 @@ The mutation rule above names `npm run probe`; this section only governs comment
 
 The reason is measurable rather than stylistic: this code is read by agents, and a paragraph above a function is paid for in tokens on every read of the file. The two-line limit is checked in `lib/`, `src/` and `bin/` by `test/comment-length.test.mjs`, and the pending list of that check can only shrink. Outside those trees the same limit rests on the author.
 
-**A fresh clone or worktree carries no generated adapter output** — `.claude/skills/backslop-*/SKILL.md` and `CLAUDE.md` are written by `npx --no-install backslop init --hooks claude` and are not tracked. Run `npm ci` and then `init` in a fresh checkout: without generated output `backslop lint` is red and the skill files the lift prompt names do not exist; `git status` does not change from it.
+**A fresh clone or worktree carries no generated adapter output** — the backslop skills under `.claude/skills/`, `.cursor/rules/` and `.agents/skills/`, and `CLAUDE.md`, are written by `npx --no-install backslop init` and are not tracked. A worker or approver worktree that Promptobus creates gets them without a step of yours: `promptobus.json` declares that command in `generate`, and the lift runs it after `npm ci`. In a checkout you made yourself, run `npm ci` and then `init`: without them the skill files the lift prompt names do not exist. `init` also writes the `AGENTS.md` backslop block and the hook records in `.claude/settings.json`; `git status` does not change from it while the installed backslop is the pin `package.json` and `backslop.json` name, and a rewrite of either file at another pin is not committed.
 
 ## Public surface
 

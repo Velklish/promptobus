@@ -1190,3 +1190,98 @@ check(': sweep keeps an unmerged approver worktree and branch',
   && spawnSync('git', ['-C', LIVE_REPO, 'rev-parse', '--verify', '--quiet', unmergedBranch], { encoding: 'utf8' }).status === 0
   && unmergedSweep.includes('left in place'),
   unmergedSweep);
+
+// The approver lift runs a declared generator after its dependency install, as spawn does: the
+// npm stub installs the tool the generator names, so the earlier order fails with "Cannot find module".
+const GEN_ADAPTER = 'generated-adapter.md';
+const GEN_TOOL = path.join('node_modules', 'gen-tool', 'gen.js');
+const GEN_TOOL_CODE = `require('node:fs').writeFileSync(${JSON.stringify(GEN_ADAPTER)}, 'adapter');`;
+const GEN_BIN = path.join(SB, 'gen-bin');
+const GEN_BG = path.join(SB, 'gen-session.txt');
+stubCommand(GEN_BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--bg') {
+  const name = args[args.indexOf('--name') + 1] ?? '';
+  writeFileSync(${JSON.stringify(GEN_BG)}, name);
+  process.stdout.write('backgrounded · cafe35 · ' + name + '\\n');
+  process.exit(0);
+}
+if (args[0] === 'agents' && existsSync(${JSON.stringify(GEN_BG)})) {
+  process.stdout.write(JSON.stringify([{ id: 'sess-gen', name: readFileSync(${JSON.stringify(GEN_BG)}, 'utf8'), status: 'running', sessionId: '00000000-0000-4000-8000-0000000000cc' }]));
+  process.exit(0);
+}
+process.stdout.write('[]');`);
+async function liftWithGenerator(name, generate, npmSource, { enclosing = false } = {}) {
+  const repo = path.join(WS, 'repos', 'demo_team', name);
+  mkdirSync(repo, { recursive: true });
+  g(repo, 'init', '-b', 'main');
+  writeFileSync(path.join(repo, 'AGENTS.md'), 'repo\n');
+  writeFileSync(path.join(repo, 'package.json'), `${JSON.stringify({ name, private: true })}\n`);
+  writeFileSync(path.join(repo, 'package-lock.json'), `${JSON.stringify({
+    name, lockfileVersion: 3, requires: true, packages: {},
+  })}\n`);
+  writeFileSync(path.join(repo, '.gitignore'), `node_modules\n${GEN_ADAPTER}\n`);
+  writeFileSync(path.join(repo, 'promptobus.json'), `${JSON.stringify({ generate })}\n`);
+  g(repo, 'add', '.');
+  g(repo, 'commit', '-m', 'declare a generator', '-q');
+  if (enclosing) {
+    mkdirSync(path.join(repo, path.dirname(GEN_TOOL)), { recursive: true });
+    writeFileSync(path.join(repo, GEN_TOOL), GEN_TOOL_CODE);
+  }
+  const task = `pb326-approver-${name}`;
+  store.createTask(HOME, {
+    id: task, title: `approver generator ${name}`, status: 'active',
+    adapter: { slug: 'pb326', stamp: 't20261004-000000' }, participants: [],
+  });
+  store.upsertParticipant(HOME, task, store.participantRecord(`worker:${name}`, {
+    harness: 'claude', repo: `repos/demo_team/${name}`, repoAbs: repo, branch: `worktree-${name}`, worktree: repo,
+  }));
+  recordOwnerResult(HOME, task, repo, name);
+  store.upsertParticipant(HOME, task, store.participantRecord(`reviewer:${name}`, {
+    harness: 'claude', repo: `repos/demo_team/${name}`, repoAbs: repo, started: assignedAt, reviewAssignedAt: assignedAt,
+  }));
+  store.sendMessage(HOME, task, {
+    from: `reviewer:${name}`, to: store.ORCHESTRATOR, type: 'result', body: 'review done',
+  });
+  stubCommand(GEN_BIN, 'npm', npmSource);
+  rmSync(GEN_BG, { force: true });
+  const priorPath = process.env.PATH;
+  const priorWarden = process.env.PROMPTOBUS_WARDEN;
+  process.env.PATH = `${GEN_BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${priorPath ?? ''}`;
+  process.env.PROMPTOBUS_WARDEN = 'off';
+  let out = '';
+  try {
+    out = await capture(() => approverLift(WS, {
+      target: repo, task, harness: 'claude',
+      tool: { ok: true, bin: path.join(GEN_BIN, 'claude'), version: '2.1.280' },
+    }));
+  } finally {
+    process.env.PATH = priorPath;
+    if (priorWarden === undefined) delete process.env.PROMPTOBUS_WARDEN;
+    else process.env.PROMPTOBUS_WARDEN = priorWarden;
+  }
+  const tree = store.participantOf(store.readTask(HOME, task), `approver:${name}`)?.metadata?.worktree;
+  return { repo, tree, out };
+}
+
+const installed = await liftWithGenerator('gen-api', ['node', GEN_TOOL], `import { mkdirSync, writeFileSync } from 'node:fs';
+mkdirSync(${JSON.stringify(path.dirname(GEN_TOOL))}, { recursive: true });
+writeFileSync(${JSON.stringify(GEN_TOOL)}, ${JSON.stringify(GEN_TOOL_CODE)});`);
+const installedStatus = installed.tree
+  ? spawnSync('git', ['-C', installed.tree, 'status', '--porcelain'], { encoding: 'utf8' }) : null;
+check(': a fresh approver worktree runs the declared generator after npm ci, and tracked files stay clean',
+  !!installed.tree && existsSync(path.join(installed.tree, GEN_ADAPTER))
+  && installedStatus?.status === 0 && installedStatus.stdout.trim() === ''
+  && installed.out.indexOf('worktree dependencies installed') >= 0
+  && installed.out.indexOf('worktree dependencies installed') < installed.out.indexOf('repository skills generated in the worktree'),
+  `${installed.tree} · ${installedStatus?.stdout ?? ''} · ${installed.out.slice(-600)}`);
+
+// A refused install on the approver path: the generator resolves its tool upward to the clone
+// root's copy and succeeds, and the lift says the install refused before it.
+const refused = await liftWithGenerator('gen-upward', ['node', '-e', "require('gen-tool/gen.js')"],
+  "process.stderr.write('ERESOLVE unable to resolve dependency tree\\n'); process.exit(7);", { enclosing: true });
+check(': an approver generator that succeeds after a refused install is reported with the refusal',
+  !!refused.tree && existsSync(path.join(refused.tree, GEN_ADAPTER))
+  && /repository skills generated in the worktree \(.*\), but the dependency install refused before it/.test(refused.out),
+  `${refused.tree} · ${refused.out.slice(-600)}`);

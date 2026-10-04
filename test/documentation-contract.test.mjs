@@ -142,6 +142,51 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
   has(spawn, 'the run reads it from the **worktree**, which is what the participant will see, so the two can disagree and the worktree decides. The same file lists, in `trustedHooks`, the project hook commands a Codex or Cursor lift keeps beside its guard, and that field is read where the hooks file it judges is: the main checkout\'s working file for Codex, the worktree\'s index for Cursor'),
   'the Spawn section must state the generate dry-run rule before trustedHooks and say where trustedHooks is read');
 
+const installGuide = read('docs/guides/install.md');
+const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+check('docs: every description of the lift order runs the generator after the dependency install',
+  has(spawn, 'It runs **after the dependency install**, so a generator may run a tool the repository pins in its own lock')
+  && has(installGuide, '`spawn` runs it in the fresh worktree after the checkout and after `npm ci`')
+  && has(orchestrateSkill, 'dependency installation runs first and the repository generator after it')
+  && has(drivers, 'Dependencies are installed from package-lock.json, then a declared repository generator runs')
+  && has(adr024, 'A fresh approver worktree runs its dependency install and then the repository\'s declared generator before launch files.')
+  && ![spawn, installGuide, orchestrateSkill, drivers, adr024].some((text) => /generator runs before dependency|runs \*\*before\*\* dependencies|before dependencies are installed|declared generator and dependency install/
+    .test(compact(text))),
+  'the Spawn section, the install guide, the orchestrate skill, the driver contract and ADR-024 must agree on the order');
+
+check('docs: the generator\'s outcome names a refused install, a tracked change and the lock it does not produce',
+  has(spawn, 'A refused install does not skip the generator, and the same upward resolution can then hand it the enclosing copy and a success; so can a repository without a lock, where nothing is installed. When the install refused, or the worktree has no `node_modules` when the generator starts, the preamble says which of the two it observed')
+  && has(spawn, 'A generator that fails after a refused install tells the participant to get `npm ci` working first.')
+  && has(spawn, 'The note depends on the worktree, not on the generator: one that uses no dependencies, such as `npx --yes <remote tool>`, still gets it when the worktree has no `node_modules`.')
+  && has(spawn, 'When git does not answer, what the generator left is reported as not checked rather than as clean.')
+  && has(spawn, '`generate` is not a manifest producer, and a `package.json` or `package-lock.json` it writes gets no install.')
+  && has(spawn, 'A tracked file the generator changed is reported apart: `.gitignore` cannot cure it')
+  && !has(read('CHANGELOG.md'), 'a generator that needs the dependencies fails as well, and the lift prints both warnings'),
+  'the Spawn section must state what a refused install, a tracked change and a written lock mean for the generator');
+
+const generatorArgv = (() => {
+  try {
+    const declared = JSON.parse(read('promptobus.json')).generate;
+    return Array.isArray(declared) && declared.length ? declared.join(' ') : null;
+  } catch {
+    return null;
+  }
+})();
+const agentsDoc = read('AGENTS.md');
+const contributingDoc = read('docs/guides/contributing.md');
+check('docs: this checkout restores its generated adapters with the command its promptobus.json declares',
+  generatorArgv !== null
+  && has(agentsDoc, `are written by \`${generatorArgv}\` and are not tracked`)
+  && has(contributingDoc, `Restore them with \`npm ci\` and then \`${generatorArgv}\``)
+  && has(contributingDoc, 'leaves both unchanged only while the installed backslop is the pin in `package.json` and `backslop.json` that wrote the committed block')
+  && has(agentsDoc, '`git status` does not change from it while the installed backslop is the pin')
+  && !has(contributingDoc, 'and leaves tracked files unchanged.')
+  && contributingDoc.split('fourteen lines').length === 2
+  && has(contributingDoc, 'At another pin it rewrites them ([measured size of that rewrite](#init-rewrite-at-another-pin)).'),
+  generatorArgv === null
+    ? 'promptobus.json declares no generate argv here: the file is absent, unreadable or has no non-empty "generate" array'
+    : `promptobus.json generate: ${generatorArgv}`);
+
 const addresses = section(protocol, '## Addresses');
 const teamleadSkill = section(read('skills/orchestrate/SKILL.md'), '## Teamleads and siblings');
 check('docs: a teamlead reads root mail in its child task, and the drain is documented',
