@@ -1,10 +1,11 @@
 # PB-334 · Replace tracker-specific hook admission with a neutral project hook contract
 
-- **Order:** 60
 - **Scope:** [Hooks and trust](../../guides/hooks-and-trust.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 60
+- **Taken:** 2026-10-04
 
 ## Context
 
