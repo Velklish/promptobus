@@ -1,10 +1,11 @@
 # PB-322 · The mutation probe runs a file name as shell text and lets a delete or rename patch escape its restore
 
-- **Order:** 70
 - **Scope:** [Contributing](../../guides/contributing.md)
 - **Created:** 2026-10-03
 - **Dependencies:** none
 - **Cost:** critical
+- **Previous order:** 70
+- **Taken:** 2026-10-04
 
 ## Context
 
