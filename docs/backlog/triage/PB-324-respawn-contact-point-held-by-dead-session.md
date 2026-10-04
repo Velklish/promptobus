@@ -7,7 +7,7 @@
 
 ## Context
 
-In run bs020 on 2026-10-03, in the ati-agents group, `worker:adr` was lifted again with the same spawn into the same worktree after its phase-1 session (b6fc23de) died. The teamlead reported the address deaf for the whole piece: mail reached the new session only through the Stop guard at the end of its turn, which for a worker is the end of the piece. After the relift of both teamleads at 20:06Z, `status` named both channels deaf until each new session's first turn end. The text it prints says the channel "returns to it on its next turn end" (`lib/driver-claude.js:349`).
+In run bs020 on 2026-10-03, in a consumer repository group, `worker:adr` was lifted again with the same spawn into the same worktree after its phase-1 session (b6fc23de) died. The teamlead reported the address deaf for the whole piece: mail reached the new session only through the Stop guard at the end of its turn, which for a worker is the end of the piece. After the relift of both teamleads at 20:06Z, `status` named both channels deaf until each new session's first turn end. The text it prints says the channel "returns to it on its next turn end" (`lib/driver-claude.js:349`).
 
 Code reading, not a measured trace: `spawn` registers the contact point at lift only for Codex (`lib/spawn.js:1630`). A Claude Code participant takes it from its own bus calls and the Stop guard (`lib/guard.js:511`), and `registerWake` refuses while the record names another session (`foreignSession`, `lib/driver-claude.js:471`). If the record still names the dead session, the new one cannot take the channel until something rewrites the record.
 
