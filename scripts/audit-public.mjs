@@ -99,6 +99,7 @@ export { absoluteOwnerHomePath, isTextContent };
 const FORBIDDEN = [
   ['origin environment prefix', `${BRAND_FRAGMENT}_`],
   ['origin memory service', ['context', '-store'].join('')],
+  ['origin memory service environment prefix', ['CONTEXT', '_STORE'].join('')],
   ['origin tracker ids', new RegExp(['BL', '-[0-9]'].join(''))],
   ['absolute owner home path', absoluteOwnerHomePath],
 ];
@@ -157,14 +158,16 @@ const failures = [];
 const matches = (name, text, needle) => (typeof needle === 'function'
   ? needle(name, text)
   : needle instanceof RegExp ? needle.test(text) : text.includes(needle));
-function scan(label, name, text, needle) {
-  if (matches(name, text, needle)) failures.push(`${label}: ${name}`);
-}
-
 const organizationLeaks = (name, text) => ORGANIZATION
   .filter(([, needle]) => matches(name, text, needle))
   .map(([label]) => label);
-export { organizationLeaks };
+const originLeaks = (name, text) => FORBIDDEN
+  .filter(([, needle]) => matches(name, text, needle))
+  .map(([label]) => label);
+export { organizationLeaks, originLeaks };
+function scanOrigin(name, text) {
+  for (const label of originLeaks(name, text)) failures.push(`${label}: ${name}`);
+}
 function scanOrganization(name, text) {
   for (const label of organizationLeaks(name, text)) failures.push(`${label}: ${name}`);
 }
@@ -279,7 +282,7 @@ if (IS_MAIN) {
     if (text === null) continue;
     trackedTextCount += 1;
     trackedTexts.set(rel, text);
-    for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
+    scanOrigin(rel, text);
     scanOrganization(rel, text);
     scanAuthoring(rel, text);
   }
@@ -335,7 +338,7 @@ if (IS_MAIN) {
       const text = textFromBytes(readFileSync(abs));
       if (text === null) continue;
       packedTextCount += 1;
-      for (const [label, needle] of FORBIDDEN) scan(label, 'tarball:' + entry, text, needle);
+      scanOrigin('tarball:' + entry, text);
       scanOrganization('tarball:' + entry, text);
       scanAuthoring('tarball:' + entry, text);
       scanTracker('tarball:' + entry, text);

@@ -39,8 +39,8 @@
 // home is needed, the nested hygiene apply keeps that value while the issued home
 // is live. Any config path other than `<current home>/.claude` is still dropped.
 //
-// Everything else the call applies — the warden switch, the session-leak list,
-// the memory-hook lever, the PATH seal — is the shared list in
+// Everything else the call applies — the warden switch, the closed list of
+// inherited names, the PATH seal — is the shared list in
 // [hygiene.mjs](hygiene.mjs), which is also where each name's reason is written.
 // One `process.env` edit is inherited by every process the file starts later, so
 // one apply covers the whole tree below it.

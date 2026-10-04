@@ -441,7 +441,7 @@ const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
 const {
   absoluteOwnerHomePath, authoringFindings, isTextContent, MANIFEST_REMAINDER, organizationLeaks,
-  staleAuthoringSnapshots, trackerLeaks,
+  originLeaks, staleAuthoringSnapshots, trackerLeaks,
 } = await import(
   pathToFileURL(path.join(REPO, 'scripts', 'audit-public.mjs')).href);
 const homePath = (...parts) => parts.join('');
@@ -600,6 +600,12 @@ const trackedSurface = publicityAudit.slice(publicityAudit.indexOf('// --- surfa
 check('publicity audit reads the tracker boundary in packed entries and not in tracked files',
   /scanTracker\('tarball:' \+ entry, text\)/.test(packedSurface) && !trackedSurface.includes('scanTracker('),
   'scanTracker must run in the packed-entry loop alone');
+// The family named without its trailing underscore is the sample a needle ending in `_` let through.
+const memoryPrefix = ['CONTEXT', '_STORE'].join('');
+const originMisses = [`the ${memoryPrefix} family`, `${memoryPrefix}_STOP_GATE=0`]
+  .filter((text) => !originLeaks('test/x.mjs', text).includes('origin memory service environment prefix'));
+check('publicity audit refuses the origin memory service environment prefix, with or without its underscore',
+  originMisses.length === 0, originMisses.join(' · '));
 // English authoring is read under every directory alike; Cyrillic passes only in a named
 // snapshot or, outside the runtime paths, inside a region whose marker says why.
 // english-authoring: input — the Russian review instruction a live harness script carried, and a Russian note

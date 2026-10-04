@@ -15,13 +15,14 @@
 // the pair was fixed separately twice: the warden switch and home;
 // and the live scripts were not fixed at all — they were run exactly
 // from sessions that have all five variables set. Checking copies
-// with a gate costs more than not making a second one: the list is
-// short, every use needs the same one, and they differ not in
-// membership but in how it is applied — the runner builds a child
-// environment, the helper edits its own, the scripts drop five names
-// and do not touch home (a live run needs the real one).
+// with a gate costs more than not making a second one. The readers
+// hold two lists: the runner and the helper keep only `INHERITED_VARS`
+// and `RUN_VARS` — the runner builds a child environment, the helper
+// edits its own — and the scripts drop the five `SESSION_LEAK_VARS`
+// and keep the rest, home included (a live run needs the real one).
 //
-// What is on the list and why:
+// What the suite must not inherit, and why; the two items marked
+// `SESSION_LEAK_VARS` are the live scripts' list as well:
 //
 // - **warden auto-lift** (`PROMPTOBUS_WARDEN=off`). The suite runs
 //   real bus commands, and those raise a task listener as a detached
@@ -32,32 +33,20 @@
 //   construction. The switch travels as far as the environment does:
 //   a child composing its own is outside this list unless named there;
 // - **contact point of this session** (`CLAUDE_CODE_MESSAGING_SOCKET`/
-//   `_TOKEN`). A bus command hands the task store the socket address
+//   `_TOKEN`; `SESSION_LEAK_VARS`). A bus command hands the task store the socket address
 //   of its session, and under a test its session is the session of the
 //   developer who started `npm test`. A fixture would get a live
 //   person's real socket;
 // - **user home** (`HOME`/`USERPROFILE`). The suite starts the real
-//   CLI as a child process, and `sync` at the tail installs memory
-//   hooks into home — not into the project. If the home layout
-//   diverges from the shipped one (and it diverges on any edit of
-//   `cli/memory-hooks`) — a green run rewrites the person's
-//   `~/legacy/memory-hooks` and `~/.claude/settings.json`. Live trace
-//   2026-08-29: a `settings.json.bak.20260829224155` backup after a
-//   worker run, invisible as a leak in the run results. The swap is
-//   shared, not in individual files: several suite files spawn the CLI
-//   on purpose, and others only hold because they refuse before the
-//   `sync` tail — a point patch would close some of them and stay
-//   silent about the next one added;
-// - **memory-hook lever** (`CONTEXT_STORE_*`). A consumer host's
-//   `extraEnv` sets `CONTEXT_STORE_STOP_GATE=0` on every bus
-//   participant — under a worker and a reviewer the variable is in
-//   the session environment before `npm test`. The suite calls real
-//   hooks with `spawnSync`, not a stub binary, and a leaked variable
-//   kills the gate in the hook child process by the same official
-//   lever, not by a test bypass;
+//   CLI as a child process, and the CLI writes its registries and the
+//   model-routing cache under home — measured 2026-09-05, two suite
+//   files writing `~/.promptobus/model-routing/cache.json` on a hand
+//   run without the diversion ([home.mjs](home.mjs)). The swap is shared, not in
+//   individual files: several suite files spawn the CLI on purpose —
+//   a point patch would close some of them and stay silent about the
+//   next one added;
 // - **bus identity** (`PROMPTOBUS_ROLE`/`PROMPTOBUS_TASK`/
-//   `PROMPTOBUS_HOME`). The same class as the memory lever, and the
-//   same reason: `sessionEnv` in spawn.js puts this triple on every
+//   `PROMPTOBUS_HOME`; `SESSION_LEAK_VARS`). `sessionEnv` in spawn.js puts this triple on every
 //   bus participant, so under a worker and a reviewer it is in the
 //   session environment before `npm test`. The suite calls real bus
 //   commands with `spawnSync`, and `PROMPTOBUS_HOME` beats a home
@@ -79,6 +68,9 @@
 //   the same place as home: `<run home>/.claude`. A nested apply
 //   keeps that path while the already-diverted home is live; any
 //   other path is dropped.
+//
+// A suite file inherits only `INHERITED_VARS`; the run issues its own value for a name in `RUN_VARS`,
+// and every other ambient name is dropped ([contributing](../docs/guides/contributing.md#suite-isolation)).
 
 //
 // The list has a second half that is not a variable at all — **PATH**. Sandboxing
@@ -113,13 +105,6 @@ const MESSAGING_VARS = ['CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_T
 // only one of the two would leave a hole on the other platform
 // entirely.
 export const HOME_VARS = ['HOME', 'USERPROFILE'];
-// Memory-hook lever (`CONTEXT_STORE_STOP_GATE=0` and neighbours):
-// a consumer host's `extraEnv` sets it on every bus participant, and under
-// a worker or a reviewer it leaks into the hook child process — the
-// suite calls real hooks with `spawnSync`, not a stub binary. A
-// prefix, not one variable: the family is one (URL, HOME, DISABLE),
-// and any of them leaks the same way.
-const CONTEXT_STORE_PREFIX = 'CONTEXT_STORE_';
 // Participant bus identity: dropped, not swapped — suite files that
 // declare their own home and task do so themselves, and those that
 // do not are more honest without a home, resolving it from the
@@ -151,14 +136,20 @@ const LEASE_DIR_VAR = 'PROMPTOBUS_LEASE_DIR';
 // entries (`/opt/homebrew/bin`, `/usr/local/bin`) are a machine's tmux, and no PATH seal covers them.
 const CURSOR_INSTALL_DIRS_VAR = 'PROMPTOBUS_CURSOR_INSTALL_DIRS';
 const CURSOR_INSTALL_DIRS_SEALED = '~/.local/bin';
-// Root of the mechanism under test and a ready workspace. Only the
-// release canary sets them; left in a developer's environment after a
-// manual run, they silently send the whole suite onto a FOREIGN tree
-// — the script resolves the binary, the store, and the driver from
-// them. Red from there would talk about a stranger's directory, and
-// green would mean nothing about the checkout. The same leak class
-// the list was created for.
-const E2E_PREFIX = 'PROMPTOBUS_E2E_';
+// What a suite file inherits from the environment that started it. A name is added with the reason its
+// value cannot point at a person's state, beside it; Windows names are compared case-blind.
+export const INHERITED_VARS = [
+  // The platform, not anyone's state: locale, terminal, time zone, the OS user, the temp directory.
+  'LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE', 'LC_MESSAGES', 'LC_MONETARY', 'LC_NUMERIC', 'LC_TIME',
+  'TERM', 'TZ', 'USER', 'LOGNAME', 'TMPDIR', 'TMP', 'TEMP',
+  // macOS writes it into every process it starts, dropped or not: a uid and a text encoding.
+  '__CF_USER_TEXT_ENCODING',
+  // Windows: a child process needs the system root, and `run` resolves commands through the last two.
+  // Not closed: no Windows run has measured what a child needs, so APPDATA, LOCALAPPDATA, SYSTEMDRIVE, USERNAME drop.
+  'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT',
+  // A revision of this checkout: documentation-contract.test.mjs reads its documents from it by hand.
+  'PROMPTOBUS_DOCS_REV',
+];
 
 /**
  * Binaries the suite may reach on the machine, and why each is here. The list is
@@ -197,6 +188,14 @@ export const REACHABLE_BINARIES = [
 
 /** Set once the seal is built, so a nested apply keeps the directory instead of rebuilding it. */
 const SEAL_VAR = 'PROMPTOBUS_TEST_PATH_SEAL';
+
+/** Names the run issues itself; a nested apply keeps them, so the runner's per-file values outlive `home.mjs`. */
+export const RUN_VARS = [
+  ...HOME_VARS, 'PATH', CONFIG_DIR_VAR, WARDEN_SWITCH, LEASE_DIR_VAR, CURSOR_INSTALL_DIRS_VAR, SEAL_VAR,
+  'PROMPTOBUS_WARDEN_TRACE', 'PROMPTOBUS_EXEC_TRACE', 'PROMPTOBUS_HOLDER_TRACE',
+];
+export const envKey = (name) => (process.platform === 'win32' ? name.toUpperCase() : name);
+const KEPT_VARS = new Set([...INHERITED_VARS, ...RUN_VARS].map(envKey));
 
 function firstOnPath(name, pathValue) {
   for (const dir of String(pathValue ?? '').split(path.delimiter)) {
@@ -273,7 +272,8 @@ export function dropSessionLeaks(env) {
   return env;
 }
 
-// Apply the list to a set of variables. `env` is edited in place and
+// Apply the list to a set of variables: drop every name on neither `INHERITED_VARS`
+// nor `RUN_VARS`, then issue the run's own. `env` is edited in place and
 // returned — for the runner this is a `process.env` copy for the
 // child, for the helper `process.env` itself. Home is a separate
 // argument: its path is different for each (the run directory for
@@ -281,14 +281,11 @@ export function dropSessionLeaks(env) {
 // of names. When the runner already diverted home, a nested apply
 // keeps its `<home>/.claude` value while that home directory exists.
 export function applyHygiene(env, { home, seal } = {}) {
+  for (const name of Object.keys(env)) {
+    if (!KEPT_VARS.has(envKey(name))) delete env[name];
+  }
   env[WARDEN_SWITCH] = WARDEN_OFF;
   env[CURSOR_INSTALL_DIRS_VAR] = CURSOR_INSTALL_DIRS_SEALED;
-  dropSessionLeaks(env);
-  delete env.PROMPTOBUS_CODEX_OWNER_HOME;
-  for (const name of HARNESS_IDENTITY_VARS) delete env[name];
-  for (const name of Object.keys(env)) {
-    if (name.startsWith(CONTEXT_STORE_PREFIX) || name.startsWith(E2E_PREFIX)) delete env[name];
-  }
   if (home) {
     for (const name of HOME_VARS) env[name] = home;
     env[CONFIG_DIR_VAR] = path.join(home, '.claude');

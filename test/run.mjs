@@ -143,7 +143,7 @@ mkdirSync(OUT_DIR, { recursive: true });
 // touch" is shared with [home.mjs](home.mjs) and lives in one place
 // in [hygiene.mjs](hygiene.mjs): that file also says why it holds the
 // warden switch, the session contact point, the user home, and the
-// memory-hook lever. The runner adds its own — the sandbox directory
+// closed list of inherited names. The runner adds its own — the sandbox directory
 // and the auto-lift trace path.
 //
 // The auto-lift trace (`PROMPTOBUS_WARDEN_TRACE`) lives at the root of
@@ -153,8 +153,8 @@ mkdirSync(OUT_DIR, { recursive: true });
 // at once.
 function testEnv(tmp) {
   // Home is per file, not one per run: under the pool several files
-  // spawn the real CLI at once, and `sync` at its tail installs memory
-  // hooks into home — a shared home would be a race of two installs.
+  // spawn the real CLI at once, and the CLI writes its registries under
+  // home (measured: the home.mjs header) — a shared home would be a race of two writers.
   // The directory is created immediately: the installer and
   // `os.homedir()` want an existing path, not a promise. It lives
   // inside the run directory, so it is removed with it.

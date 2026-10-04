@@ -88,6 +88,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release tag installs the committed `package.json` as it is and the source checkout needs the
   field. The audit exempts no other manifest field.
   [Contributing § Public surface](docs/guides/contributing.md#public-surface).
+- **A suite file inherits a closed list of environment names.** The runner and the module-load
+  apply in `test/home.mjs` drop every ambient variable that is on neither `INHERITED_VARS` —
+  locale, terminal, time zone, the OS user, the temp directory, the Windows system names and
+  the hand-run `PROMPTOBUS_DOCS_REV` — nor `RUN_VARS`, the names the run issues itself. Before,
+  they dropped a list of known names, and a name nobody had listed passed: this repository's
+  suite, run from a bus worker session, inherited `PROMPTOBUS_CURSOR_USER_HOME` pointing at the
+  operator's Cursor home, which the Cursor driver reads, and a tool location such as `GIT_DIR`
+  or `npm_config_userconfig` passed the same way. The suite no longer names a consumer's memory
+  service or describes that consumer's hooks, and the publicity audit refuses that service's
+  environment prefix as it refuses its name. A nested `npm` in a suite file now reads the run
+  home's cache and configuration rather than the operator's.
+  [Contributing § Suite isolation](docs/guides/contributing.md#suite-isolation).
 
 ### Fixed
 

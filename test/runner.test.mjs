@@ -23,7 +23,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { HARNESS_IDENTITY_VARS } from './hygiene.mjs';
+import { HARNESS_IDENTITY_VARS, INHERITED_VARS, RUN_VARS, applyHygiene, envKey } from './hygiene.mjs';
 
 const SB = makeSandbox('promptobus-runner-');
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -254,12 +254,12 @@ writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   + "console.log(`HYGIENE: ${process.env.PROMPTOBUS_WARDEN} :: "
   + "${process.env.CLAUDE_CODE_MESSAGING_SOCKET ?? '(dropped)'} :: "
   + "${process.env.CLAUDE_CODE_MESSAGING_TOKEN ?? '(dropped)'} :: "
-  + "${process.env.CONTEXT_STORE_STOP_GATE ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_E2E_ROOT ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_ROLE ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_TASK ?? '(dropped)'} :: "
   + "${process.env.PROMPTOBUS_HOME ?? '(dropped)'}`);\n"
   + `console.log('HARNESS: ' + ${JSON.stringify(HARNESS_IDENTITY_VARS)}.map((name) => process.env[name] ?? '(dropped)').join(' :: '));\n`
+  + "console.log(`NAMES: ${Object.keys(process.env).sort().join(',')}`);\n"
   // The sealed PATH, asked from inside a suite file for the same reason home is:
   // this file's own PATH was sealed by the same runner, and a check against itself
   // would pass without the seal. The file reports the PATH it was handed and, for
@@ -288,11 +288,22 @@ writeFileSync(path.join(SB2, 'c-nested.test.mjs'),
   + "import os from 'node:os';\n"
   + "console.log(`NESTED: ${process.env.CLAUDE_CONFIG_DIR ?? '(dropped)'} :: ${os.homedir()}`);\n");
 
+// Names on no list, one of each kind a host or a person leaves in a session: a foreign service's
+// lever and home, a product location override, and two tools' locations. None may reach a suite file.
+const FOREIGN_AMBIENT = {
+  FOREIGN_SERVICE_STOP_GATE: '0',
+  FOREIGN_SERVICE_HOME: '/net/takogo/servisa',
+  PROMPTOBUS_CURSOR_USER_HOME: '/net/takogo/kursora/.cursor',
+  GIT_DIR: '/net/takogo/repo/.git',
+  npm_config_userconfig: '/net/takogo/.npmrc',
+};
 const raised = await runCopy(SB2, {
   PROMPTOBUS_WARDEN: 'on',
   CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/poddelnyy-probe.sock',
   CLAUDE_CODE_MESSAGING_TOKEN: 'tok-probe',
-  CONTEXT_STORE_STOP_GATE: '0',
+  ...FOREIGN_AMBIENT,
+  // Inherited: without one name that must arrive, an emptied environment would pass as a closed one.
+  TZ: 'UTC',
   PROMPTOBUS_E2E_ROOT: '/net/takogo/kataloga',
   // Participant identity: under a mechanism worker and reviewer it
   // stands in the session environment before `npm test`, so the runner
@@ -321,9 +332,8 @@ check(': the gate names the count, the trace line itself, and the switch',
 
 // --- the user home does not reach a suite file ----------------------
 //
-// A green run rewrote a person's memory hooks and
-// `~/.claude/settings.json`: a suite file spawns the real CLI, and
-// `sync` at the tail installs hooks into home. The real home is
+// A suite file spawns the real CLI, and the CLI writes its registries
+// and the model-routing cache under home. The real home is
 // visible from here as `os.userInfo().homedir` — that record comes
 // from the system, not the environment, so the swap does not move it
 // and the check stays honest.
@@ -419,11 +429,9 @@ check(': a name that resolved nowhere is not counted — that is the seal workin
 //
 // Home is only one item on the list, and a check of one item would
 // stay silent about a dropped neighbour. The runner copy received the
-// switch in the on position, a stub wake point, and the memory-hook
-// lever — in the position the bus sets (`=0`): it must cover all
-// three.
+// switch in the on position and a stub wake point: it must cover both.
 const [
-  wdnSeen = '', sockSeen = '', tokenSeen = '', csSeen = '', e2eSeen = '',
+  wdnSeen = '', sockSeen = '', tokenSeen = '', e2eSeen = '',
   roleSeen = '', taskSeen = '', busHomeSeen = '',
 ] = (raised.out.match(/HYGIENE: (.+)/)?.[1] ?? '').split(' :: ');
 const harnessIdentitySeen = (raised.out.match(/HARNESS: (.+)/)?.[1] ?? '').split(' :: ');
@@ -434,15 +442,31 @@ check(': the runner drops every ambient harness identity before a fixture instal
 check(': the runner kills warden auto-lift and drops the session contact point',
   wdnSeen === 'off' && sockSeen === '(dropped)' && tokenSeen === '(dropped)',
   `PROMPTOBUS_WARDEN=${wdnSeen || '(unnamed)'} · socket=${sockSeen} · token=${tokenSeen}`);
-check(': the runner drops the memory-hook lever',
-  csSeen === '(dropped)', `CONTEXT_STORE_STOP_GATE=${csSeen || '(unnamed)'}`);
+// The list is closed, not a list of known leaks: the copy was started with names no list knows, and
+// a suite file must see none of them, nothing off the two lists, and still the inherited `TZ`.
+const namesSeen = (raised.out.match(/NAMES: (.*)/)?.[1] ?? '').split(',').filter(Boolean);
+const foreignSeen = Object.keys(FOREIGN_AMBIENT).filter((name) => namesSeen.includes(name));
+check(': an ambient name on no list does not reach a suite file — a foreign lever, a location override, a tool location',
+  namesSeen.length > 0 && foreignSeen.length === 0,
+  `reached: ${foreignSeen.join(', ') || '(none)'} · seen: ${namesSeen.join(',') || '(nothing)'}`);
+const listed = new Set([...INHERITED_VARS, ...RUN_VARS].map(envKey));
+const unlisted = namesSeen.filter((name) => !listed.has(envKey(name)));
+check(': every name a suite file sees is inherited or issued by the run',
+  namesSeen.length > 0 && unlisted.length === 0, `off both lists: ${unlisted.join(', ') || '(none)'}`);
+check(': an inherited name still reaches the file — the list filters, it does not empty',
+  namesSeen.includes('TZ'), `seen: ${namesSeen.join(',') || '(nothing)'}`);
+// The apply every suite file makes at load (home.mjs) filters the same way, without a runner above it.
+const loadApply = applyHygiene({ ...FOREIGN_AMBIENT, TZ: 'UTC' });
+check(': the module-load apply drops the same foreign names and keeps the inherited one',
+  Object.keys(FOREIGN_AMBIENT).every((name) => !(name in loadApply)) && loadApply.TZ === 'UTC',
+  JSON.stringify(loadApply));
 // The root of the mechanism under test is set by the release canary,
 // and only it. Left in the environment after a hand run, it silently
 // sends the whole suite onto a foreign tree: the script resolves the
 // binary, the store, and the driver from it.
 check(': the runner drops the root of the mechanism under test',
   e2eSeen === '(dropped)', `PROMPTOBUS_E2E_ROOT=${e2eSeen || '(unnamed)'}`);
-// Participant identity — the same class as the memory lever: spawn
+// Participant identity: spawn
 // itself puts it into the session environment, and under a mechanism
 // worker it stands there before `npm test`. The leak costs more than
 // the neighbours: `PROMPTOBUS_HOME` beats a home search from cwd, and
