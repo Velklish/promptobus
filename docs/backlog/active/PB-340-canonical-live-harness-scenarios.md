@@ -1,10 +1,11 @@
 # PB-340 · Own reusable live harness scenarios and consumer integration probes
 
-- **Order:** 20
 - **Scope:** [Drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 20
+- **Taken:** 2026-10-04
 
 ## Context
 
