@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`npm run probe` no longer runs a file name as shell text or lets a patch escape its
+  restore.** Without `--run`, the probed file runs as `node <file>` with its name passed as
+  an argument, so a `$(…)` or a backtick in the name no longer runs; `--run` stays the shell
+  command a person writes. `--stdin-patch` asks `git apply --check --numstat --summary` what
+  the patch does and refuses it before applying unless it only changes the content of the
+  probed file. A delete of the probed file, a pure rename or a copy of another file, and a
+  mode change each passed the old `---`/`+++` reading and left a change the restore could
+  not undo. The restore now runs in a `finally`, so a refusal or a failed spawn with the
+  mutation in place — output over the 64 MB buffer, for one — puts the file back instead of
+  leaving it mutated, and a SIGINT or SIGTERM sent to the probe in that stretch is held until
+  the run ends instead of killing the probe with the mutation in the tree. A mutated run cut
+  off before its verdicts is refused with exit 2 instead of being counted as the red: killed
+  by a signal, exited above 128, carrying at the start of a line the suite's abort line or
+  the runner's line for a file it took down or could not start, or interrupted by a signal
+  to the probe itself. The probe sets its exit code and returns instead of calling
+  `process.exit`, which can cut the last line written to a pipe.
+
 ## [0.24.0] — 2026-10-04
 
 ### Changed
