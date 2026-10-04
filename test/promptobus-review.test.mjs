@@ -61,7 +61,7 @@ writeFileSync(path.join(WS, 'AGENTS.md'), 'workspace\n');
 writeHostConfig(WS, { tools: ['claude', 'cursor', 'codex'] });
 mkdirSync(path.join(WS, '.claude'), { recursive: true });
 writeFileSync(path.join(WS, '.claude', 'settings.json'), JSON.stringify({
-  skillOverrides: { 'ненужный-скилл': 'off' },
+  skillOverrides: { 'unneeded-skill': 'off' },
 }, null, 2));
 
 const g = (cwd, ...args) => {
@@ -79,7 +79,7 @@ g(WS, 'init', '-b', 'main');
 const REPO = path.join(WS, 'repos', 'demo_team', 'orders-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'main');
-writeFileSync(path.join(REPO, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(REPO, 'AGENTS.md'), 'Repository rules.\n');
 writeFileSync(path.join(REPO, 'a.txt'), 'v1\n');
 g(REPO, 'add', '.');
 g(REPO, 'commit', '-m', 'init', '-q');
@@ -98,7 +98,7 @@ g(REPO, 'commit', '-m', 'init', '-q');
 g(REPO, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
 g(REPO, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
 writeFileSync(path.join(REPO, 'a.txt'), 'v2\n');
-writeFileSync(path.join(REPO, 'new.txt'), 'новый файл\n');
+writeFileSync(path.join(REPO, 'new.txt'), 'a new file\n');
 
 // --- first call: spawn the reviewer ---------------------------------------------
 
@@ -178,7 +178,7 @@ try {
   process.chdir(REPO);
   noTarget = expectThrow(() => planReview(WS, {}));
   noTargetDry = expectThrow(() => planReview(WS, { dryRun: true }));
-  noTargetFlags = expectThrow(() => planReview(WS, { task: 'нет-такой', title: 'моя работа', dryRun: true }));
+  noTargetFlags = expectThrow(() => planReview(WS, { task: 'no-such', title: 'my work', dryRun: true }));
   process.chdir(WS);
   outsideRepos = expectThrow(() => planReview(WS, {}));
   process.chdir(LONELY);
@@ -214,7 +214,7 @@ check(': the refusal names the current directory\'s repository and prints a read
   && noTarget.msg.includes(`promptobus review "${REPO}"`), noTarget.msg);
 check(': the call\'s flags go into the hint — the repeat costs saying them once',
   noTargetFlags.threw
-  && noTargetFlags.msg.includes(`promptobus review "${REPO}" --task нет-такой --title "моя работа" --dry-run`),
+  && noTargetFlags.msg.includes(`promptobus review "${REPO}" --task no-such --title "my work" --dry-run`),
   noTargetFlags.msg);
 check(': --dry-run doesn\'t cancel the path requirement — the gate comes before the plan',
   noTargetDry.threw && /repository path is required/.test(noTargetDry.msg), noTargetDry.msg);
@@ -227,10 +227,10 @@ check(': a clone sitting directly on the workspace disk — the refusal names th
 check(': a directory outside git — a refusal with no ready-made command',
   notARepo.threw && /not in a git repository/.test(notARepo.msg)
   && !notARepo.msg.includes('repeat with it'), notARepo.msg);
-const plan = planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api' });
+const plan = planReview(WS, { target: REPO, title: 'orchestrator work in orders-api' });
 check(`plan: the reviewer's address comes from the repository name`, plan.address === 'reviewer:orders-api', plan.address);
 check('plan: the task is opened with the name the person gave it',
-  plan.createNew?.id === plan.taskId && plan.createNew.title === 'работа оркестратора в orders-api',
+  plan.createNew?.id === plan.taskId && plan.createNew.title === 'orchestrator work in orders-api',
   plan.createNew?.title);
 // The name also produces the slug: the person copies the task id into wait and
 // re-review commands, and it becomes readable together with the name.
@@ -254,7 +254,7 @@ check('PB-157: the stat cut out of the single pass equals the stat of its own ca
 // The title goes into the session name, and the tail carries a short stamp: the raw id
 // there used to read as fifteen technical characters instead of a date and time.
 check(`reviewer's session name: role as the first word, task name, short stamp in the tail`,
-  /^Review: работа оркестратора в orders-api \(\d{4}-\d{4}\)$/.test(plan.name)
+  /^Review: orchestrator work in orders-api \(\d{4}-\d{4}\)$/.test(plan.name)
   && plan.argv[plan.argv.indexOf('--name') + 1] === plan.name, plan.name);
 // The reviewer is raised without its own worktree — the subject of the review sits in
 // someone else's tree, and it doesn't need a machine name at all: `--name` checks
@@ -593,7 +593,7 @@ check('PB-51: standalone review dry-run has no missing-plugin warning',
   && /workspace skills: not attached — .*ships no workspace-skills plugin/.test(standaloneDryRun),
   standaloneDryRun);
 check(`reviewer's settings: personal skill duplicates are suppressed by name`,
-  plan.settings.skillOverrides?.['ненужный-скилл'] === 'off', JSON.stringify(plan.settings));
+  plan.settings.skillOverrides?.['unneeded-skill'] === 'off', JSON.stringify(plan.settings));
 // The reviewer's MCP set equals the worker's set (owner decision 2026-08-28).
 // Read-only is held by a deny list on editing the working copy, not by a poor toolset.
 const rsrv = plan.mcpConfig.mcpServers;
@@ -642,7 +642,7 @@ check(': without --permission-mode the reviewer goes on the binary\'s mode — n
   plan.permissionMode === null && !plan.argv.includes('--permission-mode'), plan.argv.join(' '));
 let withMode;
 await capture(async () => {
-  withMode = await review(WS, { target: REPO, title: 'работа оркестратора в orders-api', dryRun: true, permissionMode: 'acceptEdits' });
+  withMode = await review(WS, { target: REPO, title: 'orchestrator work in orders-api', dryRun: true, permissionMode: 'acceptEdits' });
 });
 check(': the reviewer\'s --permission-mode goes into the session\'s argv',
   withMode.permissionMode === 'acceptEdits' && withMode.argv[withMode.argv.indexOf('--permission-mode') + 1] === 'acceptEdits',
@@ -655,7 +655,7 @@ check(': the reviewer\'s --permission-mode goes into the session\'s argv',
 // --dry-run".
 let withEffort;
 const dryEffort = await capture(async () => {
-  withEffort = await review(WS, { target: REPO, title: 'работа оркестратора в orders-api', dryRun: true, effort: 'high' });
+  withEffort = await review(WS, { target: REPO, title: 'orchestrator work in orders-api', dryRun: true, effort: 'high' });
 });
 check(`command: the reviewer's --effort is passed to the session right after --model <value>`,
   withEffort.effort === 'high'
@@ -666,11 +666,11 @@ check(`command: the reviewer's --effort is passed to the session right after --m
 for (const level of EFFORT_LEVELS) {
   const p = level === 'high'
     ? withEffort
-    : planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api', effort: level });
+    : planReview(WS, { target: REPO, title: 'orchestrator work in orders-api', effort: level });
   check(`--effort: value "${level}" accepted`, p.effort === level);
 }
 
-const badEffort = expectThrow(() => planReview(WS, { target: REPO, title: 'работа оркестратора в orders-api', effort: 'super-high' }));
+const badEffort = expectThrow(() => planReview(WS, { target: REPO, title: 'orchestrator work in orders-api', effort: 'super-high' }));
 check('--effort: unknown value → a clear refusal, not a silent default',
   badEffort.threw && /--effort: unknown value/.test(badEffort.msg) && badEffort.msg.includes('super-high')
   && EFFORT_LEVELS.every((l) => badEffort.msg.includes(l)), badEffort.msg);
@@ -720,7 +720,7 @@ if (args[0] === 'agents' && existsSync(${JSON.stringify(BG_RAISED)})) {
   // daemon: the name matches, there's no pid, while the neighboring record has one
   // (sessionLiveness self-calibration).
   process.stdout.write(JSON.stringify(process.env.STUB_GHOST
-    ? [{ id: 'ghost1', name: raised, state: 'blocked' }, { id: 'alive9', name: 'Worker: чужой', pid: 4242 }]
+    ? [{ id: 'ghost1', name: raised, state: 'blocked' }, { id: 'alive9', name: 'Worker: foreign', pid: 4242 }]
     : [{ id: 'sess-live', name: raised, status: 'running' }]));
   process.exit(0);
 }
@@ -733,10 +733,10 @@ const claudeFails = () => claudeStub('process.exit(1);');
 const bgArgv = () => (existsSync(BG_ARGV) ? readFileSync(BG_ARGV, 'utf8') : '');
 
 const home = path.join(WS, '.promptobus');
-const task = store.createTask(home, { id: 't20260824-100000', title: 'ревью demo_team/orders-api' });
+const task = store.createTask(home, { id: 't20260824-100000', title: 'review of demo_team/orders-api' });
 const SESSION = 'a2a-t20260824-100000-reviewer-orders-api';
 store.upsertParticipant(home, task.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api', name: SESSION }));
-writeFileSync(path.join(store.filesDir(home, task.id), 'review-orders-api.diff'), 'старый дифф\n');
+writeFileSync(path.join(store.filesDir(home, task.id), 'review-orders-api.diff'), 'an old diff\n');
 
 claudeSays(JSON.stringify([{ name: SESSION, status: 'running' }]));
 
@@ -778,16 +778,16 @@ check('re-review: the old diff isn\'t overwritten — the name gets a number',
 // from inside one command (nothing foreign happens between the plan and its write), so
 // the write itself is checked.
 const RACE = path.join(SB, 'race-artifacts');
-const firstDiff = writeDiff(RACE, 'gonka', 'дифф первого\n');
-const secondDiff = writeDiff(RACE, 'gonka', 'дифф второго\n');
+const firstDiff = writeDiff(RACE, 'gonka', 'the first diff\n');
+const secondDiff = writeDiff(RACE, 'gonka', 'the second diff\n');
 check(': the second diff of the same slug claimed its own name instead of overwriting the other one',
   firstDiff.endsWith('review-gonka.diff') && secondDiff.endsWith('review-gonka-2.diff')
-  && readFileSync(firstDiff, 'utf8') === 'дифф первого\n'
-  && readFileSync(secondDiff, 'utf8') === 'дифф второго\n',
+  && readFileSync(firstDiff, 'utf8') === 'the first diff\n'
+  && readFileSync(secondDiff, 'utf8') === 'the second diff\n',
   `${path.basename(firstDiff)} · ${path.basename(secondDiff)} · ${JSON.stringify(readFileSync(firstDiff, 'utf8'))}`);
 check(': the third one takes the next number instead of landing on the second',
-  writeDiff(RACE, 'gonka', 'дифф третьего\n').endsWith('review-gonka-3.diff')
-  && readFileSync(secondDiff, 'utf8') === 'дифф второго\n');
+  writeDiff(RACE, 'gonka', 'the third diff\n').endsWith('review-gonka-3.diff')
+  && readFileSync(secondDiff, 'utf8') === 'the second diff\n');
 
 let againEffort;
 const dryReuseEffort = await capture(async () => {
@@ -821,7 +821,7 @@ check('live reviewer: --harness of another tool is refused and names stop',
 // isn't obtainable exactly where there's no binary at all. Without the mark, a repeat
 // would go into re-review and send `type=task` to an inbox behind which there's nobody
 // (review note on , a  class bug).
-const pendingTask = store.createTask(home, { id: 't20260827-230000', title: 'ревью с сорвавшимся запуском' });
+const pendingTask = store.createTask(home, { id: 't20260827-230000', title: 'a review with a failed launch' });
 store.upsertParticipant(home, pendingTask.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api',
   name: 'a2a-t20260827-230000-reviewer-orders-api',
   pending: true }));
@@ -892,7 +892,7 @@ check(`: the reviewer's hook command carries ITS OWN address, task, and home`,
 // (review note).
 let bothFlags;
 const dryBoth = await capture(async () => {
-  bothFlags = await review(WS, { target: REPO, task: task.id, title: 'моё имя', dryRun: true });
+  bothFlags = await review(WS, { target: REPO, task: task.id, title: 'my name', dryRun: true });
 });
 check('--task with --title: the name is not applied, and the plan says so',
   bothFlags.titleIgnored === true && bothFlags.createNew === null, String(bothFlags.titleIgnored));
@@ -1137,7 +1137,7 @@ const liftoffRun = (opts, env = {}) => {
 };
 
 claudeSays('[]');
-const silentTask = store.createTask(home, { id: 't20260829-100000', title: 'ревью с молчаливым сбоем демона' });
+const silentTask = store.createTask(home, { id: 't20260829-100000', title: 'a review with a silent daemon failure' });
 const silent = liftoffRun(
   { target: REPO, task: silentTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
   { STUB_SILENT_FAIL: '1' },
@@ -1176,7 +1176,7 @@ claudeSays('[]');
 // A matching name isn't enough: a past session's record doesn't disappear from the
 // list, and restarting the reviewer under the same address would report its id — the
 // same live-ghost bug.
-const ghostTask = store.createTask(home, { id: 't20260829-101500', title: 'ревью на призрачной записи' });
+const ghostTask = store.createTask(home, { id: 't20260829-101500', title: 'a review on a ghost record' });
 const ghost = liftoffRun(
   { target: REPO, task: ghostTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
   { STUB_GHOST: '1' },
@@ -1186,7 +1186,7 @@ check(': a ghost under the same name doesn\'t count as a raise — the refusal n
 
 // The flip side of the check: the list isn't parsed — that's not death. The reviewer is
 // raised, but the unconfirmed state is named out loud, same as for the worker.
-const unverifiedTask = store.createTask(home, { id: 't20260829-103000', title: 'ревью без разбора списка' });
+const unverifiedTask = store.createTask(home, { id: 't20260829-103000', title: 'a review without parsing the list' });
 // The launch succeeds, but the session list isn't obtained: `agents` answers with a
 // non-zero code, and the fake doesn't set the raise mark — otherwise the check would
 // see it instead of the unparsed list.
@@ -1202,7 +1202,7 @@ check(': the session list isn\'t parsed — not a refusal, but an unconfirmed st
 
 // Neither the list nor the output names the session. The chosen prelaunch id still binds it.
 claudeStub("if (args[0] === 'agents') process.exit(1);\nprocess.stdout.write('backgrounded');");
-const unboundTask = store.createTask(home, { id: 't20260926-110000', title: 'ревью без id сессии' });
+const unboundTask = store.createTask(home, { id: 't20260926-110000', title: 'a review without a session id' });
 const unboundLift = liftoffRun(
   { target: REPO, task: unboundTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
   { STUB_SILENT_FAIL: '1' },
@@ -1222,7 +1222,7 @@ check(': a Claude lift uses its preselected id when neither agents nor bg output
 // from `claude agents` is the harness's direct answer, parsing `claude --bg`'s output
 // remains the fallback.
 claudeSays('[]');
-const idTask = store.createTask(home, { id: 't20260829-104500', title: 'ревью и id сессии' });
+const idTask = store.createTask(home, { id: 't20260829-104500', title: 'a review and a session id' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: idTask.id }));
 const idPart = store.participantOf(store.readTask(home, idTask.id), 'reviewer:orders-api')?.metadata;
 check(`: the reviewer's session id is taken from claude agents, not from parsing the output`,
@@ -1256,7 +1256,7 @@ const quietReview = await capture(() => review(WS, { target: REPO, task: task.id
 check(': the orchestrator\'s empty mailbox is not named in `promptobus review`\'s output',
   !/your mailbox|unread \d+ at the orchestrator/.test(quietReview), quietReview);
 store.sendMessage(home, task.id, {
-  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: `отчёт reviewer'а лежит непрочитанным`,
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: `the reviewer's report sits unread`,
 });
 // This CLI process names no session (the suite drops the identity variables), so the
 // counter takes the owner-gate's no-identity route rather than the owner's "fetch it".
@@ -1272,7 +1272,7 @@ check(': the counter is a notification, not a reader — the message stays in th
 store.readInbox(home, task.id, 'orchestrator');
 
 claudeSays('backgrounded · cafe12 · a2a-reviewer');
-const effortTask = store.createTask(home, { id: 't20260825-140000', title: 'ревью effort' });
+const effortTask = store.createTask(home, { id: 't20260825-140000', title: 'review effort' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: effortTask.id, effort: 'high' }));
 const effortPart = store.participantOf(store.readTask(home, effortTask.id), 'reviewer:orders-api')?.metadata;
 check(`spawn reviewer: effort is written to the participant, same as for the worker`,
@@ -1283,7 +1283,7 @@ check(`spawn reviewer: effort is written to the participant, same as for the wor
 // from — and which one that is isn't known here. There's no guessing by "the single
 // active task".
 store.sendMessage(home, task.id, {
-  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: 'лежит в чужой задаче',
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'result', body: 'sits in a foreign task',
 });
 const FRESH = path.join(WS, 'repos', 'demo_team', 'fresh-api');
 mkdirSync(FRESH, { recursive: true });
@@ -1294,14 +1294,14 @@ g(FRESH, 'commit', '-m', 'init', '-q');
 writeFileSync(path.join(FRESH, 'a.txt'), 'v2\n');
 let freshPlan;
 const freshTaskOut = await capture(async () => {
-  freshPlan = await review(WS, { tool: TOOL, target: FRESH, title: 'работа оркестратора в fresh-api' });
+  freshPlan = await review(WS, { tool: TOOL, target: FRESH, title: 'orchestrator work in fresh-api' });
 });
 check(': a review opening its own task does not name someone else\'s counter',
   !/unread/.test(freshTaskOut), freshTaskOut);
 store.closeTask(home, freshPlan.taskId);
 store.readInbox(home, task.id, 'orchestrator');
 
-const plainTask = store.createTask(home, { id: 't20260825-150000', title: 'ревью без effort' });
+const plainTask = store.createTask(home, { id: 't20260825-150000', title: 'a review without effort' });
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: plainTask.id }));
 const plainPart = store.participantOf(store.readTask(home, plainTask.id), 'reviewer:orders-api')?.metadata;
 check('spawn without --effort: there is no effort field on the participant',
@@ -1309,12 +1309,12 @@ check('spawn without --effort: there is no effort field on the participant',
 // A review joins the worker's task: the task slug is taken from its journal and goes
 // at the start of the reviewer's name, with the machine stamp left in the tail.
 const slugged = store.createTask(home, {
-  id: 'bl-076-imena-t20260825-160000', title: ' читаемые имена',
+  id: 'bl-076-imena-t20260825-160000', title: ' readable names',
   slug: 'bl-076-imena', stamp: 't20260825-160000',
 });
 const namedPlan = planReview(WS, { target: REPO, task: slugged.id });
 check(`reviewer's session name: task title in words, stamp in parentheses`,
-  namedPlan.name === 'Review: читаемые имена (0825-1600)', namedPlan.name);
+  namedPlan.name === 'Review: readable names (0825-1600)', namedPlan.name);
 store.closeTask(home, slugged.id);
 
 // A review without --task opens its own task even when a foreign active one is hanging
@@ -1322,15 +1322,15 @@ store.closeTask(home, slugged.id);
 // journal, and that task's warden would wake its orchestrator over someone else's
 // messages.
 const foreign = store.createTask(home, {
-  id: 'chuzhaya-t20260825-170000', title: 'Бриф: чужая задача',
+  id: 'chuzhaya-t20260825-170000', title: 'Brief: a foreign task',
   slug: 'chuzhaya', stamp: 't20260825-170000',
 });
 let own;
 const secondOut = await capture(async () => {
-  own = await review(WS, { target: FRESH, title: 'работа оркестратора в fresh-api', dryRun: true });
+  own = await review(WS, { target: FRESH, title: 'orchestrator work in fresh-api', dryRun: true });
 });
 check('without --task: a review opens its own task instead of sneaking into a foreign active one',
-  own.taskId !== foreign.id && own.createNew?.title === 'работа оркестратора в fresh-api',
+  own.taskId !== foreign.id && own.createNew?.title === 'orchestrator work in fresh-api',
   `${own.taskId} vs ${foreign.id}`);
 const joined = planReview(WS, { target: REPO, task: foreign.id });
 check('--task: joining an existing task happens only with an explicit flag',
@@ -1398,8 +1398,8 @@ const gOut = (cwd, ...args) => spawnSync('git', ['-C', cwd, ...args], { encoding
 const OWN = path.join(WS, 'repos', 'demo_team', 'base-api');
 mkdirSync(OWN, { recursive: true });
 g(OWN, 'init', '-b', 'main');
-writeFileSync(path.join(OWN, 'AGENTS.md'), 'Правила репозитория.\n');
-writeFileSync(path.join(OWN, 'obshee.txt'), 'общий код\n');
+writeFileSync(path.join(OWN, 'AGENTS.md'), 'Repository rules.\n');
+writeFileSync(path.join(OWN, 'obshee.txt'), 'shared code\n');
 g(OWN, 'add', '.');
 g(OWN, 'commit', '-m', 'init', '-q');
 const PUSHED = gOut(OWN, 'rev-parse', 'HEAD');
@@ -1408,28 +1408,28 @@ g(OWN, 'update-ref', 'refs/remotes/origin/main', PUSHED);
 // stops at the first ref. It doesn't touch the  picture — `origin/main` stays behind
 // the local `main` exactly as it was.
 g(OWN, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
-writeFileSync(path.join(OWN, 'orkestrator.txt'), 'незапушенная работа оркестратора\n');
+writeFileSync(path.join(OWN, 'orkestrator.txt'), 'unpushed orchestrator work\n');
 g(OWN, 'add', '.');
-g(OWN, 'commit', '-m', 'работа оркестратора мимо origin', '-q');
+g(OWN, 'commit', '-m', 'orchestrator work past origin', '-q');
 const FORK = gOut(OWN, 'rev-parse', 'HEAD');
 
 const W1 = path.join(OWN, '.claude', 'worktrees', 'a2a-pervyy');
 g(OWN, 'worktree', 'add', '-q', '-b', 'worktree-a2a-pervyy', W1, 'main');
-writeFileSync(path.join(W1, 'pervyy.txt'), `работа первого worker'а\n`);
-writeFileSync(path.join(W1, 'probe.txt'), 'часть commit, временно снятая mutation probe\n');
+writeFileSync(path.join(W1, 'pervyy.txt'), `the first worker's work\n`);
+writeFileSync(path.join(W1, 'probe.txt'), 'part of a commit, temporarily taken off by a mutation probe\n');
 g(W1, 'add', '.');
-g(W1, 'commit', '-m', 'работа первого', '-q');
+g(W1, 'commit', '-m', 'the first one’s work', '-q');
 const W2 = path.join(OWN, '.claude', 'worktrees', 'a2a-vtoroy');
 g(OWN, 'worktree', 'add', '-q', '-b', 'worktree-a2a-vtoroy', W2, 'main');
-writeFileSync(path.join(W2, 'vtoroy.txt'), `работа второго worker'а\n`);
+writeFileSync(path.join(W2, 'vtoroy.txt'), `the second worker's work\n`);
 g(W2, 'add', '.');
-g(W2, 'commit', '-m', 'работа второго', '-q');
+g(W2, 'commit', '-m', 'the second one’s work', '-q');
 // The third worker hasn't done anything yet: its diff is empty.
 const W3 = path.join(OWN, '.claude', 'worktrees', 'a2a-tretiy');
 g(OWN, 'worktree', 'add', '-q', '-b', 'worktree-a2a-tretiy', W3, 'main');
 
 const owned = store.createTask(home, {
-  id: 'bl-118-baza-t20260826-120000', title: ' база диффа', slug: 'bl-118-baza', stamp: 't20260826-120000',
+  id: 'bl-118-baza-t20260826-120000', title: ' diff base', slug: 'bl-118-baza', stamp: 't20260826-120000',
 });
 // `title` is the title of the worker's piece of work: its session name is assembled
 // from it, and its reviewer's session is named by it too. Without it — a record from
@@ -1447,8 +1447,8 @@ const worker = (address, worktree, wtName, title = null, extra = {}) => store.pa
   name: `Worker: ${title ?? owned.title} (0826-1200, ${address.slice('worker:'.length)})`,
   ...extra,
 });
-store.upsertParticipant(home, owned.id, worker('worker:pervyy', W1, 'a2a-pervyy', `Точка ветвления worker'а`, { baseSha: FORK }));
-store.upsertParticipant(home, owned.id, worker('worker:vtoroy', W2, 'a2a-vtoroy', 'Reviewer по предмету ревью', { baseSha: FORK }));
+store.upsertParticipant(home, owned.id, worker('worker:pervyy', W1, 'a2a-pervyy', `The worker's branch point`, { baseSha: FORK }));
+store.upsertParticipant(home, owned.id, worker('worker:vtoroy', W2, 'a2a-vtoroy', 'Reviewer of the review subject', { baseSha: FORK }));
 
 // PB-157: the branch commit contains two files, but a mutation probe has reverted one
 // addition in the working tree. The review diff must keep comparing the base with the
@@ -1512,7 +1512,7 @@ check('PB-157 output: a dirty snapshot warns the person beside the diff base and
   && dirtySnapshotOut.includes('probe.txt')
   && dirtySnapshotOut.includes('snapshot can omit committed content or include uncommitted content'),
   dirtySnapshotOut);
-writeFileSync(path.join(W1, 'probe.txt'), 'часть commit, временно снятая mutation probe\n');
+writeFileSync(path.join(W1, 'probe.txt'), 'part of a commit, temporarily taken off by a mutation probe\n');
 
 const second = planReview(WS, { target: W2, task: owned.id });
 check('PB-157 prompt: a clean snapshot says so explicitly and carries no modified tracked paths',
@@ -1536,7 +1536,7 @@ const identicalSnapshot = planReview(WS, { target: W2, task: owned.id });
 check('PB-157.1 snapshot: rewriting identical content stays clean',
   identicalSnapshot.snapshot.clean === true && identicalSnapshot.snapshot.modifiedTracked.length === 0,
   JSON.stringify(identicalSnapshot.snapshot));
-writeFileSync(secondFile, 'изменённое содержимое\n');
+writeFileSync(secondFile, 'changed contents\n');
 const changedSnapshot = planReview(WS, { target: W2, task: owned.id });
 check('PB-157.1 snapshot: rewriting different content lists the tracked path',
   changedSnapshot.snapshot.clean === false
@@ -1552,8 +1552,8 @@ check(': the second one\'s reviewer sees its own diff',
 // reviewers per task, and it must be visible from a line in `claude agents` whose work
 // each one is looking at.
 check(`: the reviewer's name names its worker's piece, not the task as a whole`,
-  first.name === `Review: Точка ветвления worker'а (0826-1200)`
-  && second.name === 'Review: Reviewer по предмету ревью (0826-1200)'
+  first.name === `Review: The worker's branch point (0826-1200)`
+  && second.name === 'Review: Reviewer of the review subject (0826-1200)'
   && !first.name.includes(owned.title), `${first.name} · ${second.name}`);
 check(`: the second one's diff does not overwrite the first one's diff — names follow the workers' slugs`,
   first.diffPath.endsWith('review-pervyy.diff') && second.diffPath.endsWith('review-vtoroy.diff'),
@@ -1594,7 +1594,7 @@ check(': dry-run and real review print the same reviewer rules block',
 const revPart = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
 check(`: the reviewer is recorded in the task journal under the worker's address, not the clone's name`,
   !!revPart, (store.readTask(home, owned.id).participants ?? []).map((p) => store.addressOf(p)).join(', '));
-claudeSays(JSON.stringify([{ name: revPart?.name ?? 'сессии нет', pid: 4242 }]));
+claudeSays(JSON.stringify([{ name: revPart?.name ?? 'no session', pid: 4242 }]));
 const reReviewed = planReview(WS, { target: W2, task: owned.id });
 check('re-review of the same subject — the same address and the same live session',
   reReviewed.address === 'reviewer:vtoroy' && reReviewed.reuse === true
@@ -1617,12 +1617,12 @@ check('PB-157 record: the lift writes the snapshot moment, head and clean tracke
 // the first snapshot for the whole review, which is the lag this answers. The worktree
 // gains a commit first: with the same HEAD on both sides the check would pass on a
 // record nobody touched.
-writeFileSync(path.join(W2, 'vtoroy-2.txt'), 'вторая порция работы\n');
+writeFileSync(path.join(W2, 'vtoroy-2.txt'), 'a second batch of work\n');
 g(W2, 'add', '.');
-g(W2, 'commit', '-m', 'вторая порция', '-q');
+g(W2, 'commit', '-m', 'a second batch', '-q');
 const afterHead = gOut(W2, 'rev-parse', 'HEAD');
-writeFileSync(path.join(W2, 'vtoroy.txt'), 'незафиксированная правка после commit\n');
-claudeSays(JSON.stringify([{ name: revPart?.name ?? 'сессии нет', pid: 4242 }]));
+writeFileSync(path.join(W2, 'vtoroy.txt'), 'an uncommitted edit after the commit\n');
+claudeSays(JSON.stringify([{ name: revPart?.name ?? 'no session', pid: 4242 }]));
 await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
 const reStamped = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
 check('PB-157 record: a re-review moves the snapshot and replaces its tracked-tree state',
@@ -1649,7 +1649,7 @@ check('main clone: address by clone name, base by the default branch — prior b
   cloneWide.owner === null && cloneWide.address === 'reviewer:base-api'
   && cloneWide.baseRef === 'origin/main', `${cloneWide.address} · ${cloneWide.baseRef}`);
 check(`main clone: the reviewer's name is the task title, this directory has no participant`,
-  cloneWide.name === 'Review: база диффа (0826-1200)', cloneWide.name);
+  cloneWide.name === 'Review: diff base (0826-1200)', cloneWide.name);
 
 // A participant record made by the previous CLI has no branch point — and that no
 // longer means the base falls back to the default branch. The point is computed as the
@@ -1668,7 +1668,7 @@ check('a previous-CLI record: there is no warning about a guessed base — the b
 // Such a record has no title of its own either — the reviewer's name stays the former
 // one, the task title, and that isn't a refusal.
 check(`a previous-CLI record without a piece title: the reviewer's name is the task title`,
-  legacyBase.name === 'Review: база диффа (0826-1200)', legacyBase.name);
+  legacyBase.name === 'Review: diff base (0826-1200)', legacyBase.name);
 
 // The recorded point is not taken on faith (review note). The branch might have been
 // rebased, and the commit might not even be in the clone at all: `merge-base <no such
@@ -1726,7 +1726,7 @@ check(': an explicit --task outweighs the pickup',
 // the literal directory in `repoAbs`, while no worker worktree record points at it.
 // Directory pickup must still find the active review task instead of planning a second.
 const reviewerOnly = store.createTask(home, {
-  id: 'reviewer-only-t20260827-091000', title: 'ревью каталога без worker',
+  id: 'reviewer-only-t20260827-091000', title: 'a review of a directory without a worker',
 });
 store.upsertParticipant(home, reviewerOnly.id, store.participantRecord('reviewer:base-api', {
   repo: 'demo_team/base-api',
@@ -1743,7 +1743,7 @@ store.closeTask(home, reviewerOnly.id);
 // A worker worktree and a separate reviewer record may claim the same directory. The
 // existing several-claims gate must see both records rather than choosing either one.
 const reviewerClaim = store.createTask(home, {
-  id: 'reviewer-claim-t20260827-091500', title: 'второе ревью каталога',
+  id: 'reviewer-claim-t20260827-091500', title: 'a second review of the directory',
 });
 store.upsertParticipant(home, reviewerClaim.id, store.participantRecord('reviewer:pervyy', {
   repo: 'demo_team/a2a-pervyy',
@@ -1762,14 +1762,14 @@ store.closeTask(home, reviewerClaim.id);
 // A foreign directory does not get a pickup: a review outside the current task is a
 // legitimate move, which is what  was resolved for. There, the prior behavior applies —
 // its own task and a warning that there will be several active ones.
-const outsideTask = await capture(() => review(WS, { target: OWN, title: 'работа оркестратора в base-api', dryRun: true }));
+const outsideTask = await capture(() => review(WS, { target: OWN, title: 'orchestrator work in base-api', dryRun: true }));
 check(': a target outside active tasks\' journals opens its own — and says so',
   /will be created/.test(outsideTask) && !outsideTask.includes(`task: ${owned.id}`)
   && new RegExp(`(?:another task is also active|other tasks are also active)[^\\n]*${owned.id}`).test(outsideTask), outsideTask);
 // The command will not choose a task for the person no matter how the journal is
 // arranged: the journal can also be edited by hand, and two live journals for one
 // directory is no longer a pickup, it's a guess.
-const twin = store.createTask(home, { id: 'twin-t20260827-090000', title: 'двойник', slug: 'twin', stamp: 't20260827-090000' });
+const twin = store.createTask(home, { id: 'twin-t20260827-090000', title: 'twin', slug: 'twin', stamp: 't20260827-090000' });
 store.upsertParticipant(home, twin.id, worker('worker:pervyy', W1, 'a2a-pervyy-twin'));
 let ambiguous = '';
 try { planReview(WS, { target: W1 }); } catch (e) { ambiguous = e.message; }
@@ -1853,7 +1853,7 @@ check(': review --task on a nonexistent task is printed without a stack',
 // review went on. The stack-free shape is visible only in a separate CLI process.
 const DONE_REVIEW = 'bl-395-zakryta-t20260831-120000';
 store.createTask(home, {
-  id: DONE_REVIEW, title: 'закрытая задача ', slug: 'bl-395-zakryta', stamp: 't20260831-120000',
+  id: DONE_REVIEW, title: 'closed task ', slug: 'bl-395-zakryta', stamp: 't20260831-120000',
 });
 store.closeTask(home, DONE_REVIEW);
 const closedReviewThrow = expectThrow(() => planReview(WS, { target: REPO, task: DONE_REVIEW, dryRun: true }));
@@ -1914,7 +1914,7 @@ check(': fixture — the session runs its own run, the binding sits on its task'
 // used to get a loud "several active tasks" refusal; the resolve silently steering
 // there is the same bug without a word, and  comes back with it.
 const strayReview = await withSessionAsync(BIND_SESS,
-  () => capture(() => review(WS, { tool: TOOL, target: OWN, title: 'ревью постороннего каталога' })));
+  () => capture(() => review(WS, { tool: TOOL, target: OWN, title: 'a review of an unrelated directory' })));
 check(': a review of a foreign directory does not steal the session binding',
   store.boundTaskId(home, BIND_SESS) === owned.id,
   `${store.boundTaskId(home, BIND_SESS)} · ${strayReview.split('\n')[0]}`);
@@ -1929,7 +1929,7 @@ store.claimOwnership(home, owned.id, ownerWasBind);
 
 // There's no owner in any live journal — and that's also not a reason to warn while the
 // base is computed from the local default branch.
-const orphanNoTask = await capture(() => review(WS, { target: W3, title: 'ревью worktree без владельца', dryRun: true }));
+const orphanNoTask = await capture(() => review(WS, { target: W3, title: 'a review of a worktree without an owner', dryRun: true }));
 check('a worktree with no owner in the live journals: the base is computed, no warning',
   !/the target is a worktree/.test(orphanNoTask), orphanNoTask);
 // Legitimate targets get no warning: the main clone and a worktree with its own owner.
@@ -1951,7 +1951,7 @@ check('empty diff: the "no changes — nothing to review" message names the base
 const OUT = path.join(SB, 'outside');
 mkdirSync(OUT, { recursive: true });
 g(OUT, 'init', '-b', 'main');
-const outside = expectThrow(() => planReview(WS, { target: OUT, title: 'посторонний каталог' }));
+const outside = expectThrow(() => planReview(WS, { target: OUT, title: 'an unrelated directory' }));
 check('outside the workspace — a refusal, not a review without rules',
   outside.threw && /outside the workspace/.test(outside.msg), outside.msg);
 
@@ -1959,7 +1959,7 @@ check('outside the workspace — a refusal, not a review without rules',
 // toplevel goes up to the workspace root. The refusal must name the specific clone,
 // not lie about being "outside the workspace".
 const GROUP = path.join(WS, 'repos', 'demo_team');
-const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'папка группы' }));
+const group = expectThrow(() => planReview(WS, { target: GROUP, title: 'a group folder' }));
 check('a group folder — a refusal about the clone, not "outside the workspace"',
   group.threw && /clone not found/.test(group.msg)
   && !/outside the workspace/.test(group.msg), group.msg);
@@ -1974,9 +1974,9 @@ check('standalone: the module review skill does not resolve — built-in finding
 // everything that arrived with the merge — and it doesn't stop being an ancestor of
 // HEAD, so the `--is-ancestor` check doesn't see the swap. A live case: 63 files of
 // someone else's already-accepted work instead of 7 of one's own.
-writeFileSync(path.join(OWN, 'chuzhaya.txt'), 'чужая принятая работа\n');
+writeFileSync(path.join(OWN, 'chuzhaya.txt'), 'foreign accepted work\n');
 g(OWN, 'add', '.');
-g(OWN, 'commit', '-m', 'чужая работа, уже принятая в main', '-q');
+g(OWN, 'commit', '-m', 'foreign work, already accepted into main', '-q');
 const MERGED = gOut(OWN, 'rev-parse', 'HEAD');
 g(W1, 'merge', '--no-edit', '-q', 'main');
 store.upsertParticipant(home, owned.id, worker('worker:pervyy', W1, 'a2a-pervyy', null, { baseSha: FORK }));
@@ -2003,18 +2003,18 @@ check(': the divergence between the recorded and the computed base is named out 
 const NOLOCAL = path.join(WS, 'repos', 'demo_team', 'no-local-default');
 mkdirSync(NOLOCAL, { recursive: true });
 g(NOLOCAL, 'init', '-b', 'work');
-writeFileSync(path.join(NOLOCAL, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(NOLOCAL, 'AGENTS.md'), 'Repository rules.\n');
 g(NOLOCAL, 'add', '.');
 g(NOLOCAL, 'commit', '-m', 'init', '-q');
 g(NOLOCAL, 'update-ref', 'refs/remotes/origin/main', gOut(NOLOCAL, 'rev-parse', 'HEAD'));
 const NLWT = path.join(NOLOCAL, '.claude', 'worktrees', 'a2a-bez-bazy');
 g(NOLOCAL, 'worktree', 'add', '-q', '-b', 'worktree-a2a-bez-bazy', NLWT, 'work');
-writeFileSync(path.join(NLWT, 'rabota.txt'), `работа worker'а\n`);
+writeFileSync(path.join(NLWT, 'rabota.txt'), `worker's work\n`);
 g(NLWT, 'add', '.');
-g(NLWT, 'commit', '-m', 'работа', '-q');
+g(NLWT, 'commit', '-m', 'work', '-q');
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:bezbazy', { repo: 'demo_team/no-local-default', repoAbs: NOLOCAL,
   worktree: NLWT, worktreeName: 'a2a-bez-bazy', branch: 'worktree-a2a-bez-bazy',
-  name: 'Worker: без базы (0826-1200, bezbazy)' }));
+  name: 'Worker: no base (0826-1200, bezbazy)' }));
 
 const noBase = planReview(WS, { target: NLWT, task: owned.id });
 check(': a record with a worktree and no baseSha gives a warning, not a calm line',
@@ -2038,7 +2038,7 @@ check(': the base is honestly named a guess by the default branch in this case',
 const DUAL = path.join(WS, 'repos', 'demo_team', 'dual-default');
 mkdirSync(DUAL, { recursive: true });
 g(DUAL, 'init', '-b', 'master');
-writeFileSync(path.join(DUAL, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(DUAL, 'AGENTS.md'), 'Repository rules.\n');
 g(DUAL, 'add', '.');
 g(DUAL, 'commit', '-m', 'init', '-q');
 const D0 = gOut(DUAL, 'rev-parse', 'HEAD');
@@ -2046,21 +2046,21 @@ const D0 = gOut(DUAL, 'rev-parse', 'HEAD');
 // origin: exactly the clone on which the detectors diverged.
 g(DUAL, 'branch', 'main');
 g(DUAL, 'update-ref', 'refs/remotes/origin/master', D0);
-writeFileSync(path.join(DUAL, 'ork.txt'), 'работа оркестратора на master\n');
+writeFileSync(path.join(DUAL, 'ork.txt'), 'orchestrator work on master\n');
 g(DUAL, 'add', '.');
-g(DUAL, 'commit', '-m', 'работа оркестратора', '-q');
+g(DUAL, 'commit', '-m', 'orchestrator work', '-q');
 const D1 = gOut(DUAL, 'rev-parse', 'HEAD');
 const DW = path.join(DUAL, '.claude', 'worktrees', 'a2a-dual');
 g(DUAL, 'worktree', 'add', '-q', '-b', 'worktree-a2a-dual', DW, 'master');
-writeFileSync(path.join(DW, 'rabota.txt'), `работа worker'а\n`);
+writeFileSync(path.join(DW, 'rabota.txt'), `worker's work\n`);
 g(DW, 'add', '.');
-g(DW, 'commit', '-m', 'работа', '-q');
+g(DW, 'commit', '-m', 'work', '-q');
 // A record without baseSha (made by the previous CLI) is the only arrangement in which
 // the base is computed from the default branch instead of taken from the record: it's
 // this one that exposes the detector.
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:dual', { repo: 'demo_team/dual-default', repoAbs: DUAL,
   worktree: DW, worktreeName: 'a2a-dual', branch: 'worktree-a2a-dual',
-  name: 'Worker: две default-ветки (0826-1200, dual)' }));
+  name: 'Worker: two default branches (0826-1200, dual)' }));
 check('fixture: spawn would have branched off master — that\'s how the shared detector chooses it',
   gOut(DUAL, 'rev-parse', 'master') === D1 && gOut(DUAL, 'rev-parse', 'main') === D0,
   `master=${gOut(DUAL, 'rev-parse', 'master')} main=${gOut(DUAL, 'rev-parse', 'main')}`);
@@ -2068,12 +2068,16 @@ check('fixture: spawn would have branched off master — that\'s how the shared 
 // An untracked file with Cyrillic in its name — right here: git returns such a path
 // octal-escaped by default, and the reviewer got a name in its prompt that doesn't
 // exist on disk.
-writeFileSync(path.join(DW, 'новая заметка.txt'), 'заметка\n');
+// english-authoring: input — non-ASCII file names prove that git paths reach the reviewer unescaped
+const UNTRACKED_NOTE = 'новая заметка.txt';
+const TRACKED_NOTE = 'закоммиченная заметка.txt';
+// english-authoring: end
+writeFileSync(path.join(DW, UNTRACKED_NOTE), 'a note\n');
 // And a tracked one too — with the same name the bug reaches the diff body and the
 // --stat summary, and the setting was only applied to one call out of three (review note).
-writeFileSync(path.join(DW, 'закоммиченная заметка.txt'), 'в индексе\n');
-g(DW, 'add', 'закоммиченная заметка.txt');
-g(DW, 'commit', '-m', 'заметка в индексе', '-q');
+writeFileSync(path.join(DW, TRACKED_NOTE), 'staged\n');
+g(DW, 'add', TRACKED_NOTE);
+g(DW, 'commit', '-m', 'a staged note', '-q');
 
 const dual = planReview(WS, { target: DW, task: owned.id });
 check(': the reviewer computes the base from the same branch spawn branches off',
@@ -2081,13 +2085,13 @@ check(': the reviewer computes the base from the same branch spawn branches off'
 check(`: the orchestrator's work on master does not land in the worker's diff`,
   !dual.diff.includes('ork.txt') && dual.diff.includes('rabota.txt'), dual.stat);
 check(`: untracked files go to the reviewer under their own names, not octal-escaped`,
-  dual.untracked.includes('новая заметка.txt') && !dual.untracked.some((f) => /\\3\d\d/.test(f)),
+  dual.untracked.includes(UNTRACKED_NOTE) && !dual.untracked.some((f) => /\\3\d\d/.test(f)),
   JSON.stringify(dual.untracked));
 check(`: the same name also appears in the reviewer's prompt — it's what it will read`,
-  dual.prompt.includes('новая заметка.txt'),
-  dual.prompt.split('\n').filter((l) => /заметк|\\3/.test(l)).join(' | '));
+  dual.prompt.includes(UNTRACKED_NOTE),
+  dual.prompt.split('\n').filter((l) => l.includes(UNTRACKED_NOTE) || /\\3/.test(l)).join(' | '));
 check('review note: a tracked file\'s name is not escaped in the diff body or in the summary',
-  dual.diff.includes('закоммиченная заметка.txt') && dual.stat.includes('закоммиченная заметка.txt')
+  dual.diff.includes(TRACKED_NOTE) && dual.stat.includes(TRACKED_NOTE)
   && !/\\3\d\d/.test(dual.diff) && !/\\3\d\d/.test(dual.stat),
   `${dual.stat} | ${dual.diff.split('\n').filter((l) => /^\+\+\+|^---/.test(l)).join(' ')}`);
 
@@ -2100,22 +2104,22 @@ check('review note: a tracked file\'s name is not escaped in the diff body or in
 const REB = path.join(WS, 'repos', 'demo_team', 'rebase-api');
 mkdirSync(REB, { recursive: true });
 g(REB, 'init', '-b', 'main');
-writeFileSync(path.join(REB, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(REB, 'AGENTS.md'), 'Repository rules.\n');
 g(REB, 'add', '.');
 g(REB, 'commit', '-m', 'init', '-q');
-writeFileSync(path.join(REB, 'ork.txt'), 'работа оркестратора\n');
+writeFileSync(path.join(REB, 'ork.txt'), 'orchestrator work\n');
 g(REB, 'add', '.');
-g(REB, 'commit', '-m', 'работа оркестратора', '-q');
+g(REB, 'commit', '-m', 'orchestrator work', '-q');
 const R_FORK = gOut(REB, 'rev-parse', 'HEAD');
 const RW = path.join(REB, '.claude', 'worktrees', 'a2a-reb');
 g(REB, 'worktree', 'add', '-q', '-b', 'worktree-a2a-reb', RW, 'main');
-writeFileSync(path.join(RW, 'rabota.txt'), `работа worker'а\n`);
+writeFileSync(path.join(RW, 'rabota.txt'), `worker's work\n`);
 g(RW, 'add', '.');
-g(RW, 'commit', '-m', `работа worker'а`, '-q');
+g(RW, 'commit', '-m', `worker's work`, '-q');
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:reb', { repo: 'demo_team/rebase-api', repoAbs: REB,
   worktree: RW, worktreeName: 'a2a-reb', branch: 'worktree-a2a-reb', baseSha: R_FORK,
-  name: 'Worker: переписанная база (0826-1200, reb)' }));
-g(REB, 'commit', '--amend', '-q', '-m', 'работа оркестратора, переписанная');
+  name: 'Worker: a rewritten base (0826-1200, reb)' }));
+g(REB, 'commit', '--amend', '-q', '-m', 'orchestrator work, rewritten');
 
 check('fixture: the merge-base with the rewritten default branch moved back from the recorded point',
   gOut(RW, 'merge-base', 'main', 'HEAD') !== R_FORK, `${gOut(RW, 'merge-base', 'main', 'HEAD')} vs ${R_FORK}`);
@@ -2134,19 +2138,19 @@ check('review note: dest names the rewind as already-merged, not rewritten',
 const MRG = path.join(WS, 'repos', 'demo_team', 'merged-api');
 mkdirSync(MRG, { recursive: true });
 g(MRG, 'init', '-b', 'main');
-writeFileSync(path.join(MRG, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(MRG, 'AGENTS.md'), 'Repository rules.\n');
 g(MRG, 'add', '.');
 g(MRG, 'commit', '-m', 'init', '-q');
 const M_FORK = gOut(MRG, 'rev-parse', 'HEAD');
 const MW = path.join(MRG, '.claude', 'worktrees', 'a2a-mrg');
 g(MRG, 'worktree', 'add', '-q', '-b', 'worktree-a2a-mrg', MW, 'main');
-writeFileSync(path.join(MW, 'sdelano.txt'), `работа worker'а\n`);
+writeFileSync(path.join(MW, 'sdelano.txt'), `worker's work\n`);
 g(MW, 'add', '.');
-g(MW, 'commit', '-m', `работа worker'а`, '-q');
+g(MW, 'commit', '-m', `worker's work`, '-q');
 g(MRG, 'merge', '--ff-only', '-q', 'worktree-a2a-mrg');
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'demo_team/merged-api', repoAbs: MRG,
   worktree: MW, worktreeName: 'a2a-mrg', branch: 'worktree-a2a-mrg', baseSha: M_FORK,
-  name: 'Worker: слитая ветка (0826-1200, mrg)' }));
+  name: 'Worker: a merged branch (0826-1200, mrg)' }));
 
 check(`fixture: after the merge, the merge-base with the default branch equals the worker's HEAD`,
   gOut(MW, 'merge-base', 'main', 'HEAD') === gOut(MW, 'rev-parse', 'HEAD'));
@@ -2162,7 +2166,7 @@ check('review note: the base line says the work is already merged',
 // an explanation would be a lie.
 store.upsertParticipant(home, owned.id, store.participantRecord('worker:mrg', { repo: 'demo_team/merged-api', repoAbs: MRG,
   worktree: MW, worktreeName: 'a2a-mrg', branch: 'worktree-a2a-mrg',
-  name: 'Worker: слитая ветка (0826-1200, mrg)' }));
+  name: 'Worker: a merged branch (0826-1200, mrg)' }));
 const mergedNoBase = planReview(WS, { target: MW, task: owned.id });
 check('review note: an empty diff on a merged branch is explained, not passed off as no work at all',
   (mergedNoBase.warnings ?? []).some((w) => /matches/.test(w) && /--base/.test(w))
@@ -2183,7 +2187,7 @@ check(`review note: for a worker with not a single commit, the base line does no
 // as an `evidence.md` the subject never named. The list is taken from the journal, which
 // binds sender to artifact, so a file cannot be attached and stay invisible here.
 const EVIDENCE = path.join(SB, 'evidence.md');
-writeFileSync(EVIDENCE, 'тринадцать проб, построчно\n');
+writeFileSync(EVIDENCE, 'thirteen probes, line by line\n');
 const ATTACHED_GATES = path.join(SB, 'gates-pervyy.json');
 writeFileSync(ATTACHED_GATES, `${JSON.stringify({
   schemaVersion: 1,
@@ -2193,15 +2197,15 @@ writeFileSync(ATTACHED_GATES, `${JSON.stringify({
   }],
 })}\n`);
 const FOREIGN_EVIDENCE = path.join(SB, 'chuzhoe.md');
-writeFileSync(FOREIGN_EVIDENCE, `улика второго worker'а\n`);
+writeFileSync(FOREIGN_EVIDENCE, `the second worker's evidence\n`);
 store.sendMessage(home, owned.id, {
-  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'проба', artifactPath: EVIDENCE,
+  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'probe', artifactPath: EVIDENCE,
 });
 store.sendMessage(home, owned.id, {
-  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'гейты', artifactPath: ATTACHED_GATES,
+  from: 'worker:pervyy', to: 'orchestrator', type: 'artifact', body: 'gates', artifactPath: ATTACHED_GATES,
 });
 store.sendMessage(home, owned.id, {
-  from: 'worker:vtoroy', to: 'orchestrator', type: 'artifact', body: 'чужое', artifactPath: FOREIGN_EVIDENCE,
+  from: 'worker:vtoroy', to: 'orchestrator', type: 'artifact', body: 'foreign', artifactPath: FOREIGN_EVIDENCE,
 });
 const attachedPlan = planReview(WS, { target: W1, task: owned.id });
 const evidenceLine = String(attachedPlan.prompt).split('\n')
@@ -2501,7 +2505,7 @@ writeFileSync(forgedMessage, JSON.stringify({
   ...sampleMessage,
   id: '20260826T120000000-9999-ffffff',
   type: 'artifact',
-  body: 'запись с идентификатором, который уводит путь из задачи',
+  body: 'a record whose identifier leads the path out of the task',
   artifact: '../../../../evil',
 }));
 // The file the traversal would reach, so the check fails on a missing guard rather than on a
@@ -2526,7 +2530,7 @@ store.closeTask(home, owned.id);
 // has already received a diff and configs; after a failed launch it should keep a
 // reviewer record with no fabricated session, and the refusal should name the orphan
 // and the exact cleanup.
-const FAIL_TITLE = 'ревью, которое не поднялось';
+const FAIL_TITLE = 'a review that did not come up';
 claudeFails();
 const failed = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});\n`
@@ -2571,7 +2575,7 @@ if (orphanTask) store.closeTask(home, orphanTask.id);
 // red honestly. The process's directory is a clone, the task name is given: without
 // the gate, the call would open a task by the current directory exactly the way it
 // happened on 2026-08-27.
-const GATE_TITLE = 'ревью, которого не должно быть';
+const GATE_TITLE = 'a review that must not exist';
 const activeBefore = store.activeTasks(home).length;
 const gated = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});\n`
@@ -2620,7 +2624,7 @@ if (args[0] === '--bg') {
 }
 process.stdout.write('[]');`);
 const ALT_BIN = path.join(ALT, process.platform === 'win32' ? 'claude.cmd' : 'claude');
-const altTask = store.createTask(home, { id: 't20260828-124500', title: 'ревью чужим бинарём' });
+const altTask = store.createTask(home, { id: 't20260828-124500', title: 'a review with a foreign binary' });
 claudeSays('[]');
 const altOut = await capture(() => review(WS, {
   target: REPO,
@@ -2641,14 +2645,14 @@ check(': reviewer lift line records launch provenance',
 
 // A version refusal carries the process away through fail() — a separate process, the
 // same trick as the required-path gate below.
-const oldTask = store.createTask(home, { id: 't20260828-124600', title: 'ревью на старом бинаре' });
+const oldTask = store.createTask(home, { id: 't20260828-124600', title: 'a review on an old binary' });
 const oldRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});
 `
   + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({
     target: REPO,
     task: oldTask.id,
-    tool: { ok: false, found: true, reason: 'Claude Code: найдена версия 2.1.100, нужна 2.1.169 или новее' },
+    tool: { ok: false, found: true, reason: 'Claude Code: found version 2.1.100, need 2.1.169 or newer' },
   })});`,
 ], { encoding: 'utf8', cwd: SB, env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const oldText = `${oldRun.stdout}${oldRun.stderr}`;
@@ -2665,7 +2669,7 @@ stubCommand(ULTRA_REVIEW_BIN, 'claude', `const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.0.0 (Claude Code)\\n'); process.exit(0); }
 process.stdout.write('[]');
 process.exit(0);`);
-const ultraReviewTask = store.createTask(home, { id: 't20260828-170100', title: 'ревью ultracode без шва' });
+const ultraReviewTask = store.createTask(home, { id: 't20260828-170100', title: 'an ultracode review without a seam' });
 const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});\n`
   + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({
@@ -2686,8 +2690,8 @@ check(': a review with no tool seam still reads the binary and refuses ultracode
 // raised, and `mcpConfigPath` isn't even rewritten — the live reviewer works with the
 // old config, and the line would describe a set that doesn't exist. Its own task: an
 // extra re-review would shift the mailbox counters of neighboring checks.
-const reuseTask = store.createTask(home, { id: 't20260828-130000', title: 'переревью и набор MCP' });
-const REUSE_SESSION = 'Review: переревью и набор MCP (0828-1300)';
+const reuseTask = store.createTask(home, { id: 't20260828-130000', title: 'a re-review and the MCP set' });
+const REUSE_SESSION = 'Review: a re-review and the MCP set (0828-1300)';
 store.upsertParticipant(home, reuseTask.id, store.participantRecord('reviewer:orders-api', { repo: 'demo_team/orders-api', name: REUSE_SESSION,
   session: 'cafe12' }));
 claudeSays(JSON.stringify([{ id: 'cafe12', name: REUSE_SESSION, state: 'working', pid: 4242 }]));
@@ -2712,7 +2716,7 @@ const FLOOD = path.join(WS, 'repos', 'demo_team', 'flood-api');
 const FLOOD_DIR = path.join(FLOOD, 'd'.repeat(30));
 mkdirSync(FLOOD_DIR, { recursive: true });
 g(FLOOD, 'init', '-b', 'master');
-writeFileSync(path.join(FLOOD, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(FLOOD, 'AGENTS.md'), 'Repository rules.\n');
 g(FLOOD, 'add', 'AGENTS.md');
 g(FLOOD, 'commit', '-m', 'init', '-q');
 g(FLOOD, 'update-ref', 'refs/remotes/origin/master', gOut(FLOOD, 'rev-parse', 'HEAD'));
@@ -2730,7 +2734,7 @@ for (let i = 0; i < FLOOD_N; i += 1) {
 // before it — meaning the plan must be reassembled against the path that actually
 // landed on disk. Its own task: raising a reviewer would shift the mailbox counters of
 // neighboring checks.
-const writtenTask = store.createTask(home, { id: 't20260829-113000', title: 'ревью и записанный дифф' });
+const writtenTask = store.createTask(home, { id: 't20260829-113000', title: 'a review and a written diff' });
 let writtenPlan = null;
 await capture(async () => { writtenPlan = await review(WS, { tool: TOOL, target: REPO, task: writtenTask.id }); });
 check(': the prompt names the diff file that landed on disk, and it holds the same diff',
@@ -2743,7 +2747,7 @@ check(': the re-review message names the same file',
   String(writtenPlan && writtenPlan.diffPath));
 store.closeTask(home, writtenTask.id);
 
-const floodTask = store.createTask(home, { id: 't20260829-120000', title: 'ревью клона с длинным перечнем' });
+const floodTask = store.createTask(home, { id: 't20260829-120000', title: 'a review of a clone with a long listing' });
 const flood = planReview(WS, { target: FLOOD, task: floodTask.id });
 check(': an untracked-file list longer than a megabyte does not crash the command',
   flood.untracked.length === FLOOD_N, `${flood.untracked.length} of ${FLOOD_N}`);
@@ -2785,7 +2789,7 @@ check(': a git spawn error in detectBase is a refusal, not a stdout TypeError',
 // holds every worker's attachments and every review round's — "a JSON file in the diff's
 // directory" is not an address, and the result that names the right one goes to the
 // orchestrator alone (review note).
-const gateTask = store.createTask(home, { id: 'gates-t20260912-210000', title: 'записи о гейтах' });
+const gateTask = store.createTask(home, { id: 'gates-t20260912-210000', title: 'gate records' });
 const gateDir = store.filesDir(home, gateTask.id);
 mkdirSync(gateDir, { recursive: true });
 writeFileSync(path.join(gateDir, 'gates-pb-prompts.json'), '{"schemaVersion":1,"records":[]}\n');
@@ -2892,10 +2896,10 @@ writeFileSync(path.join(LIFT_REPO, 'a.txt'), 'v2\n');
 let liftPlan;
 claudeSays(JSON.stringify([]));
 await asBoundSession(async () => {
-  store.createTask(home, { id: LIFT_A, title: 'задача A' });
+  store.createTask(home, { id: LIFT_A, title: 'task A' });
   store.bindSession(home, LIFT_A);
   await capture(async () => {
-    liftPlan = await review(WS, { tool: TOOL, target: LIFT_REPO, title: 'ревью из связанной сессии' });
+    liftPlan = await review(WS, { tool: TOOL, target: LIFT_REPO, title: 'a review from a linked session' });
   });
 });
 const LIFT_B = liftPlan.taskId;
@@ -2909,7 +2913,7 @@ check('PB-233: the lifted task gets the session contact point at creation, befor
 check('PB-233: one binding stays — the contact point follows the SESSION, not the binding',
   store.boundTaskId(home, LIFT_SESSION) === LIFT_A, String(store.boundTaskId(home, LIFT_SESSION)));
 
-store.sendMessage(home, LIFT_B, { from: liftPlan.address, to: 'orchestrator', type: 'result', body: 'ревью готово' });
+store.sendMessage(home, LIFT_B, { from: liftPlan.address, to: 'orchestrator', type: 'result', body: 'review ready' });
 const liftKnock = pb233Knock();
 await wdn.wardenRound(home, LIFT_B, { knock: liftKnock });
 check('PB-233: the FIRST result in the lifted task knocks on its orchestrator',

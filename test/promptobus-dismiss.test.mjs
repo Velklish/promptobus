@@ -46,12 +46,12 @@ const withSession = async (id, fn) => {
   }
 };
 
-store.createTask(HOME, { id: TASK, title: 'приёмка куска и снятие участника', owner: OWNER });
+store.createTask(HOME, { id: TASK, title: 'accepting a piece and dismissing a participant', owner: OWNER });
 
 const WORKER = 'worker:api';
 const REVIEWER = 'reviewer:api';
 const WORKER_NAME = `a2a-${TASK}-api`;
-const REVIEWER_NAME = `Review: приёмка (0830-1400)`;
+const REVIEWER_NAME = `Review: acceptance (0830-1400)`;
 // Both are recorded long ago: the registration window of a freshly spawned participant
 // would cover the "no record" outcome before any dismiss, and the check would be silent
 // about the wrong thing.
@@ -66,7 +66,7 @@ store.upsertParticipant(HOME, TASK, store.participantRecord(REVIEWER, { name: RE
 // ([sandbox.mjs](sandbox.mjs)). A foreign live record in the list is needed to
 // self-calibrate liveness: the "is listed" mark is declared only where this harness
 // prints a pid at all.
-const HARNESS_LIST = [{ id: 'liv001', name: 'Worker: сосед', state: 'working', pid: process.pid }];
+const HARNESS_LIST = [{ id: 'liv001', name: 'Worker: neighbour', state: 'working', pid: process.pid }];
 const snapOf = snapshotOfList;
 const OTHERS = () => snapOf(participants(), HARNESS_LIST);
 const participants = () => store.readTask(HOME, TASK).participants;
@@ -137,7 +137,7 @@ check(': a repeat dismiss says "was already dismissed" and does not touch the jo
 // would be a lost message where the mechanism promises delivery — bus truth lives in
 // the mailbox, and a participant lifted again will fetch it on the first `inbox`.
 store.sendMessage(HOME, TASK, {
-  from: 'orchestrator', to: REVIEWER, type: 'review', body: 'ещё один круг по тому же диффу',
+  from: 'orchestrator', to: REVIEWER, type: 'review', body: 'one more round on the same diff',
 });
 check(': a dismissed address can be written to, and the message sits in its mailbox',
   store.countInbox(HOME, TASK, REVIEWER) === 1, String(store.countInbox(HOME, TASK, REVIEWER)));
@@ -233,8 +233,8 @@ writeFileSync(path.join(REPO, 'a.txt'), 'v2\n');
 
 const REUSE_TASK = 'reuse-t20260830-160000';
 const REUSE_ADDR = 'reviewer:orders-api';
-const REUSE_SESSION = 'Review: переревью снятого (0830-1600)';
-store.createTask(HOME, { id: REUSE_TASK, title: 'переревью снятого', owner: OWNER });
+const REUSE_SESSION = 'Review: re-review of the dismissed (0830-1600)';
+store.createTask(HOME, { id: REUSE_TASK, title: 're-review of the dismissed', owner: OWNER });
 store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord(REUSE_ADDR, { repo: 'demo_team/orders-api', repoAbs: REPO,
   name: REUSE_SESSION, session: 'cafe12', started }));
 // Live reviewer session: the plan decides from it that a second one must not be lifted
@@ -286,7 +286,7 @@ check(': one who returned under watch is reported again — and by a stall, not 
 
 const ACCEPTED = 'dismiss-t20260917-100600';
 const APPROVER_SESSION = 'sess-priyomshchik-0917';
-store.createTask(HOME, { id: ACCEPTED, title: 'приёмщик снимает участника принятого куска', owner: OWNER });
+store.createTask(HOME, { id: ACCEPTED, title: 'the approver dismisses a participant of an accepted piece', owner: OWNER });
 store.upsertParticipant(HOME, ACCEPTED, store.participantRecord(WORKER, { name: `a2a-${ACCEPTED}-api`, started }));
 store.upsertParticipant(HOME, ACCEPTED, store.participantRecord('approver:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-approver-ref', sessionId: APPROVER_SESSION,

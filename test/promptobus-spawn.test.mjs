@@ -107,11 +107,11 @@ writeFileSync(path.join(WS, 'AGENTS.md'), 'workspace\n');
 writeHostConfig(WS, { tools: ['claude', 'cursor', 'codex'] });
 mkdirSync(path.join(WS, '.claude'), { recursive: true });
 writeFileSync(path.join(WS, '.claude', 'settings.json'), JSON.stringify({
-  skillOverrides: { 'ненужный-скилл': 'off' },
+  skillOverrides: { 'unneeded-skill': 'off' },
 }));
 const settingsSample = skillSettings(WS);
 check(': spawn reads skillOverrides from workspace settings',
-  settingsSample.skillOverrides?.['ненужный-скилл'] === 'off',
+  settingsSample.skillOverrides?.['unneeded-skill'] === 'off',
   JSON.stringify(settingsSample));
 
 const standaloneHost = hostOf(WS);
@@ -151,7 +151,7 @@ mkdirSync(ORIGIN, { recursive: true });
 mkdirSync(SEED, { recursive: true });
 spawnSync('git', ['init', '--bare', '-b', 'main', ORIGIN], { encoding: 'utf8' });
 g(SEED, 'init', '-b', 'main');
-writeFileSync(path.join(SEED, 'AGENTS.md'), 'Правила репозитория orders-api.\n');
+writeFileSync(path.join(SEED, 'AGENTS.md'), 'Rules of repository orders-api.\n');
 writeFileSync(path.join(SEED, 'a.txt'), 'v1\n');
 g(SEED, 'add', '.');
 g(SEED, 'commit', '-m', 'init', '-q');
@@ -173,7 +173,7 @@ const worktreesWithStamp = (stamp) => {
 spawnSync('git', ['clone', '-q', ORIGIN, REPO], { encoding: 'utf8' });
 
 const BRIEF = path.join(SB, 'brief.md');
-writeFileSync(BRIEF, '# Добавить поле source в событие OrderCreated\n\nПравки в контракте и публикации.\n');
+writeFileSync(BRIEF, '# Add a source field to the OrderCreated event\n\nEdits to the contract and the publishing.\n');
 
 // --- stubbed claude --------------------------------------------------------
 
@@ -208,7 +208,7 @@ const TASK = 'sobytie-t20260827-120000';
 // second, and the session name computed before spawn for the stubbed `claude`
 // would diverge from the one computed inside.
 store.createTask(HOME, {
-  id: TASK, title: 'событие OrderCreated в двух сервисах', slug: 'sobytie', stamp: 't20260827-120000',
+  id: TASK, title: 'the OrderCreated event in two services', slug: 'sobytie', stamp: 't20260827-120000',
 });
 
 const opts = { repo: 'orders-api', brief: BRIEF, task: TASK, effort: 'high' };
@@ -566,7 +566,7 @@ check(': spawn --task of a nonexistent task is printed without a stack',
 
 const DONE_TASK = 'bl-394-zakryta-t20260831-120000';
 store.createTask(HOME, {
-  id: DONE_TASK, title: 'закрытая задача ', slug: 'bl-394-zakryta', stamp: 't20260831-120000',
+  id: DONE_TASK, title: 'closed task ', slug: 'bl-394-zakryta', stamp: 't20260831-120000',
 });
 store.closeTask(HOME, DONE_TASK);
 const closedSpawnTask = cliRun([
@@ -590,16 +590,16 @@ const activeNow = store.activeTasks(HOME).map((t) => t.id);
 for (const id of activeNow) setStatus(id, 'done');
 const cliDry = spawnSync(process.execPath, [
   CLI, 'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF,
-  '--task-title', 'Заход по бэклогу: spawn, ожидание, резолв', '--dry-run',
+  '--task-title', 'Backlog run: spawn, wait, resolve', '--dry-run',
 ], { encoding: 'utf8', cwd: WS, env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 for (const id of activeNow) setStatus(id, 'active');
 const cliText = `${cliDry.stdout}${cliDry.stderr}`;
 check(': --task-title travels from the command line to the task title',
-  cliDry.status === 0 && cliText.includes('will be created: Заход по бэклогу: spawn, ожидание, резолв'),
+  cliDry.status === 0 && cliText.includes('will be created: Backlog run: spawn, wait, resolve'),
   `status=${cliDry.status} ${cliText}`);
 // The SLICE title stays the slice title — the session name is assembled from it.
 check(': --task-title does not replace the work-slice title in the session name',
-  cliText.includes('Worker: Добавить поле source в событие OrderCreated'),
+  cliText.includes('Worker: Add a source field to the OrderCreated event'),
   cliText.split('\n').filter((l) => /session/.test(l)).join(' | '));
 
 // --- : a foreign task and a pinned title — by the real command --------
@@ -609,7 +609,7 @@ check(': --task-title does not replace the work-slice title in the session name'
 // leave them as plan fields — and both silences the task was opened for return
 // exactly where a person reads them.
 const GUARD_TASK = 'bl-232-chuzhaya-t20260828-123535';
-const GUARD_TITLE = 'Заход 0828c: справочник, живость цикла, правила';
+const GUARD_TITLE = 'Run 0828c: reference, loop liveness, rules';
 store.createTask(HOME, {
   id: GUARD_TASK,
   title: GUARD_TITLE,
@@ -671,7 +671,7 @@ check(': a live binding does not jump into a new run',
 
 const SECOND_ACTIVE = 'bl-389-vtoraya-t20260831-120000';
 store.createTask(HOME, {
-  id: SECOND_ACTIVE, title: 'вторая активная задача', slug: 'bl-389-vtoraya',
+  id: SECOND_ACTIVE, title: 'a second active task', slug: 'bl-389-vtoraya',
   stamp: 't20260831-120000', owner: 'sess-drugaya',
 });
 const automaticNewTask = guardRun('sess-bez-privyazki', '--worker', 'avto', '--dry-run');
@@ -689,7 +689,7 @@ check(': a refusal of other commands with several actives names the --new-task e
   `status=${manyForOtherCommands.status} ${manyForOtherCommands.text}`);
 
 const keptRun = guardRun('sess-gost', '--task', GUARD_TASK, '--worker', 'yavno',
-  '--task-title', 'TASK-1024: флаги refresh в orders-api', '--dry-run');
+  '--task-title', 'TASK-1024: refresh flags in orders-api', '--dry-run');
 check(': an explicit --task passes, and --task-title prints a warning and does not touch the title',
   keptRun.status === 0 && keptRun.text.includes('--task-title ignored')
   && keptRun.text.includes(GUARD_TITLE) && !keptRun.text.includes('will be renamed')
@@ -699,7 +699,7 @@ check(': an explicit --task passes, and --task-title prints a warning and does n
 // explicitness, `--task` plus `--task-title`. The subject is the same as the
 // refusal above — print; under `--dry-run` the journal is not touched at all, and
 // the title on disk must stay as it was.
-const RESTAMP_TITLE = 'Заход 0828c: справочник и живость цикла';
+const RESTAMP_TITLE = 'Run 0828c: reference and loop liveness';
 const stampRun = guardRun('sess-hozyain', '--task', GUARD_TASK, '--worker', 'peresh',
   '--task-title', RESTAMP_TITLE, '--dry-run');
 check(': the owner with an explicit --task sees the rename, not a warning',
@@ -736,7 +736,7 @@ check(': an unknown repository name names the path, not [object Object]',
 // subject is the journal: the task title must travel to disk, otherwise a run of three
 // tracks would stay the work of one.
 const BRIEF2 = path.join(SB, 'brief2.md');
-writeFileSync(BRIEF2, '# Резолв имени репозитория\n\nВторая линия того же захода.\n');
+writeFileSync(BRIEF2, '# Repo name resolution\n\nThe second line of the same run.\n');
 const opts2 = { repo: 'orders-api', brief: BRIEF2, task: TASK, worker: 'resolve' };
 const plan2 = await planSpawn(WS, opts2);
 claudeSays([
@@ -751,16 +751,16 @@ claudeSays([
 // it. The fork "passed string versus recalc under the lock" is closed by the
 // direct `retitleTask` check elsewhere in this suite, and the form of the intent
 // — a check there too: one side was not enough, the second round fell on it.
-store.upsertParticipant(HOME, TASK, store.participantRecord('worker:sosed', { repo: 'orders-api', title: 'Линия соседа',
-  name: 'Worker: Линия соседа (0827-1200)' }));
+store.upsertParticipant(HOME, TASK, store.participantRecord('worker:sosed', { repo: 'orders-api', title: 'Neighbour line',
+  name: 'Worker: Neighbour line (0827-1200)' }));
 await quiet(() => spawnWorker(WS, opts2));
 check(': the journal got the assembly from the journal, not the prediction from the caller plan',
   store.readTask(HOME, TASK).title
-    === 'Добавить поле source в событие OrderCreated · Линия соседа · Резолв имени репозитория',
+    === 'Add a source field to the OrderCreated event · Neighbour line · Repo name resolution',
   `${store.readTask(HOME, TASK).title} · prediction was "${plan2.retitle?.preview}"`);
 check(': a track grafted after the plan was not lost from the title',
-  store.readTask(HOME, TASK).title.includes('Линия соседа')
-  && !plan2.retitle.preview.includes('Линия соседа'),
+  store.readTask(HOME, TASK).title.includes('Neighbour line')
+  && !plan2.retitle.preview.includes('Neighbour line'),
   `${store.readTask(HOME, TASK).title} · ${plan2.retitle?.preview}`);
 check(': the title is assembled, not set by a person — there is no explicit mark',
   store.readTask(HOME, TASK).adapter.titleExplicit === undefined,
@@ -778,7 +778,7 @@ check(`: track session names were not rewritten by the task title`,
 // on disk after that.
 const OLD_TASK = 'staryy-t20260827-140000';
 store.createTask(HOME, {
-  id: OLD_TASK, title: 'spawn на старом бинаре', slug: 'staryy', stamp: 't20260827-140000',
+  id: OLD_TASK, title: 'spawn on an old binary', slug: 'staryy', stamp: 't20260827-140000',
 });
 claudeSays([], 0, '2.1.100 (Claude Code)');
 // Standalone resolveToolBin does not probe --version. The version gate is the
@@ -813,7 +813,7 @@ check(': nothing is opened on disk — neither a participant nor a worktree',
 // spawn is executed in a separate process.
 const ULTRA_TASK = 'ultracode-t20260828-170000';
 store.createTask(HOME, {
-  id: ULTRA_TASK, title: 'ultracode на старом бинаре', slug: 'ultracode', stamp: 't20260828-170000',
+  id: ULTRA_TASK, title: 'ultracode on an old binary', slug: 'ultracode', stamp: 't20260828-170000',
 });
 const spawnRun = (opts) => spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
@@ -901,7 +901,7 @@ mkdirSync(GITONLY, { recursive: true });
 symlinkSync(spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(), path.join(GITONLY, 'git'));
 const FOUND_TASK = 'naydennyy-t20260827-150000';
 store.createTask(HOME, {
-  id: FOUND_TASK, title: 'spawn бинарём вне PATH', slug: 'naydennyy', stamp: 't20260827-150000',
+  id: FOUND_TASK, title: 'spawn with a binary outside PATH', slug: 'naydennyy', stamp: 't20260827-150000',
 });
 const foundPlan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' });
 const offPathBin = path.join(SB, 'off-path');
@@ -927,7 +927,7 @@ check(': the found binary is named in the output together with the directory',
 
 const NONE_TASK = 'nekem-t20260827-160000';
 store.createTask(HOME, {
-  id: NONE_TASK, title: 'spawn без бинаря', slug: 'nekem', stamp: 't20260827-160000',
+  id: NONE_TASK, title: 'spawn without a binary', slug: 'nekem', stamp: 't20260827-160000',
 });
 const noneReason = 'claude: not found in PATH. Install: npm install -g @anthropic-ai/claude-code';
 const noneRun = spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -954,7 +954,7 @@ claudeSays([], 0);
 // though the session did not come up.
 const FAIL_TASK = 'sboy-t20260827-130000';
 store.createTask(HOME, {
-  id: FAIL_TASK, title: 'spawn, который не поднялся', slug: 'sboy', stamp: 't20260827-130000',
+  id: FAIL_TASK, title: 'a spawn that did not come up', slug: 'sboy', stamp: 't20260827-130000',
 });
 claudeSays([], 3);
 const failed = spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -1011,7 +1011,7 @@ check(': a repeat recognizes its own directory, rather than taking it for a fore
 const PROBE_MARK = path.join(SB, 'probe-calls.log');
 const DRY_TASK = 'suhoy-t20260828-160000';
 store.createTask(HOME, {
-  id: DRY_TASK, title: 'spawn вхолостую', slug: 'suhoy', stamp: 't20260828-160000',
+  id: DRY_TASK, title: 'a dry spawn', slug: 'suhoy', stamp: 't20260828-160000',
 });
 const dryPlan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: DRY_TASK, worker: 'suhoy' });
 const drySessions = JSON.stringify([{ id: 'sess-dry', name: dryPlan.name, state: 'working', pid: 4245 }]);
@@ -1060,7 +1060,7 @@ check(': a real spawn reads --version once and still launches the bin',
 // → process.exit(1).
 const SILENT_TASK = 'tihiy-t20260829-110000';
 store.createTask(HOME, {
-  id: SILENT_TASK, title: 'spawn с молчаливым сбоем демона', slug: 'tihiy', stamp: 't20260829-110000',
+  id: SILENT_TASK, title: 'spawn with a silent daemon failure', slug: 'tihiy', stamp: 't20260829-110000',
 });
 claudeSays([], 0);
 const silent = spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -1089,22 +1089,22 @@ check(`: the silent worker record writes an explicit missing session reference`,
 //
 // A live orchestrator case: `spawn --worker store` in a task where the address
 // already worked as a former track and was dismissed from watch on acceptance
-// lifted a session "Worker: Вынос store в package" under a brief about /448/449.
+// lifted a session "Worker: Moving store into a package" under a brief about /448/449.
 // Mechanically the worker worked by the new brief — only the name lied, and by
 // the name a person in `claude agents` and the orchestrator find the work slice.
 // The whole triple of record fields, the task title, and that `--dry-run`
 // promises the same name that the live run will get are checked.
 const TASK453 = 'povtor-t20260902-100000';
-const TITLE_OLD = ' Вынос store в package';
-const TITLE_NEW = '   Recover и стенд гонок';
+const TITLE_OLD = ' Moving store into a package';
+const TITLE_NEW = '   Recover and the race stand';
 // Dest `shortTitle` / brief heading trim collapse runs of space. Fixture bodies
 // stay as transferred; checks compare the stored dest form.
-const TITLE_NEW_STORED = 'Recover и стенд гонок';
+const TITLE_NEW_STORED = 'Recover and the race stand';
 store.createTask(HOME, { id: TASK453, title: TITLE_OLD, slug: 'povtor', stamp: 't20260902-100000' });
 const BRIEF_OLD = path.join(SB, 'brief-406.md');
-writeFileSync(BRIEF_OLD, `# ${TITLE_OLD}\n\nВынос шины во вложенный package.\n`);
+writeFileSync(BRIEF_OLD, `# ${TITLE_OLD}\n\nMoving the bus into a nested package.\n`);
 const BRIEF_NEW = path.join(SB, 'brief-447.md');
-writeFileSync(BRIEF_NEW, `# ${TITLE_NEW}\n\nRecover журнала и стенд гонок.\n`);
+writeFileSync(BRIEF_NEW, `# ${TITLE_NEW}\n\nJournal recover and the race stand.\n`);
 
 const optsOld453 = { repo: 'orders-api', brief: BRIEF_OLD, task: TASK453, worker: 'store' };
 const planOld453 = await planSpawn(WS, optsOld453);
@@ -1180,7 +1180,7 @@ check(': an unwritable sidecar does not block a lift and names the telemetry los
 check(': the slice title of one lifted again is from the new brief, not from the old record',
   back?.title === TITLE_NEW_STORED, `${back?.title} (in the brief "${TITLE_NEW}")`);
 check(': the session name is assembled from the new title, the old one is not in it',
-  back?.name?.includes(TITLE_NEW_STORED) && !back?.name?.includes('Вынос store'), back?.name);
+  back?.name?.includes(TITLE_NEW_STORED) && !back?.name?.includes('Moving store'), back?.name);
 check(': sessionRef is rewritten together with the name — participants are looked up by it in claude agents',
   backRec?.sessionRef === back?.name && back?.name === planNew453.name,
   `${backRec?.sessionRef} · the plan promised "${planNew453.name}"`);
@@ -1218,7 +1218,7 @@ check(': --dry-run prints the same session name and the same future task title',
 // environment to a file, and the match is against it. `plan.env` next to it is
 // what will go into `--dry-run` and to the driver.
 const TASK426 = 'storozh-t20260902-140000';
-store.createTask(HOME, { id: TASK426, title: 'сторож участника', slug: 'storozh', stamp: 't20260902-140000' });
+store.createTask(HOME, { id: TASK426, title: 'participant guard', slug: 'storozh', stamp: 't20260902-140000' });
 const ENV_MARK = path.join(SB, 'seen-env.json');
 const opts426 = { repo: 'orders-api', brief: BRIEF, task: TASK426, worker: 'storozh' };
 const plan426 = await planSpawn(WS, opts426);
@@ -1286,11 +1286,11 @@ writeFileSync(path.join(BARE_REPO, 'package-lock.json'), `${JSON.stringify({
   name: 'node-bare', lockfileVersion: 3, requires: true, packages: {},
 })}\n`);
 g(BARE_REPO, 'add', '.');
-g(BARE_REPO, 'commit', '-m', 'lock без ignore', '-q');
+g(BARE_REPO, 'commit', '-m', 'lock without ignore', '-q');
 
 const DEPS_TASK = 'deps-t20260903-180000';
 store.createTask(HOME, {
-  id: DEPS_TASK, title: 'зависимости worktree', slug: 'deps', stamp: 't20260903-180000',
+  id: DEPS_TASK, title: 'worktree dependencies', slug: 'deps', stamp: 't20260903-180000',
 });
 
 clearNpm();
@@ -1446,7 +1446,7 @@ check('HostToolBin: resolveToolBin returning only `bin` launches the worker',
 const GENERATED = 'generated-skill.md';
 const GEN_TASK = 'generator-t20260905-000000';
 store.createTask(HOME, {
-  id: GEN_TASK, title: 'репозиторий со своим генератором', slug: 'generator', stamp: 't20260905-000000',
+  id: GEN_TASK, title: 'a repository with its own generator', slug: 'generator', stamp: 't20260905-000000',
 });
 // The generator copies the task journal as it sees it. That is the ORDER under test: the
 // participant record must already be in the journal when a long generator starts, or a
@@ -1536,7 +1536,7 @@ writeFileSync(path.join(GEN_REPO, 'promptobus.json'), `${JSON.stringify({
 }, null, 2)}\n`);
 const GEN2_TASK = 'generator-two-t20260905-000000';
 store.createTask(HOME, {
-  id: GEN2_TASK, title: 'клон и рабочее дерево разошлись', slug: 'generator-two', stamp: 't20260905-000000',
+  id: GEN2_TASK, title: 'the clone and the working tree diverged', slug: 'generator-two', stamp: 't20260905-000000',
 });
 const gen2Opts = { repo: 'gen-svc', brief: BRIEF, task: GEN2_TASK, worker: 'gentwo' };
 const gen2Plan = await planSpawn(WS, gen2Opts);
@@ -1561,7 +1561,7 @@ g(BAD_REPO, 'commit', '-m', 'declare a generator that refuses', '-q');
 
 const BAD_TASK = 'generator-bad-t20260905-000000';
 store.createTask(HOME, {
-  id: BAD_TASK, title: 'генератор, который отказал', slug: 'generator-bad', stamp: 't20260905-000000',
+  id: BAD_TASK, title: 'a generator that refused', slug: 'generator-bad', stamp: 't20260905-000000',
 });
 const badOpts = { repo: 'gen-bad', brief: BRIEF, task: BAD_TASK, worker: 'genbad' };
 const badPlan = await planSpawn(WS, badOpts);
@@ -1592,7 +1592,7 @@ g(ILL_REPO, 'commit', '-m', 'declare a generator as a shell line', '-q');
 
 const ILL_TASK = 'generator-ill-t20260905-000000';
 store.createTask(HOME, {
-  id: ILL_TASK, title: 'генератор строкой, а не argv', slug: 'generator-ill', stamp: 't20260905-000000',
+  id: ILL_TASK, title: 'a generator as a string, not argv', slug: 'generator-ill', stamp: 't20260905-000000',
 });
 const illOpts = { repo: 'gen-ill', brief: BRIEF, task: ILL_TASK, worker: 'genill' };
 const illPlan = await planSpawn(WS, illOpts);
@@ -1627,7 +1627,7 @@ g(DIRT_REPO, 'commit', '-m', 'declare a generator whose output is not ignored', 
 
 const DIRT_TASK = 'generator-dirt-t20260905-000000';
 store.createTask(HOME, {
-  id: DIRT_TASK, title: 'генератор оставляет грязь', slug: 'generator-dirt', stamp: 't20260905-000000',
+  id: DIRT_TASK, title: 'a generator leaves dirt', slug: 'generator-dirt', stamp: 't20260905-000000',
 });
 const dirtOpts = { repo: 'gen-dirt', brief: BRIEF, task: DIRT_TASK, worker: 'gendirt' };
 const dirtPlan = await planSpawn(WS, dirtOpts);
@@ -1886,10 +1886,10 @@ check('PB-204.2: a result that claims a landed artifact links to its metadata id
   linked?.message?.artifact && linked.message.artifact.length > 0,
   JSON.stringify(linked?.message));
 const boldProse = orderSend('result', [
-  '- **Done** — закрыто',
+  '- **Done** — closed',
   '- **Gate** — not run, because a reviewer runs nothing',
   '- **Open** — nothing',
-  '- **Decide** — принять правку lib/store.js и закрыть PB-204.2',
+  '- **Decide** — accept the lib/store.js edit and close PB-204.2',
 ].join('\n'));
 check('PB-204.2: bold-header prose with dotted words stays lawful when no artifact landed',
   boldProse?.message?.type === 'result' && !boldProse?.message?.artifact,
@@ -2021,14 +2021,14 @@ check('PB-213: and the result releases it, the same way the gate record\'s does'
 const LIFT_ORDER_SID = 'sess-pb233-order';
 const LIFT_ORDER_DEBT = 'pb233-handoff-t20260917-110000';
 const LIFT_ORDER_OTHER = 'pb233-lifted-t20260917-110100';
-store.createTask(HOME, { id: LIFT_ORDER_DEBT, title: 'долг сдачи', owner: LIFT_ORDER_SID });
+store.createTask(HOME, { id: LIFT_ORDER_DEBT, title: 'a handover debt', owner: LIFT_ORDER_SID });
 store.upsertParticipant(HOME, LIFT_ORDER_DEBT,
   store.participantRecord('worker:guard', { session: 'guard-session' }));
-store.createTask(HOME, { id: LIFT_ORDER_OTHER, title: 'поднятая с почтой', owner: LIFT_ORDER_SID });
+store.createTask(HOME, { id: LIFT_ORDER_OTHER, title: 'lifted with mail', owner: LIFT_ORDER_SID });
 store.upsertParticipant(HOME, LIFT_ORDER_OTHER,
   store.participantRecord('reviewer:api', { session: 'rev-session' }));
 store.sendMessage(HOME, LIFT_ORDER_OTHER,
-  { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'итог ревью' });
+  { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'review result' });
 const liftOrderPath = path.join(SB, 'gates-lifted-order.json');
 writeFileSync(liftOrderPath, gateRecordText('npm test'));
 store.sendMessage(HOME, LIFT_ORDER_DEBT, {
@@ -2050,8 +2050,8 @@ const SPAWN_LIFT_SID = 'sess-pb233-spawn';
 const SPAWN_LIFT_HERE = 'pb233-spawn-here-t20260917-120000';
 const SPAWN_LIFT_OTHER = 'pb233-spawn-other-t20260917-120100';
 const SPAWN_LIFT_SOCK = path.join(SB, 'pb233-spawn.sock');
-store.createTask(HOME, { id: SPAWN_LIFT_HERE, title: 'задача спавна', owner: SPAWN_LIFT_SID });
-store.createTask(HOME, { id: SPAWN_LIFT_OTHER, title: 'вторая задача той же сессии', owner: SPAWN_LIFT_SID });
+store.createTask(HOME, { id: SPAWN_LIFT_HERE, title: 'the spawn task', owner: SPAWN_LIFT_SID });
+store.createTask(HOME, { id: SPAWN_LIFT_OTHER, title: 'a second task of the same session', owner: SPAWN_LIFT_SID });
 // The suite drops the messaging variables from its own environment (hygiene.mjs), so the socket
 // under test is this fixture's and never a live person's.
 const asSpawnSession = async (fn) => {

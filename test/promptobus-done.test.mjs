@@ -59,7 +59,7 @@ function fakeRegistry(reply = () => ({ ok: true, stopped: true, note: 'closed' }
 }
 
 const TASK = 'done-t20260901-230000';
-store.createTask(HOME, { id: TASK, title: 'уборка гасит сессии', owner: null });
+store.createTask(HOME, { id: TASK, title: 'cleanup stops the sessions', owner: null });
 // The worker of a former CLI: it has no `mode` field at all, and it is managed — spawn started its session.
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:api', { name: 'sess-worker' }));
 // The reviewer of the current one: the fields were set at lift-off.
@@ -127,7 +127,7 @@ check(': unconfirmed counts neither as stopped, nor as "nothing to stop", nor as
 // predicate is the same as for the whole cleanup, so a dead session never reaches the
 // driver at all.
 const DEAD = 'done-dead-t20260901-230100';
-store.createTask(HOME, { id: DEAD, title: 'мёртвые сессии', owner: null });
+store.createTask(HOME, { id: DEAD, title: 'dead sessions', owner: null });
 store.upsertParticipant(HOME, DEAD, store.participantRecord('worker:mertvyy', { harness: 'claude', mode: 'managed', sessionRef: 'sess-net-takoy' }));
 const dead = fakeRegistry();
 const deadOut = await capture(async () => stopManaged(HOME, DEAD, { registry: dead.registry }));
@@ -152,7 +152,7 @@ check(': a refusal on attached names the mode, not the absence of capability',
 
 // A bad participant record does not crash the walk — the same trick as the whole cleanup.
 const BAD = 'done-bad-t20260901-230200';
-store.createTask(HOME, { id: BAD, title: 'негодная запись', owner: null });
+store.createTask(HOME, { id: BAD, title: 'an invalid record', owner: null });
 // The record is valid by the store schema and invalid by address: address is an
 // adapter field, and the schema does not look at it at all. It is placed past the door:
 // `participantRecord` does not accept such an address.
@@ -164,7 +164,7 @@ badMeta.participants.push({
   mode: 'attached',
   sessionRef: null,
   capabilities: null,
-  metadata: { address: 'worker:Плохой Адрес', name: 'sess-worker' },
+  metadata: { address: 'worker:Bad Address', name: 'sess-worker' },
 });
 writeFileSync(store.taskFile(HOME, BAD), JSON.stringify(badMeta, null, 2) + '\n');
 store.upsertParticipant(HOME, BAD, store.participantRecord('worker:posle', { harness: 'claude', mode: 'managed', sessionRef: 'sess-reviewer' }));
@@ -211,7 +211,7 @@ check(': the list of those being stopped is named before stopping',
 // count as managed — neither a case typo nor junk"; here what's checked is that junk
 // never reaches it.
 const STRANGE = 'done-strange-t20260901-230300';
-store.createTask(HOME, { id: STRANGE, title: 'незнакомый режим', owner: null });
+store.createTask(HOME, { id: STRANGE, title: 'an unfamiliar mode', owner: null });
 const junkMode = (mode) => {
   try {
     store.upsertParticipant(HOME, STRANGE, {
@@ -224,8 +224,8 @@ const junkMode = (mode) => {
   }
 };
 check(': store does not accept an unfamiliar mode — neither a case typo nor junk',
-  /expected managed or attached/.test(junkMode('Attached')) && /expected managed or attached/.test(junkMode('что-то своё')),
-  `${junkMode('Attached')} · ${junkMode('что-то своё')}`);
+  /expected managed or attached/.test(junkMode('Attached')) && /expected managed or attached/.test(junkMode('something else')),
+  `${junkMode('Attached')} · ${junkMode('something else')}`);
 store.upsertParticipant(HOME, STRANGE, store.participantRecord('worker:opechatka', { harness: 'claude', mode: 'attached', sessionRef: 'sess-worker' }));
 const strange = fakeRegistry();
 await capture(async () => stopManaged(HOME, STRANGE, { registry: strange.registry }));
@@ -233,7 +233,7 @@ check(': attached is not picked up by the stop walk — the driver did not start
   strange.calls.length === 0, strange.calls.join(', '));
 const strangeRefusal = await (async () => {
   try {
-    await bus.stopParticipant({ address: 'worker:musor', harness: 'claude', mode: 'что-то своё', sessionRef: 'sess-reviewer' },
+    await bus.stopParticipant({ address: 'worker:musor', harness: 'claude', mode: 'something else', sessionRef: 'sess-reviewer' },
       fakeRegistry().registry);
     return '';
   } catch (e) {
@@ -241,7 +241,7 @@ const strangeRefusal = await (async () => {
   }
 })();
 check(': an explicit call on an unfamiliar mode refuses and names it verbatim',
-  /«что-то своё»/.test(strangeRefusal) && /the contract does not know this mode/.test(strangeRefusal), strangeRefusal);
+  /«something else»/.test(strangeRefusal) && /the contract does not know this mode/.test(strangeRefusal), strangeRefusal);
 
 // --- switch for an irreversible action ----------------------------------------
 //
@@ -249,10 +249,10 @@ check(': an explicit call on an unfamiliar mode refuses and names it verbatim',
 // the walk, and the flag's own declaration is gated elsewhere in this suite. Here —
 // that the flag reaches the library by its kebab key and changes the command's course.
 const { done } = await import(path.join(here, '..', 'lib', 'done.js'));
-writeFileSync(path.join(SB, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(SB, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(SB);
 const KEEP = 'done-keep-t20260901-230400';
-store.createTask(HOME, { id: KEEP, title: 'выключатель гашения', owner: null });
+store.createTask(HOME, { id: KEEP, title: 'the stop switch', owner: null });
 // Session snapshot — via seam: the subject of the file is cleanup, not polling the
 // harness, and a live `claude` is not needed by any branch of it.
 const noSessions = () => ({});
@@ -273,7 +273,7 @@ const { PRUNE_DEFAULT_DAYS, sweepJournals } = await import(path.join(here, '..',
 const SWEEP = path.join(SB, 'sweep-ws');
 const sweepHome = path.join(SWEEP, '.promptobus');
 mkdirSync(sweepHome, { recursive: true });
-writeFileSync(path.join(SWEEP, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(SWEEP, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(SWEEP);
 // The date is set directly in the journal: `closeTask` writes "now", and the subject
 // under test is age.
@@ -284,22 +284,22 @@ const closedAgo = (home, id, title, ago) => {
   store.patchTask(home, id, { adapter: { closed: daysAgo(ago) } });
   return id;
 };
-const SWEEP_OLD = closedAgo(sweepHome, 'sweep-staraya-t20260801-010000', 'давно закрытый заход', PRUNE_DEFAULT_DAYS + 1);
-const SWEEP_YOUNG = closedAgo(sweepHome, 'sweep-svezhaya-t20260901-020000', 'вчерашний заход', 1);
+const SWEEP_OLD = closedAgo(sweepHome, 'sweep-staraya-t20260801-010000', 'a run closed long ago', PRUNE_DEFAULT_DAYS + 1);
+const SWEEP_YOUNG = closedAgo(sweepHome, 'sweep-svezhaya-t20260901-020000', 'yesterday’s run', 1);
 // Closed long ago, but its worktree still sits on disk: the journal is the only place
 // where it's recorded where this work lives. The participant has no session at all —
 // the worktree walk will leave the directory with the words "unknown" and will not make
 // an external poll.
-const SWEEP_HELD = closedAgo(sweepHome, 'sweep-zanyataya-t20260801-030000', 'заход с оставленным каталогом', PRUNE_DEFAULT_DAYS + 1);
+const SWEEP_HELD = closedAgo(sweepHome, 'sweep-zanyataya-t20260801-030000', 'a run with a kept directory', PRUNE_DEFAULT_DAYS + 1);
 const heldTree = path.join(SB, 'sweep-repo', '.claude', 'worktrees', 'promptobus-ostavshiysya');
 mkdirSync(heldTree, { recursive: true });
 store.upsertParticipant(sweepHome, SWEEP_HELD, store.participantRecord('worker:ostavshiysya', { repoAbs: path.join(SB, 'sweep-repo'), worktree: heldTree }));
 const SWEEP_ACTIVE = 'sweep-zhivaya-t20260902-040000';
-store.createTask(sweepHome, { id: SWEEP_ACTIVE, title: 'живой заход', owner: null });
+store.createTask(sweepHome, { id: SWEEP_ACTIVE, title: 'a live run', owner: null });
 // The task that the call itself closes: it's seconds old, and it does not fall under
 // cleanup.
 const SWEEP_NOW = 'sweep-seychas-t20260902-050000';
-store.createTask(sweepHome, { id: SWEEP_NOW, title: 'закрываемая сейчас', owner: null });
+store.createTask(sweepHome, { id: SWEEP_NOW, title: 'closing now', owner: null });
 
 const swept = await capture(async () => done(SWEEP, { task: SWEEP_NOW, snapshot: noSessions }));
 check(': done removed the journal of a long-closed task and named it in the list',
@@ -373,10 +373,10 @@ check(': an all-refused sweep prints the yellow total and claims no removal',
 // `promptobus prune`.
 const QUIET = path.join(SB, 'quiet-ws');
 mkdirSync(path.join(QUIET, '.promptobus'), { recursive: true });
-writeFileSync(path.join(QUIET, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(QUIET, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(QUIET);
 const QUIET_TASK = 'quiet-t20260902-060000';
-store.createTask(path.join(QUIET, '.promptobus'), { id: QUIET_TASK, title: 'нечего убирать', owner: null });
+store.createTask(path.join(QUIET, '.promptobus'), { id: QUIET_TASK, title: 'nothing to clean up', owner: null });
 const quietOut = await capture(async () => done(QUIET, { task: QUIET_TASK, snapshot: noSessions }));
 check(': nothing to remove — done says nothing about cleanup',
   !/journals removed|nothing to remove/.test(quietOut) && /closed/.test(quietOut), quietOut.trim());
@@ -390,15 +390,15 @@ check(': nothing to remove — done says nothing about cleanup',
 const LISTONCE = path.join(SB, 'listtasks-once-ws');
 const listOnceHome = path.join(LISTONCE, '.promptobus');
 mkdirSync(listOnceHome, { recursive: true });
-writeFileSync(path.join(LISTONCE, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(LISTONCE, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(LISTONCE);
-const LO_DONE_A = closedAgo(listOnceHome, 'listonce-a-t20260910-010000', 'закрытый A', 1);
-const LO_DONE_B = closedAgo(listOnceHome, 'listonce-b-t20260910-020000', 'закрытый B', 1);
+const LO_DONE_A = closedAgo(listOnceHome, 'listonce-a-t20260910-010000', 'closed A', 1);
+const LO_DONE_B = closedAgo(listOnceHome, 'listonce-b-t20260910-020000', 'closed B', 1);
 const LO_BROKEN = 'listonce-broken-t20260910-030000';
-store.createTask(listOnceHome, { id: LO_BROKEN, title: 'битый журнал', owner: null });
-writeFileSync(store.taskFile(listOnceHome, LO_BROKEN), '{неразборчивый журнал');
+store.createTask(listOnceHome, { id: LO_BROKEN, title: 'a broken journal', owner: null });
+writeFileSync(store.taskFile(listOnceHome, LO_BROKEN), '{an unreadable journal');
 const LO_NOW = 'listonce-seychas-t20260910-040000';
-store.createTask(listOnceHome, { id: LO_NOW, title: 'закрываемая сейчас', owner: null });
+store.createTask(listOnceHome, { id: LO_NOW, title: 'closing now', owner: null });
 const listOnceOut = await capture(async () => done(LISTONCE, { task: LO_NOW, snapshot: noSessions }));
 const brokenMatches = listOnceOut.match(new RegExp(`task ${LO_BROKEN} skipped:.*is unreadable`, 'g')) ?? [];
 check(': a broken task journal is warned about once per done() call, not once per sweep',
@@ -416,10 +416,10 @@ check(': the ordinary closed tasks are untouched by the broken neighbour',
 const SECRETS = path.join(SB, 'secrets-ws');
 const secretsHome = path.join(SECRETS, '.promptobus');
 mkdirSync(secretsHome, { recursive: true });
-writeFileSync(path.join(SECRETS, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(SECRETS, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(SECRETS);
 const SECRETS_TASK = 'secrets-t20260913-070000';
-store.createTask(secretsHome, { id: SECRETS_TASK, title: 'файлы участника уходят с задачей', owner: null });
+store.createTask(secretsHome, { id: SECRETS_TASK, title: 'participant files leave with the task', owner: null });
 store.upsertParticipant(secretsHome, SECRETS_TASK, store.participantRecord('reviewer:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-no-such',
 }));
@@ -515,27 +515,27 @@ check('a malformed child-link intent does not disable adapter startup',
 const TRAILER = path.join(SB, 'trailer-ws');
 const trailerHome = path.join(TRAILER, '.promptobus');
 mkdirSync(trailerHome, { recursive: true });
-writeFileSync(path.join(TRAILER, 'AGENTS.md'), 'песочница\n');
+writeFileSync(path.join(TRAILER, 'AGENTS.md'), 'sandbox\n');
 writeHostConfig(TRAILER);
 const TREPO = path.join(TRAILER, 'repo');
 mkdirSync(TREPO, { recursive: true });
 const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
 git(TREPO, 'init', '-q', '-b', 'master');
-git(TREPO, 'commit', '-q', '--allow-empty', '-m', 'основа');
+git(TREPO, 'commit', '-q', '--allow-empty', '-m', 'base');
 function editedSquash(name, named) {
   const file = `${name}.txt`;
-  writeFileSync(path.join(TREPO, file), 'общая строка\n');
-  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', `основа ${name}`);
+  writeFileSync(path.join(TREPO, file), 'shared line\n');
+  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', `base ${name}`);
   const tree = path.join(TREPO, '.claude', 'worktrees', name);
   const branch = `worktree-promptobus-${name}`;
   git(TREPO, 'worktree', 'add', '-q', '-b', branch, tree);
-  writeFileSync(path.join(tree, file), 'строка ветки\n');
-  git(tree, 'add', file); git(tree, 'commit', '-qm', 'работа ветки');
-  writeFileSync(path.join(TREPO, file), 'строка базы\n');
-  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', 'база меняет ту же строку');
+  writeFileSync(path.join(tree, file), 'branch line\n');
+  git(tree, 'add', file); git(tree, 'commit', '-qm', 'branch work');
+  writeFileSync(path.join(TREPO, file), 'base line\n');
+  git(TREPO, 'add', file); git(TREPO, 'commit', '-qm', 'the base changes the same line');
   const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
   const merged = git(TREPO, 'merge', '-q', '--squash', branch);
-  writeFileSync(path.join(TREPO, file), 'строка базы\nстрока ветки\n');
+  writeFileSync(path.join(TREPO, file), 'base line\nbranch line\n');
   git(TREPO, 'add', file);
   git(TREPO, 'commit', '-qm', `PB-1: closed — ${name}`, ...(named ? ['--trailer', `Squash-of: ${head}`] : []));
   return { tree, branch, conflicted: merged.status !== 0, acceptance: git(TREPO, 'log', '-1', '--format=%h').stdout.trim() };
@@ -543,7 +543,7 @@ function editedSquash(name, named) {
 const NAMED = editedSquash('named', true);
 const UNNAMED = editedSquash('unnamed', false);
 const TRAILER_TASK = 'trailer-t20260926-180000';
-store.createTask(trailerHome, { id: TRAILER_TASK, title: 'squash с правкой при слиянии', owner: null });
+store.createTask(trailerHome, { id: TRAILER_TASK, title: 'a squash edited at the merge', owner: null });
 for (const [address, piece] of [['worker:named', NAMED], ['worker:unnamed', UNNAMED]]) {
   store.upsertParticipant(trailerHome, TRAILER_TASK, store.participantRecord(address, {
     harness: 'claude', mode: 'managed', sessionRef: `sess-${address.split(':')[1]}`,

@@ -289,7 +289,9 @@ test('golden: the v0.61.0 slice transfers in full', async (t) => {
 
   await t.test('adapter fields from the journal survived', () => {
     const meta = readJson(path.join(target, 'tasks', ACTIVE, 'task.json'));
+    // english-authoring: input — the title the frozen v0.61 snapshot carries
     assert.equal(meta.title, 'демо: активная задача');
+    // english-authoring: end
     assert.equal(meta.adapter.slug, 'demo');
     assert.equal(meta.adapter.stamp, ACTIVE);
     assert.equal(meta.status, 'done', 'a closed task must remain closed');
@@ -436,8 +438,8 @@ test('same-named legacy records in different mailboxes do not clobber each other
     id: NAME.slice(0, -'.json'.length), task: ACTIVE, from: 'orchestrator', to,
     type: 'task', ts: '2026-08-31T09:15:00.000Z', body,
   });
-  for (const [box, to, body] of [['worker-demo', 'worker:demo', 'близнец worker\'у'],
-    ['reviewer-demo', 'reviewer:demo', 'близнец reviewer\'у']]) {
+  for (const [box, to, body] of [['worker-demo', 'worker:demo', 'twin for the worker'],
+    ['reviewer-demo', 'reviewer:demo', 'twin for the reviewer']]) {
     const dir = path.join(home, 'tasks', ACTIVE, 'inbox', box);
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, NAME), `${JSON.stringify(twin(to, body), null, 2)}\n`);
@@ -448,8 +450,8 @@ test('same-named legacy records in different mailboxes do not clobber each other
   await t.test('both twins arrived: two distinct canonical files, both with a body', () => {
     const dir = path.join(target, 'tasks', ACTIVE, 'messages');
     const bodies = names(dir).map((n) => readJson(path.join(dir, n)))
-      .filter((m) => m.body.startsWith('близнец')).map((m) => m.body).sort();
-    assert.deepEqual(bodies, ['близнец reviewer\'у', 'близнец worker\'у'], bodies.join(' | '));
+      .filter((m) => m.body.startsWith('twin for')).map((m) => m.body).sort();
+    assert.deepEqual(bodies, ['twin for the reviewer', 'twin for the worker'], bodies.join(' | '));
   });
 
   await t.test('their ids differ, and each lives in its own mailbox', () => {

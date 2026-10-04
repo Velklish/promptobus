@@ -67,20 +67,20 @@ writeHostConfig(WS);
 const REPO = path.join(WS, 'repos', 'demo_team', 'ladder-api');
 mkdirSync(REPO, { recursive: true });
 g(REPO, 'init', '-b', 'master');
-writeFileSync(path.join(REPO, 'AGENTS.md'), 'Правила репозитория.\n');
+writeFileSync(path.join(REPO, 'AGENTS.md'), 'Repository rules.\n');
 g(REPO, 'add', '.');
 g(REPO, 'commit', '-m', 'init', '-q');
 const OLD = g(REPO, 'rev-parse', 'HEAD');
 g(REPO, 'branch', 'main', OLD);
-writeFileSync(path.join(REPO, 'orkestrator.txt'), 'незапушенная работа оркестратора\n');
+writeFileSync(path.join(REPO, 'orkestrator.txt'), 'unpushed orchestrator work\n');
 g(REPO, 'add', '.');
-g(REPO, 'commit', '-m', 'работа оркестратора', '-q');
+g(REPO, 'commit', '-m', 'orchestrator work', '-q');
 const FORK = g(REPO, 'rev-parse', 'HEAD');
 const WT = path.join(REPO, '.claude', 'worktrees', 'a2a-ladder');
 g(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-ladder', WT, 'master');
-writeFileSync(path.join(WT, 'rabota.txt'), `работа worker'а\n`);
+writeFileSync(path.join(WT, 'rabota.txt'), `worker's work\n`);
 g(WT, 'add', '.');
-g(WT, 'commit', '-m', 'работа', '-q');
+g(WT, 'commit', '-m', 'work', '-q');
 
 const heads = g(REPO, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').split('\n');
 const remotes = g(REPO, 'for-each-ref', '--format=%(refname:short)', 'refs/remotes/');
@@ -97,7 +97,7 @@ check('fixture: the branch was founded from master, and its branch point differs
 // This file pins that ladder, so the host here reports no named default.
 const host = createStandaloneHost({ cwd: WS });
 host.defaultBranch = () => null;
-const plan = planReview(host, { target: WT, title: 'лесенка' });
+const plan = planReview(host, { target: WT, title: 'ladder' });
 check(': the review base is the commit worktree add founded the branch from',
   plan.baseRef === FORK, `${plan.baseRef} · founded from ${FORK}, main is at ${OLD}`);
 check(': reordering the ladder would bring the orchestrator\'s work back into the diff — it is not there',

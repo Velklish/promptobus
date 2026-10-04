@@ -88,21 +88,21 @@ writeFileSync(brief, '# Cursor participant wake\n\nFollow the stand script.\n');
 // no new one.
 planParticipant(HARNESS, WORKER, {
   turns: [
-    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.first}: первый ход` } }] },
+    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.first}: first turn` } }] },
     {
       do: [
         { tool: 'promptobus_mailbox' },
         // The report goes BEFORE the pause on purpose: it is the sign "this turn already
         // fetched the mailbox". Send the second message earlier — the same turn would
         // take it, and the gap this file exists for would stay untested.
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.second}: разбудили первым сообщением` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.second}: woken by the first message` } },
         { wait: TURN_HOLD_MS },
       ],
     },
     {
       do: [
         { tool: 'promptobus_mailbox' },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.third}: доставлено следующим ходом` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.third}: delivered on the next turn` } },
       ],
     },
   ],
@@ -113,7 +113,7 @@ const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORC
 // the runner verdict goes red on it. The separate process is real.
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
-store.createTask(home, { id: TASK, title: 'пробуждение участника Cursor', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'waking a Cursor participant', owner: ORCH_SESSION });
 const wardenLog = path.join(SB, 'warden.out');
 const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
   cwd: ws, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: wardenEnv,
@@ -158,7 +158,7 @@ check('step 3: the first participant turn ended and reported — the loop is sta
 // --- message to an idle session: the warden pastes it into the live session ---------
 
 store.sendMessage(home, TASK, {
-  from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerA}: сессия простаивала`,
+  from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerA}: the session was idle`,
 });
 
 // The wake sign is THIS turn's report: it goes out right after the mailbox fetch, so it
@@ -180,7 +180,7 @@ check('step 4: the wake happened WITHOUT a new process — the session pane is t
 // taken by the same turn, and the gap this file exists for would stay untested.
 
 store.sendMessage(home, TASK, {
-  from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerB}: ответ пришёл во время хода`,
+  from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerB}: the answer arrived during a turn`,
 });
 
 // The step-4 wake still holds the inject lock under load, so the state is waited for and

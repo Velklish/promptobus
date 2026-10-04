@@ -170,7 +170,7 @@ const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORC
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
 
-store.createTask(home, { id: TASK, title: 'живая проверка driver’а Cursor', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'live check of the Cursor driver', owner: ORCH_SESSION });
 const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
   cwd: ws, detached: true, stdio: 'ignore', env: wardenEnv,
 });
@@ -424,9 +424,9 @@ try {
   // --- step 5: a Cursor reviewer and its read-only ----------------------------------------
   const t5 = Date.now();
   const wt = wp?.metadata?.worktree ?? repoAbs;
-  writeFileSync(path.join(wt, 'live-note.md'), `# ${MARK.hello}\n\nПравка для предмета ревью.\n`);
+  writeFileSync(path.join(wt, 'live-note.md'), `# ${MARK.hello}\n\nAn edit for the review subject.\n`);
   spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'add', '-A'], { encoding: 'utf8' });
-  spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'commit', '-m', 'live: предмет ревью'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'commit', '-m', 'live: review subject'], { encoding: 'utf8' });
 
   const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor', '--model', MODEL],
     { cwd: ws, env });

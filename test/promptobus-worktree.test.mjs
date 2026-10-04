@@ -38,9 +38,9 @@ const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'u
 const REPO = path.join(SB, 'repo');
 mkdirSync(REPO, { recursive: true });
 git(REPO, 'init', '-q', '-b', 'master');
-writeFileSync(path.join(REPO, 'f'), 'первый\n');
+writeFileSync(path.join(REPO, 'f'), 'first\n');
 git(REPO, 'add', '.');
-git(REPO, 'commit', '-qm', 'первый');
+git(REPO, 'commit', '-qm', 'first');
 
 // A worker's worktree that changed nothing: its branch is entirely contained in master.
 const CLEAN = path.join(REPO, '.claude', 'worktrees', 'clean');
@@ -48,9 +48,9 @@ git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-clean', CLEAN);
 // A worker's worktree with its own work: a commit that master doesn't have.
 const AHEAD = path.join(REPO, '.claude', 'worktrees', 'ahead');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-ahead', AHEAD);
-writeFileSync(path.join(AHEAD, 'f'), `работа worker'а\n`);
+writeFileSync(path.join(AHEAD, 'f'), `worker's work\n`);
 git(AHEAD, 'add', '.');
-git(AHEAD, 'commit', '-qm', 'работа');
+git(AHEAD, 'commit', '-qm', 'work');
 // A worktree that the worker moved to its own branch per the brief's request — the exact
 // case that made MR !37 open up empty.
 const MOVED = path.join(REPO, '.claude', 'worktrees', 'moved');
@@ -61,7 +61,7 @@ git(MOVED, 'checkout', '-q', '-b', 'feat/diagnostics-domain');
 check('worktree branch is taken from git', worktreeBranch(CLEAN) === 'worktree-a2a-clean', String(worktreeBranch(CLEAN)));
 check('worker changed branch — git returns the one it is currently on',
   worktreeBranch(MOVED) === 'feat/diagnostics-domain', String(worktreeBranch(MOVED)));
-check('no directory — null, not a made-up branch', worktreeBranch(path.join(REPO, 'нет')) === null);
+check('no directory — null, not a made-up branch', worktreeBranch(path.join(REPO, 'none')) === null);
 check('detached HEAD — null, not the string «HEAD»', (() => {
   const head = git(MOVED, 'rev-parse', 'HEAD').stdout.trim();
   git(MOVED, 'checkout', '-q', head);
@@ -86,16 +86,16 @@ check('has its own commits — keep it and name how many', (() => {
   return d.action === 'keep' && d.reason.includes('1 commit');
 })(), JSON.stringify(disp(AHEAD)));
 check('the check goes by git\'s branch, not the journal\'s: a moved-off worktree is not removed', (() => {
-  writeFileSync(path.join(MOVED, 'f'), 'правка на своей ветке\n');
+  writeFileSync(path.join(MOVED, 'f'), 'an edit on its own branch\n');
   git(MOVED, 'add', '.');
-  git(MOVED, 'commit', '-qm', 'своя ветка');
+  git(MOVED, 'commit', '-qm', 'its own branch');
   const d = disp(MOVED);
   return d.action === 'keep' && d.reason.includes('feat/diagnostics-domain');
 })(), JSON.stringify(disp(MOVED)));
 check('uncommitted changes — keep', (() => {
-  writeFileSync(path.join(CLEAN, 'f'), 'недописанное\n');
+  writeFileSync(path.join(CLEAN, 'f'), 'unfinished\n');
   const d = disp(CLEAN);
-  writeFileSync(path.join(CLEAN, 'f'), 'первый\n');
+  writeFileSync(path.join(CLEAN, 'f'), 'first\n');
   return d.action === 'keep' && d.reason.includes('uncommitted');
 })());
 // The `adds` tri-state is kept honest: `false` means "we checked merge-tree, there's
@@ -104,9 +104,9 @@ check('uncommitted changes — keep', (() => {
 // know".
 check('adds does not invent "nothing to merge in" where it never checked', (() => {
   const clean = inspectWorktree(REPO, CLEAN, 'master');
-  writeFileSync(path.join(AHEAD, 'f'), 'недописанное\n');
+  writeFileSync(path.join(AHEAD, 'f'), 'unfinished\n');
   const dirty = inspectWorktree(REPO, AHEAD, 'master');
-  writeFileSync(path.join(AHEAD, 'f'), `работа worker'а\n`);
+  writeFileSync(path.join(AHEAD, 'f'), `worker's work\n`);
   return clean.adds === null && dirty.adds === null && worktreeDisposition(dirty).action === 'keep';
 })(), JSON.stringify(inspectWorktree(REPO, CLEAN, 'master')));
 // No directory — the same answer as git staying silent: "don't know" → `keep`.
@@ -115,12 +115,12 @@ check('adds does not invent "nothing to merge in" where it never checked', (() =
 // and drives everything that isn't 'keep' into `removeWorktree` — meaning the old branch
 // was a landmine.
 check('no directory — keep it, do not drive it into removal', (() => {
-  const d = worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'));
+  const d = worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'none'), 'master'));
   return d.action === 'keep' && /git did not answer/.test(d.reason);
-})(), JSON.stringify(worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'нет'), 'master'))));
+})(), JSON.stringify(worktreeDisposition(inspectWorktree(REPO, path.join(REPO, 'none'), 'master'))));
 check('nothing to compare against — keep it, do not remove it just in case',
-  worktreeDisposition(inspectWorktree(REPO, CLEAN, 'нет-такой-ветки')).action === 'keep',
-  JSON.stringify(inspectWorktree(REPO, CLEAN, 'нет-такой-ветки')));
+  worktreeDisposition(inspectWorktree(REPO, CLEAN, 'no-such-branch')).action === 'keep',
+  JSON.stringify(inspectWorktree(REPO, CLEAN, 'no-such-branch')));
 
 // The removal itself: the directory goes, and the merged branch goes with it. The directory
 // is locked on purpose — `claude --bg --worktree` locks its own worktrees, and a live
@@ -163,10 +163,10 @@ check('removal: we do not delete a foreign branch, even a merged one — and we 
 // cleanup leaves alone a lock that explains itself out loud.
 const LOCKED = path.join(REPO, '.claude', 'worktrees', 'locked');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-locked', LOCKED);
-git(REPO, 'worktree', 'lock', '--reason', 'разбираю руками', LOCKED);
+git(REPO, 'worktree', 'lock', '--reason', 'sorting it out by hand', LOCKED);
 const rmLocked = removeWorktree(REPO, LOCKED, 'worktree-a2a-locked');
 check('lock with a reason — refusal, and the human\'s reason is named in it',
-  !rmLocked.removed && String(rmLocked.error).includes('разбираю руками') && existsSync(LOCKED),
+  !rmLocked.removed && String(rmLocked.error).includes('sorting it out by hand') && existsSync(LOCKED),
   JSON.stringify(rmLocked));
 check('someone else\'s lock stayed put — cleanup did not lift it',
   git(REPO, 'worktree', 'unlock', LOCKED).status === 0);
@@ -178,7 +178,7 @@ git(REPO, 'branch', '-D', 'worktree-a2a-locked');
 // silently lifting someone else's protection.
 const STUCK = path.join(REPO, '.claude', 'worktrees', 'stuck');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-stuck', STUCK);
-writeFileSync(path.join(STUCK, 'новый'), 'незакоммиченное\n');
+writeFileSync(path.join(STUCK, 'new'), 'uncommitted\n');
 git(REPO, 'worktree', 'lock', STUCK);
 const rmStuck = removeWorktree(REPO, STUCK, 'worktree-a2a-stuck');
 check('removal failed — the lock was put back, not left lifted',
@@ -189,7 +189,7 @@ check('the refusal reason is non-empty even on an ordinary git refusal',
 // at all, leaves no line at all, and the consumer used to print "removal failed: " with no
 // reason. We reproduce it directly: a PATH without git, meaning ENOENT and an empty stderr.
 check('git never started at all — the reason is still named, not an empty string', (() => {
-  const noGit = path.join(SB, 'без-git');
+  const noGit = path.join(SB, 'no-git');
   mkdirSync(noGit, { recursive: true });
   const saved = process.env.PATH;
   process.env.PATH = noGit;
@@ -215,10 +215,10 @@ check('environment: git supports merge-tree --write-tree (2.38+) — otherwise a
 // Checking by ancestry alone is not enough here.
 const SQ = path.join(REPO, '.claude', 'worktrees', 'squashed');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-squashed', SQ);
-writeFileSync(path.join(SQ, 'sq1'), 'первая часть работы\n');
-git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'часть 1');
-writeFileSync(path.join(SQ, 'sq2'), 'вторая часть работы\n');
-git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'часть 2');
+writeFileSync(path.join(SQ, 'sq1'), 'first part of the work\n');
+git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'part 1');
+writeFileSync(path.join(SQ, 'sq2'), 'second part of the work\n');
+git(SQ, 'add', '.'); git(SQ, 'commit', '-qm', 'part 2');
 // Before the squash there is something to merge in — and that needs to be pinned down,
 // otherwise the check below would pass green for any reason at all, including "the
 // function always answers false".
@@ -228,7 +228,7 @@ check('work not yet taken in: there is something to merge — the directory stay
   JSON.stringify(inspectWorktree(REPO, SQ, 'master')));
 // Squash: the branch's content moves into master as one commit, the history does not.
 git(REPO, 'merge', '-q', '--squash', 'worktree-a2a-squashed');
-git(REPO, 'commit', '-qm', 'squash: работа ветки одним коммитом');
+git(REPO, 'commit', '-qm', 'squash: the branch work as one commit');
 const sq = inspectWorktree(REPO, SQ, 'master');
 check('fixture: after the squash, the branch\'s commits are still listed outside master',
   sq.unmerged === 2, String(sq.unmerged));
@@ -253,23 +253,23 @@ git(REPO, 'branch', '-D', 'worktree-a2a-squashed');
 // Patch identity does not care what the base did after the squash.
 const SQ2 = path.join(REPO, '.claude', 'worktrees', 'squashed-then-moved');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-squashed-2', SQ2);
-writeFileSync(path.join(SQ2, 'shared'), 'общий файл\nстрока ветки\n');
-git(SQ2, 'add', '.'); git(SQ2, 'commit', '-qm', 'работа ветки в общем файле');
+writeFileSync(path.join(SQ2, 'shared'), 'shared file\nbranch line\n');
+git(SQ2, 'add', '.'); git(SQ2, 'commit', '-qm', 'branch work in the shared file');
 git(REPO, 'merge', '-q', '--squash', 'worktree-a2a-squashed-2');
 // The squash commit carries something else as well — an edit the orchestrator made while
 // merging, in a file the branch never touched. The patch-id comparison is restricted to
 // the BRANCH's own paths, so a wider commit must still be recognised as carrying it; an
 // unrestricted comparison would not match this commit at all.
-writeFileSync(path.join(REPO, 'unrelated'), 'правка рядом с мержем\n');
+writeFileSync(path.join(REPO, 'unrelated'), 'an edit beside the merge\n');
 git(REPO, 'add', 'unrelated');
-git(REPO, 'commit', '-qm', 'squash: работа второй ветки и правка рядом');
+git(REPO, 'commit', '-qm', 'squash: the second branch work and an edit beside it');
 const squashGitlinks = git(REPO, 'ls-tree', '-r', 'HEAD').stdout.split('\n')
   .filter((line) => line.startsWith('160000 '));
 check('fixture: the squash commit carries no worker worktree gitlink',
   squashGitlinks.length === 0, squashGitlinks.join(' | '));
 // The next worker lands on the same file, in the same place.
-writeFileSync(path.join(REPO, 'shared'), 'общий файл\nстрока ветки\nстрока следующего воркера\n');
-git(REPO, 'add', 'shared'); git(REPO, 'commit', '-qm', 'следующая работа в том же файле');
+writeFileSync(path.join(REPO, 'shared'), 'shared file\nbranch line\nnext worker line\n');
+git(REPO, 'add', 'shared'); git(REPO, 'commit', '-qm', 'the next work in the same file');
 const sq2 = inspectWorktree(REPO, SQ2, 'master');
 check('fixture: the base moved over the same file, and the merge measurement can no longer answer',
   sq2.unmerged === 1 && sq2.adds === null, JSON.stringify(sq2));
@@ -286,10 +286,10 @@ git(REPO, 'branch', '-D', 'worktree-a2a-squashed-2');
 // resolve in favor of "keep", naming the reason.
 const CF = path.join(REPO, '.claude', 'worktrees', 'conflict');
 git(REPO, 'worktree', 'add', '-q', '-b', 'worktree-a2a-conflict', CF);
-writeFileSync(path.join(CF, 'f'), 'версия ветки\n');
-git(CF, 'add', '.'); git(CF, 'commit', '-qm', 'своя версия общего файла');
-writeFileSync(path.join(REPO, 'f'), 'версия master\n');
-git(REPO, 'add', 'f'); git(REPO, 'commit', '-qm', 'другая версия того же файла');
+writeFileSync(path.join(CF, 'f'), 'branch version\n');
+git(CF, 'add', '.'); git(CF, 'commit', '-qm', 'its own version of the shared file');
+writeFileSync(path.join(REPO, 'f'), 'master version\n');
+git(REPO, 'add', 'f'); git(REPO, 'commit', '-qm', 'another version of the same file');
 const cf = inspectWorktree(REPO, CF, 'master');
 check('merge conflict — "don\'t know", not "nothing to merge in"', cf.adds === null, String(cf.adds));
 check('a branch the base never took: patch identity does not find its patch either',
@@ -314,8 +314,8 @@ const squashRepo = (name) => {
   const repo = path.join(SB, `squash-${name}`);
   mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q', '-b', 'master');
-  writeFileSync(path.join(repo, 'shared'), 'общая строка\n');
-  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'основа');
+  writeFileSync(path.join(repo, 'shared'), 'shared line\n');
+  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'base');
   const tree = path.join(repo, '.claude', 'worktrees', name);
   const branch = `worktree-a2a-${name}`;
   git(repo, 'worktree', 'add', '-q', '-b', branch, tree);
@@ -324,18 +324,18 @@ const squashRepo = (name) => {
 const trailerArgs = (sha) => (sha ? ['--trailer', `Squash-of: ${sha}`] : []);
 function editedSquash(name, trailerOf) {
   const { repo, tree, branch } = squashRepo(name);
-  writeFileSync(path.join(tree, 'shared'), 'строка ветки\n');
-  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'работа ветки');
-  writeFileSync(path.join(tree, 'own'), 'второй коммит ветки\n');
-  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'ещё работа ветки');
-  writeFileSync(path.join(repo, 'shared'), 'строка базы\n');
-  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'база меняет ту же строку');
+  writeFileSync(path.join(tree, 'shared'), 'branch line\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'branch work');
+  writeFileSync(path.join(tree, 'own'), 'second branch commit\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'more branch work');
+  writeFileSync(path.join(repo, 'shared'), 'base line\n');
+  git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'the base changes the same line');
   const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
   const foreign = git(repo, 'rev-parse', 'HEAD').stdout.trim();
   const merged = git(repo, 'merge', '-q', '--squash', branch);
-  writeFileSync(path.join(repo, 'shared'), 'строка базы\nстрока ветки\n');
+  writeFileSync(path.join(repo, 'shared'), 'base line\nbranch line\n');
   git(repo, 'add', 'shared');
-  git(repo, 'commit', '-qm', 'PB-1: closed — принятая работа', ...trailerArgs(trailerOf?.({ head, foreign })));
+  git(repo, 'commit', '-qm', 'PB-1: closed — accepted work', ...trailerArgs(trailerOf?.({ head, foreign })));
   return { repo, tree, branch, head, conflicted: merged.status !== 0, acceptance: acceptanceOf(repo) };
 }
 const notMergedExactly = (branch) => `branch ${branch} is not merged: 2 commit(s) are not in master, and neither the `
@@ -371,8 +371,8 @@ check('a trailer naming another sha is no proof — the directory stays',
   JSON.stringify({ ...foreignInfo, ...worktreeDisposition(foreignInfo) }));
 
 const moved = editedSquash('moved-on', ({ head }) => head);
-writeFileSync(path.join(moved.tree, 'after'), 'коммит после принятой головы\n');
-git(moved.tree, 'add', '.'); git(moved.tree, 'commit', '-qm', 'работа после принятия');
+writeFileSync(path.join(moved.tree, 'after'), 'a commit after the accepted head\n');
+git(moved.tree, 'add', '.'); git(moved.tree, 'commit', '-qm', 'work after acceptance');
 const movedInfo = inspectWorktree(moved.repo, moved.tree, 'master');
 check('a branch one commit past the named head has work the base lacks — the directory stays', (() => {
   const d = worktreeDisposition(movedInfo);
@@ -383,14 +383,14 @@ check('a branch one commit past the named head has work the base lacks — the d
 // `merge-tree` proves the work OUT, and only the trailer can prove it in.
 function archivedCard(name, trailered) {
   const { repo, tree, branch } = squashRepo(name);
-  writeFileSync(path.join(tree, 'card'), 'карточка задачи\n');
+  writeFileSync(path.join(tree, 'card'), 'task card\n');
   git(tree, 'add', 'card'); git(tree, 'commit', '-qm', 'PB-1: filed and taken');
-  writeFileSync(path.join(tree, 'shared'), 'строка ветки\n');
-  git(tree, 'add', 'shared'); git(tree, 'commit', '-qm', 'работа ветки');
+  writeFileSync(path.join(tree, 'shared'), 'branch line\n');
+  git(tree, 'add', 'shared'); git(tree, 'commit', '-qm', 'branch work');
   const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
   git(repo, 'merge', '-q', '--squash', branch);
   git(repo, 'rm', '-q', '-f', 'card');
-  git(repo, 'commit', '-qm', 'PB-1: closed — карточка ушла в архив', ...trailerArgs(trailered ? head : null));
+  git(repo, 'commit', '-qm', 'PB-1: closed — the card went to the archive', ...trailerArgs(trailered ? head : null));
   return { repo, tree, branch, acceptance: acceptanceOf(repo) };
 }
 const archived = archivedCard('archived', true);
@@ -412,14 +412,14 @@ check('the same archived-card squash with no trailer keeps the directory, with t
 // own sentences, and the trailer is not even read.
 function cleanSquash(name, moveAfter) {
   const { repo, tree, branch } = squashRepo(name);
-  writeFileSync(path.join(tree, 'shared'), 'общая строка\nстрока ветки\n');
-  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'работа ветки');
+  writeFileSync(path.join(tree, 'shared'), 'shared line\nbranch line\n');
+  git(tree, 'add', '.'); git(tree, 'commit', '-qm', 'branch work');
   const head = git(tree, 'rev-parse', 'HEAD').stdout.trim();
   git(repo, 'merge', '-q', '--squash', branch);
-  git(repo, 'commit', '-qm', 'PB-2: closed — чистый squash', ...trailerArgs(head));
+  git(repo, 'commit', '-qm', 'PB-2: closed — a clean squash', ...trailerArgs(head));
   if (moveAfter) {
-    writeFileSync(path.join(repo, 'shared'), 'общая строка\nстрока ветки\nстрока следующего воркера\n');
-    git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'следующая работа в той же строке');
+    writeFileSync(path.join(repo, 'shared'), 'shared line\nbranch line\nnext worker line\n');
+    git(repo, 'add', 'shared'); git(repo, 'commit', '-qm', 'the next work on the same line');
   }
   return { repo, tree, branch };
 }
@@ -446,16 +446,16 @@ check('a clean squash is still proven by merge-tree first, in the same words', (
 // fixture deliberately puts origin/master behind local master — exactly the picture under
 // which a past worker never saw the orchestrator's code.
 const OLD = git(REPO, 'rev-parse', 'master').stdout.trim();
-writeFileSync(path.join(REPO, 'f'), 'незапушенная работа\n');
+writeFileSync(path.join(REPO, 'f'), 'unpushed work\n');
 git(REPO, 'add', 'f');
-git(REPO, 'commit', '-qm', 'локальный коммит поверх origin');
+git(REPO, 'commit', '-qm', 'a local commit on top of origin');
 const AHEAD_SHA = git(REPO, 'rev-parse', 'master').stdout.trim();
 git(REPO, 'update-ref', 'refs/remotes/origin/master', OLD);
 
 check('preference order: local default ahead of the origin version',
   defaultRefs(REPO, 'master')[0] === 'master'
   && defaultRefs(REPO, 'master')[1] === 'origin/master', JSON.stringify(defaultRefs(REPO, 'master')));
-check('nonexistent refs are not returned', defaultRefs(REPO, 'нет-такой').length === 0);
+check('nonexistent refs are not returned', defaultRefs(REPO, 'no-such').length === 0);
 
 const FRESH = path.join(REPO, '.claude', 'worktrees', 'fresh');
 const madeFresh = createWorktree(REPO, FRESH, 'worktree-a2a-fresh', defaultRefs(REPO, 'master')[0]);
@@ -508,11 +508,11 @@ check('a repeat call appends nothing and says so through its own outcome',
 check('the line is marked with its own marker — you can see who put it there',
   readFileSync(path.join(REPO, '.git', 'info', 'exclude'), 'utf8').includes('# promptobus:'));
 check('a write failure is its own outcome, with a reason, not a silent "already there"', (() => {
-  const notRepo = path.join(SB, 'не-репозиторий');
+  const notRepo = path.join(SB, 'not-a-repository');
   mkdirSync(notRepo, { recursive: true });
   const r = excludeWorktrees(notRepo);
   return r.status === 'failed' && typeof r.error === 'string' && r.error.length > 0;
-})(), JSON.stringify(excludeWorktrees(path.join(SB, 'не-репозиторий'))));
+})(), JSON.stringify(excludeWorktrees(path.join(SB, 'not-a-repository'))));
 
 // The file belongs to someone else: it holds a human's own exclude lines, and it used to
 // get rewritten in place. We check both that the foreign lines survive and the
@@ -522,7 +522,7 @@ mkdirSync(EXCL, { recursive: true });
 git(EXCL, 'init', '-q', '-b', 'master');
 const exclFile = path.join(EXCL, '.git', 'info', 'exclude');
 mkdirSync(path.dirname(exclFile), { recursive: true });
-writeFileSync(exclFile, '# строка человека\nмой-мусор/\n');
+writeFileSync(exclFile, '# a human line\nmy-junk/\n');
 // `mode` on writeFileSync only takes effect when the file is CREATED, and `git init`
 // already laid down its own `info/exclude` — we set the permissions with a separate
 // chmod (the same trick as writeSecret).
@@ -530,7 +530,7 @@ chmodSync(exclFile, 0o600);
 const exclAdded = excludeWorktrees(EXCL);
 check('someone else\'s exclude lines survive the append',
   exclAdded.status === 'added'
-  && readFileSync(exclFile, 'utf8').includes('мой-мусор/')
+  && readFileSync(exclFile, 'utf8').includes('my-junk/')
   && readFileSync(exclFile, 'utf8').includes('**/.claude/worktrees/'),
   readFileSync(exclFile, 'utf8'));
 check('someone else\'s file permissions do not slide to the defaults after the swap',
@@ -549,12 +549,12 @@ mkdirSync(EXCL2, { recursive: true });
 git(EXCL2, 'init', '-q', '-b', 'master');
 const excl2File = path.join(EXCL2, '.git', 'info', 'exclude');
 mkdirSync(path.dirname(excl2File), { recursive: true });
-writeFileSync(excl2File, '# строка человека\n');
-const excl2Alias = path.join(SB, 'exclude-до-записи');
+writeFileSync(excl2File, '# a human line\n');
+const excl2Alias = path.join(SB, 'exclude-before-write');
 linkSync(excl2File, excl2Alias);
 check('the write goes through tmp+rename, not over someone else\'s file',
   excludeWorktrees(EXCL2).status === 'added'
-  && readFileSync(excl2Alias, 'utf8') === '# строка человека\n'
+  && readFileSync(excl2Alias, 'utf8') === '# a human line\n'
   && readFileSync(excl2File, 'utf8').includes('**/.claude/worktrees/'),
   readFileSync(excl2Alias, 'utf8'));
 
@@ -568,9 +568,9 @@ check('the write goes through tmp+rename, not over someone else\'s file',
 const BIG = path.join(SB, 'big');
 mkdirSync(BIG, { recursive: true });
 git(BIG, 'init', '-q', '-b', 'master');
-writeFileSync(path.join(BIG, 'f'), 'первый\n');
+writeFileSync(path.join(BIG, 'f'), 'first\n');
 git(BIG, 'add', '.');
-git(BIG, 'commit', '-qm', 'первый');
+git(BIG, 'commit', '-qm', 'first');
 const BIGWT = path.join(BIG, '.claude', 'worktrees', 'big');
 git(BIG, 'worktree', 'add', '-q', '-b', 'worktree-a2a-big', BIGWT);
 const longName = 'x'.repeat(240);
@@ -601,28 +601,28 @@ check('no list passed — also the previous behavior', sessionLiveness({ name: '
 // restarting a worker at the same address, two records sit under one name. Taking the
 // first match means handing back the ghost — spawn would report its id, and status would
 // call the live one "stale".
-const DUP = 'a2a · задача · repo · 0826-1048';
-const dupList = [{ id: 'старая', name: DUP, state: 'blocked' }, { id: 'новая', name: DUP, pid: 999, state: 'working' }];
+const DUP = 'a2a · task · repo · 0826-1048';
+const dupList = [{ id: 'old', name: DUP, state: 'blocked' }, { id: 'new-one', name: DUP, pid: 999, state: 'working' }];
 check('two records under one name: the live one is chosen, not the first match',
-  findSession(dupList, DUP)?.id === 'новая', JSON.stringify(findSession(dupList, DUP)));
+  findSession(dupList, DUP)?.id === 'new-one', JSON.stringify(findSession(dupList, DUP)));
 check('no live record among the matches — return what is there, not null',
-  findSession([dupList[0], { id: 'x', pid: 7, name: 'другая' }], DUP)?.id === 'старая');
+  findSession([dupList[0], { id: 'x', pid: 7, name: 'another' }], DUP)?.id === 'old');
 
 // --- confirming a session's liftoff -------------------------------------
-const seenAfter = (n) => { let i = 0; return () => (i++ < n ? [] : [{ id: 'z', name: 'a2a · тест', pid: 5 }]); };
+const seenAfter = (n) => { let i = 0; return () => (i++ < n ? [] : [{ id: 'z', name: 'a2a · test', pid: 5 }]); };
 check('spawn: the session did not appear right away — we wait for it, rather than burying it',
-  (await awaitSession('a2a · тест', { tries: 3, delayMs: 1, sessions: seenAfter(2) })).state === 'alive');
-const ghostOnly = () => [{ id: 'призрак', name: 'a2a · тест', state: 'blocked' }, { id: 'чужой', name: 'другая', pid: 3 }];
-const onlyGhost = await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: ghostOnly });
+  (await awaitSession('a2a · test', { tries: 3, delayMs: 1, sessions: seenAfter(2) })).state === 'alive');
+const ghostOnly = () => [{ id: 'ghost', name: 'a2a · test', state: 'blocked' }, { id: 'foreign', name: 'another', pid: 3 }];
+const onlyGhost = await awaitSession('a2a · test', { tries: 2, delayMs: 1, sessions: ghostOnly });
 check('spawn: only a ghost sits under the name — that is NOT "raised"',
-  onlyGhost.state === 'dead' && onlyGhost.ghost?.id === 'призрак', JSON.stringify(onlyGhost));
+  onlyGhost.state === 'dead' && onlyGhost.ghost?.id === 'ghost', JSON.stringify(onlyGhost));
 
 check('spawn: no session across every attempt — dead',
-  (await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: () => [] })).state === 'dead');
+  (await awaitSession('a2a · test', { tries: 2, delayMs: 1, sessions: () => [] })).state === 'dead');
 check('spawn: claude agents output was not parsed — unknown, not dead',
-  (await awaitSession('a2a · тест', { tries: 2, delayMs: 1, sessions: () => null })).state === 'unknown');
+  (await awaitSession('a2a · test', { tries: 2, delayMs: 1, sessions: () => null })).state === 'unknown');
 check('spawn: session found — awaitSession returns the record itself, not just the state',
-  (await awaitSession('a2a · тест', { tries: 1, delayMs: 1, sessions: seenAfter(0) })).session?.id === 'z');
+  (await awaitSession('a2a · test', { tries: 1, delayMs: 1, sessions: seenAfter(0) })).session?.id === 'z');
 // Two sources of id need an order, not just presence: parsing `claude --bg` output guesses
 // the id from free text, while a record from the session list actually knows it. A
 // reversed order would silently write the guessed value into the participant — with a live

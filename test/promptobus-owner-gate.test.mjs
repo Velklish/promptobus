@@ -44,9 +44,9 @@ store.bindSessionIdentity(() => ({ id: SESSION }));
 const OWNED = 'gate-t20260913-100000';
 const OWNERLESS = 'gate-nobody-t20260913-100100';
 const CONTESTED = 'gate-contested-t20260913-100200';
-store.createTask(HOME, { id: OWNED, title: 'у задачи есть владелец', owner: OWNER });
-store.createTask(HOME, { id: OWNERLESS, title: 'владельца нет по построению', owner: null });
-store.createTask(HOME, { id: CONTESTED, title: 'две переменные идентичности разом', owner: OWNER });
+store.createTask(HOME, { id: OWNED, title: 'the task has an owner', owner: OWNER });
+store.createTask(HOME, { id: OWNERLESS, title: 'no owner by construction', owner: null });
+store.createTask(HOME, { id: CONTESTED, title: 'two identity variables at once', owner: OWNER });
 for (const id of [OWNED, OWNERLESS, CONTESTED]) {
   store.upsertParticipant(HOME, id, store.participantRecord(WORKER, { name: `sess-${id}`, mode: 'attached' }));
 }
@@ -174,7 +174,7 @@ for (const [name, call] of CONSUMERS.slice(1)) {
   const APPROVED = 'gate-approver-t20260917-100300';
   const APPROVER = 'sess-priyomshchik';
   const REVIEWER = 'reviewer:api';
-  store.createTask(HOME, { id: APPROVED, title: 'приёмщик убирает за куском', owner: OWNER });
+  store.createTask(HOME, { id: APPROVED, title: 'the approver cleans up after a piece', owner: OWNER });
   store.upsertParticipant(HOME, APPROVED, store.participantRecord(WORKER, { name: `sess-${APPROVED}`, mode: 'attached' }));
   store.upsertParticipant(HOME, APPROVED, store.participantRecord(REVIEWER, { name: `rev-${APPROVED}`, mode: 'attached' }));
   store.upsertParticipant(HOME, APPROVED, store.participantRecord('approver:api', {
@@ -216,7 +216,7 @@ for (const [name, call] of CONSUMERS.slice(1)) {
   // The other way the approver proof fails: a record with no session of its own. Said out
   // loud, because "refused" alone sends the reader to look for a foreign session there is none of.
   const BLIND = 'gate-approver-blind-t20260917-100400';
-  store.createTask(HOME, { id: BLIND, title: 'у приёмщика нет своей сессии', owner: OWNER });
+  store.createTask(HOME, { id: BLIND, title: 'the approver has no session of its own', owner: OWNER });
   store.upsertParticipant(HOME, BLIND, store.participantRecord(WORKER, { name: `sess-${BLIND}`, mode: 'attached' }));
   store.upsertParticipant(HOME, BLIND, store.participantRecord('approver:api', { mode: 'attached' }));
   const blind = await withSession(FOREIGN, () => expectFail(() => dismiss(ROOT, { task: BLIND, address: WORKER })));
@@ -230,7 +230,7 @@ for (const [name, call] of CONSUMERS.slice(1)) {
   // foreign id and agree with neither half.
   const MIXED = 'gate-approver-mixed-t20260917-100500';
   const HELD = 'sess-priyomshchik-dva';
-  store.createTask(HOME, { id: MIXED, title: 'два приёмщика, сессия у одного', owner: OWNER });
+  store.createTask(HOME, { id: MIXED, title: 'two approvers, one has a session', owner: OWNER });
   store.upsertParticipant(HOME, MIXED, store.participantRecord(WORKER, { name: `sess-${MIXED}`, mode: 'attached' }));
   store.upsertParticipant(HOME, MIXED, store.participantRecord('approver:api', {
     harness: 'claude', mode: 'managed', sessionRef: 'ref-api', sessionId: HELD,

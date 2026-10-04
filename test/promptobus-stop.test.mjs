@@ -66,11 +66,11 @@ const reset = () => {
   live.clear();
   ['sess-a', 'sess-b'].forEach((r) => live.add(r));
 };
-store.createTask(HOME, { id: TASK, title: 'одного участника гасим, задача живёт', owner: null });
+store.createTask(HOME, { id: TASK, title: 'one participant is stopped, the task lives on', owner: null });
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:a', { harness: 'claude', mode: 'managed', sessionRef: 'sess-a' }));
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:b', { harness: 'claude', mode: 'managed', sessionRef: 'sess-b' }));
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:own', { harness: 'claude', mode: 'attached', sessionRef: 'sess-own' }));
-store.createTask(HOME, { id: OTHER, title: 'соседняя задача', owner: null });
+store.createTask(HOME, { id: OTHER, title: 'neighbouring task', owner: null });
 store.upsertParticipant(HOME, OTHER, store.participantRecord('worker:elsewhere', { harness: 'claude', mode: 'managed', sessionRef: 'sess-elsewhere' }));
 
 // --- the negative controls, before the positive one --------------------------
@@ -162,7 +162,7 @@ check(': an unconfirmed stop is not reported as success — the record may still
 
 reset();
 const GATED = 'stop-t20260917-100500';
-store.createTask(HOME, { id: GATED, title: 'приёмщик гасит участника своего куска', owner: 'sess-stop-hozyain' });
+store.createTask(HOME, { id: GATED, title: 'the approver stops a participant of its own piece', owner: 'sess-stop-hozyain' });
 store.upsertParticipant(HOME, GATED, store.participantRecord('worker:c', { harness: 'claude', mode: 'managed', sessionRef: 'sess-c' }));
 store.upsertParticipant(HOME, GATED, store.participantRecord('approver:c', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-approver-ref', sessionId: 'sess-stop-stand',
@@ -190,7 +190,7 @@ check(': and the task it cleaned up after is still open',
 // --- the harness binary is off this process's PATH ------------------------------
 // The real Claude driver behind a `claude` only the host names; one process per host.
 const OFFPATH = 'stop-offpath-t20260924-090000';
-store.createTask(HOME, { id: OFFPATH, title: 'claude вне PATH поднятой сессии', owner: null });
+store.createTask(HOME, { id: OFFPATH, title: 'claude outside the lifted session PATH', owner: null });
 store.upsertParticipant(HOME, OFFPATH, store.participantRecord('worker:offpath', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-offpath',
 }));

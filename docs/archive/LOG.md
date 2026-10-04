@@ -474,3 +474,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-334"></a>`PB-334-neutral-project-hook-contract` · 2026-10-04 · completed · — · Replace tracker-specific hook admission with a neutral project hook contract
 - <a id="pb-337"></a>`PB-337-neutral-consumer-fixtures` · 2026-10-04 · completed · — · Remove organization-specific content from fixtures, documents and tracker records
 - <a id="pb-334.1"></a>`PB-334.1-repo-config-not-root` · 2026-10-04 · completed · — · A repository promptobus.json that holds only repository declarations does not become the standalone root
+- <a id="pb-336"></a>`PB-336-english-authored-content` · 2026-10-04 · completed · — · Apply the English authoring rule to all project-owned content
+- <a id="pb-317.1"></a>`PB-317.1-readme-ru-role-registry` · 2026-10-04 · batch PB-336 · — · README.ru.md does not translate the sentence on the host's role registry

@@ -31,7 +31,6 @@ function checkRun(cmd, args, result) {
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
 const LINK_TEXT = /\.(m?js|ts|md)$/;
-const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//;
 const BRAND_FRAGMENT = ['A', 'TI'].join('');
 const BRAND_WORD = new RegExp(`\\b${BRAND_FRAGMENT}\\b`, 'iu');
 const BRAND_CAMEL = new RegExp(`\\b${BRAND_FRAGMENT.toLowerCase()}(?=\\p{Lu})`, 'u');
@@ -113,9 +112,42 @@ const ORGANIZATION = [
   ['organization tracker ids', new RegExp(['\\bLS', '-[0-9]'].join(''), 'u')],
   ['organization tools', new RegExp(['\\b(?:kai', 'ten|team', 'ly)\\b'].join(''), 'iu')],
 ];
+// --- English authoring -------------------------------------------------------
+// Every tracked text file and packed entry is English: Cyrillic survives only in a snapshot named below
+// or, outside the runtime paths, in a region `english-authoring: input — <reason>` … `english-authoring: end`.
 const CYRILLIC = /[\u0400-\u04FF]/u;
-const CYRILLIC_ALLOWLIST = [
-  ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u], // transliteration table
+const CYRILLIC_ALL = /[\u0400-\u04FF]/gu;
+const WHOLE_FILE = /^[\s\S]*$/u;
+const REGION_START = /^\s*(?:\/\/|#|<!--)\s*english-authoring: input\b(.*)$/u;
+const REGION_END = /^\s*(?:\/\/|#|<!--)\s*english-authoring: end\b/u;
+const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//u;
+const LEGACY_V061 = 'test/fixtures/promptobus/legacy-v061/tasks/';
+const LEGACY_V061_FILES = [
+  't20260830-140000/task.json',
+  't20260830-140000/read/orchestrator/20260830T153000000-0002-worker-stale.json',
+  't20260830-140000/read/worker-stale/20260830T140100000-0001-orchestrator.json',
+  't20260831-090000/task.json',
+  't20260831-090000/supervisor.log',
+  't20260831-090000/artifacts/demo-diff.patch',
+  't20260831-090000/inbox/orchestrator/20260831T100000000-0010-worker-demo.json',
+  't20260831-090000/inbox/worker-demo/20260831T090500000-0003-orchestrator.json',
+  't20260831-090000/inbox/worker-demo/20260831T095000000-0008-orchestrator.json',
+  't20260831-090000/read/orchestrator/20260831T092000000-0004-worker-demo.json',
+  't20260831-090000/read/orchestrator/20260831T094000000-0005-worker-demo.json',
+  't20260831-090000/read/orchestrator/20260831T094500000-0007-reviewer-demo.json',
+  't20260831-090000/read/reviewer-demo/20260831T094200000-0006-orchestrator.json',
+];
+// [file, the span it excuses, why that span is not authored prose]
+const AUTHORING_SNAPSHOTS = [
+  ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u,
+    'the Cyrillic-to-Latin transliteration table is data that slugs are made from'],
+  ['docs/archive/LOG.md', WHOLE_FILE,
+    'the journal of closed tasks is history: a fold appends to it and nothing rewrites it'],
+  [/^docs\/backlog\/[a-z]+\/PB-278\.1-mixed-step7-delivered-after-own-send\.md$/u,
+    /^✖ step 7: the worker closed the note and sent a second result .*$/mu,
+    'a run trace quoted as captured evidence'],
+  ...LEGACY_V061_FILES.map((file) => [`${LEGACY_V061}${file}`, WHOLE_FILE,
+    'a frozen v0.61 store snapshot, kept byte for byte (test/fixtures/promptobus/MANIFEST.md)']),
 ];
 const GENERATED_FROM = new Map([
   ['dist/protocol.js', 'src/protocol.ts'],
@@ -137,13 +169,53 @@ function scanOrganization(name, text) {
   for (const label of organizationLeaks(name, text)) failures.push(`${label}: ${name}`);
 }
 
-function scanCyrillic(name, text) {
+const namesFile = (file, name) => (file instanceof RegExp ? file.test(name) : file === name);
+const blank = (span) => span.replace(CYRILLIC_ALL, '_');
+const regionReason = (line) => line.match(REGION_START)[1].replace(/-->\s*$/u, '').replace(/^\s*[—:-]?\s*/u, '').trim();
+/** Findings for one file: the first line of Cyrillic nothing excuses, and every malformed or empty region. */
+const authoringFindings = (name, text) => {
   const normalized = normalizedName(name);
-  if (!RUNTIME_PATH.test(normalized)) return;
   const source = GENERATED_FROM.get(normalized) ?? normalized;
-  const exemption = CYRILLIC_ALLOWLIST.find(([file]) => file === source);
-  const remaining = exemption ? text.replace(exemption[1], '') : text;
-  if (CYRILLIC.test(remaining)) failures.push(`Cyrillic runtime text: ${name}`);
+  const excused = AUTHORING_SNAPSHOTS.filter(([file]) => namesFile(file, source))
+    .reduce((rest, [, span]) => rest.replace(span, blank), text);
+  const findings = [];
+  const runtime = RUNTIME_PATH.test(normalized);
+  let open = null;
+  const lines = excused.split('\n').map((line, index) => {
+    const at = `${name}:${index + 1}`;
+    if (runtime && (REGION_START.test(line) || REGION_END.test(line))) {
+      if (REGION_START.test(line)) findings.push(`english-authoring region in a runtime path: ${at}`);
+      return line;
+    }
+    if (REGION_START.test(line)) {
+      if (open) findings.push(`english-authoring region opened inside another: ${at}`);
+      if (!regionReason(line)) findings.push(`english-authoring region without a reason: ${at}`);
+      open = { at, used: false };
+      return line;
+    }
+    if (REGION_END.test(line)) {
+      if (!open) findings.push(`english-authoring end without a region: ${at}`);
+      else if (!open.used) findings.push(`english-authoring region excuses nothing: ${open.at}`);
+      open = null;
+      return line;
+    }
+    if (!open || !CYRILLIC.test(line)) return line;
+    open.used = true;
+    return blank(line);
+  });
+  if (open) findings.push(`english-authoring region never closed: ${open.at}`);
+  const first = lines.findIndex((line) => CYRILLIC.test(line));
+  if (first >= 0) findings.push(`Cyrillic authored text: ${name}:${first + 1}`);
+  return findings;
+};
+/** Snapshot entries that excuse no Cyrillic in the tracked tree: the list only shrinks with what it names. */
+const staleAuthoringSnapshots = (texts) => AUTHORING_SNAPSHOTS
+  .filter(([file, span]) => ![...texts].some(([name, text]) => namesFile(file, name)
+    && CYRILLIC.test(text.match(span)?.[0] ?? '')))
+  .map(([file]) => String(file));
+export { authoringFindings, staleAuthoringSnapshots };
+function scanAuthoring(name, text) {
+  failures.push(...authoringFindings(name, text));
 }
 
 if (IS_MAIN) {
@@ -151,15 +223,18 @@ if (IS_MAIN) {
   const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter(Boolean);
   let trackedTextCount = 0;
+  const trackedTexts = new Map();
 
   for (const rel of tracked) {
     const text = textFromBytes(readFileSync(path.join(ROOT, rel)));
     if (text === null) continue;
     trackedTextCount += 1;
+    trackedTexts.set(rel, text);
     for (const [label, needle] of FORBIDDEN) scan(label, rel, text, needle);
     scanOrganization(rel, text);
-    scanCyrillic(rel, text);
+    scanAuthoring(rel, text);
   }
+  for (const stale of staleAuthoringSnapshots(trackedTexts)) failures.push(`stale authoring snapshot: ${stale}`);
 
   // Links that point outside this repository are the quieter half of the same
   // problem: they read as documentation and resolve to nothing.
@@ -213,7 +288,7 @@ if (IS_MAIN) {
       packedTextCount += 1;
       for (const [label, needle] of FORBIDDEN) scan(label, 'tarball:' + entry, text, needle);
       scanOrganization('tarball:' + entry, text);
-      scanCyrillic(entry, text);
+      scanAuthoring('tarball:' + entry, text);
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });

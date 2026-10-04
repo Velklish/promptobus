@@ -151,14 +151,14 @@ test('task id: a path out is rejected', () => {
 test('accessors read adapter fields and stay silent on empty', () => {
   const full = participant('worker:a', {
     started: '2026-09-03T10:00:00.000Z', repoAbs: '/tmp/repo', dismissed: '2026-09-03T11:00:00.000Z',
-    session: 'bg-1', name: 'Worker: кусок (0903-1000)', owner: 'sess-1',
+    session: 'bg-1', name: 'Worker: piece (0903-1000)', owner: 'sess-1',
   });
   assert.equal(store.addressOf(full), 'worker:a');
   assert.equal(store.startedOf(full), '2026-09-03T10:00:00.000Z');
   assert.equal(store.repoAbsOf(full), '/tmp/repo');
   assert.equal(store.dismissedOf(full), '2026-09-03T11:00:00.000Z');
   assert.equal(store.sessionOf(full), 'bg-1');
-  assert.equal(store.nameOf(full), 'Worker: кусок (0903-1000)');
+  assert.equal(store.nameOf(full), 'Worker: piece (0903-1000)');
   assert.equal(store.ownerOf(full), 'sess-1');
   const bare = participant('worker:b');
   for (const read of [store.startedOf, store.repoAbsOf, store.dismissedOf, store.sessionOf,
@@ -189,7 +189,7 @@ test('task journal lock', async (t) => {
   const home = path.join(SB, 'lock', '.promptobus');
   const engine = engineAt(home);
   const heldTask = engine.createTask({
-    id: 't20260827-100004', title: 'занятый лок', owner: participant('orchestrator'),
+    id: 't20260827-100004', title: 'held lock', owner: participant('orchestrator'),
   });
   const heldLock = path.join(store.taskDir(home, heldTask.id), '.lock');
   const holdLock = (holder) => {
@@ -353,15 +353,15 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
     if (step !== 'inbox-read' || info.mode !== 'peek' || info.name !== refusedPeek) return;
     throw Object.assign(new Error(`${refusedCode}: injected peek read refusal`), { code: refusedCode });
   });
-  const task = engine.createTask({ id: 'peek-t20260903-000000', title: 'чтения', owner: participant('orchestrator') });
+  const task = engine.createTask({ id: 'peek-t20260903-000000', title: 'reads', owner: participant('orchestrator') });
   engine.addParticipant(task.id, participant('worker:a'));
   for (const n of [1, 2, 3]) {
-    engine.sendSync(task.id, { from: 'worker-a', to: ['orchestrator'], type: 'status', body: `цел ${n}` });
+    engine.sendSync(task.id, { from: 'worker-a', to: ['orchestrator'], type: 'status', body: `whole ${n}` });
   }
 
   await t.test('peek: messages are yielded, and the mailbox stays full', () => {
     const { messages, broken } = engine.peek(task.id, 'orchestrator');
-    assert.equal(messages.map((m) => m.body).join(','), 'цел 1,цел 2,цел 3');
+    assert.equal(messages.map((m) => m.body).join(','), 'whole 1,whole 2,whole 3');
     assert.equal(broken.length, 0);
     assert.equal(engine.unread(task.id, 'orchestrator'), 3);
   });
@@ -425,7 +425,7 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
   await t.test('glance: glances in silence — touches no refs and sets no broken aside', () => {
     writeFileSync(path.join(box, dirtyName), 'not json at all');
     const seen = engine.glance(task.id, 'orchestrator');
-    assert.equal(seen.map((m) => m.body).join(','), 'цел 1,цел 2,цел 3');
+    assert.equal(seen.map((m) => m.body).join(','), 'whole 1,whole 2,whole 3');
     assert.ok(existsSync(path.join(box, dirtyName)), 'the broken file stayed in place');
     assert.equal(engine.unread(task.id, 'orchestrator'), 4);
     rmSync(path.join(box, dirtyName), { force: true });
@@ -438,13 +438,13 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
     // The walk is incremental and survives an addition: the next send moves
     // the time.
     const before = sent;
-    engine.sendSync(task.id, { from: 'orchestrator', to: ['worker-a'], type: 'task', body: 'ответ' });
+    engine.sendSync(task.id, { from: 'orchestrator', to: ['worker-a'], type: 'task', body: 'answer' });
     assert.ok(engine.lastSentAt(task.id, 'orchestrator') >= before);
   });
 
   await t.test('read after peek: the mailbox is taken whole, a second read is empty', () => {
     const { messages } = engine.read(task.id, 'orchestrator');
-    assert.equal(messages.map((m) => m.body).join(','), 'цел 1,цел 2,цел 3');
+    assert.equal(messages.map((m) => m.body).join(','), 'whole 1,whole 2,whole 3');
     assert.equal(engine.read(task.id, 'orchestrator').messages.length, 0);
     assert.equal(engine.unread(task.id, 'orchestrator'), 0);
   });
@@ -458,7 +458,7 @@ test('peek, glance and lastSentAt — reads that do not take the mailbox', async
 test('linkBlob places the link and does not overwrite a taken name', () => {
   const home = path.join(SB, 'link', '.promptobus');
   const engine = engineAt(home);
-  const task = engine.createTask({ id: 'link-t20260903-000000', title: 'ссылки', owner: participant('orchestrator') });
+  const task = engine.createTask({ id: 'link-t20260903-000000', title: 'links', owner: participant('orchestrator') });
   engine.addParticipant(task.id, participant('worker:a'));
   const src = path.join(SB, 'contract.json');
   writeFileSync(src, '{"event":"OrderCreated"}\n');
@@ -468,7 +468,7 @@ test('linkBlob places the link and does not overwrite a taken name', () => {
     from: 'worker-a',
     to: ['orchestrator'],
     type: 'artifact',
-    body: 'контракт',
+    body: 'contract',
     artifact: {
       path: src,
       name: (sha) => {

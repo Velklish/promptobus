@@ -38,8 +38,8 @@ check('local style rule confines the CLI glob to helpText',
   && localRules.includes('Refusal strings and comments elsewhere in that file are outside the style pass')
   && section.includes('selects all of `lib/cli.js`')
   && section.includes('narrows style review to the human-facing `helpText` block'));
-check('release guide treats README.ru.md as a translation',
-  section.includes('`README.ru.md` as a faithful translation of `README.md`'));
+check('release guide keeps no translated README in step',
+  !/translation|README\.ru/.test(section));
 check('release guide names the writer ledgers',
   section.includes('currency ledger row for each behaviour-changing commit')
   && section.includes('style ledger row for each `backslop-humanizer` pattern'));

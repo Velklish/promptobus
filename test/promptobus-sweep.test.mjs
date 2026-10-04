@@ -110,7 +110,7 @@ rmSync(VANISHED, { recursive: true, force: true });
 // --- fixture: the task and its participants ------------------------------------
 const TASK = 'sweep-t20260913-120000';
 const ago = (min) => new Date(Date.now() - min * 60 * 1000).toISOString();
-store.createTask(HOME, { id: TASK, title: 'уборка одного принятого куска', owner: OWNER });
+store.createTask(HOME, { id: TASK, title: 'cleaning up one accepted piece', owner: OWNER });
 
 const piece = (address, worktree) => store.upsertParticipant(HOME, TASK,
   store.participantRecord(address, {
@@ -143,10 +143,10 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('approver:accepted',
 const say = (from, to, type, body, artifactPath) => store.sendMessage(HOME, TASK, {
   from, to, type, body, ...(artifactPath ? { artifactPath } : {}),
 });
-say('worker:accepted', 'orchestrator', 'status', 'взял задание');
-say('worker:neighbour', 'orchestrator', 'status', 'тоже взял');
-say('orchestrator', 'worker:accepted', 'review', 'круг замечаний');
-say('orchestrator', 'worker:neighbour', 'review', 'и тебе круг замечаний');
+say('worker:accepted', 'orchestrator', 'status', 'took the assignment');
+say('worker:neighbour', 'orchestrator', 'status', 'took it too');
+say('orchestrator', 'worker:accepted', 'review', 'a round of notes');
+say('orchestrator', 'worker:neighbour', 'review', 'a round of notes for you too');
 
 const drop = path.join(SB, 'drop');
 mkdirSync(drop, { recursive: true });
@@ -164,13 +164,13 @@ const gateRecord = (by) => `${JSON.stringify({
   schemaVersion: 1,
   records: [{ command: 'npm test', exit: 0, tree: 'a'.repeat(40), dirty: false, at: '2026-09-13T12:00:00.000Z', by }],
 })}\n`;
-say('worker:accepted', 'orchestrator', 'artifact', 'мои гейты', file('gates-accepted.json', gateRecord('worker:accepted')));
+say('worker:accepted', 'orchestrator', 'artifact', 'my gates', file('gates-accepted.json', gateRecord('worker:accepted')));
 say('worker:accepted', 'orchestrator', 'artifact', 'only this sender', file('retired.txt', 'unshared payload\n'));
-say('worker:accepted', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
-say('worker:neighbour', 'orchestrator', 'artifact', 'соседские гейты', file('gates-neighbour.json', gateRecord('worker:neighbour')));
-say('worker:neighbour', 'orchestrator', 'artifact', 'общий', file('shared.txt', SHARED));
-say('worker:open', 'orchestrator', 'artifact', 'незакрытое', file('open-patch.diff', 'diff of work nobody took\n'));
-say('worker:vanished', 'orchestrator', 'artifact', 'пропавшее', file('vanished-patch.diff', 'diff of a tree that went\n'));
+say('worker:accepted', 'orchestrator', 'artifact', 'shared', file('shared.txt', SHARED));
+say('worker:neighbour', 'orchestrator', 'artifact', 'the neighbour’s gates', file('gates-neighbour.json', gateRecord('worker:neighbour')));
+say('worker:neighbour', 'orchestrator', 'artifact', 'shared', file('shared.txt', SHARED));
+say('worker:open', 'orchestrator', 'artifact', 'unclosed', file('open-patch.diff', 'diff of work nobody took\n'));
+say('worker:vanished', 'orchestrator', 'artifact', 'vanished', file('vanished-patch.diff', 'diff of a tree that went\n'));
 
 const workersDir = store.workersDir(HOME, TASK);
 mkdirSync(workersDir, { recursive: true });
@@ -181,7 +181,7 @@ const secretsOf = (address) => {
   writeFileSync(mcp, '{"mcpServers":{}}\n');
   writeFileSync(settings, '{"hooks":{}}\n');
   mkdirSync(stand, { recursive: true });
-  writeFileSync(path.join(stand, 'AGENTS.md'), 'стенд\n');
+  writeFileSync(path.join(stand, 'AGENTS.md'), 'stand\n');
   store.writeWake(HOME, TASK, address, { socket: `/tmp/${address}.sock`, token: 'secret' });
   return { mcp, settings, stand, wake: store.wakeFile(HOME, TASK, address) };
 };
@@ -334,7 +334,7 @@ check(': an address of no task at all is refused, and the line names who IS in t
 // A CLOSED task is refused before the right is even asked: the command promises the task
 // stays active, and on a closed one that line would be a lie.
 const CLOSED = 'sweep-closed-t20260913-120100';
-store.createTask(HOME, { id: CLOSED, title: 'закрытая задача', owner: OWNER });
+store.createTask(HOME, { id: CLOSED, title: 'closed task', owner: OWNER });
 store.upsertParticipant(HOME, CLOSED, store.participantRecord('worker:gone', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-gone', repoAbs: REPO, worktree: NEIGHBOUR,
 }));
@@ -489,7 +489,7 @@ check(': and its branch goes with it',
 // --- the harness binary is off this process's PATH ---------------------------------
 // The real Claude driver, not the stand-in, behind a `claude` only the host names; one process per host.
 const OFFPATH = 'sweep-offpath-t20260924-090000';
-store.createTask(HOME, { id: OFFPATH, title: 'claude вне PATH поднятой сессии', owner: OWNER });
+store.createTask(HOME, { id: OFFPATH, title: 'claude outside the lifted session PATH', owner: OWNER });
 const OFF_TREE = worktreeAt('offpath', 'worktree-promptobus-offpath');
 writeFileSync(path.join(OFF_TREE, 'offpath.txt'), 'swept from a lifted session\n');
 git(OFF_TREE, 'add', '.');
@@ -658,7 +658,7 @@ git(TREPO, 'add', 'named.txt');
 git(TREPO, 'commit', '-qm', 'PB-1: closed — the named piece', '--trailer', `Squash-of: ${namedHead}`);
 const namedAcceptance = git(TREPO, 'log', '-1', '--format=%h').stdout.trim();
 const TRAILER_TASK = 'sweep-trailer-t20260926-180000';
-store.createTask(HOME, { id: TRAILER_TASK, title: 'squash с правкой при слиянии', owner: OWNER });
+store.createTask(HOME, { id: TRAILER_TASK, title: 'a squash edited at the merge', owner: OWNER });
 store.upsertParticipant(HOME, TRAILER_TASK, store.participantRecord('worker:named', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-named', repoAbs: TREPO, worktree: NAMED,
   branch: 'worktree-promptobus-named',

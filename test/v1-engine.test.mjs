@@ -88,7 +88,7 @@ function clock(from = '2026-09-02T10:00:00.000Z') {
 
 /** A task with an owner and two workers. The owner is a participant too, with a harness and a mode. */
 function taskWith(engine, id = 'demo-t20260902-100000') {
-  engine.createTask({ id, title: 'демо', owner: person('owner', 'orchestrator', { mode: 'attached' }) });
+  engine.createTask({ id, title: 'demo', owner: person('owner', 'orchestrator', { mode: 'attached' }) });
   engine.addParticipant(id, person('w-api', 'worker'));
   engine.addParticipant(id, person('w-docs', 'worker'));
   return id;
@@ -225,9 +225,9 @@ test('the owner changes only by an explicit claim and returns the previous one',
 test('exactly one creates a task with the same id', () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
-  const e = refusal(() => engine.createTask({ id, title: 'вторая', owner: person('owner', 'orchestrator') }));
+  const e = refusal(() => engine.createTask({ id, title: 'second', owner: person('owner', 'orchestrator') }));
   assert.equal(e.code, 'task-exists');
-  assert.equal(engine.readTask(id).title, 'демо');
+  assert.equal(engine.readTask(id).title, 'demo');
 });
 
 test('a child has one root, one teamlead session, and blocks closing the root while active', () => {
@@ -423,7 +423,7 @@ test('prevalidation: an empty list, duplicates, an unknown addressee, and a fore
     ['participant-not-found', { from: 'w-none', to: ['w-api'], type: 'task', body: 'a' }],
     ['message-type-unknown', { from: 'owner', to: ['w-api'], type: 'notify', body: 'a' }],
     ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'task', body: '' }],
-    ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись приложена' }],
+    ['schema-invalid', { from: 'owner', to: ['w-api'], type: 'artifact', body: 'record attached' }],
   ];
   for (const [code, input] of cases) {
     await t.test(`prevalidation: ${code} on ${JSON.stringify(input.to)} ${input.type}`, async () => {
@@ -446,7 +446,7 @@ test('type=artifact carries a file at the write, and a record already written wi
   const id = taskWith(engine);
 
   await t.test('sendSync refuses type=artifact with no file, and the refusal names the field', () => {
-    const e = refusal(() => engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись приложена' }));
+    const e = refusal(() => engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'record attached' }));
     assert.ok(e instanceof PromptobusError, String(e));
     assert.equal(e.code, 'schema-invalid');
     assert.match(e.message, /artifact/);
@@ -463,11 +463,11 @@ test('type=artifact carries a file at the write, and a record already written wi
     const src = path.join(SB, 'linked-record.json');
     writeFileSync(src, '{"schemaVersion":1}\n');
     const first = engine.sendSync(id, {
-      from: 'owner', to: ['w-api'], type: 'artifact', body: 'запись', artifact: { path: src },
+      from: 'owner', to: ['w-api'], type: 'artifact', body: 'record', artifact: { path: src },
     });
     assert.ok(first.artifact?.id, 'the attachment did not land');
     const second = engine.sendSync(id, {
-      from: 'owner', to: ['w-docs'], type: 'artifact', body: 'та же запись, без второго блоба', linkArtifact: first.artifact.id,
+      from: 'owner', to: ['w-docs'], type: 'artifact', body: 'the same record, without a second blob', linkArtifact: first.artifact.id,
     });
     assert.equal(second.message.type, 'artifact');
     assert.equal(second.message.artifact, first.artifact.id);
@@ -483,7 +483,7 @@ test('type=artifact carries a file at the write, and a record already written wi
     const ghost = '20260902T101112345-0009-ffffff';
     const before = engine.listArtifacts(id).artifacts.length;
     const e = refusal(() => engine.sendSync(id, {
-      from: 'owner', to: ['w-api'], type: 'artifact', body: 'ссылка в пустоту', linkArtifact: ghost,
+      from: 'owner', to: ['w-api'], type: 'artifact', body: 'a link into the void', linkArtifact: ghost,
     }));
     assert.ok(e instanceof PromptobusError, String(e));
     assert.equal(e.code, 'artifact-not-found');
@@ -499,9 +499,9 @@ test('type=artifact carries a file at the write, and a record already written wi
     const victim = metas[metas.length - 1].id;
     const file = path.join(engine.home, 'tasks', id, 'artifacts', `${victim}.json`);
     const attic = path.join(engine.home, 'tasks', id, 'broken', 'artifacts');
-    writeFileSync(file, '{"schemaVersion": 1, "id": "оборван');
+    writeFileSync(file, '{"schemaVersion": 1, "id": "cut off');
 
-    engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'ссылка на битую запись', linkArtifact: victim });
+    engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'a link to a broken record', linkArtifact: victim });
     assert.ok(existsSync(file), 'prevalidation moved the record out of the task');
     assert.ok(!existsSync(attic), 'prevalidation created the broken/artifacts attic');
 
@@ -515,7 +515,7 @@ test('type=artifact carries a file at the write, and a record already written wi
 
   // A record of the shape a previous release wrote, put into the store directly — that is
   // what sits in live journals, and no send can produce it any more.
-  const sent = engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'станет artifact' });
+  const sent = engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'will become an artifact' });
   const box = engine.inboxPath(id, 'w-api');
   const ref = path.join(box, `${sent.message.id}.json`);
   const canon = path.join(engine.home, 'tasks', id, 'messages', `${sent.message.id}.json`);
@@ -539,16 +539,16 @@ test('type=artifact carries a file at the write, and a record already written wi
     const { messages, broken } = engine.read(id, 'w-api');
     assert.equal(broken.length, 0, broken.map((b) => `${b.name} ${b.code}`).join(' | '));
     assert.equal(messages.length, 1);
-    assert.equal(messages[0].body, 'станет artifact');
+    assert.equal(messages[0].body, 'will become an artifact');
   });
 });
 
 test('a closed task is not written to, and reading it is lawful', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'до закрытия' });
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'before closing' });
   engine.closeTask(id);
-  assert.equal((await refusalAsync(() => engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'после' }))).code,
+  assert.equal((await refusalAsync(() => engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'after' }))).code,
     'task-closed');
   assert.equal(engine.read(id, 'w-api').messages.length, 1);
 });
@@ -579,9 +579,9 @@ test('a routing denial fires BEFORE artifacts and messages', async (t) => {
   const engine = openEngine({ root, policy: noWorkerToWorker, now: clock() });
   const id = taskWith(engine);
   const file = path.join(SB, 'denial.patch');
-  writeFileSync(file, 'дифф, который не должен доехать\n');
+  writeFileSync(file, 'a diff that must not arrive\n');
   const e = await refusalAsync(() => engine.send(id, {
-    from: 'w-api', to: ['w-docs'], type: 'artifact', body: 'дифф', artifact: { path: file },
+    from: 'w-api', to: ['w-docs'], type: 'artifact', body: 'diff', artifact: { path: file },
   }));
   await t.test('routing denial: the code and the policy reason', () => {
     assert.equal(e.code, 'policy-denied');
@@ -601,7 +601,7 @@ test('a routing denial fires BEFORE artifacts and messages', async (t) => {
     assert.equal(engine.unread(id, 'w-docs'), 0);
   });
   await t.test('routing denial: the allowed direction goes through', async () => {
-    const sent = await engine.send(id, { from: 'w-api', to: ['owner'], type: 'result', body: 'готово' });
+    const sent = await engine.send(id, { from: 'w-api', to: ['owner'], type: 'result', body: 'done' });
     assert.equal(sent.message.sender, 'w-api');
     assert.equal(engine.unread(id, 'owner'), 1);
   });
@@ -621,7 +621,7 @@ test('fan-out: one canonical message and a link for each recipient', async (t) =
   const engine = open(sandbox());
   const id = taskWith(engine);
   const { message, events } = await engine.send(id, {
-    from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'сделай',
+    from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'do it',
   });
   const taskRoot = path.join(engine.home, 'tasks', id);
   await t.test('fan-out: the canon is one', () => {
@@ -654,7 +654,7 @@ test('fan-out: one canonical message and a link for each recipient', async (t) =
       assert.equal(e.task, id);
       assert.equal(e.unread, 1);
       assert.deepEqual(e.messages, [{
-        id: message.id, type: 'task', from: 'owner', ts: message.ts, body: 'сделай', artifact: null,
+        id: message.id, type: 'task', from: 'owner', ts: message.ts, body: 'do it', artifact: null,
       }]);
     }
   });
@@ -667,7 +667,7 @@ test('an activation refusal of one recipient does not touch the fan-out and does
   // not take the others with it.
   const engine = open(sandbox());
   const id = taskWith(engine);
-  const { events } = await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' });
+  const { events } = await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'to both' });
   const woken = [];
   for (const e of events) {
     try {
@@ -712,11 +712,11 @@ test('a crash at each fan-out point and idempotent recovery', async (t) => {
     await t.test(`crash at step ${step}: recovery takes delivery to the end`, async () => {
       const root = sandbox();
       const source = path.join(SB, `crash-${step}.patch`);
-      writeFileSync(source, `содержимое для ${step}\n`);
+      writeFileSync(source, `contents for ${step}\n`);
       const broken = crashAt(root, step, { at: 0 });
       const id = taskWith(broken);
       const e = await refusalAsync(() => broken.send(id, {
-        from: 'owner', to: ['w-api', 'w-docs'], type: 'artifact', body: 'дифф', artifact: { path: source },
+        from: 'owner', to: ['w-api', 'w-docs'], type: 'artifact', body: 'diff', artifact: { path: source },
       }));
       assert.match(e.message, new RegExp(`crash at step ${step}`));
 
@@ -753,7 +753,7 @@ test('a crash after the first link: the second is appended, the first is not dup
   // A crash AFTER the first link: `w-api` has it, `w-docs` does not yet.
   const broken = crashAt(root, 'ref', { at: 0 });
   const id = taskWith(broken);
-  await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' }));
+  await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'to both' }));
   assert.equal(broken.unread(id, 'w-api'), 1);
   assert.equal(broken.unread(id, 'w-docs'), 0);
 
@@ -773,13 +773,13 @@ test('a crash after a read: recovery does not return what was already read', asy
   // could deliver a second time.
   const broken = crashAt(root, 'ref', { at: 0 });
   const id = taskWith(broken);
-  await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'один раз' }));
+  await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'once' }));
   assert.equal(openIntents(path.join(broken.home, 'tasks', id, 'intents')).length, 1, 'the intent is open');
 
   // The recipient takes the message BEFORE recovery: the link leaves inbox
   // for history.
   const taken = broken.read(id, 'w-api');
-  assert.deepEqual(taken.messages.map((m) => m.body), ['один раз']);
+  assert.deepEqual(taken.messages.map((m) => m.body), ['once']);
 
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   const { repairs, events } = healed.recover(id);
@@ -801,7 +801,7 @@ test('a crash after a read: recovery does not return what was already read', asy
  * the pid of THIS process — exactly what a real sender who died at that
  * moment would have left.
  */
-async function inFlight(root, body = 'в полёте') {
+async function inFlight(root, body = 'in flight') {
   const broken = crashAt(root, 'intent');
   const id = taskWith(broken);
   await refusalAsync(() => broken.send(id, { from: 'owner', to: ['w-api'], type: 'task', body }));
@@ -874,7 +874,7 @@ test('lease: recovery does not touch the intent of a live owner', async (t) => {
 
 test('lease: recovery picks up the intent of a dead owner', async () => {
   const root = sandbox();
-  const { id, intent, owner } = await inFlight(root, 'дописать');
+  const { id, intent, owner } = await inFlight(root, 'to finish');
   lease(owner, await deadStranger());
   const healed = openEngine({ root, policy: allowAll, now: clock(), recover: false });
   const { repairs } = healed.recover(id);
@@ -941,7 +941,7 @@ test('lease: an intent abandoned by this same process is picked up', async (t) =
   // between creating the intent and taking it down would redden both them
   // and this check.
   const root = sandbox();
-  const { id, intent, owner } = await inFlight(root, 'свой же');
+  const { id, intent, owner } = await inFlight(root, 'its own');
   await t.test('our pid is written as the owner', () => {
     assert.deepEqual(JSON.parse(readFileSync(owner, 'utf8')), { pid: process.pid, host: os.hostname() });
   });
@@ -972,7 +972,7 @@ test('lease: a fresh intent does not inherit an orphaned owner record', async ()
     sender: 'owner',
     recipients: ['w-api'],
     type: 'task',
-    body: 'свежий',
+    body: 'fresh',
     ts: '2026-09-02T10:07:00.000Z',
   };
   const orphan = path.join(dir, `${record.id}.owner`);
@@ -987,7 +987,7 @@ test('lease: an orphaned owner record is removed silently', async () => {
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'закрытый fan-out' });
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'a closed fan-out' });
   const orphan = path.join(engine.home, 'tasks', id, 'intents', '20260902T100500000-0009-abcdef.owner');
   mkdirSync(path.dirname(orphan), { recursive: true });
   lease(orphan, process.pid);
@@ -1017,10 +1017,10 @@ test('a neighbour took the intent between the check and the link — the send do
     },
   });
   id = taskWith(engine);
-  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'один раз' });
+  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'once' });
   await t.test('the send returned success, not a refusal on what was already delivered', () => {
     assert.ok(stolen, 'the race was not reproduced — there was no neighbour');
-    assert.equal(sent.message.body, 'один раз');
+    assert.equal(sent.message.body, 'once');
   });
   await t.test('delivered exactly once', () => {
     assert.equal(engine.unread(id, 'w-api'), 1);
@@ -1049,7 +1049,7 @@ test('the intent is gone and there is no canon — the refusal stays a refusal',
     },
   });
   const id = taskWith(engine);
-  const e = await refusalAsync(() => engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'потеря' }));
+  const e = await refusalAsync(() => engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'loss' }));
   assert.ok(e instanceof PromptobusError, String(e));
   assert.equal(e.code, 'link-refused');
   assert.equal(e.context.errno, 'ENOENT');
@@ -1060,7 +1060,7 @@ test('a torn intent is isolated, and the task keeps working', async () => {
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
-  const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
+  const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'whole' });
   // A crash inside the commit point is the only form of intent spoilage:
   // `wx` creates the file atomically, and the contents are written after.
   const torn = path.join(engine.home, 'tasks', id, 'intents', '20260902T100500000-0009-abcdef.json');
@@ -1348,9 +1348,9 @@ test('a recipient-directory mkdir refusal is classified and leaves the intent', 
 test('a read moves the link to history and does not return what was already read', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'раз' });
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'два' });
-  assert.deepEqual(engine.read(id, 'w-api').messages.map((m) => m.body), ['раз', 'два']);
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'one' });
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'two' });
+  assert.deepEqual(engine.read(id, 'w-api').messages.map((m) => m.body), ['one', 'two']);
   assert.deepEqual(engine.read(id, 'w-api').messages, []);
   assert.equal(engine.unread(id, 'w-api'), 0);
   assert.equal(readdirSync(path.join(engine.home, 'tasks', id, 'history', 'w-api')).length, 2);
@@ -1359,7 +1359,7 @@ test('a read moves the link to history and does not return what was already read
 test('a link in inbox and a record in history read the same contents', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
-  const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'то же самое' });
+  const { message } = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'the same' });
   const root = path.join(engine.home, 'tasks', id);
   const inInbox = readFileSync(path.join(root, 'inbox', 'w-api', `${message.id}.json`), 'utf8');
   engine.read(id, 'w-api');
@@ -1434,11 +1434,11 @@ test('a transient history rename refusal loses none of a three-message walk', as
 test('a broken message in the mailbox leaves for broken, and the rest arrive', async () => {
   const engine = open(sandbox());
   const id = taskWith(engine);
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'whole' });
   const box = path.join(engine.home, 'tasks', id, 'inbox', 'w-api');
-  writeFileSync(path.join(box, '20260902T100900000-0009-ffffff.json'), '{битое');
+  writeFileSync(path.join(box, '20260902T100900000-0009-ffffff.json'), '{broken');
   const { messages, broken } = engine.read(id, 'w-api');
-  assert.deepEqual(messages.map((m) => m.body), ['целое']);
+  assert.deepEqual(messages.map((m) => m.body), ['whole']);
   assert.equal(broken.length, 1);
   assert.equal(broken[0].code, 'schema-invalid');
   assert.ok(existsSync(path.join(engine.home, 'tasks', id, 'broken', 'inbox', 'w-api',
@@ -1477,15 +1477,15 @@ test('a message of a newer version is not isolated, it is named by its own code'
   // and taking it into broken would mean losing it.
   const engine = open(sandbox());
   const id = taskWith(engine);
-  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'целое' });
+  await engine.send(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'whole' });
   const box = path.join(engine.home, 'tasks', id, 'inbox', 'w-api');
   const name = '20260902T101000000-0009-eeeeee.json';
   writeFileSync(path.join(box, name), JSON.stringify({
     protocolVersion: 2, id: name.slice(0, -5), task: id, sender: 'owner', recipients: ['w-api'],
-    type: 'task', body: 'из будущего', ts: '2026-09-02T10:10:00.000Z',
+    type: 'task', body: 'from the future', ts: '2026-09-02T10:10:00.000Z',
   }));
   const { messages, broken } = engine.read(id, 'w-api');
-  assert.deepEqual(messages.map((m) => m.body), ['целое']);
+  assert.deepEqual(messages.map((m) => m.body), ['whole']);
   assert.equal(broken[0].code, 'schema-version-unsupported');
   assert.ok(existsSync(path.join(box, name)), 'the record from the future stayed in place');
 });
@@ -1494,20 +1494,20 @@ test('history: page by page, oldest to newest, last 50 by default', async (t) =>
   const engine = open(sandbox());
   const id = taskWith(engine);
   for (let i = 0; i < 60; i += 1) {
-    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: `п${String(i).padStart(2, '0')}` });
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: `m${String(i).padStart(2, '0')}` });
   }
   engine.read(id, 'w-api');
   const page = engine.history({ task: id, participant: 'w-api' });
   await t.test('history: 50 last by default, oldest to newest', () => {
     assert.equal(page.entries.length, 50);
-    assert.equal(page.entries[0].message.body, 'п10');
-    assert.equal(page.entries.at(-1).message.body, 'п59');
+    assert.equal(page.entries[0].message.body, 'm10');
+    assert.equal(page.entries.at(-1).message.body, 'm59');
   });
   await t.test('history: the cursor gives the older page, without repeats on the boundary', () => {
     const older = engine.history({ task: id, participant: 'w-api', before: page.cursor, limit: 50 });
     assert.equal(older.entries.length, 10);
-    assert.equal(older.entries[0].message.body, 'п00');
-    assert.equal(older.entries.at(-1).message.body, 'п09');
+    assert.equal(older.entries[0].message.body, 'm00');
+    assert.equal(older.entries.at(-1).message.body, 'm09');
     assert.equal(older.cursor, null, 'no older pages left');
     const seen = new Set([...page.entries, ...older.entries].map((e) => e.message.id));
     assert.equal(seen.size, 60);
@@ -1516,7 +1516,7 @@ test('history: page by page, oldest to newest, last 50 by default', async (t) =>
     assert.equal(engine.history({ task: id, participant: 'w-api', all: true }).entries.length, 60);
   });
   await t.test('history: unread is not in it', async () => {
-    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'непрочитанное' });
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: 'unread' });
     const all = engine.history({ task: id, participant: 'w-api', all: true });
     assert.equal(all.entries.length, 60);
     assert.equal(engine.unread(id, 'w-api'), 1);
@@ -1531,7 +1531,7 @@ test('history: a page boundary does not cut a group of records of one message', 
   const engine = open(sandbox());
   const id = taskWith(engine);
   for (let i = 0; i < 3; i += 1) {
-    await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'status', body: `м${i}` });
+    await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'status', body: `m${i}` });
   }
   for (const who of ['w-api', 'w-docs']) engine.read(id, who);
   const whole = engine.history({ task: id, all: true });
@@ -1557,14 +1557,14 @@ test('history without a participant collects everyone, without a task — all ta
   const engine = open(sandbox());
   const first = taskWith(engine, 'one-t20260902-100000');
   const second = taskWith(engine, 'two-t20260902-100001');
-  await engine.send(first, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'первой' });
-  await engine.send(second, { from: 'owner', to: ['w-api'], type: 'task', body: 'второй' });
+  await engine.send(first, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'to the first' });
+  await engine.send(second, { from: 'owner', to: ['w-api'], type: 'task', body: 'to the second' });
   for (const [task, who] of [[first, 'w-api'], [first, 'w-docs'], [second, 'w-api']]) engine.read(task, who);
   // One message sitting with two is two history records: the addressees
   // are different.
   assert.equal(engine.history({ task: first, all: true }).entries.length, 2);
   assert.equal(engine.history({ all: true }).entries.length, 3);
-  assert.deepEqual(engine.history({ participant: 'w-docs', all: true }).entries.map((e) => e.message.body), ['первой']);
+  assert.deepEqual(engine.history({ participant: 'w-docs', all: true }).entries.map((e) => e.message.body), ['to the first']);
 });
 
 // ── Artifacts ─────────────────────────────────────────────────────────────────────────
@@ -1572,13 +1572,16 @@ test('history without a participant collects everyone, without a task — all ta
 test('artifact: streaming SHA-256, deduplication, and different names on one digest', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
+  // english-authoring: input — multibyte contents make the size in bytes differ from the length in characters
+  const contents = 'одно и то же содержимое\n';
+  // english-authoring: end
   const file = path.join(SB, 'artifact-a.patch');
-  writeFileSync(file, 'одно и то же содержимое\n');
+  writeFileSync(file, contents);
   const copy = path.join(SB, 'artifact-b.patch');
-  writeFileSync(copy, 'одно и то же содержимое\n');
+  writeFileSync(copy, contents);
 
-  const first = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'раз', artifact: { path: file } });
-  const second = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'два', artifact: { path: copy } });
+  const first = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'one', artifact: { path: file } });
+  const second = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'two', artifact: { path: copy } });
 
   await t.test('artifact: two names, two metadata records, one blob', () => {
     assert.equal(first.artifact.sha256, second.artifact.sha256);
@@ -1589,10 +1592,10 @@ test('artifact: streaming SHA-256, deduplication, and different names on one dig
   });
   await t.test('artifact: the message carries the metadata id, the contents are read by it', () => {
     assert.equal(first.message.artifact, first.artifact.id);
-    assert.equal(engine.readArtifactContent(id, first.artifact.id).toString(), 'одно и то же содержимое\n');
+    assert.equal(engine.readArtifactContent(id, first.artifact.id).toString(), contents);
   });
   await t.test('artifact: the size is written from what was read, not from what was declared', () => {
-    assert.equal(first.artifact.size, Buffer.byteLength('одно и то же содержимое\n'));
+    assert.equal(first.artifact.size, Buffer.byteLength(contents));
   });
 });
 
@@ -1602,12 +1605,14 @@ test('an artifact from a stream: the digest is counted on the write pass', async
   // case in any way.
   const engine = open(sandbox());
   const id = taskWith(engine);
+  // english-authoring: input — multibyte chunks make the size in bytes differ from the length in characters
   const body = 'кусок один|кусок два|кусок три';
+  // english-authoring: end
   const sent = await engine.send(id, {
     from: 'owner',
     to: ['w-api'],
     type: 'artifact',
-    body: 'из потока',
+    body: 'from a stream',
     artifact: { stream: Readable.from(body.split('|')), filename: 'stream.txt' },
   });
   assert.equal(sent.artifact.size, Buffer.byteLength(body.replaceAll('|', '')));
@@ -1621,14 +1626,14 @@ test('a bad artifact name refuses BEFORE the blob', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const cases = [
-    ['empty name on a stream', { stream: Readable.from(['данные']), filename: '' }],
-    ['a path separator in the name', { stream: Readable.from(['данные']), filename: 'sub/x.txt' }],
-    ['a directory name', { stream: Readable.from(['данные']), filename: '..' }],
+    ['empty name on a stream', { stream: Readable.from(['data']), filename: '' }],
+    ['a path separator in the name', { stream: Readable.from(['data']), filename: 'sub/x.txt' }],
+    ['a directory name', { stream: Readable.from(['data']), filename: '..' }],
   ];
   for (const [what, artifact] of cases) {
     await t.test(`artifact name: ${what} — code artifact-source`, async () => {
       const e = await refusalAsync(() => engine.send(id, {
-        from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact,
+        from: 'owner', to: ['w-api'], type: 'artifact', body: 'diff', artifact,
       }));
       assert.equal(e.code, 'artifact-source');
     });
@@ -1643,15 +1648,15 @@ test('artifact: a digest mismatch on read is a typed refusal', async (t) => {
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(SB, 'integrity.patch');
-  writeFileSync(file, 'исходное содержимое\n');
-  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact: { path: file } });
+  writeFileSync(file, 'original contents\n');
+  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'diff', artifact: { path: file } });
   const blob = path.join(engine.home, 'tasks', id, 'blobs', sent.artifact.sha256);
   await t.test('artifact: before spoilage it is read whole', () => {
-    assert.equal(engine.readArtifactContent(id, sent.artifact.id).toString(), 'исходное содержимое\n');
+    assert.equal(engine.readArtifactContent(id, sent.artifact.id).toString(), 'original contents\n');
   });
   await t.test('artifact: substituted contents are not given out silently', () => {
     rmSync(blob);
-    writeFileSync(blob, 'подменённое содержимое\n');
+    writeFileSync(blob, 'substituted contents\n');
     const e = refusal(() => engine.readArtifactContent(id, sent.artifact.id));
     assert.equal(e.code, 'artifact-integrity');
     assert.equal(e.context.declared, sent.artifact.sha256);
@@ -1730,10 +1735,10 @@ test('artifact: broken metadata is isolated, the other task records are read', a
   const engine = open(sandbox());
   const id = taskWith(engine);
   const file = path.join(SB, 'meta.patch');
-  writeFileSync(file, 'дифф\n');
-  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact: { path: file } });
+  writeFileSync(file, 'diff\n');
+  const sent = await engine.send(id, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'diff', artifact: { path: file } });
   const dir = path.join(engine.home, 'tasks', id, 'artifacts');
-  writeFileSync(path.join(dir, '20260902T101100000-0009-cccccc.json'), '{битое');
+  writeFileSync(path.join(dir, '20260902T101100000-0009-cccccc.json'), '{broken');
   const listed = engine.listArtifacts(id);
   assert.deepEqual(listed.artifacts.map((a) => a.id), [sent.artifact.id]);
   assert.equal(listed.broken.length, 1);
@@ -1744,13 +1749,13 @@ test('artifact: broken metadata is isolated, the other task records are read', a
 test('an orphan blob sits until prune, and prune takes the task whole', async (t) => {
   const root = sandbox();
   const file = path.join(SB, 'orphan.patch');
-  writeFileSync(file, 'содержимое без имени\n');
+  writeFileSync(file, 'contents without a name\n');
   // A crash between the blob and the metadata leaves the contents without
   // a single reference to them.
   const broken = crashAt(root, 'blob', { at: 0 });
   const id = taskWith(broken);
   await refusalAsync(() => broken.send(id, {
-    from: 'owner', to: ['w-api'], type: 'artifact', body: 'дифф', artifact: { path: file },
+    from: 'owner', to: ['w-api'], type: 'artifact', body: 'diff', artifact: { path: file },
   }));
   const engine = openEngine({ root, policy: allowAll, now: clock() });
   await t.test('orphan blob: the contents sit, there is no metadata on them', () => {
@@ -1780,8 +1785,8 @@ test('a damaged task blocks only itself', async (t) => {
   const engine = open(sandbox());
   const healthy = taskWith(engine, 'zhivaya-t20260902-100000');
   const sick = taskWith(engine, 'bitaya-t20260902-100001');
-  await engine.send(healthy, { from: 'owner', to: ['w-api'], type: 'task', body: 'работает' });
-  writeFileSync(path.join(engine.home, 'tasks', sick, 'task.json'), '{обрезанный журнал');
+  await engine.send(healthy, { from: 'owner', to: ['w-api'], type: 'task', body: 'working' });
+  writeFileSync(path.join(engine.home, 'tasks', sick, 'task.json'), '{a truncated journal');
 
   await t.test('the listing returns the healthy and names the spoiled', () => {
     const listed = engine.listTasks();
@@ -1797,7 +1802,7 @@ test('a damaged task blocks only itself', async (t) => {
     assert.equal(refusal(() => engine.readTask(sick)).code, 'task-broken');
   });
   await t.test('the healthy task keeps working', () => {
-    assert.deepEqual(engine.read(healthy, 'w-api').messages.map((m) => m.body), ['работает']);
+    assert.deepEqual(engine.read(healthy, 'w-api').messages.map((m) => m.body), ['working']);
   });
   await t.test('recovery across all tasks does not stumble on the spoiled one', () => {
     assert.deepEqual(engine.recover().repairs, []);
@@ -2044,7 +2049,7 @@ test('the journal is not written over itself — the new file stands through ren
   const file = path.join(engine.home, 'tasks', id, 'task.json');
   const held = path.join(engine.home, 'held-journal.json');
   linkSync(file, held);
-  engine.patchTask(id, { title: 'переименована' });
-  assert.equal(JSON.parse(readFileSync(held, 'utf8')).title, 'демо', 'the former link saw the new record');
-  assert.equal(JSON.parse(readFileSync(file, 'utf8')).title, 'переименована');
+  engine.patchTask(id, { title: 'renamed' });
+  assert.equal(JSON.parse(readFileSync(held, 'utf8')).title, 'demo', 'the former link saw the new record');
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).title, 'renamed');
 });

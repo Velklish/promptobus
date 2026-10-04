@@ -56,7 +56,7 @@ const { KNOCK_TEXT_MAX } = await import(path.join(here, '..', 'lib', 'contract.j
 // bumped, the fixture must move with it, or the test would be checking a stale requirement.
 const { PROVEN_CLAUDE_VERSION } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 
-store.createTask(HOME, { id: TASK, title: 'надзиратель задачи', owner: SESSION });
+store.createTask(HOME, { id: TASK, title: 'the task warden', owner: SESSION });
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:api'));
 
 const send = (to, body) => store.sendMessage(HOME, TASK, { from: 'orchestrator', to, type: 'task', body });
@@ -188,8 +188,8 @@ check('handing over the same thing again rewrites nothing',
 const LIFT_SID = 'sess-pb233-warden';
 const LIFT_OWN = 'sup-lift-own-t20260917-100000';
 const LIFT_FOREIGN = 'sup-lift-foreign-t20260917-100100';
-store.createTask(HOME, { id: LIFT_OWN, title: 'поднятая своя', owner: LIFT_SID });
-store.createTask(HOME, { id: LIFT_FOREIGN, title: 'чужая', owner: 'sess-chuzhaya-7777' });
+store.createTask(HOME, { id: LIFT_OWN, title: 'lifted own', owner: LIFT_SID });
+store.createTask(HOME, { id: LIFT_FOREIGN, title: 'foreign', owner: 'sess-chuzhaya-7777' });
 const liftHanded = wdn.handOverContactPoints(HOME, {
   env: { CLAUDE_CODE_MESSAGING_SOCKET: SOCK, CLAUDE_CODE_MESSAGING_TOKEN: 'deadbeef' },
   session: LIFT_SID,
@@ -213,7 +213,7 @@ const idle = stubKnock();
 await wdn.wardenRound(HOME, TASK, { knock: idle });
 check(`empty mailboxes — nobody to knock for`, idle.calls.length === 0);
 
-send('worker:api', 'бриф');
+send('worker:api', 'brief');
 const first = stubKnock();
 const r1 = await wdn.wardenRound(HOME, TASK, { knock: first });
 check(`unread in the mailbox — the knock goes to its addressee`,
@@ -231,7 +231,7 @@ const body = first.calls[0].body;
 check('the injection body names the task, the address, and the unread count',
   body.includes(TASK) && body.includes('worker:api') && /has unread: 1/.test(body), body);
 check(`: a short message rides in the postcard as its stub — sender, type and size, never the text`,
-  !body.includes('бриф') && /— task from orchestrator · \S+: text 4 characters — fetch the mailbox/.test(body), body);
+  !body.includes('brief') && /— task from orchestrator · \S+: text 5 characters — fetch the mailbox/.test(body), body);
 check(': the postcard still points to the inbox — only fetching it marks messages read',
   body.includes('mailbox') && /Fetch the mailbox|only mailbox marks messages read/.test(body), body);
 check('the injection body relies on the bus rules and disclaims any escalation of privileges',
@@ -261,7 +261,7 @@ check('the knock counter grows', health()['worker:api'].knocks === 2);
 
 // A new message on top of a knock whose mailbox is not taken waits under it: the take returns
 // both. It cannot wait forever — the knock may have been dropped — so the window bounds it.
-send('worker:api', 'уточнение');
+send('worker:api', 'clarification');
 const underKnock = stubKnock();
 await wdn.wardenRound(HOME, TASK, { knock: underKnock, now: RETRY_AT + 5000 });
 check('a new message under an outstanding knock does not knock again',
@@ -296,7 +296,7 @@ check(`an empty mailbox gets no knock`, done.calls.length === 0);
 
 // A channel failure does not bring the warden down: the participant is marked self-wake, the
 // event goes into the log, delivery to everyone else continues.
-send('orchestrator', 'отчёт');
+send('orchestrator', 'report');
 const noWake = stubKnock();
 const r3 = await wdn.wardenRound(HOME, TASK, { knock: noWake });
 check(`no contact point — no knock, and the channel is self-wake`,
@@ -421,10 +421,10 @@ const roundCalls = () => (existsSync(ROUND_LOG) ? readFileSync(ROUND_LOG, 'utf8'
 // snapshot itself wouldn't call the binary for those either (a mutation probe catches this
 // right here).
 const ROUND_TASK = 'krug-t20260902-110000';
-store.createTask(HOME, { id: ROUND_TASK, title: 'круг и снимок', owner: SESSION });
+store.createTask(HOME, { id: ROUND_TASK, title: 'a round and a snapshot', owner: SESSION });
 for (const [i, addr] of ['worker:api', 'worker:web'].entries()) {
-  store.upsertParticipant(HOME, ROUND_TASK, store.participantRecord(addr, { name: `Worker: круг ${i}` }));
-  store.sendMessage(HOME, ROUND_TASK, { from: 'orchestrator', to: addr, type: 'task', body: 'работай' });
+  store.upsertParticipant(HOME, ROUND_TASK, store.participantRecord(addr, { name: `Worker: round ${i}` }));
+  store.sendMessage(HOME, ROUND_TASK, { from: 'orchestrator', to: addr, type: 'task', body: 'work' });
 }
 const roundBack = withStubPath(ROUND_BIN);
 const rounds = [];
@@ -478,7 +478,7 @@ check('promptobus status prints the tail of the warden journal', /warden journal
 // An explicit null is the write-time marker for a lift with no confirmed session. A record
 // from before the marker has neither field, so status must keep the two situations apart.
 const SESSION_REF_TASK = 'session-ref-t20260913-000000';
-store.createTask(HOME, { id: SESSION_REF_TASK, title: 'отсутствующая ссылка на сессию' });
+store.createTask(HOME, { id: SESSION_REF_TASK, title: 'a missing session reference' });
 store.upsertParticipant(HOME, SESSION_REF_TASK,
   store.participantRecord('worker:explicit-null', { name: 'session-not-recorded', session: null }));
 store.upsertParticipant(HOME, SESSION_REF_TASK,
@@ -502,26 +502,30 @@ check('status names a legacy record without either reference field as incomplete
 // The text budget is shared across the whole postcard, not a per-message threshold: a batch
 // of five short ones would otherwise give a postcard five times bigger than the longest of
 // them.
-const short = { type: 'answer', from: 'orchestrator', ts: 'T1', body: 'да, делай' };
-const long = { type: 'result', from: 'worker:api', ts: 'T2', body: 'ы'.repeat(KNOCK_TEXT_MAX + 1) };
-const withArt = { type: 'artifact', from: 'worker:api', ts: 'T3', body: 'дифф', artifact: 'diff.patch' };
+// english-authoring: input — multibyte bodies prove that postcard sizes count characters, not UTF-8 bytes
+const SHORT_TEXT = 'да, делай';
+const [LONG_FILL, HALF_FILL, OVER_FILL] = ['ы', 'я', 'ю'];
+// english-authoring: end
+const short = { type: 'answer', from: 'orchestrator', ts: 'T1', body: SHORT_TEXT };
+const long = { type: 'result', from: 'worker:api', ts: 'T2', body: LONG_FILL.repeat(KNOCK_TEXT_MAX + 1) };
+const withArt = { type: 'artifact', from: 'worker:api', ts: 'T3', body: 'patch body', artifact: 'diff.patch' };
 
 const one = orderBody(TASK, 'orchestrator', 1, [short]);
 check(': a short message rides out as its stub — sender, type and size, never the text',
-  !one.includes('да, делай') && one.includes('— answer from orchestrator · T1: text 9 characters — fetch the mailbox'), one);
+  !one.includes(SHORT_TEXT) && one.includes('— answer from orchestrator · T1: text 9 characters — fetch the mailbox'), one);
 
 const big = orderBody(TASK, 'orchestrator', 1, [long]);
 check(': a long message rides out as a counter with its own size, not a fragment',
-  !big.includes('ыыы') && big.includes(`text ${KNOCK_TEXT_MAX + 1} characters`), big);
+  !big.includes(LONG_FILL.repeat(3)) && big.includes(`text ${KNOCK_TEXT_MAX + 1} characters`), big);
 
 const art = orderBody(TASK, 'orchestrator', 1, [withArt]);
 check(': a message with an artifact rides out as a counter, however short it is',
-  !art.includes('дифф') && art.includes('artifact diff.patch'), art);
+  !art.includes('patch body') && art.includes('artifact diff.patch'), art);
 
 // The budget is spent in order of arrival: what arrived first rides out first. A bus line
 // (`bus: true`) rides whole, and one that ate almost the whole budget leaves no room for its
 // neighbor — that one goes out in the tail, but never silently vanishes.
-const half = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T4', body: 'я'.repeat(KNOCK_TEXT_MAX - 160) };
+const half = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T4', body: HALF_FILL.repeat(KNOCK_TEXT_MAX - 160) };
 const pack = orderBody(TASK, 'orchestrator', 2, [half, short]);
 check(': the budget is shared across the postcard — the first one fit whole, the second no longer does',
   pack.includes(half.body) && !pack.includes('answer from orchestrator'), pack.slice(0, 400));
@@ -533,13 +537,13 @@ check(': the postcard does not grow past the budget plus its own frame',
 // A bus line is not in the mailbox, so its overflow never says "fetch the mailbox": too long to
 // ride whole, it names its size and where it is read; with no room at all, the tail counts it apart.
 const busRoute = 'not in the mailbox — the bus status command shows it';
-const oversized = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T5', body: 'ю'.repeat(KNOCK_TEXT_MAX + 1) };
+const oversized = { id: null, bus: true, type: 'unreachable', from: 'promptobus', ts: 'T5', body: OVER_FILL.repeat(KNOCK_TEXT_MAX + 1) };
 const overCard = orderBody(TASK, 'orchestrator', 0, [oversized]);
 check(': a bus line too long to ride whole names its size and that it is not in the mailbox',
   overCard.includes(`— unreachable from promptobus · T5: ${KNOCK_TEXT_MAX + 1} characters, ${busRoute}`)
-  && !overCard.includes('ююю') && !/T5: text \d+ characters/.test(overCard), overCard.slice(0, 400));
+  && !overCard.includes(OVER_FILL.repeat(3)) && !/T5: text \d+ characters/.test(overCard), overCard.slice(0, 400));
 const stubs = Array.from({ length: 40 }, (_, i) => (
-  { id: `m${i}`, type: 'status', from: 'worker:very-long-address-here', ts: `2026-09-26T00:00:${i}`, body: 'ок' }));
+  { id: `m${i}`, type: 'status', from: 'worker:very-long-address-here', ts: `2026-09-26T00:00:${i}`, body: 'ok' }));
 const lateBus = [1, 2].map((i) => ({ id: null, bus: true, type: 'mailbox-broken', from: 'promptobus', ts: `B${i}`, body: 'r'.repeat(100) }));
 const crowded = orderBody(TASK, 'orchestrator', 40, [...stubs, ...lateBus]);
 check(': bus lines with no room left are counted apart in the tail, not sent to the mailbox',
@@ -556,7 +560,7 @@ check(': a message without an id and without the bus mark is still a stub, never
 // postcard in the kilobytes while formally staying within budget. What does not fit counts as
 // the tail — cutting the batch off silently is not allowed.
 const pack50 = Array.from({ length: 50 }, (_, i) => (
-  { type: 'status', from: 'worker:api', ts: `T${i}`, body: `тело сообщения ${i} `.repeat(8) }));
+  { type: 'status', from: 'worker:api', ts: `T${i}`, body: `message body ${i} `.repeat(8) }));
 const packed = orderBody(TASK, 'orchestrator', 50, pack50);
 // The limit is checked EXACTLY, not "approximately": the postcard's frame is constant and is
 // read off an empty call, everything else is the digest block, and it must fit inside the
@@ -572,7 +576,7 @@ check(': what did not fit is named as a tail, not swallowed',
 // Headers count against the budget the same as bodies: a batch of short lines, where the
 // bodies weigh almost nothing, still hits the limit and produces a tail.
 const tiny = Array.from({ length: 60 }, (_, i) => (
-  { type: 'status', from: 'worker:very-long-address-here', ts: `2026-08-30T00:00:${i}`, body: 'ок' }));
+  { type: 'status', from: 'worker:very-long-address-here', ts: `2026-08-30T00:00:${i}`, body: 'ok' }));
 const tinyCard = orderBody(TASK, 'orchestrator', 60, tiny);
 check(': headers count against the budget — with short bodies there is still a tail',
   /— and \d+ more: fetch the mailbox/.test(tinyCard), tinyCard.slice(-200));
@@ -584,15 +588,15 @@ check(': a batch of short lines also fits inside the budget in full',
 
 // A record that does not parse is named (`schema-invalid` and the ref) and left in place.
 const GLANCE = 'sup-glance-t20260829-160003';
-store.createTask(HOME, { id: GLANCE, title: 'заглянуть в ящик', owner: SESSION });
+store.createTask(HOME, { id: GLANCE, title: 'a glance into the mailbox', owner: SESSION });
 store.upsertParticipant(HOME, GLANCE, store.participantRecord('worker:api'));
-store.sendMessage(HOME, GLANCE, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'целое' });
+store.sendMessage(HOME, GLANCE, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'whole' });
 const inbox = store.inboxDir(HOME, GLANCE, 'worker:api');
 const brokenName = '20260829T000000000-9999-orchestrator.json';
-writeFileSync(path.join(inbox, brokenName), '{битое');
+writeFileSync(path.join(inbox, brokenName), '{broken');
 const glanced = glanceInbox(HOME, GLANCE, store.addrDir('worker:api'));
 check(': glanceInbox returns the intact messages and names the one that does not parse',
-  glanced.messages.length === 1 && glanced.messages[0].body === 'целое'
+  glanced.messages.length === 1 && glanced.messages[0].body === 'whole'
   && glanced.broken.length === 1 && glanced.broken[0].name === brokenName
   && glanced.broken[0].code === 'schema-invalid' && /did not parse/.test(glanced.broken[0].note)
   && glanced.broken[0].attic === null,
@@ -621,7 +625,7 @@ check('the switch is case- and whitespace-insensitive',
   wdn.wardenOff({ PROMPTOBUS_WARDEN: ' OFF ' }) === true && wdn.wardenOff({}) === false);
 
 const CLOSED = 'sup-closed-t20260829-150001';
-store.createTask(HOME, { id: CLOSED, title: 'закрытая', owner: SESSION });
+store.createTask(HOME, { id: CLOSED, title: 'closed', owner: SESSION });
 store.closeTask(HOME, CLOSED);
 check('nobody watches a closed task',
   wdn.ensureWarden(HOME, CLOSED, { env: {}, launch, host: HOST }) === null && launches === 1);
@@ -673,7 +677,7 @@ if (!liveListening.ok) {
 } else {
 
 
-const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'проверка провода');
+const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'a wire check');
 await new Promise((res) => setTimeout(res, 50));
 const lines = (seen[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
 check('the knock arrived and landed as two lines of JSON', knocked.ok === true && lines.length === 2, JSON.stringify(seen));
@@ -681,13 +685,13 @@ check('the first line is auth with the token',
   lines[0]?.type === 'auth' && lines[0].token === 'tok123', JSON.stringify(lines[0]));
 check('the second is an injection-protocol message with the order body',
   lines[1]?.msgV === 1 && lines[1].type === 'user' && typeof lines[1].msg_id === 'string'
-  && lines[1].message?.content === 'проверка провода' && lines[1].from === KNOCK_FROM,
+  && lines[1].message?.content === 'a wire check' && lines[1].from === KNOCK_FROM,
   JSON.stringify(lines[1]));
 
 // The auth line is always sent, even when there's no token: on macOS it isn't checked at all,
 // on Windows it's required, and code without it doesn't port.
 seen.length = 0;
-await knockSocket({ socket: LIVE_SOCK }, 'без токена');
+await knockSocket({ socket: LIVE_SOCK }, 'without a token');
 await new Promise((res) => setTimeout(res, 50));
 check('with no token the auth line still goes out',
   JSON.parse((seen[0] ?? '{}').split('\n')[0]).type === 'auth', JSON.stringify(seen));
@@ -701,7 +705,7 @@ check('the doctor smoke test connects and sends ONLY auth — it does not touch 
 await new Promise((res) => server.close(res));
 }
 
-const dead = await knockSocket({ socket: sockPath('no-such') }, 'в пустоту');
+const dead = await knockSocket({ socket: sockPath('no-such') }, 'into the void');
 check('a nonexistent socket — a failure with a reason, not an exception',
   dead.ok === false && typeof dead.error === 'string', JSON.stringify(dead));
 
@@ -712,8 +716,8 @@ check('a nonexistent socket — a failure with a reason, not an exception',
 // stubbed in here): "there was a knock" on a stub would only mean the stub got called, and
 // the question is about the wire — did a connection arrive or not.
 const WAITED = 'sup-knock-t20260829-160000';
-store.createTask(HOME, { id: WAITED, title: 'стук на непрочитанном', owner: SESSION });
-store.upsertParticipant(HOME, WAITED, store.participantRecord('worker:api', { name: 'Worker: адресат стука' }));
+store.createTask(HOME, { id: WAITED, title: 'a knock on unread mail', owner: SESSION });
+store.upsertParticipant(HOME, WAITED, store.participantRecord('worker:api', { name: 'Worker: knock addressee' }));
 const WSOCK = sockPath('bl312');
 const knocks = [];
 const wserver = createServer((c) => {
@@ -731,7 +735,7 @@ const checkNoWaitedKnock = (name) => {
   else check(name, knocks.length === 0, String(knocks.length));
 };
 
-store.sendMessage(HOME, WAITED, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'бриф' });
+store.sendMessage(HOME, WAITED, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'brief' });
 await wdn.wardenRound(HOME, WAITED);
 await settle();
 if (!waitedListening.ok) {
@@ -741,7 +745,7 @@ if (!waitedListening.ok) {
   const wired = (knocks[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
   check(': the knock goes out immediately — unread mail is the whole condition',
     knocks.length === 1 && wired.length === 2 && wired[0]?.type === 'auth'
-    && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('text 4 characters'),
+    && wired[1]?.message?.content.includes('worker:api') && wired[1].message.content.includes('text 5 characters'),
     JSON.stringify(knocks).slice(0, 300));
 }
 
@@ -752,13 +756,13 @@ if (!waitedListening.ok) {
 // `promptobus status` line. The stall postcard has been removed: it was burning the
 // orchestrator's turns on every loop until the stall was cleared.
 const STALLED = 'sup-stall-t20260829-160004';
-store.createTask(HOME, { id: STALLED, title: 'доклад о вставших', owner: SESSION });
+store.createTask(HOME, { id: STALLED, title: 'a report on the stalled', owner: SESSION });
 store.upsertParticipant(HOME, STALLED, store.participantRecord('orchestrator', { owner: SESSION }));
-store.upsertParticipant(HOME, STALLED, store.participantRecord('worker:api', { name: 'Worker: вставший' }));
+store.upsertParticipant(HOME, STALLED, store.participantRecord('worker:api', { name: 'Worker: stalled' }));
 registerWake(HOME, STALLED, 'orchestrator', {
   CLAUDE_CODE_MESSAGING_SOCKET: WSOCK, CLAUDE_CODE_MESSAGING_TOKEN: 'tok312',
 });
-const BLOCKED = [{ id: 'sb', name: 'Worker: вставший', state: 'blocked', pid: process.pid, waitingFor: 'permission prompt' }];
+const BLOCKED = [{ id: 'sb', name: 'Worker: stalled', state: 'blocked', pid: process.pid, waitingFor: 'permission prompt' }];
 
 knocks.length = 0;
 const rs1 = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
@@ -782,9 +786,9 @@ checkNoWaitedKnock(': the same stall a second time produces no knock');
 
 // No contact point needed: there's nothing to deliver. The mark is set right away.
 const LOST = 'sup-lost-t20260829-160005';
-store.createTask(HOME, { id: LOST, title: 'стоп без сокета', owner: SESSION });
+store.createTask(HOME, { id: LOST, title: 'a stop without a socket', owner: SESSION });
 store.upsertParticipant(HOME, LOST, store.participantRecord('orchestrator', { owner: SESSION }));
-store.upsertParticipant(HOME, LOST, store.participantRecord('worker:api', { name: 'Worker: вставший' }));
+store.upsertParticipant(HOME, LOST, store.participantRecord('worker:api', { name: 'Worker: stalled' }));
 knocks.length = 0;
 const rl1 = await wdn.reportStalls(HOME, LOST, { sessions: snap(LOST, BLOCKED) });
 await settle();
@@ -799,7 +803,7 @@ checkNoWaitedKnock(': a repeat with no contact point produces no knock');
 
 // The participant unstuck — the mark is cleared, or its next stall with the same reason
 // would not count as fresh.
-const ALIVE_AGAIN = [{ id: 'sb', name: 'Worker: вставший', state: 'busy', pid: process.pid }];
+const ALIVE_AGAIN = [{ id: 'sb', name: 'Worker: stalled', state: 'busy', pid: process.pid }];
 await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, ALIVE_AGAIN) });
 knocks.length = 0;
 const rsAgain = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED) });
@@ -815,7 +819,7 @@ await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, BLOCKED), now: l
 await settle();
 checkNoWaitedKnock(': the re-knock threshold sends no stall postcard');
 
-const OTHER = [{ id: 'sb', name: 'Worker: вставший', state: 'blocked', pid: process.pid, waitingFor: 'sandbox request' }];
+const OTHER = [{ id: 'sb', name: 'Worker: stalled', state: 'blocked', pid: process.pid, waitingFor: 'sandbox request' }];
 knocks.length = 0;
 const rsOther = await wdn.reportStalls(HOME, STALLED, { sessions: snap(STALLED, OTHER), now: later(10) });
 await settle();
@@ -839,9 +843,9 @@ check(': not-known does not erase the mark — the same stall is not repeated in
 checkNoWaitedKnock(': not-known produces no knock');
 
 const NOWAKE = 'sup-nowake-t20260829-160006';
-store.createTask(HOME, { id: NOWAKE, title: 'стоп без сокета оркестратора', owner: SESSION });
+store.createTask(HOME, { id: NOWAKE, title: 'a stop without the orchestrator socket', owner: SESSION });
 store.upsertParticipant(HOME, NOWAKE, store.participantRecord('orchestrator', { owner: SESSION }));
-store.upsertParticipant(HOME, NOWAKE, store.participantRecord('worker:api', { name: 'Worker: вставший' }));
+store.upsertParticipant(HOME, NOWAKE, store.participantRecord('worker:api', { name: 'Worker: stalled' }));
 const rnw = await wdn.reportStalls(HOME, NOWAKE, { sessions: snap(NOWAKE, BLOCKED) });
 check(': the orchestrator never handed over a socket — the stall is still in the log, no knock',
   rnw.length === 1 && /worker:api stalled: permission prompt/.test(rnw[0]), JSON.stringify(rnw));
@@ -859,10 +863,10 @@ if (waitedListening.ok) await new Promise((res) => wserver.close(res));
 // `claude agents --json`, and the suite never touches a live `claude`.
 
 const BEAT = 'sup-beat-t20260829-150002';
-store.createTask(HOME, { id: BEAT, title: 'удар сердца', owner: SESSION });
+store.createTask(HOME, { id: BEAT, title: 'heartbeat', owner: SESSION });
 store.upsertParticipant(HOME, BEAT, store.participantRecord('orchestrator', { owner: SESSION }));
-store.upsertParticipant(HOME, BEAT, store.participantRecord('worker:api', { name: 'Worker: удар сердца' }));
-const ALIVE = [{ id: 'sx', name: 'Worker: удар сердца', state: 'busy', pid: process.pid }];
+store.upsertParticipant(HOME, BEAT, store.participantRecord('worker:api', { name: 'Worker: heartbeat' }));
+const ALIVE = [{ id: 'sx', name: 'Worker: heartbeat', state: 'busy', pid: process.pid }];
 
 // The warden's question is "is there anyone left to wake", and `orchestrator` (the human's
 // session, invisible in `claude agents`) does not answer it: counting it as alive, the list
@@ -879,8 +883,8 @@ check('an unparsed session list does not get recorded as dead',
 // Registration window: a just-raised session is not in the list AT ALL, and without the
 // window a fresh worker would be declared dead the very second the window exists to prevent.
 const FRESH = 'sup-fresh-t20260829-150003';
-store.createTask(HOME, { id: FRESH, title: 'окно регистрации', owner: SESSION });
-store.upsertParticipant(HOME, FRESH, store.participantRecord('worker:new', { name: 'Worker: только что', started: new Date().toISOString() }));
+store.createTask(HOME, { id: FRESH, title: 'registration window', owner: SESSION });
+store.upsertParticipant(HOME, FRESH, store.participantRecord('worker:new', { name: 'Worker: just now', started: new Date().toISOString() }));
 check('a just-raised session is not yet listed, but is not counted as dead',
   wdn.liveWatched(HOME, FRESH, snap(FRESH, [])).join(',') === 'worker:new',
   wdn.liveWatched(HOME, FRESH, snap(FRESH, [])).join(','));
@@ -914,7 +918,7 @@ check(': no live participants remain — the exit reason is named',
 // sent a `result`, its session got shut down: nobody is alive, unread mail is sitting there,
 // and the re-knock path is still needed — a drop past the queue limit is silent, and if the
 // warden left now, the delivery record would go with it.
-store.sendMessage(HOME, BEAT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог' });
+store.sendMessage(HOME, BEAT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'result' });
 check('unread mail holds the listener even when nobody is left alive',
   wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) }) === null,
   String(wdn.beatRound(HOME, BEAT, startedMs, { sessions: snap(BEAT, []) })));
@@ -925,17 +929,17 @@ check('the mailbox is fetched — nothing left to hold on to, and the process ex
 
 // The working ceiling is conditional: live participants or unread defer it.
 const CEIL = 'sup-ceil-t20260913-163533';
-store.createTask(HOME, { id: CEIL, title: 'условный потолок', owner: SESSION });
-store.upsertParticipant(HOME, CEIL, store.participantRecord('worker:api', { name: 'Worker: потолок' }));
+store.createTask(HOME, { id: CEIL, title: 'a conditional ceiling', owner: SESSION });
+store.upsertParticipant(HOME, CEIL, store.participantRecord('worker:api', { name: 'Worker: ceiling' }));
 const ceilMark = { pid: process.pid, started: new Date().toISOString(), beat: new Date().toISOString() };
 store.writeJsonAtomic(store.wardenMarkFile(HOME, CEIL), ceilMark);
-const CEIL_ALIVE = [{ id: 'sx', name: 'Worker: потолок', state: 'busy', pid: process.pid }];
+const CEIL_ALIVE = [{ id: 'sx', name: 'Worker: ceiling', state: 'busy', pid: process.pid }];
 const ceilStarted = Date.now();
 const ceilPast = ceilStarted - wdn.WARDEN_TOTAL_SEC * 1000;
 check('the working ceiling does not fire while a participant is alive',
   wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, CEIL_ALIVE) }) === null,
   String(wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, CEIL_ALIVE) })));
-store.sendMessage(HOME, CEIL, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт чтения' });
+store.sendMessage(HOME, CEIL, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting to be read' });
 check('the working ceiling does not fire while unread mail remains',
   wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, []) }) === null,
   String(wdn.beatRound(HOME, CEIL, ceilPast, { now: ceilStarted, sessions: snap(CEIL, []) })));
@@ -944,8 +948,8 @@ check('after the participant is gone and the mailbox is fetched, the process exi
   wdn.beatRound(HOME, CEIL, ceilStarted, { sessions: snap(CEIL, []) }) === 'no live participants remain',
   String(wdn.beatRound(HOME, CEIL, ceilStarted, { sessions: snap(CEIL, []) })));
 const CEIL_IDLE = 'sup-ceil-idle-t20260913';
-store.createTask(HOME, { id: CEIL_IDLE, title: 'потолок на пустом', owner: SESSION });
-store.upsertParticipant(HOME, CEIL_IDLE, store.participantRecord('worker:api', { name: 'Worker: пусто' }));
+store.createTask(HOME, { id: CEIL_IDLE, title: 'a ceiling on empty', owner: SESSION });
+store.upsertParticipant(HOME, CEIL_IDLE, store.participantRecord('worker:api', { name: 'Worker: empty' }));
 store.writeJsonAtomic(store.wardenMarkFile(HOME, CEIL_IDLE), {
   ...ceilMark, beat: new Date().toISOString(),
 });
@@ -953,7 +957,7 @@ check('sitting idle past the working ceiling names itself as the exit reason',
   wdn.beatRound(HOME, CEIL_IDLE, ceilPast, { now: ceilStarted, sessions: snap(CEIL_IDLE, []) })
     === 'sat out the overall ceiling 6 h',
   String(wdn.beatRound(HOME, CEIL_IDLE, ceilPast, { now: ceilStarted, sessions: snap(CEIL_IDLE, []) })));
-const CEIL_IDLE_ALIVE = [{ id: 'sx', name: 'Worker: пусто', state: 'busy', pid: process.pid }];
+const CEIL_IDLE_ALIVE = [{ id: 'sx', name: 'Worker: empty', state: 'busy', pid: process.pid }];
 check('the absolute limit names itself separately from a quiet exit',
   wdn.beatRound(HOME, CEIL_IDLE, ceilStarted - wdn.WARDEN_ABSOLUTE_SEC * 1000,
     { now: ceilStarted, sessions: snap(CEIL_IDLE, CEIL_IDLE_ALIVE) }) === 'hit the absolute limit 72 h',
@@ -968,7 +972,7 @@ check('a few seconds short of the working ceiling — keep sitting',
 // The spot is taken by a live process — a second one does not come up at all: one mailbox
 // watched by two would give two knocks for one message.
 const BUSY = 'sup-busy-t20260829-150004';
-store.createTask(HOME, { id: BUSY, title: 'занятое место', owner: SESSION });
+store.createTask(HOME, { id: BUSY, title: 'an occupied seat', owner: SESSION });
 store.claimWarden(HOME, BUSY, { cli: '0.45.0' });
 const busyOut = await capture(() => wdn.warden({ host: HOST, task: BUSY }, { PROMPTOBUS_HOME: HOME }, SB));
 check('the spot is taken by a live one — the process leaves, naming the holder',
@@ -989,7 +993,7 @@ check('the exit reason also went into the task log',
 // heartbeat: the process's clock is substituted, not the constant. `new Date()` does not
 // depend on the substitution, so the timestamps in the store stay real.
 const LOOP = 'sup-loop-t20260829-150005';
-store.createTask(HOME, { id: LOOP, title: 'цикл надзирателя', owner: SESSION });
+store.createTask(HOME, { id: LOOP, title: 'the warden loop', owner: SESSION });
 store.upsertParticipant(HOME, LOOP, store.participantRecord('orchestrator', { owner: SESSION }));
 store.upsertParticipant(HOME, LOOP, store.participantRecord('worker:api'));
 const realNow = Date.now;
@@ -1020,9 +1024,9 @@ check('the process writes a departure note before clearing its mark',
 // remain" and the loop exits. Had the stall record been written AFTER the verdict, this
 // stall would never have made it into the log. No postcard is sent either way.
 const LAST = 'sup-last-t20260829-150007';
-store.createTask(HOME, { id: LAST, title: 'последний стоп', owner: SESSION });
+store.createTask(HOME, { id: LAST, title: 'the last stop', owner: SESSION });
 store.upsertParticipant(HOME, LAST, store.participantRecord('orchestrator', { owner: SESSION }));
-store.upsertParticipant(HOME, LAST, store.participantRecord('worker:api', { name: 'Worker: исчезнувший' }));
+store.upsertParticipant(HOME, LAST, store.participantRecord('worker:api', { name: 'Worker: vanished' }));
 const LSOCK = sockPath('bl312last');
 const lastCards = [];
 const lserver = createServer((c) => {
@@ -1071,9 +1075,9 @@ if (lastListening.ok) await new Promise((res) => lserver.close(res));
 // failures until the ceiling. The failure is real: a directory sits where health.json should
 // be, and the atomic write never once succeeds.
 const FAIL = 'sup-fail-t20260829-150006';
-store.createTask(HOME, { id: FAIL, title: 'отказ круга', owner: SESSION });
+store.createTask(HOME, { id: FAIL, title: 'a round refusal', owner: SESSION });
 store.upsertParticipant(HOME, FAIL, store.participantRecord('worker:api'));
-store.sendMessage(HOME, FAIL, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'бриф' });
+store.sendMessage(HOME, FAIL, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'brief' });
 mkdirSync(store.healthFile(HOME, FAIL), { recursive: true });
 const failOut = await capture(() => wdn.warden({ host: HOST, task: FAIL }, { PROMPTOBUS_HOME: HOME }, SB));
 check(`the watch loop failed ${wdn.ROUND_FAIL_LIMIT} times in a row — exit with a reason`,
@@ -1123,7 +1127,7 @@ const {
 }
 
 const DIAG = 'sup-diag-t20260829-170000';
-store.createTask(HOME, { id: DIAG, title: 'диагностика состояния участника' });
+store.createTask(HOME, { id: DIAG, title: 'participant state diagnostics' });
 
 // The question "what's new" and recording the mark are deliberately kept apart: the warden
 // has one report channel, and marking something "reported" ahead of a knock that never went
@@ -1207,11 +1211,11 @@ check(': an unparsed or missing state.json — no reason, not a crash',
 // here.
 mkdirSync(path.join(CLAUDE_HOME, 'jobs', 'multi'), { recursive: true });
 writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'multi', 'state.json'),
-  JSON.stringify({ state: 'blocked', detail: `  Ты — worker задачи\n\n\tправь только его\n${'х'.repeat(400)}  ` }));
+  JSON.stringify({ state: 'blocked', detail: `  You are a worker on the task\n\n\tedit only it\n${'x'.repeat(400)}  ` }));
 const flatDetail = sessionDetail('multi', CLAUDE_HOME);
 check(': a multi-line detail is flattened to one line and truncated by length',
   !/[\n\r\t]/.test(flatDetail) && flatDetail.length <= 160 && flatDetail.endsWith('…')
-  && flatDetail.startsWith('Ты — worker задачи правь только его'), `${flatDetail.length}: ${flatDetail}`);
+  && flatDetail.startsWith('You are a worker on the task edit only it'), `${flatDetail.length}: ${flatDetail}`);
 mkdirSync(path.join(CLAUDE_HOME, 'jobs', 'blank'), { recursive: true });
 writeFileSync(path.join(CLAUDE_HOME, 'jobs', 'blank', 'state.json'),
   JSON.stringify({ state: 'blocked', detail: '   \n\t ' }));
@@ -1249,7 +1253,7 @@ check(': a changed reason is reported again, not counted as the same stall',
 // — and a reader that catches it truncated parses the emptiness as "nothing was reported" and
 // reports the same stall a second time.
 const STALLS = 'otmetki-t20260829-050000';
-store.createTask(HOME, { id: STALLS, title: 'отметка доложенных стопов' });
+store.createTask(HOME, { id: STALLS, title: 'a mark of reported stops' });
 const oneStall = [{ address: 'worker:api', name: 'api', id: 'sess-1', kind: 'limit', reason: 'limit' }];
 freshStalls(STALLS, () => oneStall);
 const stallsPath = path.join(store.taskDir(HOME, STALLS), 'stalls.json');
@@ -1368,7 +1372,7 @@ check(': the window is measured from started, both forward and back',
 // The "stall reported" mark does not get set inside the window: a real stall after it must be
 // reported as new, rather than swallowed by a false alarm.
 const FRESH_TASK = 'fresh-t20260828-160000';
-store.createTask(HOME, { id: FRESH_TASK, title: 'окно регистрации' });
+store.createTask(HOME, { id: FRESH_TASK, title: 'registration window' });
 store.upsertParticipant(HOME, FRESH_TASK, asRecords([freshP])[0]);
 check(': inside the window no mark is set and there is no report',
   freshStalls(FRESH_TASK, (ps) => blocked(FRESH_TASK, ps, registering)).length === 0);
@@ -1459,7 +1463,7 @@ check(': a session writes the normal-end-of-turn line in its own words — this 
   JSON.stringify(sessionStall({ state: 'blocked' }, TURN_END)));
 
 const CYCLE = 'cikl-t20260901-190000';
-store.createTask(HOME, { id: CYCLE, title: 'штатный конец хода участника' });
+store.createTask(HOME, { id: CYCLE, title: 'a participant’s regular end of turn' });
 const CYCLE_NAME = `a2a-${CYCLE}-api`;
 store.upsertParticipant(HOME, CYCLE, store.participantRecord('worker:api', { name: CYCLE_NAME }));
 // A live record with a pid sits next to it: without it the "listed" signal self-calibrates,
@@ -1472,7 +1476,7 @@ const cycleSessions = [
 // the message's timestamp, not from the current time: `Date.now()` right next to the send
 // can land in the same millisecond, and the check would go red every other run.
 const cycleMsg = store.sendMessage(HOME, CYCLE, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог первой задачи',
+  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'the first task’s result',
 });
 const beforeMsg = new Date(Date.parse(cycleMsg.message.ts) - 60000).toISOString();
 const afterMsg = new Date(Date.parse(cycleMsg.message.ts) + 60000).toISOString();
@@ -1492,7 +1496,7 @@ check(': silent after activation — this is a stall, and it is reported as unkn
 
 // What counts is something sent BY the address itself: the message's file name carries the
 // sender, and something sent to the participant during its own turn does not count.
-store.sendMessage(HOME, CYCLE, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ещё задача' });
+store.sendMessage(HOME, CYCLE, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'another task' });
 check(': something sent to the participant is not counted as its own message',
   cycleSeen().length === 1, JSON.stringify(cycleSeen()));
 
@@ -1553,8 +1557,8 @@ check(': there is no activation time at all — nothing to compare against, and 
 // `blocked` never fired at all, and a silent participant was completely invisible. The
 // fixtures therefore come in PAIRS — `done` next to `blocked`: both forms are live, and
 // checking only one would mean locking in half the truth all over again.
-const IDLE_DONE = { id: 'done1', name: 'Worker: отдал ход', status: 'idle', state: 'done', pid: process.pid };
-const BUSY_WORKING = { id: 'work1', name: 'Worker: думает', status: 'busy', state: 'working', pid: process.pid };
+const IDLE_DONE = { id: 'done1', name: 'Worker: gave up the turn', status: 'idle', state: 'done', pid: process.pid };
+const BUSY_WORKING = { id: 'work1', name: 'Worker: thinking', status: 'busy', state: 'working', pid: process.pid };
 // The outcome is named explicitly, not only compared against its neighbor: comparing the two
 // calls against a mutation that returns `null` on both branches would give `'null' ===
 // 'null'` and green (review note) — meaning the check would pass with the entry point
@@ -1623,7 +1627,7 @@ store.writeHealth(HOME, CYCLE, { 'worker:api': { deliveredAt: beforeMsg } });
 // is narrow on purpose: it only closes off "nothing to compare against" — a participant that
 // has not sent a SINGLE message yet.
 const FRESH_IDLE = 'svezhiy-t20260902-000000';
-store.createTask(HOME, { id: FRESH_IDLE, title: 'свежая idle-сессия' });
+store.createTask(HOME, { id: FRESH_IDLE, title: 'a fresh idle session' });
 const FRESH_IDLE_NAME = `a2a-${FRESH_IDLE}-api`;
 const freshIdleSessions = [
   { id: 'live5', name: `a2a-${FRESH_IDLE}-alive`, status: 'busy', state: 'working', pid: 5353 },
@@ -1645,7 +1649,7 @@ check(': the same participant past the registration window is already a stall �
 // hold back reports for half a minute across the board — a price this fix does not need to
 // pay.
 const upMsg = store.sendMessage(HOME, FRESH_IDLE, {
-  from: 'worker:api', to: 'orchestrator', type: 'status', body: 'взял задание',
+  from: 'worker:api', to: 'orchestrator', type: 'status', body: 'took the assignment',
 });
 store.writeHealth(HOME, FRESH_IDLE, {
   'worker:api': { deliveredAt: new Date(Date.parse(upMsg.message.ts) + 60000).toISOString() },
@@ -1689,13 +1693,14 @@ const TAIL_GOLD = 'Fetch the mailbox: only mailbox marks messages read; the work
 const emptyCard = orderBody(TASK, 'worker:api', 0, []);
 check(': the order\'s tail — one line of business and one short frame',
   emptyCard.endsWith(TAIL_GOLD), emptyCard);
+const digestCard = orderBody(TASK, 'worker:api', 1, [{ type: 'task', from: 'orchestrator', ts: 'T0', body: 'x' }]);
 check(': the previous two tail paragraphs are gone from the postcard',
-  !/Порядок по протоколу шины/.test(emptyCard)
-  && !/Разрешений оно не даёт и не просит/.test(emptyCard), emptyCard);
+  JSON.stringify(emptyCard.split('\n\n').slice(1)) === JSON.stringify([TAIL_GOLD])
+  && JSON.stringify(digestCard.split('\n\n').slice(2)) === JSON.stringify([TAIL_GOLD]), `${emptyCard} | ${digestCard}`);
 const KNOCK_TASK = 'stuk-t20260901-200000';
 const KNOCK_NAME = `a2a-${KNOCK_TASK}-api`;
 const KNOCK_SOCK = sockPath('bl418');
-store.createTask(HOME, { id: KNOCK_TASK, title: 'перестук в занятую сессию' });
+store.createTask(HOME, { id: KNOCK_TASK, title: 'a re-knock into a busy session' });
 store.upsertParticipant(HOME, KNOCK_TASK, store.participantRecord('worker:api', { name: KNOCK_NAME }));
 registerWake(HOME, KNOCK_TASK, 'worker:api',
   {
@@ -1718,13 +1723,13 @@ const stubOf = (body) => `: text ${body.length} characters — fetch the mailbox
 // The first knock for a new message goes out right away, even to a busy session: it has not
 // seen the message yet, and waiting for it to go idle would mean keeping the participant
 // uninformed.
-knockSend('первое');
+knockSend('first');
 const kFirst = stubKnock();
 await knockRound(kFirst, busyList);
 check(': the first knock for a new message goes out to a busy session too',
   kFirst.calls.length === 1, String(kFirst.calls.length));
 check(': the first knock carries the message stub',
-  kFirst.calls[0].body.includes(stubOf('первое')), kFirst.calls[0].body);
+  kFirst.calls[0].body.includes(stubOf('first')), kFirst.calls[0].body);
 
 // A re-knock about the SAME unread mail does not go to a busy session: it will see the
 // notification only at the end of the turn, and the loop's own watch already returns the
@@ -1744,12 +1749,12 @@ await knockRound(kIdle, idleList, T418);
 check(': the session went idle and did not fetch the mailbox — the re-knock goes out',
   kIdle.calls.length === 1 && knockHealth().knocks === 2, JSON.stringify(knockHealth()));
 check(': a repeat does not list what was already knocked, it names the overall counter',
-  !kIdle.calls[0].body.includes(stubOf('первое')) && /has unread: 1/.test(kIdle.calls[0].body),
+  !kIdle.calls[0].body.includes(stubOf('first')) && /has unread: 1/.test(kIdle.calls[0].body),
   kIdle.calls[0].body);
 
 // A new message arrived on top of the old one — it waits under the unanswered knock, then rides
 // out alone, without its neighbor from the previous knock.
-knockSend('второе сообщение');
+knockSend('second message');
 const kUnder = stubKnock();
 await knockRound(kUnder, busyList, T418 + 1000);
 check(': a new message under an outstanding knock waits for the take',
@@ -1760,7 +1765,7 @@ await knockRound(kGrew, busyList, T418G);
 check(': past the coalescing window a new message wakes it, even a busy session',
   kGrew.calls.length === 1, String(kGrew.calls.length));
 check(': the repeat carries only the new one, while the counter is still the overall one',
-  (kGrew.calls[0]?.body ?? '').includes(stubOf('второе сообщение')) && !kGrew.calls[0].body.includes(stubOf('первое'))
+  (kGrew.calls[0]?.body ?? '').includes(stubOf('second message')) && !kGrew.calls[0].body.includes(stubOf('first'))
   && /has unread: 2/.test(kGrew.calls[0].body), kGrew.calls[0]?.body);
 
 // Session state is unknown — that is not "busy": no list, no record, no field. The re-knock
@@ -1787,8 +1792,8 @@ registerWake(HOME, KNOCK_TASK, 'worker:api',
 const kMoved = stubKnock();
 await knockRound(kMoved, idleList, T418G + 2 * wdn.KNOCK_RETRY_SEC * 1000 + 4000);
 check(': a rewritten contact point returns the full list — the session never saw it',
-  kMoved.calls.length === 1 && kMoved.calls[0].body.includes(stubOf('первое'))
-  && kMoved.calls[0].body.includes(stubOf('второе сообщение')), kMoved.calls[0].body);
+  kMoved.calls.length === 1 && kMoved.calls[0].body.includes(stubOf('first'))
+  && kMoved.calls[0].body.includes(stubOf('second message')), kMoved.calls[0].body);
 
 // A Claude turn-end hook has a different pid from the long-lived bus server, but the
 // contact point still belongs to the same session. Refreshing that pid alone must not
@@ -1934,11 +1939,11 @@ check(': a same-session turn-counter rewrite wakes immediately with only new mes
 // loop-watch mark: it's called on every end of turn, and an activation newer than the mark
 // means the session has started a turn since then and has not yet given it back.
 const ORCH_TASK = 'orkestr-t20260901-201000';
-store.createTask(HOME, { id: ORCH_TASK, title: 'занятость участника без bg-сессии' });
+store.createTask(HOME, { id: ORCH_TASK, title: 'a participant busy without a bg session' });
 registerWake(HOME, ORCH_TASK, 'orchestrator',
   { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('bl418o'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
 store.upsertParticipant(HOME, ORCH_TASK, store.participantRecord('worker:api', { dismissed: new Date().toISOString() }));
-store.sendMessage(HOME, ORCH_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог куска' });
+store.sendMessage(HOME, ORCH_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'piece result' });
 const orchHealth = () => store.readHealth(HOME, ORCH_TASK).orchestrator;
 const orchRound = (knock, now) => wdn.wardenRound(HOME, ORCH_TASK, { knock, sessions: [], now });
 
@@ -1975,7 +1980,7 @@ check(`: the turn was given back after the knock, and the mailbox was not fetche
 // activation is guaranteed to be newer, so the re-knock went silent exactly where the state
 // was unknown. The fixture is set up so the loop-watch branch says "busy": the mark is older
 // than the activation.
-const NAMED = { address: 'worker:api', name: 'Worker: именованный' };
+const NAMED = { address: 'worker:api', name: 'Worker: named' };
 store.writeHealth(HOME, ORCH_TASK, {
   ...store.readHealth(HOME, ORCH_TASK),
   'worker:api': { knockedAt: new Date(knockedO).toISOString() },
@@ -2109,7 +2114,7 @@ check(': a take of the mailbox clears the hold mark with the rest of the knock s
 // pinned down below: what a dismissed participant with no correspondence has, and what one
 // with correspondence has.
 const DISMISSED = 'sup-dismiss-t20260902-150000';
-store.createTask(HOME, { id: DISMISSED, title: 'снятый с наблюдения', owner: SESSION });
+store.createTask(HOME, { id: DISMISSED, title: 'dismissed from watch', owner: SESSION });
 store.upsertParticipant(HOME, DISMISSED, store.participantRecord('worker:api', { sessionRef: 'worker-api' }));
 store.upsertParticipant(HOME, DISMISSED, store.participantRecord('worker:web', { sessionRef: 'worker-web' }));
 for (const addr of ['worker:api', 'worker:web']) {
@@ -2140,7 +2145,7 @@ check(': nobody wrote to the dismissed one — no health record even after three
 // show up in the stalled list — otherwise skipping ALL participants would be
 // indistinguishable from skipping just the dismissed one.
 for (const addr of ['worker:api', 'worker:web']) {
-  store.sendMessage(HOME, DISMISSED, { from: 'orchestrator', to: addr, type: 'task', body: 'ещё кусок' });
+  store.sendMessage(HOME, DISMISSED, { from: 'orchestrator', to: addr, type: 'task', body: 'another piece' });
 }
 const dKnock = stubKnock();
 await wdn.wardenRound(HOME, DISMISSED, { knock: dKnock });
@@ -2174,7 +2179,7 @@ check(': promptobus status prints both the dismissal and the unread count for th
 // Printing reads `h.channel`. The self-wake branch is a different subject and is not checked
 // here: a successful Cursor/Codex knock must be named by its own channel, not "socket".
 const CH_TASK = 'channel-t20260904-084513';
-store.createTask(HOME, { id: CH_TASK, title: `канал driver'а в status`, owner: SESSION });
+store.createTask(HOME, { id: CH_TASK, title: `the driver's channel in status`, owner: SESSION });
 store.upsertParticipant(HOME, CH_TASK, store.participantRecord('worker:cur'));
 store.writeWake(HOME, CH_TASK, 'worker:cur', {
   socket: sockPath('cur-reg'), token: 't',
@@ -2204,7 +2209,7 @@ check(': promptobus status names the channel inject, not socket',
 // point is never handed over for someone else's address. The second is delivery: seeing a
 // record with someone else's session, the warden does not knock it.
 const TAKEN = 'taken-t20260903-010000';
-store.createTask(HOME, { id: TAKEN, title: 'перехваченный contact point', owner: SESSION });
+store.createTask(HOME, { id: TAKEN, title: 'an intercepted contact point', owner: SESSION });
 // A short id in the log and a full uuid on the writer — two spellings of ONE session:
 // measured 2026-09-03 (`claude agents --json`) gives `id: "e8c5be23"` alongside
 // `sessionId: "e8c5be23-dfef-4d20-bd96-e2a40a366b97"`. The fixture keeps this pair, or the
@@ -2246,7 +2251,7 @@ check(': for a record with no session id the gate stays quiet — the contact po
 // The socket in it belongs to SOMEONE ELSE: the hijacker hands over its own, and `writeWake`
 // never rewrites a record under the previous channel's address at all.
 store.writeWake(HOME, TAKEN, 'worker:api', { socket: sockPath('alien'), token: 't', session: ALIEN });
-store.sendMessage(HOME, TAKEN, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'сообщение глухому' });
+store.sendMessage(HOME, TAKEN, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'a message to a deaf one' });
 const takenKnock = stubKnock();
 const takenRound = await wdn.wardenRound(HOME, TAKEN, { knock: takenKnock });
 const takenMark = (store.readHealth(HOME, TAKEN) ?? {})['worker:api'] ?? {};
@@ -2343,7 +2348,7 @@ check('PB-168: a hijacked contact point records the taken state, and names no ch
 // Written against the CONFLATION, not the wording: sentences would go red on a reword
 // that fixed nothing and green on three that still said the same thing.
 const PROG = 'prognosis-t20260912-000000';
-store.createTask(HOME, { id: PROG, title: 'три состояния self-wake', owner: SESSION });
+store.createTask(HOME, { id: PROG, title: 'three self-wake states', owner: SESSION });
 const PROG_STATES = [
   // address, health mark, wake record
   ['worker:starting', { channel: 'self-wake', selfWake: 'starting', selfWakeChannel: null,
@@ -2445,13 +2450,13 @@ check(': the owner rewrote the contact point with its own — the knock went out
 const HEIR_TASK = 'heir-t20260904-020000';
 const OLD_ORCH = 'sess-old-orch-warden';
 const NEW_ORCH = 'sess-new-orch-warden';
-store.createTask(HOME, { id: HEIR_TASK, title: 'claim переписывает contact point', owner: OLD_ORCH });
+store.createTask(HOME, { id: HEIR_TASK, title: 'claim rewrites the contact point', owner: OLD_ORCH });
 store.writeWake(HOME, HEIR_TASK, 'orchestrator', {
   socket: sockPath('old-dead'), token: 'old', session: OLD_ORCH,
 });
 store.upsertParticipant(HOME, HEIR_TASK, store.participantRecord('worker:api', { dismissed: new Date().toISOString() }));
 store.sendMessage(HOME, HEIR_TASK, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'после смены id',
+  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'after an id change',
 });
 const beforeClaim = stubKnock({ ok: false, error: 'ENOENT' });
 await wdn.wardenRound(HOME, HEIR_TASK, { knock: beforeClaim });
@@ -2495,7 +2500,7 @@ heirSrv.close();
 }
 
 const CLAIM_EMPTY = 'claim-empty-t20260904-050000';
-store.createTask(HOME, { id: CLAIM_EMPTY, title: 'claim без непрочитанного', owner: OLD_ORCH });
+store.createTask(HOME, { id: CLAIM_EMPTY, title: 'claim without unread mail', owner: OLD_ORCH });
 store.writeWake(HOME, CLAIM_EMPTY, 'orchestrator', {
   socket: sockPath('empty-old'), token: 'old', session: OLD_ORCH,
 });
@@ -2515,7 +2520,7 @@ check('successor: a claim with an empty mailbox and no knock does not have statu
 // failed turn rewrote the contact point, and a rewritten point asks for a knock — while `status`
 // printed "the turn is running". The view here is harness-neutral: the state belongs to the warden.
 const RESET_TASK = 'reset-t20260925-160000';
-store.createTask(HOME, { id: RESET_TASK, title: 'квота с датой сброса', owner: SESSION });
+store.createTask(HOME, { id: RESET_TASK, title: 'a quota with a reset date', owner: SESSION });
 store.upsertParticipant(HOME, RESET_TASK, store.participantRecord('orchestrator', { owner: SESSION }));
 store.upsertParticipant(HOME, RESET_TASK, store.participantRecord('worker:api', { name: `a2a-${RESET_TASK}-api` }));
 const RESET_ORCH_SOCK = sockPath('rso');
@@ -2540,7 +2545,7 @@ const resetView = (stall, busy = false) => ({ 'worker:api': { state: 'alive', bu
 const resetRound = (knock, sessions, now) => wdn.wardenRound(HOME, RESET_TASK, { knock, sessions, now });
 
 rewriteResetWake(1);
-resetSend('ревью');
+resetSend('review');
 const rFirst = stubKnock();
 await resetRound(rFirst, resetView(null), R0);
 check('reset: before any refusal the first knock goes out as always',
@@ -2558,7 +2563,7 @@ check('reset: the hold is journalled once with the named time, and kept in healt
   JSON.stringify({ events: heldTick.events, health: resetHealth() }));
 
 rewriteResetWake(3);
-resetSend('ещё одно');
+resetSend('one more');
 const rGrew = stubKnock();
 const grewTick = await resetRound(rGrew, resetView(QUOTA_STALL, true), R0 + 4000);
 const rThreshold = stubKnock();
@@ -2621,7 +2626,7 @@ check('reset: the same sighting is not reported twice, and a plain failure sends
 // The session answers the first knock with a refusal naming a reset and rewrites its contact point,
 // as every ended turn does — without the second look the stale snapshot knocks it round after round.
 const LOOP_TASK = 'reset-loop-t20260925-170000';
-store.createTask(HOME, { id: LOOP_TASK, title: 'квота в цикле', owner: SESSION });
+store.createTask(HOME, { id: LOOP_TASK, title: 'a quota in the loop', owner: SESSION });
 store.upsertParticipant(HOME, LOOP_TASK, store.participantRecord('worker:api', { name: `a2a-${LOOP_TASK}-api` }));
 let loopTurns = 0;
 const loopWake = () => registerWake(HOME, LOOP_TASK, 'worker:api', {
@@ -2637,10 +2642,10 @@ const loopKnock = stubKnock(() => {
   return { ok: true };
 });
 loopWake();
-store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ревью' });
+store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'review' });
 let loopSessions = loopSnapshot();
 for (let i = 0; i < 12; i += 1) {
-  if (i === 5) store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ещё' });
+  if (i === 5) store.sendMessage(HOME, LOOP_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'more' });
   const tick = await wdn.wardenRound(HOME, LOOP_TASK, { knock: loopKnock, sessions: loopSessions, now: R0 + i * 2000 });
   loopSessions = wdn.reinspectKnocked(HOME, LOOP_TASK, loopSessions, tick.knocked, loopSnapshot);
 }
@@ -2691,13 +2696,13 @@ check('sessionStall: a Claude limit line is held to the wall time after the line
 // An unparsed reset already standing when the mail arrives: the address was never knocked on it,
 // so the probe goes out at once — holding it would leave the mail undelivered after the limit lifts.
 const NEVER_TASK = 'reset-never-t20260925-180000';
-store.createTask(HOME, { id: NEVER_TASK, title: 'квота до первого стука', owner: SESSION });
+store.createTask(HOME, { id: NEVER_TASK, title: 'a quota before the first knock', owner: SESSION });
 store.upsertParticipant(HOME, NEVER_TASK, store.participantRecord('worker:api', { name: `a2a-${NEVER_TASK}-api` }));
 const neverWake = (n) => registerWake(HOME, NEVER_TASK, 'worker:api', {
   CLAUDE_CODE_MESSAGING_SOCKET: sockPath(`nv${n}`), CLAUDE_CODE_MESSAGING_TOKEN: 't', CLAUDE_CODE_SESSION_ID: 'never-session',
 });
 neverWake(1);
-store.sendMessage(HOME, NEVER_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'ревью' });
+store.sendMessage(HOME, NEVER_TASK, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'review' });
 const neverView = { 'worker:api': { state: 'alive', busy: false, stall: UNREAD_TIME, id: 'nv1' } };
 const nFirst = stubKnock();
 await wdn.wardenRound(HOME, NEVER_TASK, { knock: nFirst, sessions: neverView, now: R0 });
@@ -2709,8 +2714,8 @@ check('reset: an unparsed time on a never-knocked address is probed at once, and
 
 // The orchestrator's own refusal has nobody to be reported to, and the journal says so.
 const SELF_TASK = 'reset-self-t20260925-180500';
-store.createTask(HOME, { id: SELF_TASK, title: 'квота у оркестратора', owner: SESSION });
-store.upsertParticipant(HOME, SELF_TASK, store.participantRecord('orchestrator', { owner: SESSION, name: 'Orchestrator: квота' }));
+store.createTask(HOME, { id: SELF_TASK, title: 'the orchestrator’s quota', owner: SESSION });
+store.upsertParticipant(HOME, SELF_TASK, store.participantRecord('orchestrator', { owner: SESSION, name: 'Orchestrator: quota' }));
 const selfKnock = stubKnock();
 const selfLines = await wdn.reportStalls(HOME, SELF_TASK, {
   sessions: { orchestrator: { state: 'alive', busy: false, stall: QUOTA_STALL, id: 'os1' } }, knock: selfKnock, now: R0,
@@ -2723,8 +2728,8 @@ check('reset: the orchestrator\'s own named reset sends no postcard and journals
 // The re-inspection after a knock goes past the session-list cache the heartbeat fills: through
 // the real Claude reader the refusal of the knocked turn shows at once, not a beat later.
 const CACHE_TASK = 'reset-cache-t20260925-181000';
-const CACHE_NAME = 'Worker: квота в кеше';
-store.createTask(HOME, { id: CACHE_TASK, title: 'квота и кеш списка', owner: SESSION });
+const CACHE_NAME = 'Worker: quota in the cache';
+store.createTask(HOME, { id: CACHE_TASK, title: 'a quota and the list cache', owner: SESSION });
 store.upsertParticipant(HOME, CACHE_TASK, store.participantRecord('worker:api', { name: CACHE_NAME }));
 const CACHE_BIN = path.join(SB, 'cache-bin');
 const CACHE_LIST = path.join(SB, 'cache-list.json');

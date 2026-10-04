@@ -439,7 +439,9 @@ check('tarball contains the model catalog',
 
 const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const publicityAudit = readFileSync(path.join(REPO, 'scripts', 'audit-public.mjs'), 'utf8');
-const { absoluteOwnerHomePath, isTextContent, organizationLeaks } = await import(
+const {
+  absoluteOwnerHomePath, authoringFindings, isTextContent, organizationLeaks, staleAuthoringSnapshots,
+} = await import(
   pathToFileURL(path.join(REPO, 'scripts', 'audit-public.mjs')).href);
 const homePath = (...parts) => parts.join('');
 check('publicity audit rejects a bare owner-home fixture',
@@ -538,6 +540,74 @@ const neutralHits = neutralSamples
   .filter((line) => !line.endsWith(': '));
 check('publicity audit passes the fictional workspace and fragment-built detectors',
   neutralHits.length === 0, neutralHits.join(' · '));
+// English authoring is read under every directory alike; Cyrillic passes only in a named
+// snapshot or, outside the runtime paths, inside a region whose marker says why.
+// english-authoring: input — the Russian review instruction a live harness script carried, and a Russian note
+const RU_INSTRUCTION = 'Пометка автора правки для ревьюера: начни свой отчёт первой строкой «${mark}» —\n'
+  + 'по ней автор поймёт, какую редакцию диффа ты смотрел.';
+const RU_NOTE = 'пояснение';
+// english-authoring: end
+const authoredIn = (name, text) => authoringFindings(name, text).filter((f) => f.startsWith('Cyrillic authored text:'));
+const authoringDirectories = [...everyDirectory, 'scripts/live-mixed.mjs', 'test/scenario.mjs', 'README.ru.md',
+  'skills/orchestrate/SKILL.md', 'schemas/v1/task.schema.json', 'tarball:package/dist/protocol.js'];
+const unread = authoringDirectories
+  .filter((name) => authoredIn(name, `const note = \`\n${RU_INSTRUCTION}\n\`;\n`).join() !== `Cyrillic authored text: ${name}:2`);
+check('publicity audit refuses a Russian review instruction under every directory',
+  unread.length === 0, unread.join(', '));
+const opener = ['//', 'english-authoring:'].join(' ');
+const region = (reason, body) => [`${opener} input${reason}`, body, `${opener} end`].join('\n');
+const regionCases = [
+  ['a reasoned region excuses its Cyrillic', region(' — a deliberate input', `'${RU_NOTE}'`), []],
+  ['Cyrillic after the region is still refused', `${region(' — a deliberate input', `'${RU_NOTE}'`)}\n'${RU_NOTE}'`,
+    ['Cyrillic authored text: test/x.mjs:4']],
+  ['a region without a reason is a finding', region('', `'${RU_NOTE}'`),
+    ['english-authoring region without a reason: test/x.mjs:1']],
+  ['a region that excuses nothing is a finding', region(' — a deliberate input', "'english'"),
+    ['english-authoring region excuses nothing: test/x.mjs:1']],
+  ['a region never closed is a finding', `${opener} input — a deliberate input\n'${RU_NOTE}'`,
+    ['english-authoring region never closed: test/x.mjs:1']],
+  ['an end without a region is a finding', `'english'\n${opener} end`,
+    ['english-authoring end without a region: test/x.mjs:2']],
+];
+const regionMisses = regionCases
+  .filter(([, text, expected]) => authoringFindings('test/x.mjs', text).join() !== expected.join())
+  .map(([what, text]) => `${what}: ${authoringFindings('test/x.mjs', text).join(', ') || '(none)'}`);
+check('publicity audit excuses Cyrillic only inside a marked region that gives its reason',
+  regionMisses.length === 0, regionMisses.join(' · '));
+const runtimeRegion = region(' — a deliberate input', `'${RU_NOTE}'`);
+const runtimeMisses = ['lib/x.js', 'src/x.ts', 'schemas/x.json', 'tarball:package/dist/x.js']
+  .filter((name) => authoringFindings(name, runtimeRegion).join()
+    !== [`english-authoring region in a runtime path: ${name}:1`, `Cyrillic authored text: ${name}:2`].join());
+check('publicity audit refuses a marked region in a runtime path and still reads the Cyrillic in it',
+  runtimeMisses.length === 0,
+  runtimeMisses.map((name) => `${name}: ${authoringFindings(name, runtimeRegion).join(', ')}`).join(' · '));
+const protocolSource = readFileSync(path.join(REPO, 'src', 'protocol.ts'), 'utf8');
+const protocolBuilt = path.join(REPO, 'dist', 'protocol.js');
+check('publicity audit keeps the transliteration table and nothing more of protocol.ts',
+  authoringFindings('src/protocol.ts', protocolSource).length === 0
+  && authoredIn('src/protocol.ts', `${protocolSource}// ${RU_NOTE}\n`).length === 1
+  && (!existsSync(protocolBuilt)
+    || authoringFindings('tarball:package/dist/protocol.js', readFileSync(protocolBuilt, 'utf8')).length === 0),
+  authoringFindings('src/protocol.ts', protocolSource).join(', '));
+const traceCard = 'docs/backlog/queue/PB-278.1-mixed-step7-delivered-after-own-send.md';
+check('publicity audit excuses the quoted run trace in its card and not the prose around it',
+  authoredIn(traceCard, `# x\n✖ step 7: the worker closed the note and sent a second result — ${RU_NOTE}\n${RU_NOTE}\n`)
+    .join() === `Cyrillic authored text: ${traceCard}:3`,
+  authoringFindings(traceCard, `✖ step 7: the worker closed the note and sent a second result — ${RU_NOTE}`).join(', '));
+check('publicity audit names a snapshot that no longer excuses anything as stale',
+  staleAuthoringSnapshots(new Map([['docs/archive/LOG.md', 'history in English']])).includes('docs/archive/LOG.md')
+  && !staleAuthoringSnapshots(new Map([['docs/archive/LOG.md', RU_NOTE]])).includes('docs/archive/LOG.md'),
+  staleAuthoringSnapshots(new Map([['docs/archive/LOG.md', 'history in English']])).join(', '));
+const contributingRule = readFileSync(path.join(REPO, 'docs', 'guides', 'contributing.md'), 'utf8');
+const readmeRule = readFileSync(path.join(REPO, 'README.md'), 'utf8');
+check('contributing guide and README hold every tracked surface to English, with no translated README',
+  contributingRule.includes('**Everything the repository tracks and ships is written in English.**')
+  && contributingRule.includes('`english-authoring: input — <reason>`')
+  && !/README\.ru|exempt from the current sweep/.test(contributingRule)
+  && readmeRule.includes('Everything the repository tracks and ships is English')
+  && !/README\.ru|\[Russian\]/.test(readmeRule)
+  && !existsSync(path.join(REPO, 'README.ru.md')) && !pkg.files.includes('README.ru.md'),
+  'contributing, README or package.json still carry the runtime-only rule or the translated README');
 check('publicity audit derives its root through import.meta.url',
   /path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/.test(publicityAudit),
   'audit-public.mjs must use path.dirname(fileURLToPath(import.meta.url))');

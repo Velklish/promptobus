@@ -180,7 +180,7 @@ test('two processes write participants — no record is lost', async () => {
   const home = path.join(SB, 'race-participants');
   const RACE_N = 120;
   const raceTask = at(home).createTask({
-    id: 't20260827-100003', title: 'гонка участников', owner: rec(store.ORCHESTRATOR),
+    id: 't20260827-100003', title: 'participant race', owner: rec(store.ORCHESTRATOR),
   });
   const joiner = (prefix) => child(`const e = at(${J(home)});\n`
     + `for (let i = 0; i < ${RACE_N}; i += 1) e.putParticipant(${J(raceTask.id)}, `
@@ -204,7 +204,7 @@ test('message names are unique on disk, not in process memory', async (t) => {
   // The address is the same for every child — that is the whole subject.
   const NAME_TASK = 'imena-t20260829-030100';
   const engine = at(atomicHome);
-  engine.createTask({ id: NAME_TASK, title: 'уникальность имён', owner: rec(store.ORCHESTRATOR) });
+  engine.createTask({ id: NAME_TASK, title: 'name uniqueness', owner: rec(store.ORCHESTRATOR) });
   engine.putParticipant(NAME_TASK, rec('worker:a'));
   const WRITERS = 6;
   const PER_WRITER = 30;
@@ -233,7 +233,7 @@ test('parallel senders of the same content do not lose records', async (t) => {
   // files folder is the adapter's business, and it is checked there.
   const ART_TASK = 'artefakty-t20260829-030200';
   const engine = at(atomicHome);
-  engine.createTask({ id: ART_TASK, title: 'гонка артефактов', owner: rec(store.ORCHESTRATOR) });
+  engine.createTask({ id: ART_TASK, title: 'artifact race', owner: rec(store.ORCHESTRATOR) });
   engine.putParticipant(ART_TASK, rec('worker:a'));
   const artRace = path.join(SB, 'race-artifact.json');
   writeFileSync(artRace, '{"event":"OrderCreated"}\n');
@@ -263,7 +263,7 @@ test('the warden mark is not written over itself', async () => {
   // sees an empty file and answers "there is no warden", which is the
   // opposite of the truth.
   const MARK_TASK = 'otmetka-t20260829-030300';
-  at(atomicHome).createTask({ id: MARK_TASK, title: 'атомарность отметки', owner: rec(store.ORCHESTRATOR) });
+  at(atomicHome).createTask({ id: MARK_TASK, title: 'mark atomicity', owner: rec(store.ORCHESTRATOR) });
   store.claimWarden(atomicHome, MARK_TASK, { cli: 'probe' });
   const heldMark = path.join(SB, 'race-mark.json');
   linkSync(store.wardenMarkFile(atomicHome, MARK_TASK), heldMark);
@@ -283,7 +283,7 @@ test('exactly one of eight takes the warden place', async () => {
   // lift eight processes: one task would be watched by eight delivery loops,
   // and every message would go to the recipient eight times.
   const CLAIM_TASK = 'nadziratel-t20260829-030400';
-  at(atomicHome).createTask({ id: CLAIM_TASK, title: 'первый выигрывает место надзирателя', owner: rec(store.ORCHESTRATOR) });
+  at(atomicHome).createTask({ id: CLAIM_TASK, title: 'the first one wins the warden seat', owner: rec(store.ORCHESTRATOR) });
   // The mark is set on the PARENT pid, not one of its own per child. The
   // place is held by the owner being alive: `liveWarden` asks `pidAlive`, and
   // an exited winner frees it for real. While the children marked themselves,
@@ -312,7 +312,7 @@ test('clearing the mark goes under the task lock', async (t) => {
   // long too. The holder is live (our pid), so the lock is not counted as an
   // orphan.
   const LOCK_TASK = 'snyatie-t20260829-030500';
-  at(atomicHome).createTask({ id: LOCK_TASK, title: 'снятие под локом', owner: rec(store.ORCHESTRATOR) });
+  at(atomicHome).createTask({ id: LOCK_TASK, title: 'removal under the lock', owner: rec(store.ORCHESTRATOR) });
   store.claimWarden(atomicHome, LOCK_TASK);
   const clearLock = path.join(store.taskDir(atomicHome, LOCK_TASK), '.lock');
   mkdirSync(clearLock, { recursive: true });

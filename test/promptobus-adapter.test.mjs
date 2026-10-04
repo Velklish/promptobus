@@ -80,7 +80,7 @@ check('participantRecord: an unnamed writer has no synthetic 0.0.0 version',
 store.bus(home, { cli: '0.5.1' });
 
 const task = store.createTask(home, {
-  id: 't20260813-120000', title: 'трасса события через два сервиса', owner: null,
+  id: 't20260813-120000', title: 'an event trace through two services', owner: null,
 });
 
 check('createTask: status active, the orchestrator is a participant at its own address',
@@ -88,7 +88,7 @@ check('createTask: status active, the orchestrator is a participant at its own a
   `${task.status} · ${store.addressOf(task.participants[0])}`);
 
 check('createTask: the title reads back',
-  store.readTask(home, task.id).title === 'трасса события через два сервиса');
+  store.readTask(home, task.id).title === 'an event trace through two services');
 
 // The slug, the stamp, and the explicit-title flag are MECHANISM fields, and in the v1
 // journal they live under `adapter`: the task's own fields there are the title, status,
@@ -144,7 +144,7 @@ check('claimOwnership: the orchestrator record carries the claiming mechanism ve
 // journal.
 const beforeInvalid = JSON.stringify(store.readTask(home, task.id).participants);
 const invalid = thrown(() => store.upsertParticipant(home, task.id,
-  store.participantRecord('worker:Плохой Адрес', { repo: 'ns/repo' })));
+  store.participantRecord('worker:Bad Address', { repo: 'ns/repo' })));
 
 check(': participant record rejects an invalid address via a GateError',
   invalid.name === 'GateError' && /invalid participant address/.test(invalid.msg),
@@ -199,7 +199,7 @@ check(': an address without a slug yields no path — the refusal names the addr
 // --- send validation -------------------------------------------------------
 
 const bad = (patch) => thrown(() => store.sendMessage(home, task.id, {
-  from: store.ORCHESTRATOR, to: 'worker:a', type: 'task', body: 'текст', ...patch,
+  from: store.ORCHESTRATOR, to: 'worker:a', type: 'task', body: 'text', ...patch,
 }, HINTS));
 
 check('validation: an unknown message type is rejected', bad({ type: 'gossip' }).threw
@@ -210,13 +210,13 @@ check('validation: an empty body is rejected', bad({ body: '   ' }).threw);
 // `artifact` is the one type that cannot travel alone — it always carries a file
 // ([04-protocol](../docs/reference/04-protocol.md) § Artifacts), so the walk gives it one.
 const typeSample = path.join(SB, 'type-sample.txt');
-writeFileSync(typeSample, 'вложение к типу artifact\n');
+writeFileSync(typeSample, 'an attachment for the artifact type\n');
 const rejectedType = store.MESSAGE_TYPES.filter((t) => thrown(() => store.sendMessage(home, task.id, {
   from: store.ORCHESTRATOR, to: 'worker:a', type: t, body: t,
   ...(t === 'artifact' ? { artifactPath: typeSample } : {}),
 })).threw);
 const artifactAlone = thrown(() => store.sendMessage(home, task.id, {
-  from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'запись приложена',
+  from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'record attached',
 }));
 check('validation: type artifact with no artifactPath is rejected, and the refusal names the parameter',
   artifactAlone.threw && artifactAlone.name === 'GateError' && /artifactPath/.test(artifactAlone.msg),
@@ -231,7 +231,7 @@ check(`validation: all ${store.MESSAGE_TYPES.length} protocol types are accepted
 // the rule"). There was not a single check for it: a mutation probe  (allow worker → worker)
 // left `promptobus-mcp.test.mjs`, the E2E, and the entire root suite all green.
 const between = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: 'worker:b', type: 'status', body: 'мимо оркестратора',
+  from: 'worker:a', to: 'worker:b', type: 'status', body: 'past the orchestrator',
 }));
 check('routing policy: worker does not write to worker — a refusal, not a silent delivery',
   between.threw && /do not write to each other/.test(between.msg), `${between.threw} · ${between.msg}`);
@@ -247,10 +247,10 @@ check('routing policy: the refusal placed nothing — the recipient\'s mailbox i
 
 // Both lawful sides pass through: the rule forbids exactly "participant → participant".
 const toOrch = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'status', body: 'участник оркестратору',
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'status', body: 'participant to orchestrator',
 }));
 const fromOrch = thrown(() => store.sendMessage(home, task.id, {
-  from: store.ORCHESTRATOR, to: 'worker:b', type: 'task', body: 'оркестратор участнику',
+  from: store.ORCHESTRATOR, to: 'worker:b', type: 'task', body: 'orchestrator to participant',
 }));
 check('routing policy: "participant → orchestrator" and "orchestrator → participant" pass through',
   !toOrch.threw && !fromOrch.threw, `${toOrch.msg} · ${fromOrch.msg}`);
@@ -259,7 +259,7 @@ check('routing policy: "participant → orchestrator" and "orchestrator → part
 // address prefix.
 store.upsertParticipant(home, task.id, store.participantRecord('reviewer:a', { repo: 'ns/repo' }));
 const workerToReviewer = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: 'reviewer:a', type: 'question', body: 'напрямую ревьюеру',
+  from: 'worker:a', to: 'reviewer:a', type: 'question', body: 'straight to the reviewer',
 }));
 check('routing policy: worker and reviewer do not correspond with each other either',
   workerToReviewer.threw && /do not write to each other/.test(workerToReviewer.msg),
@@ -337,7 +337,7 @@ check('inbox: the unread counter', store.countInbox(home, task.id, 'worker:a') =
 const artSrc = path.join(SB, 'contract.json');
 writeFileSync(artSrc, '{"event":"OrderCreated"}\n');
 const withArt = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'контракт события', artifactPath: artSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'the event contract', artifactPath: artSrc,
 });
 
 check('artifact: a hard link in the task files folder under its own name',
@@ -347,7 +347,7 @@ check('artifact: a hard link in the task files folder under its own name',
 
 writeFileSync(artSrc, '{"event":"OrderUpdated"}\n');
 const withArt2 = store.sendMessage(home, task.id, {
-  from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'второй контракт', artifactPath: artSrc,
+  from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'a second contract', artifactPath: artSrc,
 });
 
 check('artifact: a same-named one does not overwrite the previous — the link itself claims the name',
@@ -356,7 +356,7 @@ check('artifact: a same-named one does not overwrite the previous — the link i
   withArt2.artifact.filename);
 
 const noFile = thrown(() => store.sendMessage(home, task.id, {
-  from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'нет файла',
+  from: store.ORCHESTRATOR, to: 'worker:a', type: 'artifact', body: 'no file',
   artifactPath: path.join(SB, 'ghost.txt'),
 }));
 check('artifact: a nonexistent path → refusal', noFile.threw && /artifact is missing/.test(noFile.msg), noFile.msg);
@@ -366,7 +366,7 @@ check('artifact: a nonexistent path → refusal', noFile.threw && /artifact is m
 const hiddenSrc = path.join(SB, '.gate-evidence.json');
 writeFileSync(hiddenSrc, '{"kind":"hidden"}\n');
 const hidden = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'скрытое имя', artifactPath: hiddenSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'a hidden name', artifactPath: hiddenSrc,
 });
 const visibleListing = readdirSync(store.filesDir(home, task.id));
 check('artifact: a leading dot is dropped, so an ordinary listing shows the file',
@@ -383,7 +383,7 @@ check('artifact: a name with no leading dot is unchanged to the byte',
 const shadowSrc = path.join(SB, 'gate-evidence.json');
 writeFileSync(shadowSrc, '{"kind":"plain"}\n');
 const shadow = store.sendMessage(home, task.id, {
-  from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'то же имя без точки', artifactPath: shadowSrc,
+  from: 'worker:b', to: store.ORCHESTRATOR, type: 'artifact', body: 'the same name without the dot', artifactPath: shadowSrc,
 });
 check('artifact: collision protection runs on the landed name — a dot does not buy a second slot',
   shadow.artifact.filename === 'gate-evidence-2.json'
@@ -394,7 +394,7 @@ const occupied = path.join(SB, 'review-taken.diff');
 writeFileSync(occupied, 'diff --git a b\n');
 store.occupyTaskFile(store.filesDir(home, task.id), 'review-taken', '.diff', 'written by the mechanism\n');
 const besideMechanism = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'рядом со служебным', artifactPath: occupied,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'beside a service file', artifactPath: occupied,
 });
 check('artifact: a name a mechanism file already holds is a collision, numbered like any other',
   besideMechanism.artifact.filename === 'review-taken-2.diff'
@@ -402,9 +402,9 @@ check('artifact: a name a mechanism file already holds is a collision, numbered 
   besideMechanism.artifact.filename);
 
 const dotsOnly = path.join(SB, '....');
-writeFileSync(dotsOnly, 'нечего показать\n');
+writeFileSync(dotsOnly, 'nothing to show\n');
 const dotsRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'имя из одних точек', artifactPath: dotsOnly,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'a name of dots only', artifactPath: dotsOnly,
 }));
 check('artifact: a name of nothing but dots is refused to the sender, with the reason',
   dotsRefusal.threw && /no name left once leading dots are dropped/.test(dotsRefusal.msg), dotsRefusal.msg);
@@ -418,21 +418,21 @@ check('artifact: the refused name left no blob and no file behind it',
 const repeatSrc = path.join(SB, 'evidence-run.log');
 writeFileSync(repeatSrc, 'gates 4, green 4\n');
 const firstSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'первый раз', artifactPath: repeatSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'first time', artifactPath: repeatSrc,
 });
 check('artifact: the first send of these bytes reports no twin', firstSend.sameContent === null,
   JSON.stringify(firstSend.sameContent));
 const renamedSrc = path.join(SB, 'evidence-run-fixed.log');
 writeFileSync(renamedSrc, 'gates 4, green 4\n');
 const repeatSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'думал, что исправил', artifactPath: renamedSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'thought it was fixed', artifactPath: renamedSrc,
 });
 check('artifact: a repeat of the same bytes names the file that already holds them',
   repeatSend.sameContent?.filename === 'evidence-run.log' && repeatSend.sameContent?.names === 2,
   JSON.stringify(repeatSend.sameContent));
 writeFileSync(renamedSrc, 'gates 4, green 3\n');
 const changedSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'а теперь правда исправил', artifactPath: renamedSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'and now it really is fixed', artifactPath: renamedSrc,
 });
 check('artifact: other bytes report no twin — the reading is of content, not of the source name',
   changedSend.sameContent === null, JSON.stringify(changedSend.sameContent));
@@ -442,7 +442,7 @@ check('artifact: other bytes report no twin — the reading is of content, not o
 const badGate = path.join(SB, 'gates-adapter.json');
 writeFileSync(badGate, JSON.stringify({ schemaVersion: 1, records: [{ command: 'npm test', exit: '0' }] }));
 const gateRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись гейтов', artifactPath: badGate,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'gate record', artifactPath: badGate,
 }));
 check('gate record: a document its own schema refuses does not land silently',
   gateRefusal.threw
@@ -468,7 +468,7 @@ const goodGate = {
 };
 writeFileSync(badGate, JSON.stringify(goodGate));
 const goodSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись гейтов', artifactPath: badGate,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'gate record', artifactPath: badGate,
 });
 check('gate record: a valid one passes through byte for byte',
   goodSend.artifact.filename === 'gates-adapter.json'
@@ -483,7 +483,7 @@ const verificationDoc = {
 const verificationSrc = path.join(SB, 'gates-kind.json');
 writeFileSync(verificationSrc, JSON.stringify(verificationDoc));
 const verificationSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: verificationSrc,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'card run', artifactPath: verificationSrc,
 });
 check('PB-232: a gate record carrying one card verification run validates on send',
   verificationSend.artifact.filename === 'gates-kind.json'
@@ -493,7 +493,7 @@ check('PB-232: a gate record carrying one card verification run validates on sen
 const kindAtRoot = path.join(SB, 'gates-kind-root.json');
 writeFileSync(kindAtRoot, JSON.stringify({ ...goodGate, kind: 'verification', records: [{ ...goodGate.records[0], command: CARD_RUN }] }));
 const rootRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: kindAtRoot,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'card run', artifactPath: kindAtRoot,
 }));
 check('PB-232: kind at the document root is refused by field name',
   rootRefusal.threw && /\/kind: field the schema does not define/.test(rootRefusal.msg),
@@ -508,7 +508,7 @@ writeFileSync(unknownKind, JSON.stringify({
   records: [{ ...goodGate.records[0], command: CARD_RUN, kind: 'card' }],
 }));
 const unknownRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: unknownKind,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'card run', artifactPath: unknownKind,
 }));
 check('PB-232: an unknown kind is refused by field name',
   unknownRefusal.threw && /\/records\/0\/kind/.test(unknownRefusal.msg),
@@ -517,7 +517,7 @@ check('PB-232: an unknown kind is refused by field name',
 const brokenJson = path.join(SB, 'gates-unparsed.json');
 writeFileSync(brokenJson, 'gates 4, green 4\n');
 const parseRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'не JSON', artifactPath: brokenJson,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'not JSON', artifactPath: brokenJson,
 }));
 check('gate record: a file named as a record that is not JSON at all is refused too',
   parseRefusal.threw && /did not parse as JSON/.test(parseRefusal.msg), parseRefusal.msg);
@@ -525,7 +525,7 @@ check('gate record: a file named as a record that is not JSON at all is refused 
 const badHandover = path.join(SB, 'handover-adapter.json');
 writeFileSync(badHandover, JSON.stringify({ schemaVersion: 1, tree: 'a'.repeat(40) }));
 const handoverRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: badHandover,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: badHandover,
 }));
 check('handover record: the same door, the same refusal — one mechanism covers both records',
   handoverRefusal.threw && /handover-record\.schema\.json/.test(handoverRefusal.msg)
@@ -560,7 +560,7 @@ const handoverDoc = (probeOver = {}) => ({
 const wrongTarget = path.join(SB, 'handover-wrong-target.json');
 writeFileSync(wrongTarget, JSON.stringify(handoverDoc({ expected: ['the parity block'] })));
 const targetRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: wrongTarget,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: wrongTarget,
 }));
 check('PB-234: a probe that reddened something other than its declared target is refused, with both named',
   targetRefusal.threw
@@ -577,7 +577,7 @@ check('PB-234: the refusal left nothing of the contradicting record in the task'
 const halfTarget = path.join(SB, 'handover-half-target.json');
 writeFileSync(halfTarget, JSON.stringify(handoverDoc({ expected: ['the bound check', 'the parity block'] })));
 const halfRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: halfTarget,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: halfTarget,
 }));
 check('PB-234: one target of two hit is still a refusal, and the hit one is not printed as a stray',
   halfRefusal.threw
@@ -604,7 +604,7 @@ const hitDoc = handoverDoc({
 });
 writeFileSync(hitTarget, JSON.stringify(hitDoc));
 const hitSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: hitTarget,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: hitTarget,
 });
 check('PB-234: the declared target among the names that reddened passes, and a wider net is not a fault',
   hitSend.artifact.filename === 'handover-target-hit.json'
@@ -616,7 +616,7 @@ check('PB-234: the declared target among the names that reddened passes, and a w
 const noTarget = path.join(SB, 'handover-no-target.json');
 writeFileSync(noTarget, JSON.stringify(handoverDoc()));
 const noTargetSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: noTarget,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: noTarget,
 });
 check('PB-234: a record that declares no target lands as before — the field is optional',
   noTargetSend.artifact.filename === 'handover-no-target.json', noTargetSend.artifact?.filename);
@@ -633,7 +633,7 @@ writeFileSync(restoredCounts, JSON.stringify(handoverDoc({
   verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 },
 })));
 const restoredRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: restoredCounts,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: restoredCounts,
 }));
 check('PB-234.4: a negative remainder is more verdicts than the base run, named as another invocation',
   restoredRefusal.threw
@@ -651,7 +651,7 @@ writeFileSync(otherCounts, JSON.stringify(handoverDoc({
   verdicts: { baseTotal: 26, passed: 20, unaccounted: 0 },
 })));
 const otherRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: otherCounts,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: otherCounts,
 }));
 check('PB-234.4: a positive remainder names verdicts the run never reached, not another invocation',
   otherRefusal.threw
@@ -668,7 +668,7 @@ writeFileSync(oneShort, JSON.stringify(handoverDoc({
   verdicts: { baseTotal: 26, passed: 24, unaccounted: 0 },
 })));
 const oneShortRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: oneShort,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: oneShort,
 }));
 check('PB-234.4: a remainder of one says verdict, not verdicts',
   oneShortRefusal.threw
@@ -687,7 +687,7 @@ const duplicateDoc = handoverDoc({
 });
 writeFileSync(duplicateNames, JSON.stringify(duplicateDoc));
 const duplicateSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: duplicateNames,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: duplicateNames,
 });
 check('PB-234.4: a repeated name in reddened counts once per listing, not once per distinct name',
   duplicateSend.artifact.filename === 'handover-duplicate-reddened.json'
@@ -699,7 +699,7 @@ const notRunDoc = handoverDoc();
 notRunDoc.checks.mutationProbe = { notRun: 'this repository has no runner that prints verdict names' };
 writeFileSync(notRunProbe, JSON.stringify(notRunDoc));
 const notRunSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: notRunProbe,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: notRunProbe,
 });
 check('PB-234.4: a probe declared not run has no counts to compare and lands as before',
   notRunSend.artifact.filename === 'handover-probe-not-run.json'
@@ -714,7 +714,7 @@ const LAG = 'the commits since the probe did not touch the mutated file or the r
 const lagged = path.join(SB, 'handover-lagged-tree.json');
 writeFileSync(lagged, JSON.stringify(handoverDoc({ tree: EARLIER })));
 const lagRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: lagged,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: lagged,
 }));
 check('PB-234.3: a probe recorded on another tree, with no reason, is refused and both shas are named',
   lagRefusal.threw
@@ -734,7 +734,7 @@ const explainedPath = path.join(SB, 'handover-lagged-explained.json');
 const explainedDoc = handoverDoc({ tree: EARLIER, treeLag: LAG });
 writeFileSync(explainedPath, JSON.stringify(explainedDoc));
 const explainedSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: explainedPath,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: explainedPath,
 });
 check('PB-234.3: the same record with a reason for the other tree is accepted unchanged',
   explainedSend.artifact.filename === 'handover-lagged-explained.json'
@@ -746,7 +746,7 @@ const agreedPath = path.join(SB, 'handover-agreed-tree.json');
 const agreedDoc = handoverDoc();
 writeFileSync(agreedPath, JSON.stringify(agreedDoc));
 const agreedSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: agreedPath,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: agreedPath,
 });
 check('PB-234.3: a record whose probe sha is its tree sha is unaffected',
   agreedSend.artifact.filename === 'handover-agreed-tree.json'
@@ -758,7 +758,7 @@ const agreedReasonPath = path.join(SB, 'handover-agreed-reason.json');
 const agreedReasonDoc = handoverDoc({ treeLag: LAG });
 writeFileSync(agreedReasonPath, JSON.stringify(agreedReasonDoc));
 const agreedReasonSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'запись сдачи', artifactPath: agreedReasonPath,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: agreedReasonPath,
 });
 check('PB-234.3: a reason beside shas that already agree is not a refusal',
   agreedReasonSend.artifact.filename === 'handover-agreed-reason.json'
@@ -771,7 +771,7 @@ cardCheck.checks.cardVerification = { command: CARD_RUN };
 const cardPath = path.join(SB, 'handover-card-verification.json');
 writeFileSync(cardPath, JSON.stringify(cardCheck));
 const cardRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: cardPath,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'card run', artifactPath: cardPath,
 }));
 check('PB-232: a cardVerification check in the handover record is refused by field name',
   cardRefusal.threw && /\/checks\/cardVerification: field the schema does not define/.test(cardRefusal.msg),
@@ -782,7 +782,7 @@ cardRoot.cardVerification = { command: CARD_RUN };
 const cardRootPath = path.join(SB, 'handover-card-verification-root.json');
 writeFileSync(cardRootPath, JSON.stringify(cardRoot));
 const cardRootRefusal = thrown(() => store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'прогон карточки', artifactPath: cardRootPath,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'card run', artifactPath: cardRootPath,
 }));
 check('PB-232: cardVerification at the handover root is refused by field name',
   cardRootRefusal.threw
@@ -794,7 +794,7 @@ check('PB-232: cardVerification at the handover root is refused by field name',
 const neutral = path.join(SB, 'gates-not-a-record.txt');
 writeFileSync(neutral, 'not json, not a record\n');
 const neutralSend = store.sendMessage(home, task.id, {
-  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'обычный файл', artifactPath: neutral,
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'an ordinary file', artifactPath: neutral,
 });
 check('records: a file that claims neither stem is not read as one — the check is by name',
   neutralSend.artifact.filename === 'gates-not-a-record.txt', neutralSend.artifact.filename);
@@ -806,7 +806,7 @@ store.readInbox(home, task.id, store.ORCHESTRATOR);
 check('resolveTaskId: one active task — it is the current one',
   store.resolveTaskId(home, null, null, HINTS) === task.id);
 
-const second = store.createTask(home, { id: 't20260813-130000', title: 'вторая', owner: null });
+const second = store.createTask(home, { id: 't20260813-130000', title: 'second', owner: null });
 const many = thrown(() => store.resolveTaskId(home, null, null, HINTS));
 check('resolveTaskId: several active → refusal with a list',
   many.threw && many.msg.includes(task.id) && many.msg.includes(second.id), many.msg);
@@ -821,18 +821,18 @@ check('closeTask: the task is closed, the closing mark lives in adapter, there i
   && store.resolveTaskId(home, null, null, HINTS) === task.id);
 
 check('resolveTaskId: a nonexistent task → refusal',
-  thrown(() => store.resolveTaskId(home, 'нет-такой', null, HINTS)).threw);
+  thrown(() => store.resolveTaskId(home, 'no-such', null, HINTS)).threw);
 
 // --- : message to a nonexistent addressee -------------------------------
 
 const bl156 = path.join(SB, 'bl156', '.promptobus');
-const addressed = store.createTask(bl156, { id: 't20260827-110000', title: 'адресация', owner: null });
+const addressed = store.createTask(bl156, { id: 't20260827-110000', title: 'addressing', owner: null });
 store.upsertParticipant(bl156, addressed.id,
   store.participantRecord('worker:orders-api', { repo: 'demo_team/orders-api' }));
 const ghostArt = path.join(SB, 'bl156-artifact.json');
 writeFileSync(ghostArt, '{"never":"sent"}\n');
 const toGhost = thrown(() => store.sendMessage(bl156, addressed.id, {
-  from: store.ORCHESTRATOR, to: 'worker:opechatka', type: 'task', body: 'бриф в пустоту', artifactPath: ghostArt,
+  from: store.ORCHESTRATOR, to: 'worker:opechatka', type: 'task', body: 'a brief into the void', artifactPath: ghostArt,
 }, HINTS));
 
 check(': the addressee is outside the task participants — a refusal, not a silent success',
@@ -850,7 +850,7 @@ check(': the artifact of a rejected message is not copied into the task',
   !existsSync(path.join(store.filesDir(bl156, addressed.id), 'bl156-artifact.json')));
 
 const toKnown = store.sendMessage(bl156, addressed.id, {
-  from: store.ORCHESTRATOR, to: 'worker:orders-api', type: 'task', body: 'бриф участнику',
+  from: store.ORCHESTRATOR, to: 'worker:orders-api', type: 'task', body: 'a brief to the participant',
 });
 check(': a message to a task participant still goes through as before',
   toKnown.message.recipients.join(',') === 'worker-orders-api'
@@ -863,20 +863,20 @@ check(': a message to a task participant still goes through as before',
 // harness, not the session, and without the list the message would disappear silently). The
 // package itself does not write to the process streams at all — the door assembles the line.
 const bl250 = path.join(SB, 'bl250', '.promptobus');
-const dirty = store.createTask(bl250, { id: 'bitoe-t20260829-040000', title: 'битый вход', owner: null });
+const dirty = store.createTask(bl250, { id: 'bitoe-t20260829-040000', title: 'a broken input', owner: null });
 store.upsertParticipant(bl250, dirty.id, store.participantRecord('worker:a'));
 for (const n of [1, 2, 3]) {
   store.sendMessage(bl250, dirty.id, {
-    from: 'worker:a', to: store.ORCHESTRATOR, type: 'status', body: `цел ${n}`,
+    from: 'worker:a', to: store.ORCHESTRATOR, type: 'status', body: `whole ${n}`,
   });
 }
 const dirtyBox = store.inboxDir(bl250, dirty.id, store.ORCHESTRATOR);
 const dirtyName = '20260829T040000000-9999-abcdef.json';
-writeFileSync(path.join(dirtyBox, dirtyName), 'не json вовсе');
+writeFileSync(path.join(dirtyBox, dirtyName), 'not json at all');
 const read = captureSplit(() => store.readInbox(bl250, dirty.id, store.ORCHESTRATOR));
 
 check('a broken file at the front of the queue does not take down the intact ones — all three reached the reader',
-  read.value.messages.map((m) => m.body).join(',') === 'цел 1,цел 2,цел 3',
+  read.value.messages.map((m) => m.body).join(',') === 'whole 1,whole 2,whole 3',
   read.value.messages.map((m) => m.body).join(','));
 
 check('report to the agent: the broken list names the file and where it was set aside',
@@ -897,7 +897,7 @@ check('mailbox is no longer jammed — what was read is gone, there is no broken
 // parses. The cache lives exactly as long as the synchronous span it wraps; the proof that
 // there is only one read is the disk itself: the file is removed between the two reads.
 const bl261 = path.join(SB, 'bl261', '.promptobus');
-const cached = store.createTask(bl261, { id: 'kesh-t20260829-070000', title: 'кэш журнала', owner: null });
+const cached = store.createTask(bl261, { id: 'kesh-t20260829-070000', title: 'journal cache', owner: null });
 const cachedFile = store.taskFile(bl261, cached.id);
 const cachedRaw = readFileSync(cachedFile, 'utf8');
 let inSpan = null;
@@ -909,7 +909,7 @@ const spanTry = thrown(() => {
   });
 });
 check(': inside a request the journal is read once — the second read never touches the disk',
-  !spanTry.threw && inSpan?.join('|') === 'кэш журнала|кэш журнала', spanTry.msg || String(inSpan));
+  !spanTry.threw && inSpan?.join('|') === 'journal cache|journal cache', spanTry.msg || String(inSpan));
 
 writeFileSync(cachedFile, cachedRaw);
 const outOfSpan = thrown(() => {
@@ -922,18 +922,18 @@ check(': outside a request the read is unchanged — a removed journal fails, sa
 writeFileSync(cachedFile, cachedRaw);
 const afterWrite = store.withTaskCache(() => {
   store.readTask(bl261, cached.id);
-  store.patchTask(bl261, cached.id, { title: 'переименована' });
+  store.patchTask(bl261, cached.id, { title: 'renamed' });
   return store.readTask(bl261, cached.id).title;
 });
 check(': writing the journal invalidates the cache — the next read within the same span sees the new value',
-  afterWrite === 'переименована', afterWrite);
+  afterWrite === 'renamed', afterWrite);
 
 // Under the lock, the disk is read, not the cache: read-modify-write must see what the
 // neighbor wrote, the one the lock waited for. The neighbor is played by a write that bypasses
 // the door — that way the cache is left holding the old snapshot. What gets written is a STORE
 // RECORD, not its view: the journal is versioned, and the reader will not accept a view without
 // a version — it would not even be a neighbor's edit then.
-const sneaky = { ...JSON.parse(readFileSync(cachedFile, 'utf8')), title: 'правка соседа' };
+const sneaky = { ...JSON.parse(readFileSync(cachedFile, 'utf8')), title: 'a neighbour edit' };
 const underLock = store.withTaskCache(() => {
   store.readTask(bl261, cached.id);
   writeFileSync(cachedFile, JSON.stringify(sneaky, null, 2) + '\n');
@@ -941,13 +941,13 @@ const underLock = store.withTaskCache(() => {
   return [seen, store.readTask(bl261, cached.id).title];
 });
 check(': under the lock the journal is read from disk, and the lock on exit invalidates the request cache',
-  underLock.join('|') === 'правка соседа|правка соседа', underLock.join('|'));
+  underLock.join('|') === 'a neighbour edit|a neighbour edit', underLock.join('|'));
 
 // --- listing survives a broken journal --------------------------------------
 
 const bl149 = path.join(SB, 'bl149', '.promptobus');
-const sane = store.createTask(bl149, { id: 't20260827-100000', title: 'исправная', owner: null });
-const brokenTask = store.createTask(bl149, { id: 't20260827-100001', title: 'битая', owner: null });
+const sane = store.createTask(bl149, { id: 't20260827-100000', title: 'a sound one', owner: null });
+const brokenTask = store.createTask(bl149, { id: 't20260827-100001', title: 'a broken one', owner: null });
 // This is what the journal of a process that died mid non-atomic write looks like.
 writeFileSync(store.taskFile(bl149, brokenTask.id), '{\n  "id": "t20260827-1000');
 const listed = captureSplit(() => store.listTasks(bl149));
@@ -958,7 +958,7 @@ check(': a broken journal does not crash the listing — the sound task is in pl
 check(': the skipped task is named to the human by its file',
   listed.err.includes(brokenTask.id) && listed.err.includes('task.json'), listed.err);
 
-mkdirSync(path.join(store.tasksDir(bl149), 'не id задачи'), { recursive: true });
+mkdirSync(path.join(store.tasksDir(bl149), 'not a task id'), { recursive: true });
 check(': a foreign directory next to the tasks is filtered out, not thrown as a refusal',
   !thrown(() => quiet(() => store.listTasks(bl149))).threw);
 

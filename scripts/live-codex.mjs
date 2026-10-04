@@ -118,7 +118,7 @@ const env = {
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
 
-store.createTask(home, { id: TASK, title: 'живая проверка driver’а Codex', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'live check of the Codex driver', owner: ORCH_SESSION });
 
 process.stdout.write(`▸ live Codex run: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
 process.stdout.write(`▸ model: ${MODEL} · sandbox: read-only · approvalPolicy: on-request\n`);

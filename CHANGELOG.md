@@ -36,6 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   glued to a preceding word character is no longer a finding. A detector test that must
   hold one of these strings builds it from fragments, none of which is the brand alone.
   Test fixtures use the fictional `demo_team/orders-api` repository.
+- **The package ships one README, in English, and the publicity audit holds every tracked
+  surface to English.** `README.ru.md` is gone from the repository and from the tarball, and
+  `README.md` no longer links to a translation. Cyrillic in any tracked text file or packed
+  entry is now a finding, where before only `bin/`, `lib/`, `src/`, `schemas/`, `templates/`
+  and `dist/` were read and `scripts/` and `test/` were exempt. It passes only in the snapshots
+  `AUTHORING_SNAPSHOTS` names — the transliteration table, the journal of closed tasks, a run
+  trace quoted in a card and the frozen `v0.61` store snapshot — and, outside the runtime
+  paths, inside a region a file opens with `english-authoring: input — <reason>` and closes with
+  `english-authoring: end`. A region in a runtime path, a region without a reason or never
+  closed, and a region or snapshot that excuses no Cyrillic, are findings. The live harness scripts, the end-to-end scenario and the test suite now write
+  their prompts, titles, message bodies and commit messages in English; the inputs that keep
+  Cyrillic on purpose — multibyte bodies and artifact contents, non-ASCII file names, a
+  Windows prompt, a Unicode source line — are marked regions.
+  [Contributing](docs/guides/contributing.md).
 
 ### Fixed
 

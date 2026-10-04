@@ -120,7 +120,7 @@ export const WORKER_SCRIPT = {
     {
       say: `On the first turn send the orchestrator a status message whose body starts with the line «${MARK.status}». Do nothing else and end the turn.`,
       detail: 'status sent; awaiting next cycle',
-      do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.status}: взял задание, приступаю` } }],
+      do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.status}: took the assignment, starting` } }],
     },
     {
       say: `After a notification, fetch the mailbox, create ${NOTE_FILE} in your worktree with the line «${MARK.result1}», commit it, and send the orchestrator a result whose body starts with «${MARK.result1}». End the turn.`,
@@ -128,9 +128,9 @@ export const WORKER_SCRIPT = {
       do: [
         { tool: 'promptobus_mailbox' },
         { wait: TURN_PAUSE_MS },
-        { write: { path: NOTE_FILE, text: `# ${MARK.result1}\n\nПравка worker'а сценария E2E.\n` } },
-        { commit: { message: `: правка worker'а сценария E2E` } },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result1}: правка внесена и закоммичена` } },
+        { write: { path: NOTE_FILE, text: `# ${MARK.result1}\n\nThe E2E scenario worker's edit.\n` } },
+        { commit: { message: `: the E2E scenario worker's edit` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result1}: the edit is in and committed` } },
       ],
     },
     {
@@ -139,7 +139,7 @@ export const WORKER_SCRIPT = {
       do: [
         { tool: 'promptobus_mailbox' },
         { wait: TURN_PAUSE_MS },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result2}: замечание ревью закрыто` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result2}: the review note is closed` } },
       ],
     },
     {
@@ -188,7 +188,7 @@ export const REVIEWER_SCRIPT = {
       do: [
         { tool: 'promptobus_mailbox' },
         { wait: TURN_PAUSE_MS },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review}: замечание — в заголовке правки нет номера задачи` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review}: note — the edit's heading carries no task number` } },
       ],
     },
   ],
@@ -209,7 +209,7 @@ export const REVIEW_ROUND_TURN = {
   do: [
     { tool: 'promptobus_mailbox' },
     { wait: TURN_PAUSE_MS },
-    { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review2}: новый дифф проверен, прошлое замечание закрыто` } },
+    { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review2}: the new diff is checked, the previous note is closed` } },
   ],
 };
 
@@ -347,7 +347,7 @@ export function buildWorkspace(sandbox, { ns = 'demo_team', repo = 'orders-api',
   mkdirSync(seed, { recursive: true });
   spawnSync('git', ['init', '--bare', '-b', 'main', origin], { encoding: 'utf8' });
   git(seed, 'init', '-b', 'main');
-  writeFileSync(path.join(seed, 'AGENTS.md'), `Правила репозитория ${repo}.\n`);
+  writeFileSync(path.join(seed, 'AGENTS.md'), `Rules of repository ${repo}.\n`);
   git(seed, 'add', '.');
   git(seed, 'commit', '-m', 'init', '-q');
   git(seed, 'remote', 'add', 'origin', origin);
@@ -521,7 +521,7 @@ export async function runScenario({
   // needs to be up early for the stall report — that comes on a heartbeat, once every
   // 30 s, and the time until the first beat the scenario spends on work, not on
   // waiting.
-  store.createTask(home, { id: TASK, title: 'круг оркестрации E2E', owner: ORCH_SESSION });
+  store.createTask(home, { id: TASK, title: 'E2E orchestration loop', owner: ORCH_SESSION });
 
   const wardenLog = path.join(sandbox, 'warden.out');
   const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
@@ -646,7 +646,7 @@ export async function runScenario({
     const opened = await mcp.tool('promptobus_mailbox', { message: status?.id });
     check('step 4: after the header read the body came by its id',
       opened.isError === false && opened.text.includes(status?.body), tail(opened.text));
-    const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: правь только ${NOTE_FILE}` });
+    const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: edit only ${NOTE_FILE}` });
     check('step 4: the orchestrator answer went to the worker',
       sent.isError === false && !!msgOf(WORKER, MARK.answer), `${tail(sent.text)} · ${JSON.stringify(inboxOf(WORKER))}`);
     const guarded = orchGuard();
@@ -735,7 +735,7 @@ export async function runScenario({
     // --- step 7: notes to the worker and second result ------------------------------
     const t7 = Date.now();
     await mcp.tool('promptobus_mailbox');
-    const order = await mcp.tool('promptobus_send', { to: WORKER, type: 'review', body: `${MARK.order}: замечание reviewer'а — закрой его` });
+    const order = await mcp.tool('promptobus_send', { to: WORKER, type: 'review', body: `${MARK.order}: a reviewer's note — close it` });
     check('step 7: the notes went to the worker as a review message',
       order.isError === false && msgOf(WORKER, MARK.order)?.type === 'review', tail(order.text));
     orchGuard();
@@ -908,7 +908,7 @@ export async function runScenario({
       // 2026-09-02: at load average 87 every run failed this way, under ordinary
       // load — none.
       const quietAt = Date.now();
-      await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.quiet}: ничего не отправляй, просто закончи ход` });
+      await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.quiet}: send nothing, just end the turn` });
       orchGuard();
       const quiet = await waitFor(() => {
         const h = healthOf(WORKER);
@@ -937,7 +937,7 @@ export async function runScenario({
         const line = store.tailWardenLog(home, TASK, 40).find((l) => l.includes(WORKER) && /stalled:|GONE:|LISTED|DEAF/.test(l));
         return line ?? null;
       }, { timeoutMs: stall, stepMs: 500 });
-      const stallPostcard = inbox.seen.find((p) => /встали участники/.test(String(p.body ?? '')));
+      const stallPostcard = inbox.seen.find((p) => /\b(?:stalled|GONE|DEAF):|LISTED, but no process/.test(String(p.body ?? '')));
       check('step 8: the warden wrote the stall into the log — it does not send a stall postcard',
         typeof reported === 'string' && reported.includes(WORKER) && !stallPostcard,
         `${reported} · ${JSON.stringify(inbox.seen.map((p) => String(p.body).slice(0, 60)))} · ${wh.diagnose()}`);
@@ -1044,7 +1044,7 @@ export async function runScenario({
     const t11 = Date.now();
     await mcp.tool('promptobus_mailbox');
     const artifact = path.join(sandbox, 'artifact.md');
-    writeFileSync(artifact, `# ${MARK.fan}\n\nОдин и тот же файл уходит дважды.\n`);
+    writeFileSync(artifact, `# ${MARK.fan}\n\nOne and the same file goes out twice.\n`);
     // The «knocked as far as» mark is taken BEFORE the send on BOTH. A mailbox fetch
     // does not reset it: the warden delivery branch rewrites the mark field by field
     // and carries `knockedTo` from the previous state (`supervisor.ts`, the
@@ -1059,7 +1059,7 @@ export async function runScenario({
     for (const addr of [WORKER, REVIEWER]) {
       // eslint-disable-next-line no-await-in-loop
       const r = await mcp.tool('promptobus_send', {
-        to: addr, type: 'artifact', body: `${MARK.fan}: тот же файл обоим`, artifactPath: artifact,
+        to: addr, type: 'artifact', body: `${MARK.fan}: the same file to both`, artifactPath: artifact,
       });
       fanned.push({ addr, ok: r.isError === false, text: r.text });
     }
@@ -1186,7 +1186,7 @@ export async function runScenario({
     // The orchestrator accepted the work: it merges the worker branch into the clone
     // default branch — until then cleanup lawfully will not touch the directory, and
     // «merged worktrees are swept» would have nothing to check.
-    git(repoAbs, 'merge', '--no-ff', '-q', '-m', ': работа worker\'а принята', wf.branch);
+    git(repoAbs, 'merge', '--no-ff', '-q', '-m', ': the worker\'s work is accepted', wf.branch);
     const refs = [wp?.sessionRef, rp?.sessionRef].filter(Boolean);
     // Process numbers are taken BEFORE close: after a successful `stop` session records
     // disappear, and a verdict «no processes left» derived from the registry would be

@@ -34,10 +34,10 @@ const SB = makeSandbox('promptobus-harness-');
 const HOME = path.join(SB, 'promptobus');
 const TASK = 'harness-t20260901-000000';
 const ADDR = 'worker:probe';
-const NAME = 'Worker: проба harness';
+const NAME = 'Worker: harness probe';
 const ORCH_SESSION = 'orch-session-harness';
 
-store.createTask(HOME, { id: TASK, title: 'проба подставного harness', owner: ORCH_SESSION });
+store.createTask(HOME, { id: TASK, title: 'probe of a stand-in harness', owner: ORCH_SESSION });
 store.upsertParticipant(HOME, TASK, store.participantRecord(ADDR, { name: NAME, sessionRef: NAME, harness: 'claude', mode: 'managed',
   started: new Date().toISOString() }));
 
@@ -73,13 +73,13 @@ const claude = (...args) => run('claude', args, { cwd: SB, encoding: 'utf8' });
 planParticipant(HARNESS, ADDR, {
   turns: [
     {
-      do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'первый ход участника' } }],
+      do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'the participant’s first turn' } }],
       detail: 'status sent; awaiting next cycle',
     },
     {
       do: [
         { tool: 'promptobus_mailbox' },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: 'ответ после стука' } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: 'an answer after the knock' } },
       ],
       detail: 'result sent; awaiting next cycle',
     },
@@ -142,7 +142,7 @@ const first = await waitFor(() => {
   return msgs.length ? msgs : null;
 }, { timeoutMs: 20000 });
 check('the first participant turn reached the orchestrator by a real send',
-  first?.[0]?.sender === store.addrDir(ADDR) && first?.[0]?.body === 'первый ход участника',
+  first?.[0]?.sender === store.addrDir(ADDR) && first?.[0]?.body === 'the participant’s first turn',
   `${JSON.stringify(first)} · trace: ${JSON.stringify(readTrace(HARNESS, ADDR))} · log: ${readLog(HARNESS, record?.id)}`);
 const lifted = store.participantOf(store.readTask(HOME, TASK), ADDR);
 store.upsertParticipant(HOME, TASK, {
@@ -170,9 +170,9 @@ check('the driver sees the participant alive, free, and with its own stall reaso
 // --- knock --------------------------------------------------------------------
 
 store.sendMessage(HOME, TASK, {
-  from: store.ORCHESTRATOR, to: ADDR, type: 'answer', body: 'ответ оркестратора участнику\nвторая строка ответа',
+  from: store.ORCHESTRATOR, to: ADDR, type: 'answer', body: 'the orchestrator’s answer to the participant\nsecond line of the answer',
 });
-const knocked = await knockSocket({ socket: wake.socket, token: wake.token }, 'служебный стук пробы');
+const knocked = await knockSocket({ socket: wake.socket, token: wake.token }, 'the probe’s service knock');
 check('a knock by the real driver knockSocket was accepted by the participant',
   knocked.ok === true, JSON.stringify(knocked));
 
@@ -181,20 +181,20 @@ const answered = await waitFor(() => {
   return hit ?? null;
 }, { timeoutMs: 20000 });
 check('on the knock the participant played the next turn and replied',
-  answered?.body === 'ответ после стука',
+  answered?.body === 'an answer after the knock',
   `${JSON.stringify(answered)} · log: ${readLog(HARNESS, record?.id)}`);
 
 const trace = readTrace(HARNESS, ADDR);
 const knock = trace.find((e) => e.kind === 'knock');
 check('the wire reached the participant whole: auth on the first line, the token matches, the body is from the warden',
   knock?.lines === 2 && knock.auth === true && knock.tokenOk === true
-  && knock.msgV === 1 && knock.from === 'promptobus-warden' && knock.body === 'служебный стук пробы',
+  && knock.msgV === 1 && knock.from === 'promptobus-warden' && knock.body === 'the probe’s service knock',
   JSON.stringify(knock));
 const box = trace.find((e) => e.kind === 'mailbox');
 check('the participant fetched the headers with the real tool, then the orchestrator reply by its id',
   typeof box?.text === 'string' && box.text.includes('answer from the orchestrator')
-  && !box.text.includes('вторая строка ответа')
-  && Array.isArray(box.bodies) && box.bodies.some((b) => b.includes('вторая строка ответа')), JSON.stringify(box));
+  && !box.text.includes('second line of the answer')
+  && Array.isArray(box.bodies) && box.bodies.some((b) => b.includes('second line of the answer')), JSON.stringify(box));
 check('the protocol channel wrote no unreadable lines',
   !trace.some((e) => e.kind === 'stray'), JSON.stringify(trace.filter((e) => e.kind === 'stray')));
 

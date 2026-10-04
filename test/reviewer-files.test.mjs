@@ -13,7 +13,10 @@ const outside = path.join(root, 'repo-sibling');
 mkdirSync(repo); mkdirSync(outside);
 mkdirSync(path.join(repo, 'src')); mkdirSync(path.join(repo, 'node_modules'));
 const source = path.join(repo, 'src', 'Example.cs');
-writeFileSync(source, 'namespace Test;\n// Мир\npublic int Compute() => 42;\n// a.*b literal\n');
+// english-authoring: input — a Unicode line proves that a reviewer file read keeps its text
+const UNICODE_LINE = '// Мир';
+// english-authoring: end
+writeFileSync(source, `namespace Test;\n${UNICODE_LINE}\npublic int Compute() => 42;\n// a.*b literal\n`);
 writeFileSync(path.join(repo, 'README.md'), 'Compute\n');
 writeFileSync(path.join(repo, 'node_modules', 'ignored.cs'), 'Compute\n');
 writeFileSync(path.join(outside, 'private.txt'), 'OUTSIDE\n');
@@ -31,8 +34,8 @@ test('inventory exposes only three non-destructive local reads', () => {
 });
 test('reads current uncommitted text with Unicode and line pagination', () => {
   const result = read('read_file', { path: source, start_line: 2, line_count: 2 });
-  assert.deepEqual(result.lines, [{ line: 2, text: '// Мир' }, { line: 3, text: 'public int Compute() => 42;' }]);
-  writeFileSync(source, 'namespace Test;\n// Мир\npublic int Compute() => 43;\n// a.*b literal\n');
+  assert.deepEqual(result.lines, [{ line: 2, text: UNICODE_LINE }, { line: 3, text: 'public int Compute() => 42;' }]);
+  writeFileSync(source, `namespace Test;\n${UNICODE_LINE}\npublic int Compute() => 43;\n// a.*b literal\n`);
   assert.match(read('read_file', { path: source }).lines[2].text, /43/);
 });
 test('lists glob paths, skips generated dependencies and symlink directory cycles', () => {

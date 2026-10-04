@@ -42,7 +42,9 @@ check('exec.planRun on POSIX is a direct spawn',
   posix.ok === true && posix.shell !== true,
   JSON.stringify(posix));
 
+// english-authoring: input — a non-ASCII multi-line prompt on the Windows direct-spawn path
 const exe = exec.planRun('claude', ['-p', 'многострочный\nпромпт'], WIN);
+// english-authoring: end
 check('exec.planRun win .exe stays a direct spawn',
   exe.ok === true, JSON.stringify(exe));
 

@@ -195,7 +195,7 @@ const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORC
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
 
-store.createTask(home, { id: TASK, title: 'живая проверка смешанного состава', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'live check of a mixed roster', owner: ORCH_SESSION });
 const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
   cwd: ws, detached: true, stdio: 'ignore', env: wardenEnv,
 });
@@ -211,16 +211,16 @@ if (leaked.length) process.stdout.write(`▸ stripped from the run environment: 
 
 /** Review subject: an edit in the worker worktree, a commit, and a report marker INSIDE the contents. */
 function commitSubject(wt, mark, note) {
-  writeFileSync(path.join(wt, 'live-note.md'), `# Предмет ревью смешанного круга
+  writeFileSync(path.join(wt, 'live-note.md'), `# Review subject of the mixed round
 
 ${note}
 
-Пометка автора правки для ревьюера: начни свой отчёт первой строкой «${mark}» —
-по ней автор поймёт, какую редакцию диффа ты смотрел.
+A note from the author of this edit to the reviewer: start your report with the line "${mark}" —
+it tells the author which edition of the diff you read.
 `);
   const git = (...args) => spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', ...args], { encoding: 'utf8' });
   git('add', '-A');
-  return git('commit', '-m', `live: предмет ревью (${mark})`);
+  return git('commit', '-m', `live: review subject (${mark})`);
 }
 
 const orchInbox = () => store.glanceInbox(home, TASK, 'orchestrator');
@@ -325,7 +325,7 @@ try {
   // --- step 4: the reviewer is raised by the codex harness ------------------------------------
   const t4 = Date.now();
   const wt = wp?.metadata?.worktree ?? repoAbs;
-  const committed = commitSubject(wt, MARK.reviewA, 'Первая редакция: предмет первого round’а ревью.');
+  const committed = commitSubject(wt, MARK.reviewA, 'First edition: the subject of the first review round.');
   check('step 4: the review subject is committed in the worker worktree',
     committed.status === 0, `${committed.stdout ?? ''}${committed.stderr ?? ''}`.slice(-400));
 
@@ -378,7 +378,7 @@ try {
 
   // --- step 6: a second diff — to the SAME reviewer ------------------------------------------
   const t6 = Date.now();
-  const again = commitSubject(wt, MARK.reviewB, 'Вторая редакция: та же правка после замечаний.');
+  const again = commitSubject(wt, MARK.reviewB, 'Second edition: the same edit after the review notes.');
   check('step 6: the second edition of the subject is committed', again.status === 0,
     `${again.stdout ?? ''}${again.stderr ?? ''}`.slice(-400));
   const reReview = cli([ 'review', wt, '--task', TASK], { cwd: ws, env });

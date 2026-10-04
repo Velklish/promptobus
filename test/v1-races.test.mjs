@@ -60,7 +60,7 @@ function open(root, options = {}) {
 }
 
 function taskWith(engine, id) {
-  engine.createTask({ id, title: 'гонка', owner: person('owner', 'orchestrator') });
+  engine.createTask({ id, title: 'race', owner: person('owner', 'orchestrator') });
   for (const who of ['w-api', 'w-docs']) engine.addParticipant(id, person(who, 'worker'));
   return id;
 }
@@ -198,7 +198,7 @@ test('eight processes create one task — success for exactly one', async () => 
   const id = 'sozdanie-t20260902-110100';
   const owner = J(person('owner', 'orchestrator'));
   const kids = await racers(8,
-    `try { open(${J(root)}).createTask({ id: ${J(id)}, title: 'линия ' + i, owner: ${owner} });\n`
+    `try { open(${J(root)}).createTask({ id: ${J(id)}, title: 'line ' + i, owner: ${owner} });\n`
     + "  console.log('ok ' + i);\n"
     + "} catch (e) { console.log('busy ' + (e.code || e.message)); }");
   exitedZero(kids);
@@ -206,7 +206,7 @@ test('eight processes create one task — success for exactly one', async () => 
   const winners = created.filter((r) => r.startsWith('ok'));
   assert.equal(winners.length, 1, created.join(', '));
   assert.ok(created.filter((r) => r.startsWith('busy')).every((r) => r.endsWith('task-exists')), created.join(', '));
-  assert.equal(open(root).readTask(id).title, `линия ${winners[0].split(' ')[1]}`);
+  assert.equal(open(root).readTask(id).title, `line ${winners[0].split(' ')[1]}`);
 });
 
 // ── Concurrent read ───────────────────────────────────────────────────────────────
@@ -217,20 +217,20 @@ test('two readers of one mailbox — neither a refusal nor a doubled message', a
   const id = taskWith(engine, 'chtenie-t20260902-110200');
   const LETTERS = 120;
   for (let k = 0; k < LETTERS; k += 1) {
-    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: `п${k}` });
+    await engine.send(id, { from: 'owner', to: ['w-api'], type: 'status', body: `m${k}` });
   }
   const kids = await racers(2,
     `try { const r = open(${J(root)}, { recover: false }).read(${J(id)}, 'w-api');\n`
     + "  console.log(r.messages.map((x) => x.body).join(' '));\n"
-    + "} catch (e) { console.log('ОТКАЗ ' + (e.code || e.message)); }");
+    + "} catch (e) { console.log('REFUSED ' + (e.code || e.message)); }");
   const readers = kids.map((k) => k.out);
   // A refusing reader is not taken into the count: its output is not
   // messages, it is a diagnosis, and in the sum it would lie upward on
   // exactly the mutation this check stands for.
-  const delivered = readers.filter((r) => !r.startsWith('ОТКАЗ')).flatMap((r) => r.split(' ')).filter(Boolean);
+  const delivered = readers.filter((r) => !r.startsWith('REFUSED')).flatMap((r) => r.split(' ')).filter(Boolean);
   await t.test('two readers: no refusal, not one message is lost', () => {
     exitedZero(kids);
-    assert.ok(!readers.some((r) => r.startsWith('ОТКАЗ')), readers.filter((r) => r.startsWith('ОТКАЗ')).join(', '));
+    assert.ok(!readers.some((r) => r.startsWith('REFUSED')), readers.filter((r) => r.startsWith('REFUSED')).join(', '));
     assert.equal(delivered.length, LETTERS);
   });
   await t.test('two readers: not one message went to both', () => {
@@ -254,7 +254,7 @@ test('a process dies mid-fan-out — recovery takes delivery to the end', async 
   const id = taskWith(open(root), 'padenie-t20260902-110300');
   const died = await child(
     `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
-    + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'обоим' });\n`);
+    + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'to both' });\n`);
   await t.test('crash: the process died at the ref point', () => {
     assert.equal(died.code, 7, died.err || 'stderr empty');
   });
@@ -281,8 +281,8 @@ test('concurrent recovery from four processes does not double delivery', async (
   for (let k = 0; k < 5; k += 1) {
     const killed = await child(
       `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
-      + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'п${k}' });\n`);
-    assert.equal(killed.code, 7, `sender п${k}: ${killed.err || 'stderr empty'}`);
+      + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'm${k}' });\n`);
+    assert.equal(killed.code, 7, `sender m${k}: ${killed.err || 'stderr empty'}`);
   }
   const before = openEngine({ root, policy: allowAll, recover: false });
   assert.equal(openIntents(path.join(before.home, 'tasks', id, 'intents')).length, 5);
@@ -293,7 +293,7 @@ test('concurrent recovery from four processes does not double delivery', async (
   const healers = kids.map((k) => k.out);
   await t.test('concurrent recovery: not one process refused', () => {
     exitedZero(kids);
-    assert.ok(healers.every((r) => !r.startsWith('ОТКАЗ')), healers.join(' | '));
+    assert.ok(healers.every((r) => !r.startsWith('REFUSED')), healers.join(' | '));
   });
   await t.test('concurrent recovery: each recipient has exactly five links', () => {
     exitedZero(kids);
@@ -316,7 +316,7 @@ test('concurrent recovery from four processes does not double delivery', async (
   await t.test('concurrent recovery: a read returns each message once', () => {
     const healed = open(root);
     const bodies = healed.read(id, 'w-docs').messages.map((m) => m.body).sort();
-    assert.deepEqual(bodies, ['п0', 'п1', 'п2', 'п3', 'п4']);
+    assert.deepEqual(bodies, ['m0', 'm1', 'm2', 'm3', 'm4']);
   });
 });
 
@@ -326,8 +326,8 @@ test('recovery next to a read does not return what was already read', async () =
   for (let k = 0; k < 8; k += 1) {
     const killed = await child(
       `const e = open(${J(root)}, { recover: false, faults: (step) => { if (step === 'ref') process.exit(7); } });\n`
-      + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'п${k}' });\n`);
-    assert.equal(killed.code, 7, `sender п${k}: ${killed.err || 'stderr empty'}`);
+      + `await e.send(${J(id)}, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'm${k}' });\n`);
+    assert.equal(killed.code, 7, `sender m${k}: ${killed.err || 'stderr empty'}`);
   }
   // Three recoverers and one reader at once: the reader takes links into
   // history, and the recoverers at the same time append the missing.
@@ -345,7 +345,7 @@ test('recovery next to a read does not return what was already read', async () =
   const gotSecond = engine.read(id, 'w-api').messages.map((m) => m.body);
   const all = [...gotFirst, ...gotSecond];
   assert.equal(new Set(all).size, all.length, `message delivered twice: ${all.join(' ')}`);
-  assert.deepEqual([...all].sort(), ['п0', 'п1', 'п2', 'п3', 'п4', 'п5', 'п6', 'п7']);
+  assert.deepEqual([...all].sort(), ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']);
 });
 
 test('opening the engine at a neighbour does not break an in-flight send', async (t) => {
@@ -449,7 +449,7 @@ test('the FS refused a hard link — a typed code, not a half-written record', a
   chmodSync(box, 0o500);
   let refused = null;
   try {
-    await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'не пройдёт' });
+    await engine.send(id, { from: 'owner', to: ['w-api', 'w-docs'], type: 'task', body: 'will not pass' });
   } catch (e) {
     refused = e;
   }
@@ -802,7 +802,7 @@ test('a sweep of a neighbour piece does not take a payload a live sender is publ
 
   // The neighbour's piece: a landed record and a files/ entry, both going in the sweep.
   const landed = await engine.send(id, {
-    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'соседский', artifact: { path: payload },
+    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'the neighbour’s', artifact: { path: payload },
   });
   const taskAt = path.join(engine.home, 'tasks', id);
   const files = path.join(taskAt, 'files');
@@ -837,7 +837,7 @@ test('a sweep of a neighbour piece does not take a payload a live sender is publ
     // sweeper against a live window: `go` is the parent's own write and proves nothing.
     + `  writeFileSync(${J(mark('left-window'))}, "");\n`
     + '} });\n'
-    + `await e.send(${J(id)}, { from: 'w-api', to: ['owner'], type: 'artifact', body: 'мой', artifact: { path: ${J(payload)} } });\n`,
+    + `await e.send(${J(id)}, { from: 'w-api', to: ['owner'], type: 'artifact', body: 'mine', artifact: { path: ${J(payload)} } });\n`,
   );
 
   const sawWindow = await until(mark('at-window'));
@@ -979,11 +979,11 @@ test('two artifact sends of one process publish one after the other, not side by
   setImmediate(feed);
 
   const first = engine.send(id, {
-    from: 'w-api', to: ['owner'], type: 'artifact', body: 'медленный',
+    from: 'w-api', to: ['owner'], type: 'artifact', body: 'slow',
     artifact: { stream: slow, filename: 'slow.txt' },
   });
   const second = engine.send(id, {
-    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'быстрый',
+    from: 'w-docs', to: ['owner'], type: 'artifact', body: 'fast',
     artifact: { stream: Readable.from(['fast bytes\n']), filename: 'fast.txt' },
   });
   const [slowSent, fastSent] = await Promise.all([first, second]);

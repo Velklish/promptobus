@@ -238,9 +238,9 @@ check(': the wake text calls the mailbox by the Cursor NAME and carries the mess
   (() => {
     const text = cursorDriver.renderNotification({
       kind: 'unread', task: 'T', address: 'worker:a', unread: 2,
-      messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'ТЕЛО-СООБЩЕНИЯ' }],
+      messages: [{ type: 'answer', from: 'orchestrator', ts: 'now', body: 'SECRET-MESSAGE' }],
     });
-    return text.includes('promptobus-promptobus_mailbox') && !text.includes('ТЕЛО-СООБЩЕНИЯ')
+    return text.includes('promptobus-promptobus_mailbox') && !text.includes('SECRET-MESSAGE')
       && text.includes('— answer from orchestrator · now: text 14 characters — fetch the mailbox')
       && text.includes('worker:a');
   })(), cursorDriver.renderNotification({ kind: 'unread', task: 'T', address: 'worker:a', unread: 0, messages: [] }).slice(0, 90));
@@ -421,13 +421,13 @@ check('PB-239.4: liveBin actually read the sealed install-directory variable, an
 // --- lift plan ----------------------------------------------------------------------
 
 const ctx = {
-  ref: 'Worker: проба (0903-1200)',
+  ref: 'Worker: probe (0903-1200)',
   address: WORKER,
   task: TASK,
   home: '/tmp/home',
   role: 'worker',
   mcp: { address: WORKER, task: TASK, home: '/tmp/home', servers: { promptobus: { type: 'stdio', command: 'node', args: [] } } },
-  prompt: 'ПРОМПТ',
+  prompt: 'PROMPT-TEXT',
   cwd: '/tmp/wt',
   model: 'cursor-grok-4.6-xhigh-fast',
   effort: null,
@@ -466,7 +466,7 @@ check(': the driver gives --approve-mcps to neither the worker nor the reviewer'
   !workerPlan.argv.includes('--approve-mcps'), workerPlan.argv.join(' '));
 
 check(': the prompt is the last argument and carries the harness rules',
-  workerPlan.argv[workerPlan.argv.length - 1] === 'ПРОМПТ',
+  workerPlan.argv[workerPlan.argv.length - 1] === 'PROMPT-TEXT',
   workerPlan.argv.slice(-2).join(' | '));
 
 check(': the Claude Code skills directory is not in argv — Cursor does not read it',
@@ -489,17 +489,17 @@ check(': without a workspace root the plan honestly says there are no skills, an
 const skillsRoot = path.join(SB, 'skills-src');
 mkdirSync(path.join(skillsRoot, '.cursor', 'skills', 'techdoc-style-ru'), { recursive: true });
 writeFileSync(path.join(skillsRoot, '.cursor', 'skills', 'techdoc-style-ru', 'SKILL.md'),
-  '---\nname: techdoc-style-ru\ndescription: проба\n---\nтело\n');
+  '---\nname: techdoc-style-ru\ndescription: probe\n---\nbody\n');
 mkdirSync(path.join(skillsRoot, '.cursor', 'skills', '_shared'), { recursive: true });
-writeFileSync(path.join(skillsRoot, '.cursor', 'skills', '_shared', 'standards.md'), 'общие\n');
+writeFileSync(path.join(skillsRoot, '.cursor', 'skills', '_shared', 'standards.md'), 'shared\n');
 const skillScript = path.join(skillsRoot, '.cursor', 'skills', 'techdoc-style-ru', 'run.sh');
 writeFileSync(skillScript, '#!/bin/sh\n');
 chmodSync(skillScript, 0o755);
 writeFileSync(path.join(skillsRoot, '.cursor', 'mcp.json'), '{"from":"workspace-root"}\n');
 mkdirSync(path.join(skillsRoot, '.cursor', 'agents'), { recursive: true });
-writeFileSync(path.join(skillsRoot, '.cursor', 'agents', 'demo-reviewer.md'), 'субагент\n');
+writeFileSync(path.join(skillsRoot, '.cursor', 'agents', 'demo-reviewer.md'), 'subagent\n');
 mkdirSync(path.join(skillsRoot, '.cursor', 'rules'), { recursive: true });
-writeFileSync(path.join(skillsRoot, '.cursor', 'rules', 'x.mdc'), 'правило\n');
+writeFileSync(path.join(skillsRoot, '.cursor', 'rules', 'x.mdc'), 'rule\n');
 
 const skillsWt = path.join(SB, 'skills-wt');
 // PB-171. Cursor REPLACES the environment of the participant's MCP child — measured live:
@@ -572,7 +572,7 @@ check(': .cursor/.gitignore self-ignores the directory — git status of this tr
   && String(spawnSync('git', ['-C', skillsWt, 'status', '--porcelain'], { encoding: 'utf8' }).stdout ?? '').trim() === '');
 
 mkdirSync(path.join(skillsWt, '.cursor', 'skills', 'leftover'), { recursive: true });
-writeFileSync(path.join(skillsWt, '.cursor', 'skills', 'leftover', 'SKILL.md'), 'выпавший\n');
+writeFileSync(path.join(skillsWt, '.cursor', 'skills', 'leftover', 'SKILL.md'), 'left over\n');
 symlinkSync(path.join(skillsRoot, '.cursor', 'skills', '_shared', 'standards.md'),
   path.join(skillsRoot, '.cursor', 'skills', 'ghost-link'));
 let copyWarns = '';
@@ -592,11 +592,11 @@ const gitAt = (cwd, ...args) => spawnSync('git', ['-C', cwd, '-c', 'user.email=t
 const humanClone = path.join(SB, 'human-clone');
 mkdirSync(humanClone, { recursive: true });
 gitAt(humanClone, 'init', '-q', '-b', 'master');
-writeFileSync(path.join(humanClone, 'f'), 'первый\n');
+writeFileSync(path.join(humanClone, 'f'), 'first\n');
 gitAt(humanClone, 'add', 'f');
-gitAt(humanClone, 'commit', '-qm', 'первый');
+gitAt(humanClone, 'commit', '-qm', 'first');
 mkdirSync(path.join(humanClone, '.cursor'), { recursive: true });
-writeFileSync(path.join(humanClone, '.cursor', 'human.md'), 'личный\n');
+writeFileSync(path.join(humanClone, '.cursor', 'human.md'), 'personal\n');
 const linkedWt = path.join(SB, 'human-wt');
 const linkedAdd = gitAt(humanClone, 'worktree', 'add', '-q', '--detach', linkedWt);
 writeLaunchFiles(cursorDriver.prepare({ ...ctx, root: skillsRoot, cwd: linkedWt }).files);
@@ -901,8 +901,8 @@ check(': --effort appends a suffix to the model id, Cursor has no separate flag'
 // opens a turn, `turn_ended` closes it.
 const transcriptSample = path.join(SB, 'sample.jsonl');
 const lines = [
-  { role: 'user', message: { content: [{ type: 'text', text: '<user_query>раз</user_query>' }] } },
-  { role: 'assistant', message: { content: [{ type: 'text', text: 'ответ' }] } },
+  { role: 'user', message: { content: [{ type: 'text', text: '<user_query>one</user_query>' }] } },
+  { role: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } },
   { type: 'turn_ended', status: 'success' },
 ];
 writeFileSync(transcriptSample, `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
@@ -924,7 +924,7 @@ check(': parse survives several markers in the file — state is by the last one
   JSON.stringify(readTranscript(transcriptSample)));
 
 check(': there is no transcript — parse stays silent and does not invent a state',
-  readTranscript(path.join(SB, 'нет-такого.jsonl')) === null);
+  readTranscript(path.join(SB, 'no-such.jsonl')) === null);
 
 // --- workspace-directory hash and the injection lock --------------------------------
 
@@ -943,13 +943,13 @@ check(': the workspace-directory hash is taken from the resolved path, not the s
 // The injection lock outlives its writer: if the process dies between take and release —
 // every later delivery would refuse until the participant is torn down. A live pid holds
 // the lock, a dead one does not.
-const lockRef = 'Worker: лок (0903-1200)';
-const lockRecord = { ref: lockRef, sessionName: 'нет-такой-сессии', tmuxServer: 'нет-такого-сервера' };
+const lockRef = 'Worker: lock (0903-1200)';
+const lockRecord = { ref: lockRef, sessionName: 'no-such-session', tmuxServer: 'no-such-server' };
 writeSession({ ...lockRecord, cwd: SB }, process.env);
 const lockPath = path.join(stateHome, 'sessions', `${sessionKey(lockRef)}.inject.lock`);
 mkdirSync(path.dirname(lockPath), { recursive: true });
 writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`);
-const liveLock = await injectText(lockRecord, 'текст', { env: process.env });
+const liveLock = await injectText(lockRecord, 'text', { env: process.env });
 check(': a lock with a LIVE writer holds — a second injection refuses and names the process',
   liveLock.ok === false && /already writing/.test(String(liveLock.error))
   && String(liveLock.error).includes(lockPath) && existsSync(lockPath),
@@ -959,7 +959,7 @@ check(': a lock with a LIVE writer holds — a second injection refuses and name
 // gone.
 const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
 writeFileSync(lockPath, `${JSON.stringify({ pid: dead.pid, at: new Date().toISOString() })}\n`);
-const staleLock = await injectText(lockRecord, 'текст', { env: process.env });
+const staleLock = await injectText(lockRecord, 'text', { env: process.env });
 check(': an orphan lock is taken over — delivery goes on and then hits the session',
   staleLock.ok === false && !/already writing/.test(String(staleLock.error)),
   `${JSON.stringify(staleLock)} · dead pid ${dead.pid}`);
@@ -1053,12 +1053,12 @@ const { ws, repoAbs, repo } = buildWorkspace(SB);
 writeHostConfig(ws, { tools: ['claude', 'cursor'] });
 mkdirSync(path.join(ws, '.cursor', 'skills', 'techdoc-style-ru'), { recursive: true });
 writeFileSync(path.join(ws, '.cursor', 'skills', 'techdoc-style-ru', 'SKILL.md'),
-  '---\nname: techdoc-style-ru\ndescription: канон стенда\n---\n');
+  '---\nname: techdoc-style-ru\ndescription: stand canon\n---\n');
 mkdirSync(path.join(ws, '.cursor', 'skills', '_shared'), { recursive: true });
-writeFileSync(path.join(ws, '.cursor', 'skills', '_shared', 'standards.md'), 'общие\n');
+writeFileSync(path.join(ws, '.cursor', 'skills', '_shared', 'standards.md'), 'shared\n');
 writeFileSync(path.join(ws, '.cursor', 'mcp.json'), '{"from":"workspace-root"}\n');
 mkdirSync(path.join(ws, '.cursor', 'agents'), { recursive: true });
-writeFileSync(path.join(ws, '.cursor', 'agents', 'demo-reviewer.md'), 'субагент\n');
+writeFileSync(path.join(ws, '.cursor', 'agents', 'demo-reviewer.md'), 'subagent\n');
 const home = path.join(ws, '.promptobus');
 const brief = path.join(SB, 'worker-brief.md');
 writeFileSync(brief, '# Cursor driver probe\n\nSend the orchestrator a status and end the turn.\n');
@@ -1072,16 +1072,16 @@ planParticipant(HARNESS, WORKER, {
       do: [
         // A commit is needed for review: on an empty diff `promptobus review` returns
         // without lifting a reviewer, and the Cursor path would stay unexecuted.
-        { write: { path: NOTE_FILE, text: `# ${MARK}\n\nПравка worker'а Cursor.\n` } },
-        { commit: { message: `: правка worker'а Cursor` } },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK}: worker Cursor на связи` } },
+        { write: { path: NOTE_FILE, text: `# ${MARK}\n\nThe Cursor worker's edit.\n` } },
+        { commit: { message: `: the Cursor worker's edit` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK}: the Cursor worker is on the line` } },
       ],
     },
   ],
 });
 planParticipant(HARNESS, REVIEWER, {
   turns: [
-    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${REVIEW_MARK}: замечаний нет` } }] },
+    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${REVIEW_MARK}: no notes` } }] },
   ],
 });
 
@@ -1099,7 +1099,7 @@ const env = {
   // detached process would outlive the run.
   PROMPTOBUS_WARDEN: 'off',
 };
-store.createTask(home, { id: TASK, title: 'проба driver’а Cursor', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'probe of the Cursor driver', owner: ORCH_SESSION });
 
 // Declaration gate: a harness not declared in `promptobus.json` does not lift a
 // participant — `sync` did not lay out adapters for it.
@@ -1460,7 +1460,7 @@ check('step 5: skills live with the participant directory — gone from the sand
 // will be delivered to it.
 const HANG_TASK = 'cursorhang-t20260903-000000';
 const HANG_WORKER = 'worker:hang';
-store.createTask(home, { id: HANG_TASK, title: 'молчащий ход Cursor', owner: ORCH_SESSION });
+store.createTask(home, { id: HANG_TASK, title: 'a silent Cursor turn', owner: ORCH_SESSION });
 const hangEnv = { ...env, [HANG_VAR]: '1' };
 // Its own brief: the work-chunk title sets the session name, and the session name is
 // the registry key.
@@ -1492,7 +1492,7 @@ check(': the status line of a standing Cursor does not contain claude — the ro
 
 const HANG_CHILD_TASK = 'cursorhangchild-t20260903-000000';
 const HANG_CHILD_WORKER = 'worker:hangchild';
-store.createTask(home, { id: HANG_CHILD_TASK, title: 'молчащий ход с живым процессом', owner: ORCH_SESSION });
+store.createTask(home, { id: HANG_CHILD_TASK, title: 'a silent turn with a live process', owner: ORCH_SESSION });
 const hangChildEnv = { ...env, [HANG_CHILD_VAR]: '1' };
 const hangChildBrief = path.join(SB, 'hang-child-brief.md');
 writeFileSync(hangChildBrief, '# Silent Cursor turn with a live child\n\nWait.\n');
@@ -1530,7 +1530,7 @@ cli([ 'done', '--task', HANG_CHILD_TASK], { cwd: ws, env });
 // while the owner's panel showed sixteen files edited.
 const HANG_WRITE_TASK = 'cursorhangwrite-t20260903-000000';
 const HANG_WRITE_WORKER = 'worker:hangwrite';
-store.createTask(home, { id: HANG_WRITE_TASK, title: 'молчащий ход, который правит файлы', owner: ORCH_SESSION });
+store.createTask(home, { id: HANG_WRITE_TASK, title: 'a silent turn that edits files', owner: ORCH_SESSION });
 const hangWriteEnv = { ...env, [HANG_WRITE_VAR]: '1' };
 const hangWriteBrief = path.join(SB, 'hang-write-brief.md');
 writeFileSync(hangWriteBrief, '# Silent Cursor turn that edits files\n\nEdit.\n');
@@ -1624,7 +1624,7 @@ appendFileSync(${JSON.stringify(offCalls)}, JSON.stringify({ args, PATH: process
 if (args.includes('list-sessions')) process.stdout.write('probe-sess|0|${Math.floor(Date.now() / 1000)}|${process.pid}|1|h|chat-offpath||\\n');
 else process.exitCode = 1;
 `);
-store.createTask(home, { id: OFF_TASK, title: 'tmux вне PATH вызывающего', owner: ORCH_SESSION });
+store.createTask(home, { id: OFF_TASK, title: 'tmux outside the caller PATH', owner: ORCH_SESSION });
 const offParticipant = store.participantRecord(OFF_WORKER, { harness: 'cursor', mode: 'managed', sessionRef: offRef });
 store.upsertParticipant(home, OFF_TASK, offParticipant);
 writeSession({ ref: offRef, sessionName: 'probe-sess', chatId: 'chat-offpath', tmuxServer: 'pb2392', cwd: SB, turns: 0 },
@@ -1727,7 +1727,7 @@ async function withStubTmux(fn) {
     process.env.PATH = was;
   }
 }
-store.createTask(home, { id: NOSRV_TASK, title: 'tmux list-sessions с другим отказом', owner: ORCH_SESSION });
+store.createTask(home, { id: NOSRV_TASK, title: 'tmux list-sessions with another refusal', owner: ORCH_SESSION });
 const nosrvParticipant = store.participantRecord(NOSRV_WORKER, { harness: 'cursor', mode: 'managed', sessionRef: nosrvRef });
 store.upsertParticipant(home, NOSRV_TASK, nosrvParticipant);
 writeSession({ ref: nosrvRef, sessionName: 'nosrv-sess', chatId: 'chat-nosrv', tmuxServer: 'pb2395', cwd: SB, turns: 0 },

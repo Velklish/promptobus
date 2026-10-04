@@ -996,7 +996,7 @@ check(': argv is the bypass flag, then app-server --stdio; prompt separate; no f
   && workerPlan.argv.indexOf('--dangerously-bypass-hook-trust') < workerPlan.argv.indexOf('app-server')
   && workerPlan.argv[1] === 'app-server' && workerPlan.argv[2] === '--stdio'
   && workerPlan.prompt === 'PROMPT'
-  // `.codex/.gitignore` стал безусловным в этой же ветке — один файл, не ноль.
+  // `.codex/.gitignore` became unconditional on this same branch — one file, not zero.
   && workerPlan.files.length === 1
   && workerPlan.files[0].path === path.join(ctx.cwd, '.codex', '.gitignore')
   && workerPlan.settings.sandbox === 'workspace-write'
@@ -1579,12 +1579,12 @@ planParticipant(HARNESS, WORKER, {
     {
       do: [
         { write: { path: NOTE_FILE, text: `# ${MARK}\n` } },
-        { commit: { message: ': правка worker’а Codex' } },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK}: worker Codex на связи` } },
+        { commit: { message: ': the Codex worker’s edit' } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK}: the Codex worker is on the line` } },
       ],
     },
-    { do: [{ wait: 900 }, { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${STEERED}: второй ход` } }] },
-    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${WOKE}: разбужен` } }] },
+    { do: [{ wait: 900 }, { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${STEERED}: second turn` } }] },
+    { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${WOKE}: woken` } }] },
   ],
 });
 planParticipant(HARNESS, REVIEWER, {
@@ -1592,7 +1592,7 @@ planParticipant(HARNESS, REVIEWER, {
     {
       do: [
         { write: { path: FORBIDDEN, text: 'must not appear\n' } },
-        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${REVIEW_MARK}: замечаний нет` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${REVIEW_MARK}: no notes` } },
       ],
     },
   ],
@@ -1608,7 +1608,7 @@ const env = {
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
 const elicitEnv = { ...env, [ELICIT_VAR]: '1' };
-store.createTask(home, { id: TASK, title: 'проба driver’а Codex', owner: ORCH_SESSION });
+store.createTask(home, { id: TASK, title: 'probe of the Codex driver', owner: ORCH_SESSION });
 
 const bare = path.join(SB, 'bare-ws');
 writeHostConfig(bare, { tools: ['claude'] });
@@ -2020,7 +2020,7 @@ check('step 3: promptobus status shows Codex session liveness',
 
 const second = await codexDriver.activate({ ref }, {
   kind: 'unread', task: TASK, address: WORKER, unread: 1,
-  messages: [{ type: 'task', from: 'orchestrator', ts: 'now', body: 'второй ход' }],
+  messages: [{ type: 'task', from: 'orchestrator', ts: 'now', body: 'second turn' }],
 });
 check('step 4: activate while idle starts a turn', second.ok === true, JSON.stringify(second));
 

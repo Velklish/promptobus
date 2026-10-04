@@ -312,7 +312,7 @@ test('an unfamiliar mode is not counted as managed — neither a case typo nor j
   const registry = bus.createRegistry({ drivers: { fake: driver } });
   // "If not attached, then managed" would stop a session the driver did not
   // launch: a hand-edited field can be a typo or junk.
-  for (const mode of ['Attached', 'MANAGED', 'что-то своё', 'managed ']) {
+  for (const mode of ['Attached', 'MANAGED', 'something else', 'managed ']) {
     const p = rec('worker:a', { harness: 'fake', mode, sessionRef: 'sess-a' });
     const known = mode.trim() === 'managed';
     assert.equal(bus.isManaged(p), known, `mode=${JSON.stringify(mode)}`);
@@ -519,7 +519,7 @@ test('a push-driver wakes the addressee of the unread, and the notification carr
   const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   bus.writeWake(home, task, 'worker:a', { socket: path.join(SB, 'a.sock') });
-  send(task, 'worker:a', 'task', 'первое');
+  send(task, 'worker:a', 'task', 'first');
 
   const r = await bus.supervisorRound(home, task, { registry });
   await t.test('the knock went once and to the addressee', () => {
@@ -534,7 +534,7 @@ test('a push-driver wakes the addressee of the unread, and the notification carr
     assert.equal(n.address, 'worker:a');
     assert.equal(n.unread, 1);
     assert.equal(n.messages.length, 1);
-    assert.equal(n.messages[0].body, 'первое');
+    assert.equal(n.messages[0].body, 'first');
     assert.equal(n.messages[0].type, 'task');
     assert.equal(n.messages[0].from, bus.ORCHESTRATOR);
     assert.ok(n.messages[0].id, 'the excerpt has an id — the repeat cutoff goes by it');
@@ -656,7 +656,7 @@ test('a pull-driver does not wake at all, but its unread is visible', async () =
   const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   bus.writeWake(home, task, 'worker:a', { socket: path.join(SB, 'pull.sock') });
-  send(task, 'worker:a', 'task', 'лежит');
+  send(task, 'worker:a', 'task', 'waiting');
 
   await bus.supervisorRound(home, task, { registry });
   assert.equal(driver.calls.activate.length, 0, 'a pull-driver does not wake the session');
@@ -682,7 +682,7 @@ test('an activation refusal of one participant does not block the others', async
   for (const [addr, ref] of [['worker:a', 'sess-a'], ['worker:b', 'sess-b']]) {
     put(task, addr, { harness: 'fake', sessionRef: ref });
     bus.writeWake(home, task, addr, { socket: path.join(SB, `${ref}.sock`) });
-    send(task, addr, 'task', `для ${addr}`);
+    send(task, addr, 'task', `for ${addr}`);
   }
   const r = await bus.supervisorRound(home, task, { registry });
   await t.test('both participants were walked, the round was not cut short', () => {
@@ -715,7 +715,7 @@ test('a successful knock writes the driver knockChannel, not the socket literal'
   put(task, 'worker:b', { harness: 'codex-like', sessionRef: 'sess-b' });
   for (const [addr, name] of [['worker:a', 'a'], ['worker:b', 'b']]) {
     bus.writeWake(home, task, addr, { socket: path.join(SB, `${name}.sock`) });
-    send(task, addr, 'task', `для ${addr}`);
+    send(task, addr, 'task', `for ${addr}`);
   }
   await bus.supervisorRound(home, task, { registry });
   const h = bus.readHealth(home, task);
@@ -740,7 +740,7 @@ test('a failed knock writes the driver knockChannel, not the socket literal', as
   put(task, 'worker:b', { harness: 'codex-like', sessionRef: 'sess-b' });
   for (const [addr, name] of [['worker:a', 'a'], ['worker:b', 'b']]) {
     bus.writeWake(home, task, addr, { socket: path.join(SB, `${name}.sock`) });
-    send(task, addr, 'task', `для ${addr}`);
+    send(task, addr, 'task', `for ${addr}`);
   }
   const r = await bus.supervisorRound(home, task, { registry });
   const h = bus.readHealth(home, task);
@@ -761,7 +761,7 @@ test('a participant with an unknown harness does not take the round, it stays a 
   put(task, 'worker:b', { harness: 'fake', sessionRef: 'sess-b' });
   for (const addr of ['worker:a', 'worker:b']) {
     bus.writeWake(home, task, addr, { socket: path.join(SB, `${addr.replace(':', '-')}.sock`) });
-    send(task, addr, 'task', 'привет');
+    send(task, addr, 'task', 'hello');
   }
   const r = await bus.supervisorRound(home, task, { registry });
   assert.equal(r.stop, null);
@@ -781,7 +781,7 @@ test('the warden fell and came back — the state is in place, there is no secon
   const registry = (d) => bus.createRegistry({ drivers: { fake: d }, fallback: 'fake' });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   bus.writeWake(home, task, 'worker:a', { socket: sock });
-  send(task, 'worker:a', 'task', 'первое');
+  send(task, 'worker:a', 'task', 'first');
   await bus.supervisorRound(home, task, { registry: registry(first) });
   const knockedTo = bus.readHealth(home, task)['worker:a'].knockedTo;
 
@@ -796,14 +796,14 @@ test('the warden fell and came back — the state is in place, there is no secon
   });
 
   // Past the coalescing window: under it the new message waits for the take instead.
-  send(task, 'worker:a', 'status', 'второе');
+  send(task, 'worker:a', 'status', 'second');
   const third = fakeDriver('fake');
   await bus.supervisorRound(home, task, { registry: registry(third), now: Date.now() + bus.KNOCK_COALESCE_SEC * 1000 + 1000 });
   await t.test('the repeat cutoff survived too: the notification has only the new', () => {
     assert.equal(third.calls.activate.length, 1);
     const msgs = third.calls.activate[0].notification.messages;
     assert.equal(msgs.length, 1);
-    assert.equal(msgs[0].body, 'второе');
+    assert.equal(msgs[0].body, 'second');
     assert.ok(String(msgs[0].id) > String(knockedTo), 'shown is what arrived after the previous knock');
   });
 });

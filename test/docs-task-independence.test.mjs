@@ -16,7 +16,6 @@ const trackedSet = new Set(tracked);
 
 const roots = [
   'README.md',
-  'README.ru.md',
   'docs/README.md',
   'docs/GLOSSARY.md',
   'docs/ROADMAP.md',

@@ -71,7 +71,7 @@ check('readEvent keeps a complete payload when stdin never ends',
   complete?.session_id === 'sess-complete-2222' && complete?.cwd === ROOT,
   JSON.stringify(complete));
 
-store.createTask(HOME, { id: TASK, title: 'сторож цикла', owner: SESSION });
+store.createTask(HOME, { id: TASK, title: 'loop guard', owner: SESSION });
 const WORKER_NAME = `a2a-${TASK}-api`;
 store.upsertParticipant(HOME, TASK, store.participantRecord('worker:api', { name: WORKER_NAME }));
 
@@ -90,8 +90,8 @@ check('clean state: mailbox empty — no verdict',
   guardVerdict(HOME, TASK, 'orchestrator') === null,
   JSON.stringify(guardVerdict(HOME, TASK, 'orchestrator')));
 
-send('status', 'взял в работу');
-send('result', 'готово');
+send('status', 'taking it on');
+send('result', 'done');
 const unread = guardVerdict(HOME, TASK, 'orchestrator');
 check(`unread in the mailbox: the verdict names the count and the route via inbox`,
   unread?.key === 'mailbox:2' && /mailbox has 2/.test(unread.reason)
@@ -101,7 +101,7 @@ check(`unread in the mailbox: the verdict names the count and the route via inbo
 // here the turn is ended by the addressee itself, without having read the mailbox: knocking on
 // a session that is already ending its turn is too late. This branch would sit under the
 // warden's gate if it were about notification; it's about something else.
-store.claimWarden(HOME, TASK, { cli: 'проба' });
+store.claimWarden(HOME, TASK, { cli: 'probe' });
 // The canonical short temp root avoids sun_path; a sandbox refusal is a named skip below.
 const sockPath = makeSockPath('ags-');
 const ORCH_SOCK = sockPath('orch');
@@ -222,7 +222,7 @@ check('CLI: clean — code 0 and NOT A SINGLE line of output',
   `status=${clean.status} out=${JSON.stringify(clean.stdout)} err=${JSON.stringify(clean.stderr)}`);
 check('CLI: a clean pass leaves no counter behind', !existsSync(MARK_FILE));
 
-send('question', 'какой контракт события?');
+send('question', 'which event contract?');
 const blocked = cli();
 check('CLI: unread mail returns the turn with code 2, the reason — in stderr',
   blocked.status === 2 && blocked.stdout === ''
@@ -263,7 +263,7 @@ check('protection: it keeps letting through — the counter does not reset on it
 
 // A new message is a DIFFERENT state: the counter counts consecutive identical ones, and one
 // that arrived while the model was working must return the turn again.
-send('status', 'а это пришло, пока модель работала');
+send('status', 'and this arrived while the model was working');
 const changed = cli();
 check('protection: a new message changes the state — the turn is returned again',
   changed.status === 2 && /mailbox has 2/.test(changed.stderr), `status=${changed.status} ${changed.stderr}`);
@@ -298,9 +298,9 @@ check(': the Stop payload\'s transcript_path is recorded for the address, with i
 // on the `orchestrator` address, so it takes the no-identity/foreign route, not the owner's.
 const NOID_STOP_TASK = 'noid-stop-t20260926-040000';
 const NOID_STOP_SOCK = path.join(ROOT, 'noid-stop.sock');
-store.createTask(HOME, { id: NOID_STOP_TASK, title: 'без личности на Stop', owner: 'sess-noid-owner-1' });
+store.createTask(HOME, { id: NOID_STOP_TASK, title: 'no identity on Stop', owner: 'sess-noid-owner-1' });
 store.upsertParticipant(HOME, NOID_STOP_TASK, store.participantRecord('worker:api', { name: 'w-noid-stop' }));
-store.sendMessage(HOME, NOID_STOP_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное' });
+store.sendMessage(HOME, NOID_STOP_TASK, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread' });
 store.writeWake(HOME, NOID_STOP_TASK, 'orchestrator', {
   socket: NOID_STOP_SOCK, token: 't', session: 'sess-noid-owner-1',
 });
@@ -332,7 +332,7 @@ check(': …and a drained mailbox does not move the turn-end mark either',
   `status=${noidStopClean.status} mark ${store.lastTurnAt(HOME, NOID_STOP_TASK, 'orchestrator')} vs ${Date.parse(noidStopTurnWas)}`);
 store.closeTask(HOME, NOID_STOP_TASK);
 
-send('status', 'до старта сессии');
+send('status', 'before the session started');
 const startPath = path.join(ROOT, 'session-start.jsonl');
 const sessionStart = asHook(JSON.stringify({
   session_id: SESSION,
@@ -379,10 +379,10 @@ check(': a SessionStart with no session identity leaves the owner transcript rec
 const slotTask = 'guard-slot-t20260926-010000';
 const hintTask = 'guard-hint-t20260926-010001';
 const slotSession = 'sess-slot-ownerless-1';
-store.createTask(HOME, { id: slotTask, title: 'слот транскрипта' });
-store.createTask(HOME, { id: hintTask, title: 'намёк преемнику', owner: 'sess-hint-owner-dead' });
+store.createTask(HOME, { id: slotTask, title: 'transcript slot' });
+store.createTask(HOME, { id: hintTask, title: 'a hint to the successor', owner: 'sess-hint-owner-dead' });
 store.upsertParticipant(HOME, hintTask, store.participantRecord('worker:api'));
-store.sendMessage(HOME, hintTask, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'для намёка' });
+store.sendMessage(HOME, hintTask, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'for the hint' });
 store.writeWake(HOME, hintTask, 'orchestrator', {
   socket: path.join(ROOT, 'slot-dead.sock'), token: 't', session: 'sess-hint-owner-dead',
 });
@@ -416,7 +416,7 @@ check(': a refused transcript write still hands over the contact point and lays 
 rmSync(transcriptSlot, { recursive: true, force: true });
 if (wakeWas === null) rmSync(wakeSlot, { force: true });
 else writeFileSync(wakeSlot, wakeWas);
-send('status', 'после чистого прохода');
+send('status', 'after a clean pass');
 check('protection: after a reset the turn is returned again with a full count', cli().status === 2);
 store.readInbox(HOME, TASK, 'orchestrator');
 cli();
@@ -427,7 +427,7 @@ cli();
 // active session" resolver: otherwise an unrelated session would get its turn returned for
 // someone else's run — a human is editing their own code, and the turn gets returned to them
 // because of an unread mailbox belonging to someone else's orchestrator.
-send('result', 'лежит и ждёт владельца');
+send('result', 'waiting for the owner');
 if (orchListening.ok) {
   const unbound = cli({ PROMPTOBUS_TASK: '', CLAUDE_CODE_SESSION_ID: 'sess-postoronnyaya-9999' });
   const unboundText = (() => { try { return JSON.parse(unbound.stdout).systemMessage; } catch { return ''; } })();
@@ -491,7 +491,7 @@ const asWorker = (role = 'worker:api', { args = true } = {}) => spawnSync(proces
   }).filter(([k, v]) => k !== 'CLAUDE_CODE_SESSION_ID' && v !== '')),
   encoding: 'utf8',
 });
-store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'закрой замечание' });
+store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'close the note' });
 const workerBlocked = asWorker();
 check(': the command\'s arguments beat the foreign triple in the environment — the guard took the address from them',
   workerBlocked.stderr.includes('address=worker:api') && !workerBlocked.stderr.includes('worker:sosed'),
@@ -508,7 +508,7 @@ const workerTurnWas = store.markTurn(HOME, TASK, 'worker:api', '2020-01-01T00:00
 store.readInbox(HOME, TASK, 'worker:api');
 // Reading the notes is not answering them: until the participant sends, it owes that `review`
 // and its pass is not clean. The orchestrator's own mailbox is left as the checks below find it.
-send('status', 'замечание закрыл');
+send('status', 'closed the note');
 const workerClean = asWorker();
 check(': a participant\'s clean pass sets the turn-end mark — previously only the orchestrator got it',
   workerClean.status === 0 && workerClean.stderr === ''
@@ -520,7 +520,7 @@ check(': a participant\'s clean pass sets the turn-end mark — previously only 
 // The mirror of the branch above: that guard watches mail not READ, this one an answer not SENT.
 // Both directions go on ONE participant — a gate that also fires on one which spoke proves nothing.
 const OWING = 'dolg-t20260912-190000';
-store.createTask(HOME, { id: OWING, title: 'долг по ответу', owner: SESSION });
+store.createTask(HOME, { id: OWING, title: 'an answer debt', owner: SESSION });
 store.upsertParticipant(HOME, OWING, store.participantRecord('worker:mute', {
   name: `a2a-${OWING}-mute`, started: '2026-09-12T19:00:00.000Z',
 }));
@@ -531,18 +531,18 @@ check('PB-203: spawned and never spoke — the turn is held, and the key names t
   mute?.key === 'unanswered:2026-09-12T19:00:00.000Z' && /nothing has gone out on the bus/.test(mute.reason),
   JSON.stringify(mute));
 // Direction two: the same participant, same turn, one message sent. Nothing else changed.
-store.sendMessage(HOME, OWING, { from: 'worker:mute', to: 'orchestrator', type: 'status', body: 'взял' });
+store.sendMessage(HOME, OWING, { from: 'worker:mute', to: 'orchestrator', type: 'status', body: 'took it' });
 check('PB-203: it spoke in this turn — the gate lets it through untouched',
   guardVerdict(HOME, OWING, 'worker:mute') === null,
   JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
 // A type that asks for an answer starts the debt again; one that does not, does not. That is
 // the same table the protocol reference publishes, read by one door.
-store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'status', body: 'к сведению' });
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'status', body: 'for your information' });
 store.readInbox(HOME, OWING, 'worker:mute');
 check('PB-207: a read status owes nothing — the turn is not held for it',
   guardVerdict(HOME, OWING, 'worker:mute') === null,
   JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
-store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'question', body: 'а так?' });
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'question', body: 'and like this?' });
 const asked = store.readInbox(HOME, OWING, 'worker:mute');
 const askedAt = asked.messages[asked.messages.length - 1].ts;
 check('PB-207: a read question does owe — the turn is held until the answer goes out',
@@ -550,7 +550,7 @@ check('PB-207: a read question does owe — the turn is held until the answer go
   JSON.stringify(guardVerdict(HOME, OWING, 'worker:mute')));
 // An ordinary message read after the question is not an answer to it. The debt is found by
 // walking history BACK to the newest type that asks for one, not by looking at one record.
-store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'status', body: 'и ещё к сведению' });
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'status', body: 'and more for your information' });
 store.readInbox(HOME, OWING, 'worker:mute');
 check('debt: a status read after the question does not repay it — the walk back keeps the debt',
   guardVerdict(HOME, OWING, 'worker:mute')?.key === `unanswered:${askedAt}`,
@@ -558,7 +558,7 @@ check('debt: a status read after the question does not repay it — the walk bac
 // The orchestrator is outside the table by decision: it may read a status and answer nothing.
 // The edge that leaves is named in 03-cli § Guard and warden.
 store.upsertParticipant(HOME, OWING, store.participantRecord('worker:other', { name: `a2a-${OWING}-other` }));
-store.sendMessage(HOME, OWING, { from: 'worker:other', to: 'orchestrator', type: 'result', body: 'итог' });
+store.sendMessage(HOME, OWING, { from: 'worker:other', to: 'orchestrator', type: 'result', body: 'result' });
 store.readInbox(HOME, OWING, 'orchestrator');
 check('PB-207: the orchestrator owes nothing by this table — it read a result and its turn ends clean',
   guardVerdict(HOME, OWING, 'orchestrator') === null,
@@ -586,7 +586,7 @@ check('UNANSWERED claims no liveness — beside it the session part carries the 
   muteLine(afterTurn.out));
 // Mail that arrived after the debt began: the mailbox is the first repair, and the two
 // states must not print on one line. The gate is the count status already took.
-store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'question', body: 'новое, непрочитанное' });
+store.sendMessage(HOME, OWING, { from: 'orchestrator', to: 'worker:mute', type: 'question', body: 'new, unread' });
 const withUnread = await captureSplit(() => status(quietHost, { task: OWING, sessions: null }));
 check('unread mail outranks the debt — the line prints the count and not UNANSWERED',
   muteLine(withUnread.out).includes('unread 1')
@@ -604,7 +604,7 @@ check('the mailbox drained — UNANSWERED returns, now since the newer question'
 // called by hand, and that's also how the workspace hook lives, which has no arguments at
 // all. Take this away too — and the role resolves to `orchestrator`, i.e. exactly the state
 // the mechanism lived in before .
-store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'второе замечание' });
+store.sendMessage(HOME, TASK, { from: 'orchestrator', to: 'worker:api', type: 'review', body: 'second note' });
 const byEnv = asWorker('worker:api', { args: false });
 check(': without arguments identity is taken from the environment — the fallback path for a manual run',
   byEnv.status === 2 && byEnv.stderr.includes('address=worker:api'), `status=${byEnv.status} ${byEnv.stderr}`);
@@ -627,13 +627,13 @@ const OWN_SHORT = 'e8c5be23';
 const OWN_FULL = 'e8c5be23-dfef-4d20-bd96-e2a40a366b97';
 const ALIEN_SESSION = '7f3a01bc-2210-4f61-9a0e-1c4d5e6f7a8b';
 const CHUZHOY = 'chuzhoy-t20260903-020000';
-store.createTask(HOME, { id: CHUZHOY, title: 'адрес за другой сессией', owner: SESSION });
+store.createTask(HOME, { id: CHUZHOY, title: 'an address held by another session', owner: SESSION });
 store.upsertParticipant(HOME, CHUZHOY, store.participantRecord('worker:api', { name: 'w-ch', session: OWN_SHORT }));
 store.writeWake(HOME, CHUZHOY, 'worker:api', {
   socket: path.join(ROOT, 'svoy.sock'), token: 't', session: OWN_FULL,
 });
 store.markTurn(HOME, CHUZHOY, 'worker:api', '2020-01-01T00:00:00.000Z');
-store.sendMessage(HOME, CHUZHOY, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'кусок' });
+store.sendMessage(HOME, CHUZHOY, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'piece' });
 const alienGuard = spawnSync(process.execPath, [
   BIN, 'promptobus', 'guard', '--role', 'worker:api', '--task', CHUZHOY, '--home', HOME,
 ], {
@@ -680,7 +680,7 @@ check(': the owner\'s own session returns the turn with the same call — the ga
 // it, exactly like the real hook.
 const SDACHA = 'sdacha-t20260903-030000';
 const SDACHA_SOCK = path.join(ROOT, 'sdacha.sock');
-store.createTask(HOME, { id: SDACHA, title: 'contact point от хука', owner: SESSION });
+store.createTask(HOME, { id: SDACHA, title: 'a contact point from the hook', owner: SESSION });
 store.upsertParticipant(HOME, SDACHA, store.participantRecord('worker:api', { name: 'w-sd' }));
 const handedOver = spawnSync(process.execPath, [
   BIN, 'promptobus', 'guard', '--role', 'worker:api', '--task', SDACHA, '--home', HOME,
@@ -704,9 +704,9 @@ check(': the contact point is handed over with the session id from the event pay
 // than choke on the missing directory: a silent write failure would zero out the whole
 // safeguard.
 const FRESH = 'guard-fresh-t20260829-130000';
-store.createTask(HOME, { id: FRESH, title: 'счётчик заводится на пустом месте', owner: SESSION });
+store.createTask(HOME, { id: FRESH, title: 'the counter starts from nothing', owner: SESSION });
 store.upsertParticipant(HOME, FRESH, store.participantRecord('worker:api', { name: WORKER_NAME }));
-store.sendMessage(HOME, FRESH, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог' });
+store.sendMessage(HOME, FRESH, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'result' });
 const fresh = cli({ PROMPTOBUS_TASK: FRESH });
 check('waits/ doesn\'t exist yet: the turn is returned on unread mail, the counter spins itself up',
   fresh.status === 2 && /mailbox has 1/.test(fresh.stderr)
@@ -781,7 +781,7 @@ check('section: win32 quotes guard identity values but leaves command words and 
 // harness will see: code 2 and the reason in stderr. Measured on binary 2.1.251: code 2 gives
 // a `blockingError` with the stderr text, any other non-zero code is just a warning that
 // doesn't return the turn.
-send('question', 'живой прогон хука');
+send('question', 'a live hook run');
 const hookRun = asHook(stopEvent());
 check('live run: the Stop event on stdin — code 2 and the reason in stderr',
   hookRun.status === 2 && hookRun.stderr.includes(GUARD_MARK) && hookRun.stdout === '',
@@ -830,10 +830,10 @@ check('identity: the on-disk binding is found by the session_id from the payload
 // stdin is empty. The second message here isn't for show: two returns on this state have
 // already happened, and without a state change a third would be a legitimate pass-through —
 // the check would be silent about the wrong thing.
-send('status', 'второе — состояние стало другим');
+send('status', 'second — the state has changed');
 const noPayload = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: SB,
-  input: 'не json вовсе',
+  input: 'not json at all',
   env: {
     ...process.env,
     PATH: `${STUB}${path.delimiter}${process.env.PATH}`,
@@ -881,10 +881,10 @@ writeHostConfig(MIG_ROOT);
 const MIG_LEFTOVER = path.join(MIG_ROOT, 'legacy', 'a2a');
 const MIG_TASK = 'guard-migr-t20260902-100000';
 const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
-legacy.createTask(MIG_LEFTOVER, { id: MIG_TASK, title: 'store прежней шины', owner: SESSION });
+legacy.createTask(MIG_LEFTOVER, { id: MIG_TASK, title: 'the former bus store', owner: SESSION });
 legacy.upsertParticipant(MIG_LEFTOVER, MIG_TASK, { address: 'worker:api', name: WORKER_NAME });
 legacy.sendMessage(MIG_LEFTOVER, MIG_TASK, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное прежнего store',
+  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread mail of the former store',
 });
 legacy.closeTask(MIG_LEFTOVER, MIG_TASK);
 const beforeGuard = readdirSync(path.join(MIG_LEFTOVER, 'tasks')).sort();
@@ -916,10 +916,10 @@ const BOTH_ROOT = path.join(ROOT, 'oba-kornya');
 writeHostConfig(BOTH_ROOT);
 const BOTH_HOME = path.join(BOTH_ROOT, '.promptobus');
 const BOTH_TASK = 'guard-oba-t20260902-101000';
-store.createTask(BOTH_HOME, { id: BOTH_TASK, title: 'оба корня сразу', owner: SESSION });
+store.createTask(BOTH_HOME, { id: BOTH_TASK, title: 'both roots at once', owner: SESSION });
 store.upsertParticipant(BOTH_HOME, BOTH_TASK, store.participantRecord('worker:api', { name: WORKER_NAME }));
 store.sendMessage(BOTH_HOME, BOTH_TASK, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное в новом корне',
+  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread mail in the new root',
 });
 mkdirSync(path.join(BOTH_ROOT, 'legacy', 'a2a', 'tasks'), { recursive: true });
 
@@ -967,7 +967,7 @@ const asHeir = (session, { cwd = SB, role = '', task = '', event = 'Stop' } = {}
 const heirSaid = (run) => { try { return JSON.parse(run.stdout); } catch { return null; } };
 
 const EXIT_TASK = 'guard-exit-t20260913';
-store.createTask(HOME, { id: EXIT_TASK, title: 'отметка ухода', owner: SESSION });
+store.createTask(HOME, { id: EXIT_TASK, title: 'an exit mark', owner: SESSION });
 store.upsertParticipant(HOME, EXIT_TASK, store.participantRecord('worker:api', { name: 'w-exit' }));
 store.writeWardenExit(HOME, EXIT_TASK, {
   reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
@@ -983,7 +983,7 @@ check('loop guard: orchestrator Stop clears the exit mark after naming it',
   store.readWardenExit(HOME, EXIT_TASK) === null);
 const { ensureWarden } = await import(path.join(here, '..', 'lib', 'warden.js'));
 const ERASE_TASK = 'guard-erase-exit-t20260913';
-store.createTask(HOME, { id: ERASE_TASK, title: 'автостарт не стирает отметку', owner: SESSION });
+store.createTask(HOME, { id: ERASE_TASK, title: 'autostart does not erase the mark', owner: SESSION });
 store.writeWardenExit(HOME, ERASE_TASK, {
   reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
 });
@@ -992,7 +992,7 @@ check('ensureWarden before orchestrator Stop does not erase the exit mark',
   store.readWardenExit(HOME, ERASE_TASK) !== null);
 store.clearWarden(HOME, ERASE_TASK);
 const REPL_TASK = 'guard-repl-warden-t20260913';
-store.createTask(HOME, { id: REPL_TASK, title: 'преемник не скрывает отметку', owner: SESSION });
+store.createTask(HOME, { id: REPL_TASK, title: 'a successor does not hide the mark', owner: SESSION });
 store.writeWardenExit(HOME, REPL_TASK, {
   reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.475Z',
 });
@@ -1018,9 +1018,9 @@ check('loop guard: a live warden leaves the exit notice silent',
 store.clearWarden(HOME, EXIT_TASK);
 
 const LOOP_NOEXIT = 'guard-loop-noexit-t20260913';
-store.createTask(HOME, { id: LOOP_NOEXIT, title: 'loop без отметки ухода', owner: SESSION });
+store.createTask(HOME, { id: LOOP_NOEXIT, title: 'loop without an exit mark', owner: SESSION });
 store.upsertParticipant(HOME, LOOP_NOEXIT, store.participantRecord('worker:api', { name: 'w-loop-noexit' }));
-store.sendMessage(HOME, LOOP_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+store.sendMessage(HOME, LOOP_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
 const loopNoExitRun = asHook(stopEvent(SESSION), {
   PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_NOEXIT, PROMPTOBUS_ROLE: 'orchestrator',
 });
@@ -1041,9 +1041,9 @@ store.clearWarden(HOME, LOOP_NOEXIT);
 store.readInbox(HOME, LOOP_NOEXIT, 'orchestrator');
 
 const LOOP_RELIVE = 'guard-loop-relive-t20260913';
-store.createTask(HOME, { id: LOOP_RELIVE, title: 'повтор без отметки после живого надзирателя', owner: SESSION });
+store.createTask(HOME, { id: LOOP_RELIVE, title: 'a repeat without a mark after a live warden', owner: SESSION });
 store.upsertParticipant(HOME, LOOP_RELIVE, store.participantRecord('worker:api', { name: 'w-loop-relive' }));
-store.sendMessage(HOME, LOOP_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+store.sendMessage(HOME, LOOP_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
 const loopRelive1 = asHook(stopEvent(SESSION), {
   PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_RELIVE, PROMPTOBUS_ROLE: 'orchestrator',
 });
@@ -1061,9 +1061,9 @@ check('loop guard: second death with same unread warns again after live warden',
 store.readInbox(HOME, LOOP_RELIVE, 'orchestrator');
 
 const LOOP_DRAIN = 'guard-loop-drain-t20260913';
-store.createTask(HOME, { id: LOOP_DRAIN, title: 'повтор без отметки после слива ящика', owner: SESSION });
+store.createTask(HOME, { id: LOOP_DRAIN, title: 'a repeat without a mark after a drained mailbox', owner: SESSION });
 store.upsertParticipant(HOME, LOOP_DRAIN, store.participantRecord('worker:api', { name: 'w-loop-drain' }));
-store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
 const loopDrain1 = asHook(stopEvent(SESSION), {
   PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_DRAIN, PROMPTOBUS_ROLE: 'orchestrator',
 });
@@ -1077,7 +1077,7 @@ const loopDrainQuiet = asHook(stopEvent(SESSION), {
 check('loop guard: drained inbox clears the no-exit mark',
   loopDrainQuiet.status === 0 && loopDrainQuiet.stdout === '' && loopDrainQuiet.stderr === '',
   `status=${loopDrainQuiet.status} out=${JSON.stringify(loopDrainQuiet.stdout)} err=${JSON.stringify(loopDrainQuiet.stderr)}`);
-store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ещё' });
+store.sendMessage(HOME, LOOP_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'more' });
 const loopDrain2 = asHook(stopEvent(SESSION), {
   PROMPTOBUS_HOME: HOME, PROMPTOBUS_TASK: LOOP_DRAIN, PROMPTOBUS_ROLE: 'orchestrator',
 });
@@ -1101,9 +1101,9 @@ check('successor: owner is alive — the guard stays silent for a foreign sessio
 
 const WDN_DEAD = 'wdn-dead-t20260913';
 const LIVE_ORCH = 'sess-live-orch-dddd';
-store.createTask(HOME, { id: WDN_DEAD, title: 'живой владелец, мёртвый надзиратель', owner: LIVE_ORCH });
+store.createTask(HOME, { id: WDN_DEAD, title: 'a live owner, a dead warden', owner: LIVE_ORCH });
 store.upsertParticipant(HOME, WDN_DEAD, store.participantRecord('worker:api', { name: 'w-dead' }));
-store.sendMessage(HOME, WDN_DEAD, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+store.sendMessage(HOME, WDN_DEAD, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
 store.writeWardenExit(HOME, WDN_DEAD, {
   reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.473Z',
 });
@@ -1117,9 +1117,9 @@ if (orchListening.ok) {
     wdnText || JSON.stringify(wdnHint));
 
   const WDN_TURN = 'wdn-turn-t20260913';
-  store.createTask(HOME, { id: WDN_TURN, title: 'сокет с #turn', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_TURN, title: 'a socket with #turn', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_TURN, store.participantRecord('worker:api', { name: 'w-turn' }));
-  store.sendMessage(HOME, WDN_TURN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_TURN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWardenExit(HOME, WDN_TURN, {
     reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.474Z',
   });
@@ -1133,9 +1133,9 @@ if (orchListening.ok) {
     turnText || JSON.stringify(turnHint));
 
   const WDN_TURN_NOSID = 'wdn-turn-nosid-t20260913';
-  store.createTask(HOME, { id: WDN_TURN_NOSID, title: 'сокет #turn без session', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_TURN_NOSID, title: 'a #turn socket without session', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_TURN_NOSID, store.participantRecord('worker:api', { name: 'w-turn-ns' }));
-  store.sendMessage(HOME, WDN_TURN_NOSID, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_TURN_NOSID, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWardenExit(HOME, WDN_TURN_NOSID, {
     reason: 'sat out the overall ceiling 6 h', at: '2026-09-13T01:05:21.476Z',
   });
@@ -1147,9 +1147,9 @@ if (orchListening.ok) {
     turnNsText || JSON.stringify(turnNsHint));
 
   const WDN_NOEXIT = 'wdn-noexit-t20260913';
-  store.createTask(HOME, { id: WDN_NOEXIT, title: 'без отметки ухода', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_NOEXIT, title: 'no exit mark', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_NOEXIT, store.participantRecord('worker:api', { name: 'w-noexit' }));
-  store.sendMessage(HOME, WDN_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_NOEXIT, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWake(HOME, WDN_NOEXIT, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
   const noExitHint = asHeir(HEIR);
   const noExitText = heirSaid(noExitHint)?.systemMessage ?? '';
@@ -1159,9 +1159,9 @@ if (orchListening.ok) {
     noExitText || JSON.stringify(noExitHint));
 
   const WDN_RELIVE = 'wdn-relive-t20260913';
-  store.createTask(HOME, { id: WDN_RELIVE, title: 'повтор без отметки после живого надзирателя', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_RELIVE, title: 'a repeat without a mark after a live warden', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_RELIVE, store.participantRecord('worker:api', { name: 'w-relive' }));
-  store.sendMessage(HOME, WDN_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_RELIVE, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWake(HOME, WDN_RELIVE, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
   const wdnRelive1 = asHeir(HEIR);
   const wdnRelive1Text = heirSaid(wdnRelive1)?.systemMessage ?? '';
@@ -1179,9 +1179,9 @@ if (orchListening.ok) {
     wdnRelive2Text || JSON.stringify(wdnRelive2));
 
   const WDN_DRAIN = 'wdn-drain-t20260913';
-  store.createTask(HOME, { id: WDN_DRAIN, title: 'повтор без отметки после слива ящика', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_DRAIN, title: 'a repeat without a mark after a drained mailbox', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_DRAIN, store.participantRecord('worker:api', { name: 'w-drain' }));
-  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWake(HOME, WDN_DRAIN, 'orchestrator', { socket: ORCH_SOCK, token: 't', session: LIVE_ORCH });
   const wdnDrain1 = asHeir(HEIR);
   const wdnDrain1Text = heirSaid(wdnDrain1)?.systemMessage ?? '';
@@ -1195,7 +1195,7 @@ if (orchListening.ok) {
   check('successor: drained inbox clears the no-exit mark',
     wdnDrainQuiet.status === 0 && !/without leaving a note/.test(wdnDrainQuietText),
     wdnDrainQuietText || JSON.stringify(wdnDrainQuiet));
-  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ещё' });
+  store.sendMessage(HOME, WDN_DRAIN, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'more' });
   const wdnDrain2 = asHeir(HEIR);
   const wdnDrain2Text = heirSaid(wdnDrain2)?.systemMessage ?? '';
   check('successor: second death with same unread warns again after drain',
@@ -1206,9 +1206,9 @@ if (orchListening.ok) {
   // The boundary the dead-warden advice rests on: everyone in the root gets the
   // ADVICE, only the owner gets the TURN BACK ([01-overview](../docs/reference/01-overview.md) § Warden).
   const WDN_BOUND = 'wdn-boundary-t20260914';
-  store.createTask(HOME, { id: WDN_BOUND, title: 'граница совета и возврата хода', owner: LIVE_ORCH });
+  store.createTask(HOME, { id: WDN_BOUND, title: 'the line between advice and returning the turn', owner: LIVE_ORCH });
   store.upsertParticipant(HOME, WDN_BOUND, store.participantRecord('worker:api', { name: 'w-bound' }));
-  store.sendMessage(HOME, WDN_BOUND, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'ждёт' });
+  store.sendMessage(HOME, WDN_BOUND, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'waiting' });
   store.writeWardenExit(HOME, WDN_BOUND, {
     reason: 'sat out the overall ceiling 6 h', at: '2026-09-14T01:05:21.473Z',
   });
@@ -1245,10 +1245,10 @@ if (orchListening.ok) {
 
 const START_SID = 'sess-bound-start-dddd';
 const START_TASK = 'start-t20260904-030000';
-store.createTask(HOME, { id: START_TASK, title: 'SessionStart не сторожит', owner: START_SID });
+store.createTask(HOME, { id: START_TASK, title: 'SessionStart does not guard', owner: START_SID });
 store.upsertParticipant(HOME, START_TASK, store.participantRecord('worker:api', { name: 'w-start' }));
 store.sendMessage(HOME, START_TASK, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'непрочитанное на старте',
+  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread mail at start',
 });
 store.bindIfOwner(HOME, START_TASK, START_SID);
 const startBound = asHeir(START_SID, { event: 'SessionStart', role: 'orchestrator', task: START_TASK });
@@ -1258,7 +1258,7 @@ check('successor: SessionStart for a session with a live binding does not return
   && !existsSync(startBoundMark),
   `status=${startBound.status} err=${JSON.stringify(startBound.stderr)} mark=${existsSync(startBoundMark)}`);
 
-store.createTask(HOME, { id: SUCC, title: 'преемник после смены id', owner: OLD_ORCH });
+store.createTask(HOME, { id: SUCC, title: 'a successor after an id change', owner: OLD_ORCH });
 store.upsertParticipant(HOME, SUCC, store.participantRecord('worker:api', {
   name: 'w-succ', session: WORKER_SID,
 }));
@@ -1268,10 +1268,10 @@ store.writeWake(HOME, SUCC, 'orchestrator', {
 store.writeHealth(HOME, SUCC, {
   orchestrator: { channel: 'self-wake', knockError: 'ENOENT', triedAt: '2026-09-03T20:31:43.000Z' },
 });
-store.sendMessage(HOME, SUCC, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'итог преемнику' });
+store.sendMessage(HOME, SUCC, { from: 'worker:api', to: 'orchestrator', type: 'result', body: 'a result for the successor' });
 
 const emptyDead = 'empty-t20260904-040000';
-store.createTask(HOME, { id: emptyDead, title: 'мёртвый без непрочитанного', owner: OLD_ORCH });
+store.createTask(HOME, { id: emptyDead, title: 'dead with no unread mail', owner: OLD_ORCH });
 store.writeWake(HOME, emptyDead, 'orchestrator', {
   socket: path.join(ROOT, 'empty-dead.sock'), token: 't', session: OLD_ORCH,
 });
@@ -1280,7 +1280,7 @@ const deadHint = asHeir(HEIR);
 const deadText = heirSaid(deadHint)?.systemMessage ?? '';
 check('successor: owner\'s socket is ENOENT — the guard prints the task id and the claim command',
   deadHint.status === 0 && deadHint.stderr === ''
-  && deadText.includes(SUCC) && deadText.includes('преемник после смены id')
+  && deadText.includes(SUCC) && deadText.includes('a successor after an id change')
   && deadText.includes(OLD_ORCH) && deadText.includes('2026-09-03T20:31:43.000Z')
   && /unread 1/.test(deadText)
   && deadText.includes('promptobus_mailbox {claim: true}')
@@ -1307,7 +1307,7 @@ check('successor: a participant session — the guard stays silent even with a d
   workerHint.status === 0 && workerHint.stdout === '' && workerHint.stderr === '',
   `status=${workerHint.status} out=${JSON.stringify(workerHint.stdout)} err=${JSON.stringify(workerHint.stderr)}`);
 
-store.sendMessage(HOME, SUCC, { from: 'worker:api', to: 'orchestrator', type: 'status', body: 'ещё одно' });
+store.sendMessage(HOME, SUCC, { from: 'worker:api', to: 'orchestrator', type: 'status', body: 'one more' });
 const startHint = asHeir(HEIR, { event: 'SessionStart' });
 const startOut = heirSaid(startHint);
 const startText = startOut?.hookSpecificOutput?.additionalContext ?? startOut?.systemMessage ?? '';
@@ -1324,7 +1324,7 @@ check('successor: cwd is not the workspace root — stays silent',
   `status=${otherCwd.status} out=${JSON.stringify(otherCwd.stdout)}`);
 
 const verdictLine = successorLine(
-  { id: SUCC, title: 'преемник после смены id' }, OLD_ORCH, '2026-09-03T20:31:43.000Z', 2,
+  { id: SUCC, title: 'a successor after an id change' }, OLD_ORCH, '2026-09-03T20:31:43.000Z', 2,
 );
 check('successor: successorLine names the task, the owner, the time, and the claim',
   verdictLine.includes(SUCC) && verdictLine.includes(OLD_ORCH)
@@ -1378,10 +1378,10 @@ check('successor: the mailbox after a hint is untouched — the guard is not a r
 const LIFT_A = 'guard-lift-a-t20260917-100000';
 const LIFT_B = 'guard-lift-b-t20260917-100100';
 const LIFT_SID = 'sess-pb233-lift';
-store.createTask(HOME, { id: LIFT_A, title: 'связанная задача A', owner: LIFT_SID });
-store.createTask(HOME, { id: LIFT_B, title: 'поднятая задача B', owner: LIFT_SID });
+store.createTask(HOME, { id: LIFT_A, title: 'linked task A', owner: LIFT_SID });
+store.createTask(HOME, { id: LIFT_B, title: 'lifted task B', owner: LIFT_SID });
 store.upsertParticipant(HOME, LIFT_B, store.participantRecord('reviewer:api', { name: 'r-lift-b' }));
-store.sendMessage(HOME, LIFT_B, { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'итог ревью' });
+store.sendMessage(HOME, LIFT_B, { from: 'reviewer:api', to: 'orchestrator', type: 'result', body: 'review result' });
 check('PB-233: the lifted task really has no contact point — the knock channel is off for it',
   store.readWake(HOME, LIFT_B, 'orchestrator') === null
   && store.countInbox(HOME, LIFT_A, 'orchestrator') === 0,
@@ -1389,7 +1389,7 @@ check('PB-233: the lifted task really has no contact point — the knock channel
 const liftedVerdict = guardVerdict(HOME, LIFT_A, 'orchestrator', LIFT_SID);
 check('PB-233: the verdict of the BOUND task names the lifted one, its title and its count',
   liftedVerdict?.key === `lifted:${LIFT_B}:1` && liftedVerdict.reason.includes(LIFT_B)
-  && liftedVerdict.reason.includes('поднятая задача B'),
+  && liftedVerdict.reason.includes('lifted task B'),
   JSON.stringify(liftedVerdict));
 check('PB-233: a session that owns neither is not held for them',
   guardVerdict(HOME, LIFT_A, 'orchestrator', 'sess-postoronnyaya-9999') === null,

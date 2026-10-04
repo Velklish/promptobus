@@ -149,16 +149,18 @@ const mark = JSON.parse(readFileSync(store.wardenMarkFile(home, ACTIVE), 'utf8')
 check('fixture: the warden mark is present, but it is not counted as alive',
   mark.pid === 424242 && typeof mark.beat === 'string' && store.liveWarden(home, ACTIVE) === null,
   JSON.stringify(mark));
-// The log lines are quoted from the warden's own templates: if the format diverges, the
-// snapshot stops being valid migration input, and this check is what pins the format down.
+// The patterns match lines of the frozen v0.61 snapshot's warden log, a format current code no
+// longer writes: this check pins the snapshot's own lines, so it stays valid migration input.
 const log = readFileSync(store.wardenLogFile(home, ACTIVE), 'utf8').split('\n').filter(Boolean);
 check('fixture: the warden log covers startup, knocks, delivery, fallback, and silence',
   log.length === 11
+  // english-authoring: input — patterns for lines the frozen v0.61 warden log carries
   && /надзиратель поднят · pid 424242 · CLI /.test(log[0])
   && log.some((l) => /notification worker:demo: непрочитанных 1, стук 1$/.test(l))
   && log.some((l) => /доставлено reviewer:demo: mailbox забран \(лежало 1, стуков 1\)$/.test(l))
   && log.some((l) => /откат на self-wake worker:demo: сокет не принял notification \(ENOENT\)$/.test(l))
   && /МОЛЧИТ worker:demo: mailbox не забран \d+ мин, непрочитанных 3, канал self-wake$/.test(log[log.length - 1]),
+  // english-authoring: end
   `${log.length} lines`);
 check('fixture: the log can be read from the tail',
   store.tailWardenLog(home, ACTIVE, 3).length === 3

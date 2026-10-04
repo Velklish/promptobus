@@ -152,7 +152,7 @@ const T0 = ago(180);
 const T1 = ago(90);
 const T2 = ago(45);
 const TASK = 'telemetriya-t20260906-090000';
-store.createTask(HOME, { id: TASK, title: 'запись телеметрии', owner: null });
+store.createTask(HOME, { id: TASK, title: 'telemetry record', owner: null });
 
 // Routed worker. Its record carries everything a record must not repeat: the
 // clone path, the worktree, the branch and the session ref.
@@ -232,12 +232,12 @@ store.upsertParticipant(HOME, TASK, {
 const say = (from, to, type, body) => store.sendMessage(HOME, TASK, {
   from, to, type, body,
 });
-say('worker:api', 'orchestrator', 'status', 'взял задание, читаю код');
-say('worker:api', 'orchestrator', 'question', `упёрся: в конфиге лежит ${TOKEN}, писать его в ${REPO}? пиши на ${EMAIL}`);
-say('worker:api', 'orchestrator', 'result', 'готово, дифф на ветке');
-say('orchestrator', 'worker:api', 'review', 'первый круг замечаний');
-say('orchestrator', 'worker:api', 'review', 'второй круг замечаний');
-say('worker:hand', 'orchestrator', 'result', 'ручной выбор модели, готово');
+say('worker:api', 'orchestrator', 'status', 'took the assignment, reading the code');
+say('worker:api', 'orchestrator', 'question', `hit a wall: the config holds ${TOKEN}, write it into ${REPO}? write to ${EMAIL}`);
+say('worker:api', 'orchestrator', 'result', 'done, the diff is on the branch');
+say('orchestrator', 'worker:api', 'review', 'first round of notes');
+say('orchestrator', 'worker:api', 'review', 'second round of notes');
+say('worker:hand', 'orchestrator', 'result', 'a hand-picked model, done');
 
 seedCache();
 const noSessions = () => ({});
@@ -397,7 +397,7 @@ const leaks = [
   ['worktree directory', 'promptobus-api'],
   ['branch name', 'worktree-promptobus-api'],
   ['task id', TASK],
-  ['message body', 'упёрся'],
+  ['message body', 'hit a wall'],
   ['bus home', HOME],
 ];
 for (const [what, needle] of leaks) {
@@ -419,7 +419,7 @@ const SB2 = makeSandbox('promptobus-telemetry-stale-');
 writeHostConfig(SB2);
 const HOME2 = path.join(SB2, '.promptobus');
 const TASK2 = 'telemetriya-staryy-kesh-t20260906-100000';
-store.createTask(HOME2, { id: TASK2, title: 'протухший кеш', owner: null });
+store.createTask(HOME2, { id: TASK2, title: 'a stale cache', owner: null });
 store.upsertParticipant(HOME2, TASK2, store.participantRecord('worker:api', {
   harness: 'claude',
   mode: 'managed',
@@ -456,7 +456,7 @@ const directHost = Object.create(directBase);
 directHost.routingPaths = () => ({ ...directBase.routingPaths(), cacheFile: directCache });
 const directHome = directHost.promptobusHome();
 const directTask = 'telemetriya-pryamaya-zapis-t20260906-100000';
-store.createTask(directHome, { id: directTask, title: 'прямая запись', owner: null });
+store.createTask(directHome, { id: directTask, title: 'a direct record', owner: null });
 store.upsertParticipant(directHome, directTask, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-direct', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
@@ -545,7 +545,7 @@ check(': `--json` stays one document — the line is not in the stream and not o
 // answer can still carry a fresh window percentage, and an available answer
 // can carry none.
 const FRESH_EXHAUSTED_TASK = 'telemetriya-svezhiy-izraskhodovannyy-t20260906-100003';
-store.createTask(HOME2, { id: FRESH_EXHAUSTED_TASK, title: 'свежее исчерпание', owner: null });
+store.createTask(HOME2, { id: FRESH_EXHAUSTED_TASK, title: 'a fresh exhaustion', owner: null });
 store.upsertParticipant(HOME2, FRESH_EXHAUSTED_TASK, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-fresh-exhausted', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
@@ -570,7 +570,7 @@ check(': a fresh exhausted answer reports its missing scoped window',
   freshExhaustedOut.trim());
 
 const EMPTY_WINDOWS_TASK = 'telemetriya-svezhiy-pustoy-t20260906-100004';
-store.createTask(HOME2, { id: EMPTY_WINDOWS_TASK, title: 'пустые окна', owner: null });
+store.createTask(HOME2, { id: EMPTY_WINDOWS_TASK, title: 'empty windows', owner: null });
 store.upsertParticipant(HOME2, EMPTY_WINDOWS_TASK, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-empty-windows', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
@@ -600,7 +600,7 @@ check(': an available answer with no windows names the missing reading',
 // deliberately stale before each close, so a passing record proves the adapter
 // answer, not a value left over from the previous check.
 const REFRESH_TASK = 'telemetriya-avto-obnovlenie-t20260906-100003';
-store.createTask(HOME2, { id: REFRESH_TASK, title: 'автоматическое обновление', owner: null });
+store.createTask(HOME2, { id: REFRESH_TASK, title: 'an automatic refresh', owner: null });
 store.upsertParticipant(HOME2, REFRESH_TASK, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-refresh', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
@@ -631,7 +631,7 @@ check(': a successful telemetry refresh reports its missing scoped window',
   refreshOut.trim());
 
 const SPLIT_TASK = 'telemetriya-raznye-okna-t20260906-100005';
-store.createTask(HOME2, { id: SPLIT_TASK, title: 'разные окна', owner: null });
+store.createTask(HOME2, { id: SPLIT_TASK, title: 'different windows', owner: null });
 store.upsertParticipant(HOME2, SPLIT_TASK, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-split-session', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: [SPAWN_WINDOWS[0]] },
@@ -665,7 +665,7 @@ check(': partial coverage warns once for the missing scoped window',
   splitWarnings.join('\n'));
 
 const REFUSAL_TASK = 'telemetriya-otkaz-obnovleniya-t20260906-100004';
-store.createTask(HOME2, { id: REFUSAL_TASK, title: 'отказ обновления', owner: null });
+store.createTask(HOME2, { id: REFUSAL_TASK, title: 'a refused refresh', owner: null });
 store.upsertParticipant(HOME2, REFUSAL_TASK, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-refusal', model: 'claude-opus', started: T1,
   routing: { strategy: 'balance', tupleId: 'claude.opus.high', windows: SPAWN_WINDOWS },
@@ -693,7 +693,7 @@ const SB4 = makeSandbox('promptobus-telemetry-empty-');
 writeHostConfig(SB4);
 const HOME4 = path.join(SB4, '.promptobus');
 const TASK4 = 'telemetriya-bez-uchastnikov-t20260906-110000';
-store.createTask(HOME4, { id: TASK4, title: 'некого записывать', owner: null });
+store.createTask(HOME4, { id: TASK4, title: 'nobody to record', owner: null });
 const before = readFileSync(FILE, 'utf8');
 const emptyOut = await capture(async () => close(SB4, { task: TASK4, snapshot: noSessions }));
 check(': a task nobody lifted a session in appends nothing and says nothing',
@@ -706,7 +706,7 @@ const SB5 = makeSandbox('promptobus-telemetry-blocked-');
 writeHostConfig(SB5);
 const HOME5 = path.join(SB5, '.promptobus');
 const TASK5 = 'telemetriya-net-kataloga-t20260906-120000';
-store.createTask(HOME5, { id: TASK5, title: 'некуда писать', owner: null });
+store.createTask(HOME5, { id: TASK5, title: 'nowhere to write', owner: null });
 store.upsertParticipant(HOME5, TASK5, store.participantRecord('worker:api', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-ro', model: 'claude-opus', started: T1,
 }));
@@ -785,7 +785,7 @@ check(': the routed lift itself records the applicable windows of the tuple it c
   JSON.stringify(routed.windows));
 
 const TASK6 = 'telemetriya-marshrut-t20260906-130000';
-store.createTask(HOME6, { id: TASK6, title: 'настоящий маршрутизированный подъём', owner: null });
+store.createTask(HOME6, { id: TASK6, title: 'a real routed lift', owner: null });
 store.upsertParticipant(HOME6, TASK6, store.participantRecord('worker:api', {
   harness: routed.harness,
   mode: 'managed',
@@ -843,7 +843,7 @@ writeHostConfig(badAddressSandbox);
 const badAddressHome = path.join(badAddressSandbox, '.promptobus');
 const badAddressHost = hostOf(badAddressSandbox);
 const badAddressTask = 'telemetriya-invalid-t20260906-100000';
-const badAddressMeta = store.createTask(badAddressHome, { id: badAddressTask, title: 'негодный адрес', owner: null });
+const badAddressMeta = store.createTask(badAddressHome, { id: badAddressTask, title: 'an invalid address', owner: null });
 badAddressMeta.participants.push(store.participantRecord('worker:good', {
   harness: 'claude', model: 'claude-opus', started: T1,
 }));
@@ -885,7 +885,7 @@ const WORKER56_START = ago(120);
 const REVIEWER56_START = ago(105);
 const WORKER56_RESULT = ago(45);
 const REVIEWER56_RESULT = ago(15);
-store.createTask(HOME56, { id: TASK56, title: 'собственный конец участника', owner: null });
+store.createTask(HOME56, { id: TASK56, title: 'the participant’s own end', owner: null });
 for (const [address, model, started] of [
   ['worker:stamp', 'claude-opus', WORKER56_START],
   ['reviewer:stamp', 'claude-opus', REVIEWER56_START],
@@ -922,7 +922,7 @@ const HOST205 = hostOf(SB205);
 const TASK205 = 'telemetriya-summary-t20260906-150000';
 const CLOSE205 = Date.now();
 const stamp205 = (offset) => new Date(CLOSE205 + offset).toISOString();
-store.createTask(HOME205, { id: TASK205, title: 'сводка телеметрии', owner: null });
+store.createTask(HOME205, { id: TASK205, title: 'telemetry summary', owner: null });
 store.upsertParticipant(HOME205, TASK205, store.participantRecord('worker:timed', {
   harness: 'claude',
   mode: 'managed',
@@ -1198,7 +1198,7 @@ const HOST235 = hostOf(SB235);
 const TASK235 = 'telemetriya-relift-t20260925-171200';
 const CLOSE235 = Date.now();
 const stamp235 = (offset) => new Date(CLOSE235 + offset).toISOString();
-store.createTask(HOME235, { id: TASK235, title: 'тайминги повторного подъёма', owner: null });
+store.createTask(HOME235, { id: TASK235, title: 'repeat lift timings', owner: null });
 store.upsertParticipant(HOME235, TASK235, store.participantRecord('reviewer:relift', {
   harness: 'claude', mode: 'managed', sessionRef: 'sess-relift',
   model: 'sonnet', started: stamp235(-10000),

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-09-09
-**Deciders:** Павел Ким (owner), 2026-09-09
+**Deciders:** Pavel Kim (owner), 2026-09-09
 
 ## Context
 

@@ -162,11 +162,11 @@ process.on('exit', () => rmSync(SB, { recursive: true, force: true }));
 const home = path.join(SB, '.promptobus');
 const TASK = 't20260813-090000';
 const OWNER = 'session-orchestrator';
-createTask(home, { id: TASK, title: 'событие OrderCreated в двух сервисах', owner: OWNER });
+createTask(home, { id: TASK, title: 'the OrderCreated event in two services', owner: OWNER });
 // A second task of the same home — so that entry by an EXPLICIT `task` is
 // lawful even in a conversation where the session has already entered its own.
 const SECOND = 't20260813-100000';
-createTask(home, { id: SECOND, title: 'вторая задача того же дома', owner: OWNER });
+createTask(home, { id: SECOND, title: 'a second task in the same home', owner: OWNER });
 upsertParticipant(home, TASK, {
   address: 'worker:orders-api', repo: 'demo_team/orders-api', session: 'bg-42',
 });
@@ -317,10 +317,10 @@ test('an entry that refused on the handshake leaves no mark — the next call en
   // check would be green under any mark implementation (verified by a
   // mutation probe: with a mark BEFORE entry it did not go red).
   const brokenHome = path.join(SB, 'broken', '.promptobus');
-  createTask(brokenHome, { id: TASK, title: 'журнал, который чинят посреди разговора', owner: OWNER });
+  createTask(brokenHome, { id: TASK, title: 'a journal repaired mid-conversation', owner: OWNER });
   const file = taskFile(brokenHome, TASK);
   const good = readFileSync(file, 'utf8');
-  writeFileSync(file, '{ это не json');
+  writeFileSync(file, '{ this is not json');
   const { responses, calls } = await talk([
     rpc(1, 'initialize', { capabilities: {} }),
     rpc(2, 'tools/call', { name: 'promptobus_task', arguments: {} }),
@@ -338,7 +338,7 @@ test('an entry that refused on the handshake leaves no mark — the next call en
   // nothing to hand the contact point over with.
   assert.equal(responses[0].result.protocolVersion, VERSIONS[0]);
   assert.deepEqual(calls.joins, [{ home: brokenHome, task: TASK, address: 'orchestrator', gated: false, mayRegister: true }]);
-  assert.match(textOf(responses[1]), new RegExp(`^task ${TASK} · журнал, который чинят`));
+  assert.match(textOf(responses[1]), new RegExp(`^task ${TASK} · a journal repaired`));
 });
 
 test('initialize without a resolvable task does not bring the handshake down — there is nowhere to enter', async () => {
@@ -399,7 +399,7 @@ test('tools/call: send puts the message and names the recipient, the address, an
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', {
       name: 'promptobus_send',
-      arguments: { to: 'worker:orders-api', type: 'task', body: 'разбери контракт' },
+      arguments: { to: 'worker:orders-api', type: 'task', body: 'go through the contract' },
     }),
   ]);
   const said = textOf(responses[0]);
@@ -416,7 +416,7 @@ test('tools/call: mailbox returns what arrived and glues on the stalled diagnost
   await talk([
     rpc(1, 'tools/call', {
       name: 'promptobus_send',
-      arguments: { to: 'orchestrator', type: 'status', body: 'взял в работу' },
+      arguments: { to: 'orchestrator', type: 'status', body: 'taking it on' },
     }),
   ], { role: 'worker:orders-api', session: 'bg-42' });
   const { responses, calls } = await talk([
@@ -480,7 +480,7 @@ test('tools/call: a participant address with no session identity still fetches i
 test('tools/call: a foreign session mailbox is a copy with a loud heading, originals stay with the owner', async () => {
   const { responses, calls } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: {} }),
-  ], { session: 'session-чужая' });
+  ], { session: 'session-foreign' });
   const said = textOf(responses[0]);
   assert.match(said, /^FOREIGN MAILBOX: the orchestrator address of task /);
   // The stalled diagnostic is not sent to a stranger: the route in it leads
@@ -560,7 +560,7 @@ test('tools/call: a session that only peeks gets an unread body by id as a copy,
   assert.ok(copy.includes('its second line'), copy);
   const foreign = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_mailbox', arguments: { message: sent.id } }),
-  ], { session: 'session-чужая' });
+  ], { session: 'session-foreign' });
   const foreignCopy = textOf(foreign.responses[0]);
   assert.match(foreignCopy, /^FOREIGN MAILBOX: the orchestrator address of task /);
   assert.ok(foreignCopy.includes('its second line'), foreignCopy);
@@ -577,7 +577,7 @@ test('a foreign session gets no entry mark — once it becomes the owner, it ent
   // own: the claim rewrites the task owner, and neighbouring checks would
   // then read a foreign outcome.
   const claimHome = path.join(SB, 'claim', '.promptobus');
-  createTask(claimHome, { id: TASK, title: 'захват посреди соединения', owner: OWNER });
+  createTask(claimHome, { id: TASK, title: 'a claim mid-connection', owner: OWNER });
   const heir = 'session-preemnik';
   const { calls } = await talk([
     rpc(1, 'initialize', { capabilities: {} }),
@@ -596,7 +596,7 @@ test('a foreign session gets no entry mark — once it becomes the owner, it ent
 test('tools/call: task prints the participants, and the workspace lines are given by the consumer', async () => {
   const { responses, calls } = await talk([rpc(1, 'tools/call', { name: 'promptobus_task', arguments: {} })]);
   const said = textOf(responses[0]);
-  assert.match(said, new RegExp(`^task ${TASK} · событие OrderCreated в двух сервисах\n`));
+  assert.match(said, new RegExp(`^task ${TASK} · the OrderCreated event in two services\n`));
   assert.ok(said.includes(`- orchestrator · owner ${OWNER} · unread 0`));
   assert.ok(said.includes('- worker:orders-api · repository demo_team/orders-api · unread 1'));
   assert.deepEqual(calls.decorated, ['orchestrator', 'worker:orders-api']);
@@ -624,7 +624,7 @@ test('promptobus_task reports the parent and children of a two-level task tree',
 
 test('a bad participant record is a finding in the reply, not the death of the tool', async () => {
   const spoiled = path.join(SB, 'spoiled');
-  createTask(spoiled, { id: TASK, title: 'журнал с испорченной записью', owner: OWNER });
+  createTask(spoiled, { id: TASK, title: 'a journal with a spoiled record', owner: OWNER });
   const meta = JSON.parse(readFileSync(taskFile(spoiled, TASK), 'utf8'));
   // The record is valid by the store schema and invalid by address: the
   // address is an adapter field, and the schema does not look at it at all.
@@ -637,7 +637,7 @@ test('a bad participant record is a finding in the reply, not the death of the t
     mode: 'attached',
     sessionRef: null,
     capabilities: null,
-    metadata: { address: 'worker:НЕ АДРЕС' },
+    metadata: { address: 'worker:NOT AN ADDRESS' },
   });
   writeFileSync(taskFile(spoiled, TASK), JSON.stringify(meta, null, 2) + '\n');
   const { responses } = await talk([rpc(1, 'tools/call', { name: 'promptobus_task', arguments: {} })], {
@@ -649,7 +649,7 @@ test('a bad participant record is a finding in the reply, not the death of the t
 });
 
 test('malformed JSON → −32700 in the consumer text, and the connection is alive', async () => {
-  const { responses } = await talk(['{ битый json', rpc(1, 'ping', {})]);
+  const { responses } = await talk(['{ broken json', rpc(1, 'ping', {})]);
   assert.equal(responses[0].id, null);
   assert.equal(responses[0].error.code, -32700);
   assert.equal(responses[0].error.message, 'not parsed as JSON');
@@ -697,11 +697,11 @@ test('reply order is request order, and there is nothing foreign in the stream',
 
 test('a task argument is stronger than the session declaration', async () => {
   const other = 't20260814-101010';
-  createTask(home, { id: other, title: 'вторая активная задача', owner: OWNER });
+  createTask(home, { id: other, title: 'a second active task', owner: OWNER });
   const { responses } = await talk([
     rpc(1, 'tools/call', { name: 'promptobus_task', arguments: { task: other } }),
   ]);
-  assert.match(textOf(responses[0]), new RegExp(`^task ${other} · вторая активная задача\n`));
+  assert.match(textOf(responses[0]), new RegExp(`^task ${other} · a second active task\n`));
 });
 
 // --- the first line names, it does not count ---
@@ -762,15 +762,15 @@ const named = (name) => ({
 });
 
 test('the participant name is taken from the journal, without the trailing (MMDD-HHMM) mark', () => {
-  assert.equal(readableName(named('Worker: Гейты lint (0829-1208)'), 'worker:gates'), 'Worker: Гейты lint');
+  assert.equal(readableName(named('Worker: Lint gates (0829-1208)'), 'worker:gates'), 'Worker: Lint gates');
 });
 
 test('a mark with a slug is stripped by the same form', () => {
-  assert.equal(readableName(named('Worker: Гейты lint (0829-1208, gates)'), 'worker:gates'), 'Worker: Гейты lint');
+  assert.equal(readableName(named('Worker: Lint gates (0829-1208, gates)'), 'worker:gates'), 'Worker: Lint gates');
 });
 
 test('a parenthesis that does not look like a mark stays in the name', () => {
-  assert.equal(readableName(named('Worker: Дома значений (протокол)'), 'worker:gates'), 'Worker: Дома значений (протокол)');
+  assert.equal(readableName(named('Worker: Value homes (protocol)'), 'worker:gates'), 'Worker: Value homes (protocol)');
 });
 
 test('a record without a name is the address without the role prefix', () => {

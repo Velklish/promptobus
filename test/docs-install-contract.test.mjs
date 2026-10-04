@@ -28,9 +28,7 @@ const installSection = section(read('docs/guides/install.md'), '## 1. Package', 
 
 const install = read('docs/guides/install.md');
 const english = read('README.md');
-const russian = read('README.ru.md');
 const englishInstall = section(english, '## Installation', '### 1. Declare the workspace');
-const russianInstall = section(russian, '## Установка', '### 1. Объявить рабочее место');
 const snippet = (heading, language) => mcpSection.split(heading)[1]?.split('\n### ')[0]
   ?.match(new RegExp(`\x60\x60\x60${language}\\n([\\s\\S]*?)\\n\x60\x60\x60`))?.[1] ?? '';
 const json = (value) => {
@@ -38,7 +36,7 @@ const json = (value) => {
 };
 const release = `github:Velklish/promptobus#v${version}`;
 check('PB-290 supported release source for local and global installation',
-  [installSection, englishInstall, russianInstall].every((doc) =>
+  [installSection, englishInstall].every((doc) =>
     same([...doc.matchAll(installLine)].map((match) => match[1] ?? ''), ['', '-g '])
     && !/^npm install(?: -g)? promptobus$/m.test(doc)
     && firstFencedCommandAfter(installSection,
@@ -49,12 +47,8 @@ check('PB-290 supported release source for local and global installation',
     && firstFencedCommandAfter(englishInstall, 'The package is not on the npm registry. Install the current GitHub release as a local library dependency:')
       === `npm install ${release}`
     && firstFencedCommandAfter(englishInstall, 'For a global CLI on `PATH`, use the same pinned tag:')
-      === `npm install -g ${release}`
-    && firstFencedCommandAfter(russianInstall, 'Пакета нет в реестре npm. Локальную зависимость ставят с GitHub, закрепив текущий тег релиза:')
-      === `npm install ${release}`
-    && firstFencedCommandAfter(russianInstall, 'Для глобальной CLI-команды в `PATH` используйте тот же тег:')
       === `npm install -g ${release}`),
-  'All three installation surfaces must use the current GitHub tag for both forms');
+  'Both installation surfaces must use the current GitHub tag for both forms');
 
 const mcpSection = section(install, '## 3. MCP server for the orchestrator', '## 4. Project hooks');
 const claudeSection = section(mcpSection, '### Claude Code:', '### Cursor:');
@@ -66,7 +60,6 @@ const codexMcp = snippet('### Codex:', 'toml');
 const home = '/absolute/path/to/workspace/.promptobus';
 const cliArgs = ['/absolute/path/to/bin/promptobus.js', 'mcp'];
 const readmeMcp = section(english, '### 2. Give the orchestrator the MCP server', '### 3. Install the project hooks');
-const russianMcp = section(russian, '### 2. Дать оркестратору MCP-сервер', '### 3. Поставить project hooks');
 check('PB-291 orchestrator MCP setup names three project formats',
   mcpSection.includes('`install` writes project hooks and process skills; it does not register an MCP server for the orchestrator.')
     && mcpSection.includes('Each participant lift writes its own MCP entry.')
@@ -92,19 +85,17 @@ check('PB-291 orchestrator MCP setup names three project formats',
     && codexSection.includes('`codex mcp list` checks the server entry')
     && mcpSection.includes('an owner-bound orchestrator mailbox read then returns a copy and leaves the originals unread')
     && readmeMcp.includes('Register the orchestrator\'s stdio server separately in the project file for its harness: Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, or Codex `.codex/config.toml`.')
-    && readmeMcp.includes('`promptobus install` writes hooks and skills, not this MCP entry.')
-    && russianMcp.includes('регистрируют отдельно в project-файле его инструмента: `.mcp.json` для Claude Code, `.cursor/mcp.json` для Cursor, `.codex/config.toml` для Codex.')
-    && russianMcp.includes('`promptobus install` пишет хуки и скиллы, но не эту запись MCP.'),
+    && readmeMcp.includes('`promptobus install` writes hooks and skills, not this MCP entry.'),
   'The guide must give a destination, syntax and read-only verification for each harness');
 
-const shippedDocs = ['README.md', 'README.ru.md', 'skills/orchestrate/SKILL.md', 'skills/solo-review/SKILL.md'];
+const shippedDocs = ['README.md', 'skills/orchestrate/SKILL.md', 'skills/solo-review/SKILL.md'];
 const releasePrefix = 'https://github.com/Velklish/promptobus/blob/';
 const markdownLinks = (file) => [...read(file).matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
 const releaseLinks = (file) => markdownLinks(file).filter((target) => target.startsWith(releasePrefix));
 const relativeLinks = (file) => markdownLinks(file)
   .map((target) => target.split('#')[0])
   .filter((target) => target && !/^[a-z]+:/i.test(target));
-const packageFiles = new Set(['README.md', 'README.ru.md', 'LICENSE', 'package.json']);
+const packageFiles = new Set(['README.md', 'LICENSE', 'package.json']);
 const packagedLink = (file, target) => {
   const resolved = path.normalize(path.join(path.dirname(file), target));
   const inSkills = resolved.startsWith(`skills${path.sep}`);
@@ -168,12 +159,12 @@ const packageOverview = section(overview, '### Documentation in the package', '#
 const allReleaseLinks = shippedDocs.flatMap((file) => releaseLinks(file));
 check('PB-292 shipped and installed documentation links use release targets',
   shippedDocs.every((file) => relativeLinks(file).every((target) => packagedLink(file, target)))
-    && shippedDocs.slice(0, 3).every((file) => releaseLinks(file).length > 0)
+    && shippedDocs.slice(0, 2).every((file) => releaseLinks(file).length > 0)
     && allReleaseLinks.every((target) => pinnedTarget(target) !== null)
     && relativeLinks('skills/orchestrate/SKILL.md').includes('../solo-review/SKILL.md')
-    && packageOverview.includes('`package.json` ships both READMEs and the two process skills, but not `docs/`')
+    && packageOverview.includes('`package.json` ships the README and the two process skills, but not `docs/`')
     && packageOverview.includes('After changing `package.json`\'s version for a release, refresh all package documentation links and installation examples with this one command')
-    && packageOverview.includes('for (const file of ["README.md", "README.ru.md", "docs/guides/install.md", "skills/orchestrate/SKILL.md"])')
+    && packageOverview.includes('for (const file of ["README.md", "docs/guides/install.md", "skills/orchestrate/SKILL.md"])')
     && packageOverview.includes('On `main` between releases, these links still open the last tagged release\'s pages')
     && packageOverview.includes('A version bump before its tag exists briefly points to a future destination'),
   'Packaged relative links must resolve and source links must name this package version');
@@ -192,46 +183,34 @@ const glossary = read('docs/GLOSSARY.md');
 const trust = read('docs/guides/hooks-and-trust.md');
 const drivers = read('docs/reference/05-drivers.md');
 const englishFeatures = section(english, '## Features', '## Requirements');
-const russianFeatures = section(russian, '## Что умеет', '## Требования');
 const englishHooks = starts(englishFeatures, '- **MCP server and hooks.**');
-const russianHooks = starts(russianFeatures, '- **MCP-сервер и хуки.**');
 const englishMcpTools = section(english, '### MCP tools', '### Model routing');
-const russianMcpTools = section(russian, '### Инструменты MCP', '### Маршрутизация моделей');
 const toolRows = (doc) => [...doc.matchAll(/^\| `(promptobus_[a-z]+)` \|/gm)].map((match) => match[1]);
 const sixTools = ['promptobus_send', 'promptobus_mailbox', 'promptobus_task',
   'promptobus_digest', 'promptobus_status', 'promptobus_ask'];
 const overviewTools = section(overview, '### The tool declarations', '### Rendering a reply for a participant');
 const englishLibrary = section(english, '## Library', '## Development');
-const russianLibrary = section(russian, '## Библиотека', '## Разработка');
 const englishDevelopment = section(english, '## Development', '## Contributing');
-const russianDevelopment = section(russian, '## Разработка', '## Как участвовать');
 const trustRoles = section(trust, "## A participant's hooks are not the workspace's", '## What is never touched');
 const trustNeverTouched = section(trust, '## What is never touched', '## How to verify');
 const driversIntro = section(drivers, '# Drivers', '## Participant binding before launch');
-const russianCommands = section(russian, '### Команды', '### Инструменты MCP');
-const russianSteps = starts(russianFeatures, '- **Шаги проверки.**');
-const russianAcceptance = starts(russianFeatures, '- **Адресованная приёмка.**');
-const russianStepCommand = starts(russianCommands, '| `promptobus step <name> <path> --task <id>` |');
+const englishCommands = section(english, '### Commands', '### MCP tools');
+const englishSteps = starts(englishFeatures, '- **Declared gate lifts.**');
+const englishAcceptance = starts(englishFeatures, '- **Addressed acceptance.**');
+const englishStepCommand = starts(englishCommands, '| `promptobus step <name> <path> --task <id>` |');
 check('PB-293 entry points match current hooks tools roles and package',
   englishHooks.includes('`promptobus mcp` exposes six tools over stdio, including three restricted to a proven reporter session.')
     && englishHooks.includes('Stop and SessionStart loop guard for Claude Code and Codex, and a stop guard for Cursor.')
     && englishHooks.includes('as soon as an orchestrator receives a question from `user`.')
-    && russianHooks.includes('`promptobus mcp` отдаёт шесть инструментов по stdio; три доступны только подтверждённой сессии reporter.')
-    && russianHooks.includes('Stop и SessionStart для Claude Code и Codex, только на stop для Cursor.')
-    && russianHooks.includes('сразу после вопроса `user` оркестратору.')
     && same(toolRows(englishMcpTools), sixTools)
-    && same(toolRows(russianMcpTools), sixTools)
     && sixTools.slice(3).every((name) => starts(englishMcpTools, `| \`${name}\` |`).includes('Reporter only:'))
-    && sixTools.slice(3).every((name) => starts(russianMcpTools, `| \`${name}\` |`).includes('Только для reporter:'))
     && overviewTools.includes('The service declares six tools: `send`, `mailbox`, and `task` for participants,')
     && overviewTools.includes('and `digest`, `status`, and `ask` for a proven reporter.')
     && overviewTools.includes('six declarations carry `additionalProperties: false`')
     && section(overview, '### Rendering a reply for a participant', '### The package entry point')
       .includes('names the home, task and address')
     && starts(englishLibrary, '| `promptobus/hooks` |').includes('Stop and SessionStart loop guard')
-    && starts(russianLibrary, '| `promptobus/hooks` |').includes('Stop и SessionStart; Cursor ставит только stop')
     && englishDevelopment.includes('`skills/`, `schemas/` and `models/` ship in the tarball.')
-    && russianDevelopment.includes('`skills/`, `schemas/` и `models/` едут в tarball.')
     && starts(glossary, '| hook |').includes('Claude Code and Codex use Stop and SessionStart; Cursor uses stop.')
     && starts(glossary, '| hook |').includes('former PostToolUse feed hook is recognised only for removal.')
     && starts(glossary, '| unanswered |').includes('an orchestrator\'s question from `user` is visible immediately, before its turn ends.')
@@ -244,10 +223,10 @@ check('PB-293 entry points match current hooks tools roles and package',
     && driversIntro.includes('while Cursor installs stop only')
     && driversIntro.includes('Teamlead and reporter sessions work at the install root')
     && ['promptobus spawn --teamlead', 'promptobus report', 'promptobus step', 'promptobus ask']
-      .every((command) => russianCommands.includes(`| \`${command}`))
-    && russianSteps.includes('Первый гейт чтения диффа можно поднять без результата предыдущего участника; каждый следующий гейт требует текущий результат предшествующего объявленного гейта для того же объекта проверки.')
-    && russianAcceptance.includes('после текущих результатов предшествующего объявленного гейта и владельца для того же объекта проверки.')
-    && russianStepCommand.includes('первому гейту чтения диффа предшествующий результат не нужен; следующим нужен текущий результат предшествующего объявленного гейта для того же объекта проверки, а гейту записи — также результат владельца'),
+      .every((command) => englishCommands.includes(`| \`${command}`))
+    && englishSteps.includes('The first gate has no predecessor precondition; every later gate needs a result from the preceding gate\'s participant for the same subject, recorded at or after that participant\'s current assignment. A `writes-main-tree` gate also needs the owner\'s result, under the same subject and currency condition, whether or not it is the first gate.')
+    && englishAcceptance.includes('once the owner, and the preceding gate\'s participant when the pipeline declares one, have each recorded a result for the same subject at or after their current assignment.')
+    && englishStepCommand.includes('the first gate has no predecessor precondition; a later gate needs the preceding gate\'s result for the same subject at or after that participant\'s current assignment; a `writes-main-tree` gate also needs the owner\'s result under the same condition, whether or not it is the first gate'),
   'Current entry prose must describe the six-tool, guard-only, root-role and packed-file contracts');
 
 const cli = read('docs/reference/03-cli.md');
@@ -262,7 +241,6 @@ check('the orchestration skill names the harnesses a teamlead lifts on',
   'the teamlead usage line and paragraph follow TEAMLEAD_HARNESSES');
 const cliWakeRecipe = section(cli, '**Re-proving it costs one lift and one message.**', '**Nothing runs `claude` with a bare word.**');
 const englishWorkspace = section(english, '### 1. Declare the workspace', '### 2. Give the orchestrator the MCP server');
-const russianWorkspace = section(russian, '### 1. Объявить рабочее место', '### 2. Дать оркестратору MCP-сервер');
 const orchestrateHarness = starts(orchestrate, '`--harness` must be listed');
 const soloClose = section(soloReview, '## Close', '## Not this skill');
 const overviewEntry = section(overview, '## Entry points', '### Documentation in the package');
@@ -271,8 +249,6 @@ check('PB-293.1 CLI recipes state routed and task-selection conditions',
     && cliWakeRecipe.includes('`promptobus send` is also a CLI command (`lib/cli.js`)')
     && englishWorkspace.includes('On a new `spawn` or `review` lift without that flag, an explicit or recorded strategy can select a harness when routing applies; without a strategy, the new lift uses the `claude` fallback.')
     && englishWorkspace.includes('A repeat `spawn` reuses its participant\'s recorded harness. A repeat `review` reuses the reviewer\'s recorded harness unless an allowed explicit harness rebind takes effect.')
-    && russianWorkspace.includes('При новом подъёме `spawn` или `review` без этого флага явная или записанная стратегия может выбрать инструмент, если работает маршрутизация; без стратегии новый участник получает запасной `claude`.')
-    && russianWorkspace.includes('Повторный `spawn` использует записанный инструмент участника. Повторный `review` использует записанный инструмент ревьюера, кроме разрешённой явной смены инструмента.')
     && orchestrateHarness.includes('For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list.')
     && orchestrateHarness.includes('With no strategy, the new unrouted lift falls back to `claude`.')
     && orchestrateHarness.includes('A repeat `spawn` uses its participant\'s recorded harness; a repeat `review` uses the reviewer\'s recorded harness unless an allowed explicit harness rebind takes effect.')
