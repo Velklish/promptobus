@@ -91,7 +91,7 @@ used for a worker.
 
 Codex's return to the approver role follows a live SessionStart event from a hooks file
 naming the approver address and a byte-identical clone root after the lift. A
-clone-root `.codex/hooks.json` holding a record other than the project tracker's own, or a
+clone-root `.codex/hooks.json` holding a record its repository's `promptobus.json` does not trust, or a
 malformed `.codex/config.toml`, refuses Codex approver and worker lifts before worktree creation; a malformed config there stopped a measured
 lift before its isolated home could protect it. In a controlled `config/read` probe with
 the approver worktree as cwd, an isolated participant home, and a valid clone-root config
@@ -340,10 +340,10 @@ Source: `lib/driver-cursor.js` (`prepare`), `lib/project-hooks.js`.
 
 Cursor reads `.cursor/hooks.json` at the root of the worktree it runs in. When that
 path is tracked, the plan merges the index content into its hooks file: the guard on
-`stop` first, then the records the project tracker owns, and every other record is left
-out with a warning that names it. The launch file carries the tracked text as `tracked`,
-so the write sets `skip-worktree` on the path and the worker's `git status --porcelain`
-stays empty. The rule, the measurements and the cost of `skip-worktree` are in
+`stop` first, then the records the repository's `promptobus.json` trusts, and every
+other record is left out with a warning that names it and the rule. The launch file
+carries the tracked text as `tracked`, so the write sets `skip-worktree` on the path and
+the worker's `git status --porcelain` stays empty. The rule, the measurements and the cost of `skip-worktree` are in
 [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records).
 
 ### Cursor: tmux by absolute path
@@ -412,12 +412,13 @@ pin a mutable updater path and probe the version of that same concrete binary. I
 the host's `HostToolBin` passes through unchanged. It is not a capability and is not required
 of drivers whose binaries do not need this normalization.
 
-`refuseForeignProjectLayer?(lookupDir, writtenDir, tool?)` is optional. Spawn calls it at
-plan time without a binary and again with the selected binary before the first write of
-the lift. It throws GateError naming the file, and returns nothing when there is nothing
+`refuseForeignProjectLayer?(lookupDir, writtenDir, tool?, guardCommand?)` is optional. Spawn
+calls it at plan time without a binary and again with the selected binary before the first
+write of the lift, and passes the lift's guard command each time, so a project record that
+carries it is never trusted. It throws GateError naming the file, and returns nothing when there is nothing
 to refuse. A string return is not a refusal: spawn does not read one. The Codex driver
-throws when Codex would run a clone-root hook record other than the project tracker's own
-([ADR-025](../adr/adr-025-foreign-project-hook-records.md)) or cannot parse the
+throws when Codex would run a clone-root hook record its repository's `promptobus.json`
+does not trust ([ADR-025](../adr/adr-025-foreign-project-hook-records.md)) or cannot parse the
 clone-root config. A harness without that project-layer concern leaves the operation
 absent, and spawn does not ask it.
 
@@ -559,8 +560,8 @@ and [0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/ReviewerFile
 `bypass_hook_trust` trusts every
 project hooks file Codex discovers. A file at a path this lift writes is its own
 and is rewritten, whatever its bytes; the reviewer sandbox is that path. A file
-in the main checkout lifts only when it holds nothing but the project tracker's own
-records, which Codex then runs beside the home copy
+in the main checkout lifts only when it holds nothing but records its repository's
+`promptobus.json` trusts, which Codex then runs beside the home copy
 ([hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records)). Any
 other record refuses, including a guard with the same bytes, because that path is not
 one this lift writes and Codex would load it beside the home copy. The refusal is

@@ -60,6 +60,9 @@ interface HostFile {
   /** Argv of the command that restores process skills a repository does not keep in git, never a
    * shell line. Read from the SPAWNED REPOSITORY's own file ([03-cli.md § Spawn](../docs/reference/03-cli.md#spawn)). */
   generate?: string[];
+  /** Exact project hook commands a lift keeps, by harness and event key. Read, as `generate` is,
+   * from the SPAWNED REPOSITORY's own file. */
+  trustedHooks?: Record<string, Record<string, string[]>>;
   /** The owner step and the gate steps: 02-host § The pipeline declaration. */
   pipeline?: unknown;
 }

@@ -1,8 +1,8 @@
-# ADR-025: A participant lift accepts the tracker's hook records in a project's Codex and Cursor hook files
+# ADR-025: A participant lift keeps the project hook records its repository trusts in Codex and Cursor hook files
 
 **Status:** Accepted
-**Date:** 2026-10-03
-**Deciders:** the repository owner, 2026-10-03: 1A, 2B and 3A.
+**Date:** 2026-10-04
+**Deciders:** the repository owner, 2026-10-03: 2B and 3A; the owner, through the orchestrator of a run on 2026-10-04: 1D, under the product boundary that runtime code reads no development tool's own configuration.
 
 ## Context
 
@@ -26,6 +26,8 @@ backslop, from its v0.20.0, writes agent hook records into a project's own hook 
 
 **The public audit does not stand in the way.** `npm run audit` exited 0 with a probe file in `lib/` naming `backslop.json`, `npx --no-install backslop` and one of the tracker's task identifiers: its forbidden list is the origin project's names, not those of the tools a consumer uses. Whether the code names the tool is therefore a choice of the rule, and the gate allows either.
 
+**The package is a product, and one tracker's contract does not belong in it.** Under 1A below, the shipped `lib/project-hooks.js` read `backslop.json`, took its `cli` and built that tool's `hook session-start|stop --harness <id>` subcommands. The rule worked only for projects whose hooks came from that one tool, at that one command form; a project whose records came from any other tool, or from its own scripts, could not lift a Codex participant at all, and the tool's next change of form would refuse every project that used it. The owner's product boundary, set 2026-10-04, is that runtime code reads no development tool's own configuration and builds none of its commands; tool-specific configuration stays in the repository that uses the tool.
+
 ## Options
 
 **Decision 1 — which foreign records a lift accepts.**
@@ -33,6 +35,7 @@ backslop, from its v0.20.0, writes agent hook records into a project's own hook 
 - **1A — exact commands from `backslop.json`.** A record is accepted when its command `C` equals `<cli> hook <event> --harness <id>`, with `<cli>` the trimmed `cli` field of the `backslop.json` beside the judged hooks file, `<event>` `session-start` or `stop`, and `<id>` the harness that reads the file (`codex`, `cursor`), and when it sits under the event key that harness uses for that event. The record's form is the harness's own, with no other key: in Codex it is `{ "type": "command", "command": C }` inside a group that carries `hooks` and nothing else; in Cursor it is `{ "command": C }`, a record with `type` is not accepted, and the file may carry `version` beside `hooks`. Security cost: whoever commits both files chooses the command, so the rule keeps out a stray or unknown record, a record of another harness or event, and a non-command handler, but it does not keep out a hostile `cli`. A `cli` of the form `npx github:<owner>/<repo>#<tag>` fetches and runs that tag's code at every hook; `npx --no-install backslop` runs the worktree's installed dependency. Either runs without the owner's review.
 - **1B — command shape alone.** A record is accepted when its command matches `<anything> hook session-start|stop --harness <id>`, without reading `backslop.json`, so the code never names the tool. Security cost: the prefix is any command, so the suffix is the only filter and the rule accepts arbitrary code on two events. Restricting the prefix to characters without shell operators still accepts any program on the path.
 - **1C — an owner's list.** 1A, and the `cli` must also appear in a list the owner keeps in `promptobus.json`; a project whose `cli` changes refuses until the owner adds the new value. Security cost: the lowest of the three — a project cannot change what runs without the owner — but the code the `cli` resolves to is still unreviewed. Operating cost: a new configuration key, and an owner edit on every tracker upgrade that changes a versioned `cli`.
+- **1D — exact commands the repository declares.** A record is kept when its command is byte-equal to a string the repository's own `promptobus.json` lists under `trustedHooks.<harness>.<event key>`, read beside the judged hooks file — for Cursor from the index, as the records are — and when it sits under that key; the keys a lift keeps are `SessionStart` and `Stop` for Codex and `sessionStart` and `stop` for Cursor. The record's form is the harness's own, as in 1A. A Promptobus guard command — a bare `guard` after a word naming promptobus, or the words of the lift's own guard command after its launcher, in any quoting — is never kept, whatever the list says: the guard already runs from the lift's own document. A missing file or field trusts nothing; an unreadable file, a file that is not a JSON object or a misshapen field trusts nothing and is named in the refusal or warning. Security cost: the same as 1A — whoever commits both files chooses the command, and a listed command can fetch and run code without the owner's review. Operating cost: a project lists its commands once and edits the list when a tool changes its command; the tool that wrote the records needs to know nothing about Promptobus.
 
 **Decision 2 — how Codex runs accepted records.**
 
@@ -47,9 +50,9 @@ backslop, from its v0.20.0, writes agent hook records into a project's own hook 
 
 ## Decision
 
-**1A, 2B and 3A.**
+**1D, 2B and 3A.**
 
-1A because the boundary it draws is the one a worker already runs inside: the project's committers choose `npm ci` lifecycle scripts and gates, so trusting their `cli` adds no new author, while 1B trusts any command and 1C costs an owner edit per versioned upgrade for a guarantee the project's own scripts already void.
+1D because it keeps the boundary 1A drew — the one a worker already runs inside: the project's committers choose `npm ci` lifecycle scripts and gates, so trusting the commands they list adds no new author — while the package reads no tool's configuration and builds no tool's commands. 1A is that same trust with one tracker's contract compiled into the product, which the product boundary rules out. 1B trusts any command, and 1C costs an owner edit per versioned upgrade for a guarantee the project's own scripts already void.
 
 2B because 2A is measured to double the records, and accepting in place is the only arrangement in which each record runs once.
 
@@ -57,8 +60,10 @@ backslop, from its v0.20.0, writes agent hook records into a project's own hook 
 
 ## Consequences
 
-- A project that commits the tracker's Codex hooks can run Codex workers and approvers; its records run in them without review, once per event, beside the guard.
-- A Cursor worker or approver in such a project gets both the guard and the project's records, and its tree stays clean. A rebase across an upstream change of `.cursor/hooks.json` refuses until the bit is cleared, and [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records) says how. A worker's own edit of that file does not reach a commit.
-- The Codex refusal message lists the records it did not accept, not only the file.
-- A new event, harness or command form the tracker adds is refused until this rule is widened by a new decision.
+- A project that commits Codex hooks and lists their commands under `trustedHooks` can run Codex workers and approvers; its records run in them without review, once per event, beside the guard. Without that list any record refuses a Codex lift.
+- A Cursor worker or approver in such a project gets both the guard and the listed records, and its tree stays clean; an unlisted record is left out with a warning. A rebase across an upstream change of `.cursor/hooks.json` refuses until the bit is cleared, and [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records) says how. A worker's own edit of that file does not reach a commit.
+- A project whose records come from a tracker lists the tracker's commands itself; the tracker writes nothing for Promptobus. A project that relied on 1A keeps its records only after it adds that list.
+- The Codex refusal message lists the records it did not keep, the declaration file and the keys to list them under.
+- A repository that commits `promptobus.json` for this list is also the root of a standalone `promptobus` started inside it or its worktrees, because the standalone host takes the first `promptobus.json` above its working directory; measured in [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records). A participant there keeps its store, which its bus server and guard name explicitly, but their host is the repository's: a step declared only in the install root's `pipeline` is refused as an address inside such a repository, measured on `promptobus send` and read from the code for the bus server and the guard. The shipped roles are admitted either way.
+- A changed command needs a list edit by the project. A new event or harness is refused until this rule is widened by a new decision.
 - `.claude/settings.json` is untouched: a Claude Code participant gets its guard through its own settings file. Cursor's bundle also reads hooks from the project's `.claude/settings.json`; a second live `-p` turn with that file in the worktree fired none of its records.

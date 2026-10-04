@@ -1,6 +1,6 @@
 // Package packing gates for the public promptobus repo. Does not recurse into npm test.
 import {
-  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
+  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -603,6 +603,38 @@ check('reference validator and compiler do not ship in the tarball',
 check('installed tree has no package source or tests',
   existsSync(installedPkg) && !existsSync(path.join(installedPkg, 'src'))
   && !existsSync(path.join(installedPkg, 'test')), installedPkg);
+
+// A project hook record is kept only by the repository's own trust declaration: in the installed
+// package a tracker config naming its cli trusts nothing, and no runtime file names that tracker.
+const TRACKER_CLI = 'npx --no-install backslop';
+const trackerProject = path.join(SB, 'tracker-project');
+mkdirSync(trackerProject);
+writeFileSync(path.join(trackerProject, 'backslop.json'), `${JSON.stringify({ cli: TRACKER_CLI })}\n`);
+const trackerRecord = (event) => ({ hooks: [{ type: 'command', command: `${TRACKER_CLI} hook ${event} --harness codex` }] });
+const trackerHooks = JSON.stringify({ hooks: { SessionStart: [trackerRecord('session-start')], Stop: [trackerRecord('stop')] } });
+const installedHookRule = path.join(installedPkg, 'lib', 'project-hooks.js');
+const trackerJudged = existsSync(installedHookRule)
+  ? spawnSync(process.execPath, ['--input-type=module', '-e',
+    `const { judgeHookRecords } = await import(${JSON.stringify(pathToFileURL(installedHookRule).href)});`
+    + `process.stdout.write(JSON.stringify(judgeHookRecords(${JSON.stringify(trackerHooks)}, `
+    + `${JSON.stringify(trackerProject)}, 'codex')));`], { encoding: 'utf8' })
+  : { status: 1, stdout: '', stderr: `missing ${installedHookRule}` };
+let trackerVerdict = null;
+try {
+  trackerVerdict = JSON.parse(trackerJudged.stdout);
+} catch {
+  // The check below names the child process output when it could not return JSON.
+}
+check('installed package refuses tracker hook records that only a tracker config names',
+  trackerJudged.status === 0 && trackerVerdict?.accepted?.length === 0 && trackerVerdict?.refused?.length === 2,
+  trackerJudged.stdout || why(trackerJudged));
+const runtimeFiles = ['bin', 'dist', 'lib'].flatMap((dir) => {
+  const abs = path.join(installedPkg, dir);
+  return existsSync(abs) ? readdirSync(abs, { recursive: true }).map((rel) => path.join(dir, String(rel))) : [];
+}).filter((rel) => statSync(path.join(installedPkg, rel)).isFile());
+const namesTracker = runtimeFiles.filter((rel) => readFileSync(path.join(installedPkg, rel), 'utf8').includes('backslop'));
+check('installed runtime files name no development tracker',
+  runtimeFiles.length > 0 && namesTracker.length === 0, namesTracker.join(', ') || `${runtimeFiles.length} files`);
 
 const exportedSpecifiers = [
   'promptobus',

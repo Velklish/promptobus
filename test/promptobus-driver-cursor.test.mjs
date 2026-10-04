@@ -65,6 +65,7 @@ const {
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
+const { guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { APPROVER } = await import(path.join(here, '..', 'dist', 'index.js'));
 
 const TASK = 'cursorbus-t20260903-000000';
@@ -641,9 +642,13 @@ console.warn = unclaimedWarn0;
 check('PB-161.1: a driver that claims no directory is asked nothing',
   unclaimedWarns === '', unclaimedWarns || '(silent)');
 
-// A tracked .cursor/hooks.json with the tracker's records: the lift writes the guard beside them
-// over it, keeps a foreign record out, and hides the path from the worker's index.
+// A tracked .cursor/hooks.json with tracker records the repository's promptobus.json trusts: the lift
+// writes the guard beside them over it, keeps a foreign record out, and hides the path from the worker's index.
 const trackerCli = 'npx --no-install backslop';
+const trackerTrust = `${JSON.stringify({ trustedHooks: { cursor: {
+  sessionStart: [`${trackerCli} hook session-start --harness cursor`],
+  stop: [`${trackerCli} hook stop --harness cursor`],
+} } })}\n`;
 const hooksClone = path.join(SB, 'tracker-hooks-clone');
 mkdirSync(path.join(hooksClone, '.cursor'), { recursive: true });
 gitAt(hooksClone, 'init', '-q', '-b', 'master');
@@ -655,7 +660,7 @@ const trackedHooks = `${JSON.stringify({
   },
 }, null, 2)}\n`;
 writeFileSync(path.join(hooksClone, '.cursor', 'hooks.json'), trackedHooks);
-writeFileSync(path.join(hooksClone, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
+writeFileSync(path.join(hooksClone, 'promptobus.json'), trackerTrust);
 gitAt(hooksClone, 'add', '.');
 gitAt(hooksClone, 'commit', '-qm', 'tracker hooks');
 const hooksWt = path.join(SB, 'tracker-hooks-wt');
@@ -667,11 +672,11 @@ writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: hooksWt, root: null }).file
 console.warn = mergeWarn0;
 const mergedHooks = JSON.parse(readFileSync(path.join(hooksWt, '.cursor', 'hooks.json'), 'utf8'));
 const mergedPorc = gitAt(hooksWt, 'status', '--porcelain');
-check(': a tracked .cursor/hooks.json — the guard stands beside the tracker records, a foreign record is kept out',
+check(': a tracked .cursor/hooks.json — the guard stands beside the trusted tracker records, a foreign record is kept out',
   mergedHooks.hooks.stop.map((r) => r.command).join('|') === `${ctx.guardCommand}|${trackerCli} hook stop --harness cursor`
-  && mergedHooks.hooks.sessionStart?.[0]?.command === `${trackerCli} hook session-start --harness cursor`
+  && mergedHooks.hooks.sessionStart.map((r) => r.command).join('|') === `${trackerCli} hook session-start --harness cursor`
   && !JSON.stringify(mergedHooks).includes('echo foreign-record')
-  && mergeWarns.includes('echo foreign-record'),
+  && mergeWarns.includes('echo foreign-record') && mergeWarns.includes('"trustedHooks.cursor.stop"'),
   `${JSON.stringify(mergedHooks)} · ${mergeWarns}`);
 check(': git status --porcelain of a worker tree with a tracked .cursor/hooks.json is empty after the lift',
   mergedPorc.status === 0 && mergedPorc.stdout === ''
@@ -683,6 +688,64 @@ const reliftHooks = JSON.parse(cursorDriver.prepare({ ...ctx, cwd: hooksWt, root
 check(': a relift merges from the tracked bytes, not from its own earlier write — one guard',
   reliftHooks.hooks.stop.length === 2 && reliftHooks.hooks.stop[0].command === ctx.guardCommand,
   JSON.stringify(reliftHooks));
+// The same tracked hooks with an unrelated trusted command, and with a tracker config but no declaration.
+const trustClone = (name, files, { onDisk = {}, guardCommand = ctx.guardCommand } = {}) => {
+  const clone = path.join(SB, name);
+  mkdirSync(path.join(clone, '.cursor'), { recursive: true });
+  gitAt(clone, 'init', '-q', '-b', 'master');
+  for (const [rel, text] of Object.entries(files)) writeFileSync(path.join(clone, rel), text);
+  gitAt(clone, 'add', '.');
+  gitAt(clone, 'commit', '-qm', name);
+  const wt = path.join(SB, `${name}-wt`);
+  gitAt(clone, 'worktree', 'add', '-q', '--detach', wt);
+  for (const [rel, text] of Object.entries(onDisk)) writeFileSync(path.join(wt, rel), text);
+  let warned = '';
+  const warn0 = console.warn;
+  console.warn = (m) => { warned += `${m}\n`; };
+  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: wt, root: null, guardCommand }).files, cursorDriver.options.launchDirs);
+  console.warn = warn0;
+  return { merged: JSON.parse(readFileSync(path.join(wt, '.cursor', 'hooks.json'), 'utf8')), warned };
+};
+const unrelatedCommand = 'node scripts/stop-note.mjs';
+const unrelatedLift = trustClone('unrelated-hooks-clone', {
+  '.cursor/hooks.json': `${JSON.stringify({ version: 1, hooks: { stop: [{ command: unrelatedCommand }] } })}\n`,
+  'promptobus.json': `${JSON.stringify({ trustedHooks: { cursor: { stop: [unrelatedCommand] } } })}\n`,
+});
+check(': an unrelated command the repository trusts runs beside the guard, once',
+  unrelatedLift.merged.hooks.stop.map((r) => r.command).join('|') === `${ctx.guardCommand}|${unrelatedCommand}`
+  && unrelatedLift.warned === '',
+  `${JSON.stringify(unrelatedLift.merged)} · ${unrelatedLift.warned}`);
+const undeclaredLift = trustClone('undeclared-hooks-clone', {
+  '.cursor/hooks.json': trackedHooks,
+  'backslop.json': `${JSON.stringify({ cli: trackerCli })}\n`,
+});
+check(': tracker records beside a tracker config naming its cli, with no trust declaration, are kept out with a warning',
+  undeclaredLift.merged.hooks.stop.map((r) => r.command).join('|') === ctx.guardCommand
+  && undeclaredLift.merged.hooks.sessionStart === undefined
+  && undeclaredLift.warned.includes(`${trackerCli} hook stop --harness cursor`)
+  && undeclaredLift.warned.includes('promptobus.json'),
+  `${JSON.stringify(undeclaredLift.merged)} · ${undeclaredLift.warned}`);
+const editedTrustLift = trustClone('edited-trust-clone', {
+  '.cursor/hooks.json': trackedHooks,
+  'promptobus.json': `${JSON.stringify({ trustedHooks: { cursor: { stop: [] } } })}\n`,
+}, { onDisk: { 'promptobus.json': trackerTrust } });
+check(': an uncommitted edit of promptobus.json does not trust committed records — the declaration is read from the index',
+  editedTrustLift.merged.hooks.stop.map((r) => r.command).join('|') === ctx.guardCommand
+  && editedTrustLift.merged.hooks.sessionStart === undefined
+  && editedTrustLift.warned.includes(`${trackerCli} hook stop --harness cursor`),
+  `${JSON.stringify(editedTrustLift.merged)} · ${editedTrustLift.warned}`);
+// A host whose guard argv names no promptobus: its installed guard, listed, still is not a second guard.
+const customGuardHost = { nodePath: () => '/usr/bin/node', guardArgv: (args) => ['/x/mytool.js', 'bus', ...args] };
+const customGuard = guardHookCommand(customGuardHost, { address: 'worker:cur', taskId: 'T', home: '/h' });
+const installedCustomGuard = guardHookCommand(customGuardHost);
+const customGuardLift = trustClone('custom-guard-clone', {
+  '.cursor/hooks.json': `${JSON.stringify({ version: 1, hooks: { stop: [{ command: installedCustomGuard }] } })}\n`,
+  'promptobus.json': `${JSON.stringify({ trustedHooks: { cursor: { stop: [installedCustomGuard] } } })}\n`,
+}, { guardCommand: customGuard });
+check(': a listed guard of a host whose guard argv names no promptobus is kept out — one guard, the lift\'s',
+  customGuardLift.merged.hooks.stop.map((r) => r.command).join('|') === customGuard
+  && customGuardLift.warned.includes(installedCustomGuard.replaceAll('"', '\\"')),
+  `${JSON.stringify(customGuardLift.merged)} · ${customGuardLift.warned}`);
 const approverHooksWt = path.join(SB, 'tracker-hooks-approver');
 gitAt(hooksClone, 'worktree', 'add', '-q', '--detach', approverHooksWt);
 const approverHooksPlan = cursorDriver.prepare({ ...ctx, cwd: approverHooksWt, root: null, role: APPROVER });
@@ -699,7 +762,7 @@ mkdirSync(path.join(crlfClone, '.cursor'), { recursive: true });
 gitAt(crlfClone, 'init', '-q', '-b', 'master');
 writeFileSync(path.join(crlfClone, '.gitattributes'), '.cursor/hooks.json text eol=crlf\n');
 writeFileSync(path.join(crlfClone, '.cursor', 'hooks.json'), trackedHooks);
-writeFileSync(path.join(crlfClone, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
+writeFileSync(path.join(crlfClone, 'promptobus.json'), trackerTrust);
 gitAt(crlfClone, 'add', '.');
 gitAt(crlfClone, 'commit', '-qm', 'tracker hooks with crlf checkout');
 const crlfWt = path.join(SB, 'tracker-hooks-crlf-approver');

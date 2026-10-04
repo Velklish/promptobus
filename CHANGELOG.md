@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A Codex or Cursor lift keeps a project's own hook records only when the repository's
+  `promptobus.json` lists their commands.** The new `trustedHooks` field maps a harness and an
+  event key of its hooks file to the exact commands the repository trusts, for example
+  `{ "trustedHooks": { "codex": { "Stop": ["node scripts/stop-note.mjs"] } } }`; a lift keeps
+  `SessionStart` and `Stop` records for Codex and `sessionStart` and `stop` for Cursor. The lift
+  no longer reads a tracker's `backslop.json` or builds its `hook` subcommands, and a Promptobus
+  guard is never kept whatever the list says. **Migration:** a project that commits tracker
+  records in `.codex/hooks.json` or `.cursor/hooks.json` lists those commands under
+  `trustedHooks`; until it does, a Codex lift refuses and names the declaration to edit, and a
+  Cursor lift leaves the records out with a warning. The tracker itself writes nothing for
+  Promptobus. A committed repository `promptobus.json` is also the root a standalone
+  `promptobus` finds when started inside that repository or its worktrees, so run workspace
+  commands from the install root; and a participant whose step is declared only in the install
+  root's `pipeline` is refused by the bus in a worktree of such a repository, while `worker`,
+  `reviewer` and `approver` are not. A Cursor lift reads the declaration from the index, as it
+  reads the hook records.
+  [ADR-025](docs/adr/adr-025-foreign-project-hook-records.md),
+  [hooks and trust](docs/guides/hooks-and-trust.md#a-projects-own-hook-records).
+
 ### Fixed
 
 - **`npm run probe` no longer runs a file name as shell text or lets a patch escape its

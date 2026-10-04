@@ -78,6 +78,7 @@ const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'driv
 const { liftHarness, skillsNote, toolName, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
+const { guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 
 // The override key prefix is the CONSUMER's name, so it comes from a host and not from
 // a constant. `HOST` stands in for the workspace everywhere below; `OTHER` is a second
@@ -2794,7 +2795,8 @@ check(': a log write under a removed registry does not rebuild the tree',
   check(': a project hooks file in the main checkout refuses before any write',
     refusedDry.status !== 0
     && refusedDry.out.includes(mainHooks)
-    && refusedDry.out.includes('Remove or move that file')
+    && refusedDry.out.includes('remove or move that file')
+    && refusedDry.out.includes('"trustedHooks.codex.Stop"')
     && refusedDry.out.includes('another harness')
     && refusedUp.status !== 0
     && refusedPart == null
@@ -2837,16 +2839,61 @@ check(': a log write under a removed registry does not rebuild the tree',
     && rewritten.includes('--role reviewer:fplain')
     && !rewritten.includes('old-guard'),
     `${revOwn.out.slice(-500)}\n${rewritten.slice(0, 300)}`);
-  // The tracker's own records in a committed main-checkout file lift a worker; Codex runs that
-  // file itself, so the worktree's tracked copy is left alone and the guard goes to the home.
+  // Records the repository's promptobus.json trusts lift a worker from a committed main-checkout file;
+  // Codex runs that file itself, so the worktree's tracked copy is left alone and the guard goes to the home.
   const trackerCli = 'npx --no-install backslop';
+  const trackerStart = `${trackerCli} hook session-start --harness codex`;
+  const trackerStop = `${trackerCli} hook stop --harness codex`;
   const trackerDoc = (extra = []) => `${JSON.stringify({ hooks: {
-    SessionStart: [{ hooks: [{ type: 'command', command: `${trackerCli} hook session-start --harness codex` }] }],
-    Stop: [{ hooks: [{ type: 'command', command: `${trackerCli} hook stop --harness codex` }] }, ...extra],
+    SessionStart: [{ hooks: [{ type: 'command', command: trackerStart }] }],
+    Stop: [{ hooks: [{ type: 'command', command: trackerStop }] }, ...extra],
   } }, null, 2)}\n`;
+  const mainTrust = path.join(realpathSync(fbox.repoAbs), 'promptobus.json');
+  const trustDoc = (codex) => `${JSON.stringify({ trustedHooks: { codex } }, null, 2)}\n`;
+  const unrelatedCommand = 'node scripts/stop-note.mjs';
+  writeFileSync(mainHooks, `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: unrelatedCommand }] }] } })}\n`);
+  writeFileSync(mainTrust, trustDoc({ Stop: [unrelatedCommand] }));
+  const unrelatedDry = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'funrelated', '--harness', 'codex', '--dry-run'], { cwd: fbox.ws, env: fenv });
+  let unrelatedPlan = null;
+  const unrelatedPrepare = thrown(() => {
+    unrelatedPlan = codexDriver.prepare({
+      ...ctx, cwd: plainPart?.metadata?.worktree, guardCommand: GUARD_CMD, task: FTASK, address: 'worker:funrelated',
+    });
+  });
+  check(': an unrelated command the repository trusts lifts a Codex worker plan, and the home holds the guard alone',
+    unrelatedDry.status === 0 && !unrelatedPrepare.threw
+    && String(unrelatedPlan?.homeHooks).includes('--role worker:api')
+    && !JSON.stringify(unrelatedPlan).includes(unrelatedCommand),
+    `${unrelatedDry.out.slice(-500)}\n${unrelatedPrepare.msg}\n${unrelatedPlan?.homeHooks}`);
+  // A host whose guard argv names no promptobus: its installed guard, listed, is still refused by the lift's own guard.
+  const customGuardHost = { nodePath: () => '/usr/bin/node', guardArgv: (args) => ['/x/mytool.js', 'bus', ...args] };
+  const customGuard = guardHookCommand(customGuardHost, { address: 'worker:fcustom', taskId: FTASK, home: fhome });
+  const installedCustomGuard = guardHookCommand(customGuardHost);
+  writeFileSync(mainHooks, `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: installedCustomGuard }] }] } })}\n`);
+  writeFileSync(mainTrust, trustDoc({ Stop: [installedCustomGuard] }));
+  const unbornWorktree = path.join(SB, 'fcustom-unborn-wt');
+  const customWithoutGuard = thrown(() => codexDriver.refuseForeignProjectLayer(fbox.repoAbs, unbornWorktree));
+  const customWithGuard = thrown(() => codexDriver.refuseForeignProjectLayer(fbox.repoAbs, unbornWorktree, null, customGuard));
+  const customPrepare = thrown(() => codexDriver.prepare({
+    ...ctx, cwd: plainPart?.metadata?.worktree, guardCommand: customGuard, task: FTASK, address: 'worker:fcustom',
+  }));
+  check(': a listed guard of a host whose guard argv names no promptobus refuses a Codex lift that carries that guard',
+    !customWithoutGuard.threw && customWithGuard.threw && customWithGuard.msg.includes('/x/mytool.js')
+    && customPrepare.threw && customPrepare.msg.includes(mainHooks),
+    `${customWithoutGuard.msg} · ${customWithGuard.msg} · ${customPrepare.msg}`);
+  rmSync(mainTrust);
   writeFileSync(path.join(fbox.repoAbs, 'backslop.json'), `${JSON.stringify({ cli: trackerCli })}\n`);
   writeFileSync(mainHooks, trackerDoc());
-  const trackerCommitted = gitOk(['add', 'backslop.json', '.codex/hooks.json'], fbox.repoAbs)
+  const untrustedDry = cli(['spawn', '--repo', fbox.repo, '--brief', fbrief, '--task', FTASK,
+    '--worker', 'funtrusted', '--harness', 'codex', '--dry-run'], { cwd: fbox.ws, env: fenv });
+  check(': tracker records beside a tracker config naming its cli, with no trust declaration, refuse and name the declaration',
+    untrustedDry.status !== 0 && untrustedDry.out.includes(trackerStop) && untrustedDry.out.includes(mainTrust)
+    && !store.participantOf(store.readTask(fhome, FTASK), 'worker:funtrusted'),
+    untrustedDry.out.slice(-600));
+  rmSync(path.join(fbox.repoAbs, 'backslop.json'));
+  writeFileSync(mainTrust, trustDoc({ SessionStart: [trackerStart], Stop: [trackerStop] }));
+  const trackerCommitted = gitOk(['add', 'promptobus.json', '.codex/hooks.json'], fbox.repoAbs)
     && gitOk(['-c', 'user.email=hooks@example.com', '-c', 'user.name=hooks', 'commit', '-qm', 'tracker hooks'], fbox.repoAbs);
   planParticipant(HARNESS, 'worker:faccept', {
     turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'FACCEPT' } }] }],
@@ -2859,7 +2906,7 @@ check(': a log write under a removed registry does not rebuild the tree',
   const acceptPorc = spawnSync('git', ['-C', acceptWt, 'status', '--porcelain'], { encoding: 'utf8' });
   const acceptHomeHooks = existsSync(path.join(acceptHome, 'hooks.json'))
     ? readFileSync(path.join(acceptHome, 'hooks.json'), 'utf8') : '';
-  check(': a main-checkout hooks file holding only the tracker records lifts a Codex worker',
+  check(': a main-checkout hooks file holding only trusted tracker records lifts a Codex worker',
     trackerCommitted && acceptUp.status === 0 && /worker worker:faccept lifted/.test(acceptUp.out),
     acceptUp.out.slice(-500));
   check(': the worker tree with a tracked .codex/hooks.json stays clean, the guard is in the home only',
@@ -2886,7 +2933,7 @@ check(': a log write under a removed registry does not rebuild the tree',
     foreignRecord.status !== 0
     && foreignRecord.out.includes(mainHooks)
     && foreignRecord.out.includes('echo foreign-record')
-    && foreignRecord.out.includes(`${trackerCli} hook stop --harness codex`)
+    && foreignRecord.out.includes('"trustedHooks.codex.Stop"')
     && !store.participantOf(store.readTask(fhome, FTASK), 'worker:frecord'),
     foreignRecord.out.slice(-600));
   gitOk(['checkout', '--', '.codex/hooks.json'], fbox.repoAbs);

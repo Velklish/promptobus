@@ -438,9 +438,9 @@ export interface Driver {
   /** Refusal by harness version for the requested options, before the first write to disk. `null`
    * means nothing to refuse for: the version is fine, or it was not read and may not be claimed. */
   optionRefusal?(options: { effort?: string | null }, tool: unknown): string | null;
-  /** Throws GateError naming a foreign project file before the first write of this lift.
-   * The selected binary is passed at lift; a plan passes none and reads only the project layer. */
-  refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: HostToolBin): void;
+  /** Throws GateError naming a foreign project file before the first write of this lift. The selected
+   * binary is passed at lift, a plan passes none; `guardCommand` is the lift's guard, never trusted. */
+  refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: HostToolBin | null, guardCommand?: string | null): void;
   /** Names of delivered MCP servers shadowed by a person's PERSONAL records. Personal config is a
    * harness property; the output line about shadowing is one for all. */
   shadowedUserServers?(names: string[]): string[];

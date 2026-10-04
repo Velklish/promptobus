@@ -138,6 +138,10 @@ check('docs: Codex thread/start overrides match the holder and role boundary',
     '`ThreadStartParams.config` always carries `bypass_hook_trust`, optionally carries `model_reasoning_effort`, and a Codex install-root role (teamlead, reporter or orchestrator) adds `features.hooks = false`. Admission itself comes from `TEAMLEAD_HARNESSES`, not from that branch; the current overrides are listed in [the Codex holder](../reference/03-cli.md#the-codex-holder).'),
   JSON.stringify({ workerConfig, teamleadConfig }));
 
+check('docs: the generate dry-run rule does not read as the trustedHooks rule',
+  has(spawn, 'the run reads it from the **worktree**, which is what the participant will see, so the two can disagree and the worktree decides. The same file lists, in `trustedHooks`, the project hook commands a Codex or Cursor lift keeps beside its guard, and that field is read where the hooks file it judges is: the main checkout\'s working file for Codex, the worktree\'s index for Cursor'),
+  'the Spawn section must state the generate dry-run rule before trustedHooks and say where trustedHooks is read');
+
 const addresses = section(protocol, '## Addresses');
 const teamleadSkill = section(read('skills/orchestrate/SKILL.md'), '## Teamleads and siblings');
 check('docs: a teamlead reads root mail in its child task, and the drain is documented',
