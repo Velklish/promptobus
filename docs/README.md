@@ -33,6 +33,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-024-approver-acceptance-in-own-worktree.md](adr/adr-024-approver-acceptance-in-own-worktree.md) | The approver is the fourth addressed role, lifted on Claude Code, Cursor and Codex after a reviewer result, and accepts in its own worktree; Cursor stays refused as a teamlead | Accepted |
 | [adr/adr-025-foreign-project-hook-records.md](adr/adr-025-foreign-project-hook-records.md) | A participant lift keeps the project hook records its repository trusts in `promptobus.json`: which records, Codex accepting in place, Cursor merging under `skip-worktree` | Accepted |
 | [adr/adr-026-teamlead-one-mailbox.md](adr/adr-026-teamlead-one-mailbox.md) | A teamlead has one mailbox: root mail to `teamlead:<slug>` lands in its child task's `orchestrator` mailbox from the governance address `root:<root slug>`, a child send to that address reaches the root as the teamlead, and mail an earlier version left at the root slot moves on the teamlead's next read | Accepted |
+| [adr/adr-027-host-integration-entry-point.md](adr/adr-027-host-integration-entry-point.md) | A host that embeds the bus reads its printed values, driver declarations, install plan, routing report and installed version from one entry point, `promptobus/integration`; the `exports` map is the whole supported surface, and a removed name or a reshaped return is a contract change | Accepted |
 
 ## Cross-cutting principles
 

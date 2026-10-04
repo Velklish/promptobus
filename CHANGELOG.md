@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`promptobus/integration`: a supported entry point for a host that embeds the bus.** A host
+  reads here what it took from package files before: `PACKAGE_VERSION`; the values the CLI
+  prints (`PROMPTOBUS_TOOLS`, `PROTOCOL_VERSIONS`, `PRUNE_DEFAULT_DAYS`, `KNOCK_TEXT_MAX`,
+  `MAILBOX_UNREAD_MARK`, `BRANCH_CHANGED_MARK`, `WORKTREE_BRANCH_TEMPLATE`, `npmCiCommand()`);
+  `DRIVER_DECLARATIONS`, a deep-frozen data copy of each shipped driver's id, capabilities and
+  options, and `checkWake` for a driver's wake-channel smoke; `INSTALL_TARGETS`,
+  `SKILL_OWNERSHIP_MARKER`, `packageSkills()` and `planHookInstall(host, root, harnesses)`, which
+  returns what `install` would write without writing it; and `routingDiagnosis(host)`, the routing
+  readiness report with no probe and no cache write. Types ship in `lib/integration.d.ts`.
+  `promptobus/cli` also exports `COMMANDS`, the frozen command vocabulary its unknown-command
+  refusal lists. Everything else under `lib/` and `dist/` stays private, and an import of it
+  still fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+  [02-host § The host integration entry point](docs/reference/02-host.md#the-host-integration-entry-point),
+  [ADR-027](docs/adr/adr-027-host-integration-entry-point.md).
+
 ### Changed
 
 - **A repository's declared generator runs after the worktree's dependency install, not

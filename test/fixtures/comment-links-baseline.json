@@ -3,7 +3,7 @@
     "fileOnly": 33,
     "citation": 46,
     "crossFile": 6,
-    "fileLevel": 55,
+    "fileLevel": 57,
     "bound": 53,
     "sameFileCitation": 11
   },
@@ -98,6 +98,12 @@
     "lib/install.js": [
       "../docs/guides/install.md#what-the-installer-knows-and-never-writes",
       "../docs/guides/install.md#2-workspace-file"
+    ],
+    "lib/integration.d.ts": [
+      "../docs/reference/02-host.md#the-host-integration-entry-point"
+    ],
+    "lib/integration.js": [
+      "../docs/reference/02-host.md#the-host-integration-entry-point"
     ],
     "lib/lease.js": [
       "../docs/reference/01-overview.md#machine-lease"

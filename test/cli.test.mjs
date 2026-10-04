@@ -11,7 +11,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { GateError as ProtocolGateError, PromptobusError } from '../dist/index.js';
 import { HostResolveError } from '../dist/host.js';
-import { helpText, runPromptobus } from '../lib/cli.js';
+import { COMMANDS, helpText, runPromptobus } from '../lib/cli.js';
 import { TEAMLEAD_HARNESSES } from '../lib/contract.js';
 import { expectFail } from './console.mjs';
 
@@ -304,10 +304,11 @@ test('the reference command list is the dispatcher, aliases aside', () => {
 });
 
 test('the unknown-command refusal names every command the dispatcher knows', () => {
-  // SUBCOMMANDS is a hand copy of the dispatcher's case labels; held equal here.
+  // COMMANDS is a hand copy of the dispatcher's case labels; held equal here, and the refusal joins it.
   const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
   const aliases = new Set(['help', '--help', '-h', '--version', '-v']);
   const dispatcherCommands = [...subcommands()].filter((cmd) => !aliases.has(cmd)).sort();
-  const listed = cli.match(/const SUBCOMMANDS = '([^']+)';/)[1].split(', ').sort();
-  assert.deepEqual(listed, dispatcherCommands);
+  assert.deepEqual([...COMMANDS].sort(), dispatcherCommands);
+  assert.ok(Object.isFrozen(COMMANDS), 'COMMANDS is exported frozen');
+  assert.match(cli, /unknown command "\$\{cmd \?\? ''\}" — \$\{COMMANDS\.join\(', '\)\}/);
 });

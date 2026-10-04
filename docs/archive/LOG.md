@@ -479,3 +479,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-326"></a>`PB-326-lift-skips-tracker-adapters` · 2026-10-04 · completed · — · Restore generated development adapters through the repository generator
 - <a id="pb-335"></a>`PB-335-consumer-tracker-information-boundary` · 2026-10-04 · completed · — · Keep the development tracker out of consumer documentation and release metadata
 - <a id="pb-338"></a>`PB-338-generic-test-environment-isolation` · 2026-10-04 · completed · — · Move private memory-service policy out of the product test harness
+- <a id="pb-339"></a>`PB-339-supported-host-integration-api` · 2026-10-04 · completed · — · Provide supported host integration and diagnostic contracts

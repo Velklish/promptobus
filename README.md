@@ -234,7 +234,9 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/host` | The `PromptobusHost` contract and `createStandaloneHost` |
 | `promptobus/hooks` | Hook planner for the Stop and SessionStart loop guard; Cursor installs its stop event only |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
-| `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` |
+| `promptobus/telemetry` | Participant telemetry summary: `telemetrySummary`, `telemetryStats` and their record types |
+| `promptobus/integration` | What a host embedding the bus reads instead of package files: the installed version, the values the CLI prints, the shipped drivers' declarations, the install plan and the routing readiness report |
+| `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` and `COMMANDS`, the command vocabulary |
 | `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record, the handover record and the model-routing documents |
 
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/04-protocol.md).

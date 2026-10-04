@@ -10,6 +10,7 @@ The “Term” column gives the spelling for prose; EN is the name in code and E
 |---|---|---|---|
 | host | host | Declared workspace interface. The caller passes it into the bus on every call that needs a workspace. | `src/host.ts` (`PromptobusHost`) |
 | standalone host | standalone host | Host built from the current directory, Git, and `promptobus.json`. It does not know another product's layout. | `src/standalone.ts` (`createStandaloneHost`) |
+| host integration entry point | host integration entry point | The package entry point `promptobus/integration`: the installed version, the values the CLI prints, the shipped drivers' declarations, the install plan and the routing readiness report, which a host that embeds the bus reads instead of package files. With the other keys of the `exports` map it is the whole supported surface. | `lib/integration.js`, [ADR-027](adr/adr-027-host-integration-entry-point.md) |
 | task | task | On-disk unit of work: title, status, participants, mail, and artifacts. | `schemas/v1/task.schema.json`, `src/v1/model.ts` |
 | root task | root task | Task without `parent`; it may own child tasks and holds one teamlead participant for each. | `src/v1/store.ts` (`createTask`), [ADR-021](adr/adr-021-task-tree-and-governance-routes.md) |
 | child task | child task | Task whose `parent` names a root task. Its orchestrator is owned by the same session as the root's teamlead participant. | `schemas/v1/task.schema.json`, `src/v1/store.ts` (`createTask`) |

@@ -840,15 +840,24 @@ check('the installed package carries no tracker name, task id or contributor pro
     && installedLeaks.length === 0,
   installedLeaks.join(' · ') || `${installedTexts.length} text files`);
 
-const exportedSpecifiers = [
-  'promptobus',
-  'promptobus/driver',
-  'promptobus/host',
-  'promptobus/telemetry',
-  'promptobus/hooks',
-  'promptobus/cli',
-  'promptobus/schemas/v1/task.schema.json',
-];
+// The exports map is the list: a pattern key resolves through one concrete file under it, and a
+// pattern key with no sample stays a pattern, which the install probe below refuses to resolve.
+const exportKeys = Object.keys(pkg.exports ?? {});
+const specifierOf = (key) => (key === '.' ? 'promptobus' : `promptobus/${key.slice(2)}`);
+const PATTERN_SAMPLES = { './schemas/*': 'promptobus/schemas/v1/task.schema.json' };
+const exportedSpecifiers = exportKeys.map((key) => PATTERN_SAMPLES[key] ?? specifierOf(key));
+const readme = readFileSync(path.join(REPO, 'README.md'), 'utf8');
+const librarySection = readme.split('\n## Library\n')[1]?.split('\n## ')[0] ?? '';
+const libraryRows = [...librarySection.matchAll(/^\| `(promptobus[^`]*)` \|/gm)].map((m) => m[1]).sort();
+const exportRows = exportKeys.map(specifierOf).sort();
+check('README Library table names every exports key and nothing else',
+  librarySection !== '' && JSON.stringify(libraryRows) === JSON.stringify(exportRows),
+  `table: ${libraryRows.join(', ')} · exports: ${exportRows.join(', ')}`);
+const entrySection = overview.split('\n## Entry points\n')[1]?.split(/\n#{2,3} /)[0] ?? '';
+const entryKeys = [...entrySection.matchAll(/→ `(\.\/[^`]*|\.)`/g)].map((m) => m[1]).sort();
+check('01-overview Entry points table maps a source to every exports key and nothing else',
+  entrySection !== '' && JSON.stringify(entryKeys) === JSON.stringify([...exportKeys].sort()),
+  `table: ${entryKeys.join(', ')} · exports: ${[...exportKeys].sort().join(', ')}`);
 const specifierProbe = installed.status === 0
   ? spawnSync(process.execPath, ['--input-type=module', '-e', `
     import { readFile } from 'node:fs/promises';
@@ -874,6 +883,9 @@ const specifierProbe = installed.status === 0
           }
           if (specifier === 'promptobus/hooks' && typeof module.planPromptobusHooks !== 'function') {
             throw new Error('hook planner planPromptobusHooks is missing');
+          }
+          if (specifier === 'promptobus/integration' && typeof module.planHookInstall !== 'function') {
+            throw new Error('install planner planHookInstall is missing');
           }
           if (specifier === 'promptobus/telemetry'
             && (typeof module.telemetryStats !== 'function'
@@ -914,3 +926,88 @@ const probe = existsSync(entry)
 check('package imports from the installed tree',
   probe.stdout.trim() === 'promptobus 1',
   `${probe.stdout.trim()} ${why(probe)}`);
+
+// Each operation a host integration takes from the package, run by a consumer fixture from the
+// installed tree through public specifiers; the expected values come from the packed copy's modules.
+const copyLib = (rel) => import(pathToFileURL(path.join(COPY_ROOT, 'lib', rel)).href);
+const [copyContract, copyDrivers, copyStatus, copyWorktree, copyInstall, copyCli] = await Promise.all(
+  ['contract.js', 'drivers.js', 'status.js', 'worktree.js', 'install.js', 'cli.js'].map(copyLib));
+const PRIVATE_SPECIFIERS = [
+  'lib/contract.js', 'lib/drivers.js', 'lib/status.js', 'lib/worktree.js', 'lib/install.js', 'lib/integration.js',
+  'lib/model-routing/validate.js', 'lib/model-routing/cache.js', 'lib/models.js', 'dist/index.js', 'package.json',
+].map((rel) => `promptobus/${rel}`);
+const INTEGRATION_NAMES = [
+  'BRANCH_CHANGED_MARK', 'DRIVER_DECLARATIONS', 'INSTALL_TARGETS', 'KNOCK_TEXT_MAX', 'MAILBOX_UNREAD_MARK',
+  'PACKAGE_VERSION', 'PROMPTOBUS_TOOLS', 'PROTOCOL_VERSIONS', 'PRUNE_DEFAULT_DAYS', 'SKILL_OWNERSHIP_MARKER',
+  'WORKTREE_BRANCH_TEMPLATE', 'checkWake', 'npmCiCommand', 'packageSkills', 'planHookInstall', 'routingDiagnosis',
+];
+const hostReference = readFileSync(path.join(REPO, 'docs', 'reference', '02-host.md'), 'utf8');
+const integrationTable = hostReference.split('\n## The host integration entry point\n')[1]?.split('\n### ')[0] ?? '';
+const undocumented = INTEGRATION_NAMES.filter((name) => !new RegExp(`^\\| \`${name}[\`(]`, 'm').test(integrationTable)
+  && !integrationTable.includes(`, \`${name}\``));
+check('02-host names every host integration export in its table',
+  integrationTable !== '' && undocumented.length === 0, undocumented.join(', ') || 'section not found');
+const fixtureSandbox = path.join(SB, 'host-integration');
+const fixtureHome = path.join(fixtureSandbox, 'home');
+mkdirSync(fixtureHome, { recursive: true });
+const fixtureInput = path.join(SB, 'host-integration.json');
+writeFileSync(fixtureInput, JSON.stringify({
+  sandbox: fixtureSandbox,
+  expected: {
+    version: pkg.version,
+    printed: {
+      PROMPTOBUS_TOOLS: copyContract.PROMPTOBUS_TOOLS,
+      PROTOCOL_VERSIONS: copyContract.PROTOCOL_VERSIONS,
+      PRUNE_DEFAULT_DAYS: copyContract.PRUNE_DEFAULT_DAYS,
+      KNOCK_TEXT_MAX: copyContract.KNOCK_TEXT_MAX,
+      MAILBOX_UNREAD_MARK: copyStatus.MAILBOX_UNREAD_MARK,
+      BRANCH_CHANGED_MARK: copyWorktree.BRANCH_CHANGED_MARK,
+      WORKTREE_BRANCH_TEMPLATE: copyWorktree.WORKTREE_BRANCH_TEMPLATE,
+      npmCiCommand: copyWorktree.npmCiCommand(),
+    },
+    busServer: copyContract.PROMPTOBUS_SERVER,
+    drivers: {
+      fallback: copyDrivers.REGISTRY.fallback,
+      drivers: Object.fromEntries(Object.entries(copyDrivers.REGISTRY.drivers).map(([harness, driver]) => [
+        harness, { id: driver.id, capabilities: driver.capabilities, options: driver.options }])),
+    },
+    installTargets: copyInstall.INSTALL_TARGETS,
+    skills: readdirSync(path.join(COPY_ROOT, 'skills')).sort(),
+    commands: copyCli.COMMANDS,
+    names: INTEGRATION_NAMES,
+    privateSpecifiers: PRIVATE_SPECIFIERS,
+  },
+}));
+const HOST_INTEGRATION_VERDICTS = 15;
+const fixtureRun = installed.status === 0
+  ? spawnSync(process.execPath, [path.join(here, 'fixtures', 'host-integration', 'consumer.mjs'), fixtureInput], {
+    cwd: target, encoding: 'utf8', env: { ...env, HOME: fixtureHome, USERPROFILE: fixtureHome },
+  })
+  : { status: 1, stdout: '', stderr: 'tarball was not installed' };
+let fixtureVerdicts = [];
+try {
+  fixtureVerdicts = JSON.parse(fixtureRun.stdout);
+} catch {
+  // The check below names the child process output when it could not return JSON.
+}
+check(`host integration fixture ran all ${HOST_INTEGRATION_VERDICTS} operations from the installed tree`,
+  fixtureRun.status === 0 && fixtureVerdicts.length === HOST_INTEGRATION_VERDICTS,
+  `${fixtureVerdicts.length} verdicts · ${why(fixtureRun)}`);
+for (const v of fixtureVerdicts) check(v.name, v.ok, v.detail);
+
+// The same fixture's typed half: the `types` condition resolves and the declarations hold against dist.
+const typedFixture = path.join(target, 'consumer.ts');
+cpSync(path.join(here, 'fixtures', 'host-integration', 'consumer.ts'), typedFixture);
+writeFileSync(path.join(target, 'tsconfig.json'), `${JSON.stringify({
+  compilerOptions: {
+    target: 'es2023', lib: ['es2023'], module: 'nodenext', moduleResolution: 'nodenext', strict: true, noEmit: true,
+    types: ['node'], typeRoots: [path.join(REPO, 'node_modules', '@types')], skipLibCheck: false,
+  },
+  files: ['consumer.ts'],
+})}\n`);
+const typed = installed.status === 0
+  ? spawnSync(process.execPath, [path.join(DEPS, 'bin', 'tsc'), '-p', path.join(target, 'tsconfig.json')],
+    { cwd: target, encoding: 'utf8', env })
+  : { status: 1, stdout: '', stderr: 'tarball was not installed' };
+check('host integration: TypeScript reads every entry name through its declared types',
+  typed.status === 0, why(typed));

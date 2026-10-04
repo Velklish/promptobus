@@ -14,12 +14,14 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `src/host-index.ts` → `./host` | Host contract and the standalone implementation |
 | `src/hooks.ts` → `./hooks` | Hook planner |
 | `src/driver.ts` → `./driver` | Driver contract |
-| `lib/cli.js` → `./cli` | Command parser |
+| `src/telemetry.ts` → `./telemetry` | Participant telemetry summary |
+| `lib/integration.js` → `./integration` | What a host reads instead of package files: printed values, driver declarations, install plan, routing report ([02-host § The host integration entry point](02-host.md#the-host-integration-entry-point)) |
+| `lib/cli.js` → `./cli` | Command parser, and `COMMANDS`, the command vocabulary |
 | `schemas/v1/*.json` → `./schemas/*` | Record and declaration schemas |
 
 `promptobus send` dispatches through `lib/cli.js`. Commands that call `resolveTaskId` try an explicit task, then the session binding, then the sole active task (`lib/store.js`). A single leftover task can be selected by that last rule; several unbound active tasks require an explicit task. `review <path>` has its own directory pickup before it opens a new review task ([03-cli § Review](03-cli.md#review)). Without `--harness`, a new routed lift takes the selected harness, and a new lift with no strategy reaches the Claude Code fallback (`lib/spawn.js`, `lib/drivers.js`). A repeat `spawn` uses its participant's recorded driver; a repeat `review` uses its reviewer's recorded driver unless an allowed explicit rebind takes effect (`lib/spawn.js`, `lib/review.js`).
 
-The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass.
+The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass. Its list of specifiers is the `exports` map itself, and it holds the arrow rows of the table above and the README's Library table equal to the map's keys.
 
 ### Documentation in the package
 

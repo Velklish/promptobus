@@ -51,6 +51,10 @@
       "types": "./dist/hooks.d.ts",
       "default": "./dist/hooks.js"
     },
+    "./integration": {
+      "types": "./lib/integration.d.ts",
+      "default": "./lib/integration.js"
+    },
     "./cli": "./lib/cli.js",
     "./schemas/*": "./schemas/*"
   },

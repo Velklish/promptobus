@@ -289,6 +289,68 @@ for each tool call. [ADR-019](../adr/adr-019-session-address-per-task-lands.md)
 
 `lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.
 
+## The host integration entry point
+
+Source: `lib/integration.js` and `lib/integration.d.ts`, its types. Specifier: `promptobus/integration`.
+
+A host that embeds the bus renders its own install, diagnoses its workspace and quotes lines the package prints. It reads those values and operations here, not from package files. The entry points in `package.json` `exports` are the whole supported surface: an import of `promptobus/lib/…`, of `promptobus/dist/…` or of the package manifest fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`, and a file URL built from the package directory reads a layout that can change in any release.
+
+| Name | Input | Output |
+|---|---|---|
+| `PACKAGE_VERSION` | — | The version in the installed `package.json`, for a host that compares it with its own pin. |
+| `PROMPTOBUS_TOOLS` | — | Frozen list of the MCP tool names the bus server declares. |
+| `PROTOCOL_VERSIONS` | — | Frozen list of the MCP protocol versions the server serves, latest first. |
+| `PRUNE_DEFAULT_DAYS` | — | The age threshold of `prune`, in days. |
+| `KNOCK_TEXT_MAX` | — | The character budget of one warden notification. |
+| `MAILBOX_UNREAD_MARK`, `BRANCH_CHANGED_MARK` | — | Headers `status` prints. |
+| `WORKTREE_BRANCH_TEMPLATE` | — | The branch name `spawn` gives a worktree, with its placeholders. |
+| `npmCiCommand()` | — | The dependency install command a fresh worktree gets. |
+| `DRIVER_DECLARATIONS` | — | `{ fallback, drivers }`: for each shipped harness, a deep-frozen copy of its driver's `id`, `capabilities` and `options` ([05-drivers](05-drivers.md)). Data only: no driver method is reachable through it. |
+| `checkWake(harness?, env?)` | A harness id, `fallback` when omitted; an environment, `process.env` when omitted | A promise of `{ harness, endpoint, ok, error }`: that driver's wake-channel smoke. It sends no message. A driver that declares no smoke answers `endpoint: null`, `ok: false`, `error: 'no wake channel declared'`. An unknown harness throws. |
+| `INSTALL_TARGETS` | — | `{ claude, cursor, codex }`, each `{ hooksRel, skillsRel }`: where `install` writes that harness's hook file and the package skills, relative to the project root, with the platform's separator. |
+| `SKILL_OWNERSHIP_MARKER` | — | The line that marks a skill file the package wrote. |
+| `packageSkills()` | — | The shipped skills sorted by name, `{ name, files: { rel, abs, buffer, text }[] }[]`. A missing or empty skills directory, or a symlink in it, throws `GateError`. |
+| `planHookInstall(host, root, harnesses)` | A host with `nodePath`, `guardArgv`, `busHookRel` and `installManifestRel`; the project root; the harnesses to install for | `{ writes, owned, ownedSkills, unproven }`, below. |
+| `routingDiagnosis(host, { now? })` | A full host; the clock, `Date.now()` when omitted | A promise of the routing report, below. |
+
+### `planHookInstall`: what `install` would write, without writing
+
+`writes` lists every file `promptobus install --harnesses <harnesses>` would write or remove in `root`, each `{ rel, abs, text, buffer?, remove? }`:
+
+- the hook file of each harness in `harnesses`, at `INSTALL_TARGETS[harness].hooksRel`, with the guard groups merged into what the file already holds;
+- the hook file of a harness left out, with the package's earlier groups taken out, when the file has any;
+- each package skill file and its `.gitignore` under `INSTALL_TARGETS[harness].skillsRel`, with `buffer`;
+- `remove: true` with `text: null` for a skill file an earlier plan owned and this one does not, and for the feed-hook runner an older install left at `busHookRel()`.
+
+`owned` and `ownedSkills` give, for each of the three harnesses, the hook group ids and the skill files the package owns after the plan. The plan reads both fields from the JSON at `installManifestRel()` to recognise what an earlier install wrote, so a host that applies the plan itself keeps them there. `unproven` names the Cursor hook events the planned file holds that are known from one Cursor build's inventory and were never seen firing; `install` prints them as a warning.
+
+A hook file that is not a JSON object, an unknown Cursor hook event and a skill file on disk that the package does not own each throw `GateError` before anything is written. The plan does not write the `harnesses` field of the host file or the install manifest: `promptobus install` writes those, and a host that applies the plan records the same facts its own way.
+
+### `routingDiagnosis`: routing readiness without probes
+
+The report reads the routing stack the host declares and the availability cache for the worker step, the same reading `promptobus models` makes without `--refresh`: a declared set that leaves no candidate is reported, not refused. It runs no availability probe and writes no cache.
+
+| Field | Value |
+|---|---|
+| `layers` | Every layer `{ id, path, present, writable }`, the shipped `catalog` first, then the host's overlays in `routingPaths()` order. |
+| `errors`, `warnings` | The findings `promptobus models validate` prints, each with `message` and, where it has them, `code`, `layer`, `at` and `rule`. |
+| `cache` | `{ file, present, takenAt }`: `present` says whether the cache file exists; `takenAt` is `null` when it does not, or when this release does not read its format. |
+| `strategy` | `{ strategy, source }`, the strategy a routed call uses: `source` is `overlay:<layer>` or `null` for the built-in default. |
+| `harnesses` | For each declared harness the worker step may route to: `{ harness, state, reason, message, tier, windows }`, where `tier` is `{ name, source }` or `null` and each window is `{ kind, id, usedPercent, resetAt }`. |
+| `nearLimit` | The `near-limit` warning messages of the decision. |
+| `skipped` | `layer-errors` when `errors` is not empty: `strategy` stays `null` and the two lists after it empty. `no-declared-harness` when `host.declaredTools()` is empty: the strategy is read, and no harness is left to route to, so the two lists stay empty. Otherwise `null`. |
+| `failure` | The message of a refusal while the strategy or the snapshot was read, otherwise `null`. The report is returned either way. |
+
+### Compatibility and ownership
+
+The names in the table are the supported surface of this entry point ([ADR-027](../adr/adr-027-host-integration-entry-point.md)). A removed name, or a changed shape of what a name returns, is a contract change and its changelog entry says so; a field added to a returned object is not. The values follow the installed release, so a host that quotes them reads them at run time instead of keeping a copy. A host's tests or scripts that import modules under `lib/` or `dist/` stay unsupported: each such call site moves to a public name or a command, or stays bound to one release's file layout.
+
+The package owns the values, the driver declarations, the install targets, the install plan and the routing reading. The host owns everything it decides for itself: which harnesses and commands it offers, its workspace paths, its manifest, applying a plan, and how a diagnosis is worded for its users.
+
+Two neighbouring names are not repeated here: the bus server name is `BUS_SERVER` of `promptobus/hooks`, and the command vocabulary is `COMMANDS` of `promptobus/cli` ([03-cli](03-cli.md)). A host that withholds a command filters that list itself.
+
+The package test installs the packed tarball and runs a consumer fixture, `test/fixtures/host-integration/`, from the install directory. The fixture exercises every name above, `BUS_SERVER`, `COMMANDS` and `runPromptobus` through public specifiers. It type-checks a TypeScript consumer against the declarations and holds the private paths above unexported.
+
 ## The harness session registry, and the refusal when nobody says
 
 Source: `lib/harness-home.js`, `harnessStateHome`.
