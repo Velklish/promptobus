@@ -66,7 +66,7 @@ The last command prints `promptobus` and the version from `package.json`.
 
 ### 1. Declare the workspace
 
-Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it and keeps the store in `.promptobus/` beside it — add that directory to `.gitignore`.
+Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it and keeps the store in `.promptobus/` beside it — add that directory to `.gitignore`. On the way up it passes over a repository's own `promptobus.json` that holds only `generate`, `trustedHooks` or both ([02-host § Standalone host](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/02-host.md#standalone-host)).
 
 ```json
 {

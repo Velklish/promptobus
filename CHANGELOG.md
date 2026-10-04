@@ -19,12 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records in `.codex/hooks.json` or `.cursor/hooks.json` lists those commands under
   `trustedHooks`; until it does, a Codex lift refuses and names the declaration to edit, and a
   Cursor lift leaves the records out with a warning. The tracker itself writes nothing for
-  Promptobus. A committed repository `promptobus.json` is also the root a standalone
-  `promptobus` finds when started inside that repository or its worktrees, so run workspace
-  commands from the install root; and a participant whose step is declared only in the install
-  root's `pipeline` is refused by the bus in a worktree of such a repository, while `worker`,
-  `reviewer` and `approver` are not. A Cursor lift reads the declaration from the index, as it
-  reads the hook records.
+  Promptobus. A Cursor lift reads the declaration from the index, as it reads the hook
+  records.
   [ADR-025](docs/adr/adr-025-foreign-project-hook-records.md),
   [hooks and trust](docs/guides/hooks-and-trust.md#a-projects-own-hook-records).
 
@@ -42,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Test fixtures use the fictional `demo_team/orders-api` repository.
 
 ### Fixed
+
+- **A repository `promptobus.json` that holds only `generate` or `trustedHooks` no longer
+  becomes the standalone root.** The standalone host and `install` walk past such a file to
+  the next `promptobus.json` above it, so a `promptobus` started in that repository or in a
+  worktree nested in it keeps the install root, its store, `tools` and `pipeline`, and a
+  participant whose step is declared only in that `pipeline` is admitted by the bus there.
+  Before, the repository became the root and such a step was refused as an address. A file
+  with any other field, an empty one, or one with no `promptobus.json` above it is the root as
+  before.
+  [02-host § Standalone host](docs/reference/02-host.md#standalone-host).
 
 - **`npm run probe` no longer runs a file name as shell text or lets a patch escape its
   restore.** Without `--run`, the probed file runs as `node <file>` with its name passed as

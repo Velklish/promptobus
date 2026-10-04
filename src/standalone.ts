@@ -58,10 +58,10 @@ interface HostFile {
   mcp?: Record<string, unknown>;
   skills?: string;
   /** Argv of the command that restores process skills a repository does not keep in git, never a
-   * shell line. Read from the SPAWNED REPOSITORY's own file ([03-cli.md § Spawn](../docs/reference/03-cli.md#spawn)). */
+   * shell line. Read from the SPAWNED REPOSITORY's own file ([03-cli.md § Spawn](../docs/reference/03-cli.md#spawn)); in REPOSITORY_FIELDS. */
   generate?: string[];
   /** Exact project hook commands a lift keeps, by harness and event key. Read, as `generate` is,
-   * from the SPAWNED REPOSITORY's own file. */
+   * from the SPAWNED REPOSITORY's own file; in REPOSITORY_FIELDS. */
   trustedHooks?: Record<string, Record<string, string[]>>;
   /** The owner step and the gate steps: 02-host § The pipeline declaration. */
   pipeline?: unknown;
@@ -76,15 +76,26 @@ function readConfig(file: string): HostFile {
   }
 }
 
-function findConfig(start: string): { root: string; config: HostFile } {
-  let dir = path.resolve(start);
-  for (;;) {
+// Fields a repository declares for itself; a file holding only these does not move the root.
+const REPOSITORY_FIELDS: (keyof HostFile)[] = ['generate', 'trustedHooks'];
+
+/** The directory whose `promptobus.json` is the root above `start`, or null: 02-host § Standalone host. */
+export function findHostRoot(start: string): string | null {
+  let nearestRepository: string | null = null;
+  for (let dir = path.resolve(start); ; dir = path.dirname(dir)) {
     const file = path.join(dir, HOST_CONFIG);
-    if (existsSync(file)) return { root: dir, config: readConfig(file) };
-    const parent = path.dirname(dir);
-    if (parent === dir) return { root: path.resolve(start), config: {} };
-    dir = parent;
+    if (existsSync(file)) {
+      const keys = Object.keys(readConfig(file));
+      if (!keys.length || !keys.every((key) => REPOSITORY_FIELDS.includes(key as keyof HostFile))) return dir;
+      nearestRepository ??= dir;
+    }
+    if (path.dirname(dir) === dir) return nearestRepository;
   }
+}
+
+function findConfig(start: string): { root: string; config: HostFile } {
+  const root = findHostRoot(start);
+  return root ? { root, config: readConfig(path.join(root, HOST_CONFIG)) } : { root: path.resolve(start), config: {} };
 }
 
 function readBinVersion(bin: string, timeoutMs: number): string | null {

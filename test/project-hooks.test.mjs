@@ -8,6 +8,8 @@ import { makeSandbox } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { judgeHookRecords, trustRule } = await import(path.join(here, '..', 'lib', 'project-hooks.js'));
+const { resolveProjectRoot } = await import(path.join(here, '..', 'lib', 'install.js'));
+const { WORKTREE_DIR_REL } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 const { admitsAddress, registryOf } = await import(path.join(here, '..', 'dist', 'index.js'));
 const { guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
@@ -193,15 +195,57 @@ const installRoot = projectWith('install-root', {
 const nested = path.join(installRoot, 'repos', 'r');
 mkdirSync(nested, { recursive: true });
 const admits = (cwd, address) => admitsAddress(registryOf(createStandaloneHost({ cwd })), address);
-const rootBefore = createStandaloneHost({ cwd: nested }).workspaceRoot();
-const stepBefore = admits(nested, 'security:x');
-writeFileSync(path.join(nested, 'promptobus.json'), json({ trustedHooks: { codex: { Stop: [UNRELATED] } } }));
-const hostAfter = createStandaloneHost({ cwd: nested });
-check(': a repository promptobus.json holding only trustedHooks becomes the root of a standalone host started inside it',
-  rootBefore === installRoot && hostAfter.workspaceRoot() === nested
-  && hostAfter.promptobusHome() === path.join(nested, '.promptobus'),
-  JSON.stringify({ rootBefore, after: hostAfter.workspaceRoot(), home: hostAfter.promptobusHome() }));
-check(': inside that repository a step declared only in the install root pipeline is no longer an address; shipped roles still are',
-  stepBefore && admits(installRoot, 'security:x')
-  && !admits(nested, 'security:x') && admits(nested, 'worker:x'),
-  JSON.stringify({ stepBefore, atRoot: admits(installRoot, 'security:x'), nested: admits(nested, 'security:x') }));
+const rootsFrom = (cwd) => {
+  const host = createStandaloneHost({ cwd });
+  return { root: host.workspaceRoot(), home: host.promptobusHome(), install: resolveProjectRoot(host, cwd) };
+};
+const atInstallRoot = { root: installRoot, home: path.join(installRoot, '.promptobus'), install: installRoot };
+const repositoryFile = (doc) => writeFileSync(path.join(nested, 'promptobus.json'), json(doc));
+const declarationsOnly = [
+  { trustedHooks: { codex: { Stop: [UNRELATED] } } },
+  { generate: ['npx', '--yes', 'github:owner/tool', 'init'] },
+  { trustedHooks: { codex: { Stop: [UNRELATED] } }, generate: ['node', 'gen.mjs'] },
+].map((doc) => {
+  repositoryFile(doc);
+  return { doc, roots: rootsFrom(nested), step: admits(nested, 'security:x') };
+});
+check(': a repository promptobus.json holding only trustedHooks or generate leaves the root, the store and the install root at the install root',
+  declarationsOnly.every(({ roots }) => JSON.stringify(roots) === JSON.stringify(atInstallRoot)),
+  JSON.stringify(declarationsOnly));
+check(': inside that repository a step declared only in the install root pipeline is still an address',
+  declarationsOnly.every(({ step }) => step) && admits(installRoot, 'security:x') && admits(nested, 'worker:x'),
+  JSON.stringify(declarationsOnly.map(({ step }) => step)));
+
+const hostFields = [{ tools: ['codex'], trustedHooks: { codex: { Stop: [UNRELATED] } } }, {}].map((doc) => {
+  repositoryFile(doc);
+  return { doc, roots: rootsFrom(nested), step: admits(nested, 'security:x') };
+});
+check(': a repository promptobus.json with a host field, or with no field, is the root, the store and the install root',
+  hostFields.every(({ roots, step }) => roots.root === nested && roots.home === path.join(nested, '.promptobus')
+    && roots.install === nested && !step),
+  JSON.stringify(hostFields));
+
+const alone = projectWith('alone', { 'promptobus.json': json({ trustedHooks: { codex: { Stop: [UNRELATED] } } }) });
+mkdirSync(path.join(alone, 'src'), { recursive: true });
+check(': with no promptobus.json above it, a repository file holding only trustedHooks stays the root from inside the repository',
+  JSON.stringify(rootsFrom(path.join(alone, 'src')))
+    === JSON.stringify({ root: alone, home: path.join(alone, '.promptobus'), install: alone }),
+  JSON.stringify(rootsFrom(path.join(alone, 'src'))));
+
+const committed = { trustedHooks: { codex: { Stop: [UNRELATED] } } };
+const worktreeOf = (repo) => {
+  const dir = path.join(repo, WORKTREE_DIR_REL, 'w');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'promptobus.json'), json(committed));
+  return dir;
+};
+repositoryFile(committed);
+const worktree = worktreeOf(nested);
+check(': from a worktree nested in that repository, both carrying the file, the install root stays the root and the step is an address',
+  JSON.stringify(rootsFrom(worktree)) === JSON.stringify(atInstallRoot) && admits(worktree, 'security:x'),
+  JSON.stringify({ roots: rootsFrom(worktree), step: admits(worktree, 'security:x') }));
+const aloneWorktree = worktreeOf(alone);
+check(': with no promptobus.json above them, the nearest of two stacked declarations-only files is the root',
+  JSON.stringify(rootsFrom(aloneWorktree))
+    === JSON.stringify({ root: aloneWorktree, home: path.join(aloneWorktree, '.promptobus'), install: aloneWorktree }),
+  JSON.stringify(rootsFrom(aloneWorktree)));

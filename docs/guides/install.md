@@ -41,7 +41,7 @@ Create `promptobus.json` at the workspace root:
 }
 ```
 
-`tools` is the spawn allow-list. `--harness` checks this list (`lib/spawn.js`). The standalone host walks up from the current directory to find the file. The store is `.promptobus/` beside it.
+`tools` is the spawn allow-list. `--harness` checks this list (`lib/spawn.js`). The standalone host walks up from the current directory to find the file, passing over a repository's own `promptobus.json` that holds only `generate`, `trustedHooks` or both ([02-host § Standalone host](../reference/02-host.md#standalone-host)). The store is `.promptobus/` beside it.
 
 Adding a harness to that list is a hand edit of this file. There is no `tools` subcommand, and an undeclared `--harness` is refused with the file and the field named. Run `promptobus install` after the edit.
 
