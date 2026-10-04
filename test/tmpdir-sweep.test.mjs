@@ -311,7 +311,7 @@ const codexSrc = sourceOf('live-codex.mjs');
 const e2eSrc = sourceOf('live-e2e.mjs');
 const canarySrc = sourceOf('live-canary.mjs');
 const LIVE_PREFIXES = [
-  'promptobus-live-codex-', 'promptobus-live-cursor-', 'promptobus-live-e2e-',
+  'promptobus-live-codex-', 'promptobus-live-cursor-', 'promptobus-live-e2e-', 'promptobus-live-mixed-',
 ];
 
 check(': live-canary narrates only current checks and keeps its whole-run home snapshot',
@@ -326,15 +326,21 @@ check(': live-mixed ignores run directories older than this run',
   /const tmpLeft[\s\S]*?bornAfter\(path\.join\(tmpdir\(\), n\)\)/.test(mixedSrc),
   'the run-directory verdict has no birth-time cutoff');
 
-const ownSweep = (src, prefix) => /sweepPreviousRuns/.test(src)
-  && new RegExp(`prefix:\\s*['"]${prefix}['"]`).test(src)
-  && /current:\s*SB/.test(src);
+const ownSweep = (src, prefix) => new RegExp(`const RUN_PREFIX = ['"]${prefix}['"]`).test(src)
+  && /const SB = makeSandbox\(RUN_PREFIX\);\s*markRunOwner\(SB\);/.test(src)
+  && /sweepLiveRuns\((?:os\.)?tmpdir\(\), \{ prefix: RUN_PREFIX, current: SB \}\)/.test(src);
 check(': live-codex sweeps old sandbox directories with its own prefix',
   ownSweep(codexSrc, 'promptobus-live-codex-'),
   'live-codex has no sweep for its sandbox prefix');
 check(': live-e2e sweeps old sandbox directories with its own prefix',
   ownSweep(e2eSrc, 'promptobus-live-e2e-'),
   'live-e2e has no sweep for its sandbox prefix');
+check(': live-cursor sweeps old sandbox directories with its own prefix',
+  ownSweep(cursorSrc, 'promptobus-live-cursor-run-'),
+  'live-cursor has no sweep for its sandbox prefix');
+check(': live-mixed sweeps old sandbox directories with its own prefix',
+  ownSweep(mixedSrc, 'promptobus-live-mixed-run-'),
+  'live-mixed has no sweep for its sandbox prefix');
 
 const refusedSweep = (src) => /const refused\w*\s*=\s*\[\]/.test(src)
   && /sweepPreviousRuns\([\s\S]*?refused:\s*refused\w*/.test(src)
@@ -429,6 +435,8 @@ if (process.platform !== 'win32' && process.getuid?.() !== 0) {
 // under `/tmp` past `os.tmpdir()` and is not the subject of THIS
 // sweep: its prefixes are watched by the section below.
 const declared = [];
+const runPrefixes = [];
+const undeclaredRun = [];
 const relative = [];
 let literalArgs = 0;
 // The walk also refuses a `mkdtemp` given a BARE prefix, in three parts — the reason each
@@ -450,6 +458,11 @@ for (const dir of SCAN) {
     // sentinel in silence — and they are moved in this repository
     // in batches, whole waves.
     for (const m of src.matchAll(/makeSandbox\(\s*(['"`])([^'"`]+)\1/g)) declared.push([file, m[2]]);
+    if (dir === scriptsDir && /makeSandbox\(\s*[A-Za-z_$]/.test(src)) {
+      const run = src.match(/const RUN_PREFIX = (['"`])([^'"`$]+)\1;/);
+      if (run && /makeSandbox\(\s*RUN_PREFIX\s*\)/.test(src)) runPrefixes.push([file, run[2]]);
+      else undeclaredRun.push(file);
+    }
     for (const m of src.matchAll(/mkdtempSync\(\s*(?:path\.)?join\(\s*(?:os\.)?tmpdir\(\)\s*,\s*(['"`])([^'"`]+)\1/g)) {
       declared.push([file, m[2]]);
     }
@@ -459,6 +472,7 @@ for (const dir of SCAN) {
     }
   }
 }
+declared.push(...runPrefixes);
 const uncovered = declared.filter(([, pre]) => !SUITE_PREFIXES.some((known) => pre.startsWith(known))
   && !LIVE_PREFIXES.some((known) => pre.startsWith(known)));
 
@@ -466,6 +480,11 @@ check(': the sweep prefix list covers every suite sandbox',
   declared.length > 0 && uncovered.length === 0,
   `literals found: ${declared.length} · uncovered: `
   + `${uncovered.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
+
+check(': every live script that names its sandbox prefix by variable declares it as a literal RUN_PREFIX',
+  undeclaredRun.length === 0 && runPrefixes.length > 0,
+  `undeclared: ${undeclaredRun.join(', ') || '—'} · declared: `
+  + `${runPrefixes.map(([f, p]) => `${p} (${f})`).join(', ') || '—'}`);
 
 // Three, the samples: assembled from fragments, because this file is inside the walk.
 const call = (arg) => `mkdtemp${'Sync'}(${arg})`;

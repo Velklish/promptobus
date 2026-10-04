@@ -10,7 +10,7 @@
 // runs whole already on import — it raises a workspace, installs a tarball and drives
 // live sessions — and there would be no other way to cover the sweep with a suite.
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -100,6 +100,24 @@ export function runOwnerIsLive(dir) {
   }
 }
 
+/** Claim `dir` for this process with the same marker the suite runner writes. */
+export function markRunOwner(dir, pid = process.pid) {
+  writeFileSync(path.join(dir, RUN_OWNER_FILE), `${JSON.stringify({ pid, path: dir })}\n`, { flag: 'wx', mode: 0o600 });
+}
+
+/** True only for a readable marker of this very directory whose pid no longer exists; anything else is not dead. */
+export function runOwnerIsDead(dir) {
+  try {
+    const owner = JSON.parse(readFileSync(path.join(dir, RUN_OWNER_FILE), 'utf8'));
+    const pid = Number(owner?.pid);
+    if (!Number.isInteger(pid) || pid <= 0 || realpathSync(owner.path) !== realpathSync(dir)) return false;
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === 'ESRCH';
+  }
+}
+
 /**
  * Return whether a directory contains a socket that still accepts a connection.
  * The probe is a short child process because the sweep is synchronous and must
@@ -153,10 +171,13 @@ export function socketDirIsLive(dir) {
  *
  * `isLive` — an optional ownership/liveness predicate. A true result holds the
  * directory and adds its name to `held`; a thrown predicate is also held closed.
+ *
+ * `isDead` — an optional predicate for a directory whose owner is gone: it is swept
+ * past both thresholds, and a thrown predicate is not dead.
  */
 export function sweepPreviousRuns(dir, {
   keep = KEEP_RUNS, current = null, now = Date.now(), prefix = CANARY_PREFIX, refused = [],
-  isLive = null, held = [],
+  isLive = null, held = [], isDead = null,
 } = {}) {
   const mine = current ? path.basename(current) : null;
   const runs = [];
@@ -168,11 +189,16 @@ export function sweepPreviousRuns(dir, {
     } catch { /* vanished between the walk and the question — nothing to sweep */ }
   }
   runs.sort((a, b) => b.at - a.at);
-  const doomed = runs.slice(keep).filter((r) => now - r.at >= MIN_AGE_MS);
+  const dead = (r) => {
+    try { return !!isDead?.(path.join(dir, r.name), r); } catch { return false; }
+  };
+  const orphans = runs.filter(dead);
+  const rest = runs.filter((r) => !orphans.includes(r));
+  const doomed = [...orphans, ...rest.slice(keep).filter((r) => now - r.at >= MIN_AGE_MS)];
   const swept = [];
   for (const r of doomed) {
     const full = path.join(dir, r.name);
-    if (isLive) {
+    if (isLive && !orphans.includes(r)) {
       let live = false;
       try { live = !!isLive(full, r); } catch { live = true; }
       if (live) {
@@ -206,6 +232,20 @@ export function sweptLine(what, swept, { keep = KEEP_RUNS } = {}) {
     `younger than ${MIN_AGE_MS / 60_000} minutes`,
   ];
   return `${what} nothing to sweep: everything is ${guards.join(' or ')}`;
+}
+
+/** Sweep a live script's previous sandboxes: none kept, a dead owner's swept at once, a live one's held. */
+export function sweepLiveRuns(dir, { prefix, current }) {
+  const refused = [];
+  const held = [];
+  const swept = sweepPreviousRuns(dir, {
+    prefix, current, keep: 0, refused, held, isLive: runOwnerIsLive, isDead: runOwnerIsDead,
+  });
+  return [
+    sweptLine('previous-run sandboxes', swept, { keep: 0 }),
+    ...(held.length ? [`held, their owner is alive: ${held.join(', ')}`] : []),
+    ...(refused.length ? [`sweep refused (busy or foreign permissions): ${refused.join(', ')}`] : []),
+  ];
 }
 
 function listOf(dir) {

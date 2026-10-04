@@ -453,6 +453,21 @@ function participantHarness(harness, address, flags) {
   };
 }
 
+export const E2E_TASK_SLUG = 'e2ebus';
+const LOOP_TITLE = 'E2E orchestration loop';
+
+/** The loop's task id, its own on every run: a fixed one gave every run the same session names,
+ *  and a stale session of a cut-off run in the machine-wide registry was found in the new one's place. */
+export function e2eTaskId(now = new Date()) {
+  return store.newTaskIdentity(E2E_TASK_SLUG, now).id;
+}
+
+/** The worker's slice title carries the id's seconds: the readable stamp in a session name stops at minutes. */
+export function loopTitle(taskId) {
+  const m = /t\d{8}-(\d{2})(\d{2})(\d{2})$/.exec(String(taskId ?? ''));
+  return m ? `${LOOP_TITLE} ·${m[1]}:${m[2]}:${m[3]}` : LOOP_TITLE;
+}
+
 /**
  * Run the scenario. `harness` gives two things the scenario cannot have: a binary
  * substitution (or its absence) and a way to ask whether participant sessions are
@@ -467,7 +482,7 @@ export async function runScenario({
   const step = timeouts.step ?? 30000;
   const stall = timeouts.stall ?? 75000;
   const ORCH_SESSION = `orch-${process.pid}`;
-  const TASK = 'e2ebus-t20260901-000000';
+  const TASK = e2eTaskId();
   const wh = participantHarness(harness, WORKER, 'spawnFlags');
   const rh = participantHarness(harness, REVIEWER, 'reviewFlags');
 
@@ -478,7 +493,7 @@ export async function runScenario({
   const reviewerScript = reviewRounds >= 2
     ? { ...REVIEWER_SCRIPT, turns: [...REVIEWER_SCRIPT.turns, REVIEW_ROUND_TURN] }
     : REVIEWER_SCRIPT;
-  writeFileSync(workerBrief, briefText('E2E orchestration loop', WORKER_SCRIPT));
+  writeFileSync(workerBrief, briefText(loopTitle(TASK), WORKER_SCRIPT));
   writeFileSync(reviewerBrief, briefText('E2E loop review', reviewerScript));
   // Stall turns are attached ONLY to the harness that plays them, and only to the
   // script, not to the brief: the brief is built from `WORKER_SCRIPT`, and a live
@@ -521,7 +536,9 @@ export async function runScenario({
   // needs to be up early for the stall report — that comes on a heartbeat, once every
   // 30 s, and the time until the first beat the scenario spends on work, not on
   // waiting.
-  store.createTask(home, { id: TASK, title: 'E2E orchestration loop', owner: ORCH_SESSION });
+  store.createTask(home, { id: TASK, title: LOOP_TITLE, owner: ORCH_SESSION });
+  // Named aloud: a person sorting out a cut-off run looks its sessions up by this pair.
+  trace(`loop task ${TASK}, slice "${loopTitle(TASK)}"`);
 
   const wardenLog = path.join(sandbox, 'warden.out');
   const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
@@ -564,6 +581,7 @@ export async function runScenario({
   const healthOf = (addr) => (store.readHealth(home, TASK) ?? {})[addr] ?? {};
   const postcard = (line) => inbox.seen.find((p) => String(p.body ?? '').includes(line)) ?? null;
   const timings = [];
+  let sessionNames = [];
   const at = (name, ms) => { timings.push({ name, ms }); trace(`${name}: ${(ms / 1000).toFixed(1)} s`); };
   // What the run actually went with — by the word of the started process. Goes into the
   // report: the canary checks it against its install tree, and the scenario has nowhere
@@ -1211,6 +1229,7 @@ export async function runScenario({
     const secretsBefore = [[WORKER, wh], [REVIEWER, rh]]
       .flatMap(([a, h]) => [store.wakeFile(home, TASK, a), ...(h.files ? [store.participantMcpPath(home, TASK, a)] : [])])
       .filter((f) => existsSync(f));
+    sessionNames = [WORKER, REVIEWER].map((addr) => participantOf(addr)?.metadata?.name ?? null);
     const done = cli([ 'done', '--task', TASK], { cwd: ws, env: orchEnv });
     check('step 13: promptobus done closed the task and named the sessions it is tearing down',
       done.status === 0 && /stopping participant sessions \(2\)/.test(done.out) && /worker:e2e/.test(done.out),
@@ -1254,7 +1273,7 @@ export async function runScenario({
     try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already exited */ }
     harness.cleanup();
   }
-  return { timings, totalMs: Date.now() - t0, postcards: inbox.seen, mechanism: { declared: PROMPTOBUS_BIN, reported: selfBin } };
+  return { task: TASK, sessionNames, timings, totalMs: Date.now() - t0, postcards: inbox.seen, mechanism: { declared: PROMPTOBUS_BIN, reported: selfBin } };
 }
 
 function out(r) {

@@ -12,17 +12,29 @@
 // **This run does not take filesystem write rights.** Spawn goes
 // `--permission-mode read-only`. Whether `app-server` with `workspace-write`
 // writes a `[projects."…"]` section is not checked here.
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
-import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
+import { onAbort } from './live-abort.mjs';
+import { codexConfigSha } from './codex-config.mjs';
+
+const LIVE_FLAGS = {
+  '--model': { key: 'model', display: '--model <id>', description: 'model of the live Codex session' },
+};
+const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS), {
+  usage: 'scripts/live-codex.mjs [--model <id>]',
+  purpose: 'check the Codex driver against a live codex app-server',
+  price: 'raises a live Codex session and spends the account limit',
+  flags: LIVE_FLAGS,
+});
 
 const { codexDriver, DEFAULT_MODEL } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const { readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
@@ -38,9 +50,7 @@ const RELIED = [
   'turn/interrupt',
 ];
 
-const argv = process.argv.slice(2);
-const at = argv.indexOf('--model');
-const MODEL = at >= 0 && at + 1 < argv.length ? argv[at + 1] : DEFAULT_MODEL;
+const MODEL = LIVE_ARGS.model ?? DEFAULT_MODEL;
 
 const tool = resolveToolBin('codex');
 if (!tool.ok) {
@@ -63,33 +73,23 @@ function at_(name, ms) {
   process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
-function shaFile(file) {
-  try {
-    return createHash('sha256').update(readFileSync(file)).digest('hex');
-  } catch {
-    return null;
-  }
-}
-
 function pgrep(pattern) {
   const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
   return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
 }
 
 const CONFIG = path.join(homedir(), '.codex', 'config.toml');
-const shaBefore = shaFile(CONFIG);
+const shaBefore = codexConfigSha(CONFIG);
 const pgrepBefore = {
   cask: pgrep('Caskroom/codex'),
   app: pgrep('app-server --stdio'),
 };
 
-const SB = makeSandbox('promptobus-live-codex-');
-const refusedRuns = [];
-const swept = sweepPreviousRuns(tmpdir(), {
-  prefix: 'promptobus-live-codex-', current: SB, refused: refusedRuns,
-});
-process.stdout.write(`${sweptLine('previous-run sandboxes', swept)}\n`);
-if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
+const RUN_PREFIX = 'promptobus-live-codex-';
+const SB = makeSandbox(RUN_PREFIX);
+markRunOwner(SB);
+// A surviving sandbox holds a thread record, and its holder keeps a live app-server while it does.
+for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
 const TASK = `livecodex-t${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
 const WORKER = 'worker:live';
 const ORCH_SESSION = `orch-live-codex-${process.pid}`;
@@ -124,11 +124,18 @@ process.stdout.write(`▸ live Codex run: ${tool.path}${tool.version ? ` (${tool
 process.stdout.write(`▸ model: ${MODEL} · sandbox: read-only · approvalPolicy: on-request\n`);
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
+process.stdout.write(`▸ task: ${TASK}\n`);
 process.stdout.write(`▸ sha ~/.codex/config.toml before: ${shaBefore ?? '(no file)'}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 let ref = '';
 let methodsCalled = [];
+
+// The driver's stop is asynchronous and would not outlive the exit; the exit hook removes the
+// sandbox, and the holder kills its app-server once the thread record under it is gone.
+onAbort((signal) => {
+  writeSync(1, `\n▸ run cut off by ${signal}: the sandbox goes on exit, and the holder of ${ref || 'no thread yet'} with it\n`);
+});
 const t0 = Date.now();
 try {
   const t2 = Date.now();
@@ -184,7 +191,7 @@ try {
   rmSync(SB, { recursive: true, force: true });
 }
 
-const shaAfter = shaFile(CONFIG);
+const shaAfter = codexConfigSha(CONFIG);
 check('personal ~/.codex/config.toml did not change over the run (sha)',
   shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
 

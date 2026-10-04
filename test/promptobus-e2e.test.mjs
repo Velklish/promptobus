@@ -23,7 +23,7 @@ import { listenTestSocket, makeSandbox, makeSockPath } from './sandbox.mjs';
 import {
   diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant, readLog, stopAll,
 } from './harness.mjs';
-import { runScenario } from './scenario.mjs';
+import { loopTitle, runScenario } from './scenario.mjs';
 
 const SB = makeSandbox('promptobus-e2e-');
 const sock = makeSockPath('a2e-');
@@ -63,8 +63,11 @@ const harness = {
   cleanup: () => {},
 };
 
+const traced = [];
+const startedAt = Date.now();
 const report = await runScenario({
   check, harness, sandbox: SB, timeouts: { step: 30000, stall: 75000 }, listenSocket: listenTestSocket,
+  trace: (line) => traced.push(line),
 });
 
 if (report.skipped) {
@@ -74,6 +77,17 @@ if (report.skipped) {
 // go into the task measurement. This is not a verdict — a number, not a sentence.
 process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 1000).toFixed(1)} s`).join(' · ')}`
   + ` · total ${(report.totalMs / 1000).toFixed(1)} s\n`);
+
+// One id through the whole run: the trace names it, and both session names, taken before the
+// close, carry its seconds — the readable stamp in a name stops at minutes.
+const names = report.sessionNames ?? [];
+const stamp = /t(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(report.task ?? '');
+const stampedAt = stamp ? Date.UTC(stamp[1], stamp[2] - 1, stamp[3], stamp[4], stamp[5], stamp[6]) : NaN;
+check('identity: the loop task is this run\'s own id, named in the trace and carried by both session names',
+  /^e2ebus-t\d{8}-\d{6}$/.test(report.task ?? '') && stampedAt >= startedAt - 1000 && stampedAt <= Date.now()
+  && traced.includes(`loop task ${report.task}, slice "${loopTitle(report.task)}"`)
+  && names.length === 2 && names.every((n) => String(n).includes(loopTitle(report.task))),
+  `task ${report.task} · names ${JSON.stringify(names)} · trace ${traced.find((l) => l.startsWith('loop task')) ?? 'none'}`);
 
 // Insurance, not a check: the "no processes left" verdict lives in the scenario; this is
 // cleanup after a fallen run, so a red file does not leave live children behind.

@@ -31,23 +31,38 @@
 // `workspace-write` appends a trust section `[projects."…"]` to this file —
 // i.e. a person's consent to trust a directory. A run that left it silently
 // widened trust in the personal config; sha before and after is how to see
-// that.
+// that, without the marketplace refresh timestamps ([codex-config.mjs](codex-config.mjs)).
 //
-// Reviewer report markers travel in the DIFF BODY and only there: so the
-// verdict "the reviewer got the diff" rests on what actually went through the
-// diff file, not on the model's obedience to a brief it may not have read.
-import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+// A review round is answered by the reviewer's next unseen result naming the round's diff file.
+import {
+  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync,
+} from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
-import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { onAbort } from './live-abort.mjs';
+import { codexConfigSha } from './codex-config.mjs';
+import { messageKey, reportMentionsDiff, unseenResult } from './review-events.mjs';
+import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
+
+const LIVE_FLAGS = {
+  '--cursor-model': { key: 'cursorModel', display: '--cursor-model <id>', description: 'model of the live Cursor worker' },
+  '--codex-model': { key: 'codexModel', display: '--codex-model <id>', description: 'model of the live Codex reviewer' },
+};
+const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS), {
+  usage: 'scripts/live-mixed.mjs [--cursor-model <id>] [--codex-model <id>]',
+  purpose: 'check a mixed loop: a live Cursor worker and a live Codex reviewer',
+  price: 'raises sessions of two tools and spends the limits of two accounts',
+  flags: LIVE_FLAGS,
+});
 
 const { cursorDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const { codexDriver, DEFAULT_MODEL: CODEX_DEFAULT } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
@@ -59,13 +74,8 @@ const codexSession = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-sessio
 // Both models are named by flags: the run is driven on the ones the owner
 // named, and they go into the report. The Codex default is taken from the
 // driver — there is no reason to invent a number here.
-const argv = process.argv.slice(2);
-const flag = (name, fallback) => {
-  const at = argv.indexOf(name);
-  return at >= 0 && at + 1 < argv.length ? argv[at + 1] : fallback;
-};
-const CURSOR_MODEL = flag('--cursor-model', 'cursor-grok-4.6-xhigh-fast');
-const CODEX_MODEL = flag('--codex-model', CODEX_DEFAULT);
+const CURSOR_MODEL = LIVE_ARGS.cursorModel ?? 'cursor-grok-4.6-xhigh-fast';
+const CODEX_MODEL = LIVE_ARGS.codexModel ?? CODEX_DEFAULT;
 
 // Both binaries are asked BEFORE any layout: a loop of three participants
 // without one of them checks nothing, and a refuse mid-way would leave a live
@@ -95,14 +105,6 @@ function at_(name, ms) {
   process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
-function shaFile(file) {
-  try {
-    return createHash('sha256').update(readFileSync(file)).digest('hex');
-  } catch {
-    return null;
-  }
-}
-
 // Codex processes are looked up by TWO templates and both are needed: `pgrep
 // -fl codex` also catches foreign commands with the word codex in the path
 // (including this script itself), and the thread holder is visible only as
@@ -113,25 +115,17 @@ function pgrep(pattern) {
 }
 
 const CODEX_CONFIG = path.join(homedir(), '.codex', 'config.toml');
-const shaBefore = shaFile(CODEX_CONFIG);
+const shaBefore = codexConfigSha(CODEX_CONFIG);
 const pgrepBefore = { cask: pgrep('Caskroom/codex'), app: pgrep('app-server --stdio') };
 
-// Mechanism session registries live in the person home and are NOT redirected
-// in a live run: the subject is how this works for the user. That nothing is
-// left there after the loop is what the run compares by compositions before
-// and after. Person sessions nearby are legal, and they must be subtracted: an
-// "empty list" would be a wrong verdict on a machine where the person works.
-//
-// Both paths are NAMED rather than left to a default, and they are the same
-// paths the package used to fall back to. The fallback is gone: with no
-// variable and no host bound, the registry helpers refuse by name rather than
-// guess a directory under someone's real home (PB-2). A live run is exactly the
-// case that WANTS the real one, so it says so.
-for (const [name, harness] of [['PROMPTOBUS_CURSOR_HOME', 'cursor'], ['PROMPTOBUS_CODEX_HOME', 'codex']]) {
-  process.env[name] = process.env[name] ?? path.join(homedir(), '.promptobus', harness);
-}
+// The Cursor registry stays in the person home, named, since the helpers refuse to guess one;
+// what the run leaves there is compared before and after, the person's own sessions subtracted.
+process.env.PROMPTOBUS_CURSOR_HOME = process.env.PROMPTOBUS_CURSOR_HOME ?? path.join(homedir(), '.promptobus', 'cursor');
 const CURSOR_STATE = cursorPersist.sessionsDir();
-const CODEX_STATE = codexSession.sessionsDir();
+// The person's Codex registry is only compared: the run's own Codex home goes under the sandbox below.
+const USER_CODEX_STATE = codexSession.sessionsDir({
+  PROMPTOBUS_CODEX_HOME: process.env.PROMPTOBUS_CODEX_HOME ?? path.join(homedir(), '.promptobus', 'codex'),
+});
 const listing = (dir) => {
   try {
     return readdirSync(dir);
@@ -139,8 +133,14 @@ const listing = (dir) => {
     return [];
   }
 };
-const stateBefore = { cursor: listing(CURSOR_STATE), codex: listing(CODEX_STATE) };
-const panesBefore = new Set(cursorPersist.tmuxSessions().map((s) => s.name));
+const stateBefore = { cursor: listing(CURSOR_STATE), codex: listing(USER_CODEX_STATE) };
+let panesBefore;
+try {
+  panesBefore = new Set(requiredTmuxSessions(cursorPersist.readTmuxSessions).map((s) => s.name));
+} catch (error) {
+  console.error(`✖ no persist session list to subtract before the run: ${error.message}`);
+  process.exit(1);
+}
 
 // The sandbox prefix is not a PREFIX of the logs prefix, and that is a
 // condition, not style: the `$TMPDIR` leftover verdict looks up run
@@ -156,6 +156,13 @@ const bornAfter = (file) => {
   } catch { return false; }
 };
 const SB = makeSandbox(RUN_PREFIX);
+markRunOwner(SB);
+for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
+// The reviewer's thread record lives under the sandbox: a holder that outlives this process
+// exits once the sandbox is gone, and the person's registry stays outside every cleanup.
+const CODEX_HOME = path.join(SB, 'codex-state');
+process.env.PROMPTOBUS_CODEX_HOME = CODEX_HOME;
+const CODEX_STATE = codexSession.sessionsDir();
 // Turn logs outlive the run: the sandbox is swept, and the Cursor transcript
 // and the Codex holder log are what a red is debugged by.
 const LOGS_PREFIX = 'promptobus-live-mixed-logs-';
@@ -206,6 +213,7 @@ process.stdout.write(`▸ cursor: ${tools.cursor.path}${tools.cursor.version ? `
 process.stdout.write(`▸ codex: ${tools.codex.path}${tools.codex.version ? ` (${tools.codex.version})` : ''} · model ${CODEX_MODEL} · reviewer sandbox: read-only\n`);
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
+process.stdout.write(`▸ task: ${TASK}\n`);
 process.stdout.write(`▸ sha ~/.codex/config.toml before: ${shaBefore ?? '(no file)'}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
@@ -231,6 +239,7 @@ const said = (from, type, mark) => orchInbox()
 let workerRef = '';
 let reviewerRef = '';
 let transcriptPath = null;
+let codexStateBeforeCleanup = [];
 // Turn logs are taken BEFORE stop, and the two halves of the lineup differ,
 // because `done` sweeps different things. It does not touch the Cursor
 // transcript — that lives in the Cursor home — but the PATH to it sits in the
@@ -293,6 +302,26 @@ function keepLogs() {
   keepHolderLog();
 }
 
+// The same cleanup as `finally`: logs first, the Cursor worker stopped with no wait, the warden by
+// its process group. The Codex holder exits with its record when the exit hook removes the sandbox.
+onAbort((signal) => {
+  const say = (line) => writeSync(1, line);
+  say(`\n▸ run cut off by ${signal}: keeping the logs and stopping the loop\n`);
+  keepLogs();
+  if (workerRef) {
+    Promise.resolve(cursorDriver.stop(workerRef, { timeoutMs: 0 })).catch(() => {});
+    say(`  · stop sent to the Cursor worker: ${workerRef}\n`);
+  }
+  try {
+    process.kill(-warden.pid, 'SIGTERM');
+    say('  · task warden stopped by its process group\n');
+  } catch {
+    say('  · no task warden left\n');
+  }
+  say(`  · Codex reviewer ${reviewerRef || '(none yet)'} ends with the sandbox: ${SB}\n`);
+  say(`  · turn logs: ${KEPT_LOGS}\n`);
+});
+
 const t0 = Date.now();
 try {
   const live = await waitFor(() => store.liveWarden(home, TASK), { timeoutMs: 30000 });
@@ -329,6 +358,7 @@ try {
   check('step 4: the review subject is committed in the worker worktree',
     committed.status === 0, `${committed.stdout ?? ''}${committed.stderr ?? ''}`.slice(-400));
 
+  const seenA = new Set(orchInbox().filter((m) => sentBy(m, REVIEWER) && m.type === 'result').map(messageKey));
   const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'codex', '--model', CODEX_MODEL],
     { cwd: ws, env });
   check('step 4: promptobus review --harness codex raised a live reviewer',
@@ -352,12 +382,12 @@ try {
     diffsA.length === 1
     && readFileSync(path.join(store.filesDir(home, TASK), diffsA[0]), 'utf8').includes(MARK.reviewA),
     JSON.stringify(diffsA));
-  const reviewA = await waitFor(() => orchInbox().find((m) => sentBy(m, REVIEWER) && m.type === 'result') ?? null,
+  const reviewA = await waitFor(() => unseenResult(orchInbox(), seenA, (m) => sentBy(m, REVIEWER)),
     { timeoutMs: 600000 });
   check('step 4: the Codex reviewer got the diff and sent a result on the same bus',
     !!reviewA, codexSession.tailLog(reviewerRef, process.env, 12));
-  check('step 4: the reviewer report is about THAT diff — the marker from the diff body stands in the report',
-    !!reviewA && String(reviewA.body ?? '').includes(MARK.reviewA),
+  check('step 4: the reviewer report names the diff file of this round',
+    !!reviewA && reportMentionsDiff(reviewA.body, diffsA[0]),
     `${JSON.stringify(reviewA?.body ?? null).slice(0, 400)} · diff ${diffsA.join(', ')}`);
   at_('first review round', Date.now() - t4);
 
@@ -381,6 +411,7 @@ try {
   const again = commitSubject(wt, MARK.reviewB, 'Second edition: the same edit after the review notes.');
   check('step 6: the second edition of the subject is committed', again.status === 0,
     `${again.stdout ?? ''}${again.stderr ?? ''}`.slice(-400));
+  const seenB = new Set(orchInbox().filter((m) => sentBy(m, REVIEWER) && m.type === 'result').map(messageKey));
   const reReview = cli([ 'review', wt, '--task', TASK], { cwd: ws, env });
   const rp2 = store.participantOf(store.readTask(home, TASK), REVIEWER);
   // The same reviewer is THREE things at once: the mechanism said "already on the bus",
@@ -398,11 +429,13 @@ try {
     diffsB.length === 1
     && readFileSync(path.join(store.filesDir(home, TASK), diffsB[0]), 'utf8').includes(MARK.reviewB),
     `${diffsA.join(', ')} → ${diffsOf().join(', ')}`);
-  const reviewB = await waitFor(() => orchInbox()
-    .find((m) => sentBy(m, REVIEWER) && m.type === 'result' && String(m.body ?? '').includes(MARK.reviewB)) ?? null,
-  { timeoutMs: 600000 });
+  const reviewB = await waitFor(() => unseenResult(orchInbox(), seenB, (m) => sentBy(m, REVIEWER)),
+    { timeoutMs: 600000 });
   check('step 6: the reviewer parsed the NEW diff in the same context and sent a second result',
     !!reviewB, codexSession.tailLog(reviewerRef, process.env, 12));
+  check('step 6: the second report names the diff file of the second round',
+    !!reviewB && reportMentionsDiff(reviewB.body, diffsB[0]),
+    `${JSON.stringify(reviewB?.body ?? null).slice(0, 400)} · diff ${diffsB.join(', ')}`);
   at_('second review round', Date.now() - t6);
 
   // --- step 7: promptobus done stops all three ------------------------------------------
@@ -431,6 +464,7 @@ try {
   // directories. Stop is by their own drivers, each by its own record.
   if (workerRef) await Promise.resolve(cursorDriver.stop(workerRef, { timeoutMs: 0 })).catch(() => {});
   if (reviewerRef) await Promise.resolve(codexDriver.stop(reviewerRef)).catch(() => {});
+  codexStateBeforeCleanup = listing(CODEX_STATE);
   try {
     process.kill(-warden.pid, 'SIGTERM');
   } catch {
@@ -441,7 +475,7 @@ try {
 
 // --- hygiene: the person home and the machine after the loop ----------------------------------------
 
-const shaAfter = shaFile(CODEX_CONFIG);
+const shaAfter = codexConfigSha(CODEX_CONFIG);
 // The main Codex hygiene verdict: the reviewer went read-only, and it must not
 // write a trust section `[projects."…"]` into the personal config. Sha is
 // compared, not parsed: a change of the file in ANY form is already a widening
@@ -463,7 +497,9 @@ check('no new app-server --stdio processes after the loop', extraApp.length === 
 // go as a line into the report and do not paint the verdict. The check is
 // taken from `live-cursor.mjs`, where it also caught orphans (a holder that
 // outlived its parent).
-const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8' });
+// A listing that cannot be read, or that lacks this very process, is red: an empty one passes on nothing.
+const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
 const ours = [];
 const foreign = [];
 for (const line of String(ps.stdout ?? '').split('\n')) {
@@ -476,7 +512,8 @@ for (const line of String(ps.stdout ?? '').split('\n')) {
   if (mine) ours.push(row);
   else foreign.push(row);
 }
-check('no Cursor processes of the run left after the loop', ours.length === 0, ours.join(' | '));
+check('no Cursor processes of the run left after the loop', ps.status === 0 && seesSelf && ours.length === 0,
+  seesSelf ? ours.join(' | ') : `ps did not list this process (exit ${ps.status} · ${String(ps.error?.message ?? ps.stderr ?? '').slice(0, 200)})`);
 if (foreign.length) {
   process.stdout.write(`  · processes of the same commands outside the run directory: ${foreign.length} (not ours)\n`);
 }
@@ -484,18 +521,19 @@ if (foreign.length) {
 // Cursor persist sessions are judged by SUBTRACTION: person sessions and other
 // runs legally live nearby, and an "empty list" would be a wrong verdict on a
 // working machine.
-const panesLeft = cursorPersist.tmuxSessions().filter((s) => !panesBefore.has(s.name));
+const finalPanes = tmuxAbsenceVerdict(cursorPersist.readTmuxSessions, panesBefore);
 check('no persist sessions of the run on the tmux server after the loop, foreign ones intact',
-  panesLeft.length === 0 && [...panesBefore].every((n) => cursorPersist.tmuxSessions().some((s) => s.name === n)),
-  `left: ${JSON.stringify(panesLeft.map((s) => s.name))} · was: ${[...panesBefore].join(', ') || 'none'}`);
+  finalPanes.ok, finalPanes.detail);
 
 const stateLeft = {
   cursor: listing(CURSOR_STATE).filter((n) => !stateBefore.cursor.includes(n)),
-  codex: listing(CODEX_STATE).filter((n) => !stateBefore.codex.includes(n)),
+  codex: listing(USER_CODEX_STATE).filter((n) => !stateBefore.codex.includes(n)),
 };
-check('after the loop the mechanism session registries are clean — `done` dropped the records',
+check('after the loop the Cursor registry is clean and the person\'s Codex registry untouched',
   stateLeft.cursor.length === 0 && stateLeft.codex.length === 0,
   `cursor: ${stateLeft.cursor.join(', ') || 'clean'} · codex: ${stateLeft.codex.join(', ') || 'clean'}`);
+check('after the stop the run\'s own Codex registry was empty before the sandbox went',
+  codexStateBeforeCleanup.length === 0, codexStateBeforeCleanup.join(', ') || 'clean');
 
 // Leftovers in `$TMPDIR` are looked up by the run PREFIX, not by the directory
 // name whole: the name is given by the sandbox generator, and a literal would

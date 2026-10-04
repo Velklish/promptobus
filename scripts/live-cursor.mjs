@@ -30,28 +30,43 @@
 // processes nor registry records — and the person sessions are intact. It does
 // not check model-reasoning quality: checks go by a marker at the start of the
 // body.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync,
+} from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
-import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { onAbort } from './live-abort.mjs';
+import { reportMentionsDiff } from './review-events.mjs';
+import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
+
+const LIVE_FLAGS = {
+  '--model': { key: 'model', display: '--model <id>', description: 'model of the live Cursor sessions' },
+};
+const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS), {
+  usage: 'scripts/live-cursor.mjs [--model <id>]',
+  purpose: 'check the Cursor driver and its persist sessions against a live agent',
+  price: 'raises live Cursor sessions and spends the account limit',
+  flags: LIVE_FLAGS,
+});
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const {
-  cursorStateHome, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
+  cursorStateHome, readTmuxSessions, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
+  LAUNCH_TMUX_SERVER,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 
 // The model is named by a flag, not taken from the driver default: the live
 // check is driven on the one the owner named, and it goes into the report.
-const argv = process.argv.slice(2);
-const at = argv.indexOf('--model');
-const MODEL = at >= 0 && at + 1 < argv.length ? argv[at + 1] : 'cursor-grok-4.6-xhigh-fast';
+const MODEL = LIVE_ARGS.model ?? 'cursor-grok-4.6-xhigh-fast';
 
 const tool = resolveToolBin('cursor');
 if (!tool.ok) {
@@ -123,9 +138,19 @@ const stateBefore = snapshotState();
 // live nearby, and they must be subtracted — an "empty list" after the loop
 // would be a wrong verdict on a machine where the person works in their own
 // session.
-const sessionsBefore = new Set(tmuxSessions().map((s) => s.name));
+let sessionsBefore;
+try {
+  sessionsBefore = new Set(requiredTmuxSessions(readTmuxSessions).map((s) => s.name));
+} catch (error) {
+  console.error(`✖ no persist session list to subtract before the run: ${error.message}`);
+  process.exit(1);
+}
 
-const SB = makeSandbox('promptobus-live-cursor-');
+// Not a prefix of the logs prefix: sandboxes are swept with none kept, logs keep the three newest.
+const RUN_PREFIX = 'promptobus-live-cursor-run-';
+const SB = makeSandbox(RUN_PREFIX);
+markRunOwner(SB);
+for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
 // Turn logs outlive the run: the sandbox is swept, and the stream is needed to
 // debug a red.
 const LOGS_PREFIX = 'promptobus-live-cursor-logs-';
@@ -180,6 +205,7 @@ process.stdout.write(`▸ live Cursor run: ${tool.path}${tool.version ? ` (${too
 process.stdout.write(`▸ model: ${MODEL}\n`);
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
+process.stdout.write(`▸ task: ${TASK}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 // Transcripts of both participants — into a directory that outlives the run.
@@ -232,6 +258,27 @@ function rememberProbeMarks() {
     }
   }
 }
+// The same cleanup as `finally`, in its order: logs first, then a stop with no wait, then the
+// warden by its process group — it is detached, and a foreground signal does not reach it.
+onAbort((signal) => {
+  const say = (line) => writeSync(1, line);
+  say(`\n▸ run cut off by ${signal}: keeping the logs and stopping the loop\n`);
+  keepTranscripts();
+  for (const addr of [WORKER, REVIEWER]) {
+    const left = store.participantOf(store.readTask(home, TASK), addr)?.sessionRef;
+    if (!left) continue;
+    Promise.resolve(cursorDriver.stop(left, { timeoutMs: 0 })).catch(() => {});
+    say(`  · stop sent: ${addr} → ${left}\n`);
+  }
+  try {
+    process.kill(-warden.pid, 'SIGTERM');
+    say('  · task warden stopped by its process group\n');
+  } catch {
+    say('  · no task warden left\n');
+  }
+  say(`  · turn logs: ${KEPT_LOGS}\n`);
+});
+
 const t0 = Date.now();
 try {
   const live = await waitFor(() => store.liveWarden(home, TASK), { timeoutMs: 30000 });
@@ -252,6 +299,8 @@ try {
     !!record?.sessionName && !!record?.chatId
     && wp?.metadata?.session === record.sessionName && wp?.metadata?.sessionId === record.chatId,
     `${JSON.stringify(record)} · ${wp?.metadata?.session} · ${wp?.metadata?.sessionId}`);
+  // Taken at the lift: after `done` the record is gone, and leftovers are judged by these marks.
+  rememberProbeMarks();
 
   const mine = tmuxSessions().find((s) => s.name === record?.sessionName) ?? null;
   check('step 2: the session is visible in the tmux list, marked with the task and address, and its chat is the same',
@@ -263,9 +312,9 @@ try {
     listOut.status === 0 && String(listOut.stdout ?? '').includes((record?.sessionName || 'no-name')),
     String(listOut.stdout ?? '').slice(-500));
 
+  const launchList = tmuxAbsenceVerdict(readTmuxSessions, new Set(), { server: LAUNCH_TMUX_SERVER });
   check('step 2: the one-shot pty-provider pane is down — the launch server is empty',
-    tmuxSessions({ server: 'promptobus-launch' }).length === 0,
-    JSON.stringify(tmuxSessions({ server: 'promptobus-launch' })));
+    launchList.ok, launchList.detail);
 
   const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
   check('step 2: promptobus status shows the Cursor session is alive',
@@ -350,14 +399,14 @@ try {
   const t4b = Date.now();
   const seat = `promptobus-live-attach-${process.pid}`;
   tmux(['new-session', '-d', '-s', seat, '-x', '200', '-y', '50',
-    `${tool.path} persist attach ${record?.sessionName}`], { server: 'promptobus-launch' });
+    `${tool.path} persist attach ${record?.sessionName}`], { server: LAUNCH_TMUX_SERVER });
   const attached = await waitFor(() => {
     const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached > 0 ? s : null;
   }, { timeoutMs: 30000 });
   check('step 4b: a human attaches to the live session — attach gives a second client',
-    !!attached, `${JSON.stringify(tmuxSessions())} · attach pane: ${JSON.stringify(tmuxSessions({ server: 'promptobus-launch' }))}`);
-  tmux(['kill-session', '-t', seat], { server: 'promptobus-launch' });
+    !!attached, `${JSON.stringify(tmuxSessions())} · attach pane: ${JSON.stringify(tmuxSessions({ server: LAUNCH_TMUX_SERVER }))}`);
+  tmux(['kill-session', '-t', seat], { server: LAUNCH_TMUX_SERVER });
   const leftSeat = await waitFor(() => {
     const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached === 0 ? s : null;
@@ -424,7 +473,8 @@ try {
   // --- step 5: a Cursor reviewer and its read-only ----------------------------------------
   const t5 = Date.now();
   const wt = wp?.metadata?.worktree ?? repoAbs;
-  writeFileSync(path.join(wt, 'live-note.md'), `# ${MARK.hello}\n\nAn edit for the review subject.\n`);
+  // Signed with its own marker, so the round's diff file can be shown to carry this edit.
+  writeFileSync(path.join(wt, 'live-note.md'), `# ${MARK.review}\n\nAn edit for the review subject.\n`);
   spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'add', '-A'], { encoding: 'utf8' });
   spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'commit', '-m', 'live: review subject'], { encoding: 'utf8' });
 
@@ -432,6 +482,7 @@ try {
     { cwd: ws, env });
   check('step 5: promptobus review --harness cursor raised a live reviewer',
     reviewed.status === 0 && /reviewer reviewer:live started/.test(reviewed.out), reviewed.out.slice(-600));
+  rememberProbeMarks();
   sandboxDir = reviewSandbox(store.participantSettingsPath(home, TASK, REVIEWER));
   check('step 5: the reviewer sandbox is a git directory with its own deny',
     existsSync(path.join(sandboxDir, '.git'))
@@ -466,6 +517,19 @@ try {
   { timeoutMs: 300000 });
   check('step 5: the Cursor reviewer report reached the orchestrator on the same bus',
     !!reviewSaid, JSON.stringify(readSession(store.participantOf(store.readTask(home, TASK), REVIEWER)?.sessionRef ?? '')?.last));
+  const diffs = (() => {
+    try {
+      return readdirSync(store.filesDir(home, TASK)).filter((n) => n.endsWith('.diff'));
+    } catch {
+      return [];
+    }
+  })();
+  check('step 5: the review diff landed as a task file and carries the review subject',
+    diffs.length === 1 && readFileSync(path.join(store.filesDir(home, TASK), diffs[0]), 'utf8').includes(MARK.review),
+    JSON.stringify(diffs));
+  check('step 5: the reviewer report names the diff file it was given',
+    !!reviewSaid && reportMentionsDiff(reviewSaid.body, diffs[0]),
+    `${String(reviewSaid?.body ?? '(no report)').slice(0, 400)} · diff ${diffs.join(', ')}`);
   rememberTranscript(REVIEWER);
   at_('review', Date.now() - t5);
 
@@ -480,10 +544,9 @@ try {
   // No mechanism sessions left on the shared server — and person sessions, if
   // they were there, are intact: teardown goes by the participant record, not
   // by "everything that was found".
-  const leftSessions = tmuxSessions().filter((s) => !sessionsBefore.has(s.name));
+  const finalList = tmuxAbsenceVerdict(readTmuxSessions, sessionsBefore);
   check('step 6: no persist sessions of the run left on the tmux server, foreign ones untouched',
-    leftSessions.length === 0 && [...sessionsBefore].every((n) => tmuxSessions().some((s) => s.name === n)),
-    `left: ${JSON.stringify(leftSessions)} · was: ${[...sessionsBefore].join(', ') || 'none'}`);
+    finalList.ok, finalList.detail);
   const persistOut = spawnSync(tool.path, ['persist', 'list'], { encoding: 'utf8' });
   check('step 6: agent persist list does not show the run — the list is clean for the person',
     !String(persistOut.stdout ?? '').includes(TASK) && !String(persistOut.stdout ?? '').includes((record?.sessionName || 'no-name')),
@@ -492,6 +555,7 @@ try {
 } catch (e) {
   check('the run reached the end without a break', false, e.stack ?? e.message);
 } finally {
+  // A safety net for a run broken before a lift; the lifts above already took their marks.
   rememberProbeMarks();
   // Turn logs are taken FIRST and on any outcome (review note): teardown sweeps
   // them with the session record, and the stream is needed exactly where the
@@ -523,7 +587,9 @@ try {
 // hour before the run, not processes of the run. Foreign processes of the same
 // commands do not paint the verdict — like the Claude canary,
 // "outside the run directory: N (not ours)".
-const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8' });
+// A listing that cannot be read, or that lacks this very process, is red: an empty one passes on nothing.
+const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
 const ours = [];
 const foreign = [];
 for (const line of String(ps.stdout ?? '').split('\n')) {
@@ -536,7 +602,8 @@ for (const line of String(ps.stdout ?? '').split('\n')) {
   if (mine) ours.push(row);
   else foreign.push(row);
 }
-check('no run processes left after the loop', ours.length === 0, ours.join(' | '));
+check('no run processes left after the loop', ps.status === 0 && seesSelf && ours.length === 0,
+  seesSelf ? ours.join(' | ') : `ps did not list this process (exit ${ps.status} · ${String(ps.error?.message ?? ps.stderr ?? '').slice(0, 200)})`);
 if (foreign.length) {
   process.stdout.write(`  · processes of the same commands outside the run directory: ${foreign.length} (not ours)\n`);
 }

@@ -117,6 +117,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment prefix as it refuses its name. A nested `npm` in a suite file now reads the run
   home's cache and configuration rather than the operator's.
   [Contributing § Suite isolation](docs/guides/contributing.md#suite-isolation).
+- **The live Codex, Cursor and mixed scenarios are the package's canonical live checks, and a
+  run cut off by a signal cleans up after itself.** `scripts/live-codex.mjs`,
+  `live-cursor.mjs`, `live-mixed.mjs` and `live-e2e.mjs` take the fixes a consumer had made in
+  its own copies. `SIGINT`, `SIGTERM` and `SIGHUP` run the cleanup of `finally` before the
+  sandbox helper's handler and exit `128 + signal`; before, the sandbox went and the Cursor
+  sessions, the task warden and the Claude sessions stayed. Each sandbox carries a run-owner
+  marker, and a script sweeps only its own earlier sandboxes: a dead owner's at once, a live
+  owner's never. `--help` and an unknown flag exit before anything is raised; before, `--help`
+  started a paid run. The E2E loop task id is per run, not a fixed literal, and two runs in one
+  UTC minute lift sessions under different names. `live-mixed.mjs` keeps its Codex reviewer's
+  state home in the run's sandbox and judges a review round by the next unseen result naming the
+  round's diff file; `live-cursor.mjs` judges its review by the report naming the diff file too,
+  not by an echo of a marker, and takes its probe marks at each lift, so leftovers are still
+  recognised after `done`. Persist-session and process verdicts refuse an unreadable `tmux` or
+  `ps`.
+  A Cursor or mixed run that cannot read the `tmux` list at start exits 1 naming why.
+  The personal `~/.codex/config.toml` hash leaves out the two marketplace refresh timestamps
+  Codex rewrites in the background.
+  [Contributing § Live harness scenarios](docs/guides/contributing.md#live-harness-scenarios).
 
 ### Fixed
 

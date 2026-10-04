@@ -22,15 +22,23 @@
 //
 // The report is verdicts and step durations. It has no tokens: the orchestrator socket
 // listener puts only the "token matched" mark into the trace, not the token itself.
-import { rmSync } from 'node:fs';
+import { rmSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
+import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, makeSockDir, resolveToolBin } from '../test/sandbox.mjs';
 import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
-import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
+import { onAbort } from './live-abort.mjs';
+
+finishLiveArgs(parseLiveArgs(process.argv.slice(2)), {
+  usage: 'scripts/live-e2e.mjs',
+  purpose: 'run the E2E bus scenario on real Claude Code',
+  price: 'raises two live Claude Code sessions and spends the account limit',
+});
 
 // The mechanism under test is one root for the whole run, and the scenario declares
 // it (`PROMPTOBUS_E2E_ROOT`). Unset — the checkout, as before. Set — the installed
@@ -69,13 +77,10 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
-const SB = makeSandbox('promptobus-live-e2e-');
-const refusedRuns = [];
-const swept = sweepPreviousRuns(os.tmpdir(), {
-  prefix: 'promptobus-live-e2e-', current: SB, refused: refusedRuns,
-});
-process.stdout.write(`${sweptLine('previous-run sandboxes', swept)}\n`);
-if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
+const RUN_PREFIX = 'promptobus-live-e2e-';
+const SB = makeSandbox(RUN_PREFIX);
+markRunOwner(SB);
+for (const line of sweepLiveRuns(os.tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
 // The run socket directory is its own, and it is removed in `finally` with the
 // sandbox. The exit hook in [sandbox.mjs](../test/sandbox.mjs) removes it too, but
 // only on its own process: a loop cut off mid-file never reaches the end, and
@@ -133,6 +138,8 @@ const harness = {
   // done` in the scenario does this itself, but the canary must also tidy up after
   // a fallen run.
   cleanup: () => {
+    // `stop` finds a session by name in the registry cache, which the loop's steps filled earlier.
+    resetBgSessionsCache();
     for (const ref of raised) {
       // The stop outcome is a promise: the command itself goes to the binary
       // synchronously, and all that remains is waiting for the record to vanish
@@ -146,6 +153,14 @@ const harness = {
     }
   },
 };
+
+// The same cleanup as `finally`: sessions first, then the sandbox and the socket directory.
+onAbort((signal) => {
+  writeSync(1, `\n▸ run cut off by ${signal}: stopping the loop sessions (${raised.size}) and removing the sandbox\n`);
+  harness.cleanup();
+  rmSync(SB, { recursive: true, force: true });
+  if (sockDir) rmSync(sockDir, { recursive: true, force: true });
+});
 
 const verdicts = [];
 const check = (name, cond, detail = '') => {
