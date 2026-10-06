@@ -1,10 +1,11 @@
 # PB-342 · Reviewer and approver lift through opencode
 
-- **Order:** 280
 - **Scope:** [05-drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** PB-341 (worker lift, holder protocol, contract dictionary)
 - **Cost:** major
+- **Previous order:** 280
+- **Taken:** 2026-10-06
 
 ## Context
 
@@ -18,7 +19,7 @@ wake path.
 
 - Reviewer lift on opencode: read-only config profile, MCP write deny, reviewer prompt rules.
 - `approverLift`: approver worktree lift, publication lease path, `eligibleHarnessesForRole` cover.
-- Follow-up turns on a live session (the `pull` upgrade) with a wake probe.
+- Follow-up turns on a live session with a wake probe.
 - Docs (05-drivers, CHANGELOG) and tests with fixtures red without the change.
 
 ## Out of scope

@@ -739,7 +739,11 @@ default, which the plan writes. Auth failures fail the lift loudly; no login ver
 The record lands before the first holder call (pid first, then url, then session id), so a crash
 past lift keeps a handle `stop` reaps by; a failed lift reaps the holder and removes record and
 log, and the next attempt opens a fresh log. The bound lift points the bus MCP entry and the
-holder env at the session record. Reviewer and approver lifts refuse in `prepare`.
+holder env at the session record. Reviewer and approver lift on the same holder with the deny
+map in config (`REVIEWER_DENY` plus the host-classified MCP writes in both tool-name spellings,
+the version-spelled one pending a pin). Wake is a follow-up prompt on the live session: the
+contact point is the record path, an idle session takes the text, a running turn refuses and the
+warden retries; `checkWake` smokes the channel without spending a turn.
 
 Config travels by environment, not by worktree writes: the plan emits one opencode.json beside
 the task record (`OPENCODE_CONFIG`) with the MCP set (`url` entries as remote servers, `command`

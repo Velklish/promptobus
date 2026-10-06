@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harness `opencode` to `lib/driver-opencode.js`: a worker is a per-participant `serve` holder
   (own port, config, password) plus a session in it — holder up, session created by title, first
   turn posted; config by `OPENCODE_CONFIG` env beside the task record (MCP set, `model` default,
-  permission map; no worktree writes), skills by `OPENCODE_CONFIG_DIR`; activation is `pull`.
+  permission map; no worktree writes), skills by `OPENCODE_CONFIG_DIR`. Reviewer and approver
+  lift on the same holder with the deny map; wake is a follow-up prompt on an idle session.
   Availability probes the binary floor 2.0.0 (measured on 2.0.20); the default lift model is the
-  owner's opencode model. Reviewer and approver lifts on this harness are not declared yet.
+  owner's opencode model.
   [05-drivers § OPENCODE](docs/reference/05-drivers.md#opencode--opencode-harness-driver--the-fourth-production-bus-driver).
 
 - **`promptobus/integration`: a supported entry point for a host that embeds the bus.** A host

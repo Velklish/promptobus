@@ -15,7 +15,8 @@ const SB = makeSandbox('promptobus-driver-opencode-');
 
 const {
   OPENCODE, opencodeDriver, prepare, permissionDeny, PERMISSION_MODES, apiArgv, parseSessionList,
-  viewOf, REVIEWER_DENY, listSessionsSync, SESSION_RECORD_VAR,
+  viewOf, REVIEWER_DENY, listSessionsSync, SESSION_RECORD_VAR, mcpDenyTools, activate, checkWake,
+  registerWake, renderNotification,
 } = await import(path.join(here, '..', 'lib', 'driver-opencode.js'));
 const {
   holderPassword, holderUrl, portOfLog, idleOutcome, createSession, sendPrompt, readMessages,
@@ -31,21 +32,22 @@ check(': opencode is registered under its own name',
   OPENCODE === 'opencode' && REGISTRY.drivers.opencode === opencodeDriver,
   Object.keys(REGISTRY.drivers).sort().join(','));
 
-check(': worker capabilities are spawn/inspect/stop with pull activation and no approver lift',
+check(': worker capabilities are spawn/inspect/stop with push activation and approver lift',
   opencodeDriver.capabilities.spawn === true
   && opencodeDriver.capabilities.inspect === true
   && opencodeDriver.capabilities.stop === true
-  && opencodeDriver.capabilities.activation === 'pull'
-  && opencodeDriver.capabilities.approverLift !== true,
+  && opencodeDriver.capabilities.activation === 'push'
+  && opencodeDriver.capabilities.mcpDenyTools === true
+  && opencodeDriver.capabilities.approverLift === true,
   JSON.stringify(opencodeDriver.capabilities));
 
 check(': the default model names the owner-ordered provider and model',
   opencodeDriver.options.defaultModel === 'opencode-go/muse-spark-1.3-contributor',
   opencodeDriver.options.defaultModel);
 
-check(': the contract dictionary is complete — deny list, pull channel, null identity',
+check(': the contract dictionary is complete — deny list, http channel, null identity',
   Array.isArray(opencodeDriver.options.denyTools) && opencodeDriver.options.denyTools.length > 0
-  && opencodeDriver.options.knockChannel === 'pull'
+  && opencodeDriver.options.knockChannel === 'http'
   && opencodeDriver.options.identityVar === null
   && opencodeDriver.options.mcpIdentity?.recordVar === 'PROMPTOBUS_OPENCODE_SESSION',
   JSON.stringify({
@@ -150,15 +152,11 @@ check(': an explicit effort refuses — no variant mapping is guessed',
   effortRefused?.message ?? 'no refusal');
 
 for (const role of ['reviewer', 'approver']) {
-  let refused = null;
-  try {
-    planFor({ role });
-  } catch (error) {
-    refused = error;
-  }
-  check(`: a ${role} lift refuses — it would land without isolation`,
-    refused !== null && new RegExp(role).test(refused.message ?? ''),
-    refused?.message ?? 'no refusal');
+  const rolePlan = planFor({ role, denyTools: ['edit', 'bash'] });
+  const roleCfg = JSON.parse(rolePlan.files.find((f) => f.path === path.join(SB, 'opencode.json')).text);
+  check(`: a ${role} lift carries the deny map instead of refusing`,
+    roleCfg.permission?.edit === 'deny' && roleCfg.permission?.bash === 'deny',
+    JSON.stringify(roleCfg.permission));
 }
 
 // --- inspect core -----------------------------------------------------------
@@ -192,6 +190,15 @@ check(': a bound lift points its bus entry and env at the session record',
   boundCfg.mcp.promptobus?.environment?.[SESSION_RECORD_VAR] !== undefined
   && boundPlan.env[SESSION_RECORD_VAR] === boundCfg.mcp.promptobus.environment[SESSION_RECORD_VAR],
   JSON.stringify(boundCfg.mcp.promptobus?.environment));
+
+check(': the wake operations ride the driver map, not beside it',
+  typeof opencodeDriver.mcpDenyTools === 'function'
+  && typeof opencodeDriver.activate === 'function'
+  && typeof opencodeDriver.registerWake === 'function'
+  && typeof opencodeDriver.checkWake === 'function'
+  && typeof opencodeDriver.sayForeignWrite === 'function'
+  && typeof opencodeDriver.renderNotification === 'function',
+  'wake map');
 
 check(': the reviewer deny list is non-empty opencode permission keys',
   REVIEWER_DENY.length > 0 && REVIEWER_DENY.every((k) => k === k.toLowerCase()),
@@ -302,3 +309,95 @@ check(': the drivers reference names the opencode driver with its floor',
   driversDoc.includes('`OPENCODE` — opencode harness driver')
   && driversDoc.includes('the floor is 2.0.0'),
   '05-drivers.md lacks the OPENCODE section');
+
+// --- wake path --------------------------------------------------------------
+
+check(': classified MCP writes become both opencode permission spellings',
+  JSON.stringify(mcpDenyTools([{ server: 'promptobus', tool: 'promptobus_send' }]))
+  === JSON.stringify(['promptobus_promptobus_send', 'mcp__promptobus__promptobus_send'])
+  && mcpDenyTools([{ server: '', tool: '' }]).length === 0
+  && mcpDenyTools(null).length === 0,
+  JSON.stringify(mcpDenyTools([{ server: 'promptobus', tool: 'promptobus_send' }])));
+
+check(': the notification names the task, the address and the mailbox fetch',
+  renderNotification({ task: 't1', address: 'worker:w', unread: 2, messages: [] }).includes('t1')
+  && renderNotification({ task: 't1', address: 'worker:w', unread: 2, messages: [] }).includes('promptobus_mailbox'),
+  'notification body');
+
+import { writeFileSync } from 'node:fs';
+const WAKE_HOME = path.join(SB, 'wake');
+const WAKE_TASK = 't-wake-1';
+const store = await import(path.join(here, '..', 'lib', 'store.js'));
+store.createTask(WAKE_HOME, { id: WAKE_TASK, title: 'wake probe' });
+store.upsertParticipant(WAKE_HOME, WAKE_TASK, store.participantRecord('worker:wake',
+  { harness: 'opencode', sessionId: 'ses_stub' }));
+
+const wakeRecord = path.join(SB, 'wake-session.json');
+writeFileSync(wakeRecord, JSON.stringify({
+  url: stubUrl, password: 'secret', sessionId: 'ses_stub', holderPid: process.pid,
+}));
+const wakeEnv = { [SESSION_RECORD_VAR]: wakeRecord };
+
+const woken = registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, 'ses_stub');
+check(': a matching session hands over the record path as the contact point',
+  !!woken && woken.session === 'ses_stub', JSON.stringify(woken));
+
+check(': a foreign session hands over nothing',
+  registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, 'ses_other') !== true,
+  'foreign handoff');
+check(': with no session or no record var there is nothing to hand over',
+  registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, null) === null
+  && registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', {}, 'ses_stub') === null,
+  'empty handoff');
+
+const smoke = checkWake(wakeEnv);
+check(': the channel smoke answers on the record, spending no turn',
+  smoke.ok === true && smoke.endpoint === wakeRecord, JSON.stringify(smoke));
+check(': the smoke refuses outside a participant session',
+  checkWake({}).ok === false, JSON.stringify(checkWake({})));
+
+const idleRecord = path.join(SB, 'idle-session.json');
+writeFileSync(idleRecord, JSON.stringify({
+  url: stubUrl, password: 'secret', sessionId: 'ses_idle', holderPid: process.pid,
+}));
+const idleStub = createServer((req, res) => {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk; });
+  req.on('end', () => {
+    if (req.method === 'GET' && req.url === '/api/session/ses_idle/message?limit=3') {
+      return void res.end(JSON.stringify({ data: idleMessages }));
+    }
+    if (req.method === 'POST' && req.url === '/api/session/ses_idle/prompt') {
+      idlePrompts.push(body);
+      return void res.end(JSON.stringify({ data: { id: 'msg_2' } }));
+    }
+    res.writeHead(404).end();
+  });
+});
+let idleMessages = [{ type: 'idle', outcome: 'succeeded' }];
+const idlePrompts = [];
+await new Promise((resolve) => { idleStub.listen(0, '127.0.0.1', resolve); });
+const idleUrl = holderUrl(idleStub.address().port);
+writeFileSync(idleRecord, JSON.stringify({
+  url: idleUrl, password: 'secret', sessionId: 'ses_idle', holderPid: process.pid,
+}));
+
+const wokenIdle = await activate({ ref: 'worker:wake', endpoint: idleRecord },
+  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+check(': an idle session takes the follow-up turn',
+  wokenIdle.ok === true && idlePrompts.length === 1 && idlePrompts[0].includes(WAKE_TASK),
+  `${JSON.stringify(wokenIdle)} · prompts ${idlePrompts.length}`);
+
+idleMessages = [{ type: 'assistant' }];
+const wokenBusy = await activate({ ref: 'worker:wake', endpoint: idleRecord },
+  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+check(': a running turn refuses honestly instead of queueing blind',
+  wokenBusy.ok === false && /running/.test(wokenBusy.error ?? ''),
+  JSON.stringify(wokenBusy));
+
+const wokenNowhere = await activate({ ref: 'worker:wake', endpoint: path.join(SB, 'missing.json') },
+  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+check(': a contact point with no record refuses',
+  wokenNowhere.ok === false, JSON.stringify(wokenNowhere));
+idleStub.close();
+stub.close();
