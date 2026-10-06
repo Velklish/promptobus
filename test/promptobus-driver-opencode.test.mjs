@@ -465,3 +465,10 @@ const readme = readFileSync(path.join(here, '..', 'README.md'), 'utf8');
 check(': the README names the opencode reviewer deny map',
   readme.includes('An opencode reviewer denies file and shell writes through the holder permission map'),
   'README reviewer paragraph');
+
+// --- release currency ----------------------------------------------------------
+
+const cliRef = readFileSync(path.join(here, '..', 'docs', 'reference', '03-cli.md'), 'utf8');
+check(': the repeat-spawn sentence counts all four stop drivers',
+  cliRef.includes('for any harness whose driver declares `stop` — all four do —'),
+  '03-cli stop-drivers sentence');
