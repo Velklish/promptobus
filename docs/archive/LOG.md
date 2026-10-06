@@ -485,3 +485,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-324.1"></a>`PB-324.1-bg-ignores-session-id` · 2026-10-04 · batch PB-331 · — · A Claude Code lift records the --session-id that claude --bg ignores, so the first contact-point handoff is refused
 - <a id="pb-324"></a>`PB-324-respawn-contact-point-held-by-dead-session` · 2026-10-04 · merged into PB-331 · — · A participant lifted again on the same address stays deaf while the dead session's record holds the contact point
 - <a id="pb-318.1"></a>`PB-318.1-sibling-mail-unreadable` · 2026-10-04 · merged into PB-331 · — · Sibling mail to a teamlead lands in a root slot its Claude Code tools cannot read
+- <a id="pb-341"></a>`PB-341-opencode-worker-driver` · 2026-10-06 · completed · — · Lift worker sessions through opencode
