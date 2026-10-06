@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-06",
+  "binary": "opencode 2.0.20",
+  "turn": "PROOF-OK",
+  "before": {
+    "workers": [
+      "proof.session.json",
+      "proof.session.json.holder.log"
+    ],
+    "registry": [
+      "probe-proof-954e83898edd.json"
+    ],
+    "inspect": {
+      "state": "alive",
+      "busy": false,
+      "stall": null,
+      "id": "ses_ef0d1f572ffeEdw35pHE1Z0GR5",
+      "note": "idle"
+    }
+  },
+  "stop": {
+    "ok": true,
+    "stopped": true,
+    "note": "session ses_ef0d1f572ffeEdw35pHE1Z0GR5 stopped"
+  },
+  "after": {
+    "workers": [],
+    "registry": []
+  }
+}

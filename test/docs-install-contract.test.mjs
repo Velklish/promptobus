@@ -235,7 +235,7 @@ const soloReview = read('skills/solo-review/SKILL.md');
 const { TEAMLEAD_HARNESSES } = await import('../lib/contract.js');
 check('the orchestration skill names the harnesses a teamlead lifts on',
   orchestrate.includes(`promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness ${TEAMLEAD_HARNESSES.join('|')}] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]`)
-    && orchestrate.includes('The teamlead runs at the install root on Claude Code or Codex.')
+    && orchestrate.includes('The teamlead runs at the install root on Claude Code, Codex or opencode.')
     && orchestrate.includes('`--permission-mode full-access`')
     && !orchestrate.includes('The teamlead runs at the install root on Claude Code.'),
   'the teamlead usage line and paragraph follow TEAMLEAD_HARNESSES');

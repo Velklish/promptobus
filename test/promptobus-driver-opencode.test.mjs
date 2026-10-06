@@ -16,13 +16,22 @@ const SB = makeSandbox('promptobus-driver-opencode-');
 const {
   OPENCODE, opencodeDriver, prepare, permissionDeny, PERMISSION_MODES, apiArgv, parseSessionList,
   viewOf, REVIEWER_DENY, listSessionsSync, SESSION_RECORD_VAR, mcpDenyTools, activate, checkWake,
-  registerWake, renderNotification,
+  registerWake, renderNotification, registrySessionKey,
 } = await import(path.join(here, '..', 'lib', 'driver-opencode.js'));
 const {
   holderPassword, holderUrl, portOfLog, idleOutcome, createSession, sendPrompt, readMessages,
   deleteSession, waitReady,
 } = await import(path.join(here, '..', 'lib', 'opencode-session.js'));
 const { REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
+const { TEAMLEAD_HARNESSES } = await import(path.join(here, '..', 'lib', 'contract.js'));
+const { opencodeGuardNote } = await import(path.join(here, '..', 'lib', 'spawn.js'));
+
+check(': dry-run names the missing loop-guard hook instead of files that never land',
+  opencodeGuardNote({ mcpConfigPath: path.join(SB, 'opencode.json') }).includes('no loop-guard hook'),
+  'guard note');
+
+check(': opencode is admitted to teamlead lifts',
+  TEAMLEAD_HARNESSES.includes('opencode'), TEAMLEAD_HARNESSES.join(','));
 const { opencodeAvailability, OPENCODE_MIN_VERSION } = await import(
   path.join(here, '..', 'lib', 'model-routing', 'adapter-opencode.js'));
 
@@ -85,6 +94,7 @@ const SERVERS = {
   promptobus: {
     type: 'stdio', command: 'node', args: ['bus.mjs'], env: { PROMPTOBUS_ROLE: 'worker:x' },
   },
+  bus: { type: 'stdio', command: '/bin/node', args: ['/bin/node', 'mcp'] },
   docs: { url: 'https://docs.example/mcp', headers: { api_key: 'k' } },
   skip: 'not-an-entry',
 };
@@ -124,6 +134,7 @@ check(': stdio servers become local entries, url entries remote ones, junk is dr
   && written.mcp.promptobus?.environment?.PROMPTOBUS_ROLE === 'worker:x'
   && written.mcp.docs?.type === 'remote'
   && written.mcp.docs?.url === 'https://docs.example/mcp'
+  && written.mcp.bus?.command.join(' ') === '/bin/node mcp'
   && !('skip' in written.mcp),
   JSON.stringify(written.mcp));
 
@@ -191,12 +202,20 @@ check(': a bound lift points its bus entry and env at the session record',
   && boundPlan.env[SESSION_RECORD_VAR] === boundCfg.mcp.promptobus.environment[SESSION_RECORD_VAR],
   JSON.stringify(boundCfg.mcp.promptobus?.environment));
 
+const slotPlan = planFor({ home: 'h', task: 't', address: 'orchestrator' });
+check(': an address without a file stem falls back to the lift ref, same file every relift',
+  slotPlan.env[SESSION_RECORD_VAR] !== undefined
+  && slotPlan.env[SESSION_RECORD_VAR].endsWith('.session.json')
+  && slotPlan.env[SESSION_RECORD_VAR] === planFor({ home: 'h', task: 't', address: 'orchestrator' }).env[SESSION_RECORD_VAR],
+  slotPlan.env[SESSION_RECORD_VAR]);
+
 check(': the wake operations ride the driver map, not beside it',
   typeof opencodeDriver.mcpDenyTools === 'function'
   && typeof opencodeDriver.activate === 'function'
   && typeof opencodeDriver.registerWake === 'function'
   && typeof opencodeDriver.checkWake === 'function'
   && typeof opencodeDriver.sayForeignWrite === 'function'
+  && typeof opencodeDriver.sweepParticipant === 'function'
   && typeof opencodeDriver.renderNotification === 'function',
   'wake map');
 
@@ -206,12 +225,33 @@ check(': the reviewer deny list is non-empty opencode permission keys',
 
 // --- inspect / stop without a record ----------------------------------------
 
-check(': inspect with no record is unknown, not death',
-  opencodeDriver.inspect('worker:x', {}) === null, 'non-null without a record');
+process.env.PROMPTOBUS_OPENCODE_HOME = path.join(SB, 'state');
 
-const stopped = await opencodeDriver.stop('worker:x', {});
-check(': stop with no record is idempotent',
+check(': inspect with no entry is unknown, not death',
+  opencodeDriver.inspect('worker:x') === null, 'non-null without an entry');
+
+const stopped = await opencodeDriver.stop('worker:x');
+check(': stop with no entry is idempotent',
   stopped.ok === true && stopped.stopped === false, JSON.stringify(stopped));
+
+import { mkdirSync, readdirSync, writeFileSync as writeFile } from 'node:fs';
+const sweepState = path.join(SB, 'state', 'sessions');
+mkdirSync(sweepState, { recursive: true });
+const sweepRecord = path.join(SB, 'sweep-session.json');
+writeFile(sweepRecord, JSON.stringify({ holderPid: 4194304, url: null, sessionId: null, log: `${sweepRecord}.holder.log` }));
+writeFile(`${sweepRecord}.holder.log`, 'stale log\n');
+writeFile(path.join(sweepState, `${registrySessionKey('worker:gone')}.json`), JSON.stringify({
+  ref: 'worker:gone', recordPath: sweepRecord,
+  sessionId: null, home: 'h', task: 't-sweep', address: 'worker:gone',
+}));
+const swept = await opencodeDriver.sweepParticipant({ metadata: {} }, 't-sweep');
+check(': sweep reaps the dead registry entries of the closed task and nothing else',
+  swept.swept === 1
+  && readdirSync(sweepState).length === 0
+  && !readdirSync(SB).includes('sweep-session.json')
+  && !readdirSync(SB).some((n) => n.endsWith('.holder.log'))
+  && (await opencodeDriver.sweepParticipant({ metadata: {} }, 't-other')).swept === 0,
+  JSON.stringify(swept));
 
 // --- holder protocol against a stub -----------------------------------------
 
@@ -401,3 +441,27 @@ check(': a contact point with no record refuses',
   wokenNowhere.ok === false, JSON.stringify(wokenNowhere));
 idleStub.close();
 stub.close();
+
+// --- live proof fixture -------------------------------------------------------
+
+const proof = JSON.parse(readFileSync(path.join(here, 'fixtures', 'opencode-refonly-stop.json'), 'utf8'));
+check(': the ref-only stop proof emptied workers dir and registry after a live turn',
+  proof.before.workers.length === 2 && proof.before.registry.length === 1
+  && proof.before.inspect?.state === 'alive' && proof.before.inspect?.busy === false
+  && proof.stop?.ok === true && proof.stop?.stopped === true
+  && proof.after.workers.length === 0 && proof.after.registry.length === 0,
+  JSON.stringify({ before: proof.before.workers, after: proof.after.workers }));
+
+// --- teamlead transcript fixture ----------------------------------------------
+
+const transcript = JSON.parse(readFileSync(path.join(here, 'fixtures', 'opencode-teamlead-proof.json'), 'utf8'));
+check(': the teamlead transcript carries the fallback-route report it describes',
+  transcript.messages.length > 0 && transcript.messages.every((m) => m.type && m.body),
+  JSON.stringify(transcript.messages.map((m) => m.type)));
+
+// --- consumer surface ---------------------------------------------------------
+
+const readme = readFileSync(path.join(here, '..', 'README.md'), 'utf8');
+check(': the README names the opencode reviewer deny map',
+  readme.includes('An opencode reviewer denies file and shell writes through the holder permission map'),
+  'README reviewer paragraph');

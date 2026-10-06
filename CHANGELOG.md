@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turn posted; config by `OPENCODE_CONFIG` env beside the task record (MCP set, `model` default,
   permission map; no worktree writes), skills by `OPENCODE_CONFIG_DIR`. Reviewer and approver
   lift on the same holder with the deny map; wake is a follow-up prompt on an idle session.
+  Teamlead lifts are admitted (`TEAMLEAD_HARNESSES`); ref-only `inspect`/`stop` resolve the
+  record through the harness session registry, and `sweepParticipant` clears closed tasks.
   Availability probes the binary floor 2.0.0 (measured on 2.0.20); the default lift model is the
   owner's opencode model.
   [05-drivers § OPENCODE](docs/reference/05-drivers.md#opencode--opencode-harness-driver--the-fourth-production-bus-driver).

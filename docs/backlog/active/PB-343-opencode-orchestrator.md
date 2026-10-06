@@ -1,10 +1,10 @@
 # PB-343 · Orchestrator and teamlead sessions through opencode
 
-- **Order:** 290
 - **Scope:** [05-drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** PB-341 (worker lift), PB-342 (reviewer, approver)
 - **Cost:** major
+- **Taken:** 2026-10-06
 
 ## Context
 
@@ -22,6 +22,7 @@ record and the dependency re-pin onto the release carrying the driver.
 
 ## Out of scope
 
+- Managed-root `lead` stays Codex-only (native thread binding and holder wait).
 - npm publication of the package.
 - Changes to claude/cursor/codex drivers.
 

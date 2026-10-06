@@ -724,26 +724,41 @@ measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
 ### `OPENCODE` — opencode harness driver — the fourth production bus driver
 
 Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.js`.
+Registry: the harness session registry (`harnessStateHome('opencode')`), ref → record path.
+An opencode session carries no CLI owner identity (`identityVar: null`).
 
 **What opencode does differently.** A participant is a `serve` holder of its own — one port,
-one config, one password — plus a session in it. There is no messaging socket, so activation is
-`pull`: the bus does not knock mid-turn, and a follow-up arrives as another prompt on the same
-session id. The lift starts `serve --port 0`, reads the listening port off the holder log, waits
-for an answered session list, creates a session by title and posts the first turn. `inspect` reads
-holder-process liveness plus `session.list`; `stop` kills the holder and deletes the service-side
-session. The measured holder API (basic auth `opencode:<password>`): `GET /api/session`,
-`POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt` (`{"text"}` — the turn runs
-async), `GET /api/session/:id/message?limit=N` (a trailing `idle` outcome ends the wait),
-`DELETE /api/session/:id`. The prompt names no model — the turn runs on the config `model`
-default, which the plan writes. Auth failures fail the lift loudly; no login verdict is probed.
-The record lands before the first holder call (pid first, then url, then session id), so a crash
-past lift keeps a handle `stop` reaps by; a failed lift reaps the holder and removes record and
-log, and the next attempt opens a fresh log. The bound lift points the bus MCP entry and the
-holder env at the session record. Reviewer and approver lift on the same holder with the deny
-map in config (`REVIEWER_DENY` plus the host-classified MCP writes in both tool-name spellings,
-the version-spelled one pending a pin). Wake is a follow-up prompt on the live session: the
-contact point is the record path, an idle session takes the text, a running turn refuses and the
-warden retries; `checkWake` smokes the channel without spending a turn.
+one config, one password — plus a session in it. There is no messaging socket, so wake is a
+follow-up prompt on an idle session: the contact point is the record path, an idle session
+takes the text, a running turn refuses and the warden retries; `checkWake` smokes the channel
+without spending a turn. `inspect` and `stop` arrive ref-only and resolve the record through
+the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
+path falls back to the lift ref; `sweepParticipant` reaps every registry record of a closed
+task, record, log and entry together. The lift starts `serve --port 0`, reads the listening
+port off the holder log, waits for an answered session list, creates a session by title and
+posts the first turn. The measured holder API (basic auth `opencode:<password>`):
+`GET /api/session`, `POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt`
+(`{"text"}` — the turn runs async), `GET /api/session/:id/message?limit=N` (a trailing `idle`
+outcome ends the wait), `DELETE /api/session/:id`. The prompt names no model — the turn runs
+on the config `model` default, which the plan writes. Auth failures fail the lift loudly; no
+login verdict is probed. The record lands before the first holder call (pid first, then url,
+then session id), so a crash past lift keeps a handle `stop` reaps by; a failed lift reaps the
+holder and removes record and log, and the next attempt opens a fresh log. The bound lift
+points the bus MCP entry and the holder env at the session record. Reviewer and approver
+lift on the same holder with the deny map in config. No loop-guard hook is
+installed (the holder takes no settings file) — scope enforcement is prompt rules plus the
+permission map; a guard-hook mapping is an open follow-up, not a silent equivalent.
+
+**Live proof.** 2026-10-06, opencode 2.0.20 ([worker fixture](../../test/fixtures/opencode-refonly-stop.json),
+[teamlead transcript](../../test/fixtures/opencode-teamlead-proof.json)): a worker lift answered its
+prompt on the owner's model and idled; ref-only `stop` deleted the service-side session and
+emptied workers dir and registry. A reviewer lift could not write (no file created); a
+follow-up prompt on its idle session was taken. A teamlead lift ran turns with MCP tools; its
+status/result sends were refused under emulated root ownership and arrived via the fallback
+question route — clean bus delivery from an opencode teamlead stays a follow-up, not a claim
+here. Two holder behaviors were measured on the way: the turn model comes from the config
+`model` default (create/prompt model keys are ignored), and a symlinked cwd stalls the turn on
+an `external_directory` permission ask with nobody to answer it — lifts run in real paths.
 
 Config travels by environment, not by worktree writes: the plan emits one opencode.json beside
 the task record (`OPENCODE_CONFIG`) with the MCP set (`url` entries as remote servers, `command`

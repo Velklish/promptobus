@@ -32,7 +32,7 @@ const git = (...args) => {
 };
 const prior = process.env.CLAUDE_CODE_SESSION_ID;
 process.env.CLAUDE_CODE_SESSION_ID = 'root-session';
-writeHostConfig(root, { tools: ['claude', 'cursor', 'codex'] });
+writeHostConfig(root, { tools: ['claude', 'cursor', 'codex', 'opencode'] });
 writeFileSync(path.join(root, 'AGENTS.md'), 'Root rules.\n');
 writeFileSync(path.join(root, '.gitignore'), '.promptobus/\n');
 writeFileSync(brief, '# Group One\n\nOwn the repositories in this brief.\n');

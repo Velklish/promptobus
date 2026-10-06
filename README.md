@@ -130,7 +130,7 @@ The path is required, `--title` opens a new review task, and `--task <id>` sends
 promptobus step security ./my-repo --task <id>
 ```
 
-A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/03-cli.md#review).
+A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. An opencode reviewer denies file and shell writes through the holder permission map. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.24.0/docs/reference/03-cli.md#review).
 
 Close the task when the work is accepted:
 
