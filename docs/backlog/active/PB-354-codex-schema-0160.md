@@ -1,10 +1,11 @@
 # PB-354 · Installed Codex 0.160.0 has no captured protocol baseline
 
-- **Order:** 30
 - **Scope:** `lib/driver-codex.js`, `test/fixtures/codex-app-server/`, [Contributing — protocol fixtures](../../guides/contributing.md), [Drivers — Codex](../../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver)
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 30
+- **Taken:** 2026-10-06
 
 ## Context
 
