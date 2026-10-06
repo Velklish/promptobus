@@ -487,3 +487,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-318.1"></a>`PB-318.1-sibling-mail-unreadable` · 2026-10-04 · merged into PB-331 · — · Sibling mail to a teamlead lands in a root slot its Claude Code tools cannot read
 - <a id="pb-341"></a>`PB-341-opencode-worker-driver` · 2026-10-06 · completed · — · Lift worker sessions through opencode
 - <a id="pb-342"></a>`PB-342-opencode-reviewer-approver` · 2026-10-06 · completed · — · Reviewer and approver lift through opencode
+- <a id="pb-343"></a>`PB-343-opencode-orchestrator` · 2026-10-06 · completed · — · Orchestrator and teamlead sessions through opencode
