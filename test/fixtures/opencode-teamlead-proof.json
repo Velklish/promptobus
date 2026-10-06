@@ -3,12 +3,20 @@
   "binary": "opencode 2.0.20",
   "harness": "opencode",
   "role": "teamlead",
+  "delivery": "clean",
   "messages": [
     {
       "from": null,
-      "type": "question",
-      "body": "REPORT from teamlead:probe6 (child task probe6-t20261006-034932), sent via the user channel because all teamlead send routes are refused. My assignment was: send status TEAM-UP, then result TEAM-DONE."
+      "type": "status",
+      "body": "TEAM-UP. Rules read: /private/tmp/pb345-proof/AGENTS.md"
+    },
+    {
+      "from": null,
+      "type": "result",
+      "body": "TEAM-DONE"
     }
   ],
-  "note": "Follow-up turn under emulated root ownership: teamlead send routes refused, report arrived via fallback question route. Worker-stop fixture stays the machine-checked proof."
+  "wake": {
+    "session": "ses_eef96ce06ffeKGD6IRpWOXCff3"
+  }
 }

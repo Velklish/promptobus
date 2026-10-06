@@ -349,6 +349,14 @@ check(': the drivers reference names the opencode driver with its floor',
   driversDoc.includes('`OPENCODE` — opencode harness driver')
   && driversDoc.includes('the floor is 2.0.0'),
   '05-drivers.md lacks the OPENCODE section');
+check(': the drivers reference states the measured wake boundary — no hook channel in serve holders',
+  driversDoc.includes('never under `serve`')
+  && driversDoc.includes('no hook channel at all'),
+  '05-drivers.md lacks the serve-holder hook boundary');
+check(': the drivers reference claims clean teamlead delivery with its proof',
+  driversDoc.includes('opencode-teamlead-proof.json')
+  && driversDoc.includes('by the clean bus route'),
+  '05-drivers.md lacks the clean-delivery claim');
 
 // --- wake path --------------------------------------------------------------
 
@@ -492,8 +500,12 @@ check(': the ref-only stop proof emptied workers dir and registry after a live t
 // --- teamlead transcript fixture ----------------------------------------------
 
 const transcript = JSON.parse(readFileSync(path.join(here, 'fixtures', 'opencode-teamlead-proof.json'), 'utf8'));
-check(': the teamlead transcript carries the fallback-route report it describes',
-  transcript.messages.length > 0 && transcript.messages.every((m) => m.type && m.body),
+check(': the teamlead proof carries clean status+result delivery, not the fallback route',
+  transcript.delivery === 'clean'
+  && transcript.messages.some((m) => m.type === 'status' && m.body.includes('TEAM-UP'))
+  && transcript.messages.some((m) => m.type === 'result' && m.body.includes('TEAM-DONE'))
+  && transcript.messages.every((m) => m.type !== 'question')
+  && typeof transcript.wake?.session === 'string',
   JSON.stringify(transcript.messages.map((m) => m.type)));
 
 // --- consumer surface ---------------------------------------------------------

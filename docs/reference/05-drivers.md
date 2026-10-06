@@ -750,16 +750,17 @@ holder and removes record and log, and the next attempt opens a fresh log. The b
 points the bus MCP entry and the holder env at the session record. Reviewer and approver
 lift on the same holder with the deny map in config. No loop-guard hook is
 installed (the holder takes no settings file) — scope enforcement is prompt rules plus the
-permission map; a guard-hook mapping is an open follow-up, not a silent equivalent.
+permission map; a plugin hook cannot carry it either — measured 2026-10-06 on 2.0.20: a marker
+plugin loads under `run` but never under `serve`, from neither the custom nor the project plugin
+dir, so the serve-mode holder has no hook channel at all (deferred until serve loads plugins).
 
 **Live proof.** 2026-10-06, opencode 2.0.20 ([worker fixture](../../test/fixtures/opencode-refonly-stop.json),
 [teamlead transcript](../../test/fixtures/opencode-teamlead-proof.json)): a worker lift answered its
 prompt on the owner's model and idled; ref-only `stop` deleted the service-side session and
 emptied workers dir and registry. A reviewer lift could not write (no file created); a
-follow-up prompt on its idle session was taken. A teamlead lift ran turns with MCP tools; its
-status/result sends were refused under emulated root ownership and arrived via the fallback
-question route — clean bus delivery from an opencode teamlead stays a follow-up, not a claim
-here. Two holder behaviors were measured on the way: the turn model comes from the config
+follow-up prompt on its idle session was taken. A teamlead lift ([proof](../../test/fixtures/opencode-teamlead-proof.json))
+sent status and result by the clean bus route and handed over its contact point; an idle wake
+takes it through the record socket. Two holder behaviors were measured on the way: the turn model comes from the config
 `model` default (create/prompt model keys are ignored), and a symlinked cwd stalls the turn on
 an `external_directory` permission ask with nobody to answer it — lifts run in real paths.
 

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against them; `registerWake` falls back to the record's session id when the bus server hands
   over with none named; the teamlead lift binds the same pointer through its home. Before,
   the handover never happened and teamlead sends were refused.
+- **Clean teamlead delivery is captured, not just observed.** A status+result round trip on a
+  scratch root is pinned in a fixture the driver test reads: the proof names the clean bus
+  route and the handed-over session.
+- **No loop-guard hook exists for serve holders, and that is now measured rather than stated.**
+  A marker plugin loads under `run` but never under `serve` on the current binary, so no
+  plugin hook can carry the guard; the entry waits deferred on a binary whose serve loads
+  plugins.
 
 ## [0.25.0] — 2026-10-06
 
