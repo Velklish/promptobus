@@ -9,7 +9,7 @@
 
 activate reads the holder message tail but does not validate response status/shape. Missing data is treated as length zero, bypassing the busy refusal, so a subsequent successful POST reports wake success without proven idle state. Source: lib/driver-opencode.js:498-504; documented idle-only contract docs/reference/05-drivers.md:732-735.
 
-Evidence: 2026-10-06, HEAD a64dd37af65b395585d06324bd79bd73b122198e, `node /Users/kim.p/AtiWorkspace/workspace/.promptobus/tasks/codex-backlogs-t20261006-134126/files/repro-opencode-boundaries.mjs` → exit 0. Synthetic GET HTTP 500 error body and GET HTTP 200 malformed JSON both yield one prompt POST and outcome ok:true. fetch was mocked, no network or model turn performed. Reviewer result 20261006T135900047-0005-51d017 confirms the same branch.
+Evidence: 2026-10-06, HEAD a64dd37af65b395585d06324bd79bd73b122198e, `node <private-run-files>/repro-opencode-boundaries.mjs` → exit 0. Synthetic GET HTTP 500 error body and GET HTTP 200 malformed JSON both yield one prompt POST and outcome ok:true. fetch was mocked, no network or model turn performed. Reviewer result 20261006T135900047-0005-51d017 confirms the same branch. The exact original command path is retained in the private run evidence.
 
 ## Work to do
 
