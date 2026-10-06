@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The Codex protocol baseline now captures the installed 0.160.0 binary: all 314
+  schemas match 0.159.2, with full provenance and request/response/approval validation.
+  Native model turns and hooks were not remeasured; historical evidence keeps its version.
+- Codex shutdown interrupts known active turns with their required IDs within one
+  five-second budget, preserving acknowledgement and child/socket cleanup across
+  delayed responses, completions and interruption failures.
+- Codex mock app-server responses carry the native required thread, model, skill,
+  turn and reset-credit ID fields; actual positive outputs validate against the full
+  captured schemas, with omitted/null cwd normalized once and retained across
+  read/resume/list, and explicit quota error branches retained.
+
 ## [0.25.1] — 2026-10-06
 
 ### Fixed

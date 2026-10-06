@@ -232,6 +232,16 @@ A long block splits three ways: what serves a reader of the documentation moves 
 
 **The Codex protocol fixtures are a citation, and `npm run codex-schema` is what keeps its version tag honest**. The schemas under `test/fixtures/codex-app-server/<version>/` were generated from one binary; the harness now names that directory off `PROVEN_CODEX_VERSION` in `lib/driver-codex.js`, so the constant and the fixtures cannot disagree silently, and `test/codex-fixtures.test.mjs` fails when the constant names a directory that is not there. The remaining gap is the machine: a locally installed `codex` newer than the fixtures leaves the suite green about a protocol nobody speaks any more. `scripts/check-codex-schema.mjs` compares the two and prints the regeneration command; with no `codex` on the machine it says so and exits 0, which is why it sits in `gates` and not in CI — the runner installs no such binary.
 
+The current binary-only capture is codex-cli 0.160.0: 314 generated schemas, all
+byte-identical to 0.159.2, with 104 client request and 10 server request variants.
+The [capture record](../../test/fixtures/codex-app-server/0.160.0/README.md) includes
+the measured binary SHA-256 and every generated file hash. Keep the full captures,
+validate every typed holder request and relevant mock response/approval against
+them, and retain historical verdicts before changing the proven version. Generic
+caller-supplied RPC forwarding remains untyped; `currentTime/read` is an extension.
+Native model turns and hook behavior were not remeasured on 0.160.0. Historical
+live evidence keeps the binary version on which it was measured.
+
 **Moving a block changes the base of every relative link in it, and that is the likeliest way to lose content in this work.** A comment in `lib/model-routing/cache.js` writes `](catalog.js)` and `](../store.js)`; the same text in `docs/guides/` must say `](../../lib/model-routing/catalog.js)` and `](../../lib/store.js)`. Resolve each link against the source file's directory and re-relativize against the destination's — pattern matching on the prefix misses the bare forms. Measured 2026-09-12: six links of the shape `](model-routing/cache.js)` survived a prefix-based rewrite and turned both `backslop lint` and `npm run audit` red. Both gates check links, so the failure is loud — but only after the fact, and only because those gates exist.
 
 **The same break happens to the block's pointing words, and there no gate can help.** "read below", "the list below", "the constants above" are deixis: they name a position rather than a thing, and the position is gone the moment the block is. A relative path can be resolved and checked; a word cannot, and `below` is perfectly legitimate in document prose — a gate on it would cry wolf. So the mover WARNS on `below|above|following|earlier` inside a block it is about to move, and the warning goes to the person already looking at that block. Rewrite them to name the thing: "the one field the adapter reads" rather than "what is read below". Measured the same day: two relocated paragraphs had carried theirs across, found by grep after the fact rather than by anything automatic.

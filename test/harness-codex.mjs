@@ -48,6 +48,33 @@ function validateCodexFixture(label, validate, value) {
   throw new Error(`${label} does not match the codex-cli ${PROVEN_CODEX_VERSION} fixture: ${codexFixtureAjv.errorsText(validate.errors)}`);
 }
 
+function protocolTurn(turn) {
+  return { ...turn, status: turn.status ?? 'inProgress', items: (turn.items ?? []).map((item, index) => ({
+    ...item, id: item.id ?? `${turn.id}-item-${index}`,
+  })) };
+}
+
+function protocolThread(thread, includeTurns = true) {
+  return {
+    id: thread.id, sessionId: thread.id, cliVersion: PROVEN_CODEX_VERSION,
+    createdAt: 0, updatedAt: 0, cwd: thread.cwd, ephemeral: false,
+    modelProvider: 'openai', preview: '', projectId: null, source: 'appServer',
+    name: thread.name ?? null, status: { type: thread.busy ? 'active' : 'idle', ...(thread.busy ? { activeFlags: [] } : {}) },
+    turns: includeTurns ? (thread.turns ?? []).map(protocolTurn) : [],
+  };
+}
+
+function protocolThreadResponse(thread, includeTurns = true) {
+  const sandbox = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
+  return {
+    thread: protocolThread(thread, includeTurns), cwd: thread.cwd,
+    model: thread.model ?? 'gpt-6-astra', modelProvider: 'openai',
+    approvalPolicy: thread.approvalPolicy ?? 'on-request', approvalsReviewer: 'user',
+    sandbox: { type: sandbox[thread.sandbox] ?? 'workspaceWrite' },
+    ...(thread.config?.model_reasoning_effort ? { reasoningEffort: thread.config.model_reasoning_effort } : {}),
+  };
+}
+
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';
 export const LIMIT_VAR = 'CODEX_STUB_LIMIT';
 export const APPROVAL_VAR = 'CODEX_STUB_ASK_APPROVAL';
@@ -407,7 +434,8 @@ async function appServer() {
       // on a reply. The stand does not close stdin either — a closed stream is a
       // different failure and has its own case.
       if (probe.has('hang')) return;
-      reply(id, { userAgent: 'codex-stub', platformOs: process.platform, experimentalApi: true });
+      reply(id, { userAgent: 'codex-stub', platformOs: process.platform,
+        platformFamily: 'unix', codexHome: process.env.CODEX_HOME ?? home, experimentalApi: true });
       if (process.env[ORPHAN_VAR] === '1') {
         emit({ jsonrpc: '2.0', id: 999001, result: { unexpected: true } });
       }
@@ -467,6 +495,7 @@ async function appServer() {
         rateLimitResetCredits: {
           availableCount: STUB_RESET_CREDITS,
           credits: [{
+            id: 'fixture-reset-credit',
             resetType: 'codexRateLimits',
             status: 'available',
             title: 'Full reset (Weekly + 5 hr)',
@@ -492,7 +521,8 @@ async function appServer() {
             const file = path.join(root, name, 'SKILL.md');
             try {
               const text = readFileSync(file, 'utf8');
-              skills.push({ name: text.match(/^name:\s*(.+)$/m)?.[1] ?? name, path: file, scope });
+              skills.push({ name: text.match(/^name:\s*(.+)$/m)?.[1] ?? name, path: file, scope,
+              description: text.match(/^description:\s*(.+)$/m)?.[1] ?? '', enabled: true });
             } catch { /* not a skill directory */ }
           }
         }
@@ -530,7 +560,11 @@ async function appServer() {
           additionalSpeedTiers: ['fast'],
         });
       }
-      reply(id, { data });
+      reply(id, { data: data.map(row => ({
+        ...row, model: row.id, displayName: row.id, description: 'Fixture model',
+        hidden: row.hidden ?? false, isDefault: row.isDefault ?? false, defaultReasoningEffort: 'medium',
+        supportedReasoningEfforts: row.supportedReasoningEfforts.map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort })),
+      })) });
       return;
     }
     if (method === 'thread/items/list') {
@@ -541,7 +575,7 @@ async function appServer() {
       await new Promise((resolve) => setTimeout(resolve, Number(process.env[THREAD_DELAY_VAR] ?? 0)));
       const t = writeThread(home, {
         id: newId(),
-        cwd: params.cwd,
+        cwd: params.cwd ?? process.cwd(),
         sandbox: params.sandbox,
         approvalPolicy: params.approvalPolicy,
         model: params.model,
@@ -562,11 +596,7 @@ async function appServer() {
         // check can also say what a home does NOT contain.
         codexHome: readCodexHome(process.env.CODEX_HOME),
       });
-      const reasoningEffort = params.config?.model_reasoning_effort;
-      reply(id, {
-        thread: { id: t.id, status: { type: 'idle' } },
-        ...(reasoningEffort ? { reasoningEffort } : {}),
-      });
+      reply(id, protocolThreadResponse(t, false));
       notify('hook/started', {
         threadId: t.id, turnId: null,
         run: { eventName: 'sessionStart', status: 'running', sourcePath: '/hooks.json' },
@@ -584,7 +614,7 @@ async function appServer() {
         fail(id, -32600, `no rollout found for thread id ${params.threadId}`);
         return;
       }
-      reply(id, { thread: { id: t.id, status: { type: 'idle' }, turns: params.excludeTurns ? [] : t.turns ?? [] } });
+      reply(id, protocolThreadResponse(t, !params.excludeTurns));
       return;
     }
     if (method === 'thread/inject_items') {
@@ -615,10 +645,10 @@ async function appServer() {
           fail(id, -32602, 'thread not loaded');
           return;
         }
-        reply(id, { thread: t });
+        reply(id, { thread: protocolThread(t, params.includeTurns === true) });
         return;
       }
-      reply(id, { data: all, threads: all });
+      reply(id, method === 'thread/loaded/list' ? { data: all.map(t => t.id) } : { data: all.map(t => protocolThread(t, false)) });
       return;
     }
     if (method === 'turn/start' || method === 'review/start') {
@@ -632,7 +662,8 @@ async function appServer() {
       if (t.busy) {
         t.pending = [...(t.pending ?? []), { turnId, params }];
         writeThread(home, t);
-        reply(id, { turn: { id: turnId, status: 'inProgress' } });
+        reply(id, { turn: protocolTurn({ id: turnId, status: 'inProgress' }),
+          ...(method === 'review/start' ? { reviewThreadId: threadId } : {}) });
         return;
       }
       t.busy = true;
@@ -642,7 +673,8 @@ async function appServer() {
       t.firstRpc ??= { method, params };
       t.turns = [...(t.turns ?? []), { id: turnId, items: [{ type: 'userMessage', content: params.input ?? [] }] }];
       writeThread(home, t);
-      reply(id, { turn: { id: turnId, status: 'inProgress' } });
+      reply(id, { turn: protocolTurn({ id: turnId, status: 'inProgress' }),
+          ...(method === 'review/start' ? { reviewThreadId: threadId } : {}) });
       setTimeout(() => playTurn(home, t, turnId, params, ask, notify), 40);
       return;
     }
@@ -656,7 +688,7 @@ async function appServer() {
       note(home, address, { kind: 'steer', turnId: t.turnId, expected: params.expectedTurnId });
       t.steered = (t.steered ?? 0) + 1;
       writeThread(home, t);
-      reply(id, { turn: { id: t.turnId, status: 'inProgress' } });
+      reply(id, { turnId: t.turnId });
       return;
     }
     if (method === 'turn/interrupt') {

@@ -491,3 +491,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-344"></a>`PB-344-opencode-teamlead-wake` · 2026-10-06 · completed · — · Wake the opencode teamlead: hand over the contact point
 - <a id="pb-345"></a>`PB-345-opencode-minors-batch` · 2026-10-06 · completed · — · Opencode minors batch: guard-hook probe and send-refused proof
 - <a id="pb-343.2"></a>`PB-343.2-opencode-teamlead-send-refused` · 2026-10-06 · batch PB-345 · — · opencode-teamlead-send-refused
+- <a id="pb-354"></a>`PB-354-codex-schema-0160` · 2026-10-06 · completed · — · Installed Codex 0.160.0 has no captured protocol baseline
+- <a id="pb-354.1"></a>`PB-354.1-codex-interrupt-without-turn-id` · 2026-10-06 · completed · — · Codex shutdown sends turn/interrupt without its required turnId
+- <a id="pb-354.2"></a>`PB-354.2-codex-mock-response-schema-skew` · 2026-10-06 · completed · — · Codex harness responses violate their captured native schemas

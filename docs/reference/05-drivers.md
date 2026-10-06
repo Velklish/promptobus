@@ -690,16 +690,49 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.159.2. Full captures from the bundled Desktop binary
-and the PATH 0.158.0 binary contain 314 generated JSON schemas each. The holder's initialize,
-thread/start, thread/resume, skills/list, turn/start, turn/steer and thread/read shapes validate against
-both. Native 0.159.2 turns also repeat the trusted-root hook control, canonical worker and
-reviewer skills, and reporter MCP reads: [capture and evidence](../../test/fixtures/codex-app-server/0.159.2/README.md).
-The participant minimum is the measured 0.158.0, and the local schema gate accepts only
-these two captured versions. An unknown installed version needs a fresh capture and
-measurement. Historical 0.156.1 MCP and token-usage records remain under their original date;
-they are not evidence from the newer binaries. The unrouted default is `gpt-6-astra`, tested
-with subscription credentials on both current binaries.
+The fixture baseline is codex-cli 0.160.0, captured from the installed Desktop binary
+on 2026-10-06. All 314 generated schemas are byte-identical to the complete 0.159.2
+capture: added 0, removed 0, changed 0. ClientRequest retains 104 variants and
+ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.160.0/README.md)
+names the measured binary hash and full file inventory. Holder request shapes and
+approval replies validate against the complete captures; generic caller-supplied
+holder RPC forwarding is untyped, and `currentTime/read` is an extension absent from
+the generated ServerRequest schema.
+
+The participant minimum remains 0.158.0. The local schema gate accepts the minimum
+and current proven capture. An unknown installed version needs a fresh capture and
+contract validation. Native model turns and hook behavior were not remeasured on
+0.160.0. [Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
+retains its own measured version, including the trusted-root hook control, canonical
+worker/reviewer skills, and reporter MCP reads. The unrouted default `gpt-6-astra`
+was tested with subscription credentials on 0.158.0 and 0.159.2. Historical 0.156.1
+MCP and token-usage records keep their original version and date.
+
+### Codex mock response contracts
+
+The mock app-server emits complete native response shapes for initialize, model/list,
+skills/list, thread/start, thread/resume, thread/read, turn/start, turn/steer and
+review/start. Its internal thread store remains a test fixture; emitted threads have
+tagged status, native required metadata, and turns with item IDs. The response test
+validates 38 actual positive outputs against both complete 0.159.2 and 0.160.0
+captures, including default, credits, flat and spend-control quota responses. Omitted
+or null thread/start cwd defaults once to the mock process working directory and
+persists through thread/read, thread/resume and thread/list responses. Reset-credit
+IDs are synthetic fixture identifiers required by these captured response schemas;
+the historical 0.146.0 shape comment retains its measured version. The two quota error
+branches remain explicit checks. Fault-injection branches retain their separate contracts.
+This is mock schema validation, not a native model-turn measurement.
+
+### Codex holder shutdown
+
+Shutdown interrupts only nonempty turn IDs in the holder's active-turn reservations.
+Completed turns are removed; the retained currentTurnId alone is not an active target.
+Concurrent interrupts share one five-second deadline. Errors, missing IDs and absent
+responses still lead to unconditional app-server termination, followed by the existing
+50 ms socket cleanup delay so the shutdown caller receives its acknowledgement.
+Queued turn requests refuse once stopping begins, and a late response cannot add a
+reservation. A temporary per-request set records completions that arrive before a
+turn response, even when another completion later replaces lastTurn.
 
 ### Writable Git metadata
 
