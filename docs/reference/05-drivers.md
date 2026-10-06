@@ -760,7 +760,7 @@ prompt on the owner's model and idled; ref-only `stop` deleted the service-side 
 emptied workers dir and registry. A reviewer lift could not write (no file created); a
 follow-up prompt on its idle session was taken. A teamlead lift ([proof](../../test/fixtures/opencode-teamlead-proof.json))
 sent status and result by the clean bus route and handed over its contact point; an idle wake
-takes it through the record socket. Two holder behaviors were measured on the way: the turn model comes from the config
+goes through the record path. Two holder behaviors were measured on the way: the turn model comes from the config
 `model` default (create/prompt model keys are ignored), and a symlinked cwd stalls the turn on
 an `external_directory` permission ask with nobody to answer it — lifts run in real paths.
 

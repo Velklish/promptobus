@@ -489,3 +489,5 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-342"></a>`PB-342-opencode-reviewer-approver` · 2026-10-06 · completed · — · Reviewer and approver lift through opencode
 - <a id="pb-343"></a>`PB-343-opencode-orchestrator` · 2026-10-06 · completed · — · Orchestrator and teamlead sessions through opencode
 - <a id="pb-344"></a>`PB-344-opencode-teamlead-wake` · 2026-10-06 · completed · — · Wake the opencode teamlead: hand over the contact point
+- <a id="pb-345"></a>`PB-345-opencode-minors-batch` · 2026-10-06 · completed · — · Opencode minors batch: guard-hook probe and send-refused proof
+- <a id="pb-343.2"></a>`PB-343.2-opencode-teamlead-send-refused` · 2026-10-06 · batch PB-345 · — · opencode-teamlead-send-refused
