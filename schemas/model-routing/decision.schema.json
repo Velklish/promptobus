@@ -390,7 +390,8 @@
         "balance-fallback",
         "near-limit",
         "live-participant-cap",
-        "window-nearly-spent-named"
+        "window-nearly-spent-named",
+        "role-not-rated-named"
       ]
     }
   }

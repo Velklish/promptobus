@@ -1872,6 +1872,26 @@ test('the documented example overlay is a document the mechanism accepts', () =>
   }
 });
 
+test('overlays cannot widen assessed roles through a roles field or rating patch', () => {
+  const tuple = CATALOG.tuples.find((row) => row.id === 'codex-gpt6-luna-high');
+  assert.deepEqual(tuple.roles, ['worker']);
+  for (const fields of [
+    { roles: { [tuple.id]: ['worker', 'approver'] } },
+    { ratings: { [tuple.id]: { roles: ['worker', 'approver'] } } },
+  ]) {
+    const document = { schemaVersion: 2, ...fields };
+    assert.equal(ajvOverlay(document), false);
+    assert.ok(checkOverlayShape(document).length > 0);
+    assert.equal(validateLayers({ canonical: canonicalLayer(),
+      overlays: [overlayLayer('workspace', document)],
+    }).ok, false);
+    const merged = mergeRouting({ canonical: CATALOG,
+      overlays: [overlayLayer('workspace', document)],
+    });
+    assert.deepEqual(merged.tuples.find((row) => row.id === tuple.id).roles, ['worker']);
+  }
+});
+
 test('the package ships the catalog', () => {
   const pkg = readJson(path.join(ROOT, 'package.json'));
   assert.ok(pkg.files.includes('models'), 'models/ is not in package.json files — the catalog would not ship');

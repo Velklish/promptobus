@@ -5,6 +5,7 @@ import { resolve } from '../lib/model-routing/resolver.js';
 
 const guide = readFileSync(new URL('../docs/guides/model-routing.md', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../docs/reference/03-cli.md', import.meta.url), 'utf8');
+const orchestrate = readFileSync(new URL('../skills/orchestrate/SKILL.md', import.meta.url), 'utf8');
 const warningSchema = JSON.parse(readFileSync(
   new URL('../schemas/model-routing/decision.schema.json', import.meta.url), 'utf8',
 )).properties.warnings.items;
@@ -46,6 +47,14 @@ check('routing docs: declared routed steps map to catalog roles',
   && /catalog role/.test(roleRule)
   && /declared routed step/.test(unknownRole)
   && /catalog role/.test(unknownRole));
+
+check('routing docs: named role overrides retain automatic roles and overlay prohibition',
+  [guide, cli, orchestrate].every((text) => text.includes('role-not-rated-named')
+    && /[Uu]nnamed routing/.test(text)
+    && /[Oo]verlays (?:still )?cannot widen/.test(text)
+    && /before (?:policy|filtering)/.test(text)
+    && /subscription exhaustion/.test(text)
+    && /PAYG/.test(text)));
 
 check('routing docs: decision warnings include schema optional fields',
   sameFields(warningGuide.match(/Warnings carry required (.*?);/)?.[1], warningSchema.required)

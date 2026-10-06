@@ -94,6 +94,36 @@ test('a routed lift carries step and catalog role into metadata and its status l
   assert.match(routingLine(lift.metadata), /step security · catalog role reviewer · floor 7/);
 });
 
+test('a named role override on a declared step still enforces step and catalog-role policy', async () => {
+  const host = workspace(7);
+  const namedCatalog = path.join(sandbox, 'named-role-catalog.json');
+  writeFileSync(namedCatalog, JSON.stringify({ schemaVersion: 2, updated: '2026-09-26',
+    tuples: tuples.map((tuple) => ({ ...tuple, roles: ['worker'] })),
+  }));
+  const options = { role: 'security', strategy: 'economy', model: 'quick', refresh: true,
+    dryRun: true, adapterFor, catalogFile: namedCatalog, now };
+  const lift = await routeLift(host, options);
+  assert.equal(lift.decision.chosen.tupleId, 'quick');
+  assert.equal(lift.decision.role, 'reviewer');
+  assert.equal(lift.decision.step, 'security');
+  assert.match(lift.decision.warnings.find((w) => w.code === 'role-not-rated-named').message,
+    /reviewer \(step security\).*rated for worker only/);
+  const writable = host.routingPaths().overlays.find((layer) => layer.writable);
+  mkdirSync(path.dirname(writable.path), { recursive: true });
+  for (const name of ['security', 'reviewer']) {
+    for (const rule of ['allow', 'deny']) {
+      writeFileSync(writable.path, JSON.stringify({ schemaVersion: 2,
+        [rule]: { byRole: { [name]: { models: [rule === 'deny' ? 'quick' : 'deep'] } } },
+      }));
+      await assert.rejects(() => routeLift(host, options), (error) => {
+        assert.match(error.message, /denied-by-policy/);
+        assert.match(error.message, new RegExp(`${rule}.byRole.${name}.models`));
+        return true;
+      });
+    }
+  }
+});
+
 test('a declared step selector applies beside its catalog-role selector; validate names an unknown key', async () => {
   const host = workspace(7);
   const writable = host.routingPaths().overlays.find((layer) => layer.writable);

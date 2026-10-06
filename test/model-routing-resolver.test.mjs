@@ -430,6 +430,117 @@ test('a reviewer is routed from the tuples rated for it', () => {
   assert.equal(decision.warnings.some((w) => w.code === 'reviewer-floor-not-met'), false);
 });
 
+test('a named model and effort override only the catalog role rating', () => {
+  const catalog = clone(CATALOG);
+  catalog.tuples.find((tuple) => tuple.id === 'example-quick').effort = 'high';
+  for (const role of ['reviewer', 'approver']) {
+    const decision = decide({ role, catalog,
+      constraints: { harness: 'example', model: 'example-quick', effort: 'high' } });
+    assert.equal(decision.chosen?.tupleId, 'example-quick', role);
+    assert.equal(decision.chosen.effort, 'high');
+    assert.equal(excludedOf(decision, 'example-quick'), null);
+    const warning = decision.warnings.find((w) => w.code === 'role-not-rated-named');
+    assert.match(warning.message, new RegExp(`explicitly named for ${role}.*rated for worker only`));
+    assert.ok(decision.warnings.some((w) => w.code === `${role}-floor-not-met`));
+    assert.match(render(decision), /role-not-rated-named/);
+    assert.match(routingLine(routingMetadata(decision)), /role-not-rated-named/);
+    validDecision(decision);
+  }
+});
+
+test('a named model with one catalog effort overrides the role without an effort flag', () => {
+  for (const effort of [null, 'high']) {
+    const catalog = clone(CATALOG);
+    catalog.tuples.find((tuple) => tuple.id === 'example-quick').effort = effort;
+    const decision = decide({ role: 'reviewer', catalog, constraints: { model: 'example-quick' } });
+    assert.equal(decision.chosen?.tupleId, 'example-quick');
+    assert.equal(decision.chosen.effort, effort);
+    assert.ok(decision.warnings.some((w) => w.code === 'role-not-rated-named'));
+  }
+});
+
+test('ambiguous efforts stay role-filtered even when another effort is denied or unavailable', () => {
+  const catalog = clone(CATALOG);
+  const quick = catalog.tuples.find((tuple) => tuple.id === 'example-quick');
+  quick.effort = 'high';
+  catalog.tuples.push({ ...clone(quick), id: 'other-quick-low', harness: 'other', effort: 'low' });
+  for (const workspace of [null, overlay({ deny: { efforts: ['low'] } })]) {
+    const snapshot = clone(SNAPSHOT);
+    snapshot.harnesses.other.state = 'unavailable';
+    const decision = decide({ role: 'reviewer', catalog, snapshot, workspace,
+      constraints: { model: 'example-quick' } });
+    assert.equal(decision.chosen, null);
+    assert.equal(excludedOf(decision, 'example-quick').code, 'role-not-allowed');
+    assert.equal(decision.warnings.some((w) => w.code === 'role-not-rated-named'), false);
+  }
+  const scoped = decide({ role: 'reviewer', catalog,
+    constraints: { harness: 'example', model: 'example-quick' } });
+  assert.equal(scoped.chosen?.tupleId, 'example-quick', 'an explicit harness makes the effort unambiguous');
+  const sameHarness = clone(catalog);
+  sameHarness.tuples.at(-1).harness = 'example';
+  const ambiguous = decide({ role: 'reviewer', catalog: sameHarness,
+    constraints: { harness: 'example', model: 'example-quick' } });
+  assert.equal(ambiguous.chosen, null, 'two efforts on the named harness still require an effort flag');
+  const selected = decide({ role: 'reviewer', catalog: sameHarness,
+    constraints: { model: 'example-quick', effort: 'low' } });
+  assert.equal(selected.chosen?.tupleId, 'other-quick-low');
+});
+
+test('a harness or effort flag alone never overrides a catalog role rating', () => {
+  for (const constraints of [{}, { harness: 'example' }, { effort: 'high' }, { model: 'example-deep' }]) {
+    const catalog = clone(CATALOG);
+    for (const tuple of catalog.tuples) tuple.roles = ['worker'];
+    const decision = decide({ role: 'reviewer', catalog, constraints });
+    assert.equal(decision.chosen, null, JSON.stringify(constraints));
+    assert.equal(decision.warnings.some((w) => w.code === 'role-not-rated-named'), false);
+  }
+});
+
+test('named role overrides preserve allow and deny selectors in every layer and scope', () => {
+  const constraints = { harness: 'example', model: 'example-quick' };
+  const snapshot = clone(SNAPSHOT);
+  snapshot.harnesses.example.models = [{ model: 'example-quick', flags: ['no-zdr'] }];
+  const selectors = { harnesses: ['example', 'other'], models: ['example-quick', 'example-deep'],
+    efforts: [null, 'high'], tuples: ['example-quick', 'example-deep-high'], flags: ['no-zdr', 'another-mark'] };
+  for (const layer of ['user', 'workspace']) {
+    for (const scope of [null, 'reviewer']) {
+      for (const [kind, [hit, miss]] of Object.entries(selectors)) {
+        for (const rule of ['allow', 'deny']) {
+          const selector = { [kind]: [rule === 'deny' ? hit : miss] };
+          const block = scope ? { byRole: { [scope]: selector } } : selector;
+          const decision = decide({ role: 'reviewer', constraints, snapshot,
+            [layer]: overlay({ [rule]: block }) });
+          assert.equal(decision.chosen, null, `${layer} ${scope} ${rule}.${kind}`);
+          assert.equal(excludedOf(decision, 'example-quick').code, 'denied-by-policy');
+          assert.match(excludedOf(decision, 'example-quick').detail, new RegExp(layer));
+          assert.equal(decision.warnings.some((w) => w.code === 'role-not-rated-named'), false);
+        }
+      }
+    }
+  }
+});
+
+test('named role overrides preserve inventory, availability, exhaustion and PAYG refusals', () => {
+  const constraints = { model: 'example-quick' };
+  for (const [changes, code] of [
+    [{ models: [] }, 'model-not-in-inventory'],
+    [{ models: [{ model: 'example-quick', hidden: true }] }, 'model-not-in-inventory'],
+    [{ state: 'unavailable' }, 'harness-unavailable'],
+    [{ state: 'exhausted' }, 'harness-exhausted'],
+  ]) {
+    const snapshot = clone(SNAPSHOT);
+    Object.assign(snapshot.harnesses.example, changes);
+    const decision = decide({ role: 'reviewer', snapshot, constraints });
+    assert.equal(decision.chosen, null, code);
+    assert.equal(excludedOf(decision, 'example-quick').code, code);
+  }
+  const metered = decide({ role: 'reviewer', constraints: { model: 'other-metered' } });
+  assert.equal(metered.chosen, null);
+  assert.equal(excludedOf(metered, 'other-metered').code, 'payg-not-allowed');
+  const optedIn = decide({ role: 'reviewer', constraints: { model: 'other-metered', allowPayg: true } });
+  assert.equal(optedIn.chosen?.tupleId, 'other-metered');
+});
+
 test('a reviewer that differs from the live worker gains the diversity bonus', () => {
   const decision = decide({
     role: 'reviewer',

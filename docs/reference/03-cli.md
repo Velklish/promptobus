@@ -349,7 +349,7 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | Kind | Code | Meaning |
 |---|---|---|
 | exclusion | `model-not-in-inventory` | The catalog rates the tuple; the account does not expose that model |
-| exclusion | `role-not-allowed` | The tuple is not rated for the role being routed |
+| exclusion | `role-not-allowed` | The tuple is not rated for the role being routed, and no named model with a selected effort overrides that rating |
 | exclusion | `constraint-mismatch` | An explicit `--harness`, `--model` or `--effort` rules it out |
 | exclusion | `denied-by-policy` | An allow/deny rule of the merged policy; `detail` names the rule and **every** layer that wrote it — a deny list accumulates, so a ban two layers wrote is lifted in neither of them alone |
 | exclusion | `payg-not-allowed` | Pay-as-you-go without `--allow-payg` |
@@ -359,6 +359,7 @@ Why a candidate did not reach scoring, what moved its score, and what the person
 | adjustment | `unknown-availability` | −10: the remaining limit is unknown, counted as a neutral 50 % |
 | adjustment | `live-participant` | −5 per participant already live on that harness, capped at −20 |
 | adjustment | `reviewer-diversity` | +5: this reviewer's harness or model differs from the worker's |
+| warning | `role-not-rated-named` | A named model with an explicit or unambiguous effort was scored for a role outside its catalog rating; the warning names the requested role and the rated roles |
 | warning | `stale-rating` | A tuple's `assessedAt` is old. A warning only — never an exclusion |
 | warning | `unknown-remaining` | At least one harness could not report its remaining limit. The line says why: the harness exposes no limit source, or — for a harness answered as `stale_cache` whose cached entry carried windows — `window entries expired <N> s ago; refresh with --refresh`, counted from the moment the sixty-second window TTL ran out. The penalty is the same either way |
 | warning | `reviewer-floor-not-met` | No reviewer candidate reached the quality floor; the best remaining one was taken |
@@ -846,7 +847,7 @@ Both are pure — no disk, no harness, no clock of their own — because determi
 
 1. the tuples of the merged catalog;
 2. the allow and deny lists **in force for the step being routed** — unscoped, catalog-role and step blocks unioned into the deny and intersected into the allow — then `--harness`, `--model` and `--effort`: `denied-by-policy`, whose `detail` names the rule and every layer that wrote it, then `constraint-mismatch`. Allow lists of different selector kinds hold at once: a tuple must be named by every allow list there is, and the first one that does not name it is the one reported. The `flags` selector is the one that is not applied here — it needs a snapshot row, and it runs at step 4a;
-3. tuples not rated for the role — `role-not-allowed`;
+3. tuples not rated for the role — `role-not-allowed`, unless `--model` names the model and `--effort` names its effort, or that model has only one catalog effort on the named harness (across all harnesses when `--harness` is absent). The effort count includes tuples before policy, role, inventory and availability filtering; a denied or unavailable effort does not make the choice unambiguous. Each scored tuple outside its rated roles carries `role-not-rated-named`, naming the requested role and its rated roles. `--harness` or `--effort` alone waives no role filter;
 4. tuples whose model the account does not expose — `model-not-in-inventory`. A harness that reported no inventory at all excludes nothing: silence is not absence;
    4a. the `flags` selector, over the marks the snapshot carries on the model row this step just consulted — `denied-by-policy` again, with the flag and its layers in `detail`;
 5. `unavailable` and `exhausted` harnesses — `harness-unavailable`, `harness-exhausted`; then a tuple whose binding window is at or past `nearLimit.excludeAtUsedPercent` (90) — `window-nearly-spent`, waived with a `window-nearly-spent-named` warning when `--harness` or `--model` named the tuple;
@@ -854,6 +855,8 @@ Both are pure — no disk, no harness, no clock of their own — because determi
 7. scoring;
 8. the reviewer rules;
 9. the tie-break.
+
+**An explicit role override changes selection, not assessment.** Overlays still cannot widen or patch tuple `roles`: the overlay schema and validator refuse those fields. The catalog keeps its assessed roles and base-row requirements. Unnamed routing offers only tuples rated for the requested role. All allow and deny rules of every layer, native inventory, harness availability, subscription exhaustion and PAYG opt-in still apply to a named choice. A quality-floor warning does not replace the named tuple.
 
 **A harness the snapshot does not carry is filtered out, not excluded.** The preflight is asked about the harnesses the workspace declared, so the snapshot's harness set is that declaration, and ADR-005 says the catalog is filtered by it. On a workspace that declares only `claude`, the Cursor and Codex tuples are absent from `candidates` rather than listed with a reason — they were never considered, and the exclusion list has no code that would be true of them. The cost is that `resolve` alone cannot tell "you named a harness this workspace never declared" from "nothing survived filtering": both end with `chosen: null`. Telling them apart is the command's job and it happens before the call — an explicit `--harness`, `--model` or `--effort` that matches no tuple of the merged catalog is `constraint-unknown` (a lift's unrated `--model` excepted, below), and a `--clear-exhausted` naming an undeclared harness is `harness-unknown`, both from the table above.
 

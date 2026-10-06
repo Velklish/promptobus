@@ -150,6 +150,8 @@ A Codex holder declines an MCP server's own elicitation with `{ action: "decline
 
 Classify each track on its own. One run may spawn `quality` and `economy` side by side.
 
+Unnamed routing offers only tuples rated for the requested role. An explicit `--model` with `--effort`, or with only one catalog effort for that model on the named harness (across harnesses if none is named), overrides the role filter with `role-not-rated-named`: it names the requested role and the rated roles. Efforts are counted before filtering, so a denied or unavailable effort does not grant an override. All allow and deny layers, native inventory, availability, subscription exhaustion and PAYG safeguards still apply. Overlays cannot widen tuple `roles`.
+
 Role quality floors are soft; on the ten-point scale they default to worker 5, approver 7, reviewer 9; a pick below one carries `<role>-floor-not-met` (`src/registry.ts`). The shipped catalog rates no Anthropic model on Cursor (`models/catalog.json`).
 
 `balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).

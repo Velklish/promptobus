@@ -12,6 +12,8 @@ The model-routing JSON schemas remain static artifacts. The parity test in [test
 
 `ROUTED_ROLES` names catalog roles, not every routed address. A declared routed step is admitted by the registry, uses its step kind's catalog role for ratings and live-tuple accounting, and keeps its own step name in decisions and telemetry. An address with no routed catalog role — such as `orchestrator` or a future role deliberately left unrouted — is rejected as unknown for policy role keys and resolver selection, and excluded from live-tuple and telemetry projections.
 
+A named model with an explicit or unambiguous effort overrides the catalog role filter with `role-not-rated-named`, which names the requested role and the rated roles. Unambiguous means one catalog effort for that model on the named harness, or across harnesses when none is named, counted before policy and availability filtering. Unnamed routing keeps the role filter. Overlays cannot widen or patch tuple `roles`; the schema and validator still refuse those fields, and catalog assessment requirements remain unchanged. All allow and deny layers, native inventory, availability, subscription exhaustion and PAYG safeguards still apply.
+
 ## The layers
 
 ```text
@@ -140,7 +142,7 @@ The lift is `review --approver` once a reviewer result is on record; acceptance 
 state changes, and [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
 records why that work rejects 6 without buying the independent defect discovery of 8.
 
-**Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is offered as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
+**Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is rated for automatic selection as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
 
 **Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–10 band of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": the vendors' published **list** prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2`, banded against the dated $2.50 → 1 / $30 → 10 anchor pair and cited in the row's `evidence`. A promotional price never moves the anchor — it applies to the model's own figure while the cited promotion is in force, and the row's `evidence` names the list price, the promotion and the band the list price would give, so the row is re-banded the day the promotion ends — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent. The `gpt-5.6-sol` max records in [the calibrate fixture](../../test/fixtures/model-routing/telemetry.jsonl) are scaled to agree with `codex-sol-max`'s promotional band 4. When the row re-bands at the promotion's end, rescale them.
 
@@ -596,7 +598,8 @@ the exclusion reported.** The `flags` selector runs after the inventory step
 (`flagExclusion` in `lib/model-routing/resolver.js`), because that is where
 the snapshot row it reads arrives. Order is what makes an explanation stable: a tuple
 the account cannot run AND that is rated for the other role must always give the same
-answer, or two runs would disagree about why.
+answer for the same constraints. A named model and selected effort waive only the role
+filter; later inventory, availability and billing checks still report their refusals.
 
 **A harness the snapshot does not carry is filtered, not excluded.** The
 snapshot covers the harnesses the workspace declared (`host.declaredTools()`,

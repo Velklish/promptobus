@@ -1095,6 +1095,48 @@ test('a routed review with no path refuses for the path, not after probing three
   assert.equal(probes.probes, 0);
 });
 
+test('named reviewer and approver Codex tuples dry-run with a role warning and no writes', async () => {
+  for (const [role, model, effort, tupleId] of [
+    ['reviewer', 'gpt-6-astra', 'xhigh', 'codex-gpt6-astra-xhigh'],
+    ['approver', 'gpt-6-luna', 'high', 'codex-gpt6-luna-high'],
+  ]) {
+    const task = freshTask(`named-${role}-t20260905-090000`);
+    store.upsertParticipant(HOME, task, store.participantRecord('worker:orders-api', {
+      harness: 'codex', repoAbs: REPO, worktree: REPO, started: '2026-09-05T09:00:00.000Z',
+    }));
+    store.sendMessage(HOME, task, { from: 'worker:orders-api', to: store.ORCHESTRATOR,
+      type: 'result', body: 'worker completed' });
+    if (role === 'approver') {
+      store.upsertParticipant(HOME, task, store.participantRecord('reviewer:orders-api', {
+        harness: 'codex', repoAbs: REPO, started: '2026-09-05T09:00:00.000Z',
+      }));
+      store.sendMessage(HOME, task, { from: 'reviewer:orders-api', to: store.ORCHESTRATOR,
+        type: 'result', body: 'review completed' });
+    }
+    const healthy = HEALTHY();
+    healthy.codex = entry('available', null, {
+      models: [{ model }],
+      windows: [{ id: 'primary', kind: 'session', usedPercent: 9, lengthSec: 604800,
+        resetAt: null, scope: null }],
+    });
+    seedCache(healthy);
+    const before = treeOf(HOME);
+    const repository = treeOf(REPO);
+    const probes = counter();
+    const said = await captureSplit(() => review(WS, {
+      target: REPO, task, approver: role === 'approver', harness: 'codex', model, effort,
+      strategy: 'balanced', dryRun: true, adapterFor: probeSet(probes),
+      tool: { ok: true, bin: 'codex' },
+    }));
+    assert.match(said.out, new RegExp(`chosen: ${tupleId}`));
+    assert.match(said.out, /role-not-rated-named/);
+    assert.match(said.out, new RegExp(`explicitly named for ${role}.*rated for worker`));
+    assert.equal(probes.probes, 0);
+    assert.deepEqual(treeOf(HOME), before, `${role} dry-run writes no bus state`);
+    assert.deepEqual(treeOf(REPO), repository, `${role} dry-run writes no repository state`);
+  }
+});
+
 test('a routed review lift keeps its decision on the reviewer record', async () => {
   seedCache(HEALTHY());
   writeFileSync(path.join(REPO, 'a.txt'), 'v3\n');
