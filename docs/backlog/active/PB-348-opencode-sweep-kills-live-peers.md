@@ -4,7 +4,8 @@
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** critical
-- **Order:** 40
+- **Previous order:** 40
+- **Taken:** 2026-10-06
 
 ## Context
 
