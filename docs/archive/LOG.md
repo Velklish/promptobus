@@ -488,3 +488,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-341"></a>`PB-341-opencode-worker-driver` · 2026-10-06 · completed · — · Lift worker sessions through opencode
 - <a id="pb-342"></a>`PB-342-opencode-reviewer-approver` · 2026-10-06 · completed · — · Reviewer and approver lift through opencode
 - <a id="pb-343"></a>`PB-343-opencode-orchestrator` · 2026-10-06 · completed · — · Orchestrator and teamlead sessions through opencode
+- <a id="pb-344"></a>`PB-344-opencode-teamlead-wake` · 2026-10-06 · completed · — · Wake the opencode teamlead: hand over the contact point
