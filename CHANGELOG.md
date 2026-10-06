@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The opencode contact point is handed over, so the warden can wake the teamlead.** The
+  holder record carries home, task and address, and the MCP identity check proves the caller
+  against them; `registerWake` falls back to the record's session id when the bus server hands
+  over with none named; the teamlead lift binds the same pointer through its home. Before,
+  the handover never happened and teamlead sends were refused.
+
 ## [0.25.0] — 2026-10-06
 
 ### Added

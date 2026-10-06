@@ -16,7 +16,7 @@ const SB = makeSandbox('promptobus-driver-opencode-');
 const {
   OPENCODE, opencodeDriver, prepare, permissionDeny, PERMISSION_MODES, apiArgv, parseSessionList,
   viewOf, REVIEWER_DENY, listSessionsSync, SESSION_RECORD_VAR, mcpDenyTools, activate, checkWake,
-  registerWake, renderNotification, registrySessionKey,
+  registerWake, renderNotification, registrySessionKey, holderRecord,
 } = await import(path.join(here, '..', 'lib', 'driver-opencode.js'));
 const {
   holderPassword, holderUrl, portOfLog, idleOutcome, createSession, sendPrompt, readMessages,
@@ -385,10 +385,41 @@ check(': a matching session hands over the record path as the contact point',
 check(': a foreign session hands over nothing',
   registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, 'ses_other') !== true,
   'foreign handoff');
-check(': with no session or no record var there is nothing to hand over',
-  registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, null) === null
+check(': with no session argument the record names the session, as the bus server hands over',
+  registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', wakeEnv, null)?.session === 'ses_stub'
   && registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake', {}, 'ses_stub') === null,
+  'sessionless handoff');
+writeFileSync(path.join(SB, 'empty-session.json'), JSON.stringify({
+  url: stubUrl, password: 'secret', holderPid: process.pid,
+}));
+check(': with no session anywhere there is nothing to hand over',
+  registerWake(WAKE_HOME, WAKE_TASK, 'worker:wake',
+    { [SESSION_RECORD_VAR]: path.join(SB, 'empty-session.json') }, null) === null,
   'empty handoff');
+
+// --- holder record identity ---------------------------------------------------
+
+const { mcpIdentityCandidates } = await import(path.join(here, '..', 'lib', 'drivers.js'));
+const homedRecord = path.join(SB, 'homed-session.json');
+writeFileSync(homedRecord, JSON.stringify({
+  url: stubUrl, password: 'secret', sessionId: 'ses_stub', holderPid: process.pid,
+  home: WAKE_HOME, task: WAKE_TASK, address: 'worker:wake',
+}));
+const homedScope = { home: WAKE_HOME, task: WAKE_TASK, address: 'worker:wake' };
+const homed = mcpIdentityCandidates({ [SESSION_RECORD_VAR]: homedRecord }, homedScope);
+check(': a record carrying home/task/address proves the caller session',
+  homed.length === 1 && homed[0].id === 'ses_stub', JSON.stringify(homed));
+const unhomed = mcpIdentityCandidates(wakeEnv, homedScope);
+check(': a record without them proves nothing — sends would be refused',
+  unhomed.length === 0, JSON.stringify(unhomed));
+
+const staged = holderRecord({
+  home: 'h', task: 't', address: 'worker:x', password: 'pw', pid: 123, log: 'l', cwd: 'c',
+});
+check(': the staged holder record carries the identity the MCP check reads',
+  staged.home === 'h' && staged.task === 't' && staged.address === 'worker:x'
+  && staged.sessionId === null && staged.holderPid === 123,
+  JSON.stringify({ home: staged.home, task: staged.task, address: staged.address }));
 
 const smoke = checkWake(wakeEnv);
 check(': the channel smoke answers on the record, spending no turn',
@@ -427,6 +458,12 @@ const wokenIdle = await activate({ ref: 'worker:wake', endpoint: idleRecord },
 check(': an idle session takes the follow-up turn',
   wokenIdle.ok === true && idlePrompts.length === 1 && idlePrompts[0].includes(WAKE_TASK),
   `${JSON.stringify(wokenIdle)} · prompts ${idlePrompts.length}`);
+
+const wokenShape = await activate({ ref: 'worker:wake', endpoint: { socket: idleRecord, token: null } },
+  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+check(': the warden-shaped target wakes through its socket',
+  wokenShape.ok === true && idlePrompts.length === 2,
+  `${JSON.stringify(wokenShape)} · prompts ${idlePrompts.length}`);
 
 idleMessages = [{ type: 'assistant' }];
 const wokenBusy = await activate({ ref: 'worker:wake', endpoint: idleRecord },

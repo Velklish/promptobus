@@ -13,6 +13,7 @@ import { participantSession, status } from '../lib/status.js';
 import { snapshotOf } from '../lib/drivers.js';
 import { GateError, liveWatched } from '../dist/index.js';
 import { TEAMLEAD_HARNESSES, harnessName } from '../lib/contract.js';
+import { SESSION_RECORD_VAR } from '../lib/driver-opencode.js';
 import { send } from '../lib/send.js';
 import { wardenRound } from '../lib/warden.js';
 import { blockedParticipants } from '../dist/index.js';
@@ -139,6 +140,14 @@ let otherRefusal = '';
 try { await planTeamlead(host, { ...opts, harness: 'other' }); } catch (error) { otherRefusal = error.message; }
 check('a harness outside the list is refused with the list named',
   otherRefusal.endsWith(`supported only on ${TEAMLEAD_HARNESSES.map(harnessName).join(' and ')}`), otherRefusal);
+
+const opencodeLead = await planTeamlead(host, { ...opts, harness: 'opencode' });
+check('opencode teamlead binds the session record pointer into holder env and bus entry',
+  typeof opencodeLead.launch.env[SESSION_RECORD_VAR] === 'string'
+  && opencodeLead.launch.env[SESSION_RECORD_VAR].endsWith('.session.json')
+  && opencodeLead.launch.mcpConfig.mcp?.promptobus?.environment?.[SESSION_RECORD_VAR]
+    === opencodeLead.launch.env[SESSION_RECORD_VAR],
+  JSON.stringify(opencodeLead.launch.env[SESSION_RECORD_VAR]));
 
 for (const harness of ['cursor']) {
   const ran = spawnSync(process.execPath, [cli, 'spawn', '--teamlead', '--task', task,

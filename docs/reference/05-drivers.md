@@ -729,9 +729,12 @@ An opencode session carries no CLI owner identity (`identityVar: null`).
 
 **What opencode does differently.** A participant is a `serve` holder of its own — one port,
 one config, one password — plus a session in it. There is no messaging socket, so wake is a
-follow-up prompt on an idle session: the contact point is the record path, an idle session
-takes the text, a running turn refuses and the warden retries; `checkWake` smokes the channel
-without spending a turn. `inspect` and `stop` arrive ref-only and resolve the record through
+follow-up prompt on an idle session: the contact point is the record path, handed over by the
+participant's first bus call — the record names the session, so no caller names it explicitly.
+An idle session takes the text, a running turn refuses and the warden retries; `checkWake`
+smokes the channel without spending a turn. The record carries home, task and address, and the
+MCP identity check proves the caller against them; the teamlead lift binds the same pointer
+through its home. `inspect` and `stop` arrive ref-only and resolve the record through
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
 path falls back to the lift ref; `sweepParticipant` reaps every registry record of a closed
 task, record, log and entry together. The lift starts `serve --port 0`, reads the listening
