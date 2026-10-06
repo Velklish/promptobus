@@ -145,7 +145,7 @@ function thrown(fn) {
 }
 
 check(': the Codex driver sits in the registry map and is taken by name',
-  liftDriver('codex').id === 'codex' && Object.keys(REGISTRY.drivers).sort().join(',') === 'claude,codex,cursor',
+  liftDriver('codex').id === 'codex' && Object.keys(REGISTRY.drivers).sort().join(',') === 'claude,codex,cursor,opencode',
   Object.keys(REGISTRY.drivers).join(','));
 
 check(': without a name the previous driver is taken — Claude Code argv does not move',

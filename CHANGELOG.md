@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fourth production bus driver: worker sessions lift through opencode.** The registry maps
+  harness `opencode` to `lib/driver-opencode.js`: a worker is a per-participant `serve` holder
+  (own port, config, password) plus a session in it — holder up, session created by title, first
+  turn posted; config by `OPENCODE_CONFIG` env beside the task record (MCP set, `model` default,
+  permission map; no worktree writes), skills by `OPENCODE_CONFIG_DIR`; activation is `pull`.
+  Availability probes the binary floor 2.0.0 (measured on 2.0.20); the default lift model is the
+  owner's opencode model. Reviewer and approver lifts on this harness are not declared yet.
+  [05-drivers § OPENCODE](docs/reference/05-drivers.md#opencode--opencode-harness-driver--the-fourth-production-bus-driver).
+
 - **`promptobus/integration`: a supported entry point for a host that embeds the bus.** A host
   reads here what it took from package files before: `PACKAGE_VERSION`; the values the CLI
   prints (`PROMPTOBUS_TOOLS`, `PROTOCOL_VERSIONS`, `PRUNE_DEFAULT_DAYS`, `KNOCK_TEXT_MAX`,

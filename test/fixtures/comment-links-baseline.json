@@ -1,6 +1,6 @@
 {
   "classes": {
-    "fileOnly": 33,
+    "fileOnly": 34,
     "citation": 46,
     "crossFile": 6,
     "fileLevel": 57,
@@ -74,6 +74,9 @@
       "../docs/reference/02-host.md#tool-binaries",
       "../docs/reference/05-drivers.md#cursor-the-persist-session",
       "../docs/reference/05-drivers.md#cursor-project-skills-location"
+    ],
+    "lib/driver-opencode.js": [
+      "drivers.js"
     ],
     "lib/drivers.js": [
       "stalls.js"

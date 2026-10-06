@@ -34,11 +34,13 @@ const { PARENT_SESSION_ENV } = await lib('session-env.js');
 const { bindSessionIdentity, sessionIdentity } = await lib('store.js');
 // Without this the core is UNBOUND and answers `null` for every environment, so the
 // identity assertion below would hold with the drop reverted. See the positive control.
+// The opencode check below rides the same purity argument; its own measurement is the live lift.
 bindSessionIdentity((await lib('drivers.js')).resolveSessionIdentity);
 const drivers = {
   claude: (await lib('driver-claude.js')).claudeDriver,
   codex: (await lib('driver-codex.js')).codexDriver,
   cursor: (await lib('driver-cursor.js')).cursorDriver,
+  opencode: (await lib('driver-opencode.js')).opencodeDriver,
 };
 
 // A parent that carries every name plus one the mechanism sets itself, so a drop that takes too
@@ -83,6 +85,10 @@ test('cursor: no parent identity or messaging variable reaches a lifted particip
   pinsDropAndOrder('cursor');
 });
 
+test('opencode: no parent identity or messaging variable reaches a lifted participant', () => {
+  pinsDropAndOrder('opencode');
+});
+
 // The list is the contract, and an empty or shrunken one would make every check above pass for
 // the wrong reason — the shape this run kept finding by eye.
 test('the shared list still names the parent identity and messaging variables', () => {
@@ -95,7 +101,7 @@ test('the shared list still names the parent identity and messaging variables', 
 });
 
 // Positive control for the identity assertion above. An unbound core answers `null` for
-// everything, so without this the three checks would hold with the drop lists emptied.
+// everything, so without this the four checks would hold with the drop lists emptied.
 test('the identity reader used above can answer, so its null means the drop and not an unbound core', () => {
   assert.equal(sessionIdentity({ CLAUDE_CODE_SESSION_ID: 'x' }), 'x',
     'sessionIdentity() answered null for an environment that names a session — the registry is not bound, '

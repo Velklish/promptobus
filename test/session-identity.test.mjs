@@ -31,7 +31,7 @@ const MCP_RECORDS = Object.fromEntries(
 {
   check(': every declared driver answers the identity member — none is left out of the contract',
     Object.values(VARS).every((v) => typeof v === 'string' || v === null)
-      && Object.keys(VARS).length === 3,
+      && Object.keys(VARS).length === 4,
     JSON.stringify(VARS));
 }
 {
@@ -41,7 +41,9 @@ const MCP_RECORDS = Object.fromEntries(
     && MCP_RECORDS.codex?.idField === 'threadId'
     && MCP_RECORDS.cursor?.recordVar === 'PROMPTOBUS_CURSOR_SESSION'
     && MCP_RECORDS.cursor?.idField === 'chatId'
-    && new Set(Object.values(MCP_RECORDS).filter(Boolean).map((proof) => proof.recordVar)).size === 2,
+    && MCP_RECORDS.opencode?.recordVar === 'PROMPTOBUS_OPENCODE_SESSION'
+    && MCP_RECORDS.opencode?.idField === 'sessionId'
+    && new Set(Object.values(MCP_RECORDS).filter(Boolean).map((proof) => proof.recordVar)).size === 3,
     JSON.stringify(MCP_RECORDS));
 }
 

@@ -721,6 +721,33 @@ a native file edit and exposed no classified project MCP write tool. This Git wr
 measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
 [Curated evidence](../../test/fixtures/codex-app-server/0.159.2/GitMetadataWrite-0.159.2-2026-10-01.json).
 
+### `OPENCODE` — opencode harness driver — the fourth production bus driver
+
+Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.js`.
+
+**What opencode does differently.** A participant is a `serve` holder of its own — one port,
+one config, one password — plus a session in it. There is no messaging socket, so activation is
+`pull`: the bus does not knock mid-turn, and a follow-up arrives as another prompt on the same
+session id. The lift starts `serve --port 0`, reads the listening port off the holder log, waits
+for an answered session list, creates a session by title and posts the first turn. `inspect` reads
+holder-process liveness plus `session.list`; `stop` kills the holder and deletes the service-side
+session. The measured holder API (basic auth `opencode:<password>`): `GET /api/session`,
+`POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt` (`{"text"}` — the turn runs
+async), `GET /api/session/:id/message?limit=N` (a trailing `idle` outcome ends the wait),
+`DELETE /api/session/:id`. The prompt names no model — the turn runs on the config `model`
+default, which the plan writes. Auth failures fail the lift loudly; no login verdict is probed.
+The record lands before the first holder call (pid first, then url, then session id), so a crash
+past lift keeps a handle `stop` reaps by; a failed lift reaps the holder and removes record and
+log, and the next attempt opens a fresh log. The bound lift points the bus MCP entry and the
+holder env at the session record. Reviewer and approver lifts refuse in `prepare`.
+
+Config travels by environment, not by worktree writes: the plan emits one opencode.json beside
+the task record (`OPENCODE_CONFIG`) with the MCP set (`url` entries as remote servers, `command`
+entries as local ones), the `model` default and the permission map (bus deny names in opencode
+lowercase spelling), and the skills canon through `OPENCODE_CONFIG_DIR`. `launchDirs` is empty.
+Permission modes hold one value, `auto`; effort has no mapping and refuses. Measured on opencode
+2.0.20, which is also the proven version; the floor is 2.0.0.
+
 ## Codex participant authentication
 
 Subscription participants receive the owner's access credentials with an empty refresh token.

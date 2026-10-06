@@ -125,7 +125,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
     for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\btoolBin\b/g)) holders.add(m[1]);
     for (const m of src.matchAll(/\{[^}]*\btoolBin\b[^}]*\}\s*=/g)) holders.add('toolBin');
     if (/\btoolBin\s*\./.test(src)) holders.add('toolBin');
-    // The three adapters destructure it with a rename in the parameter list:
+    // The four adapters destructure it with a rename in the parameter list:
     // `{ toolBin: tool, timeoutMs }`.
     for (const m of src.matchAll(/\btoolBin\s*:\s*([A-Za-z_$][\w$]*)/g)) holders.add(m[1]);
     assert.ok(holders.size, `${rel} holds no tool bin — the scan lost a reader`);
@@ -140,7 +140,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
 
   // This is a reader inventory, not a quota: a changed count needs inspection.
   // The shared driver leaf is not a HostToolBin reader.
-  const expectedToolBinReaders = 7;
+  const expectedToolBinReaders = 8;
   assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${readers.join(' ')}`);
   assert.equal(seen.get('version')?.size, 6, [...seen.get('version') ?? []].join(' '));
   assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,
