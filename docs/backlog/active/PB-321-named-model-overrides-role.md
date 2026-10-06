@@ -1,10 +1,11 @@
 # PB-321 · An explicitly named model and effort lift in any role
 
-- **Order:** 250
 - **Scope:** [03. CLI § An explicit model the catalog does not rate](../../reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate)
 - **Created:** 2026-10-03
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 250
+- **Taken:** 2026-10-06
 
 ## Context
 
