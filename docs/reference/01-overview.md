@@ -366,6 +366,12 @@ turn. The two costs are not comparable: one is a line of text, the other takes
 a person's move away in their own work because somebody else's mailbox is
 unread.
 
+**An unavailable owner contact is an observation, not takeover authority.** A foreign
+session in the workspace root receives only an informational hint requiring explicit user
+direction before taking over a mailbox. An endpoint explicitly stamped for a previous owner
+is ignored without probing it; it says nothing about the current owner. Unstamped legacy
+contacts retain their probe behavior, and authorized manual recovery remains available.
+
 **A session with no identity is not the owner either.** On the `orchestrator` address, both the
 Stop path and the SessionStart transcript mark take the proved-foreign route — nothing
 registered or marked, the turn not returned — same as `join()` (03-cli § The owner gate).

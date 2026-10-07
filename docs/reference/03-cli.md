@@ -1215,6 +1215,14 @@ The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session id
 
 ## Guard and warden
 
+An explicitly stamped wake endpoint for a different owner is ignored before any endpoint check or probe.
+A missing or refused matching-owner contact does not prove the owner session is dead.
+An unbound session at the workspace root receives an informational contact hint at Stop or
+SessionStart, with explicit user direction required before mailbox takeover. Sharing the
+workspace alone grants no authority, and the hint contains no ready-to-run claim instruction.
+Unstamped legacy wake endpoints keep their existing probe behavior. Explicitly authorized
+manual recovery through the mailbox claim API remains available.
+
 `guard` is the Stop-hook helper. Clean mailbox and no user answer owed in any task this session orchestrates: exit 0, no output. Unread mail: exit 2, return the turn. A turn ending while an answer is owed: exit 2 as well. Same state twice, then it warns and lets the turn end.
 
 **Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not READ — the warden escalates it after `SILENCE_SEC`, and it applies to every address, the orchestrator included. `UNANSWERED` is an answer that was not SENT. For ordinary participants, it appears when the mailbox is empty and a turn ended without a send since the debt began. For the orchestrator, the person's question is named as soon as it arrives and stays until an `answer` to `user`. `promptobus status` prints each under its own word. Unread mail is the guard's first repair; for ordinary participants, `status` prints the count instead of the debt while mail remains. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
@@ -1227,7 +1235,7 @@ For ordinary participants, the debt is anchored on the later of two hand-overs: 
 
 **Who owes: every participant except the reporter and orchestrator, and the orchestrator only for a `user` question.** The ordinary door is that one address, not a list of roles — a role list would have to learn each role the bus gains, and the one it had not learned would drop out of the state in silence rather than into it. A role added later is covered the day it exists. For an orchestrator, `unansweredUserQuestions` reads canonical messages so an unread question is already a debt; the latest question after the last `answer` to `user` anchors it. A `status` to `user`, a message to another participant, or a question from a teamlead or peer does not create or settle that debt. While mail is unread, the guard names the person's question in its mailbox verdict; after it is read, the debt verdict still names it.
 
-One list does have to learn every role, and it is not this one: the guard's participant prefixes in `lib/guard.js` (`declaredParticipant`), which answer "is this session already a participant" for the root's successor detector. A role missing from them is not merely unguarded — its session is taken for a stranger in the workspace root and offered a mailbox that is not its own. They are the shipped role registry's steps ([04-protocol § The role registry](04-protocol.md#the-role-registry)) — `worker:`, `reviewer:` and `approver:`. A step a host declares and the governance roles are not among them until rights are keyed by step kind and something lifts them.
+One list does have to learn every role, and it is not this one: the guard's participant prefixes in `lib/guard.js` (`declaredParticipant`), which answer "is this session already a participant" for the root's successor detector. A role missing from them is not merely unguarded — its session is taken for a stranger in the workspace root and receives a contact hint about another task. They are the shipped role registry's steps ([04-protocol § The role registry](04-protocol.md#the-role-registry)) — `worker:`, `reviewer:` and `approver:`. A step a host declares and the governance roles are not among them until rights are keyed by step kind and something lifts them.
 
 **The dead-warden advice goes to every session in the workspace root that is not already on the bus, and the turn comes back only to the owner** ([01-overview](01-overview.md) § Warden). A session bound to no task, owning none and named on no participant record gets the `NO WARDEN` line with the raise route and exit 0; a `guard` that returned the turn to it would take a person's move away in their own work over somebody else's unread mailbox. The owner is not skipped — it reaches the same line through the loop guard at its own end of turn, which is the branch that also returns its turn.
 

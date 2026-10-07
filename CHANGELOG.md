@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Guard contact hints ignore wake endpoints explicitly stamped for a different owner without probing them. Unavailable contacts are reported conservatively and require explicit user direction before mailbox takeover; unrelated workspace chats receive no ready-to-run claim instruction. Legacy unstamped contacts and authorized manual recovery remain available.
+
 - A named model with an explicit or unambiguous effort can lift in a role outside its catalog rating. The decision warns with the requested and rated roles; policy, inventory, availability, exhaustion and PAYG checks still apply. Unnamed routing and catalog assessments keep their role restrictions.
 - The Codex protocol baseline now captures the installed 0.160.0 binary: all 314
   schemas match 0.159.2, with full provenance and request/response/approval validation.

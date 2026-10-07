@@ -945,6 +945,77 @@ check(': leftover catalog does not skip the live mailbox — unread still return
 check(': leftover catalog and live store both stay on disk',
   existsSync(path.join(BOTH_ROOT, 'legacy', 'a2a')) && existsSync(BOTH_HOME));
 
+// A retained wake from a previous owner proves nothing about the current owner.
+const CONTACT_ROOT = path.join(ROOT, 'contact-root');
+mkdirSync(CONTACT_ROOT);
+const CONTACT_HOME = path.join(CONTACT_ROOT, '.promptobus');
+const CONTACT_TASK = 'contact-t20261006-100000';
+const PREVIOUS_OWNER = 'fixture-previous-owner';
+const CURRENT_OWNER = 'fixture-current-owner';
+const UNRELATED_SESSION = 'fixture-unrelated-chat';
+store.createTask(CONTACT_HOME, { id: CONTACT_TASK, title: 'changed owner contact', owner: PREVIOUS_OWNER });
+store.upsertParticipant(CONTACT_HOME, CONTACT_TASK, store.participantRecord('worker:fixture', { name: 'fixture-worker' }));
+store.claimOwnership(CONTACT_HOME, CONTACT_TASK, CURRENT_OWNER);
+store.sendMessage(CONTACT_HOME, CONTACT_TASK, {
+  from: 'worker:fixture', to: 'orchestrator', type: 'result', body: 'unread fixture result',
+});
+const currentContact = path.join(CONTACT_ROOT, 'current.sock');
+writeFileSync(currentContact, 'fixture live contact');
+store.writeWake(CONTACT_HOME, CONTACT_TASK, 'orchestrator', { socket: currentContact, session: CURRENT_OWNER, token: 't' });
+let contactProbes = [];
+const stoppedContactProbe = async (socket) => {
+  contactProbes.push(socket);
+  return { dead: true, error: 'ECONNREFUSED' };
+};
+const contactStart = { hook_event_name: 'SessionStart' };
+const currentLiveHint = await successorHint({ home: CONTACT_HOME }, CONTACT_ROOT, UNRELATED_SESSION, contactStart, stoppedContactProbe);
+check('successor: changed current owner with a matching live contact stays silent without probing',
+  currentLiveHint === null && contactProbes.length === 0, JSON.stringify({ currentLiveHint, contactProbes }));
+const previousContact = path.join(CONTACT_ROOT, 'previous.sock');
+writeFileSync(previousContact, 'fixture stopped contact');
+for (const [name, socket, session] of [
+  ['missing previous contact', path.join(CONTACT_ROOT, 'missing.sock'), PREVIOUS_OWNER],
+  ['existing previous contact', previousContact, PREVIOUS_OWNER],
+  ['previous contact with turn suffix', `${previousContact}#turn`, PREVIOUS_OWNER],
+  ['owner prefix is not an exact stamp', previousContact, CURRENT_OWNER.slice(0, 8)],
+]) {
+  store.writeWake(CONTACT_HOME, CONTACT_TASK, 'orchestrator', { socket, session, token: 't' });
+  contactProbes = [];
+  const hint = await successorHint({ home: CONTACT_HOME }, CONTACT_ROOT, UNRELATED_SESSION, contactStart, stoppedContactProbe, quietHost);
+  check(`successor: stale owner stamp — ${name} neither hints nor probes`,
+    hint === null && contactProbes.length === 0, JSON.stringify({ hint, contactProbes }));
+}
+store.writeWake(CONTACT_HOME, CONTACT_TASK, 'orchestrator', {
+  socket: path.join(CONTACT_ROOT, 'missing-current.sock'), session: CURRENT_OWNER, token: 't',
+});
+const unavailableHint = await successorHint({ home: CONTACT_HOME }, CONTACT_ROOT, UNRELATED_SESSION, contactStart, stoppedContactProbe);
+const unavailableText = unavailableHint?.payload?.hookSpecificOutput?.additionalContext ?? '';
+check('successor: an unrelated SessionStart needs explicit user direction for unavailable current contact',
+  unavailableHint?.code === 0 && unavailableText.includes('contact appears unavailable')
+  && unavailableText.includes('explicit user direction')
+  && !/claim\s*:\s*true|take the mailbox|is dead since/.test(unavailableText), JSON.stringify(unavailableHint));
+store.writeWake(CONTACT_HOME, CONTACT_TASK, 'orchestrator', { socket: previousContact, token: 't' });
+contactProbes = [];
+const legacyDeadHint = await successorHint({ home: CONTACT_HOME }, CONTACT_ROOT, 'fixture-legacy-dead', contactStart, stoppedContactProbe);
+check('successor: an unstamped legacy contact still probes and reports an unavailable endpoint',
+  legacyDeadHint?.payload?.systemMessage.includes('explicit user direction') && contactProbes.length === 1,
+  JSON.stringify({ legacyDeadHint, contactProbes }));
+let legacyLiveProbes = 0;
+const legacyLiveHint = await successorHint({ home: CONTACT_HOME }, CONTACT_ROOT, 'fixture-legacy-live', contactStart,
+  async () => { legacyLiveProbes += 1; return { dead: false, error: null }; });
+check('successor: an unstamped legacy live contact still probes and stays silent',
+  legacyLiveHint === null && legacyLiveProbes === 1, JSON.stringify({ legacyLiveHint, legacyLiveProbes }));
+check('successor: stale and unavailable contact hints preserve the current owner and unread mail',
+  store.taskOwner(CONTACT_HOME, CONTACT_TASK) === CURRENT_OWNER
+  && store.countInbox(CONTACT_HOME, CONTACT_TASK, 'orchestrator') === 1,
+  `${store.taskOwner(CONTACT_HOME, CONTACT_TASK)} · ${store.countInbox(CONTACT_HOME, CONTACT_TASK, 'orchestrator')}`);
+const formerOwner = store.claimOwnership(CONTACT_HOME, CONTACT_TASK, 'fixture-authorized-recovery');
+check('successor: explicit manual recovery still claims and binds an isolated fixture mailbox',
+  formerOwner === CURRENT_OWNER && store.taskOwner(CONTACT_HOME, CONTACT_TASK) === 'fixture-authorized-recovery'
+  && store.boundTaskId(CONTACT_HOME, 'fixture-authorized-recovery') === CONTACT_TASK
+  && store.countInbox(CONTACT_HOME, CONTACT_TASK, 'orchestrator') === 1,
+  JSON.stringify({ formerOwner, owner: store.taskOwner(CONTACT_HOME, CONTACT_TASK) }));
+
 // --- orchestrator successor: a root detector, not an auto-claim --------------------
 const SUCC = 'succ-t20260904-010000';
 const OLD_ORCH = 'sess-old-orch-aaaa';
@@ -1278,12 +1349,13 @@ store.writeWake(HOME, emptyDead, 'orchestrator', {
 
 const deadHint = asHeir(HEIR);
 const deadText = heirSaid(deadHint)?.systemMessage ?? '';
-check('successor: owner\'s socket is ENOENT — the guard prints the task id and the claim command',
+check('successor: owner\'s socket is ENOENT — the guard prints the task id and the explicit user direction requirement',
   deadHint.status === 0 && deadHint.stderr === ''
   && deadText.includes(SUCC) && deadText.includes('a successor after an id change')
   && deadText.includes(OLD_ORCH) && deadText.includes('2026-09-03T20:31:43.000Z')
   && /unread 1/.test(deadText)
-  && deadText.includes('promptobus_mailbox {claim: true}')
+  && deadText.includes('explicit user direction')
+  && !/claim\s*:\s*true|take the mailbox|is dead since/.test(deadText)
   && !deadText.includes(emptyDead),
   `status=${deadHint.status} out=${JSON.stringify(deadHint.stdout)} err=${JSON.stringify(deadHint.stderr)}`);
 check('successor: the turn is not returned — a foreign session at the root is not obligated to be the successor',
@@ -1294,7 +1366,7 @@ const HEIR2 = 'sess-heir-eeee';
 const otherHeir = asHeir(HEIR2);
 const otherText = heirSaid(otherHeir)?.systemMessage ?? '';
 check('successor: a second session at the root on the same state also gets the hint',
-  otherHeir.status === 0 && otherText.includes(SUCC) && otherText.includes('promptobus_mailbox {claim: true}'),
+  otherHeir.status === 0 && otherText.includes(SUCC) && otherText.includes('explicit user direction') && !otherText.includes('claim: true'),
   `status=${otherHeir.status} out=${JSON.stringify(otherHeir.stdout)}`);
 
 const deadHintAgain = asHeir(HEIR);
@@ -1312,7 +1384,7 @@ const startHint = asHeir(HEIR, { event: 'SessionStart' });
 const startOut = heirSaid(startHint);
 const startText = startOut?.hookSpecificOutput?.additionalContext ?? startOut?.systemMessage ?? '';
 check('successor: SessionStart at the root carries the same text in additionalContext',
-  startHint.status === 0 && startText.includes(SUCC) && startText.includes('promptobus_mailbox {claim: true}')
+  startHint.status === 0 && startText.includes(SUCC) && startText.includes('explicit user direction') && !startText.includes('claim: true')
   && startOut?.hookSpecificOutput?.hookEventName === 'SessionStart',
   `status=${startHint.status} out=${JSON.stringify(startHint.stdout)}`);
 
@@ -1326,9 +1398,10 @@ check('successor: cwd is not the workspace root — stays silent',
 const verdictLine = successorLine(
   { id: SUCC, title: 'a successor after an id change' }, OLD_ORCH, '2026-09-03T20:31:43.000Z', 2,
 );
-check('successor: successorLine names the task, the owner, the time, and the claim',
+check('successor: successorLine names the task, the owner, the time, and the explicit user direction requirement',
   verdictLine.includes(SUCC) && verdictLine.includes(OLD_ORCH)
-  && verdictLine.includes('promptobus_mailbox {claim: true}'),
+  && verdictLine.includes('explicit user direction')
+  && verdictLine.includes('contact appears unavailable') && !verdictLine.includes('claim: true'),
   verdictLine);
 const direct = await successorHint({ home: HOME }, SB, 'sess-direct-ffff');
 const directText = direct?.payload?.systemMessage ?? '';
