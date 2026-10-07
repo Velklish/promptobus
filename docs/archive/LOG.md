@@ -496,3 +496,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-354.2"></a>`PB-354.2-codex-mock-response-schema-skew` · 2026-10-06 · completed · — · Codex harness responses violate their captured native schemas
 - <a id="pb-321"></a>`PB-321-named-model-overrides-role` · 2026-10-07 · completed · — · An explicitly named model and effort lift in any role
 - <a id="pb-355"></a>`PB-355-successor-owner-contact` · 2026-10-07 · completed · — · Avoid successor takeover hints for stale or unrelated owner contacts
+- <a id="pb-348"></a>`PB-348-opencode-sweep-kills-live-peers` · 2026-10-07 · completed · — · Sweeping one OpenCode participant terminates live peers in the same task

@@ -769,8 +769,11 @@ smokes the channel without spending a turn. The record carries home, task and ad
 MCP identity check proves the caller against them; the teamlead lift binds the same pointer
 through its home. `inspect` and `stop` arrive ref-only and resolve the record through
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
-path falls back to the lift ref; `sweepParticipant` reaps every registry record of a closed
-task, record, log and entry together. The lift starts `serve --port 0`, reads the listening
+path falls back to the lift ref; `sweepParticipant` reaps registry records matching both task and
+participant address, record, log and entry together. An unnamed participant removes nothing.
+`done` awaits cleanup for each dead participant of a closed task. Live or unknown participants
+with a cleanup hook keep the sweep pending, even without a worktree; a later `done` reaps them
+after their sessions are gone. The lift starts `serve --port 0`, reads the listening
 port off the holder log, waits for an answered session list, creates a session by title and
 posts the first turn. The measured holder API (basic auth `opencode:<password>`):
 `GET /api/session`, `POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt`

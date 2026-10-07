@@ -1695,6 +1695,11 @@ taken, and the destructive stretch runs inside it.
 
 The target of `sweep`, `stop` and `dismiss` may be any participant address admitted by the declared registry, including a gate step such as `security:<slug>`. They act on the named participant's record. The owner step's files and tree are outside a gate step's cleanup.
 
+The OpenCode cleanup hook matches both task and participant address and preserves live peers.
+`done` awaits that hook for each dead participant in its existing closed-task walk.
+Live or unknown participants with a cleanup hook keep the sweep pending, even without a worktree.
+After their sessions are gone, a later `done` removes their remaining harness state.
+
 The list of what is going is named BEFORE the first removal, the same move `done` and
 `stop` make with theirs: the command is irreversible, and a person reading the output
 should see what is leaving rather than what left.

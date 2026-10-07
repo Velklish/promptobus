@@ -244,13 +244,13 @@ writeFile(path.join(sweepState, `${registrySessionKey('worker:gone')}.json`), JS
   ref: 'worker:gone', recordPath: sweepRecord,
   sessionId: null, home: 'h', task: 't-sweep', address: 'worker:gone',
 }));
-const swept = await opencodeDriver.sweepParticipant({ metadata: {} }, 't-sweep');
+const swept = await opencodeDriver.sweepParticipant({ metadata: { address: 'worker:gone' } }, 't-sweep');
 check(': sweep reaps the dead registry entries of the closed task and nothing else',
   swept.swept === 1
   && readdirSync(sweepState).length === 0
   && !readdirSync(SB).includes('sweep-session.json')
   && !readdirSync(SB).some((n) => n.endsWith('.holder.log'))
-  && (await opencodeDriver.sweepParticipant({ metadata: {} }, 't-other')).swept === 0,
+  && (await opencodeDriver.sweepParticipant({ metadata: { address: 'worker:gone' } }, 't-other')).swept === 0,
   JSON.stringify(swept));
 
 // --- holder protocol against a stub -----------------------------------------

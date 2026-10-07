@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **OpenCode participant cleanup preserves live peers.** Sweeping one participant removes
+  only records matching its task and address, with their session, holder and log. Closed-task
+  cleanup awaits each dead participant's hook before continuing and stays pending for live
+  or unknown participants with a cleanup hook, including reviewers without a worktree.
+
 ## [0.25.2] — 2026-10-07
 
 ### Fixed
