@@ -12,7 +12,11 @@ The model-routing JSON schemas remain static artifacts. The parity test in [test
 
 `ROUTED_ROLES` names catalog roles, not every routed address. A declared routed step is admitted by the registry, uses its step kind's catalog role for ratings and live-tuple accounting, and keeps its own step name in decisions and telemetry. An address with no routed catalog role — such as `orchestrator` or a future role deliberately left unrouted — is rejected as unknown for policy role keys and resolver selection, and excluded from live-tuple and telemetry projections.
 
-A named model with an explicit or unambiguous effort overrides the catalog role filter with `role-not-rated-named`, which names the requested role and the rated roles. Unambiguous means one catalog effort for that model on the named harness, or across harnesses when none is named, counted before policy and availability filtering. Unnamed routing keeps the role filter. Overlays cannot widen or patch tuple `roles`; the schema and validator still refuse those fields, and catalog assessment requirements remain unchanged. All allow and deny layers, native inventory, availability, subscription exhaustion and PAYG safeguards still apply.
+<!-- quote:../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md -->
+A named model with an explicit or unambiguous effort overrides the catalog role filter with `role-not-rated-named`, which names the requested role and the rated roles. Unambiguous means one catalog effort for that model on the named harness, or across harnesses when none is named, counted before policy and availability filtering.
+<!-- /quote -->
+
+Unnamed routing keeps the role filter. Overlays cannot widen or patch tuple `roles`; the schema and validator still refuse those fields, and catalog assessment requirements remain unchanged. All allow and deny layers, native inventory, availability, subscription exhaustion and PAYG safeguards still apply.
 
 ## The layers
 
