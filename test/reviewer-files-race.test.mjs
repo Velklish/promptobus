@@ -8,7 +8,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { Worker } from 'node:worker_threads';
 import { reviewerFiles } from '../lib/reviewer-files.js';
 
-for (const tool of ['read_file', 'search_text']) {
+for (const tool of ['read_file', 'read_files', 'search_text']) {
   test(`${tool} cannot read outside bytes after a concurrent symlink replacement`, async () => {
     const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'review-file-swap-')));
     const repo = path.join(directory, 'repo');
@@ -47,13 +47,13 @@ for (const tool of ['read_file', 'search_text']) {
     try {
       let result;
       let refusal;
-      try { result = read(tool, { path: file, query: '_' }); }
+      try { result = read(tool, tool === 'read_files' ? { files: [{ path: file }] } : { path: file, query: '_' }); }
       catch (error) { refusal = error; }
       assert.equal(barrierReached, true, 'test must reach the actual read boundary');
       assert.equal(Atomics.load(state, 1), 1, 'worker must complete the concurrent replacement');
       assert.equal(fs.realpathSync(file), outside);
       if (result) {
-        const lines = tool === 'read_file' ? result.lines : result.matches;
+        const lines = tool === 'read_files' ? result.files[0].lines : tool === 'read_file' ? result.lines : result.matches;
         assert.equal(lines.some((line) => line.text.includes('OUTSIDE_ROOT')), false,
           `${tool} returned outside-root bytes after a concurrent source-to-symlink replacement`);
         assert.equal(lines.some((line) => line.text === 'INSIDE_ONLY'), true);

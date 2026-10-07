@@ -538,9 +538,19 @@ write-approval denials remain. Workers, approvers, teamleads, root owners and re
 keep their own profiles. A reviewer cannot read local files through a native Read tool,
 so the mechanism also supplies `reviewer_files`, a dependency-free stdio MCP server.
 
-Its `read_file`, `list_files` and literal `search_text` tools accept only declared absolute
+Its `read_file`, `read_files`, `list_files` and literal `search_text` tools accept only declared absolute
 paths inside the reviewed tree, exact rule files, canonical and visible personal skill
 directories, declared review skill/shared directories and task artifacts. Realpath checks reject escaping symlinks. No tool launches a subprocess.
+The workspace's exact `.agents/skills-index.md` file is granted when present; its parent
+directory is not. An index or parent symlink is not granted. Its canonical path and
+regular-file type are checked again when the MCP server starts, so a replaced index
+refuses startup. The grant remains an exact file for the server's lifetime.
+`PROMPTOBUS_REVIEW_CANONICAL_FILES` carries that file constraint without changing
+the declared roots. `read_files` accepts one to eight file/range requests, with the same
+line metadata and restrictions as `read_file`. A batch permits at most 2000 requested
+lines and 256 KiB of serialized UTF-8 output, including JSON escaping and metadata.
+An invalid or excessive batch returns an error without partial file content; request
+smaller ranges. Independent reads can therefore share one model tool call.
 Reads and search output are bounded; listings skip Git, dependency and build directories.
 `PROMPTOBUS_REVIEW_READ_ROOTS` carries the JSON root list to this one server. It never
 includes the authentication home. Rule-file parent directories, the shared workspace
@@ -588,6 +598,19 @@ The worker preamble names its absolute worktree path and the session roots (`cwd
 An outside refusal logs the resolved allowed roots and prints a requested-to-resolved
 pair only when the target changed during resolution; the reply to Codex remains
 `{ decision: 'decline' }`.
+
+**Effective Codex execution profile.** After `thread/start` or `thread/resume`, the holder
+logs requested and effective model, effort, sandbox and approval policy. An explicit
+value that differs or is absent in the response refuses before `turn/start`; unspecified
+model and effort keep native defaults. The comparison does not change routing or defaults.
+The same response reports network access: `dangerFullAccess` is unrestricted;
+`workspaceWrite` and `readOnly` default to restricted unless `networkAccess` is true.
+A restricted sandbox can report a DNS resolution error even when machine DNS works.
+Do not repeat the same denied fetch or dependency installation, change machine DNS,
+or grant network from the holder. Use the supported explicitly authorized managed-owner
+route for orchestration and preparation, or report the denied participant operation.
+Check transport, authentication and command exit separately; the profile is not proof
+that a particular remote host is reachable.
 
 **The participant shell and the holder approval are separate boundaries.** Two independent
 Codex participants on codex-cli 0.146.0 had no successful apply_patch call, and direct

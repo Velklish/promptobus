@@ -23,7 +23,7 @@ writeFileSync(brief, '# Original root\nKeep its holder isolated.\n');
 const cli = path.resolve('bin/promptobus.js');
 for (const [index, title] of ['Original root', 'Different root'].entries()) {
   const task = `lead-unbound-t20261001-00000${index + 1}`;
-  const args = ['lead', '--brief', brief, '--task', task];
+  const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];
   const launcher = spawn(process.execPath, [cli, ...args], {
     cwd: root, env: { ...env, [THREAD_DELAY_VAR]: '3000' }, stdio: 'ignore',
   });

@@ -28,9 +28,35 @@ writeFileSync(path.join(repo, 'binary.dat'), Buffer.from([1, 0, 2]));
 const read = reviewerFiles([repo]);
 after(() => rmSync(root, { recursive: true, force: true }));
 
-test('inventory exposes only three non-destructive local reads', () => {
-  assert.deepEqual(REVIEW_FILE_TOOLS.map((x) => x.name), ['read_file', 'list_files', 'search_text']);
+test('inventory exposes only non-destructive local reads', () => {
+  assert.deepEqual(REVIEW_FILE_TOOLS.map((x) => x.name), ['read_file', 'read_files', 'list_files', 'search_text']);
   assert.ok(REVIEW_FILE_TOOLS.every((x) => x.annotations.readOnlyHint && !x.annotations.destructiveHint && !x.annotations.openWorldHint));
+});
+test('batch reads preserve single-file line metadata across independent ranges', () => {
+  const requests = [{ path: source, start_line: 2, line_count: 2 }, { path: path.join(repo, 'README.md') }];
+  assert.deepEqual(read('read_files', { files: requests }).files, requests.map(args => read('read_file', args)));
+});
+test('batch reads enforce exact grants, symlink and binary restrictions', () => {
+  for (const target of [path.join(repo, 'outside.txt'), path.join(outside, 'private.txt'), path.join(repo, 'binary.dat')]) {
+    assert.throws(() => read('read_files', { files: [{ path: source }, { path: target }] }), /outside the declared review roots|Binary files/);
+  }
+  const bounded = reviewerFiles([source]);
+  assert.throws(() => bounded('read_files', { files: [{ path: path.join(repo, 'README.md') }] }), /outside the declared review roots/);
+  assert.equal(read('read_files', { files: [{ path: path.join(repo, 'inside.cs') }] }).files[0].path, source);
+});
+test('batch bounds apply to requests, total requested lines and serialized bytes', () => {
+  for (const files of [null, [], Array(9).fill({ path: source }), [null], [42], [[]]]) {
+    assert.throws(() => read('read_files', { files }), /files must|read request/);
+  }
+  assert.throws(() => read('read_files', { files: [{ path: source, line_count: 1001 }, { path: source, line_count: 1000 }] }), /2000 line limit/);
+  assert.throws(() => read('read_files', { files: [{ path: source, start_line: 0 }] }), /start_line/);
+  const wide = path.join(repo, 'wide.txt');
+  writeFileSync(wide, 'x'.repeat(130 * 1024));
+  assert.throws(() => read('read_files', { files: [{ path: wide }, { path: wide }] }), /256 KiB output limit/);
+  assert.equal(read('read_files', { files: [{ path: wide }] }).files.length, 1);
+  const escaped = path.join(repo, 'escaped.txt');
+  writeFileSync(escaped, '"'.repeat(140 * 1024));
+  assert.throws(() => read('read_files', { files: [{ path: escaped }] }), /256 KiB output limit/);
 });
 test('reads current uncommitted text with Unicode and line pagination', () => {
   const result = read('read_file', { path: source, start_line: 2, line_count: 2 });
@@ -99,6 +125,8 @@ test('stdio MCP handshake, tool read and forbidden path complete without command
     { id: 2, method: 'tools/list' },
     { id: 3, method: 'tools/call', params: { name: 'read_file', arguments: { path: source } } },
     { id: 4, method: 'tools/call', params: { name: 'read_file', arguments: { path: path.join(repo, 'outside.txt') } } },
+    { id: 5, method: 'tools/call', params: { name: 'read_files', arguments: { files: [{ path: source }, { path: path.join(repo, 'README.md') }] } } },
+    { id: 6, method: 'tools/call', params: { name: 'read_files', arguments: { files: [{ path: source }, { path: path.join(repo, 'outside.txt') }] } } },
   ];
   const child = spawnSync(process.execPath, [new URL('../lib/reviewer-files.js', import.meta.url).pathname], {
     input: requests.map((x) => JSON.stringify(x)).join('\n') + '\n', encoding: 'utf8', timeout: 5000,
@@ -106,8 +134,10 @@ test('stdio MCP handshake, tool read and forbidden path complete without command
   });
   assert.equal(child.status, 0, child.stderr);
   const replies = child.stdout.trim().split('\n').map((x) => JSON.parse(x));
-  assert.equal(replies.length, 4);
-  assert.equal(replies[1].result.tools.length, 3);
+  assert.equal(replies.length, 6);
+  assert.equal(replies[1].result.tools.length, 4);
   assert.match(replies[2].result.content[0].text, /Compute/);
   assert.equal(replies[3].result.isError, true);
+  assert.equal(JSON.parse(replies[4].result.content[0].text).files.length, 2);
+  assert.equal(replies[5].result.isError, true);
 });

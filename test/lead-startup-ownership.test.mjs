@@ -36,7 +36,7 @@ await import(${JSON.stringify(pathToFileURL(cli).href)});
 `);
 for (const [index, title] of ['Startup root', 'Different startup root'].entries()) {
   const task = `lead-startup-t20261001-00000${index + 1}`;
-  const args = ['lead', '--brief', brief, '--task', task];
+  const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];
   const launched = spawnSync(process.execPath, [child, ...args], {
     cwd: root, env: { ...env, [THREAD_DELAY_VAR]: '3000' }, encoding: 'utf8', timeout: 15000,
   });

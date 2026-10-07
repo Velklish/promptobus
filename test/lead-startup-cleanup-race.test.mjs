@@ -50,7 +50,7 @@ cp.spawn = (...args) => {
 syncBuiltinESMExports();
 await import(${JSON.stringify(pathToFileURL(cli).href)});
 `);
-  const args = ['lead', '--brief', brief, '--task', task];
+  const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];
   const launched = spawnSync(process.execPath, [launcher, ...args], { cwd: root, env, encoding: 'utf8', timeout: 15000 });
   await waitFor(() => existsSync(pidFile), { timeoutMs: 10000 });
   const original = registrySessions(env).find(record => record.task === task);
@@ -94,7 +94,7 @@ await import(${JSON.stringify(pathToFileURL(cli).href)});
 const callbackTask = 'lead-cleanup-t20261001-000003';
 const callbackBrief = path.join(root, 'callback.md');
 writeFileSync(callbackBrief, '# Callback ownership\nKeep replacement records and sidecars unchanged.\n');
-const callbackLaunch = spawnSync(process.execPath, [cli, 'lead', '--brief', callbackBrief, '--task', callbackTask], {
+const callbackLaunch = spawnSync(process.execPath, [cli, 'lead', '--permission-mode', 'full-access', '--brief', callbackBrief, '--task', callbackTask], {
   cwd: root, env, encoding: 'utf8', timeout: 15000,
 });
 const callbackRecord = registrySessions(env).find(record => record.task === callbackTask);

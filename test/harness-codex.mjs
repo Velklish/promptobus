@@ -596,7 +596,10 @@ async function appServer() {
         // check can also say what a home does NOT contain.
         codexHome: readCodexHome(process.env.CODEX_HOME),
       });
-      reply(id, protocolThreadResponse(t, false));
+      const response = protocolThreadResponse(t, false);
+      if (probe.has('profile-model-mismatch')) response.model = 'gpt-unexpected';
+      if (probe.has('profile-effort-mismatch')) response.reasoningEffort = 'xhigh';
+      reply(id, response);
       notify('hook/started', {
         threadId: t.id, turnId: null,
         run: { eventName: 'sessionStart', status: 'running', sourcePath: '/hooks.json' },

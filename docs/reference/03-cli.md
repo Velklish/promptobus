@@ -6,7 +6,7 @@ Help and `--version` do not load the standalone host. Every other command does.
 
 ## Lead
 
-`promptobus lead --brief <file> [--task <new-id>] [--title <text>] [routing flags] [--dry-run]`
+`promptobus lead --brief <file> --permission-mode full-access [--task <new-id>] [--title <text>] [routing flags] [--dry-run]`
 starts a managed Codex root orchestrator at the install root. It creates a new root task,
 not a child, and accepts only Codex. An invalid task id or an existing task refuses before
 session preparation; the existing owner and journal remain unchanged. The first brief
@@ -15,8 +15,10 @@ an id. The unrouted Codex default is `gpt-6-astra`; `--model` or routing can sel
 model exposed by the account.
 
 The root owner receives canonical skills and the mechanism MCP set in a private home,
-without writing a project layer at the shared root. Its ordinary sandbox is `workspace-write`;
-`--permission-mode full-access` explicitly selects `danger-full-access`. Project hooks are
+without writing a project layer at the shared root. It requires explicit
+`--permission-mode full-access`, selecting `danger-full-access`; other profiles refuse
+before routing, reading the brief or creating a task. Participant lifts under a workspace-write
+owner are unsupported. Participants retain their separate permission profiles. Project hooks are
 disabled in its thread. Before binding, the holder preserves the original assignment as a
 native user message with `thread/inject_items`; this starts no model turn. The first model
 input continues that stored assignment. The holder waits after `thread/start` until the complete native

@@ -16,7 +16,7 @@ The bus does not know your workspace. Every call receives a **host** that answer
 - **Task digest.** `digest` prints the root and child tasks, each participant's latest status first line, questions and their age across linked roots, answer debts, and pieces by their current pipeline step. Peer messages record their origin task, so a later same-slug link cannot answer an older root's question. A legacy question whose origin is unknown is marked `UNRESOLVED PROVENANCE`. `--json` carries the same page for scripts without starting a harness.
 - **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. `link` registers two root tasks as peers; a send to one peer enters the other root's orchestrator mailbox under the source peer address. `user` asks a root or child orchestrator by `question`, receives `answer` or `status`, and `reporter` never sends as itself. Its restricted ask tool writes as `user`. Other traffic follows the root orchestrator. The [route table](https://github.com/Velklish/promptobus/blob/v0.25.2/docs/reference/04-protocol.md#addresses) gives each decision; `ask` registers `user` on first use.
 - **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched. OpenCode cleanup matches both task and participant address; `done` awaits each dead participant's cleanup. Live or unknown participants with a cleanup hook keep the sweep pending, even without a worktree.
-- **Managed Codex root owner.** `promptobus lead --brief ./task.md` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
+- **Managed Codex root owner.** `promptobus lead --brief ./task.md --permission-mode full-access` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
 - **Teamleads for child tasks.** `promptobus spawn --teamlead --brief ./group.md --task <root>` lifts a Claude Code or Codex orchestrator at the install root. It owns one child task, reports to the root as `teamlead:<slug>`, reads root mail in its child task's mailbox, and repairs an interrupted lift on retry. A relift updates both addresses to the new session; a dry-run leaves a pending repair untouched. A Codex teamlead completed worker lifts on all three harnesses and real Claude Code, Cursor and Codex reviews with `full-access`; their `workspace-write` lifts refused. Cursor teamleads remain refused.
 - **Reporter for the person.** `promptobus report --task <root>` lifts one read-only Claude Code or Codex session at the install root. It answers from the tree digest and journals, or asks the root orchestrator as `user` through its restricted MCP tool. Ask an existing Codex reporter with `report --task <root> --question <text>`; its completed reply prints in the terminal.
 - **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate of the declared pipeline. The first gate has no predecessor precondition; every later gate needs a result from the preceding gate's participant for the same subject, recorded at or after that participant's current assignment. A `writes-main-tree` gate also needs the owner's result, under the same subject and currency condition, whether or not it is the first gate. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
@@ -98,7 +98,7 @@ Write a brief — a Markdown file with the assignment — then:
 For a managed Codex root, start coordination from the brief:
 
 ```bash
-promptobus lead --brief ./task.md --model gpt-6-astra
+promptobus lead --brief ./task.md --model gpt-6-astra --permission-mode full-access
 promptobus status --task <id>
 ```
 
@@ -108,6 +108,12 @@ from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it 
 project layer. Before idle turns, the holder reloads fresh owner access in the same native
 thread. If owner access expires, renew the normal owner login and retry. Participants never
 receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.25.2/docs/reference/03-cli.md).
+
+The managed root requires explicit `full-access`: `workspace-write` participant lifts are
+unsupported and refuse before launch. Each participant keeps its own permission profile.
+The Desktop chat supplies the brief and reads results; the managed owner holds the mailbox
+and receives delivery. Use `lead --resume --task <id>` for its retained owner; a new lead
+does not take over an existing Desktop mailbox.
 
 From an existing orchestrator session, lift a worker:
 
@@ -130,7 +136,7 @@ The path is required, `--title` opens a new review task, and `--task <id>` sends
 promptobus step security ./my-repo --task <id>
 ```
 
-A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox. An opencode reviewer denies file and shell writes through the holder permission map. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.25.2/docs/reference/03-cli.md#review).
+A Cursor reviewer mechanically denies file and shell writes. A Codex reviewer disables shell execution tools and reads files through bounded MCP reads in its read-only sandbox, including `read_files` for independent file ranges. An opencode reviewer denies file and shell writes through the holder permission map. External MCP writes for Cursor are constrained by its review prompt; the Cursor driver has no verified mechanical MCP deny rule. See [03-cli § Review](https://github.com/Velklish/promptobus/blob/v0.25.2/docs/reference/03-cli.md#review).
 
 Close the task when the work is accepted:
 
@@ -147,7 +153,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | Command | What it does |
 |---|---|
 | `promptobus lead --resume --task <id>` | Resume an active retained managed Codex root; its native thread, owner and journal stay the same; live or closed owners refuse |
-| `promptobus lead --brief <file>` | Start a managed Codex root orchestrator. `--task`, `--title`, routing flags, `--permission-mode workspace-write|full-access`, `--dry-run`; existing tasks are refused |
+| `promptobus lead --brief <file> --permission-mode full-access` | Start a managed Codex root orchestrator. `--task`, `--title`, routing flags, `--dry-run`; unsupported permissions and existing tasks are refused |
 | `promptobus spawn --repo <path> --brief <file>` | Start a worker in an isolated git worktree. A worker name that shares files with an existing task participant is refused. `--new-task` or `--task <id>`, `--title`, `--task-title`, `--harness`, `--model`, `--effort`, `--strategy`, `--dry-run` |
 | `promptobus spawn --teamlead --brief <file> --task <root>` | Start a child-task orchestrator at the install root on Claude Code or Codex. `--slug`, `--harness`, `--strategy`, `--model`, `--effort`, `--permission-mode`, `--allow-payg`, `--refresh`, `--dry-run` |
 | `promptobus step <name> <path> --task <id>` | Lift the named declared gate: the first gate has no predecessor precondition; a later gate needs the preceding gate's result for the same subject at or after that participant's current assignment; a `writes-main-tree` gate also needs the owner's result under the same condition, whether or not it is the first gate. `--base <ref>`, `--brief <file>` for a writer, routing flags, `--dry-run` |

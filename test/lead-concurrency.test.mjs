@@ -23,7 +23,7 @@ const task = 'lead-concurrency-t20261001-000001';
 const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Concurrent root\nKeep the only launcher alive.\n');
 const cliFile = path.resolve('bin/promptobus.js');
-const args = ['lead', '--brief', brief, '--task', task];
+const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];
 const privateHome = participantCodexHome({ task, address: 'orchestrator' }, env);
 const winner = spawn(process.execPath, [cliFile, ...args], {
   cwd: root, env: { ...env, [THREAD_DELAY_VAR]: '1500' }, stdio: ['ignore', 'pipe', 'pipe'],

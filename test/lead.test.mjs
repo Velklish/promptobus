@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, unlinkSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { check } from './check.mjs';
@@ -11,13 +13,24 @@ import { wardenLine } from '../lib/status.js';
 import { runPromptobus, helpText } from '../lib/cli.js';
 import { dropSession, readSession, writeSession, threadStartConfig, recoveryPrompt } from '../lib/codex-session.js';
 import { codexDriver, participantCodexHome } from '../lib/driver-codex.js';
+import { reviewerFiles } from '../lib/reviewer-files.js';
 
 const root = makeSandbox('promptobus-lead-');
 writeHostConfig(root, { tools: ['codex'] });
 const host = hostOf(root);
 const brief = path.join(root, 'assignment.md');
 writeFileSync(brief, '# Codex owns this task\nCoordinate the workers and accept their results.\n');
-const opts = { brief, task: 'lead-t20261001-000001', model: 'gpt-6-astra', dryRun: true };
+const opts = { brief, task: 'lead-t20261001-000001', model: 'gpt-6-astra', permissionMode: 'full-access', dryRun: true };
+for (const permissionMode of [undefined, 'workspace-write', 'read-only', 'bypassPermissions']) {
+  let refusal = '';
+  const noRouting = Object.create(host);
+  noRouting.collectRules = () => { throw new Error('unsupported permission reached rules collection'); };
+  try { await planLead(noRouting, { ...opts, permissionMode, brief: path.join(root, 'missing-brief.md') }); }
+  catch (error) { refusal = error.message; }
+  check(`root lead refuses ${permissionMode ?? 'implicit permissions'} before reading the brief or creating a task`,
+    /requires explicit --permission-mode full-access/.test(refusal)
+    && !taskExists(host.promptobusHome(), opts.task), refusal);
+}
 const plan = await planLead(host, opts);
 check('Codex root lead plans the orchestrator mailbox without a child task',
   plan.address === 'orchestrator' && plan.task === opts.task && !plan.rootTask
@@ -26,8 +39,8 @@ check('Codex root lead plans the orchestrator mailbox without a child task',
 check('root lead has a private Codex home and writes no shared project layer',
   plan.launch.files.length === 0 && plan.launch.trustProject === false
   && plan.launch.codexHome && plan.launch.rootSessionRecord === null);
-check('root lead keeps the requested model and the ordinary write sandbox',
-  plan.model === 'gpt-6-astra' && plan.launch.settings.sandbox === 'workspace-write');
+check('root lead keeps the requested model and explicit full-access sandbox',
+  plan.model === 'gpt-6-astra' && plan.launch.settings.sandbox === 'danger-full-access');
 const fallback = await planLead(host, { ...opts, model: undefined });
 check('an unrouted root lead defaults to the model proven by native subscription turns',
   fallback.model === 'gpt-6-astra');
@@ -55,7 +68,7 @@ check('invalid root task ids refuse before reading the brief or preparing a sess
 
 let cliCode = null;
 const cliOutput = await capture(async () => {
-  cliCode = await runPromptobus(['lead', '--brief', brief, '--task', opts.task,
+  cliCode = await runPromptobus(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', opts.task,
     '--model', 'gpt-6-astra', '--dry-run'], { host, cwd: root, env: {} });
 });
 check('lead CLI dispatch reaches the dry plan without creating a task',
@@ -63,6 +76,7 @@ check('lead CLI dispatch reaches the dry plan without creating a task',
   && /dry-run: nothing written/.test(cliOutput) && !taskExists(host.promptobusHome(), opts.task));
 check('CLI help exposes the managed root and both reporter harnesses',
   /lead --brief/.test(helpText(host))
+  && !/workspace-write\|full-access/.test(helpText(host))
   && /report --task[^\n]*\[--harness claude\|codex\]/.test(helpText(host))
   && /read-only Claude Code or Codex reporter/.test(helpText(host)));
 
@@ -184,6 +198,29 @@ check('reviewer grants exact rule files and external review skills without their
   boundedRoots.includes(outsideRules) && boundedRoots.includes(externalSkill)
   && !boundedRoots.includes(path.dirname(outsideRules)) && !boundedRoots.includes(root)
   && !boundedRoots.includes(bounded.cwd) && !boundedRoots.includes(bounded.codexHome));
+const indexFile = path.join(root, '.agents', 'skills-index.md');
+mkdirSync(path.dirname(indexFile), { recursive: true });
+mkdirSync(path.join(root, 'source'), { recursive: true });
+writeFileSync(indexFile, 'Review skills index marker');
+const privateFile = path.join(root, '.agents', 'private.txt');
+writeFileSync(privateFile, 'PRIVATE');
+const indexPlan = codexDriver.prepare({ ref: 'indexed-review', role: 'reviewer', root,
+  cwd: path.join(root, 'source'), settingsPath: path.join(root, 'indexed-settings.json'),
+  prompt: 'Review', model: 'gpt-6-astra', mcp: { servers: {} },
+});
+const indexRoots = JSON.parse(indexPlan.mcpConfig.mcpServers.reviewer_files.env.PROMPTOBUS_REVIEW_READ_ROOTS);
+const indexReader = reviewerFiles(indexRoots);
+let privateDenied = false, parentDenied = false, indexMarker = '';
+try { indexMarker = indexReader('read_file', { path: indexFile }).lines[0].text; } catch (error) { indexMarker = error.message; }
+try { indexReader('read_file', { path: privateFile }); } catch (error) { privateDenied = /outside the declared review roots/.test(error.message); }
+try { indexReader('list_files', { path: path.dirname(indexFile) }); } catch (error) { parentDenied = /outside the declared review roots/.test(error.message); }
+check('Codex reviewer can read the exact workspace skills index without its parent or private sibling',
+  indexMarker === 'Review skills index marker'
+  && privateDenied && parentDenied && !indexRoots.includes(root));
+const workerPlan = codexDriver.prepare({ ref: 'index-worker', role: 'worker', root,
+  cwd: path.join(root, 'source'), prompt: 'Implement', model: 'gpt-6-astra', mcp: { servers: {} },
+});
+check('a Codex worker does not receive the reviewer file server', !workerPlan.mcpConfig.mcpServers.reviewer_files);
 
 let incompatibleCode;
 const incompatibleOutput = await expectFail(async () => {
@@ -220,3 +257,91 @@ const from = doc.indexOf(line);
 const end = doc.indexOf('promptobus spawn', from);
 const question = doc.slice(from, end).match(/promptobus ask "[^"]*"[^\n`]*--task <id>/)?.[0];
 check('README.md: the quickstart human question selects the task printed by lead', !!question);
+
+function checkIndex(name, run) {
+  let failure;
+  try { run(); } catch (error) { failure = error; }
+  check(name, !failure, failure?.stack);
+}
+
+function indexFixture() {
+  const root = realpathSync(makeSandbox('promptobus-codex-'));
+  const source = path.join(root, 'source');
+  const privateDir = path.join(root, 'private');
+  mkdirSync(source); mkdirSync(privateDir);
+  const credential = path.join(privateDir, 'auth.json');
+  writeFileSync(credential, 'PRIVATE_CREDENTIAL_FIXTURE');
+  const index = path.join(root, '.agents', 'skills-index.md');
+  mkdirSync(path.dirname(index));
+  writeFileSync(index, 'PUBLIC_SKILLS_INDEX');
+  const prepare = () => codexDriver.prepare({ root, cwd: source, role: 'reviewer', ref: 'index-boundary',
+    settingsPath: path.join(root, 'review.settings.json'), prompt: 'Review', model: 'gpt-6-astra', mcp: { servers: {} },
+    env: { ...process.env, PROMPTOBUS_CODEX_HOME: path.join(root, 'registry') },
+  }).mcpConfig.mcpServers.reviewer_files;
+  const reader = (env) => reviewerFiles(JSON.parse(env.PROMPTOBUS_REVIEW_READ_ROOTS),
+    JSON.parse(env.PROMPTOBUS_REVIEW_CANONICAL_FILES));
+  return { root, source, privateDir, credential, index, prepare, reader };
+}
+
+checkIndex('normal index is readable without its directory or neighbouring credentials', () => {
+  const f = indexFixture(), env = f.prepare().env, read = f.reader(env);
+  assert.deepEqual(JSON.parse(env.PROMPTOBUS_REVIEW_CANONICAL_FILES), [f.index]);
+  assert.equal(read('read_file', { path: f.index }).lines[0].text, 'PUBLIC_SKILLS_INDEX');
+  assert.throws(() => read('list_files', { path: path.dirname(f.index) }), /outside the declared review roots/);
+  assert.throws(() => read('read_files', { files: [{ path: f.credential }] }), /outside the declared review roots/);
+});
+checkIndex('an index symlink cannot grant credentials outside the reviewed tree', () => {
+  const f = indexFixture();
+  unlinkSync(f.index); symlinkSync(f.credential, f.index);
+  const env = f.prepare().env, read = f.reader(env);
+  assert.deepEqual(JSON.parse(env.PROMPTOBUS_REVIEW_CANONICAL_FILES), []);
+  for (const file of [f.index, f.credential]) assert.throws(() => read('read_file', { path: file }), /outside the declared review roots/);
+});
+checkIndex('a redirected index parent cannot grant its external target', () => {
+  const f = indexFixture();
+  writeFileSync(path.join(f.privateDir, 'skills-index.md'), 'PRIVATE_PARENT_FIXTURE');
+  rmSync(path.dirname(f.index), { recursive: true }); symlinkSync(f.privateDir, path.dirname(f.index));
+  const read = f.reader(f.prepare().env);
+  for (const file of [f.index, path.join(f.privateDir, 'skills-index.md'), f.credential]) {
+    assert.throws(() => read('read_file', { path: file }), /outside the declared review roots/);
+  }
+});
+checkIndex('index replacement between preparation and server startup refuses instead of authorizing its target', () => {
+  const f = indexFixture(), server = f.prepare();
+  unlinkSync(f.index); symlinkSync(f.credential, f.index);
+  assert.throws(() => f.reader(server.env), /Canonical review file changed/);
+  const child = spawnSync(server.command, server.args, {
+    env: { ...process.env, ...server.env }, input: '', encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(child.status, 1);
+  assert.match(child.stderr, /Canonical review file changed/);
+  assert.ok(!child.stdout.includes('PRIVATE_CREDENTIAL_FIXTURE'));
+});
+checkIndex('parent replacement before startup is rejected and replacement after startup cannot escape', () => {
+  const f = indexFixture(), server = f.prepare(), read = f.reader(server.env);
+  writeFileSync(path.join(f.privateDir, 'skills-index.md'), 'PRIVATE_PARENT_FIXTURE');
+  rmSync(path.dirname(f.index), { recursive: true }); symlinkSync(f.privateDir, path.dirname(f.index));
+  assert.throws(() => f.reader(server.env), /Canonical review file changed/);
+  assert.throws(() => read('read_file', { path: f.index }), /outside the declared review roots/);
+});
+checkIndex('index replaced with a directory before server startup is refused without descendant bytes', () => {
+  const f = indexFixture(), server = f.prepare();
+  unlinkSync(f.index); mkdirSync(f.index);
+  writeFileSync(path.join(f.index, 'private.txt'), 'PRIVATE_DIRECTORY_FIXTURE');
+  assert.throws(() => f.reader(server.env), /Canonical review file changed/);
+  const child = spawnSync(server.command, server.args, {
+    env: { ...process.env, ...server.env }, input: '', encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(child.status, 1);
+  assert.match(child.stderr, /Canonical review file changed/);
+  assert.ok(!child.stdout.includes('PRIVATE_DIRECTORY_FIXTURE'));
+});
+checkIndex('index replaced with a directory after startup retains an exact-file grant', () => {
+  const f = indexFixture(), read = f.reader(f.prepare().env);
+  unlinkSync(f.index); mkdirSync(f.index);
+  const descendant = path.join(f.index, 'private.txt');
+  writeFileSync(descendant, 'PRIVATE_DIRECTORY_FIXTURE');
+  assert.throws(() => read('read_file', { path: descendant }), /outside the declared review roots/);
+  assert.throws(() => read('read_files', { files: [{ path: descendant }] }), /outside the declared review roots/);
+  assert.throws(() => read('search_text', { path: f.index, query: 'PRIVATE' }), /outside the declared review roots/);
+});

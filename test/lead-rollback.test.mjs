@@ -18,7 +18,7 @@ const env = { ...process.env, CODEX_HOME: ownerHome, PROMPTOBUS_CODEX_OWNER_HOME
 const host = hostOf(root);
 const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Protected launch\nPreserve another launch on rollback.\n');
-const plan = await planLead(host, { brief, task: 'lead-rollback-t20261001-000001' });
+const plan = await planLead(host, { brief, task: 'lead-rollback-t20261001-000001', permissionMode: 'full-access' });
 let replacement, refused = '';
 try {
   await codexDriver.spawn(plan.launch, { tool: { ok: true, bin: 'codex', version: '0.159.2' },

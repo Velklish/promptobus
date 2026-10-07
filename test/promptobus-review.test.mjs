@@ -496,8 +496,8 @@ const codexClassifiedPlan = planReview(classifiedHost, {
 });
 check('reviewer prompt: Codex reads through MCP without native execution or checks',
   codexClassifiedPlan.prompt.includes('Shell execution tools are disabled and the sandbox is read-only.')
-  && codexClassifiedPlan.prompt.includes('reviewer_files read_file, list_files and search_text MCP tools')
-  && codexClassifiedPlan.prompt.includes('do not run builds, tests or analyzers')
+  && codexClassifiedPlan.prompt.includes('reviewer_files read_file, read_files, list_files and search_text MCP tools')
+  && codexClassifiedPlan.prompt.includes('Do not run builds, tests or analyzers')
   && skillPrompts.codex.includes('Skip steps that need a write, a command that builds, tests or runs an analyzer')
   && codexClassifiedPlan.prompt.includes('not run, because a reviewer runs no gates or mechanical checks')
   && !codexClassifiedPlan.prompt.includes('File edits and command starts are disabled for you by the mechanism.'),

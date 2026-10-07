@@ -27,7 +27,7 @@ writeFileSync(brief, '# Auth lifecycle\nRead task metadata.\n');
 planParticipant(harness.home, 'orchestrator', { turns: [
   { do: [] }, { do: [{ wait: 800 }] }, { do: [] }, { do: [{ wait: 800 }] }, { do: [] },
 ] });
-const started = spawnSync(process.execPath, [path.resolve('bin/promptobus.js'), 'lead', '--brief', brief, '--task', task], {
+const started = spawnSync(process.execPath, [path.resolve('bin/promptobus.js'), 'lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task], {
   cwd: root, env, encoding: 'utf8', timeout: 45000,
 });
 check('holder starts with a durable owner source despite a missing scoped home', started.status === 0,

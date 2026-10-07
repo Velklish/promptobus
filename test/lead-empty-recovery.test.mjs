@@ -33,7 +33,7 @@ import { bus, participantRecord } from ${JSON.stringify(moduleUrl('store'))};
 import { hostOf } from ${JSON.stringify(moduleUrl('host'))};
 const host = hostOf(process.cwd(), { binPath: ${JSON.stringify(path.resolve('bin/promptobus.js'))}, nodePath: process.execPath, version: '0.21.0' });
 const task = ${JSON.stringify(task)};
-const plan = await planLead(host, { task, brief: ${JSON.stringify(brief)}, model: 'gpt-6-astra' });
+const plan = await planLead(host, { task, brief: ${JSON.stringify(brief)}, model: 'gpt-6-astra', permissionMode: 'full-access' });
 await codexDriver.spawn(plan.launch, {
   tool: { ok: true, bin: 'codex', version: '0.159.2' }, host, home: host.promptobusHome(),
   task, address: 'orchestrator', cwd: process.cwd(), env: process.env, ref: plan.name, role: 'orchestrator',

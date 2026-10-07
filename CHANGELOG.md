@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Codex launches and review reads avoid unsupported paths.** A managed root requires
+  explicit `--permission-mode full-access` before routing or launch. Its holder checks
+  the applied model, explicit effort, sandbox and approval policy before the first turn,
+  and reports the network profile. Reviewers can batch bounded exact-root file reads
+  and read the workspace's exact skills index without access to its parent directory.
+  Claude Code, Cursor and OpenCode profiles and shared delivery remain unchanged.
+
 - **OpenCode participant cleanup preserves live peers.** Sweeping one participant removes
   only records matching its task and address, with their session, holder and log. Closed-task
   cleanup awaits each dead participant's hook before continuing and stays pending for live

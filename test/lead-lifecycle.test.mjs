@@ -34,7 +34,7 @@ planParticipant(harness.home, 'orchestrator', { turns: [
   { do: [{ tool: 'promptobus_task', args: { task } }] },
   { do: [{ tool: 'promptobus_task', args: { task } }] },
 ] });
-const started = cli(['lead', '--brief', brief, '--task', task]);
+const started = cli(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task]);
 check('managed root native holder launches after complete task binding', started.status === 0,
   `${started.status} ${started.stdout} ${started.stderr}`);
 const originalOwner = owner();
@@ -102,7 +102,7 @@ check('stop cleans a dead managed Codex root home without closing its task',
 writeFileSync(path.join(ownerHome, 'auth.json'), '{"stub":"credentials"}\n');
 writeFileSync(brief, '# Failed first turn\nKeep recovery history.\n');
 const failedTask = 'lead-lifecycle-t20261001-000002';
-const failed = cli(['lead', '--brief', brief, '--task', failedTask], {
+const failed = cli(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', failedTask], {
   [HANG_FIRST_VAR]: '1', PROMPTOBUS_CODEX_READY_MS: '1000',
 });
 const failedOwner = participantOf(core().readTask(failedTask), 'orchestrator');
