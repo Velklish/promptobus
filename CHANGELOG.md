@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a local BB plugin with a constrained Codex reviewer provider: verified
+  read-only execution, no approval escalation, bounded file tools and a fail-closed
+  external tool allowlist. The built-in BB Codex provider is not admitted as a
+  reviewer. This does not yet establish the complete BB role workflow.
+  [Setup](bb-plugin-promptobus/README.md), [decision](docs/adr/adr-029-bb-constrained-codex-reviewer.md).
+
 ### Fixed
+
+- Capture the installed Codex 0.162.0-alpha.2 protocol with all 317 generated schemas,
+  binary and file hashes, and request/response/approval validation. Earlier captures
+  remain unchanged; native model turns and hooks were not remeasured on this build.
 
 - **Codex launches and review reads avoid unsupported paths.** A managed root requires
   explicit `--permission-mode full-access` before routing or launch. Its holder checks

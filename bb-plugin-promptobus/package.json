@@ -1,0 +1,42 @@
+{
+  "name": "bb-plugin-promptobus",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.45.0 <0.46.0",
+    "bbPluginSdk": "0.6.15"
+  },
+  "bb": {
+    "name": "Promptobus",
+    "description": "Read-only Codex reviewers with bounded file tools in BB.",
+    "branding": {
+      "icon": "Workflow"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "@get-bb/plugin-sdk": "0.6.15",
+    "promptobus": "file:..",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.11",
+    "typescript": "7.0.2"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "build": "bb plugin build",
+    "test": "tsc -p tsconfig.json --noEmit false --outDir .test-build && node --test test/*.test.mjs"
+  },
+  "files": [
+    "*.ts",
+    "skills",
+    "dist",
+    "README.md",
+    "PLUGIN_OVERVIEW.md"
+  ]
+}

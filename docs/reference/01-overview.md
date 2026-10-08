@@ -13,6 +13,7 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `src/index.ts` → `.` | Protocol, store v1, MCP factory, driver contract, host types, standalone host |
 | `src/host-index.ts` → `./host` | Host contract and the standalone implementation |
 | `src/hooks.ts` → `./hooks` | Hook planner |
+| `lib/bb-reviewer.js` → `./bb-reviewer` | Constrained Codex executor and bounded file tools for the BB reviewer provider |
 | `src/driver.ts` → `./driver` | Driver contract |
 | `src/telemetry.ts` → `./telemetry` | Participant telemetry summary |
 | `lib/integration.js` → `./integration` | What a host reads instead of package files: printed values, driver declarations, install plan, routing report ([02-host § The host integration entry point](02-host.md#the-host-integration-entry-point)) |

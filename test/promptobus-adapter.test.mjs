@@ -1032,6 +1032,7 @@ for (const [rel, file] of adapterFiles) {
   for (const m of text.matchAll(MODULE_SPEC)) {
     if (!DRIVER_PRIVATE.test(m[1])) continue;
     const statement = text.slice(0, m.index).split('\n').at(-1) + m[0];
+    if (rel === 'lib/bb-reviewer.js' && statement === "import { CodexRpc } from './codex-rpc.js'") continue;
     if (rel === 'lib/report-channel.js' && statement === "import { holderAlive, holderAsk, readSession } from './codex-session.js'") continue;
     crossings.push(`${rel} → ${m[1]} (line ${text.slice(0, m.index).split('\n').length})`);
   }
@@ -1042,7 +1043,7 @@ check(': the boundary gate sees the mechanism files — there is something to ch
   && adapterFiles.some(([rel]) => rel === 'bin/promptobus.js'),
   `${adapterFiles.length} files`);
 
-check(': driver internals stay behind the registry except the reporter public holder contact',
+check(': driver internals stay behind the registry except the reporter contact and BB reviewer RPC transport',
   crossings.length === 0, crossings.join(' | '));
 
 // There is one door, and it is not empty: the map itself must import a driver — otherwise the

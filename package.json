@@ -31,6 +31,10 @@
     "node": ">=20"
   },
   "exports": {
+    "./bb-reviewer": {
+      "types": "./lib/bb-reviewer.d.ts",
+      "default": "./lib/bb-reviewer.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"

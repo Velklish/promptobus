@@ -6,11 +6,12 @@ import Ajv from 'ajv';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { dropSession, holderAsk, pidAlive, readSession, sessionFile, waitReady, writeSession } from '../lib/codex-session.js';
+import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
 const root = makeSandbox('promptobus-codex-');
 const binDir = path.join(root, 'bin');
 mkdirSync(binDir);
-const schemaChecks = ['0.159.2', '0.160.0'].map(version => {
+const schemaChecks = [...new Set(['0.159.2', '0.160.0', PROVEN_CODEX_VERSION])].map(version => {
   const ajv = new Ajv();
   return ajv.compile(JSON.parse(readFileSync(path.resolve('test/fixtures/codex-app-server', version, 'v2/TurnInterruptParams.json'))));
 });

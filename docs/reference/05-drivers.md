@@ -713,10 +713,10 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.160.0, captured from the installed Desktop binary
-on 2026-10-06. All 314 generated schemas are byte-identical to the complete 0.159.2
-capture: added 0, removed 0, changed 0. ClientRequest retains 104 variants and
-ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.160.0/README.md)
+The fixture baseline is codex-cli 0.162.0-alpha.2, captured from the installed Desktop binary
+on 2026-10-08. The complete capture contains 317 generated schemas: compared with
+0.160.0, added 3, removed 0, changed 25, unchanged 289. ClientRequest contains 105
+variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.162.0/README.md)
 names the measured binary hash and full file inventory. Holder request shapes and
 approval replies validate against the complete captures; generic caller-supplied
 holder RPC forwarding is untyped, and `currentTime/read` is an extension absent from
@@ -725,7 +725,9 @@ the generated ServerRequest schema.
 The participant minimum remains 0.158.0. The local schema gate accepts the minimum
 and current proven capture. An unknown installed version needs a fresh capture and
 contract validation. Native model turns and hook behavior were not remeasured on
-0.160.0. [Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
+0.162.0. The three-component fixture directory names the measured alpha build;
+it does not measure a later stable binary. Earlier full captures remain unchanged.
+[Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
 retains its own measured version, including the trusted-root hook control, canonical
 worker/reviewer skills, and reporter MCP reads. The unrouted default `gpt-6-astra`
 was tested with subscription credentials on 0.158.0 and 0.159.2. Historical 0.156.1
@@ -737,7 +739,7 @@ The mock app-server emits complete native response shapes for initialize, model/
 skills/list, thread/start, thread/resume, thread/read, turn/start, turn/steer and
 review/start. Its internal thread store remains a test fixture; emitted threads have
 tagged status, native required metadata, and turns with item IDs. The response test
-validates 38 actual positive outputs against both complete 0.159.2 and 0.160.0
+validates 38 actual positive outputs against the complete 0.159.2, 0.160.0 and 0.162.0
 captures, including default, credits, flat and spend-control quota responses. Omitted
 or null thread/start cwd defaults once to the mock process working directory and
 persists through thread/read, thread/resume and thread/list responses. Reset-credit
@@ -1173,3 +1175,32 @@ the walk as "not open". A line that does not parse is skipped. Anything
 else — no question in the tail, a file that cannot be read — is "not
 open". The answer is cached by the file's size and mtime, so the
 warden's one-second round costs one `fstat` while nothing is written.
+
+## BB constrained Codex reviewer
+
+The BB integration supplies `promptobus-codex-reviewer` separately from the native
+Driver registry. It uses BB's provider bridge lifecycle and one Codex app-server
+per session. The built-in BB `codex` provider has no public per-role read-only
+selection in BB 0.45.0 / Plugin SDK 0.6.15 and is refused for the reviewer role.
+
+The constrained provider requests and verifies the effective Codex read-only
+sandbox, approval policy never and explicit model before starting a turn. It
+refuses Codex versions other than the measured 0.162.0-alpha.2. Apps, plugins and
+remote plugins are disabled at process startup, together with shell, unified
+execution, hooks, subagents and computer use. The built-in `apply_patch` remains
+exposed; the native read-only sandbox rejects its mutations. A private Codex
+home receives authentication only, and the empty project sandbox receives no
+workspace config or MCP servers. Its dynamic tool allowlist contains the four
+`pb_review_*` bounded file reads. Unclassified tools and forged calls are denied
+before dispatch. Effective startup configuration must confirm the private home,
+disabled features and no MCP servers; unexpected managed servers refuse launch.
+Model and effort changes require a fresh session. Read roots come from the authenticated BB thread environment on
+the local coordinator host. Remote hosts are refused.
+
+Canonical MCP reads are withheld with writes until their delivery and
+classification contract is connected. This provider establishes the reviewer
+restriction contract only; the complete BB role workflow needs separate live
+evidence. A native reviewer beside BB workers remains a mixed runtime pilot.
+See [the plugin setup](../../bb-plugin-promptobus/README.md) and
+[ADR-029](../adr/adr-029-bb-constrained-codex-reviewer.md). Native Driver permissions
+and launch paths are unchanged.

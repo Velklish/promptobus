@@ -6,11 +6,12 @@ import Ajv from 'ajv';
 import { makeSandbox } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { CodexRpc } from '../lib/codex-rpc.js';
+import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness } from './harness-codex.mjs';
 
 const root = makeSandbox('promptobus-codex-');
 const harness = await installHarness({ binDir: path.join(root, 'bin') });
-const schemas = ['0.159.2', '0.160.0'].map(version => {
+const schemas = [...new Set(['0.159.2', '0.160.0', PROVEN_CODEX_VERSION])].map(version => {
   const ajv = new Ajv({ strict: false, allErrors: true, formats: {
     int64: true, uint64: true, uint32: true, uint: true, double: true, int32: true, uint16: true,
   } });

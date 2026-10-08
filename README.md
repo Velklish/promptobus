@@ -239,6 +239,7 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus` | Protocol and store v1: `openEngine`, tasks, participants, messages, artifacts, recoverable fan-out, history; the MCP factory; host and driver types |
 | `promptobus/host` | The `PromptobusHost` contract and `createStandaloneHost` |
 | `promptobus/hooks` | Hook planner for the Stop and SessionStart loop guard; Cursor installs its stop event only |
+| `promptobus/bb-reviewer` | Constrained Codex executor and bounded file tools for the optional BB reviewer provider |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
 | `promptobus/telemetry` | Participant telemetry summary: `telemetrySummary`, `telemetryStats` and their record types |
 | `promptobus/integration` | What a host embedding the bus reads instead of package files: the installed version, the values the CLI prints, the shipped drivers' declarations, the install plan and the routing readiness report |
@@ -289,3 +290,9 @@ A change is complete when the reference, the affected README and `CHANGELOG.md` 
 ## License
 
 [MIT](LICENSE)
+
+### BB reviewer plugin
+
+The repository contains a separate source package, `bb-plugin-promptobus/`,
+which supplies a constrained Codex read-only reviewer provider. It is separate from the native harness registry.
+The reviewer provider alone does not establish full BB orchestration support.

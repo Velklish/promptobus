@@ -2,7 +2,7 @@
 
 - **Scope:** [Host](../../reference/02-host.md), [Drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-08
-- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](PB-364-bb-plugin-engine-and-participant-binding.md), [PB-366 · Prove and define BB reviewer sandbox and tool restrictions before full runtime support](PB-366-bb-reviewer-enforcement-contract.md)
+- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](PB-364-bb-plugin-engine-and-participant-binding.md), [PB-366 · Prove and define BB reviewer sandbox and tool restrictions before full runtime support](../../archive/LOG.md#pb-366)
 - **Cost:** —
 - **Order:** 50
 

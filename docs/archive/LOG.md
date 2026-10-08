@@ -498,3 +498,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-355"></a>`PB-355-successor-owner-contact` · 2026-10-07 · completed · — · Avoid successor takeover hints for stale or unrelated owner contacts
 - <a id="pb-348"></a>`PB-348-opencode-sweep-kills-live-peers` · 2026-10-07 · completed · — · Sweeping one OpenCode participant terminates live peers in the same task
 - <a id="pb-356"></a>`PB-356-codex-only-orchestration-efficiency` · 2026-10-07 · completed · — · Codex-only launch checks and bounded reviewer reads
+- <a id="pb-366"></a>`PB-366-bb-reviewer-enforcement-contract` · 2026-10-08 · completed · — · Prove and define BB reviewer sandbox and tool restrictions before full runtime support
