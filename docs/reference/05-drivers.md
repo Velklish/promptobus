@@ -7,6 +7,39 @@ gets is the workspace's call, and how a task is journalled is the engine's.
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
+## BB provider selection
+
+The optional BB facade selects an explicit SDK provider and model. It records
+`runtime: bb`, underlying `harness: codex`, SDK provider/model, native model,
+reasoning, selection source and observation scope/time in participant metadata.
+It does not introduce a native `bb` harness or share a quota bucket across providers.
+
+| BB provider | Admitted roles | Model/effort source | Account windows |
+| --- | --- | --- | --- |
+| `codex` | orchestrator, worker, approver, teamlead, reporter | Actual scoped SDK catalog; explicit supported effort or its catalog default | Selected provider's SDK usage on its host; unknown if unavailable |
+| `promptobus-codex-reviewer` | reviewer | Actual SDK catalog through the constrained Codex bridge | Unknown: this provider exposes no usage API |
+
+This matrix is limited to BB 0.45.0, SDK 0.6.15 and the constrained reviewer's
+verified Codex CLI 0.162.0-alpha.2. Provider/model inventory is re-read before
+launch; a model-load error, unsupported model/effort, unavailable host/environment
+or known invalid installation/authentication refuses before canonical reservation.
+Unknown health is retained when the selected model inventory is available.
+New managed worktrees use host-scoped catalog/health until their actual environment
+exists. SDK usage is host/provider-account scoped, never estimated per task.
+
+`bb promptobus task create` and `participant add` accept `--provider`,
+`--model` and `--reasoning-level`; an explicit provider must match the role.
+The read-only `routing inspect` command reports the same decision without launch.
+Bindings hold the launch observation; `participant get` also reads the SDK's
+current execution options, which can be null or change after launch.
+
+The BB facade rejects native `--harness`, `--strategy` and `--effort` flags.
+Native constraints stay in the native CLI, with its existing catalog, overlays,
+defaults and account caches. There is no automatic provider fallback, quota
+threshold policy, permission elevation or import of a native strategy into BB.
+The SDK catalog default is an explicit BB choice, not the native effort default.
+See [ADR-033](../adr/adr-033-bb-provider-routing.md).
+
 The current project hook is a loop guard: Claude Code and Codex install Stop and SessionStart,
 while Cursor installs stop only (`src/hooks.ts`, `lib/install.js`). A former PostToolUse feed
 hook and its runner are recognised for removal during install or uninstall. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`);

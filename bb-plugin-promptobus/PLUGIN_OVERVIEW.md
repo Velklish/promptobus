@@ -31,5 +31,9 @@ no bus rights. Wake hints refer to canonical unread messages; SDK delivery does 
 ACK them. Reload replays history and reconciles a bounded outbox without spawning
 again. Plugin participant Stop durably pauses automatic continuation until resume;
 ordinary BB Stop on an already-idle thread has no replayable SDK pause marker.
-Active interruption and denied interactions also pause continuation. Model routing
-and the complete role workflow remain separate boundaries.
+Active interruption and denied interactions also pause continuation.
+Selection records runtime, provider, SDK/native model and reasoning from a scoped
+SDK catalog. Explicit provider choices must match the role; no provider fallback
+or native strategy substitution occurs. Account windows belong to that provider
+on its host; absent reviewer usage remains unknown. The complete role workflow
+remains a separate boundary.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Select BB provider/model/reasoning from the actual scoped SDK catalog before
+  reservation; keep provider-account windows and unknown usage explicit.
+  Role policy refuses provider substitution and leaves native routing defaults
+  unchanged. Native children drop inherited BB identity while retaining connection
+  configuration. [Selection](bb-plugin-promptobus/README.md#provider-and-model-selection),
+  [decision](docs/adr/adr-033-bb-provider-routing.md).
+
 - Persist BB launch intent, wake outbox and event cursors; reconcile canonical
   unread mail after reload with bounded hints and missing-result continuation.
   SDK sent/queued success never ACKs mail. Plugin Stop durably pauses delivery,

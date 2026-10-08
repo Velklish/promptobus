@@ -69,6 +69,7 @@ plugin after source changes. `bb promptobus --help` describes the operator CLI.
 ```sh
 bb promptobus task create --task demo-t20261008-120000 --title "Demo" \
   --project proj_example --environment env_example --model gpt-6.1-sol \
+  --provider codex --reasoning-level medium \
   --assignment "Read the task and wait for mail."
 bb promptobus participant add --task demo-t20261008-120000 \
   --participant worker-api --role worker --model gpt-6.1-sol \
@@ -116,9 +117,60 @@ send. Routing currently goes through the task orchestrator; worker lateral sends
 are refused. New role threads use built-in Codex except reviewers, which use the
 constrained provider. Bus writes do not grant reviewer source or shell writes.
 
-The six role skills and recipient wake/recovery are delivered. Model-catalog
-selection and the complete role workflow remain separate integration boundaries.
+The six role skills, model-catalog selection and recipient wake/recovery are delivered.
+The complete role workflow remains a separate integration boundary.
 BB queued first prompts are admission state, not the canonical Promptobus mailbox.
+
+## Provider and model selection
+
+`task create` and `participant add` require `--model`. Optional `--provider`
+must match the role: `codex` for the owner, worker, approver, teamlead and reporter;
+`promptobus-codex-reviewer` for reviewer. There is no fallback between providers.
+Optional `--reasoning-level` must be supported by that model; omission selects the
+SDK catalog's default, which can differ from the native Promptobus defaults.
+The SDK model id sent to spawn and the native model name are recorded separately.
+
+For example, inspect a reviewer selection without creating a task or thread:
+
+```sh
+bb promptobus routing inspect --environment env_example --role reviewer \
+  --provider promptobus-codex-reviewer --model gpt-6.1-sol --reasoning-level medium
+```
+
+Selection checks the actual connected host, existing environment, provider,
+model inventory and reported provider health before canonical reservation or
+SDK spawn. A new managed environment uses its host's model catalog and health,
+and requires a host-scoped catalog. Unknown or failed model availability refuses;
+unknown health remains explicit when a valid model catalog is available.
+Unavailable installation/authentication reported by health refuses.
+
+Quota is an observation of the selected provider's account windows on its host.
+Missing or failed usage, empty windows and providers without a usage API report
+`unknown` with no invented percentage. Reviewer usage is not exposed by this
+provider and never borrows regular Codex windows, even if both use one account.
+The selection contains no account email or inferred per-task cost. Account windows
+are evidence, not an automatic fallback or a new quota threshold policy.
+
+Participant bindings and launch replies expose `execution`: runtime, native
+harness, provider/model/reasoning, selection source, scope and observation time.
+The canonical participant also stores it in `metadata.bb.execution`; its top-level
+`harness: bb` remains the adapter/lifecycle discriminator. It is the launch decision snapshot. `participant get` additionally reads SDK
+`currentExecution`, which may be null or differ after an operator changes a
+normal Codex thread's settings. The constrained reviewer requires a fresh session
+for model/effort changes.
+
+This BB facade does not apply native `--strategy`, `--harness` or `--effort`
+flags or native routing overlays; its CLI rejects them. Use the native Promptobus
+CLI when those constraints are required. The native catalog, strategy resolution,
+account caches and defaults are unchanged.
+
+| Provider | Supported roles | Usage |
+| --- | --- | --- |
+| `codex` | orchestrator, worker, approver, teamlead, reporter | SDK host/provider account windows, or unknown |
+| `promptobus-codex-reviewer` | reviewer | Unknown; no usage API |
+
+The supported versions are BB 0.45.0, SDK 0.6.15 and the reviewer's verified
+Codex CLI 0.162.0-alpha.2. Other BB providers are not admitted.
 
 ## Wake and recovery
 

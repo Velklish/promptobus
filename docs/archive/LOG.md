@@ -504,3 +504,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-364"></a>`PB-364-bb-plugin-engine-and-participant-binding` · 2026-10-08 · completed · — · Add a local BB plugin entry point with engine-backed tools and authenticated participants
 - <a id="pb-363"></a>`PB-363-bb-thread-and-environment-lifecycle` · 2026-10-08 · completed · — · Launch and inspect BB participants with one owner for each environment
 - <a id="pb-362"></a>`PB-362-bb-message-delivery-and-recovery` · 2026-10-08 · completed · — · Deliver BB wake hints with durable recovery, bounded continuation and explicit stop handling
+- <a id="pb-361"></a>`PB-361-bb-provider-aware-routing-and-environment-boundary` · 2026-10-08 · completed · — · Route BB execution by actual provider and filter inherited parent runtime identity

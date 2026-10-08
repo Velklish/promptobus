@@ -89,6 +89,23 @@ test('opencode: no parent identity or messaging variable reaches a lifted partic
   pinsDropAndOrder('opencode');
 });
 
+test('native children drop literal BB parent identity and retain connection configuration', () => {
+  const parent = { BB_THREAD_ID: 'parent-thread', BB_ENVIRONMENT_ID: 'parent-env',
+    BB_PROJECT_ID: 'parent-project', BB_THREAD_STORAGE: '/parent/thread-storage',
+    BB_CLI: '/bin/bb', BB_SERVER_URL: 'http://localhost:1234', BB_HOST_DAEMON_PORT: '1235',
+    BB_CUSTOM_CONFIG: 'keep', PATH: '/usr/bin', CUSTOM_CONFIG: 'keep' };
+  for (const [name, driver] of Object.entries(drivers)) {
+    const child = driver.sessionEnv(parent, {});
+    for (const key of ['BB_THREAD_ID', 'BB_ENVIRONMENT_ID', 'BB_PROJECT_ID', 'BB_THREAD_STORAGE']) {
+      assert.equal(Object.hasOwn(child, key), false, `${name}: ${key} inherited parent identity`);
+    }
+    for (const key of ['BB_CLI', 'BB_SERVER_URL', 'BB_HOST_DAEMON_PORT', 'BB_CUSTOM_CONFIG', 'PATH', 'CUSTOM_CONFIG']) {
+      assert.equal(child[key], parent[key], `${name}: ${key} configuration lost`);
+    }
+    assert.equal(driver.sessionEnv(parent, { BB_THREAD_ID: 'authenticated-child' }).BB_THREAD_ID, 'authenticated-child');
+  }
+});
+
 // The list is the contract, and an empty or shrunken one would make every check above pass for
 // the wrong reason — the shape this run kept finding by eye.
 test('the shared list still names the parent identity and messaging variables', () => {

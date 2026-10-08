@@ -15,6 +15,7 @@ async function stand(t, options = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const threads = new Map();
+  const executionOptions = new Map();
   const metadata = new Map();
   const history = new Map(); const queues = new Map(); const interactions = new Map(); const wakes = [];
   const append = (id, type, data = {}) => {
@@ -43,7 +44,13 @@ async function stand(t, options = {}) {
     worker: 'promptobus-worker', reviewer: 'promptobus-reviewer', approver: 'promptobus-approver',
     teamlead: 'promptobus-teamlead', reporter: 'promptobus-reporter', orchestrator: 'promptobus-orchestrator',
   }), sdk: {
-    system: { config: async () => ({ primaryHostId: 'local' }) },
+    system: { config: async () => ({ primaryHostId: 'local' }),
+      providerStates: async () => ({ providers: [{ providerId: 'codex', status: 'ready' }] }),
+      usageLimits: async () => ({ codex: { status: 'ok', windows: [{ label: '5h', usedPercent: 21, resetsAt: null }] } }) },
+    providers: { list: async () => ['codex', 'promptobus-codex-reviewer'].map(id => ({ id, available: true, family: 'codex',
+      capabilities: { modelCatalogScope: 'host' }, maintenance: { health: id === 'codex', usage: id === 'codex' } })),
+      models: async () => ({ modelLoadError: options.modelLoadError ?? null, models: [{ id: 'test-model', model: 'test-model', defaultReasoningEffort: 'low',
+        supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] }) },
     environments: { get: async ({ environmentId }) => environmentId === 'env' ? environment : workerEnvironment,
       status: async ({ environmentId }) => workspace(environmentId), diffPatch: async ({ paths }) => {
         assert.equal(paths.length > 0, true, 'SDK diffPatch requires at least one path');
@@ -68,12 +75,15 @@ async function stand(t, options = {}) {
       },
       get: async ({ threadId }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
         if (options.beforeGet) await options.beforeGet(threadId); return threads.get(threadId); },
+      defaultExecutionOptions: async ({ threadId }) => executionOptions.get(threadId) ?? null,
       spawn: async args => {
         initialArgs = args;
         nativeCatalogCleared = false;
         const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
           parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null });
         threads.set(thread.id, thread);
+        executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
+          serviceTier: 'default', source: 'client/thread/start' });
         metadata.set(thread.id, args.pluginMetadata ?? {});
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread, origin: 'plugin', originPluginId: 'promptobus' }))).action, 'wait');
@@ -139,12 +149,12 @@ async function stand(t, options = {}) {
   t.after(() => host.harness.lifecycle.dispose());
   plugin(host.bb);
   const task = newTaskIdentity('engine-test').id;
-  const create = async () => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.']);
+  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
   const add = async (id, role = 'worker', extra = []) => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, events, get host() { return host; }, task, create, add, call, control,
-    wakes, queues, interactions, append,
+    wakes, queues, interactions, append, executionOptions, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
     updateDelivery: (id, update) => bindingStore(host.bb).updateDelivery(id, update),
@@ -153,6 +163,66 @@ async function stand(t, options = {}) {
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+test('BB launch persists explicit provider/model/reasoning and sends the same selection to SDK', async t => {
+  const s = await stand(t);
+  assert.equal((await s.create(['--provider', 'codex', '--reasoning-level', 'high'])).exitCode, 0);
+  assert.equal(s.initialArgs.providerId, 'codex');
+  assert.equal(s.initialArgs.model, 'test-model');
+  assert.equal(s.initialArgs.reasoningLevel, 'high');
+  const selected = bindingStore(s.host.bb).thread('thr-1').execution;
+  assert.equal(selected.runtime, 'bb'); assert.equal(selected.harness, 'codex');
+  assert.equal(selected.providerId, 'codex'); assert.equal(selected.model, 'test-model');
+  assert.equal(selected.reasoningLevel, 'high'); assert.equal(selected.reasoningSource, 'explicit');
+  assert.equal(selected.scope.environmentId, 'env'); assert.equal(selected.scope.hostId, 'local');
+  const canonical = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false }).readTask(s.task);
+  assert.equal(canonical.participants[0].harness, 'bb');
+  assert.deepEqual(canonical.participants[0].metadata.bb.execution, selected);
+  await s.reload();
+  assert.deepEqual(bindingStore(s.host.bb).thread('thr-1').execution, selected);
+  s.executionOptions.get('thr-1').reasoningLevel = 'low';
+  const observed = JSON.parse((await s.control('get', 'orchestrator')).stdout);
+  assert.deepEqual(observed.execution, selected);
+  assert.equal(observed.currentExecution.reasoningLevel, 'low');
+});
+
+test('BB role policy refuses an explicit provider mismatch without canonical reservation or spawn', async t => {
+  const s = await stand(t); await s.create();
+  const before = s.host.harness.inspection.experimental_hostRpcCalls.length;
+  const result = await s.add('unsafe-reviewer', 'reviewer', ['--provider', 'codex']);
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /reviewer.*promptobus-codex-reviewer/);
+  assert.equal(s.threads.size, 1);
+  assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.slice(before).some(call => call.input.operation === 'reserve'), false);
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'unsafe-reviewer'), undefined);
+});
+
+test('BB reviewer uses its own provider and does not reuse the owner quota selection', async t => {
+  const s = await stand(t); await s.create(['--reasoning-level', 'high']);
+  assert.equal((await s.add('reviewer-one', 'reviewer')).exitCode, 0);
+  const execution = bindingStore(s.host.bb).thread('thr-2').execution;
+  assert.equal(s.initialArgs.providerId, 'promptobus-codex-reviewer');
+  assert.equal(s.initialArgs.reasoningLevel, 'low');
+  assert.equal(execution.quota.status, 'unknown'); assert.deepEqual(execution.quota.windows, []);
+  const canonical = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false }).readTask(s.task);
+  assert.deepEqual(canonical.participants.find(p => p.id === 'reviewer-one').metadata.bb.execution, execution);
+});
+
+test('the BB CLI rejects native harness and strategy flags before any task or thread creation', async t => {
+  const s = await stand(t);
+  for (const args of [['--harness', 'claude'], ['--strategy', 'cheap']]) {
+    const result = await s.create(args);
+    assert.equal(result.exitCode, 1); assert.match(result.stderr, /unknown option/);
+    assert.equal(s.threads.size, 0); assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
+  }
+});
+
+test('unknown BB model availability fails before a canonical task, binding or thread exists', async t => {
+  const s = await stand(t, { modelLoadError: { code: 'timeout', providerId: 'codex', detail: null } });
+  const result = await s.create();
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /model availability is unknown: timeout/);
+  assert.equal(s.threads.size, 0); assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
+  assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.length, 0);
+});
 
 test('wake hints and duplicate BB announcements do not ACK or repeat canonical consumption across reload', async t => {
   const s = await stand(t); await s.create(); await s.add('worker-one');

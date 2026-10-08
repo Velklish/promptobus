@@ -6,12 +6,12 @@ import { BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewer';
 import { ORCHESTRATOR, REVIEWER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { bindingStore } from './bindings.js';
-import { artifactSchema, bindingSchema, emptySchema, mailboxSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
+import { artifactSchema, bindingSchema, emptySchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
-
-export const REVIEWER_PROVIDER = 'promptobus-codex-reviewer';
+import { REVIEWER_PROVIDER, selectBbExecution, SUPPORTED_PROVIDERS } from './routing.js';
+export { REVIEWER_PROVIDER } from './routing.js';
 
 export function registerRuntime(bb: BbPluginApi) {
   const store = bindingStore(bb);
@@ -75,9 +75,10 @@ export function registerRuntime(bb: BbPluginApi) {
       return { action: 'proceed' };
     } catch (error) { return { action: 'reject', message: String((error as Error).message) }; }
   });
-  const spawn = async (b: Binding, assignment: string, model: string, baseBranch?: string) => {
+  const spawn = async (b: Binding, assignment: string, baseBranch?: string) => {
     let recorded = false;
-    const intent = { attemptId: randomUUID(), assignment, model, ...(baseBranch ? { baseBranch } : {}), status: 'requested' as const };
+    const { model, reasoningLevel } = b.execution!;
+    const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ...(baseBranch ? { baseBranch } : {}), status: 'requested' as const };
     store.launch(b, intent);
     const tools = toolsFor(b.role);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
@@ -88,7 +89,7 @@ export function registerRuntime(bb: BbPluginApi) {
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : { type: 'reuse', environmentId: b.environmentId },
-        providerId: b.providerId, model, permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
+        providerId: b.providerId, model, reasoningLevel, permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
         ...(b.parentThreadId ? { parentThreadId: b.parentThreadId } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
         prompt: b.bootstrap ?? initialPrompt(), title: `Promptobus ${b.role}: ${b.participant}` });
@@ -120,7 +121,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (baseBranch) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
       await bb.experimental_hooks.recheck('message.dispatch');
       store.launch(b, { ...intent, status: 'ready' });
-      return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase };
+      return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase, execution: b.execution };
     } catch (error) {
       if (!recorded) b.threadId = null;
       b.phase = 'orphan'; store.save(b);
@@ -135,6 +136,8 @@ export function registerRuntime(bb: BbPluginApi) {
     project: { type: 'string', required: true, description: 'Existing BB project id.' },
     environment: { type: 'string', required: true, description: 'Existing local coordinator environment id.' },
     model: { type: 'string', required: true, description: 'Explicit Codex model.' },
+    provider: { type: 'enum', values: SUPPORTED_PROVIDERS, description: 'Explicit BB provider; must match the role policy.' },
+    'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
   } as const;
   const participantOptions = { task: createOptions.task,
@@ -155,17 +158,18 @@ export function registerRuntime(bb: BbPluginApi) {
           environmentId: options.environment, environmentPath: environment.path, hostId: local, providerId: 'codex', root: environment.path,
           token: randomUUID(), threadId: null, phase: 'pending' });
         await recordBbWorkspace(bb, b, context.signal);
+        b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
         store.reserve(b, true);
         try {
           const result = await onHost(b, { operation: 'reserve', create: true, title: options.title }, context.signal) as { root: string };
           b.root = result.root; store.save(b);
-          return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment, options.model)) };
+          return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment)) };
         } catch (error) { b.phase = 'orphan'; store.save(b); throw error; }
       } }),
     'participant add': cliCommand({ summary: 'Bind a new role thread to an existing plugin-owned task.', options: {
       ...participantOptions,
       role: { type: 'enum', values: roleSchema.options, required: true, description: 'Instruction role.' },
-      model: createOptions.model, assignment: createOptions.assignment,
+      model: createOptions.model, provider: createOptions.provider, 'reasoning-level': createOptions['reasoning-level'], assignment: createOptions.assignment,
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
       'new-environment': { type: 'boolean', description: 'Let BB create and own a managed worktree.' },
       'base-branch': { type: 'string', description: 'Required branch for a new managed worktree.' },
@@ -183,21 +187,35 @@ export function registerRuntime(bb: BbPluginApi) {
         preservation: undefined });
       delete b.preservation;
       if (!options['new-environment']) await recordBbWorkspace(bb, b, context.signal);
+      b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');
       store.reserve(b, false);
       try {
         if (!options['new-environment']) await onHost(b, { operation: 'reserve', create: false, title: options.task }, context.signal);
-        return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment, options.model, options['base-branch'])) };
+        return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment, options['base-branch'])) };
       } catch (error) { b.phase = 'orphan'; store.save(b); throw error; }
     } }),
     'participant get': cliCommand({ summary: 'Resolve SDK state before returning a plain SessionView.', options: participantOptions,
       async run({ options }, context) {
         const b = boundParticipant(options.task, options.participant);
         const observation = await observeBbParticipant(bb, b, context.signal);
+        const currentExecution = observation.view.state === 'alive' ? await bb.sdk.threads.defaultExecutionOptions({ threadId: b.threadId!, signal: context.signal }) : null;
         return { exitCode: 0, stdout: JSON.stringify({ participant: b.participant, phase: b.phase,
           environmentId: b.environmentId, environmentPath: b.environmentPath, hostId: b.hostId, branch: b.branch, baseSha: b.baseSha,
-          parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId, ...observation }) };
+          parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId,
+          execution: b.execution ?? null, currentExecution, ...observation }) };
       } }),
+    'routing inspect': cliCommand({ summary: 'Read scoped BB provider/model selection and account windows without launching.', options: {
+      environment: createOptions.environment, model: createOptions.model, provider: createOptions.provider,
+      'reasoning-level': createOptions['reasoning-level'], role: { type: 'enum', values: roleSchema.options, required: true, description: 'Role policy to check.' },
+    }, async run({ options }, context) {
+      const environment = await bb.sdk.environments.get({ environmentId: options.environment, signal: context.signal });
+      const local = (await bb.sdk.system.config()).primaryHostId;
+      if (!local || environment.hostId !== local) throw new Error('A local BB environment is required');
+      const execution = await selectBbExecution(bb, { role: options.role, hostId: local, environmentId: environment.id, environmentOwner: 'existing' },
+        { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+      return { exitCode: 0, stdout: JSON.stringify(execution) };
+    } }),
     'participant stop': cliCommand({ summary: 'Request Stop and check fresh runtime state; preserve the environment.', options: participantOptions,
       async run({ options }) {
         const b = boundParticipant(options.task, options.participant);

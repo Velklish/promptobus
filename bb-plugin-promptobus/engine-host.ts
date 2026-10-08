@@ -21,7 +21,8 @@ export async function engineOperation(input: unknown) {
       sessionRef: null, capabilities: null, metadata: { bb: { token: b.token, projectId: b.projectId,
         environmentId: b.environmentId, hostId: b.hostId, providerId: b.providerId, environmentPath: b.environmentPath,
         environmentOwner: b.environmentOwner, branch: b.branch, baseSha: b.baseSha,
-        parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } } };
+        parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId,
+        ...(b.execution ? { execution: b.execution } : {}) } } };
     if (request.create) {
       if (b.role !== ORCHESTRATOR || b.participant !== ORCHESTRATOR) throw new Error('Task owner must be the orchestrator');
       engine.createTask({ id: b.task, title: request.title, owner: participant, adapter: { bb: { hostId: b.hostId, root } } });

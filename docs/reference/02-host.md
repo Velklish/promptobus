@@ -252,6 +252,15 @@ The spawn path chooses a readable participant session name from the work-slice t
 
 ## Session identity
 
+At the native child boundary, all four drivers remove inherited `BB_THREAD_ID`,
+`BB_ENVIRONMENT_ID`, `BB_PROJECT_ID` and `BB_THREAD_STORAGE` using the shared
+`PARENT_SESSION_ENV` list. These identify the parent, not the child.
+`BB_CLI`, `BB_SERVER_URL`, `BB_HOST_DAEMON_PORT` and unrelated values are retained.
+Explicit caller-supplied child values merge after removal. BB SDK-managed threads
+keep their authenticated SDK context; this filter runs only in native driver
+`sessionEnv`. The constrained reviewer app-server keeps its separate private
+environment security boundary ([ADR-029](../adr/adr-029-bb-constrained-codex-reviewer.md)).
+
 **Who a session is comes from its driver, not from one harness's variable.** `DriverOptions.identityVar` names the environment variable a harness uses to name its own session, or `null` when it has none: `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID`, `CODEX_THREAD_ID`. Task ownership, `claim`, the warden's claim and the loop guard all read the answer — 23 call sites across 8 modules — and until [ADR-019](../adr/adr-019-session-address-per-task-lands.md) every one of them read the first of those three directly.
 
 **The member answers for ONE path, and the distinction is measured rather than cautionary.** It answers for a command the session runs. In measured Codex 0.156.1 and `cursor-agent` 2026.09.26-dd393fe MCP children, none of the three command-path identity variables arrived. A generated participant bus entry supplies a separate session-record pointer; an entry without that pointer names no session. On the command path the old reader was worse than empty: a live Codex participant's environment carried its orchestrator's `CLAUDE_CODE_SESSION_ID`, and the reader returned **the parent's id** as the participant's own.

@@ -3,6 +3,18 @@ import { MESSAGE_TYPES, PARTICIPANT_ID_RE, TASK_ID_RE } from 'promptobus';
 import { BB_ROLE_SKILLS } from 'promptobus/instructions';
 
 export const roleSchema = z.enum(Object.keys(BB_ROLE_SKILLS) as [keyof typeof BB_ROLE_SKILLS, ...(keyof typeof BB_ROLE_SKILLS)[]]);
+export const reasoningSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'none', 'ultracode']);
+export const executionSchema = z.object({
+  runtime: z.literal('bb'), harness: z.literal('codex'), providerId: z.enum(['codex', 'promptobus-codex-reviewer']),
+  providerSource: z.enum(['role', 'explicit']), model: z.string().min(1), nativeModel: z.string().min(1),
+  requestedModel: z.string().min(1), reasoningLevel: reasoningSchema, reasoningSource: z.enum(['catalog', 'explicit']),
+  observedAt: z.string(), scope: z.object({ hostId: z.string(), environmentId: z.string().nullable() }).strict(),
+  health: z.enum(['ready', 'unknown']),
+  quota: z.object({ status: z.enum(['known', 'unknown']), reason: z.string().nullable(),
+    windows: z.array(z.object({ label: z.string(), usedPercent: z.number(), resetsAt: z.string().nullable() }).strict()),
+  }).strict(),
+}).strict();
+export type ExecutionSelection = z.infer<typeof executionSchema>;
 export const bindingSchema = z.object({
   task: z.string().regex(TASK_ID_RE), participant: z.string().regex(PARTICIPANT_ID_RE), role: roleSchema,
   projectId: z.string().min(1), environmentId: z.string().min(1), environmentPath: z.string().min(1),
@@ -12,10 +24,11 @@ export const bindingSchema = z.object({
   environmentOwner: z.enum(['existing', 'bb']).default('existing'), branch: z.string().nullable().default(null),
   baseSha: z.string().regex(/^[a-f0-9]{40,64}$/).nullable().default(null), bootstrap: z.string().optional(),
   preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
+  execution: executionSchema.optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
 export const launchSchema = z.object({
-  attemptId: z.string().uuid(), assignment: z.string(), model: z.string(), baseBranch: z.string().optional(),
+  attemptId: z.string().uuid(), assignment: z.string(), model: z.string(), reasoningLevel: reasoningSchema.optional(), baseBranch: z.string().optional(),
   status: z.enum(['prepared', 'requested', 'recorded', 'ready', 'unknown']),
 }).strict();
 export const deliverySchema = z.object({
