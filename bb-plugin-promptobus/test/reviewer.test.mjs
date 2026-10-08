@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext } from '@get-bb/plugin-sdk/testing';
 import { renderBbInstructionSkill } from 'promptobus/instructions';
 import plugin from '../.test-build/server.js';
 import { reviewerBridge } from '../.test-build/reviewer-bridge.js';
@@ -77,21 +78,19 @@ test('reviewer bridge reserves an opening session and cancels it on close', asyn
   assert.match((await h.call('thread/start', start)).error.message, /closing/);
 });
 
-test('reviewer tools reject a forged provider or remote environment before host dispatch', async () => {
-  const tools = new Map();
-  let config;
+test('reviewer tools reject a forged provider or remote environment before host dispatch', async t => {
   let calls = 0;
-  let thread = { providerId: 'codex', projectId: 'project', environmentId: 'env' };
+  let thread = makeThreadResponse({ id: 'bb-thread', providerId: 'codex', projectId: 'project', environmentId: 'env' });
   let environment = { path: '/review', hostId: 'remote' };
-  plugin({
-    providers: { register() {} },
-    hosts: { experimental_client: () => ({ call: async () => { calls++; return {}; } }) },
-    agents: { registerTool: tool => tools.set(tool.name, tool), configure: value => { config = value; } },
+  const host = createFakePluginHost({ pluginId: 'promptobus', experimental_callHostRpc: async () => { calls++; return {}; },
     sdk: { threads: { get: async () => thread }, environments: { get: async () => environment },
       system: { config: async () => ({ primaryHostId: 'local' }) } },
   });
-  assert.deepEqual(config({ provider: { id: 'codex' } }).tools, []);
-  const read = tools.get('pb_review_read_file');
+  t.after(() => host.harness.lifecycle.dispose());
+  plugin(host.bb);
+  const config = host.harness.inspection.registrations.agentConfigurationProvider;
+  assert.deepEqual(config(makePluginAgentConfigurationContext({ provider: { id: 'codex' } })).tools, []);
+  const read = { execute: (args, ctx) => host.harness.behavior.callAgentTool('pb_review_read_file', args, ctx) };
   const context = { threadId: 'bb-thread', projectId: 'project' };
   await assert.rejects(read.execute({ path: '/review/sample' }, context), /authenticated BB thread/);
   thread = { ...thread, providerId: 'promptobus-codex-reviewer' };

@@ -1,5 +1,6 @@
 export type ReviewerTool = { name: string; description: string; inputSchema: unknown };
 export const BB_REVIEWER_TOOLS: string[];
+export const BB_REVIEWER_PROTOCOL_TOOLS: string[];
 export const BB_REVIEWER_CODEX_VERSION: string;
 export function reviewerTools(tools?: ReviewerTool[]): ReviewerTool[];
 export function reviewerProfile(input: { cwd: string; model: string; effort?: string; instructions?: string; tools?: ReviewerTool[] }): Record<string, unknown>;

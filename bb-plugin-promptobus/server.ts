@@ -3,10 +3,12 @@ import { BB_REVIEWER_TOOLS, REVIEW_FILE_TOOLS } from 'promptobus/bb-reviewer';
 import { BB_ROLE_SKILLS } from 'promptobus/instructions';
 import { REVIEWER } from 'promptobus';
 import { hostContract } from './contract.js';
+import { registerRuntime, REVIEWER_PROVIDER } from './runtime.js';
 
-export const REVIEWER_PROVIDER = 'promptobus-codex-reviewer';
+export { REVIEWER_PROVIDER } from './runtime.js';
 
 export default function plugin(bb: BbPluginApi) {
+  const runtime = registerRuntime(bb);
   const host = bb.hosts.experimental_client({ contract: hostContract });
   bb.providers.register({
     id: REVIEWER_PROVIDER, displayName: 'Codex (Promptobus read-only reviewer)', family: 'codex',
@@ -21,6 +23,7 @@ export default function plugin(bb: BbPluginApi) {
       name: `pb_review_${tool.name}`, description: tool.description,
       parameters: tool.inputSchema as Record<string, unknown>,
       async execute(args, context) {
+        await runtime.checkReviewer(context);
         const thread = await bb.sdk.threads.get({ threadId: context.threadId, signal: context.signal });
         if (thread.providerId !== REVIEWER_PROVIDER || thread.projectId !== context.projectId || !thread.environmentId) {
           throw new Error('Read-only reviewer tool requires its authenticated BB thread');
@@ -34,7 +37,7 @@ export default function plugin(bb: BbPluginApi) {
       },
     });
   }
-  bb.agents.configure(context => context.provider.id === REVIEWER_PROVIDER
+  bb.agents.configure(context => runtime.configuration(context) ?? (context.provider.id === REVIEWER_PROVIDER
     ? { tools: BB_REVIEWER_TOOLS, skills: [BB_ROLE_SKILLS[REVIEWER]], instructions: 'The provider supplies the complete promptobus-reviewer skill before the first native turn. Read code through pb_review_read_file, pb_review_read_files, pb_review_list_files and pb_review_search_text. This provider mechanically denies shell, edits and all unclassified external tools.' }
-    : { tools: [], skills: [] });
+    : { tools: [], skills: [] }));
 }

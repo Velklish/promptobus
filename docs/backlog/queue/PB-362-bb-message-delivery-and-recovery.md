@@ -2,7 +2,7 @@
 
 - **Scope:** [Protocol](../../reference/04-protocol.md), [CLI warden and guard](../../reference/03-cli.md)
 - **Created:** 2026-10-08
-- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](PB-364-bb-plugin-engine-and-participant-binding.md), [PB-363 · Launch and inspect BB participants with one owner for each environment](PB-363-bb-thread-and-environment-lifecycle.md)
+- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](../../archive/LOG.md#pb-364), [PB-363 · Launch and inspect BB participants with one owner for each environment](PB-363-bb-thread-and-environment-lifecycle.md)
 - **Cost:** —
 - **Order:** 30
 

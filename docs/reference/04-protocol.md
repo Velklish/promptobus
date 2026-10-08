@@ -777,3 +777,20 @@ it is a synchronous block.
 Exported for a contract quote: the reference names the threshold in
 seconds, and `lint` checks that number against this constant through
 `dist`; there are no other consumers outside.
+
+## BB participant tools
+
+BB uses the exported v1 engine and its independent participant ids. The public
+`PARTICIPANT_ID_RE` is the same grammar the engine validates. A BB thread id is an
+opaque `sessionRef`; native process-oriented Driver launch is not involved.
+
+`promptobus_send` derives task and sender from the authenticated plugin binding.
+It accepts typed recipients/body and optional UTF-8 attachment content, which the
+host streams into the engine blob store after routing validation.
+`promptobus_mailbox` peeks or ACKs only the caller's mailbox; `promptobus_task`
+returns current contacts without adapter credentials; `promptobus_artifact` reads
+verified content from the bound task. Reporter bindings cannot send. Initial
+routing goes through the orchestrator and refuses lateral worker sends. The
+server stores identity and admission state, never a second canonical mailbox.
+The entry point returns activation events; recipient wake delivery belongs to
+the continuation adapter. [Local contract](../../bb-plugin-promptobus/README.md).

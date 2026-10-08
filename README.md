@@ -292,8 +292,9 @@ A change is complete when the reference, the affected README and `CHANGELOG.md` 
 
 [MIT](LICENSE)
 
-### BB reviewer plugin
+### BB plugin
 
 The repository contains a separate source package, `bb-plugin-promptobus/`,
-which supplies a constrained Codex read-only reviewer provider. It is separate from the native harness registry.
-The reviewer provider alone does not establish full BB orchestration support.
+which supplies a constrained Codex read-only reviewer provider and local engine-backed
+participant tools. It is separate from the native harness registry. Setup and the
+current activation boundary are described in that package's README.

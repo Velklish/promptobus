@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Promptobus",
-    "description": "Read-only Codex reviewers with bounded file tools in BB.",
+    "description": "Local engine-backed task participants and read-only Codex reviewers in BB.",
     "branding": {
       "icon": "Workflow"
     },
@@ -24,7 +24,11 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
     "@types/node": "22.19.11",
+    "better-sqlite3": "12.10.0",
+    "cron-parser": "5.5.0",
+    "hono": "4.11.9",
     "typescript": "7.0.2"
   },
   "scripts": {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bind local BB task participants to authenticated thread, project, environment and
+  host identities in plugin-owned SQLite. Native role tools call the canonical v1
+  engine on the coordinator host. First prompts wait for binding finalization;
+  reload retains bindings and orphaned launches cannot acquire another identity.
+  Reviewer bus operations retain the read-only source sandbox and external-tool
+  refusal. [Setup](bb-plugin-promptobus/README.md),
+  [decision](docs/adr/adr-030-bb-authoritative-participants.md).
+
 - Export typed portable role instruction renderers. Native planners retain their
   captured prompts, while BB role skills share the ownership, review and evidence
   contracts with explicit runtime bindings. Long role text and initial task context

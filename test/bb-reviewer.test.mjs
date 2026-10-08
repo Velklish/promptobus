@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, chmodSync, copyFileSync } from 'node:fs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { reviewerProfile, reviewerTools, verifyReviewerProfile, verifyReviewerConfig, openBbReviewer } from '../lib/bb-reviewer.js';
+import { BB_REVIEWER_PROTOCOL_TOOLS, reviewerProfile, reviewerTools, verifyReviewerProfile, verifyReviewerConfig, openBbReviewer } from '../lib/bb-reviewer.js';
 
 test('BB reviewer always requests read-only execution, never approval escalation', () => {
   const profile = reviewerProfile({ cwd: '/review', model: 'model', effort: 'high', sandbox: 'danger-full-access' });
@@ -24,6 +24,14 @@ test('BB reviewer denies unclassified external tools and built-in execution tool
   const tools = ['pb_review_read_file', 'shell', 'apply_patch', 'mcp__canonical__write', 'mcp__canonical__read']
     .map(name => ({ name, description: name, inputSchema: { type: 'object' } }));
   assert.deepEqual(reviewerTools(tools).map(tool => tool.name), ['pb_review_read_file']);
+});
+
+test('BB reviewer admits only declared authenticated bus operations alongside bounded reads', () => {
+  const names = [...BB_REVIEWER_PROTOCOL_TOOLS, 'promptobus_bind', 'promptobus_spawn', 'promptobus_send_as', 'shell'];
+  const profile = reviewerProfile({ cwd: '/review', model: 'model', tools: names.map(name => ({ name, description: name, inputSchema: { type: 'object' } })) });
+  assert.deepEqual(profile.dynamicTools.map(tool => tool.name), BB_REVIEWER_PROTOCOL_TOOLS);
+  assert.equal(profile.sandbox, 'read-only');
+  assert.equal(profile.approvalPolicy, 'never');
 });
 
 test('BB reviewer refusal covers a missing or widened effective sandbox', () => {

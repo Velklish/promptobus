@@ -573,3 +573,19 @@ availability adapters, which report it to a person as the verdict's
 `version` (the Claude one also filters its inventory by it). It is the drift `bin` above carries its comment about, one field
 over — and load-bearing for a diagnosis rather than for a launch, which is
 why it survived longer.
+
+## Local BB host boundary
+
+The optional `bb-plugin-promptobus` package owns the BB server and host entries.
+The server authenticates tool calls from SDK thread/project context and persistent
+plugin bindings. It resolves the actual environment and primary local host before
+calling the host entry. Filesystem engine operations run on that host; server cwd
+is never used as a participant root. The host checks canonical task/participant
+state before each bound operation. Mutable metadata cannot establish identity.
+
+First-message admission uses `message.dispatch`: a pending plugin thread waits
+until its returned identity is finalized, then a hook recheck allows the queued
+initial prompt. The native tools have an independent ready-binding guard, so
+manual queue release cannot confer rights. Reload retains bindings; orphaned
+launches remain refused. [Decision](../adr/adr-030-bb-authoritative-participants.md)
+and [operator setup](../../bb-plugin-promptobus/README.md) define the local scope.

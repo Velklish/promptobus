@@ -1,5 +1,8 @@
-The plugin adds a Codex reviewer provider that reads source files through bounded
-native BB tools. It refuses shell execution, edits and unclassified external tools.
+The plugin binds local task participants to authenticated BB threads and exposes
+native mailbox, typed send, task and artifact tools. The canonical v1 engine runs
+on the local coordinator host; the server keeps identity rows in plugin storage.
+It also adds a Codex reviewer provider that reads source through bounded native
+tools and refuses shell execution, source edits and unclassified external tools.
 
 ## Requirements
 
@@ -12,8 +15,12 @@ their own behavior.
 
 The provider verifies Codex read-only sandbox and no approval escalation before a
 model turn. BB's Accept Edits label does not grant writes through this provider.
-Four bounded file tools read the authenticated thread's environment. Canonical
+Four bounded file tools read the authenticated thread's environment. Bound
+reviewers also receive authenticated bus tools; these write task journals only.
+Canonical
 external tools are withheld until classified delivery is available.
 
-The reviewer provider alone does not establish the complete Promptobus BB role
-workflow. No remote-host or full-runtime support claim is made here.
+`bb promptobus task create`, `participant add` and `bindings` use an existing
+environment on the primary local host. First prompts wait for binding finalization;
+orphaned launches receive no bus rights. Recipient wake delivery, managed environment
+lifecycle, model routing and the complete role workflow remain separate boundaries.

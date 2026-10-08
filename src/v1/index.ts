@@ -3,7 +3,7 @@
 export { ERROR_CODES, PromptobusError } from './errors.js';
 export type { ErrorCode, ErrorContext } from './errors.js';
 export {
-  MESSAGE_PROTOCOL_VERSION, MESSAGE_TYPES_V1, MODELS, SCHEMA_VERSION,
+  MESSAGE_PROTOCOL_VERSION, MESSAGE_TYPES_V1, MODELS, PARTICIPANT_ID_RE, SCHEMA_VERSION,
 } from './model.js';
 export type {
   ArtifactV1, CapabilitiesSnapshot, MessageV1, ModelName, ParticipantMode, ParticipantV1, TaskV1,

@@ -2,7 +2,7 @@
 
 - **Scope:** [Drivers and routing](../../reference/05-drivers.md), [Host identity](../../reference/02-host.md)
 - **Created:** 2026-10-08
-- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](PB-364-bb-plugin-engine-and-participant-binding.md)
+- **Dependencies:** [PB-364 · Add a local BB plugin entry point with engine-backed tools and authenticated participants](../../archive/LOG.md#pb-364)
 - **Cost:** —
 - **Order:** 40
 
