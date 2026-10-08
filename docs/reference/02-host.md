@@ -598,3 +598,43 @@ initial prompt. The native tools have an independent ready-binding guard, so
 manual queue release cannot confer rights. Reload retains bindings; orphaned
 launches remain refused. [Decision](../adr/adr-030-bb-authoritative-participants.md)
 and [operator setup](../../bb-plugin-promptobus/README.md) define the local scope.
+
+## BB Host context delivery
+
+`promptobus/bb-host` exports `createBbHostIntegration` and
+`renderBbHostContext`, with [public types](../../lib/bb-host.d.ts). The consumer
+supplies `resolveHost(root)`, optional `prepareEnvironment({root, role, signal})`,
+and `listTools` / `invokeTool` when canonical servers are declared. The default
+plugin resolves the standalone Host and refuses declared servers without those
+adapters. Native Host delivery defaults are unchanged.
+
+Collection preserves `collectRules(root)` order, highest precedence first,
+and embeds each complete rule file and `skillsDir()` skill body in the initial
+assignment. A reviewer also receives its module's declared review skill.
+Each file must be text at most 256 KiB; the collected context is at most 1 MiB.
+Collection uses the actual ready BB environment after preparation and before
+canonical finalization, including newly managed worktrees. It never reuses an
+owner's context for a child environment.
+
+`listTools({server, configuration, root, signal})` returns explicit tool name,
+description, input schema and `access: read | write`. The configuration from
+`participantServers()` stays host-side. External unresolved servers refuse.
+`invokeTool` receives that configuration plus canonical tool/args, authoritative
+role and `actor: {task, participant}`. The consumer owns canonical transport,
+argument validation and private credentials. No protocol-specific client or
+universal MCP injection is implied.
+
+The authenticated `promptobus_host_context` tool inspects fresh context or reads
+only declared rule files and canonical skill resource roots. The authenticated
+`promptobus_host_call` tool admits only a current catalog pair. Reviewer/reporter
+catalogs require complete Host write classification that includes every declared
+write; denied pairs never reach `invokeTool`. Reporter uses the reviewer's readonly
+classification selector; its authoritative invocation role and actor remain reporter.
+SDK and engine identity checks occur before context reads or calls. Native reviewer
+MCP stays disabled.
+
+A source generator produces the consumer plugin variant; see
+[setup](../../bb-plugin-promptobus/README.md#consumer-host-setup) and
+[ADR-034](../adr/adr-034-bb-host-context-delivery.md). Private source integration
+and server configuration belong to the consumer. Regenerate and create fresh
+participants when delivered context or the native tool catalog changes.

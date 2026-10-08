@@ -15,6 +15,17 @@ export const executionSchema = z.object({
   }).strict(),
 }).strict();
 export type ExecutionSelection = z.infer<typeof executionSchema>;
+export const hostContextSchema = z.object({
+  rules: z.array(z.object({ path: z.string(), text: z.string() }).strict()),
+  skills: z.array(z.object({ name: z.string(), path: z.string(), text: z.string(), root: z.string() }).strict()),
+  tools: z.array(z.object({ server: z.string(), tool: z.string(), description: z.string(), inputSchema: z.unknown(), access: z.enum(['read', 'write']) }).strict()),
+}).strict();
+export const hostReadSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('inspect') }).strict(),
+  z.object({ mode: z.literal('read'), path: z.string().min(1), start_line: z.number().int().positive().optional(),
+    line_count: z.number().int().positive().max(2000).optional() }).strict(),
+]);
+export const hostCallSchema = z.object({ server: z.string().min(1), tool: z.string().min(1), args: z.record(z.string(), z.unknown()) }).strict();
 export const bindingSchema = z.object({
   task: z.string().regex(TASK_ID_RE), participant: z.string().regex(PARTICIPANT_ID_RE), role: roleSchema,
   projectId: z.string().min(1), environmentId: z.string().min(1), environmentPath: z.string().min(1),
@@ -25,6 +36,7 @@ export const bindingSchema = z.object({
   baseSha: z.string().regex(/^[a-f0-9]{40,64}$/).nullable().default(null), bootstrap: z.string().optional(),
   preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
   execution: executionSchema.optional(),
+  hostContext: hostContextSchema.optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
 export const launchSchema = z.object({

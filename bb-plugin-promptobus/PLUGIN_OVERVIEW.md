@@ -17,8 +17,11 @@ The provider verifies Codex read-only sandbox and no approval escalation before 
 model turn. BB's Accept Edits label does not grant writes through this provider.
 Four bounded file tools read the authenticated thread's environment. Bound
 reviewers also receive authenticated bus tools; these write task journals only.
-Canonical
-external tools are withheld until classified delivery is available.
+Canonical reads use the authenticated Host bridge and a consumer-owned adapter;
+fresh complete classification excludes writes before consumer dispatch. Native MCP
+remains disabled. Full Host rules and canonical skill text enter the first assignment,
+including new BB worktrees. The source generator creates a consumer plugin variant;
+the default variant uses the standalone Host and refuses declared servers without an adapter.
 
 `bb promptobus task create`, `participant add` and `bindings` use an existing
 unmanaged Git coordinator on the primary local host. Participants can reuse a local

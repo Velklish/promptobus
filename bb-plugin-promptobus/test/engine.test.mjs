@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext, makeMessageDispatchHookContext } from '@get-bb/plugin-sdk/testing';
@@ -8,11 +8,14 @@ import { openEngine, newTaskIdentity } from 'promptobus';
 import plugin from '../.test-build/server.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 import { bindingStore } from '../.test-build/bindings.js';
+import { createHostEntry } from '../.test-build/host-integration.js';
+import { createBbHostIntegration } from 'promptobus/bb-host';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
 async function stand(t, options = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-'));
+  const hostEntry = options.hostSetup?.(root);
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const threads = new Map();
   const executionOptions = new Map();
@@ -140,6 +143,9 @@ async function stand(t, options = {}) {
     },
   }, experimental_callHostRpc: async ({ method, input, hostId }) => {
     assert.equal(hostId, 'local');
+    if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
+    if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
+    if (method === 'canonical' || method === 'hostContext') return options.hostOperation?.(method, input) ?? { read: true };
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
     if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck();
@@ -163,6 +169,62 @@ async function stand(t, options = {}) {
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+function fictionalHost(calls) {
+  return root => {
+    const base = path.join(root, 'base'), module = path.join(root, 'modules'), skills = path.join(root, 'canon-skills');
+    for (const dir of [base, module, path.join(skills, 'catalog')]) mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(base, 'rules.md'), 'PRECEDENCE=base');
+    writeFileSync(path.join(module, 'rules.md'), 'PRECEDENCE=module');
+    writeFileSync(path.join(skills, 'catalog', 'SKILL.md'), 'Canonical skill: read catalog before editing.');
+    const host = { collectRules: environment => [path.join(environment, 'AGENTS.md'), path.join(module, 'rules.md'), path.join(base, 'rules.md')],
+      skillsDir: () => skills, resolveRepoModule: () => null, reviewSkillDir: () => skills,
+      participantServers: () => ({ servers: { catalog: { env: { SECRET: 'not-delivered' } } }, external: [] }),
+      participantDenyTools: () => ({ tools: [{ server: 'catalog', tool: 'write' }], complete: true }) };
+    return createHostEntry(createBbHostIntegration({ resolveHost: () => host,
+      prepareEnvironment: ({ root: environment }) => { mkdirSync(environment, { recursive: true });
+        writeFileSync(path.join(environment, 'AGENTS.md'), `PRECEDENCE=repo\nENVIRONMENT=${environment}\n${'rule '.repeat(1000)}\nRULE_TAIL`); },
+      listTools: async () => [{ name: 'read', description: 'Read catalog', access: 'read', inputSchema: { type: 'object' } },
+        { name: 'write', description: 'Write catalog', access: 'write', inputSchema: { type: 'object' } }],
+      invokeTool: async input => { calls.push(input); return { result: input.tool }; },
+    }));
+  };
+}
+
+test('BB Host delivery uses complete rule/skill content and authentic canonical worker/reviewer capabilities', async t => {
+  const calls = []; const s = await stand(t, { hostSetup: fictionalHost(calls) });
+  assert.equal((await s.create()).exitCode, 0);
+  assert.ok(s.initialArgs.prompt.includes('RULE_TAIL'));
+  assert.ok(s.initialArgs.prompt.includes('Canonical skill: read catalog before editing.'));
+  assert.equal(s.initialArgs.prompt.includes('not-delivered'), false);
+  await s.add('worker-host'); await s.add('reviewer-host', 'reviewer');
+  const worker = bindingStore(s.host.bb).thread('thr-2'), reviewer = bindingStore(s.host.bb).thread('thr-3');
+  assert.deepEqual(worker.hostContext.tools.map(tool => tool.tool), ['read', 'write']);
+  assert.deepEqual(reviewer.hostContext.tools.map(tool => tool.tool), ['read']);
+  assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_host_call', { server: 'catalog', tool: 'write', args: {} })), { result: 'write' });
+  assert.deepEqual(calls[0].actor, { task: s.task, participant: 'worker-host' });
+  assert.deepEqual(JSON.parse(await s.call('thr-3', 'promptobus_host_call', { server: 'catalog', tool: 'read', args: {} })), { result: 'read' });
+  assert.deepEqual(calls[1].actor, { task: s.task, participant: 'reviewer-host' });
+  await assert.rejects(s.call('thr-3', 'promptobus_host_call', { server: 'catalog', tool: 'write', args: { role: 'worker' } }), /not admitted/);
+  await assert.rejects(s.call('thr-3', 'promptobus_host_call', { server: 'catalog', tool: 'read', args: {}, role: 'worker' }), /unrecognized|unknown/i);
+  assert.equal(calls.length, 2);
+  await s.reload();
+  const context = JSON.parse(await s.call('thr-3', 'promptobus_host_context', { mode: 'inspect' }));
+  assert.ok(context.rules[0].text.endsWith('RULE_TAIL'));
+});
+
+test('new BB worktrees collect generated Host context after actual environment provisioning', async t => {
+  const s = await stand(t, { hostSetup: fictionalHost([]) }); await s.create();
+  assert.equal((await s.add('worker-host', 'worker', ['--new-environment', '--base-branch', 'main'])).exitCode, 0);
+  const b = bindingStore(s.host.bb).thread('thr-2');
+  assert.equal(b.hostContext.rules[0].path, path.join(realpathSync(s.workerEnvironment.path), 'AGENTS.md'));
+  assert.ok(b.hostContext.rules[0].text.includes(`ENVIRONMENT=${s.workerEnvironment.path}`));
+  const config = await s.host.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+    thread: { id: b.threadId }, project: { id: b.projectId }, environment: { id: b.environmentId, path: b.environmentPath },
+    host: { id: b.hostId }, provider: { id: b.providerId },
+  }));
+  assert.ok(config.tools.some(tool => tool.name === 'promptobus_host_call'));
+});
 
 test('BB launch persists explicit provider/model/reasoning and sends the same selection to SDK', async t => {
   const s = await stand(t);

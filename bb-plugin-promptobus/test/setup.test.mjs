@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+test('consumer generator builds a fresh packed Host integration without generated developer files', t => {
+  const source = fileURLToPath(new URL('..', import.meta.url));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-setup-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = { ...process.env, NPM_CONFIG_CACHE: '/private/tmp/pb-bb-npm-cache' };
+  const run = (command, args, cwd) => execFileSync(command, args, { cwd, env, stdio: 'pipe', timeout: 120_000 });
+  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', root], path.dirname(source)))[0];
+  const integration = path.join(root, 'consumer.mjs');
+  writeFileSync(integration, `import path from 'node:path';
+export default {
+  resolveHost(root) { return {
+    collectRules: () => [path.join(root, 'AGENTS.md')], skillsDir: () => null,
+    resolveRepoModule: () => null, reviewSkillDir: () => null, pipeline: () => null,
+    participantServers: () => ({servers:{canonical:{command:'fiction'}}, external:[]}),
+    participantDenyToolsByKind: () => ({complete:true, tools:[{server:'canonical',tool:'write'}]}),
+  }; },
+  async listTools() { return ['read','write'].map(name => ({name, description:name, inputSchema:{type:'object'}, access:name})); },
+  async invokeTool(input) { return {role:input.role, tool:input.tool, actor:input.actor}; },
+};\n`);
+  const directory = path.join(root, 'plugin');
+  run(process.execPath, [path.join(source, 'scripts/create-host-plugin.mjs'), '--directory', directory,
+    '--integration', integration, '--promptobus', `file:${path.join(root, packed.filename)}`], source);
+  assert.equal(existsSync(path.join(directory, '.test-build')), false);
+  assert.equal(existsSync(path.join(directory, 'node_modules')), false);
+  assert.equal(existsSync(path.join(directory, 'dist')), false);
+  assert.equal(existsSync(path.join(directory, 'test')), false);
+  assert.equal(readFileSync(path.join(directory, 'skills/promptobus-worker/SKILL.md'), 'utf8'),
+    readFileSync(path.join(source, 'skills/promptobus-worker/SKILL.md'), 'utf8'));
+  assert.throws(() => run(process.execPath, [path.join(source, 'scripts/create-host-plugin.mjs'), '--directory', directory,
+    '--integration', integration, '--promptobus', 'unused'], source), /existing files are never overwritten/);
+  run('npm', ['install', '--no-audit', '--no-fund'], directory);
+  for (const script of ['check', 'skills:check', 'build']) run('npm', ['run', script], directory);
+  const fixture = path.join(root, 'fixture'); mkdirSync(fixture);
+  writeFileSync(path.join(fixture, 'AGENTS.md'), 'FICTION_RULE_FROM_PACKED_HOST');
+  const probe = path.join(directory, 'probe.mjs');
+  writeFileSync(probe, `import assert from 'node:assert/strict';
+import entry from './dist/host.js';
+import {createBbHostIntegration} from 'promptobus/bb-host';
+import options from ${JSON.stringify(pathToFileURL(integration).href)};
+const context={signal:new AbortController().signal};
+const collected=await entry.handlers.prepareContext({binding:{environmentPath:${JSON.stringify(fixture)},role:'reviewer'}},context);
+assert.equal(collected.rules[0].text,'FICTION_RULE_FROM_PACKED_HOST');
+assert.deepEqual(collected.tools.map(t=>t.tool),['read']);
+const host=createBbHostIntegration(options);
+const input={root:${JSON.stringify(fixture)},role:'reviewer',server:'canonical',tool:'write',args:{},actor:{task:'fiction',participant:'reviewer'}};
+await assert.rejects(host.invoke(input),/not admitted/);
+assert.equal((await host.invoke({...input,role:'worker'})).tool,'write');\n`);
+  run(process.execPath, [probe], directory);
+});

@@ -1,6 +1,6 @@
 import { defineRpcContract } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
-import { artifactSchema, bindingSchema, emptySchema, mailboxSchema, sendSchema } from './protocol.js';
+import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, sendSchema } from './protocol.js';
 
 const bound = { binding: bindingSchema };
 export const engineInput = z.discriminatedUnion('operation', [
@@ -16,6 +16,9 @@ export const engineInput = z.discriminatedUnion('operation', [
 ]);
 
 export const hostContract = defineRpcContract({
+  prepareContext: { input: z.object(bound).strict(), output: hostContextSchema },
+  hostContext: { input: z.object({ ...bound, args: hostReadSchema }).strict(), output: z.unknown() },
+  canonical: { input: z.object({ ...bound, args: hostCallSchema }).strict(), output: z.unknown() },
   read: { input: z.object({ root: z.string(), name: z.string(), args: z.record(z.string(), z.unknown()) }).strict(), output: z.unknown() },
   engine: { input: engineInput, output: z.unknown() },
 });

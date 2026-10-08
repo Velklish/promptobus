@@ -18,9 +18,12 @@ app-server in a private home and an empty project sandbox, forces read-only with
 approval policy never, disables Apps and plugins before initialization, disables
 execution and hooks, and verifies the effective
 profile before any turn. Effective startup configuration must confirm disabled
-features and no MCP servers, including managed configuration. Only the four bounded review file tools enter its dynamic
-tool inventory. Unknown tool calls are denied before BB dispatch. All external MCP
-tools remain unavailable until an authoritative read classification admits them.
+features and no MCP servers, including managed configuration. Its dynamic inventory
+admits four bounded review reads, four authenticated bus tools and the two exact
+Host context/call bridge names. Unknown tool calls are denied before BB dispatch.
+Native MCP remains disabled. The authenticated host entry checks canonical identity
+and fresh complete write classification before invoking a canonical read adapter
+([ADR-034](adr-034-bb-host-context-delivery.md)). Prompt text cannot authorize a write.
 
 BB owns environment and bridge lifecycle. The provider owns its Codex child only.
 An interrupt waits for the native terminal event before a successful Stop reply;

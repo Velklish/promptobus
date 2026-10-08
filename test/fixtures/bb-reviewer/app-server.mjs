@@ -4,10 +4,17 @@ import { createInterface } from 'node:readline';
 const denied = [];
 const result = () => ({ denied, argv: process.argv.slice(2), bbParent: process.env.BB_THREAD_ID ?? null, busParent: process.env.PROMPTOBUS_TASK ?? null });
 let probe;
+let hostProbe;
+const hostReplies = [];
 const reply = (id, result) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`);
 for await (const line of createInterface({ input: process.stdin })) {
   const message = JSON.parse(line);
   if (!message.method) {
+    if (String(message.id).startsWith('host-probe-')) {
+      hostReplies.push(message);
+      if (hostReplies.length === 2) reply(hostProbe, hostReplies);
+      continue;
+    }
     denied.push(message);
     if (denied.length === 3 && probe) reply(probe, result());
     continue;
@@ -33,6 +40,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (message.method === 'security/probe') {
     if (denied.length === 3) reply(message.id, result());
     else probe = message.id;
+  } else if (message.method === 'host/probe') {
+    hostProbe = message.id;
+    for (const tool of ['read', 'write']) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'host-probe-' + tool,
+      method: 'item/tool/call', params: { threadId: 'review-thread', tool: 'promptobus_host_call',
+        arguments: { server: 'catalog', tool, args: {} } } }) + '\n');
   }
   else reply(message.id, {});
 }

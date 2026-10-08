@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Deliver complete Host rules and canonical skills before BB assignments, including
+  newly provisioned worktrees. Authenticated Host tools route canonical calls through
+  a consumer-owned adapter; incomplete reviewer write classification refuses delivery,
+  and writes are rejected before dispatch. A source generator builds consumer plugins
+  without hand-editing generated adapters. [Host contract](docs/reference/02-host.md#bb-host-context-delivery).
+
 - Select BB provider/model/reasoning from the actual scoped SDK catalog before
   reservation; keep provider-account windows and unknown usage explicit.
   Role policy refuses provider substitution and leaves native routing defaults

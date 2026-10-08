@@ -6,6 +6,7 @@ import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { BB_REVIEWER_PROTOCOL_TOOLS, reviewerProfile, reviewerTools, verifyReviewerProfile, verifyReviewerConfig, openBbReviewer } from '../lib/bb-reviewer.js';
+import { createBbHostIntegration } from '../lib/bb-host.js';
 
 test('BB reviewer always requests read-only execution, never approval escalation', () => {
   const profile = reviewerProfile({ cwd: '/review', model: 'model', effort: 'high', sandbox: 'danger-full-access' });
@@ -79,6 +80,28 @@ test('BB reviewer refuses an unverified Codex build before thread creation', asy
     await assert.rejects(openBbReviewer({ directory, executable, model: 'model',
       env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: '0.163.0' } }), /requires the verified Codex version/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('native reviewer forwards the classified Host bridge but canonical writes fail before the consumer invocation', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-host-probe-'));
+  const executable = path.join(directory, 'codex-fake');
+  copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable); chmodSync(executable, 0o755);
+  const calls = [];
+  const integration = createBbHostIntegration({ resolveHost: () => ({ collectRules: () => [], skillsDir: () => null,
+    resolveRepoModule: () => null, participantServers: () => ({ servers: { catalog: {} }, external: [] }),
+    participantDenyTools: () => ({ complete: true, tools: [{ server: 'catalog', tool: 'write' }] }) }),
+    listTools: async () => ['read', 'write'].map(access => ({ name: access, description: access, access, inputSchema: {} })),
+    invokeTool: async input => { calls.push(input.tool); return { success: true, contentItems: [{ type: 'inputText', text: 'ALLOWED_READ' }] }; } });
+  const session = await openBbReviewer({ directory, executable, model: 'model',
+    env: { ...process.env, CODEX_HOME: directory },
+    tools: [{ name: 'promptobus_host_call', description: 'Classified Host bridge', inputSchema: { type: 'object' } }],
+    invoke: call => integration.invoke({ root: directory, role: 'reviewer', ...call.arguments, actor: { participant: 'reviewer', task: 'task' } }) });
+  try {
+    const result = await session.request('host/probe', {});
+    assert.ok(result.find(row => row.id === 'host-probe-read').result.success);
+    assert.match(result.find(row => row.id === 'host-probe-write').error.message, /not admitted/);
+    assert.deepEqual(calls, ['read']);
+  } finally { await session.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 

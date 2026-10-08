@@ -1254,14 +1254,16 @@ execution, hooks, subagents and computer use. The built-in `apply_patch` remains
 exposed; the native read-only sandbox rejects its mutations. A private Codex
 home receives authentication only, and the empty project sandbox receives no
 workspace config or MCP servers. Its dynamic tool allowlist contains the four
-`pb_review_*` bounded file reads. Unclassified tools and forged calls are denied
+`pb_review_*` bounded file reads, four authenticated bus tools and the two exact
+Host bridge names. Unclassified tools and forged calls are denied
 before dispatch. Effective startup configuration must confirm the private home,
 disabled features and no MCP servers; unexpected managed servers refuse launch.
 Model and effort changes require a fresh session. Read roots come from the authenticated BB thread environment on
 the local coordinator host. Remote hosts are refused.
 
-Canonical MCP reads are withheld with writes until their delivery and
-classification contract is connected. This provider establishes the reviewer
+Canonical calls use the authenticated host entry and a consumer adapter; fresh
+Host write classification excludes writes before dispatch. Native MCP remains
+disabled. See [Host delivery](02-host.md#bb-host-context-delivery). This provider establishes the reviewer
 restriction contract only; the complete BB role workflow needs separate live
 evidence. A native reviewer beside BB workers remains a mixed runtime pilot.
 See [the plugin setup](../../bb-plugin-promptobus/README.md) and

@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { cliCommand, defineCli } from '@get-bb/plugin-sdk';
 import type { BbPluginApi, PluginAgentConfigurationContext, PluginAgentToolContext } from '@get-bb/plugin-sdk';
 import { createBbInstructionDelivery, BB_ROLE_SKILLS } from 'promptobus/instructions';
-import { BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewer';
+import { BB_REVIEWER_HOST_TOOLS, BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewer';
+import { renderBbHostContext } from 'promptobus/bb-host';
 import { ORCHESTRATOR, REVIEWER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { bindingStore } from './bindings.js';
-import { artifactSchema, bindingSchema, emptySchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
+import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
@@ -16,6 +17,12 @@ export { REVIEWER_PROVIDER } from './routing.js';
 export function registerRuntime(bb: BbPluginApi) {
   const store = bindingStore(bb);
   const host = bb.hosts.experimental_client({ contract: hostContract });
+  const participantTools = (b: Binding) => [...toolsFor(b.role),
+    ...(b.hostContext && (b.hostContext.rules.length || b.hostContext.skills.length || b.hostContext.tools.length) ? [BB_REVIEWER_HOST_TOOLS[0]] : []),
+    ...(b.hostContext?.tools.length ? [BB_REVIEWER_HOST_TOOLS[1]] : [])];
+  const prepareContext = async (b: Binding, signal?: AbortSignal) => {
+    b.hostContext = hostContextSchema.parse(await host.call('prepareContext', { binding: b }, { hostId: b.hostId, signal }));
+  };
   const onHost = async (binding: Binding, request: Record<string, unknown>, signal?: AbortSignal) => {
     const result = await host.call('engine', engineInput.parse({ binding, ...request }), { hostId: binding.hostId, signal });
     bb.log.info(`Promptobus ${request.operation} host=${binding.hostId} task=${binding.task} participant=${binding.participant}`);
@@ -36,7 +43,7 @@ export function registerRuntime(bb: BbPluginApi) {
     const b = store.thread(context.threadId);
     if (!b || b.phase !== 'ready') throw new Error('Promptobus participant is not bound');
     if (b.projectId !== context.projectId) throw new Error('BB project binding mismatch');
-    if (!toolsFor(b.role).includes(tool)) throw new Error('Tool is not available to this role');
+    if (!participantTools(b).includes(tool)) throw new Error('Tool is not available to this role');
     await requireThread(b, context.signal);
     context.signal.throwIfAborted();
     return b;
@@ -56,6 +63,16 @@ export function registerRuntime(bb: BbPluginApi) {
         return JSON.stringify(result);
       } });
   }
+  bb.agents.registerTool({ name: 'promptobus_host_context', description: 'Read declared Host rules, skills, canonical catalog or bounded context resources. Identity is runtime-owned.',
+    parameters: hostReadSchema, async execute(args, context) {
+      const binding = await authorize(context, 'promptobus_host_context');
+      return JSON.stringify(await host.call('hostContext', { binding, args }, { hostId: binding.hostId, signal: context.signal }));
+    } });
+  bb.agents.registerTool({ name: 'promptobus_host_call', description: 'Call an admitted canonical Host tool by server/tool pair. Reviewer writes are mechanically refused before invocation.',
+    parameters: hostCallSchema, async execute(args, context) {
+      const binding = await authorize(context, 'promptobus_host_call');
+      return JSON.stringify(await host.call('canonical', { binding, args }, { hostId: binding.hostId, signal: context.signal }));
+    } });
   bb.experimental_hooks.on('message.dispatch', async context => {
     const b = store.thread(context.thread.id);
     if (!b) return context.originPluginId === 'promptobus'
@@ -80,10 +97,9 @@ export function registerRuntime(bb: BbPluginApi) {
     const { model, reasoningLevel } = b.execution!;
     const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ...(baseBranch ? { baseBranch } : {}), status: 'requested' as const };
     store.launch(b, intent);
-    const tools = toolsFor(b.role);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
-      workspace: b.environmentPath, assignment, tools: Object.fromEntries(tools.map(name => [name, name])) });
-    const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}`;
+      workspace: b.environmentPath, assignment, tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
+    const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
     if (baseBranch) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
@@ -109,6 +125,7 @@ export function registerRuntime(bb: BbPluginApi) {
         const environment = await recordBbWorkspace(bb, b);
         if (!environment.managed) throw new Error('BB did not return a managed environment');
         if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('BB preparation Stop was not confirmed');
+        await prepareContext(b);
         await bb.sdk.threads.clearContext({ threadId: b.threadId });
         delete b.bootstrap; b.phase = 'pending'; store.save(b);
         await onHost(b, { operation: 'reserve', create: false, title: b.task });
@@ -159,6 +176,7 @@ export function registerRuntime(bb: BbPluginApi) {
           token: randomUUID(), threadId: null, phase: 'pending' });
         await recordBbWorkspace(bb, b, context.signal);
         b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+        await prepareContext(b, context.signal);
         store.reserve(b, true);
         try {
           const result = await onHost(b, { operation: 'reserve', create: true, title: options.title }, context.signal) as { root: string };
@@ -186,8 +204,10 @@ export function registerRuntime(bb: BbPluginApi) {
         environmentId: options.environment ?? owner.environmentId, environmentOwner: options['new-environment'] ? 'bb' : 'existing',
         preservation: undefined });
       delete b.preservation;
+      delete b.hostContext;
       if (!options['new-environment']) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+      if (!options['new-environment']) await prepareContext(b, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');
       store.reserve(b, false);
       try {
@@ -303,7 +323,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (!b) return undefined;
       if (b.phase !== 'ready' || b.projectId !== context.project.id || b.environmentId !== context.environment.id
         || b.environmentPath !== context.environment.path || b.hostId !== context.host.id || b.providerId !== context.provider.id) return { tools: [], skills: [] };
-      return { tools: [...toolsFor(b.role), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])], skills: [BB_ROLE_SKILLS[b.role]],
+      return { tools: [...participantTools(b), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])], skills: [BB_ROLE_SKILLS[b.role]],
         instructions: `Authenticated Promptobus task ${b.task}, participant ${b.participant}, role ${b.role}. Use promptobus_task for current contacts. Identity fields are not tool arguments. Use the complete initial context and the selected role skill. BB owns Stop and continuation; end the turn when waiting.` };
     },
   };

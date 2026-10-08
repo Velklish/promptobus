@@ -14,6 +14,7 @@ That number is written out by hand, and the suite compares it to `package.json`,
 | `src/host-index.ts` → `./host` | Host contract and the standalone implementation |
 | `src/hooks.ts` → `./hooks` | Hook planner |
 | `lib/bb-reviewer.js` → `./bb-reviewer` | Constrained Codex executor and bounded file tools for the BB reviewer provider |
+| `lib/bb-host.js` → `./bb-host` | Full Host rule/skill delivery and authenticated role-classified canonical calls |
 | `lib/instructions.js` → `./instructions` | Pure role instruction renderers, typed runtime bindings and BB skill delivery |
 | `src/driver.ts` → `./driver` | Driver contract |
 | `src/telemetry.ts` → `./telemetry` | Participant telemetry summary |

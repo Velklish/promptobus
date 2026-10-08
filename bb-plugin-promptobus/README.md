@@ -23,10 +23,11 @@ computer-use features are disabled before app-server initialization. The built-i
 The provider has an empty project sandbox and an isolated Codex home with no MCP
 configuration. It accepts only `pb_review_read_file`, `pb_review_read_files`,
 `pb_review_list_files` and `pb_review_search_text` from BB dynamic tools, plus the
-four explicitly classified authenticated bus tools below for bound reviewers.
+four explicitly classified authenticated bus tools below for bound reviewers and
+the exact `promptobus_host_context` / `promptobus_host_call` Host bridge names.
 Unclassified external tools are omitted, and forged tool calls are denied before
-forwarding. Canonical MCP reads are also withheld until an explicit classification
-and delivery contract admits them. Prompt text is not the enforcement boundary.
+forwarding. Canonical reads pass through the authenticated host entry with fresh
+Host classification; native MCP stays disabled. Prompt text is not the enforcement boundary.
 
 Each read uses the authenticated BB thread's actual local environment as its root.
 The host entry performs bounded reads and rejects paths outside that root. Client
@@ -109,6 +110,8 @@ the SQLite rows; changed or missing threads/tasks/participants are refused.
 | `promptobus_mailbox` | `mode: peek` or `read` | Peek retains unread refs; read ACKs only the caller's mailbox |
 | `promptobus_send` | `to`, protocol `type`, `body`, optional `artifact: {filename, content}` | Engine-canonical typed send; UTF-8 artifact is streamed on the host |
 | `promptobus_artifact` | artifact `id` | Current-task metadata and verified UTF-8 content, up to 1 MB |
+| `promptobus_host_context` | `mode: inspect`, or `read` with `path`, optional `start_line`, `line_count` | Fresh Host rules/skills/catalog or bounded reads of declared rule/skill resources |
+| `promptobus_host_call` | `server`, `tool`, `args` | Freshly admitted canonical call through the consumer adapter; role/root/actor come from the binding |
 
 All argument objects are strict. Sender, task and address are derived from the
 binding, and cannot be supplied. Body size is capped at 2400 characters; attachment
@@ -298,3 +301,48 @@ Preexisting work in a reused environment remains its original owner's responsibi
 
 Models are read from the actual Codex app-server catalog. Usage windows and full
 role workflow support are not claimed by this reviewer provider.
+
+## Consumer Host setup
+
+The default host entry uses `createStandaloneHost` for each actual environment.
+A consumer workspace provides a source module exporting the options for
+`createBbHostIntegration` from `promptobus/bb-host`. Its Host owns repo/module/base
+rule discovery, canonical skills, reviewer classification and server declarations.
+Its `listTools` / `invokeTool` callbacks own canonical transport and argument
+validation. Server configuration and credentials stay host-side. Reporter and
+reviewer roles both require complete write classification.
+
+Generate a new plugin directory from this canonical source package:
+
+```sh
+node scripts/create-host-plugin.mjs --directory /absolute/new-plugin \
+  --integration /absolute/consumer/host-integration.mjs \
+  --promptobus 'file:/absolute/promptobus-package.tgz'
+cd /absolute/new-plugin
+npm install
+npm run check
+npm run skills:check
+bb plugin build
+bb plugin install .
+bb plugin reload promptobus
+```
+
+Use a packed release or another explicit supported package spec. The integration
+module keeps its own dependencies installed in its consumer project. Generation
+copies canonical TypeScript, role skills and setup scripts; it does not copy
+ignored build output, adapters, tests or dependencies. It refuses existing output
+directories. The entry imports the consumer source module, which BB bundles on
+build. Keep secrets in host-side runtime configuration, not source literals.
+This variant has the same plugin id `promptobus` and replaces the default variant;
+it is not a second parallel plugin.
+
+An optional `prepareEnvironment` callback runs the consumer's generator for the
+actual environment before collection. Existing and newly provisioned environments
+receive full rules and canonical skill text in their assignment, beyond BB's
+4096-character dynamic instructions limit. `promptobus_host_context` can read
+additional declared skill resources; it grants no arbitrary workspace read.
+`promptobus_host_call` derives role/root/actor from the binding and freshly checks
+admission before callback dispatch. Tools appear only when the collected context
+requires them. A running Codex session keeps its native tool inventory: after a
+source/context change regenerate/build/reload and create fresh participants.
+Never hand-edit generated adapters or assume reload changes an existing session.
