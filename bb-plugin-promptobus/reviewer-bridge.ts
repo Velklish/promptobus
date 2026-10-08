@@ -7,6 +7,8 @@ import {
   threadDeltaNotificationParamsSchema, type ThreadDelta,
 } from '@get-bb/plugin-sdk/provider-bridge';
 import { openBbReviewer, queryBbReviewer } from 'promptobus/bb-reviewer';
+import { renderBbInstructionSkill } from 'promptobus/instructions';
+import { REVIEWER } from 'promptobus';
 
 export function reviewerBridge(write?: (line: string) => void, open = openBbReviewer, query = queryBbReviewer) {
   const io = createBridgeIo({ write });
@@ -98,7 +100,7 @@ export function reviewerBridge(write?: (line: string) => void, open = openBbRevi
         signal: abort.signal,
         directory: path.join(directory, createHash('sha256').update(input.threadId).digest('hex')),
         model: input.options.model ?? '', effort: input.options.reasoningLevel,
-        instructions: input.options.instructions, tools: input.dynamicTools,
+        instructions: [renderBbInstructionSkill(REVIEWER), input.options.instructions].filter(Boolean).join('\n\n'), tools: input.dynamicTools,
         threadId: typeof input.providerThreadId === 'string' ? input.providerThreadId : null,
         invoke: async call => {
           const result = await tools.forwardToolCall({ scope: session, threadId: input.threadId,

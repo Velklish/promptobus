@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Export typed portable role instruction renderers. Native planners retain their
+  captured prompts, while BB role skills share the ownership, review and evidence
+  contracts with explicit runtime bindings. Long role text and initial task context
+  bypass the dynamic configuration instruction limit. [Source mapping](lib/prompts/README.md).
+
 - Add a local BB plugin with a constrained Codex reviewer provider: verified
   read-only execution, no approval escalation, bounded file tools and a fail-closed
   external tool allowlist. The built-in BB Codex provider is not admitted as a

@@ -1,5 +1,7 @@
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { BB_REVIEWER_TOOLS, REVIEW_FILE_TOOLS } from 'promptobus/bb-reviewer';
+import { BB_ROLE_SKILLS } from 'promptobus/instructions';
+import { REVIEWER } from 'promptobus';
 import { hostContract } from './contract.js';
 
 export const REVIEWER_PROVIDER = 'promptobus-codex-reviewer';
@@ -33,6 +35,6 @@ export default function plugin(bb: BbPluginApi) {
     });
   }
   bb.agents.configure(context => context.provider.id === REVIEWER_PROVIDER
-    ? { tools: BB_REVIEWER_TOOLS, skills: [], instructions: 'Read code through pb_review_read_file, pb_review_read_files, pb_review_list_files and pb_review_search_text. This provider mechanically denies shell, edits and all unclassified external tools.' }
+    ? { tools: BB_REVIEWER_TOOLS, skills: [BB_ROLE_SKILLS[REVIEWER]], instructions: 'The provider supplies the complete promptobus-reviewer skill before the first native turn. Read code through pb_review_read_file, pb_review_read_files, pb_review_list_files and pb_review_search_text. This provider mechanically denies shell, edits and all unclassified external tools.' }
     : { tools: [], skills: [] });
 }

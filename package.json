@@ -60,7 +60,11 @@
       "default": "./lib/integration.js"
     },
     "./cli": "./lib/cli.js",
-    "./schemas/*": "./schemas/*"
+    "./schemas/*": "./schemas/*",
+    "./instructions": {
+      "types": "./lib/instructions.d.ts",
+      "default": "./lib/instructions.js"
+    }
   },
   "bin": {
     "promptobus": "./bin/promptobus.js"

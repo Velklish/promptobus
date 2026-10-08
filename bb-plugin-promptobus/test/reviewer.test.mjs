@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { renderBbInstructionSkill } from 'promptobus/instructions';
 import plugin from '../.test-build/server.js';
 import { reviewerBridge } from '../.test-build/reviewer-bridge.js';
 import { experimental_createDeltaAssembler as createAssembler } from '@get-bb/plugin-sdk/provider-bridge/testing';
@@ -21,6 +22,18 @@ function harness(open, query) {
   } };
 }
 const start = { threadId: 'bb-thread', cwd: '/review', instructionMode: 'append', options: { model: 'model', permissionMode: 'accept-edits', permissionScope: 'workspace', approvalReviewer: 'user', permissionEscalation: 'deny' } };
+
+test('reviewer supplies the complete installed role skill before the first native turn', async () => {
+  let received;
+  const h = harness(async options => { received = options; return { threadId: 'native', profile: { model: 'model' }, close: async () => {} }; });
+  await h.call('thread/start', { ...start, options: { ...start.options, instructions: 'Runtime tool bindings.' } });
+  const body = renderBbInstructionSkill('reviewer');
+  assert.ok(body.length > 4096);
+  assert.ok(received.instructions.includes(body));
+  assert.ok(received.instructions.includes('Runtime tool bindings.'));
+  assert.ok(received.instructions.includes('BB owns session closure and Stop.'));
+  h.bridge.onClose();
+});
 
 test('reviewer bridge correlates final text with its BB turn', async () => {
   let input;

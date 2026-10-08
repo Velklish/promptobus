@@ -1,9 +1,34 @@
-# Harness prompt sources
+# Role instruction sources
 
-Shared worker ownership, mailbox protocol and evidence instructions are assembled
-in `lib/spawn.js`. Independent-review duties and evidence interpretation stay in
-`lib/review.js`; managed-root assignment and acceptance duties stay in `lib/lead.js`.
-These callers receive harness-specific instructions through `driver.phrases`.
+`promptobus/instructions` exports six pure role renderers from `roles.js` and
+their TypeScript input types. Worker ownership, mailbox protocol, independent
+review, acceptance and evidence forms share this source. Native planners in
+`lib/spawn.js`, `lib/review.js`, `lib/approver.js`, `lib/report.js` and `lib/lead.js`
+retain state reads, snapshot construction, permission and launch planning. They
+supply task context and concrete tool, environment, continuation and publication
+bindings. `renderReviewProcedure` preserves the common finding-cost definitions.
+
+`bb.js` binds those contracts to BB role skills. `renderBbInstructionSkill` uses
+descriptive context fields; they are not usable identities or paths.
+`createBbInstructionDelivery` selects one skill with a short dynamic instruction
+and puts complete task, tool, environment, snapshot and gate context in an initial
+prompt. Its caller must obtain authoritative participant bindings first; neither
+renderer authenticates or grants a right. Long inputs may instead be supplied as
+declared artifacts. Dynamic configuration text stays below BB's 4096-character
+limit; role or model changes use a supported fresh session setup.
+
+The returned configuration is SDK-compatible and selects no tools (`tools: []`).
+The caller replaces that list with its authenticated, registered tool selection
+before `agents.configure`; tool names in prompt context alone expose no tool.
+The standing approver contract follows supplied worker contacts and assignment
+authorization rather than assuming a worker is present or absent.
+
+The BB plugin ships six generated skills. Its constrained reviewer supplies the
+complete reviewer contract before the first native turn, alongside runtime
+instructions, and selects that same plugin skill. This avoids requiring an
+unclassified skill-read tool or truncating the long contract through dynamic
+configuration. Run the plugin's `npm run skills:render` after refreshing its local
+package when the source changes; `npm run skills:check` detects delivered drift.
 
 `codex.js` supplies Codex worker, reviewer and root-owner operational rules,
 root preamble and the measured reviewer boundary. `promptRulesFor` distinguishes
@@ -28,3 +53,8 @@ The reviewer receives bounded-read instructions and no execution guidance.
 preserves shared Codex contracts and tests that a worker-only Codex source edit
 changes only that prompt. Native launch, lifecycle and permission behavior remains
 covered by the existing driver and managed-root tests.
+`test/role-instructions.test.mjs` compares every supported native role and refusal
+against the pre-extraction fixture, checks BB contracts and preserves long context.
+The package test installs a fresh tarball, imports this entry and compiles an
+external TypeScript consumer. The BB bridge test verifies complete instruction
+delivery before the first native turn; it does not establish model compliance.

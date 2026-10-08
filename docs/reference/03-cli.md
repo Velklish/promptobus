@@ -4,6 +4,29 @@ Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `mo
 
 Help and `--version` do not load the standalone host. Every other command does.
 
+## Portable role instructions
+
+`promptobus/instructions` exports pure worker, reviewer, approver, teamlead,
+reporter and orchestrator renderers with TypeScript input types. Native planners
+retain launch, permission, snapshot and repository preparation; the renderers
+receive the resulting task context and concrete tool, continuation, environment
+and publication bindings. Extraction preserves the native prompts and supported
+role refusals. [Source mapping](../../lib/prompts/README.md).
+
+For BB, `renderBbInstructionSkill` supplies the standing role contract and
+`createBbInstructionDelivery` separates a short skill selection from an initial
+task-context prompt. The caller obtains authenticated bindings before creating
+that context; a renderer authenticates nothing and grants no rights. Snapshot and
+gate evidence can be named as declared artifacts. Long role text belongs in plugin
+skills; long task inputs belong in initial prompts or artifacts, since dynamic
+configuration instructions are limited to 4096 characters. A changed model or
+role requires the corresponding supported session setup, not hot reconfiguration.
+
+The returned SDK-compatible configuration selects no tools (`tools: []`). The
+caller adds its authenticated registered tool selection before `agents.configure`;
+putting tool names in the prompt alone does not expose them. Standing approver
+instructions follow supplied worker contacts and assignment authorization.
+
 ## Lead
 
 `promptobus lead --brief <file> --permission-mode full-access [--task <new-id>] [--title <text>] [routing flags] [--dry-run]`

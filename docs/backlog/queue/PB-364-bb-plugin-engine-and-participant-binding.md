@@ -2,7 +2,7 @@
 
 - **Scope:** [Host](../../reference/02-host.md), [Protocol](../../reference/04-protocol.md)
 - **Created:** 2026-10-08
-- **Dependencies:** [PB-365 · Export portable role instruction renderers while preserving native harness behavior](PB-365-portable-role-instruction-renderers.md)
+- **Dependencies:** [PB-365 · Export portable role instruction renderers while preserving native harness behavior](../../archive/LOG.md#pb-365)
 - **Cost:** —
 - **Order:** 10
 

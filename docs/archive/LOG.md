@@ -500,3 +500,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-356"></a>`PB-356-codex-only-orchestration-efficiency` · 2026-10-07 · completed · — · Codex-only launch checks and bounded reviewer reads
 - <a id="pb-366"></a>`PB-366-bb-reviewer-enforcement-contract` · 2026-10-08 · completed · — · Prove and define BB reviewer sandbox and tool restrictions before full runtime support
 - <a id="pb-358"></a>`PB-358-harness-specific-prompt-sources` · 2026-10-08 · completed · — · Separate harness-specific prompt sources from shared contracts
+- <a id="pb-365"></a>`PB-365-portable-role-instruction-renderers` · 2026-10-08 · completed · — · Export portable role instruction renderers while preserving native harness behavior

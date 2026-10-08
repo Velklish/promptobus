@@ -28,6 +28,8 @@
     "typescript": "7.0.2"
   },
   "scripts": {
+    "skills:render": "node scripts/render-skills.mjs",
+    "skills:check": "node scripts/render-skills.mjs --check",
     "check": "tsc -p tsconfig.json",
     "build": "bb plugin build",
     "test": "tsc -p tsconfig.json --noEmit false --outDir .test-build && node --test test/*.test.mjs"
@@ -35,6 +37,7 @@
   "files": [
     "*.ts",
     "skills",
+    "scripts",
     "dist",
     "README.md",
     "PLUGIN_OVERVIEW.md"

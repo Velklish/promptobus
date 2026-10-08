@@ -35,6 +35,29 @@ Startup also verifies the effective disabled features, private home and absence
 of configured MCP servers, including managed configuration. Model and effort
 changes require a fresh reviewer session.
 
+## Role instructions
+
+The six standing role contracts live in `skills/` and are generated from
+`promptobus/instructions`. After refreshing the local package with `npm ci`, run
+`npm run skills:render` when the renderer changes; `npm run skills:check` checks
+the delivered text. Task, tool, environment, snapshot and gate bindings belong in
+the initial prompt or declared artifacts. `createBbInstructionDelivery` constructs
+that payload and a short skill selection; its caller must first authenticate the
+participant. The payload builder grants no rights.
+
+The returned configuration has `tools: []`. The caller supplies a validated list
+of registered tools, for example `{ ...delivery.configuration, tools:
+authenticatedToolSelection }`, before returning it from `agents.configure`.
+Prompt context tool names do not perform that selection. Approver contact rules
+are conditional on the supplied registered worker and assignment authorization.
+
+The constrained reviewer bridge supplies the complete reviewer skill before the
+first native turn, alongside runtime instructions. It does not place the long
+contract in `agents.configure().instructions`, which BB truncates at 4096
+characters. Its selected plugin skill is the same text, checked against the
+exported renderer. The other role skills describe the portable contracts;
+engine-backed participant activation is a separate integration surface.
+
 ## Lifecycle
 
 BB owns the bridge process. A native Codex app-server belongs to each active

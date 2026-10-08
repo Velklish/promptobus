@@ -948,9 +948,10 @@ worker, reviewer or orchestrator rules, `rootPreamble` names the managed root,
 and `workerOrchestrator` identifies the task owner without assuming its harness.
 The existing `promptRules` field remains the common tail for other callers.
 
-Worker ownership and evidence forms stay in `lib/spawn.js`; independent-review
-duties stay in `lib/review.js`; root assignment and acceptance duties stay in
-`lib/lead.js`. Claude, Cursor and OpenCode instruction sources stay in their own
+Shared worker ownership, independent-review, acceptance and evidence forms are
+rendered by `lib/prompts/roles.js`. Native planners in `lib/spawn.js`,
+`lib/review.js`, `lib/approver.js`, `lib/report.js` and `lib/lead.js` supply their
+runtime bindings and task context. Claude, Cursor and OpenCode instruction sources stay in their own
 drivers. A Codex-only instruction edit therefore has no source dependency from
 those drivers. [Source mapping](../../lib/prompts/README.md).
 
