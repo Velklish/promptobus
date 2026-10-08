@@ -2,7 +2,7 @@
 
 - **Scope:** [CLI role prompts](../../reference/03-cli.md), [Drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-08
-- **Dependencies:** [PB-358 · Separate harness-specific prompt sources from shared contracts](PB-358-harness-specific-prompt-sources.md)
+- **Dependencies:** [PB-358 · Separate harness-specific prompt sources from shared contracts](../../archive/LOG.md#pb-358)
 - **Cost:** —
 - **Order:** 5
 

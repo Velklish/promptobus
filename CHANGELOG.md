@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reviewer. This does not yet establish the complete BB role workflow.
   [Setup](bb-plugin-promptobus/README.md), [decision](docs/adr/adr-029-bb-constrained-codex-reviewer.md).
 
+- Separate Codex role instructions behind the driver boundary. Worker, reviewer
+  and managed-root guidance reuses persistent MCP connections and checks native
+  identity and task routes; executable roles check supported command permissions
+  before listener-dependent commands. Other harness instructions and shared role
+  contracts remain unchanged. [Source mapping](lib/prompts/README.md).
+
 ### Fixed
 
 - Capture the installed Codex 0.162.0-alpha.2 protocol with all 317 generated schemas,

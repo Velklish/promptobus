@@ -1,6 +1,7 @@
 // The driver contract.
 // [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract)
 import { addressOf, GateError } from './protocol.js';
+import type { ORCHESTRATOR, REVIEWER, WORKER } from './registry.js';
 import type { HostMcpTool, HostToolBin, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
@@ -259,6 +260,12 @@ export interface DriverPhrases {
   /** Rules of THIS harness appended to the participant prompt — its headless habits. Empty means
    * nothing to append, and the prompt stays exactly what the caller assembled. */
   promptRules: string;
+  /** A role-specific tail, when this harness distinguishes executable roles from reviewers. */
+  promptRulesFor?(role: typeof WORKER | typeof REVIEWER | typeof ORCHESTRATOR): string;
+  /** Task owner description; absent preserves the native worker prompt's established wording. */
+  workerOrchestrator?: string;
+  /** Preamble for the managed root owner supported by this driver. */
+  rootPreamble?(context: { task: string; root: string }): string;
   /** What this harness calls the session when the mechanism does not choose the name: `--dry-run`
    * prints this, because a name the binary invents at start cannot be printed in advance. */
   naming?: string;

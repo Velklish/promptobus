@@ -940,7 +940,36 @@ removed, and the registry must not grow a second opinion.
 
 ### Codex: the phrases a participant is addressed by
 
-Source: `lib/driver-codex.js`.
+Source: `lib/driver-codex.js`, `lib/prompts/codex.js`.
+
+Session and tool naming come from `lib/driver-codex.js`. Codex role instructions
+come from `lib/prompts/codex.js` through `driver.phrases`: `promptRulesFor` selects
+worker, reviewer or orchestrator rules, `rootPreamble` names the managed root,
+and `workerOrchestrator` identifies the task owner without assuming its harness.
+The existing `promptRules` field remains the common tail for other callers.
+
+Worker ownership and evidence forms stay in `lib/spawn.js`; independent-review
+duties stay in `lib/review.js`; root assignment and acceptance duties stay in
+`lib/lead.js`. Claude, Cursor and OpenCode instruction sources stay in their own
+drivers. A Codex-only instruction edit therefore has no source dependency from
+those drivers. [Source mapping](../../lib/prompts/README.md).
+
+Codex operational instructions reuse attached persistent MCP servers and check
+native thread ownership, task, mailbox address and contact routes before work.
+The task reply supplies the registered native owner and the mailbox supplies its
+coordinates. An independent comparison uses native context when it is supplied;
+otherwise it is reported as unverified. Reviewers use no shell or
+unavailable session-info tool to obtain it. A fresh root can bootstrap before its
+first participant contact exists, then checks each required route before sending.
+A missing owner contact blocks only a question needing the owner's answer.
+Instructions retain native event delivery and turn-ending waits. Executable roles inspect
+the effective sandbox, network and approval policy before a known listener-dependent
+command; only an already authorized operation with a supported command-level permission
+field may use that field on the first call. An unavailable permission is reported
+as blocked. This guidance grants no permission and changes no holder setting.
+Reviewers retain bounded reads with shell execution disabled and receive no
+command-permission guidance. Captured planner fixtures compare unchanged native
+instructions and unsupported managed-root refusals for the other three harnesses.
 
 The participant's isolated Codex home.
 
