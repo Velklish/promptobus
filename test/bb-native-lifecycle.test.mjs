@@ -1,0 +1,56 @@
+import './home.mjs';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { capture, expectFail } from './console.mjs';
+import { createTask, readTask, patchTask, taskFile, upsertParticipant, participantRecord, bindSessionIdentity, closeTask } from '../lib/store.js';
+import { done, stopManaged } from '../lib/done.js';
+import { sweep } from '../lib/sweep.js';
+import { sweepJournals } from '../lib/prune.js';
+
+test('native done, sweep and stopManaged leave BB participant resources and task status intact', async () => {
+  const root = makeSandbox('pb-bb-native-');
+  writeHostConfig(root);
+  const home = path.join(root, '.promptobus');
+  const id = 'bb-lifecycle-t20261008-000000';
+  createTask(home, { id, title: 'BB resources', owner: null });
+  patchTask(home, id, { adapter: { bb: { root } } });
+  upsertParticipant(home, id, participantRecord('worker:bb', { harness: 'bb', mode: 'managed', sessionRef: 'thr-bb' }));
+  const original = readFileSync(taskFile(home, id), 'utf8');
+  const ended = await expectFail(() => done(root, { task: id }));
+  assert.equal(ended.failed, true); assert.match(ended.out, /uses BB lifecycle/);
+  const swept = expectFail(() => sweep(root, { task: id, address: 'worker:bb' }));
+  assert.equal(swept.failed, true); assert.match(swept.out, /uses BB lifecycle/);
+  let snapshots = 0;
+  const stop = await stopManaged(home, id, { snapshot: () => { snapshots++; return {}; } });
+  assert.equal(stop.unconfirmed, 2); assert.equal(snapshots, 0);
+  assert.equal(readFileSync(taskFile(home, id), 'utf8'), original);
+});
+
+test('closing a native task never sweeps a closed BB worktree or its retained journal', async () => {
+  const root = makeSandbox('pb-bb-native-global-');
+  writeHostConfig(root);
+  const home = path.join(root, '.promptobus');
+  const repo = path.join(root, 'repo'); mkdirSync(repo);
+  const git = (...args) => { const r = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd: repo, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r; };
+  git('init', '-q', '-b', 'main'); writeFileSync(path.join(repo, 'base.txt'), 'base\n'); git('add', '.'); git('commit', '-qm', 'base');
+  const tree = path.join(root, 'bb-owned-tree'); git('worktree', 'add', '-q', '-b', 'worktree-promptobus-bb-owned', tree);
+  const bb = 'bb-closed-t20261008-000001';
+  createTask(home, { id: bb, title: 'Retained BB resources', owner: null });
+  patchTask(home, bb, { adapter: { bb: { root } } });
+  upsertParticipant(home, bb, participantRecord('worker:bb', { harness: 'bb', mode: 'managed', sessionRef: 'thr-bb', repoAbs: repo, worktree: tree }));
+  closeTask(home, bb); patchTask(home, bb, { adapter: { closed: '2020-01-01T00:00:00.000Z' } });
+  const native = 'native-close-t20261008-000002';
+  bindSessionIdentity(() => ({ id: 'native-owner' }));
+  createTask(home, { id: native, title: 'Native task', owner: 'native-owner' });
+  await capture(() => done(root, { task: native, 'keep-sessions': true, snapshot: () => ({}) }));
+  assert.equal(readTask(home, native).status, 'done');
+  assert.equal(existsSync(path.join(tree, 'base.txt')), true);
+  assert.equal(readTask(home, bb).adapter.worktreesSwept, undefined);
+  git('worktree', 'remove', tree);
+  assert.equal(sweepJournals(home, 0, { tasks: [readTask(home, bb)] }).count, 0);
+  assert.equal(existsSync(taskFile(home, bb)), true);
+});

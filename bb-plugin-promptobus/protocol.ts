@@ -7,7 +7,11 @@ export const bindingSchema = z.object({
   task: z.string().regex(TASK_ID_RE), participant: z.string().regex(PARTICIPANT_ID_RE), role: roleSchema,
   projectId: z.string().min(1), environmentId: z.string().min(1), environmentPath: z.string().min(1),
   hostId: z.string().min(1), providerId: z.string().min(1), root: z.string().min(1), token: z.string().uuid(),
-  threadId: z.string().nullable(), phase: z.enum(['pending', 'ready', 'orphan']),
+  threadId: z.string().nullable(), phase: z.enum(['pending', 'provisioning', 'ready', 'orphan', 'archiving', 'archived']),
+  parentThreadId: z.string().nullable().default(null), lifecycleOwnerThreadId: z.string().nullable().default(null),
+  environmentOwner: z.enum(['existing', 'bb']).default('existing'), branch: z.string().nullable().default(null),
+  baseSha: z.string().regex(/^[a-f0-9]{40,64}$/).nullable().default(null), bootstrap: z.string().optional(),
+  preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
 export const sendSchema = z.object({

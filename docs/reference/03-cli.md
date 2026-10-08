@@ -1905,3 +1905,25 @@ The suite after spawn/stop calls `resetBgSessionsCache` (sandbox.mjs); `awaitSes
 and the warden reset themselves, otherwise they would see the list from before the
 change. This read measures 0.34–0.41 s (driver-claude.js); the shared minute is a
 wedge ceiling, not a latency budget, and a crossing becomes `unknown` below.
+
+## BB participant lifecycle
+
+The optional local BB plugin exposes `bb promptobus task create`, `participant add`,
+`participant get`, `participant stop`, `participant archive` and `bindings`. The
+coordinator is an existing unmanaged Git environment. `add --environment <id>`
+reuses a local environment; `add --new-environment --base-branch <branch>` delegates
+worktree creation to BB. Returned SDK paths and ids are authoritative.
+
+New worktree provisioning uses a preparation turn without assignment or plugin
+rights, followed by confirmed Stop, cleared preparation model context and canonical
+binding before the first assignment.
+`get` awaits async SDK state and returns a plain SessionView plus original BB status.
+`stop` requires fresh available idle state with no background agents. Stopping and
+offline observations block cleanup. `archive` preserves a complete patch snapshot
+and result refs in the coordinator before BB archive/retirement. It requires archived
+lifecycle children and refuses incomplete preservation. Neither command accepts work.
+Native `done`, `sweep` and journal pruning retain BB resources. Direct BB operator
+controls can bypass these barriers; preserve through the adapter first.
+
+See [plugin lifecycle](../../bb-plugin-promptobus/README.md#lifecycle) and
+[ADR-031](../adr/adr-031-bb-environment-lifecycle.md).

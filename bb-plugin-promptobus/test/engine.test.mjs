@@ -8,11 +8,27 @@ import { openEngine, newTaskIdentity } from 'promptobus';
 import plugin from '../.test-build/server.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+
 async function stand(t, options = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const threads = new Map();
-  const environment = { id: 'env', projectId: 'project', path: root, hostId: 'local' };
+  const environment = { id: 'env', projectId: 'project', path: root, hostId: 'local', managed: false, status: 'ready', lifecycle: { phase: 'active' } };
+  const workerEnvironment = { ...environment, id: 'bb-actual-env', path: `${root}/actual-bb-worktree`, managed: true };
+  const events = [];
+  let initialArgs;
+  let nativeCatalogCleared = false;
+  let stopStatus = 'idle';
+  let behindCount = 0;
+  let baseRef;
+  let patches = [{ path: 'result.txt', patch: 'diff --git a/result.txt b/result.txt\nnew file mode 100644\n--- /dev/null\n+++ b/result.txt\n@@ -0,0 +1 @@\n+unaccepted result\n', truncated: false }];
+  const workspace = env => ({ outcome: 'available', workspace: {
+    checkout: { kind: 'branch', headSha: env === 'env' ? 'a'.repeat(40) : 'b'.repeat(40) },
+    branch: { currentBranch: env === 'env' ? 'main' : 'actual-bb-branch' },
+    mergeBase: { files: [], behindCount, baseRef: baseRef ?? (env === 'env' ? 'a'.repeat(40) : 'b'.repeat(40)) },
+    workingTree: { files: patches.map(p => ({ path: p.path, status: '??' })) },
+  } });
   let next = 0;
   let host;
   host = createFakePluginHost({ pluginId: 'promptobus', agentSkillIds: Object.values(options.skills ?? {
@@ -20,11 +36,19 @@ async function stand(t, options = {}) {
     teamlead: 'promptobus-teamlead', reporter: 'promptobus-reporter', orchestrator: 'promptobus-orchestrator',
   }), sdk: {
     system: { config: async () => ({ primaryHostId: 'local' }) },
-    environments: { get: async () => environment },
+    environments: { get: async ({ environmentId }) => environmentId === 'env' ? environment : workerEnvironment,
+      status: async ({ environmentId }) => workspace(environmentId), diffPatch: async ({ paths }) => {
+        assert.equal(paths.length > 0, true, 'SDK diffPatch requires at least one path');
+        return { outcome: 'available', patches };
+      } },
+    hosts: { get: async () => ({ id: 'local', status: 'connected', lifecycle: { phase: 'active' } }) },
     threads: {
       get: async ({ threadId }) => { if (!threads.has(threadId)) throw new Error('Thread not found'); return threads.get(threadId); },
       spawn: async args => {
-        const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: 'env', providerId: args.providerId });
+        initialArgs = args;
+        nativeCatalogCleared = false;
+        const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
+          parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null });
         threads.set(thread.id, thread);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread, origin: 'plugin', originPluginId: 'promptobus' }))).action, 'wait');
@@ -34,27 +58,59 @@ async function stand(t, options = {}) {
         if (options.beforeReturn) await options.beforeReturn({ host, thread });
         return thread;
       },
-      stop: async () => ({ ok: true }),
+      stop: async ({ threadId }) => { events.push('stop'); const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = stopStatus; return { ok: true }; },
+      wait: async ({ threadId }) => {
+        const thread = threads.get(threadId);
+        const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+        const context = makeMessageDispatchHookContext({ thread, host: { id: 'local' },
+          input: { blocks: [{ type: 'text', text: initialArgs.prompt }], text: initialArgs.prompt } });
+        assert.equal((await hook({ ...context, input: { ...context.input, text: 'Do the actual assignment' } })).action, 'wait');
+        assert.equal((await hook(context)).action, 'proceed');
+        await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
+        thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
+        events.push('provision');
+        return { matched: true, target: { kind: 'status', status: 'idle' }, thread };
+      },
+      clearContext: async () => { nativeCatalogCleared = true; events.push('clear-context'); return { ok: true }; },
+      send: async ({ threadId, input }) => { events.push('assignment');
+        assert.equal(nativeCatalogCleared, true, 'The preparation native thread retains its empty dynamic tool catalog until Clear context');
+        assert.equal(input[0].text.includes('Read mailbox, then stop.'), true);
+        assert.equal(input[0].text.includes(workerEnvironment.path), true);
+        const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+        assert.equal((await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId) }))).action, 'proceed');
+        return { ok: true }; },
+      list: async ({ offset = 0, limit = 200 } = {}) => {
+        const list = [...threads.values()].filter(t => t.archivedAt === null && t.deletedAt === null).slice(offset, offset + limit);
+        if (options.beforeListReturn) await options.beforeListReturn();
+        return list;
+      },
+      archive: async ({ threadId }) => { events.push('archive'); threads.get(threadId).archivedAt = Date.now(); return { ok: true }; },
     },
   }, experimental_callHostRpc: async ({ method, input, hostId }) => {
     assert.equal(hostId, 'local');
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
+    if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck();
+    if (input.operation === 'preserve') events.push('preserve');
     return engineOperation(input);
   } });
   t.after(() => host.harness.lifecycle.dispose());
   plugin(host.bb);
   const task = newTaskIdentity('engine-test').id;
   const create = async () => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.']);
-  const add = async (id, role = 'worker') => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.']);
+  const add = async (id, role = 'worker', extra = []) => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
-  return { root, threads, environment, get host() { return host; }, task, create, add, call,
+  const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
+  return { root, threads, environment, workerEnvironment, events, get host() { return host; }, task, create, add, call, control,
+    set stopStatus(value) { stopStatus = value; }, set patches(value) { patches = value; },
+    set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
 
 test('bound tools use host engine canon; peek preserves mail, read acknowledges only the caller, artifacts survive reload', async t => {
   const s = await stand(t);
   assert.equal((await s.create()).exitCode, 0);
-  assert.equal((await s.add('worker-one')).exitCode, 0);
+  const added = await s.add('worker-one');
+  assert.equal(added.exitCode, 0, JSON.stringify(added));
   assert.equal(s.host.harness.inspection.recheckCount, 2);
   const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'artifact', body: 'Review evidence', artifact: { filename: 'evidence.txt', content: 'immutable evidence' } }));
   const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
@@ -141,4 +197,119 @@ test('unrelated dispatches proceed while metadata cannot release a pending plugi
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
   assert.equal((await hook(makeMessageDispatchHookContext({ originPluginId: null }))).action, 'proceed');
   assert.equal((await hook(makeMessageDispatchHookContext({ originPluginId: 'promptobus' }))).action, 'wait');
+});
+
+test('BB owns new worktree selection; preparation has no bus rights and actual assignment follows Stop and canonical binding', async t => {
+  const s = await stand(t);
+  await s.create();
+  const added = await s.add('worker-new', 'worker', ['--new-environment', '--base-branch', 'main']);
+  assert.equal(added.exitCode, 0, JSON.stringify(added));
+  assert.deepEqual(s.events, ['provision', 'stop', 'clear-context', 'assignment']);
+  const get = await s.control('get', 'worker-new');
+  assert.equal(get.exitCode, 0, JSON.stringify(get));
+  const actual = JSON.parse(get.stdout);
+  assert.equal(actual.environmentId, 'bb-actual-env');
+  assert.equal(actual.environmentPath, s.workerEnvironment.path);
+  assert.equal(actual.branch, 'actual-bb-branch');
+  assert.equal(actual.baseSha, 'b'.repeat(40));
+  assert.equal(actual.parentThreadId, 'thr-1');
+  assert.equal(actual.lifecycleOwnerThreadId, 'thr-1');
+  assert.equal(actual.view.state, 'alive');
+  await s.reload();
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  const worker = engine.readTask(s.task).participants.find(p => p.id === 'worker-new');
+  assert.equal(worker.metadata.bb.environmentOwner, 'bb');
+  assert.equal(worker.metadata.bb.environmentPath, s.workerEnvironment.path);
+  assert.equal(worker.sessionRef, 'thr-2');
+  assert.equal(JSON.parse((await s.control('get', 'worker-new')).stdout).baseSha, 'b'.repeat(40));
+});
+
+test('archive preserves unaccepted patch in stable canon before BB archive and never accepts the task', async t => {
+  const s = await stand(t);
+  await s.create(); await s.add('worker-new', 'worker', ['--new-environment', '--base-branch', 'main']);
+  s.events.length = 0;
+  const archive = await s.control('archive', 'worker-new');
+  assert.equal(archive.exitCode, 0, JSON.stringify(archive));
+  assert.deepEqual(s.events, ['stop', 'preserve', 'archive']);
+  const result = JSON.parse(archive.stdout);
+  assert.equal(result.accepted, false);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  const snapshot = JSON.parse(engine.readArtifactContent(s.task, result.preservation.artifactId).toString());
+  assert.equal(snapshot.patches[0].patch.includes('unaccepted result'), true);
+  assert.equal(snapshot.baseSha, 'b'.repeat(40));
+  assert.equal(engine.readTask(s.task).status, 'active');
+  await s.reload();
+  assert.equal((await s.control('archive', 'worker-new')).exitCode, 0);
+  assert.equal(JSON.parse((await s.control('get', 'worker-new')).stdout).phase, 'archived');
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /not bound/);
+});
+
+test('unconfirmed Stop, truncated patch and unpreserved lifecycle children block archive across reload', async t => {
+  const s = await stand(t);
+  await s.create(); await s.add('worker-one');
+  assert.equal((await s.control('archive', 'orchestrator')).exitCode, 1);
+  assert.equal(s.events.includes('archive'), false);
+  s.stopStatus = 'stopping';
+  const stopping = await s.control('archive', 'worker-one');
+  assert.equal(stopping.exitCode, 1);
+  assert.match(stopping.stderr, /Stop was not confirmed/);
+  assert.equal(s.events.includes('preserve'), false);
+  await s.reload(); s.stopStatus = 'idle';
+  s.patches = [{ path: 'result.txt', patch: 'partial patch', truncated: true }];
+  const partial = await s.control('archive', 'worker-one');
+  assert.equal(partial.exitCode, 1);
+  assert.match(partial.stderr, /Incomplete patch/);
+  assert.equal(s.events.includes('archive'), false);
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /not bound/);
+});
+
+test('untracked binary marker and a foreign SDK lifecycle child are retained', async t => {
+  const s = await stand(t);
+  await s.create(); await s.add('worker-one');
+  s.patches = [{ path: 'result.txt', patch: 'Binary files /dev/null and b/result.txt differ\n', truncated: false }];
+  assert.equal((await s.control('archive', 'worker-one')).exitCode, 1);
+  assert.equal(s.events.includes('archive'), false);
+  s.patches = [];
+  assert.equal((await s.control('archive', 'worker-one')).exitCode, 0);
+  s.events.length = 0;
+  s.threads.set('foreign-child', makeThreadResponse({ id: 'foreign-child', lifecycleOwnerThreadId: 'thr-1' }));
+  const result = await s.control('archive', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /BB lifecycle child/);
+  assert.equal(s.events.includes('archive'), false);
+});
+
+test('common merge base or a recorded base ahead of HEAD blocks preservation and archive', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  s.baseRef = 'c'.repeat(40);
+  assert.match((await s.control('archive', 'worker-one')).stderr, /diverged from the recorded base/);
+  s.baseRef = undefined; s.behindCount = 1;
+  assert.match((await s.control('archive', 'worker-one')).stderr, /diverged from the recorded base/);
+  assert.equal(s.events.includes('preserve'), false); assert.equal(s.events.includes('archive'), false);
+});
+
+test('an add waiting on host validation cannot launch after the owner enters archive', async t => {
+  const { promise: entered, resolve: enter } = deferred();
+  const { promise: release, resolve } = deferred();
+  const s = await stand(t, { beforeCheck: async () => { enter(); await release; } });
+  await s.create();
+  const add = s.add('late-worker'); await entered;
+  assert.equal((await s.control('archive', 'orchestrator')).exitCode, 0);
+  resolve();
+  const result = await add;
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /no longer ready/);
+  assert.equal(s.threads.size, 1);
+});
+
+test('archive waiting on SDK scan sees a child reserved before its phase change', async t => {
+  const { promise: entered, resolve: enter } = deferred();
+  const { promise: release, resolve } = deferred();
+  const s = await stand(t, { beforeListReturn: async () => { enter(); await release; } });
+  await s.create();
+  const archive = s.control('archive', 'orchestrator'); await entered;
+  assert.equal((await s.add('early-worker')).exitCode, 0);
+  resolve();
+  const result = await archive;
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /children first/);
+  assert.equal(s.events.includes('archive'), false); assert.equal(s.threads.get('thr-2').archivedAt, null);
 });

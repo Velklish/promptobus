@@ -502,3 +502,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-358"></a>`PB-358-harness-specific-prompt-sources` · 2026-10-08 · completed · — · Separate harness-specific prompt sources from shared contracts
 - <a id="pb-365"></a>`PB-365-portable-role-instruction-renderers` · 2026-10-08 · completed · — · Export portable role instruction renderers while preserving native harness behavior
 - <a id="pb-364"></a>`PB-364-bb-plugin-engine-and-participant-binding` · 2026-10-08 · completed · — · Add a local BB plugin entry point with engine-backed tools and authenticated participants
+- <a id="pb-363"></a>`PB-363-bb-thread-and-environment-lifecycle` · 2026-10-08 · completed · — · Launch and inspect BB participants with one owner for each environment

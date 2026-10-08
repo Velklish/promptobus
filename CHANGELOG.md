@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Let BB create participant worktrees and retain actual environment/thread ownership
+  refs. SDK observations preserve stopping/offline uncertainty. Archive confirms Stop
+  and preserves unaccepted patches in a stable coordinator before BB retirement;
+  native cleanup retains BB resources. [Lifecycle](bb-plugin-promptobus/README.md#lifecycle),
+  [decision](docs/adr/adr-031-bb-environment-lifecycle.md).
+
 - Bind local BB task participants to authenticated thread, project, environment and
   host identities in plugin-owned SQLite. Native role tools call the canonical v1
   engine on the coordinator host. First prompts wait for binding finalization;

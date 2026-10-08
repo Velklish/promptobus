@@ -18,7 +18,9 @@ export async function engineOperation(input: unknown) {
   if (request.operation === 'reserve') {
     const participant: ParticipantV1 = { id: b.participant, role: b.role, harness: 'bb', mode: 'managed',
       sessionRef: null, capabilities: null, metadata: { bb: { token: b.token, projectId: b.projectId,
-        environmentId: b.environmentId, hostId: b.hostId, providerId: b.providerId } } };
+        environmentId: b.environmentId, hostId: b.hostId, providerId: b.providerId, environmentPath: b.environmentPath,
+        environmentOwner: b.environmentOwner, branch: b.branch, baseSha: b.baseSha,
+        parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } } };
     if (request.create) {
       if (b.role !== ORCHESTRATOR || b.participant !== ORCHESTRATOR) throw new Error('Task owner must be the orchestrator');
       engine.createTask({ id: b.task, title: request.title, owner: participant, adapter: { bb: { hostId: b.hostId, root } } });
@@ -44,8 +46,12 @@ export async function engineOperation(input: unknown) {
     engine.patchParticipant(b.task, b.participant, { sessionRef: b.threadId });
     return { ready: true };
   }
-  if (b.phase !== 'ready' || !b.threadId || participant.sessionRef !== b.threadId) throw new Error('Canonical binding mismatch');
+  if ((b.phase !== 'ready' && !(b.phase === 'archiving' && request.operation === 'preserve'))
+    || !b.threadId || participant.sessionRef !== b.threadId) throw new Error('Canonical binding mismatch');
   switch (request.operation) {
+    case 'preserve': return engine.send(b.task, { from: ORCHESTRATOR, to: [ORCHESTRATOR], type: 'artifact',
+      body: `BB lifecycle snapshot for ${b.participant}; this is not acceptance.`,
+      artifact: { filename: `${b.participant}-bb-snapshot.json`, stream: Readable.from([Buffer.from(request.content, 'utf8')]) } });
     case 'check': return { ready: true };
     case 'task': return { id: task.id, title: task.title, status: task.status, owner: task.owner,
       participant: b.participant, role: b.role,

@@ -76,7 +76,9 @@ bb promptobus participant add --task demo-t20261008-120000 \
 bb promptobus bindings
 ```
 
-Use real existing project/environment ids on the primary local host. The first
+Use real existing project/environment ids on the primary local host and a Git
+coordinator environment with an actual HEAD. The coordinator must be unmanaged:
+its canonical journal must outlive BB worker environment retirement. The first
 command creates the canonical task and a new owner thread; the second adds a
 new participant to that plugin-owned active task. Both hold the first prompt
 until the returned BB thread identity is finalized. A launch failure remains
@@ -105,8 +107,8 @@ send. Routing currently goes through the task orchestrator; worker lateral sends
 are refused. New role threads use built-in Codex except reviewers, which use the
 constrained provider. Bus writes do not grant reviewer source or shell writes.
 
-The six role skills are delivered, but managed environment ownership, recipient
-wake/recovery, model-catalog selection and the complete role workflow are separate
+The six role skills are delivered, but recipient wake/recovery, model-catalog
+selection and the complete role workflow are separate
 integration boundaries. A send returns engine activation events; this entry point
 does not yet wake recipients. BB queued first prompts are admission state, not
 the canonical Promptobus mailbox.
@@ -121,8 +123,59 @@ and actual local tool-turn evidence are reported separately.
 
 ## Lifecycle
 
-BB owns the bridge process. A native Codex app-server belongs to each active
-reviewer session. Stop releases that process; the private home remains for explicit
-resume and retained session evidence. No review environment is removed here.
+`participant add --environment <id>` reuses an existing local environment.
+`participant add --new-environment --base-branch <branch>` asks BB to create a
+managed worktree. The SDK owns creation; no native Promptobus worktree name or
+`git worktree add/remove` is reconstructed. Children explicitly name the owner
+thread as both `parentThreadId` and `lifecycleOwnerThreadId`. Returned actual
+environment id, path, branch, host and HEAD SHA are retained in plugin storage and
+canonical participant metadata.
+
+BB 0.45.0 provisions a new environment after the first prompt, not when it creates
+the thread row. A bound `provisioning` phase admits only the exact nonce-bearing
+preparation prompt, with no assignment, plugin tools or role skill selection.
+Other prompts and every bus call wait or fail. After preparation ends, the adapter
+records the actual workspace and confirms Stop, clears the preparation model context,
+finalizes the canonical binding,
+then sends the first assignment with its complete role context. Clear context
+starts a fresh native Codex thread: resuming the preparation thread would retain
+its empty dynamic tool catalog even after Stop; BB event history remains retained. Failed preparation
+remains orphaned for operator recovery; it never grants bus rights.
+
+`participant get --task <id> --participant <id>` awaits SDK observations before
+returning a plain `SessionView` and the original BB status. Active/starting is busy;
+idle is reachable and resumable. Stopping, pending, error and unavailable/offline
+observations remain unknown. `alive` is logical thread availability, not proof of
+a native process. `participant stop` succeeds only after a fresh idle observation,
+with no background agents and an available host/environment. Stop releases the
+runtime and leaves the environment in place. A reviewer private home remains for
+resume and evidence.
+
+`participant archive` first holds further adapter dispatches, confirms Stop and
+saves a complete SDK patch snapshot relative to the recorded base SHA as an engine
+artifact in the stable coordinator. The manifest includes actual HEAD, branch,
+environment and thread refs. Canonical messages and result artifacts are already
+outside worker environments. The coordinator's `.promptobus` journal is retained
+directly and excluded from its own source snapshot. Truncated/missing patches,
+binary marker-only output, submodule changes, unstable snapshots, diverged base SHA,
+missing base SHA
+or an unconfirmed Stop block archive and retain the environment. Legacy bindings
+without a recorded base SHA therefore need operator preservation rather than
+automatic archive.
+
+Archive follows preservation and a final stopped/unchanged check. Lifecycle children,
+including children outside plugin storage, must be archived first. Failed preservation
+remains `archiving` across reload and can be retried. Archived bindings keep their
+immutable thread refs and snapshot digest; archive never accepts or closes the task.
+BB owns retirement after the last unarchived thread leaves a managed environment;
+its default grace is five minutes. Reused environments retain their BB provider's
+retention policy. Native `done`, `sweep` and journal pruning leave BB resources alone.
+
+Direct BB operator actions, including Send now, archive/delete and environment
+cleanup and concurrent dependent creation by other SDK clients, can bypass the adapter's admission/preservation path. Preserve results
+through this CLI before those actions. This adapter cannot veto an explicit BB
+operator override or protect concurrent external filesystem edits after its check.
+Preexisting work in a reused environment remains its original owner's responsibility.
+
 Models are read from the actual Codex app-server catalog. Usage windows and full
 role workflow support are not claimed by this reviewer provider.

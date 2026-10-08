@@ -21,6 +21,11 @@ Canonical
 external tools are withheld until classified delivery is available.
 
 `bb promptobus task create`, `participant add` and `bindings` use an existing
-environment on the primary local host. First prompts wait for binding finalization;
-orphaned launches receive no bus rights. Recipient wake delivery, managed environment
-lifecycle, model routing and the complete role workflow remain separate boundaries.
+unmanaged Git coordinator on the primary local host. Participants can reuse a local
+environment or ask BB to create a managed worktree. New worktrees use a preparation
+turn without assignment or plugin tools, then confirmed Stop, cleared preparation
+model context and authoritative
+binding before the first assignment. Stop retains the environment; archive preserves
+a complete patch in the coordinator before BB retirement. Orphaned launches receive
+no bus rights. Recipient wake delivery, model routing and the complete role workflow
+remain separate boundaries.

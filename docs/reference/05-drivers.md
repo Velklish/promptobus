@@ -1234,3 +1234,19 @@ evidence. A native reviewer beside BB workers remains a mixed runtime pilot.
 See [the plugin setup](../../bb-plugin-promptobus/README.md) and
 [ADR-029](../adr/adr-029-bb-constrained-codex-reviewer.md). Native Driver permissions
 and launch paths are unchanged.
+
+## BB async lifecycle observations
+
+BB participants use an SDK adapter outside the native synchronous Driver registry.
+Environment creation and retirement have one owner: BB. The adapter awaits thread,
+environment and host reads before producing a plain SessionView for decisions.
+`alive` means an available resumable logical thread, with busy derived from active
+or starting status; it does not assert a live native process. Pending, stopping,
+error, binding mismatch and offline state remain unknown and cannot authorize cleanup.
+
+Fresh Stop confirmation requires idle thread/runtime state, zero background agents
+and an available bound host/environment. Archive additionally requires complete
+preservation in the stable coordinator and archived lifecycle children. Actual SDK
+path, branch, base SHA, environment and parent/lifecycle owner ids survive reload.
+[Lifecycle](../../bb-plugin-promptobus/README.md#lifecycle) defines retention and the
+explicit BB operator-override boundary. Native Drivers keep their existing behavior.

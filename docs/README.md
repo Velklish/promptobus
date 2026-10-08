@@ -37,6 +37,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-028-participant-mailbox.md](adr/adr-028-participant-mailbox.md) | A participant owns one mailbox: the slots of its task addresses read, counted and knocked as one, keyed by the address its lift bound; root and sibling mail to a teamlead land in its root slot with their senders kept while one session holds both its records; a relift drops the dead session's contact point, and a Claude Code participant bound before launch binds its own id at its handshake through a session-record pointer; the routing policy, enumerated, is the contact list each participant is given and the send door enforces | Accepted |
 | [adr/adr-029-bb-constrained-codex-reviewer.md](adr/adr-029-bb-constrained-codex-reviewer.md) | BB review runs through a constrained Codex provider with verified read-only execution and an explicit tool allowlist | Accepted |
 | [adr/adr-030-bb-authoritative-participants.md](adr/adr-030-bb-authoritative-participants.md) | BB participants are authenticated from plugin-owned bindings; the host v1 engine remains canonical | Accepted |
+| [adr/adr-031-bb-environment-lifecycle.md](adr/adr-031-bb-environment-lifecycle.md) | BB owns participant environments; the stable coordinator retains unaccepted snapshots before archive | Accepted |
 
 ## Cross-cutting principles
 

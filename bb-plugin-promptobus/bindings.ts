@@ -23,6 +23,7 @@ export function bindingStore(bb: BbPluginApi) {
         .run(binding.threadId, JSON.stringify(binding), binding.task, binding.participant);
     },
     thread: (id: string) => parse(db.prepare('SELECT payload FROM bindings WHERE thread = ?').get(id)),
+    participant: (task: string, id: string) => parse(db.prepare('SELECT payload FROM bindings WHERE task = ? AND participant = ?').get(task, id)),
     task: (id: string) => parse(db.prepare("SELECT payload FROM bindings WHERE task = ? AND participant = 'orchestrator'").get(id)),
     list: (): Binding[] => (db.prepare('SELECT payload FROM bindings ORDER BY task, participant').all()).map((row: unknown) => parse(row)!),
   };
