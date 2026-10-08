@@ -9,6 +9,7 @@ import { bindingStore } from './bindings.js';
 import { artifactSchema, bindingSchema, emptySchema, mailboxSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
+import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
 
 export const REVIEWER_PROVIDER = 'promptobus-codex-reviewer';
 
@@ -29,6 +30,7 @@ export function registerRuntime(bb: BbPluginApi) {
     const local = (await bb.sdk.system.config()).primaryHostId;
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
+  const recovery = registerDelivery(bb, store, onHost);
   const authorize = async (context: PluginAgentToolContext, tool: string) => {
     context.signal.throwIfAborted();
     const b = store.thread(context.threadId);
@@ -46,7 +48,12 @@ export function registerRuntime(bb: BbPluginApi) {
     bb.agents.registerTool({ name, description: `Promptobus ${operation} for the authenticated participant. Identity is supplied by the runtime.`,
       parameters, async execute(args, context) {
         const binding = await authorize(context, name);
-        return JSON.stringify(await onHost(binding, { operation, args }, context.signal));
+        const result = await onHost(binding, { operation, args }, context.signal);
+        if (operation === 'send') for (const recipient of (args as { to: string[] }).to) {
+          const target = store.participant(binding.task, recipient);
+          if (target?.threadId) void recovery.run(target.threadId);
+        }
+        return JSON.stringify(result);
       } });
   }
   bb.experimental_hooks.on('message.dispatch', async context => {
@@ -57,35 +64,46 @@ export function registerRuntime(bb: BbPluginApi) {
       && context.thread.providerId === b.providerId && context.host?.id === b.hostId
       && context.input.blocks.length === 1 && context.input.blocks[0]?.type === 'text' && context.input.text === b.bootstrap) return { action: 'proceed' };
     if (b.phase !== 'ready') return { action: 'wait', reason: `Promptobus binding is ${b.phase}; operator recovery is required` };
+    const admits = () => store.thread(b.threadId!)?.phase === 'ready' && recovery.admits(b.threadId!, context.input.text)
+      && (context.originPluginId !== 'promptobus' || !store.delivery(b.threadId!).paused);
+    if (!admits()) return { action: 'reject', message: 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
     try {
       await requireThread(b);
       await onHost(b, { operation: 'check' });
+      await recovery.replay(b, AbortSignal.timeout(5000));
+      if (!admits()) return { action: 'reject', message: 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
       return { action: 'proceed' };
     } catch (error) { return { action: 'reject', message: String((error as Error).message) }; }
   });
   const spawn = async (b: Binding, assignment: string, model: string, baseBranch?: string) => {
     let recorded = false;
+    const intent = { attemptId: randomUUID(), assignment, model, ...(baseBranch ? { baseBranch } : {}), status: 'requested' as const };
+    store.launch(b, intent);
     const tools = toolsFor(b.role);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
       workspace: b.environmentPath, assignment, tools: Object.fromEntries(tools.map(name => [name, name])) });
+    const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}`;
     if (baseBranch) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : { type: 'reuse', environmentId: b.environmentId },
-        providerId: b.providerId, model, permissionMode: 'accept-edits',
+        providerId: b.providerId, model, permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
         ...(b.parentThreadId ? { parentThreadId: b.parentThreadId } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
-        prompt: b.bootstrap ?? delivery().initialPrompt, title: `Promptobus ${b.role}: ${b.participant}` });
+        prompt: b.bootstrap ?? initialPrompt(), title: `Promptobus ${b.role}: ${b.participant}` });
       b.threadId = thread.id;
       store.save(b);
       recorded = true;
+      store.launch(b, { ...intent, status: 'recorded' });
       if (baseBranch) {
         b.phase = 'provisioning'; store.save(b);
         await bb.experimental_hooks.recheck('message.dispatch');
-        await bb.sdk.threads.wait({ threadId: b.threadId, status: 'idle', timeoutMs: 120_000 });
+        const prepared = await bb.sdk.threads.wait({ threadId: b.threadId, status: 'idle', timeoutMs: 120_000 });
+        if (!prepared.matched) throw new Error('BB preparation did not become idle');
         const actual = await bb.sdk.threads.get({ threadId: b.threadId });
         if (actual.projectId !== b.projectId || actual.providerId !== b.providerId || !actual.environmentId) throw new Error('BB provisioning binding mismatch');
+        if (actual.status !== 'idle' || actual.runtime.displayStatus !== 'idle' || actual.activeBackgroundAgentCount !== 0) throw new Error('BB preparation is not idle');
         b.environmentId = actual.environmentId;
         const environment = await recordBbWorkspace(bb, b);
         if (!environment.managed) throw new Error('BB did not return a managed environment');
@@ -96,13 +114,17 @@ export function registerRuntime(bb: BbPluginApi) {
       }
       await requireThread(b);
       await onHost(b, { operation: 'finalize' });
+      await recovery.arm(b);
+      if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
       b.phase = 'ready'; store.save(b);
-      if (baseBranch) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: delivery().initialPrompt, mentions: [] }] });
+      if (baseBranch) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
       await bb.experimental_hooks.recheck('message.dispatch');
+      store.launch(b, { ...intent, status: 'ready' });
       return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase };
     } catch (error) {
       if (!recorded) b.threadId = null;
       b.phase = 'orphan'; store.save(b);
+      store.launch(b, { ...intent, status: recorded ? 'recorded' : 'unknown' });
       if (b.threadId) await bb.sdk.threads.stop({ threadId: b.threadId }).catch(() => {});
       throw error;
     }
@@ -177,8 +199,24 @@ export function registerRuntime(bb: BbPluginApi) {
           parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId, ...observation }) };
       } }),
     'participant stop': cliCommand({ summary: 'Request Stop and check fresh runtime state; preserve the environment.', options: participantOptions,
-      async run({ options }) { const result = await stopBbParticipant(bb, boundParticipant(options.task, options.participant));
-        return { exitCode: result.confirmed ? 0 : 1, stdout: JSON.stringify(result) }; } }),
+      async run({ options }) {
+        const b = boundParticipant(options.task, options.participant);
+        recovery.pause(b, 'Operator Stop; explicit resume is required');
+        await recovery.cancelQueued(b).catch(error => bb.log.warn(`Promptobus queued wake retained: ${(error as Error).message}`));
+        const result = await stopBbParticipant(bb, b);
+        return { exitCode: result.confirmed ? 0 : 1, stdout: JSON.stringify({ ...result, deliveryPaused: true }) }; } }),
+    'participant resume': cliCommand({ summary: 'Explicitly re-enable bounded wake delivery to an available idle participant.', options: participantOptions,
+      async run({ options }, context) {
+        const b = boundParticipant(options.task, options.participant);
+        await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
+        return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b)) };
+      } }),
+    'recovery run': cliCommand({ summary: 'Reconcile recorded threads, history and canonical unread mail without resuming paused participants.',
+      async run(_args, context) {
+        for (const b of store.list()) if (b.threadId && b.phase === 'ready') await recovery.run(b.threadId, context.signal);
+        return { exitCode: 0, stdout: JSON.stringify(store.list().filter(b => b.threadId).map(b => ({ participant: b.participant, task: b.task,
+          phase: b.phase, delivery: store.delivery(b.threadId!) }))) };
+      } }),
     'participant archive': cliCommand({ summary: 'Stop, preserve a complete workspace snapshot in the coordinator, then archive through BB.', options: participantOptions,
       async run({ options }, context) {
         const b = boundParticipant(options.task, options.participant);
@@ -194,6 +232,7 @@ export function registerRuntime(bb: BbPluginApi) {
         if (archiving.has(b.threadId!)) throw new Error('Participant is already being archived');
         archiving.add(b.threadId!);
         try {
+          recovery.pause(b, 'Participant archive');
           b.phase = 'archiving'; store.save(b);
           if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('BB Stop was not confirmed; environment remains in place');
           const excludeCanonicalStore = store.task(b.task)?.environmentId === b.environmentId;
@@ -213,6 +252,25 @@ export function registerRuntime(bb: BbPluginApi) {
       } }),
     bindings: cliCommand({ summary: 'List participant binding phases, including orphaned launches.', run: () => ({ exitCode: 0,
       stdout: JSON.stringify(store.list().map(({ token, ...binding }) => binding)) }) }),
+    'recovery inspect': cliCommand({ summary: 'Inspect durable launch intent and candidate threads without binding or spawning.', options: participantOptions,
+      async run({ options }, context) {
+        const b = store.participant(options.task, options.participant);
+        if (!b) throw new Error('Participant is not owned by this plugin');
+        const intent = store.launchIntent(b);
+        const candidates: { threadId: string; environmentId: string | null; status: string }[] = [];
+        if (!b.threadId && intent) for (let offset = 0; ; offset += 200) {
+          const threads = await bb.sdk.threads.list({ projectId: b.projectId, includeHidden: true, archived: false, limit: 200, offset, signal: context.signal });
+          for (const thread of threads) if (thread.providerId === b.providerId && thread.parentThreadId === b.parentThreadId
+            && thread.lifecycleOwnerThreadId === b.lifecycleOwnerThreadId) {
+            const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: thread.id, signal: context.signal });
+            if (metadata.launchAttemptId === intent.attemptId) candidates.push({ threadId: thread.id, environmentId: thread.environmentId, status: thread.status });
+          }
+          if (threads.length < 200) break;
+        }
+        return { exitCode: 0, stdout: JSON.stringify({ participant: b.participant, phase: b.phase, threadId: b.threadId,
+          launch: intent ? { attemptId: intent.attemptId, status: intent.status, model: intent.model, baseBranch: intent.baseBranch } : null,
+          delivery: b.threadId ? store.delivery(b.threadId) : null, candidates, automaticallyRebound: false }) };
+      } }),
   } }));
   return {
     async checkReviewer(context: PluginAgentToolContext) {

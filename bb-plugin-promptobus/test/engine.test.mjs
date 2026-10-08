@@ -7,6 +7,7 @@ import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationC
 import { openEngine, newTaskIdentity } from 'promptobus';
 import plugin from '../.test-build/server.js';
 import { engineOperation } from '../.test-build/engine-host.js';
+import { bindingStore } from '../.test-build/bindings.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
@@ -14,6 +15,13 @@ async function stand(t, options = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const threads = new Map();
+  const metadata = new Map();
+  const history = new Map(); const queues = new Map(); const interactions = new Map(); const wakes = [];
+  const append = (id, type, data = {}) => {
+    const rows = history.get(id) ?? []; const seq = (rows.at(-1)?.seq ?? 0) + 1;
+    const row = { id: `event-${id}-${seq}`, threadId: id, seq, createdAt: Date.now(), scope: { kind: 'thread' }, type, data };
+    rows.push(row); history.set(id, rows); return row;
+  };
   const environment = { id: 'env', projectId: 'project', path: root, hostId: 'local', managed: false, status: 'ready', lifecycle: { phase: 'active' } };
   const workerEnvironment = { ...environment, id: 'bb-actual-env', path: `${root}/actual-bb-worktree`, managed: true };
   const events = [];
@@ -43,20 +51,41 @@ async function stand(t, options = {}) {
       } },
     hosts: { get: async () => ({ id: 'local', status: 'connected', lifecycle: { phase: 'active' } }) },
     threads: {
-      get: async ({ threadId }) => { if (!threads.has(threadId)) throw new Error('Thread not found'); return threads.get(threadId); },
+      events: { list: async ({ threadId, afterSeq = '0', order = 'asc', limit = '200', types }) => {
+        assert.equal(Number(limit) <= 100, true, 'Thread event limit cannot exceed 100');
+        const rows = (history.get(threadId) ?? []).filter(row => row.seq > Number(afterSeq) && (!types || types.includes(row.type)));
+        return (order === 'desc' ? [...rows].reverse() : rows).slice(0, Number(limit));
+      } },
+      interactions: { list: async ({ threadId }) => interactions.get(threadId) ?? [] },
+      queuedMessages: {
+        list: async ({ threadId }) => queues.get(threadId) ?? [],
+        delete: async ({ threadId, queuedMessageId }) => {
+          const entries = queues.get(threadId) ?? []; const entry = entries.find(row => row.id === queuedMessageId);
+          queues.set(threadId, entries.filter(row => row.id !== queuedMessageId));
+          if (entry) await host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+          return { ok: true };
+        },
+      },
+      get: async ({ threadId }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
+        if (options.beforeGet) await options.beforeGet(threadId); return threads.get(threadId); },
       spawn: async args => {
         initialArgs = args;
         nativeCatalogCleared = false;
         const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
           parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null });
         threads.set(thread.id, thread);
+        metadata.set(thread.id, args.pluginMetadata ?? {});
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread, origin: 'plugin', originPluginId: 'promptobus' }))).action, 'wait');
         const before = host.harness.inspection.experimental_hostRpcCalls.length;
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId: thread.id, projectId: 'project' }), /not bound/);
         assert.equal(host.harness.inspection.experimental_hostRpcCalls.length, before);
         if (options.beforeReturn) await options.beforeReturn({ host, thread });
+        if (options.ambiguousSpawn) throw new Error('Spawn response was lost');
         return thread;
+      },
+      getPluginMetadata: async ({ threadId, pluginId }) => {
+        assert.equal(pluginId, 'promptobus'); return metadata.get(threadId) ?? {};
       },
       stop: async ({ threadId }) => { events.push('stop'); const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = stopStatus; return { ok: true }; },
       wait: async ({ threadId }) => {
@@ -67,12 +96,25 @@ async function stand(t, options = {}) {
         assert.equal((await hook({ ...context, input: { ...context.input, text: 'Do the actual assignment' } })).action, 'wait');
         assert.equal((await hook(context)).action, 'proceed');
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
+        if (options.beforePreparationIdle) await options.beforePreparationIdle({ threadId, append, thread });
         thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
         events.push('provision');
         return { matched: true, target: { kind: 'status', status: 'idle' }, thread };
       },
       clearContext: async () => { nativeCatalogCleared = true; events.push('clear-context'); return { ok: true }; },
-      send: async ({ threadId, input }) => { events.push('assignment');
+      send: async ({ threadId, input, mode }) => {
+        if (input[0].text.startsWith('Promptobus mailbox wake: ')) {
+          wakes.push({ threadId, input, mode });
+          if (options.wakeSend) return options.wakeSend({ threadId, input, mode, append, queues, threads, host });
+          const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+          const admitted = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), input: { blocks: input, text: input[0].text } }));
+          assert.equal(admitted.action, 'proceed', JSON.stringify(admitted));
+          append(threadId, 'client/turn/requested', { input });
+          const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = 'active';
+          return { ok: true, delivery: 'sent' };
+        }
+        if (options.assignmentSend) return options.assignmentSend({ threadId, input, mode, threads, host });
+        events.push('assignment');
         assert.equal(nativeCatalogCleared, true, 'The preparation native thread retains its empty dynamic tool catalog until Clear context');
         assert.equal(input[0].text.includes('Read mailbox, then stop.'), true);
         assert.equal(input[0].text.includes(workerEnvironment.path), true);
@@ -89,6 +131,7 @@ async function stand(t, options = {}) {
   }, experimental_callHostRpc: async ({ method, input, hostId }) => {
     assert.equal(hostId, 'local');
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
+    if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
     if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck();
     if (input.operation === 'preserve') events.push('preserve');
     return engineOperation(input);
@@ -101,10 +144,308 @@ async function stand(t, options = {}) {
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, events, get host() { return host; }, task, create, add, call, control,
+    wakes, queues, interactions, append,
+    reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
+    delivery: id => bindingStore(host.bb).delivery(id),
+    updateDelivery: (id, update) => bindingStore(host.bb).updateDelivery(id, update),
+    finish(id, status = 'completed') { append(id, 'turn/completed', { status }); const thread = threads.get(id); thread.status = thread.runtime.displayStatus = 'idle'; },
     set stopStatus(value) { stopStatus = value; }, set patches(value) { patches = value; },
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+test('wake hints and duplicate BB announcements do not ACK or repeat canonical consumption across reload', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Unread work hint' }));
+  await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.wakes[0].mode, 'queue-if-active');
+  assert.ok(s.wakes[0].input[0].text.includes(sent.message.id));
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  assert.equal(engine.unread(s.task, 'worker-one'), 1);
+  for (let i = 0; i < 3; i++) await s.host.harness.behavior.emitThreadEvent('experimental_thread.events', { thread: s.threads.get('thr-2'), sequence: 1 });
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1);
+  assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 1);
+  assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 0);
+  s.finish('thr-2'); await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').pending, null);
+});
+
+test('recovery closes the canon-to-outbox crash gap and reconciles a lost accepted send without another executor', async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, append, threads }) {
+    append(threadId, 'client/turn/requested', { input }); const thread = threads.get(threadId);
+    thread.status = thread.runtime.displayStatus = 'active'; throw new Error('Accepted send response was lost');
+  } });
+  await s.create(); await s.add('worker-one');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Committed just before server crash' });
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').pending.state, 'unknown');
+  await s.reload(); await s.reconcile();
+  assert.equal(s.delivery('thr-2').pending.state, 'sent'); assert.equal(s.wakes.length, 1); assert.equal(s.threads.size, 2);
+  assert.equal(engine.unread(s.task, 'worker-one'), 1);
+});
+
+for (const ambiguous of [false, true]) test(`queued wake${ambiguous ? ' with lost reply' : ''} survives reload without duplicate send or mailbox ACK`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues }) {
+    const entry = { id: 'queued-wake', threadId, content: input }; queues.set(threadId, [entry]);
+    if (ambiguous) throw new Error('Queued response was lost');
+    return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'interaction' } };
+  } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Durable queued mail' });
+  await s.reconcile(); await s.reload(); await s.reconcile();
+  assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').pending.state, 'queued');
+  assert.equal(s.delivery('thr-2').pending.queuedId, 'queued-wake');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  assert.equal(engine.unread(s.task, 'worker-one'), 1);
+  const resumed = await s.control('resume', 'worker-one');
+  assert.equal(resumed.exitCode, 0, resumed.stderr);
+  assert.equal(s.delivery('thr-2').paused, false, 'Internal queue cancellation must not become a user Stop');
+  assert.equal(s.wakes.length, 2);
+});
+
+test('pending interaction defers wake, a denied interaction pauses it, and replay remains idempotent', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  s.interactions.set('thr-2', [{ id: 'approval' }]);
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Wait for interaction' });
+  await s.reconcile(); assert.equal(s.wakes.length, 0);
+  s.interactions.set('thr-2', []); await s.reconcile(); assert.equal(s.wakes.length, 1);
+  s.finish('thr-2'); s.append('thr-2', 'system/interaction/lifecycle', { interaction: { status: 'resolved', resolution: { decision: 'deny' } } });
+  await s.reconcile(); const epoch = s.delivery('thr-2').epoch;
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1);
+  assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.delivery('thr-2').epoch, epoch);
+});
+
+test('operator Stop wins over a late queued send response and stays paused after reload until explicit resume', async t => {
+  const entered = deferred(); const reply = deferred();
+  let queued = true;
+  const s = await stand(t, { async wakeSend({ threadId, input, queues, append, threads }) {
+    if (queued) {
+      const entry = { id: 'late-queued', threadId, content: input }; queues.set(threadId, [entry]); entered.resolve();
+      await reply.promise; return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+    }
+    append(threadId, 'client/turn/requested', { input }); const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = 'active';
+    return { ok: true, delivery: 'sent' };
+  } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Stop while send is unresolved' });
+  await entered.promise;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  const epoch = s.delivery('thr-2').epoch; const oldText = s.wakes[0].input[0].text;
+  reply.resolve(); await s.reconcile(); assert.deepEqual(s.queues.get('thr-2'), []);
+  assert.equal(s.delivery('thr-2').pending, null); assert.equal(s.delivery('thr-2').epoch, epoch);
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').paused, true);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const admission = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), input: { blocks: [{ type: 'text', text: oldText }], text: oldText } }));
+  assert.equal(admission.action, 'reject');
+  queued = false; const resumed = await s.control('resume', 'worker-one'); assert.equal(resumed.exitCode, 0, resumed.stderr);
+  assert.equal(s.wakes.length, 2); assert.equal(s.delivery('thr-2').paused, false);
+});
+
+test('operator Stop during launch finalization cancels the initial assignment and retains the recorded thread', async t => {
+  const entered = deferred(); const release = deferred();
+  const s = await stand(t, { async beforeFinalize(input) {
+    if (input.binding.participant === 'worker-one') { entered.resolve(); await release.promise; }
+  } });
+  await s.create();
+  const adding = s.add('worker-one', 'worker', ['--new-environment', '--base-branch', 'main']);
+  await entered.promise;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  release.resolve(); const added = await adding;
+  assert.equal(added.exitCode, 1, 'A stopped launch must require operator recovery');
+  assert.match(added.stderr, /stopped during launch/);
+  assert.equal(s.events.includes('assignment'), false, 'Stop must suppress the automatic initial assignment');
+  assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phase, 'orphan');
+  assert.equal(s.threads.get('thr-2').status, 'idle');
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 0); assert.equal(s.threads.size, 2);
+});
+
+test('active BB Stop during preparation is replayed before arming the first assignment', async t => {
+  const s = await stand(t, { beforePreparationIdle({ threadId, append, thread }) {
+    thread.status = thread.runtime.displayStatus = 'active';
+    append(threadId, 'system/thread/interrupted', {});
+    append(threadId, 'turn/completed', { status: 'interrupted' });
+  } });
+  await s.create();
+  const added = await s.add('worker-one', 'worker', ['--new-environment', '--base-branch', 'main']);
+  assert.equal(added.exitCode, 1, 'Interrupted preparation must not be treated as a completed launch');
+  assert.equal(s.events.includes('assignment'), false); assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(s.delivery('thr-2').cursor, 2); assert.equal(s.threads.get('thr-2').status, 'idle');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phase, 'orphan');
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 0);
+});
+
+test('operator Stop while wake dispatch validates the host rejects the late admission', async t => {
+  const entered = deferred(); const release = deferred(); let block = false; let admission;
+  const s = await stand(t, { async beforeCheck() { if (block) { entered.resolve(); await release.promise; } },
+    async wakeSend({ threadId, input, host, threads, append }) {
+      const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+      admission = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), origin: 'plugin', originPluginId: 'promptobus',
+        input: { blocks: input, text: input[0].text } }));
+      if (admission.action !== 'proceed') throw new Error('Wake admission rejected');
+      append(threadId, 'client/turn/requested', { input });
+      threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
+      return { ok: true, delivery: 'sent' };
+    } });
+  await s.create(); await s.add('worker-one'); block = true;
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Stop during validation' });
+  const running = s.reconcile(); await entered.promise;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  release.resolve(); await running;
+  assert.equal(admission.action, 'reject', 'Late admission must check the current Stop state');
+  assert.equal(s.threads.get('thr-2').status, 'idle'); assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(engine.unread(s.task, 'worker-one'), 1);
+  block = false;
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const input = { blocks: [{ type: 'text', text: 'Initial assignment' }], text: 'Initial assignment' };
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), origin: 'plugin', originPluginId: 'promptobus', input }))).action, 'reject');
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), origin: 'user', input }))).action, 'proceed');
+});
+
+test('initial SDK send with no plugin attribution is refused when Stop finishes during host validation', async t => {
+  const entered = deferred(); const release = deferred(); let block = false; let admission;
+  const s = await stand(t, { async beforeCheck() { if (block) { entered.resolve(); await release.promise; } },
+    async assignmentSend({ threadId, input, host, threads }) {
+      block = true;
+      const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+      admission = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), origin: null, originPluginId: null,
+        input: { blocks: input, text: input[0].text } }));
+      if (admission.action !== 'proceed') throw new Error('Initial assignment admission rejected');
+      threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
+      return { ok: true, delivery: 'sent' };
+    } });
+  await s.create();
+  const adding = s.add('worker-one', 'worker', ['--new-environment', '--base-branch', 'main']);
+  await entered.promise; assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  release.resolve(); const added = await adding;
+  assert.equal(admission.action, 'reject', 'Initial assignment admission cannot depend on SDK origin attribution');
+  assert.equal(added.exitCode, 1); assert.equal(s.threads.get('thr-2').status, 'idle');
+  assert.equal(s.delivery('thr-2').paused, true);
+});
+
+test('active interruption after a full history page pauses delivery without replaying or reviving it', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  for (let i = 0; i < 200; i++) s.append('thr-2', 'turn/completed', { status: 'completed' });
+  s.append('thr-2', 'system/thread/interrupted', {});
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Mail after user interruption' });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').cursor, 201); assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(s.wakes.length, 0); const epoch = s.delivery('thr-2').epoch;
+  await s.reload(); await s.reconcile(); assert.equal(s.delivery('thr-2').epoch, epoch); assert.equal(s.wakes.length, 0);
+});
+
+test('active Stop recorded after replay and before idle observation prevents a new wake despite overlapping announcements', async t => {
+  const entered = deferred(); const release = deferred(); let block = false;
+  const s = await stand(t, { async beforeGet(id) {
+    if (block && id === 'thr-2') { block = false; entered.resolve(); await release.promise; }
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Unread during active Stop' });
+  block = true; const running = s.reconcile(); await entered.promise;
+  const interrupted = s.append('thr-2', 'system/thread/interrupted', {});
+  thread.status = thread.runtime.displayStatus = 'idle';
+  const announced = s.host.harness.behavior.emitThreadEvent('experimental_thread.events', { thread, sequence: interrupted.seq });
+  release.resolve(); await Promise.all([running, announced]);
+  assert.equal(s.wakes.length, 0, 'Interruption committed during observation must be replayed before another wake');
+  assert.equal(thread.status, 'idle'); assert.equal(s.delivery('thr-2').paused, true);
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 0); assert.equal(engine.unread(s.task, 'worker-one'), 1);
+});
+
+test('dispatch replays interruption committed during host validation without waiting for an announcement', async t => {
+  const entered = deferred(); const release = deferred(); let block = false; let admission;
+  const s = await stand(t, { async beforeCheck() { if (block) { entered.resolve(); await release.promise; } },
+    async wakeSend({ threadId, input, host, threads }) {
+      const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
+      admission = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), input: { blocks: input, text: input[0].text } }));
+      if (admission.action !== 'proceed') throw new Error('Wake admission rejected');
+      threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
+      return { ok: true, delivery: 'sent' };
+    } });
+  await s.create(); await s.add('worker-one'); block = true;
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Interruption during dispatch validation' });
+  const running = s.reconcile(); await entered.promise;
+  s.append('thr-2', 'system/thread/interrupted', {});
+  release.resolve(); await running;
+  assert.equal(admission.action, 'reject'); assert.equal(s.threads.get('thr-2').status, 'idle');
+  assert.equal(s.delivery('thr-2').paused, true); assert.equal(engine.unread(s.task, 'worker-one'), 1);
+});
+
+test('an ambiguous unobserved send is replayed before bounded retry, and unread hints cannot loop without new mail', async t => {
+  const s = await stand(t, { wakeSend() { throw new Error('No send receipt'); } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'No receipt' }); await s.reconcile();
+  assert.equal(s.wakes.length, 1);
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1);
+  for (let i = 0; i < 3; i++) {
+    s.updateDelivery('thr-2', state => { state.pending.at = Date.now() - 31_000; }); await s.reconcile();
+  }
+  assert.equal(s.wakes.length, 3); assert.match(s.delivery('thr-2').reason, /budget exhausted/);
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 3); assert.equal(s.threads.size, 2);
+});
+
+test('ACK without canonical result gets two turn-boundary continuations, then requires explicit operator recovery', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Canonical result obligation' }); await s.reconcile();
+  await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' });
+  for (let i = 0; i < 3; i++) { s.finish('thr-2'); await s.reconcile(); }
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2').length, 3);
+  assert.equal(s.delivery('thr-2').continuations, 2); assert.match(s.delivery('thr-2').reason, /budget exhausted/);
+  await s.reload(); await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2').length, 3);
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Canonical terminal evidence' }); await s.reconcile();
+  assert.equal(s.delivery('thr-2').obligation, null); assert.equal(s.delivery('thr-2').pending, null);
+});
+
+test('lost spawn response retains launch intent and exposes candidates without a second executor or automatic binding', async t => {
+  let intentDuringSpawn;
+  const s = await stand(t, { ambiguousSpawn: true, beforeReturn({ host }) {
+    const store = bindingStore(host.bb); const b = store.list()[0];
+    intentDuringSpawn = store.launchIntent(b); assert.equal(b.threadId, null);
+  } });
+  const result = await s.create();
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /response was lost/);
+  assert.equal(intentDuringSpawn?.status, 'requested', 'Intent must be durable before the SDK response');
+  assert.equal(intentDuringSpawn.assignment, 'Read mailbox, then stop.'); assert.equal(intentDuringSpawn.model, 'test-model');
+  await s.reload();
+  const inspect = await s.host.harness.behavior.runCli(['recovery', 'inspect', '--task', s.task, '--participant', 'orchestrator']);
+  assert.equal(inspect.exitCode, 0, inspect.stderr);
+  const state = JSON.parse(inspect.stdout);
+  assert.equal(state.phase, 'orphan'); assert.equal(state.threadId, null);
+  assert.equal(state.launch.status, 'unknown'); assert.equal(state.automaticallyRebound, false);
+  assert.deepEqual(state.candidates, [{ threadId: 'thr-1', environmentId: 'env', status: 'idle' }]);
+  assert.equal(s.threads.size, 1);
+  await assert.rejects(s.call('thr-1', 'promptobus_task'), /not bound/);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  assert.equal(engine.readTask(s.task).participants[0].sessionRef, null);
+});
+
+test('recovery distinguishes canonical mailbox ACK from an outstanding task result across reload', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Produce the assigned result' }));
+  const pending = () => engineOperation({ binding: bindingStore(s.host.bb).thread('thr-2'), operation: 'pending' });
+  const before = await pending();
+  assert.deepEqual(before.ids, [sent.message.id]); assert.equal(before.obligation, sent.message.id);
+  await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' });
+  await s.reload();
+  const acknowledged = await pending();
+  assert.deepEqual(acknowledged.ids, []); assert.equal(acknowledged.obligation, sent.message.id);
+  assert.notEqual(acknowledged.revision, before.revision);
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Assigned result' });
+  assert.equal((await pending()).obligation, null);
+  await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' });
+  await s.reload(); assert.equal((await pending()).obligation, null);
+});
+
+test('delivery cursor and pause survive reload independently of a stale lifecycle binding save', async t => {
+  const s = await stand(t); await s.create();
+  const store = bindingStore(s.host.bb); const stale = store.thread('thr-1');
+  store.updateDelivery('thr-1', state => { state.cursor = 37; state.paused = true; state.epoch += 1; state.reason = 'Operator Stop'; });
+  store.save(stale);
+  await s.reload();
+  const restored = bindingStore(s.host.bb).delivery('thr-1');
+  assert.equal(restored.cursor, 37); assert.equal(restored.epoch, 1); assert.equal(restored.paused, true);
+  assert.equal(restored.reason, 'Operator Stop');
+});
 
 test('bound tools use host engine canon; peek preserves mail, read acknowledges only the caller, artifacts survive reload', async t => {
   const s = await stand(t);

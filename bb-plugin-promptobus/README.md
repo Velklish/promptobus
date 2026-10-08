@@ -85,6 +85,15 @@ until the returned BB thread identity is finalized. A launch failure remains
 `orphan` in `bindings`; it is never silently reassigned. This CLI is a trusted
 local machine-operator entry point. It does not expose a bind-existing-thread tool.
 
+The plugin records the launch attempt, assignment and model before calling SDK
+spawn. `bb promptobus recovery inspect --task <id> --participant <id>` returns
+the recorded phase, thread id and launch summary. When the spawn reply was lost,
+it lists candidate threads carrying the attempt marker. This writable metadata
+is diagnostic only: inspection never binds a candidate, grants tools or retries
+spawn. Preserve any candidate work before explicitly stopping or archiving it
+through BB. An ambiguous launch requires operator intervention; creating another
+thread does not repair the old participant.
+
 The server owns SQLite identity rows and never reads a participant filesystem.
 Each tool checks the authenticated thread/project, fresh SDK provider/environment
 and primary host, then calls the host entry. The host verifies the active v1 task,
@@ -107,11 +116,68 @@ send. Routing currently goes through the task orchestrator; worker lateral sends
 are refused. New role threads use built-in Codex except reviewers, which use the
 constrained provider. Bus writes do not grant reviewer source or shell writes.
 
-The six role skills are delivered, but recipient wake/recovery, model-catalog
-selection and the complete role workflow are separate
-integration boundaries. A send returns engine activation events; this entry point
-does not yet wake recipients. BB queued first prompts are admission state, not
-the canonical Promptobus mailbox.
+The six role skills and recipient wake/recovery are delivered. Model-catalog
+selection and the complete role workflow remain separate integration boundaries.
+BB queued first prompts are admission state, not the canonical Promptobus mailbox.
+
+## Wake and recovery
+
+Canonical send commits mail and artifacts on the host before requesting a BB
+wake. A listener-backed service scans recorded ready participants every second;
+it replays stored BB events in sequence and reads canonical unread IDs. SQLite
+stores the event cursor, mailbox revision, outgoing hint, attempts and pause epoch.
+Listeners are registered before this recovery scan. A crash between canonical send
+and saving an outbox entry is recovered from the unread mailbox. Reconnect and
+duplicate announcements cannot create another thread or ACK mail.
+
+Hints name the task, participant, revision and canonical IDs. The agent consumes
+mail through `promptobus_mailbox` with `mode: read`; repeated hints do not replace
+this ACK or request repeated acknowledged work. SDK `sent`, `queued` and waiting
+interactions are delivery observations. None proves mailbox consumption, completed
+work or acceptance. The SDK exposes no public spawn/send idempotency key; delivery
+and source-work effects are not exactly-once transactions across the two stores.
+
+The adapter sends only to an available idle thread without background agents,
+pending interactions or other queued input. It uses `queue-if-active` to handle a
+concurrent start. A queued hint is reconciled by its marker; a lost accepted reply
+is reconciled against event history. Without a queue or request record it waits
+30 seconds before a bounded repeated hint. There are at most three hints per
+unread revision. A canonical `task` acknowledged by a non-owner, non-reporter role
+without a later canonical `result` or `review` gets at most two turn-boundary
+continuations. This does not certify which assignment a result fulfilled; the role
+workflow owns that decision. Exhaustion requires explicit operator recovery.
+
+`bb promptobus recovery run` performs the same scan once. `recovery inspect`
+reports intent, cursor, outbox and pause state. SDK/host unavailability remains
+unknown and is retried by reconciliation; `error`, `stopping`, rejected turns,
+interrupted turns and denied/cancelled approval interactions pause continuation.
+Pending interactions are left for the user. Repair the failure or resolve the
+interaction before explicitly resuming; recovery never retries failed source work.
+
+For a durable stop, use `bb promptobus participant stop --task <id> --participant
+<id>`. It records pause before waiting for SDK Stop and cancels its own queued
+hint. Late replies cannot clear the pause, and stale hints are refused at dispatch.
+Dispatch rechecks the pause after async validation. Stop during launch cancels the
+automatic initial assignment and leaves the recorded thread orphaned for operator
+inspection; its launch intent and environment remain preserved.
+The initial assignment carries its durable launch marker, independent of SDK send
+attribution. Recovery and dispatch replay interruption history after async checks;
+an overlapping announcement cannot admit a wake using an earlier idle observation.
+Launch history is replayed before arming delivery, including preparation interruption.
+The adapter's preparation Stop runs only after a confirmed available idle turn;
+it cannot erase a user's earlier active Stop.
+`participant resume` requires fresh identity/canonical validation and an available
+idle thread without pending interactions, then explicitly resets the bounded
+delivery budget. Existing bindings created before this delivery state remain paused
+until this command; a reload cannot assume they were running.
+
+An active BB `Stop` is also observed through the interruption history and remains
+paused after reload. **An ordinary BB `Stop` on an already-idle thread is not a
+durable pause through SDK0.6.15:** on the measured BB0.45.0 test, it changed neither
+the public thread state nor its event log. Use the plugin stop command for this
+case. Direct BB Send now can bypass the dispatch hook by design; an explicit BB
+send can run a turn, but automatic continuation remains paused until plugin resume.
+Archive/deletion and participant binding phases also prevent automatic revival.
 
 ## Verification
 
@@ -147,7 +213,8 @@ returning a plain `SessionView` and the original BB status. Active/starting is b
 idle is reachable and resumable. Stopping, pending, error and unavailable/offline
 observations remain unknown. `alive` is logical thread availability, not proof of
 a native process. `participant stop` succeeds only after a fresh idle observation,
-with no background agents and an available host/environment. Stop releases the
+with no background agents and an available host/environment. Plugin Stop records
+the durable delivery pause described above and releases the
 runtime and leaves the environment in place. A reviewer private home remains for
 resume and evidence.
 

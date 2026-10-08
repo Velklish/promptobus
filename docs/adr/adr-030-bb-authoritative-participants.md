@@ -32,6 +32,9 @@ verified, its opaque sessionRef is finalized on the host, and the binding become
 ready. The plugin requests a hook recheck after committing that state. Native
 tools independently refuse unbound/pending identities, including a manual Send
 now bypass. A failed launch remains orphaned, with no automatic reassignment.
+Launch intent is durable before the SDK request. Inspection may list threads
+with the recorded attempt marker after a lost reply, but that mutable marker is
+never an authorization credential or a reason to retry spawn automatically.
 
 ## Consequences
 
@@ -43,8 +46,9 @@ identity credential. Ordinary native tools use authenticated SDK context.
 
 The task uses a stable existing coordinator on the primary local host. Participant
 environment creation and preservation follow [ADR-031](adr-031-bb-environment-lifecycle.md),
-including its preparation phase before an assignment is admitted. General wake
-delivery, catalog routing and complete role workflows require their own adapters.
+including its preparation phase before an assignment is admitted. Wake and replay
+follow [ADR-032](adr-032-bb-wake-recovery.md); catalog routing and complete role
+workflows require their own adapters.
 Reviewer bus writes affect its authenticated
 task journal only; source edits, shell and unclassified external tools remain
 mechanically unavailable. Unrelated threads receive no bus tools.

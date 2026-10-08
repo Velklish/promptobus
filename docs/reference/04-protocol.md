@@ -792,5 +792,13 @@ returns current contacts without adapter credentials; `promptobus_artifact` read
 verified content from the bound task. Reporter bindings cannot send. Initial
 routing goes through the orchestrator and refuses lateral worker sends. The
 server stores identity and admission state, never a second canonical mailbox.
-The entry point returns activation events; recipient wake delivery belongs to
-the continuation adapter. [Local contract](../../bb-plugin-promptobus/README.md).
+The entry point returns canonical activation events and schedules wake hints. A
+durable server outbox references unread message IDs and revisions; replayed BB
+events and fresh state reconcile sent, queued and ambiguous responses. These
+observations never ACK canonical mail. Continuation is bounded to three hints per
+unread revision and two missing-result continuations per latest canonical task.
+SDK send and source effects are not an exactly-once transaction. Plugin Stop
+persists pause before SDK Stop; interruption and denied interaction pause replay.
+No native warden or Stop-hook veto is added to this path.
+[Local contract](../../bb-plugin-promptobus/README.md#wake-and-recovery),
+[decision](../adr/adr-032-bb-wake-recovery.md).

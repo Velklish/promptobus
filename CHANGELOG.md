@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Persist BB launch intent, wake outbox and event cursors; reconcile canonical
+  unread mail after reload with bounded hints and missing-result continuation.
+  SDK sent/queued success never ACKs mail. Plugin Stop durably pauses delivery,
+  including late replies; explicit resume restores it. Active interruption is
+  replayed; already-idle BB Stop has a documented SDK observation limit.
+  [Recovery](bb-plugin-promptobus/README.md#wake-and-recovery),
+  [decision](docs/adr/adr-032-bb-wake-recovery.md).
+
 - Let BB create participant worktrees and retain actual environment/thread ownership
   refs. SDK observations preserve stopping/offline uncertainty. Archive confirms Stop
   and preserves unaccepted patches in a stable coordinator before BB retirement;

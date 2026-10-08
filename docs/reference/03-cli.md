@@ -1908,8 +1908,14 @@ wedge ceiling, not a latency budget, and a crossing becomes `unknown` below.
 
 ## BB participant lifecycle
 
+`bb promptobus recovery inspect --task <id> --participant <id>` reports durable
+launch intent and delivery state. Candidate threads for a lost spawn reply are
+diagnostic only; the command does not bind them or spawn replacements. Explicit
+operator inspection and preservation are required before candidate cleanup.
+
 The optional local BB plugin exposes `bb promptobus task create`, `participant add`,
-`participant get`, `participant stop`, `participant archive` and `bindings`. The
+`participant get`, `participant stop`, `participant resume`, `participant archive`,
+`recovery run` and `bindings`. The
 coordinator is an existing unmanaged Git environment. `add --environment <id>`
 reuses a local environment; `add --new-environment --base-branch <branch>` delegates
 worktree creation to BB. Returned SDK paths and ids are authoritative.
@@ -1924,6 +1930,19 @@ and result refs in the coordinator before BB archive/retirement. It requires arc
 lifecycle children and refuses incomplete preservation. Neither command accepts work.
 Native `done`, `sweep` and journal pruning retain BB resources. Direct BB operator
 controls can bypass these barriers; preserve through the adapter first.
+
+Plugin Stop records a durable wake pause before the SDK call; reload and late
+send replies cannot resume it.
+Initial assignments carry a durable launch marker; stopped launches retain their
+thread and intent as orphaned. Dispatch refreshes interruption history after async
+checks, so an earlier observation cannot override a recorded active Stop.
+Resume explicitly re-enables bounded continuation after checking fresh identity,
+task and idle/interaction state. Active BB Stop is
+replayed from interruption history. Already-idle BB Stop has no replayable marker
+in SDK0.6.15; use plugin Stop for a durable pause. `recovery run` reconciles recorded
+threads and canonical mail once, without clearing pause or creating another thread.
+Unknown/offline state waits; errors, stopping, rejected/interrupted turns and denied
+interactions require operator recovery. See [wake recovery](../../bb-plugin-promptobus/README.md#wake-and-recovery).
 
 See [plugin lifecycle](../../bb-plugin-promptobus/README.md#lifecycle) and
 [ADR-031](../adr/adr-031-bb-environment-lifecycle.md).

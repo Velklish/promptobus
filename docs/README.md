@@ -38,6 +38,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-029-bb-constrained-codex-reviewer.md](adr/adr-029-bb-constrained-codex-reviewer.md) | BB review runs through a constrained Codex provider with verified read-only execution and an explicit tool allowlist | Accepted |
 | [adr/adr-030-bb-authoritative-participants.md](adr/adr-030-bb-authoritative-participants.md) | BB participants are authenticated from plugin-owned bindings; the host v1 engine remains canonical | Accepted |
 | [adr/adr-031-bb-environment-lifecycle.md](adr/adr-031-bb-environment-lifecycle.md) | BB owns participant environments; the stable coordinator retains unaccepted snapshots before archive | Accepted |
+| [adr/adr-032-bb-wake-recovery.md](adr/adr-032-bb-wake-recovery.md) | BB wake hints use durable replay and bounded continuation; plugin Stop persists pause independently of SDK state | Accepted |
 
 ## Cross-cutting principles
 

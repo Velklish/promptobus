@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { openEngine, ORCHESTRATOR } from 'promptobus';
@@ -49,6 +50,21 @@ export async function engineOperation(input: unknown) {
   if ((b.phase !== 'ready' && !(b.phase === 'archiving' && request.operation === 'preserve'))
     || !b.threadId || participant.sessionRef !== b.threadId) throw new Error('Canonical binding mismatch');
   switch (request.operation) {
+    case 'pending': {
+      const recovery = engine.recover(b.task);
+      const history = engine.history({ task: b.task, all: true });
+      if (recovery.broken.length || recovery.failed.length || recovery.linkFailures.length || history.broken.length) throw new Error('Canonical recovery is incomplete');
+      const unread = engine.glance(b.task, b.participant);
+      const messages = [...history.entries.map(entry => entry.message),
+        ...task.participants.flatMap(contact => engine.glance(b.task, contact.id))];
+      const latestTask = messages.filter(message => message.recipients.includes(b.participant) && message.type === 'task')
+        .sort((a, c) => a.id.localeCompare(c.id)).at(-1);
+      const terminal = latestTask && messages.some(message => message.sender === b.participant
+        && (message.type === 'result' || message.type === 'review') && message.id > latestTask.id);
+      const ids = unread.map(message => message.id).sort();
+      return { ids, revision: createHash('sha256').update(JSON.stringify(ids)).digest('hex'),
+        obligation: latestTask && !terminal && b.role !== 'reporter' && b.role !== ORCHESTRATOR ? latestTask.id : null };
+    }
     case 'preserve': return engine.send(b.task, { from: ORCHESTRATOR, to: [ORCHESTRATOR], type: 'artifact',
       body: `BB lifecycle snapshot for ${b.participant}; this is not acceptance.`,
       artifact: { filename: `${b.participant}-bb-snapshot.json`, stream: Readable.from([Buffer.from(request.content, 'utf8')]) } });

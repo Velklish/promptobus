@@ -7,6 +7,7 @@ export const engineInput = z.discriminatedUnion('operation', [
   z.object({ ...bound, operation: z.literal('reserve'), title: z.string().min(1), create: z.boolean() }).strict(),
   z.object({ ...bound, operation: z.literal('finalize') }).strict(),
   z.object({ ...bound, operation: z.literal('check') }).strict(),
+  z.object({ ...bound, operation: z.literal('pending') }).strict(),
   z.object({ ...bound, operation: z.literal('preserve'), content: z.string().max(10_000_000) }).strict(),
   z.object({ ...bound, operation: z.literal('send'), args: sendSchema }).strict(),
   z.object({ ...bound, operation: z.literal('mailbox'), args: mailboxSchema }).strict(),

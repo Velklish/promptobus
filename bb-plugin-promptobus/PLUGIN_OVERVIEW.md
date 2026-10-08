@@ -27,5 +27,9 @@ turn without assignment or plugin tools, then confirmed Stop, cleared preparatio
 model context and authoritative
 binding before the first assignment. Stop retains the environment; archive preserves
 a complete patch in the coordinator before BB retirement. Orphaned launches receive
-no bus rights. Recipient wake delivery, model routing and the complete role workflow
-remain separate boundaries.
+no bus rights. Wake hints refer to canonical unread messages; SDK delivery does not
+ACK them. Reload replays history and reconciles a bounded outbox without spawning
+again. Plugin participant Stop durably pauses automatic continuation until resume;
+ordinary BB Stop on an already-idle thread has no replayable SDK pause marker.
+Active interruption and denied interactions also pause continuation. Model routing
+and the complete role workflow remain separate boundaries.
