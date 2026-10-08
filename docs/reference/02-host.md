@@ -612,6 +612,8 @@ Collection preserves `collectRules(root)` order, highest precedence first,
 and embeds each complete rule file and `skillsDir()` skill body in the initial
 assignment. A reviewer also receives its module's declared review skill.
 Each file must be text at most 256 KiB; the collected context is at most 1 MiB.
+Symlink entries in `skillsDir()` refuse collection explicitly; they are not
+silently omitted from successful context.
 Collection uses the actual ready BB environment after preparation and before
 canonical finalization, including newly managed worktrees. It never reuses an
 owner's context for a child environment.
@@ -641,6 +643,8 @@ participants when delivered context or the native tool catalog changes.
 
 `BbHostIntegration.checkStep` resolves the subject Host and runs the existing
 factual pipeline preconditions from canonical participant/result/assignment data.
-It is an operator/runtime host call, not a model tool. It neither grades result
+The BB profile first requires the shipped worker/reviewer/approver names and kinds
+in that order; unsupported configured shapes refuse. Native pipeline configuration
+keeps its existing semantics. It is an operator/runtime host call, not a model tool. It neither grades result
 content nor grants participant identity. [Currency](04-protocol.md#bb-workflow-result-currency)
 records the BB projection and unchanged native semantics.

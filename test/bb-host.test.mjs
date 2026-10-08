@@ -1,7 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createBbHostIntegration, renderBbHostContext } from '../lib/bb-host.js';
@@ -93,4 +93,23 @@ test('Host resource reads include canonical skill references and refuse unrelate
   const resource = await s.integration.read({ root: s.worktree, role: 'reviewer', path: path.join(s.skills, 'canonical-skill', 'reference.txt') });
   assert.match(JSON.stringify(resource), /canonical resource/);
   await assert.rejects(s.integration.read({ root: s.worktree, role: 'reviewer', path: path.join(s.root, 'private.txt') }), /outside the declared/);
+});
+
+
+test('BB context refuses symlink skill entries instead of silently omitting canonical instructions', async t => {
+  const s = fixture(t);
+  symlinkSync(path.join(s.skills, 'canonical-skill'), path.join(s.skills, 'linked-skill'));
+  await assert.rejects(s.integration.collect({ root: s.worktree, role: 'worker' }), /symlink.*skill/i);
+});
+
+test('BB admission refuses a missing reviewer or renamed configured step before result lookup', async t => {
+  const s = fixture(t);
+  for (const steps of [
+    [{ name: 'worker', kind: 'edits-tree' }, { name: 'approver', kind: 'writes-main-tree' }],
+    [{ name: 'builder', kind: 'edits-tree' }, { name: 'reviewer', kind: 'reads-diff' }, { name: 'approver', kind: 'writes-main-tree' }],
+    [{ name: 'worker', kind: 'edits-tree' }, { name: 'reviewer', kind: 'writes-main-tree' }, { name: 'approver', kind: 'writes-main-tree' }],
+  ]) {
+    s.host.pipeline = () => steps;
+    await assert.rejects(s.integration.checkStep({ repoDir: s.worktree }), /BB requires the shipped.*pipeline/);
+  }
 });

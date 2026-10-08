@@ -50,9 +50,14 @@ export const deliverySchema = z.object({
   attempts: z.number().int().nonnegative().default(0), reason: z.string().default('Explicit resume is required'),
   lastCompleted: z.number().int().nonnegative().default(0), obligation: z.string().nullable().default(null),
   continuations: z.number().int().nonnegative().default(0),
+  retired: z.array(z.object({ marker: z.string(), text: z.string(), requests: z.array(z.string()).default([]),
+    visibility: z.literal('agent-only').nullable().default(null),
+  }).strict()).default([]),
   pending: z.object({ marker: z.string(), text: z.string(), key: z.string(), afterSeq: z.number().int().nonnegative(),
     at: z.number(), state: z.enum(['sending', 'sent', 'queued', 'unknown']), queuedId: z.string().nullable(),
     requestSeq: z.number().int().nonnegative().nullable().default(null),
+    requestId: z.string().nullable().default(null),
+    requests: z.array(z.string()).default([]), visibility: z.literal('agent-only').nullable().default(null),
   }).strict().nullable().default(null),
 }).strict();
 export type DeliveryState = z.infer<typeof deliverySchema>;

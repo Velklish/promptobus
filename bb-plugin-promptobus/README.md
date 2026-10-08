@@ -160,7 +160,8 @@ The canonical participant also stores it in `metadata.bb.execution`; its top-lev
 `harness: bb` remains the adapter/lifecycle discriminator. It is the launch decision snapshot. `participant get` additionally reads SDK
 `currentExecution`, which may be null or differ after an operator changes a
 normal Codex thread's settings. The constrained reviewer requires a fresh session
-for model/effort changes.
+for model/effort changes. `recovery inspect` reports the persisted launch
+`reasoningLevel`; a legacy intent without it reports `null`.
 
 This BB facade does not apply native `--strategy`, `--harness` or `--effort`
 flags or native routing overlays; its CLI rejects them. Use the native Promptobus
@@ -406,6 +407,29 @@ unaccepted: lifecycle preservation does not accept source or reported facts.
 These fixture artifacts demonstrate runtime behavior, not a consumer release
 certificate or standardized gate/handover schema validation. Consumers retain
 those records and judge their own source, review and real gates. SDK limits remain:
-already-idle BB Stop is unobservable, reviewer tool calls require native transcript
-inspection until timeline forwarding is available, and the constrained provider
-has no usage API. No remote push or release publication was part of the proof.
+already-idle BB Stop is unobservable and the constrained provider has no usage
+API. Native dynamic tool notifications now produce correlated BB timeline rows
+with arguments, completion and results; stale or stopped turns cannot add rows. No remote push or release publication was part of the proof.
+
+
+Dispatch validation shares one 5000 ms abort budget across SDK identity reads,
+Host calls and event replay, below BB's 10-second hook cap. Temporary validation
+loss returns `wait` with a scheduled recheck; identity mismatch refuses. Every
+model tool still performs independent authorization.
+
+Cancelled wake receipts remain in plugin SQLite for the binding's lifetime.
+Recovery retries deletion of exact Promptobus-owned queued text after late send
+responses, failures and reload, including while automatic delivery is paused.
+Generated wake text carries SDK `visibility: agent-only` metadata for durable
+request correlation; ordinary copied or quoted text does not. This presentation
+metadata is not authorization. BB `threads.send` may omit plugin origin; dispatch
+and queue cleanup then correlate the complete stored generated payload and its
+metadata, while excluding explicit foreign plugin origins. Every model tool
+checks its binding independently. Copied or quoted user
+inputs remain user-owned. Rejection of an obsolete owned
+hint does not pause a freshly resumed generation; operator Stop still does.
+
+Host context collection refuses symlink entries in `skillsDir()` explicitly.
+BB approver admission requires the shipped worker/reviewer/approver names and
+kinds in that order; a missing, renamed or differently typed step refuses before
+launch. Native configurable pipeline behavior is unchanged.

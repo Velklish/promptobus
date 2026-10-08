@@ -507,3 +507,11 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-361"></a>`PB-361-bb-provider-aware-routing-and-environment-boundary` · 2026-10-08 · completed · — · Route BB execution by actual provider and filter inherited parent runtime identity
 - <a id="pb-360"></a>`PB-360-bb-host-context-delivery` · 2026-10-08 · completed · — · Deliver Host rules, skills and canonical tools into BB participant environments
 - <a id="pb-359"></a>`PB-359-bb-full-role-support-and-regression-evidence` · 2026-10-08 · completed · — · Verify the complete BB role workflow and publish an explicit runtime support contract
+- <a id="pb-368"></a>`PB-368-bb-minor-batch` · 2026-10-08 · completed · — · Resolve the seven deferred findings from BB Codex support
+- <a id="pb-359.1"></a>`PB-359.1-bb-configured-pipeline-support` · 2026-10-08 · batch PB-368 · — · Make BB admission reject unsupported configured pipeline shapes explicitly
+- <a id="pb-360.1"></a>`PB-360.1-bb-symlink-skill-delivery` · 2026-10-08 · batch PB-368 · — · Declare and enforce the BB Host policy for symlinked canonical skills
+- <a id="pb-361.1"></a>`PB-361.1-bb-recovery-launch-reasoning` · 2026-10-08 · batch PB-368 · — · Report selected reasoning in BB launch recovery diagnostics
+- <a id="pb-362.1"></a>`PB-362.1-bb-stale-queued-wake-marker` · 2026-10-08 · batch PB-368 · — · Retain queued wake ownership until cancellation is reconciled
+- <a id="pb-363.1"></a>`PB-363.1-bb-concurrent-archive-state` · 2026-10-08 · batch PB-368 · — · Keep terminal BB binding state during overlapping archive requests
+- <a id="pb-364.1"></a>`PB-364.1-bb-reviewer-tool-history` · 2026-10-08 · batch PB-368 · — · Show constrained BB reviewer tool calls in the thread timeline
+- <a id="pb-364.2"></a>`PB-364.2-bb-dispatch-bounded-host-check` · 2026-10-08 · batch PB-368 · — · Bound host validation inside the BB message dispatch hook

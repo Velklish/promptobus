@@ -333,3 +333,57 @@ test('late BB read-tool responses after Stop do not produce unsolicited protocol
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.messages.length, before);
 });
+
+
+test('native bounded reads and bus calls appear once in the matching BB timeline, ignoring stale and late completions', async () => {
+  let input, n = 0;
+  const h = harness(async options => { input = options; return { threadId: 'native', profile: { model: 'model' },
+    close: async () => {}, request: async () => ({ turn: { id: `turn-${++n}` } }) }; });
+  await h.call('thread/start', start);
+  const turn = () => h.call('turn/start', { threadId: 'bb-thread', providerThreadId: 'native', clientRequestId: 'creq_abcdefghjk',
+    input: [{ type: 'text', text: 'Review' }], options: start.options });
+  await turn();
+  for (const [id, tool, args] of [['read', 'pb_review_read_file', { path: '/review/file' }], ['bus', 'promptobus_task', {}]]) {
+    const item = { type: 'dynamicToolCall', id, tool, arguments: args, status: 'inProgress' };
+    const notify = (method, turnId, complete = false) => input.notify({ method, params: { turnId,
+      item: complete ? { ...item, status: 'completed', success: true, contentItems: [{ type: 'inputText', text: `${tool} result` }] } : item } });
+    notify('item/started', 'stale'); notify('item/started', 'turn-1'); notify('item/started', 'turn-1');
+    notify('item/completed', 'turn-1', true); notify('item/completed', 'turn-1', true);
+  }
+  input.notify({ method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } });
+  await turn();
+  input.notify({ method: 'item/completed', params: { turnId: 'turn-1', item: { type: 'dynamicToolCall', id: 'bus', tool: 'promptobus_task', arguments: {}, status: 'completed' } } });
+  const assembler = createAssembler({ providerId: 'promptobus-codex-reviewer', textDeltaFlushMs: 0 });
+  const events = h.messages.filter(m => m.method === 'thread/delta').flatMap(m => assembler.assemble(m.params));
+  const calls = events.filter(e => e.type === 'item/completed' && e.item.type === 'toolCall');
+  assert.equal(calls.length, 2); assert.deepEqual(calls.map(e => e.item.tool), ['pb_review_read_file', 'promptobus_task']);
+  assert.deepEqual(calls[0].item.arguments, { path: '/review/file' });
+  assert.deepEqual(calls[0].item.result, [{ type: 'inputText', text: 'pb_review_read_file result' }]);
+  await h.call('thread/stop', { threadId: 'bb-thread', providerThreadId: 'native', activeTurnId: null, intent: 'release' });
+  const before = h.messages.length;
+  input.notify({ method: 'item/completed', params: { turnId: 'turn-2', item: { type: 'dynamicToolCall', id: 'late', tool: 'promptobus_task', arguments: {}, status: 'completed' } } });
+  assert.equal(h.messages.length, before);
+});
+
+
+test('tool events buffered before turn/start acknowledgement close a failed call in the accepted turn', async () => {
+  let input;
+  const h = harness(async options => { input = options; return { threadId: 'native', profile: { model: 'model' }, close: async () => {},
+    request: async () => {
+      const item = { type: 'dynamicToolCall', id: 'early-tool', tool: 'promptobus_host_call', arguments: { tool: 'write' }, status: 'inProgress' };
+      input.notify({ method: 'item/started', params: { turnId: 'early', item } });
+      input.notify({ method: 'item/completed', params: { turnId: 'early', item: { ...item, status: 'completed', success: false,
+        contentItems: [{ type: 'inputText', text: 'Canonical tool is not admitted' }] } } });
+      return { turn: { id: 'early' } };
+    } }; });
+  await h.call('thread/start', start);
+  await h.call('turn/start', { threadId: 'bb-thread', providerThreadId: 'native', clientRequestId: 'creq_abcdefghjk',
+    input: [{ type: 'text', text: 'Review' }], options: start.options });
+  const deltas = h.messages.filter(m => m.method === 'thread/delta').flatMap(m => m.params.deltas);
+  assert.deepEqual(deltas.map(d => d.kind), ['session.reset', 'input.accepted', 'turn.open', 'item.open', 'item.close']);
+  assert.equal(deltas.at(-1).status, 'failed'); assert.equal(deltas.at(-1).providerTurnId, 'early');
+  const assembler = createAssembler({ providerId: 'promptobus-codex-reviewer', textDeltaFlushMs: 0 });
+  const events = h.messages.filter(m => m.method === 'thread/delta').flatMap(m => assembler.assemble(m.params));
+  assert.ok(events.some(e => e.type === 'item/completed' && e.item.type === 'toolCall' && e.item.status === 'failed'));
+  h.bridge.onClose();
+});

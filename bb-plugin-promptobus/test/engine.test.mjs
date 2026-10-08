@@ -23,6 +23,7 @@ async function stand(t, options = {}) {
   const history = new Map(); const queues = new Map(); const interactions = new Map(); const wakes = [];
   const append = (id, type, data = {}) => {
     const rows = history.get(id) ?? []; const seq = (rows.at(-1)?.seq ?? 0) + 1;
+    if (type === 'client/turn/requested' || type === 'client/turn/rejected') data = { requestId: `request-${id}-${seq}`, ...data };
     const row = { id: `event-${id}-${seq}`, threadId: id, seq, createdAt: Date.now(), scope: { kind: 'thread' }, type, data };
     rows.push(row); history.set(id, rows); return row;
   };
@@ -70,14 +71,15 @@ async function stand(t, options = {}) {
       queuedMessages: {
         list: async ({ threadId }) => queues.get(threadId) ?? [],
         delete: async ({ threadId, queuedMessageId }) => {
+          if (options.beforeQueueDelete) await options.beforeQueueDelete();
           const entries = queues.get(threadId) ?? []; const entry = entries.find(row => row.id === queuedMessageId);
           queues.set(threadId, entries.filter(row => row.id !== queuedMessageId));
           if (entry) await host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
           return { ok: true };
         },
       },
-      get: async ({ threadId }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
-        if (options.beforeGet) await options.beforeGet(threadId); return threads.get(threadId); },
+      get: async ({ threadId, signal }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
+        if (options.beforeGet) await options.beforeGet(threadId, signal); return threads.get(threadId); },
       defaultExecutionOptions: async ({ threadId }) => executionOptions.get(threadId) ?? null,
       spawn: async args => {
         initialArgs = args;
@@ -120,7 +122,7 @@ async function stand(t, options = {}) {
           wakes.push({ threadId, input, mode });
           if (options.wakeSend) return options.wakeSend({ threadId, input, mode, append, queues, threads, host });
           const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
-          const admitted = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), input: { blocks: input, text: input[0].text } }));
+          const admitted = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), originPluginId: null, input: { blocks: input, text: input[0].text } }));
           assert.equal(admitted.action, 'proceed', JSON.stringify(admitted));
           append(threadId, 'client/turn/requested', { input });
           const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = 'active';
@@ -141,14 +143,14 @@ async function stand(t, options = {}) {
       },
       archive: async ({ threadId }) => { events.push('archive'); threads.get(threadId).archivedAt = Date.now(); return { ok: true }; },
     },
-  }, experimental_callHostRpc: async ({ method, input, hostId }) => {
+  }, experimental_callHostRpc: async ({ method, input, hostId, signal }) => {
     assert.equal(hostId, 'local');
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
     if (method === 'canonical' || method === 'hostContext') return options.hostOperation?.(method, input) ?? { read: true };
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
-    if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck();
+    if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck(signal);
     if (input.operation === 'preserve') events.push('preserve');
     if (input.operation === 'step') {
       const entry = hostEntry ?? createHostEntry();
@@ -320,7 +322,7 @@ test('recovery closes the canon-to-outbox crash gap and reconciles a lost accept
 
 for (const ambiguous of [false, true]) test(`queued wake${ambiguous ? ' with lost reply' : ''} survives reload without duplicate send or mailbox ACK`, async t => {
   const s = await stand(t, { wakeSend({ threadId, input, queues }) {
-    const entry = { id: 'queued-wake', threadId, content: input }; queues.set(threadId, [entry]);
+    const entry = { id: 'queued-wake', threadId, originPluginId: 'promptobus', content: input }; queues.set(threadId, [entry]);
     if (ambiguous) throw new Error('Queued response was lost');
     return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'interaction' } };
   } });
@@ -354,7 +356,7 @@ test('operator Stop wins over a late queued send response and stays paused after
   let queued = true;
   const s = await stand(t, { async wakeSend({ threadId, input, queues, append, threads }) {
     if (queued) {
-      const entry = { id: 'late-queued', threadId, content: input }; queues.set(threadId, [entry]); entered.resolve();
+      const entry = { id: 'late-queued', threadId, originPluginId: 'promptobus', content: input }; queues.set(threadId, [entry]); entered.resolve();
       await reply.promise; return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
     }
     append(threadId, 'client/turn/requested', { input }); const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = 'active';
@@ -369,7 +371,7 @@ test('operator Stop wins over a late queued send response and stays paused after
   assert.equal(s.delivery('thr-2').pending, null); assert.equal(s.delivery('thr-2').epoch, epoch);
   await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').paused, true);
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
-  const admission = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), input: { blocks: [{ type: 'text', text: oldText }], text: oldText } }));
+  const admission = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus', input: { blocks: [{ type: 'text', text: oldText }], text: oldText } }));
   assert.equal(admission.action, 'reject');
   queued = false; const resumed = await s.control('resume', 'worker-one'); assert.equal(resumed.exitCode, 0, resumed.stderr);
   assert.equal(s.wakes.length, 2); assert.equal(s.delivery('thr-2').paused, false);
@@ -492,7 +494,7 @@ test('dispatch replays interruption committed during host validation without wai
   const s = await stand(t, { async beforeCheck() { if (block) { entered.resolve(); await release.promise; } },
     async wakeSend({ threadId, input, host, threads }) {
       const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
-      admission = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), input: { blocks: input, text: input[0].text } }));
+      admission = await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId), originPluginId: null, input: { blocks: input, text: input[0].text } }));
       if (admission.action !== 'proceed') throw new Error('Wake admission rejected');
       threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
       return { ok: true, delivery: 'sent' };
@@ -898,4 +900,262 @@ test('archive waiting on SDK scan sees a child reserved before its phase change'
   const result = await archive;
   assert.equal(result.exitCode, 1); assert.match(result.stderr, /children first/);
   assert.equal(s.events.includes('archive'), false); assert.equal(s.threads.get('thr-2').archivedAt, null);
+});
+
+
+test('overlapping archive rereads the terminal binding after the async child scan', async t => {
+  const entered = deferred(), release = deferred(); let first = true;
+  const s = await stand(t, { async beforeListReturn() {
+    if (first) { first = false; entered.resolve(); await release.promise; }
+  } });
+  await s.create(); await s.add('worker-one');
+  const slow = s.control('archive', 'worker-one'); await entered.promise;
+  const fast = await s.control('archive', 'worker-one');
+  assert.equal(fast.exitCode, 0, fast.stderr);
+  const preserved = JSON.parse(fast.stdout).preservation;
+  release.resolve(); const result = await slow;
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).preservation, preserved);
+  assert.equal(s.events.filter(e => e === 'preserve').length, 1);
+  await s.reload();
+  const b = bindingStore(s.host.bb).participant(s.task, 'worker-one');
+  assert.equal(b.phase, 'archived'); assert.deepEqual(b.preservation, preserved);
+  assert.ok(openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false }).readArtifactContent(s.task, preserved.artifactId));
+});
+
+test('orphan recovery reports persisted effort and explicitly unknown legacy effort without executing', async t => {
+  const s = await stand(t, { ambiguousSpawn: true });
+  assert.equal((await s.create(['--reasoning-level', 'high'])).exitCode, 1);
+  const inspect = () => s.host.harness.behavior.runCli(['recovery', 'inspect', '--task', s.task, '--participant', 'orchestrator']);
+  assert.equal(JSON.parse((await inspect()).stdout).launch.reasoningLevel, 'high');
+  const store = bindingStore(s.host.bb), b = store.task(s.task), intent = store.launchIntent(b);
+  delete intent.reasoningLevel; store.launch(b, intent); await s.reload();
+  assert.equal(JSON.parse((await inspect()).stdout).launch.reasoningLevel, null);
+  assert.equal(s.threads.size, 1); assert.equal(bindingStore(s.host.bb).task(s.task).threadId, null);
+});
+
+test('dispatch bounds stalled SDK validation, waits on temporary loss and rejects a permanent mismatch', async t => {
+  let stall = false, temporary = false, observed;
+  const s = await stand(t, { async beforeGet(id, signal) {
+    if (temporary) throw new Error('Host temporarily offline');
+    if (stall) {
+      observed = signal;
+      await new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    }
+  } });
+  await s.create(); const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = () => makeMessageDispatchHookContext({ thread: s.threads.get('thr-1') });
+  stall = true; const began = Date.now(); const blocked = await hook(context());
+  assert.equal(blocked.action, 'wait'); assert.equal(observed.aborted, true);
+  assert.ok(Date.now() - began < 8000, 'Dispatch must release the shared lock below the SDK 10-second cap');
+  stall = false; temporary = true; assert.equal((await hook(context())).action, 'wait');
+  temporary = false; assert.equal((await hook(context())).action, 'proceed');
+  s.threads.get('thr-1').providerId = 'foreign'; assert.equal((await hook(context())).action, 'reject');
+});
+
+
+for (const originPluginId of [null, 'promptobus']) test(`late queue insertion after Stop and reload retains exact ownership and rejects stale hints without pausing resume (${originPluginId})`, async t => {
+  const entered = deferred(), reply = deferred(); let first = true;
+  const s = await stand(t, { async wakeSend({ threadId, input, queues, append, threads }) {
+    if (first) {
+      first = false; entered.resolve(); await reply.promise;
+      const entry = { id: 'after-stop', threadId, originPluginId, content: input };
+      queues.set(threadId, [...(queues.get(threadId) ?? []), entry]);
+      return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+    }
+    append(threadId, 'client/turn/requested', { input }); threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
+    return { ok: true, delivery: 'sent' };
+  } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Insert after cancellation scan' }); await entered.promise;
+  const old = s.wakes[0].input[0].text;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  const unrelated = { id: 'quoted-user', threadId: 'thr-2', originPluginId: null, content: [{ type: 'text', text: `Please explain this hint: ${old}` }] };
+  const copied = { id: 'copied-user', threadId: 'thr-2', originPluginId: null, content: [{ type: 'text', text: old }] };
+  s.queues.set('thr-2', [unrelated, copied]); await s.reload(); reply.resolve(); await new Promise(resolve => setImmediate(resolve));
+  await s.reconcile(); assert.deepEqual(s.queues.get('thr-2'), [unrelated, copied]);
+  assert.equal(s.delivery('thr-2').paused, true);
+  s.queues.set('thr-2', []);
+  const resumed = await s.control('resume', 'worker-one'); assert.equal(resumed.exitCode, 0, resumed.stderr);
+  const epoch = s.delivery('thr-2').epoch;
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const rejected = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId,
+    input: { text: old, blocks: s.wakes[0].input } }));
+  assert.equal(rejected.action, 'reject');
+  s.append('thr-2', 'client/turn/rejected', { requestId: 'old-request', reason: 'plugin-rejected', message: rejected.message });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, false); assert.equal(s.delivery('thr-2').epoch, epoch);
+  assert.equal(s.wakes.length, 2);
+});
+
+for (const originPluginId of [null, 'promptobus']) test(`failed queued wake deletion retains ownership across reload and retries before resume (${originPluginId})`, async t => {
+  let fail = true;
+  const s = await stand(t, { beforeQueueDelete() { if (fail) throw new Error('Delete temporarily failed'); },
+    wakeSend({ threadId, input, queues }) {
+      const entry = { id: 'owned-queued', threadId, originPluginId, content: input }; queues.set(threadId, [entry]);
+      return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+    } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Retry cancellation' }); await s.reconcile();
+  const old = s.wakes[0].input[0].text;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  assert.equal(s.queues.get('thr-2').length, 1);
+  fail = false; await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' });
+  const result = await s.control('resume', 'worker-one'); assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(s.queues.get('thr-2'), []); assert.equal(s.delivery('thr-2').paused, false);
+  assert.ok(s.delivery('thr-2').retired.some(receipt => receipt.text === old));
+});
+
+
+test('stalled host validation shares the dispatch abort budget and rechecks after recovery', async t => {
+  let stall = false, observed;
+  const s = await stand(t, { async beforeCheck(signal) {
+    if (!stall) return;
+    observed = signal;
+    await new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  } });
+  await s.create();
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-1') });
+  stall = true; const before = Date.now();
+  assert.equal((await hook(context)).action, 'wait'); assert.ok(Date.now() - before < 8000);
+  assert.equal(observed.aborted, true);
+  stall = false; assert.equal((await hook(context)).action, 'proceed');
+});
+
+
+test('a previously replayed wake request ID remains owned when its ordinary SDK rejection arrives after resume', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Late ordinary SDK rejection' });
+  await s.reconcile();
+  await s.reconcile();
+  const requested = s.delivery('thr-2').pending;
+  assert.ok(requested.requestSeq > 0, 'Old requested event must already be behind the durable cursor');
+  const requestId = `request-thr-2-${requested.requestSeq}`;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  const epoch = s.delivery('thr-2').epoch;
+  s.append('thr-2', 'client/turn/rejected', { requestId, reason: 'provider-unavailable', message: 'Provider connection closed' });
+  await s.reconcile();
+  assert.equal(s.delivery('thr-2').paused, false); assert.equal(s.delivery('thr-2').epoch, epoch);
+  s.append('thr-2', 'client/turn/rejected', { requestId: 'unrelated-current', reason: 'provider-unavailable', message: 'Provider connection closed' });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, true);
+});
+
+
+test('copied and quoted user wake text dispatches as user input without becoming a retired request', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'User owns copies' }); await s.reconcile();
+  const old = s.wakes[0].input[0].text;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  const entries = [old, `Explain this hint: ${old}`].map((text, i) => ({ id: `user-${i}`, threadId: 'thr-2', originPluginId: null,
+    content: [{ type: 'text', text }] }));
+  s.queues.set('thr-2', entries);
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  assert.deepEqual(s.queues.get('thr-2'), entries);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  for (const entry of entries) {
+    const ctx = makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), origin: 'cli', originPluginId: null,
+      queuedMessages: [entry], input: { blocks: entry.content, text: entry.content[0].text } });
+    assert.equal((await hook(ctx)).action, 'proceed', 'User-owned text must survive real dispatch');
+    s.append('thr-2', 'client/turn/requested', { requestId: entry.id, input: entry.content });
+    s.queues.set('thr-2', s.queues.get('thr-2').filter(row => row.id !== entry.id));
+    s.finish('thr-2'); await s.reconcile();
+    assert.ok(s.delivery('thr-2').retired.every(receipt => !receipt.requests.includes(entry.id)));
+    assert.equal(s.delivery('thr-2').paused, false);
+  }
+});
+
+for (const originPluginId of [null, 'promptobus']) test(`a mixed queued group waits for owned obsolete cleanup without rejecting unrelated user rows (${originPluginId})`, async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Mixed group' }); await s.reconcile();
+  const old = s.wakes[0].input;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  const user = { id: 'user', threadId: 'thr-2', originPluginId: null, content: [{ type: 'text', text: 'Keep this user input' }] };
+  s.queues.set('thr-2', [user]); assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  const stale = { id: 'late-old', threadId: 'thr-2', originPluginId, content: old };
+  s.queues.set('thr-2', [stale, user]);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'mixed',
+    queuedMessages: [stale, user], input: { blocks: [...old, ...user.content], text: old[0].text+'\n'+user.content[0].text } }))).action, 'wait');
+  await s.reconcile(); assert.deepEqual(s.queues.get('thr-2'), [user]);
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null,
+    queuedMessages: [user], input: { blocks: user.content, text: user.content[0].text } }))).action, 'proceed');
+  assert.equal(s.delivery('thr-2').paused, false);
+});
+
+
+test('Stop before requested replay still correlates generated payload after retirement and reload', async t => {
+  const entered = deferred(), reply = deferred(); let first = true, requestId;
+  const s = await stand(t, { async wakeSend({ threadId, input, append, threads }) {
+    const row = append(threadId, 'client/turn/requested', { input });
+    if (first) { first = false; requestId = row.data.requestId; entered.resolve(); await reply.promise; }
+    threads.get(threadId).status = threads.get(threadId).runtime.displayStatus = 'active';
+    return { ok: true, delivery: 'sent' };
+  } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Stop before event replay' }); await entered.promise;
+  assert.equal(s.delivery('thr-2').pending.requestId, null);
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  reply.resolve(); await new Promise(resolve => setImmediate(resolve));
+  const epoch = s.delivery('thr-2').epoch;
+  s.append('thr-2', 'client/turn/rejected', { requestId, reason: 'provider-unavailable', message: 'Provider connection closed' });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, false); assert.equal(s.delivery('thr-2').epoch, epoch);
+});
+
+test('a user copy of the current pending text cannot replace generated request identity', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Current wake copy' }); await s.reconcile(); await s.reconcile();
+  const owned = s.delivery('thr-2').pending; assert.ok(owned.requestId);
+  const user = { type: 'text', text: owned.text };
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null,
+    input: { blocks: [user], text: user.text } }))).action, 'proceed');
+  s.append('thr-2', 'client/turn/requested', { requestId: 'user-current-copy', input: [user] }); await s.reconcile();
+  assert.equal(s.delivery('thr-2').pending.requestId, owned.requestId);
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  s.append('thr-2', 'client/turn/rejected', { requestId: owned.requestId, reason: 'provider-unavailable', message: 'Provider connection closed' });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, false);
+  s.append('thr-2', 'client/turn/rejected', { requestId: 'user-current-copy', reason: 'provider-unavailable', message: 'Provider connection closed' });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, true);
+});
+
+for (const currentFirst of [true, false]) test(`current and obsolete owned queue group waits for precise cleanup (current first ${currentFirst})`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues }) {
+    const entry = { id: `owned-${Date.now()}`, threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]); return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+  } });
+  await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Two owned rows' }); await s.reconcile();
+  const old = s.queues.get('thr-2')[0]; assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 0);
+  const current = s.queues.get('thr-2')[0]; const entries = currentFirst ? [current, old] : [old, current];
+  s.queues.set('thr-2', entries);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus', queuedMessages: entries,
+    input: { blocks: entries.flatMap(entry => entry.content), text: entries.map(entry => entry.content[0].text).join('\n') } }))).action, 'wait');
+  await s.reconcile(); assert.deepEqual(s.queues.get('thr-2'), [current]);
+  assert.equal(s.delivery('thr-2').pending.text, current.content[0].text); assert.equal(s.delivery('thr-2').paused, false);
+  assert.equal((await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus', queuedMessages: [current],
+    input: { blocks: current.content, text: current.content[0].text } }))).action, 'proceed');
+});
+
+
+test('unattributed generated wakes are fenced while paused and preserve explicit foreign and user copies', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'SDK origin is absent' }); await s.reconcile();
+  const input = s.wakes[0].input;
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = blocks => makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null,
+    input: { blocks, text: blocks[0].text } });
+  assert.equal((await hook(context(input))).action, 'reject');
+  const copied = { id: 'manual-copy', threadId: 'thr-2', originPluginId: null, content: [{ type: 'text', text: input[0].text }] };
+  const foreign = { id: 'foreign-copy', threadId: 'thr-2', originPluginId: 'another-plugin', content: input };
+  s.queues.set('thr-2', [copied, foreign]); await s.reconcile();
+  assert.deepEqual(s.queues.get('thr-2'), [copied, foreign]);
+  assert.equal((await hook(context(copied.content))).action, 'proceed');
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry: copied });
+  assert.equal(s.delivery('thr-2').reason.includes('User cancelled'), false);
 });

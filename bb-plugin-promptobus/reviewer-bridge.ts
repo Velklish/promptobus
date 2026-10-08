@@ -15,7 +15,7 @@ export function reviewerBridge(write?: (line: string) => void, open = openBbRevi
   const tools = createPendingToolCallTracker({ sendToolCall: io.send });
   type Session = Awaited<ReturnType<typeof openBbReviewer>>;
   type Notification = Parameters<NonNullable<Parameters<typeof openBbReviewer>[0]['notify']>>[0];
-  type Turn = { id: string; done: Promise<void>; finish: () => void; failure?: string };
+  type Turn = { id: string; done: Promise<void>; finish: () => void; failure?: string; tools: Map<string, boolean> };
   type Slot = { opening: Promise<Session>; stopped: boolean; abort: AbortController; session?: Session;
     pending: Notification[] | null; emit: (message: Notification) => void; active?: Turn;
     stopping?: Promise<void>; closing?: Promise<void> };
@@ -77,7 +77,22 @@ export function reviewerBridge(write?: (line: string) => void, open = openBbRevi
       const emit = (message: Notification) => {
         if (slot.stopped) return;
         const p = message.params ?? {};
-        if (message.method === 'item/started' && p.item?.type === 'agentMessage') {
+        if (message.method.startsWith('item/') && (!slot.active || slot.active.id !== p.turnId)) return;
+        if ((message.method === 'item/started' || message.method === 'item/completed') && p.item?.type === 'dynamicToolCall') {
+          const turn = slot.active!, item = p.item;
+          if (turn.tools.get(item.id) === true) return;
+          const key = { providerItemId: item.id }, shape = { type: 'tool' as const, tool: item.tool, args: item.arguments };
+          if (!turn.tools.has(item.id)) {
+            turn.tools.set(item.id, false);
+            delta(input.threadId, [{ kind: 'item.open', providerTurnId: turn.id, key, item: shape }]);
+          }
+          if (message.method === 'item/completed') {
+            turn.tools.set(item.id, true);
+            delta(input.threadId, [{ kind: 'item.close', providerTurnId: turn.id, key,
+              status: item.status === 'failed' || item.success === false ? 'failed' : 'completed',
+              item: { ...shape, result: item.contentItems, ...(item.durationMs != null ? { durationMs: item.durationMs } : {}) } }]);
+          }
+        } else if (message.method === 'item/started' && p.item?.type === 'agentMessage') {
           delta(input.threadId, [{ kind: 'item.open', providerTurnId: p.turnId, key: { providerItemId: p.item.id }, item: { type: 'agentMessage', text: '' } }]);
         } else if (message.method === 'item/agentMessage/delta') {
           delta(input.threadId, [{ kind: 'item.textDelta', providerTurnId: p.turnId, key: { providerItemId: p.itemId }, channel: 'agentMessage', text: p.delta }]);
@@ -144,7 +159,7 @@ export function reviewerBridge(write?: (line: string) => void, open = openBbRevi
         if (slot.stopped) throw new Error('Reviewer turn start was cancelled');
         let finish!: () => void;
         const done = new Promise<void>(resolve => { finish = resolve; });
-        slot.active = { id: started.turn.id, done, finish };
+        slot.active = { id: started.turn.id, done, finish, tools: new Map() };
         delta(input.threadId, [{ kind: 'input.accepted', clientRequestId: input.clientRequestId, providerTurnId: started.turn.id },
           { kind: 'turn.open', providerTurnId: started.turn.id }]);
         accepted = true;

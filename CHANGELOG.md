@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show constrained BB reviewer tool calls in the matching timeline turn, bound
+  dispatch validation to one abort budget, preserve terminal archive state under
+  overlapping requests, retain exact cancelled-wake ownership through late replies
+  and reload, and report persisted launch reasoning. BB Host context now explicitly
+  refuses symlink skill entries and approver admission refuses unsupported pipeline
+  shapes. [Runtime details](bb-plugin-promptobus/README.md).
+
 - Require explicit current worker/reviewer results for a BB approver's actual
   subject before launch, dispatch and tool calls, through the existing factual
   pipeline gate. Independent participant ids remain distinct from adapter addresses;

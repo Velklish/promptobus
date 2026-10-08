@@ -29,12 +29,16 @@ export function registerRuntime(bb: BbPluginApi) {
     return result;
   };
   const requireThread = async (b: Binding, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     const thread = await bb.sdk.threads.get({ threadId: b.threadId!, signal });
+    signal?.throwIfAborted();
     if (thread.id !== b.threadId || thread.projectId !== b.projectId || thread.environmentId !== b.environmentId
       || thread.providerId !== b.providerId || thread.parentThreadId !== b.parentThreadId
       || thread.lifecycleOwnerThreadId !== b.lifecycleOwnerThreadId) throw new Error('BB thread binding mismatch');
     const environment = await bb.sdk.environments.get({ environmentId: b.environmentId, signal });
-    const local = (await bb.sdk.system.config()).primaryHostId;
+    signal?.throwIfAborted();
+    const local = (await bb.sdk.system.config({ signal })).primaryHostId;
+    signal?.throwIfAborted();
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
   const recovery = registerDelivery(bb, store, onHost);
@@ -87,17 +91,42 @@ export function registerRuntime(bb: BbPluginApi) {
       && context.thread.providerId === b.providerId && context.host?.id === b.hostId
       && context.input.blocks.length === 1 && context.input.blocks[0]?.type === 'text' && context.input.text === b.bootstrap) return { action: 'proceed' };
     if (b.phase !== 'ready') return { action: 'wait', reason: `Promptobus binding is ${b.phase}; operator recovery is required` };
-    const admits = () => store.thread(b.threadId!)?.phase === 'ready' && recovery.admits(b.threadId!, context.input.text)
-      && (context.originPluginId !== 'promptobus' || !store.delivery(b.threadId!).paused);
-    if (!admits()) return { action: 'reject', message: 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
+    const owned = context.queuedMessages.length ? context.queuedMessages.filter(entry => entry.originPluginId === 'promptobus'
+      || recovery.owns(b.threadId!, entry.content, entry.originPluginId))
+      .map(entry => entry.content.filter(block => block.type === 'text').map(block => block.text).join('\n'))
+      : context.originPluginId === 'promptobus' || recovery.owns(b.threadId!, context.input.blocks, context.originPluginId) ? [context.input.text] : [];
+    const grouped = owned.length > 0 && context.queuedMessages.length > 1;
+    const refusal = () => grouped
+      ? { action: 'wait' as const, reason: 'Waiting for owned Promptobus wake cancellation', sendAt: Date.now() + 1000 }
+      : { action: 'reject' as const, message: owned.length ? recovery.rejection(b.threadId!, owned[0])
+        : 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
+    const admits = () => store.thread(b.threadId!)?.phase === 'ready' && recovery.admits(b.threadId!, context.input.text, false)
+      && owned.every(text => recovery.admits(b.threadId!, text)) && (!owned.length || !store.delivery(b.threadId!).paused);
+    if (!admits()) return refusal();
+    const controller = new AbortController(), signal = controller.signal;
+    let timer: ReturnType<typeof setTimeout>;
     try {
-      await requireThread(b);
-      await onHost(b, { operation: 'check' });
-      await checkStep(b);
-      await recovery.replay(b, AbortSignal.timeout(5000));
-      if (!admits()) return { action: 'reject', message: 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
+      await Promise.race([(async () => {
+        await requireThread(b, signal);
+        signal.throwIfAborted();
+        await onHost(b, { operation: 'check' }, signal);
+        signal.throwIfAborted();
+        await checkStep(b, signal);
+        signal.throwIfAborted();
+        await recovery.replay(b, signal);
+        signal.throwIfAborted();
+      })(), new Promise<never>((_, reject) => { timer = setTimeout(() => {
+        const error = new Error('Promptobus dispatch validation exceeded 5000 ms');
+        controller.abort(error); reject(error);
+      }, 5000); })]);
+      if (!admits()) return refusal();
       return { action: 'proceed' };
-    } catch (error) { return { action: 'reject', message: String((error as Error).message) }; }
+    } catch (error) {
+      const message = String((error as Error).message);
+      return /binding mismatch|task is closed|requires explicit|requires the shipped.*pipeline/i.test(message)
+        ? { action: 'reject', message }
+        : { action: 'wait', reason: `Promptobus validation unavailable: ${message}`, sendAt: Date.now() + 1000 };
+    } finally { clearTimeout(timer!); }
   });
   const spawn = async (b: Binding, assignment: string, baseBranch?: string) => {
     let recorded = false;
@@ -278,7 +307,7 @@ export function registerRuntime(bb: BbPluginApi) {
       } }),
     'participant archive': cliCommand({ summary: 'Stop, preserve a complete workspace snapshot in the coordinator, then archive through BB.', options: participantOptions,
       async run({ options }, context) {
-        const b = boundParticipant(options.task, options.participant);
+        let b = boundParticipant(options.task, options.participant);
         if (b.phase === 'archived') return { exitCode: 0, stdout: JSON.stringify({ phase: b.phase, preservation: b.preservation }) };
         if (b.phase !== 'ready' && b.phase !== 'archiving') throw new Error('Participant is not ready for preservation');
         if (store.list().some(child => child.lifecycleOwnerThreadId === b.threadId && child.phase !== 'archived')) throw new Error('Preserve and archive lifecycle children first');
@@ -287,6 +316,9 @@ export function registerRuntime(bb: BbPluginApi) {
           if (threads.some(thread => thread.lifecycleOwnerThreadId === b.threadId)) throw new Error('A BB lifecycle child is still unarchived');
           if (threads.length < 200) break;
         }
+        b = boundParticipant(options.task, options.participant);
+        if (b.phase === 'archived') return { exitCode: 0, stdout: JSON.stringify({ phase: b.phase, preservation: b.preservation }) };
+        if (b.phase !== 'ready' && b.phase !== 'archiving') throw new Error('Participant is not ready for preservation');
         if (store.list().some(child => child.lifecycleOwnerThreadId === b.threadId && child.phase !== 'archived')) throw new Error('Preserve and archive lifecycle children first');
         if (archiving.has(b.threadId!)) throw new Error('Participant is already being archived');
         archiving.add(b.threadId!);
@@ -327,7 +359,7 @@ export function registerRuntime(bb: BbPluginApi) {
           if (threads.length < 200) break;
         }
         return { exitCode: 0, stdout: JSON.stringify({ participant: b.participant, phase: b.phase, threadId: b.threadId,
-          launch: intent ? { attemptId: intent.attemptId, status: intent.status, model: intent.model, baseBranch: intent.baseBranch } : null,
+          launch: intent ? { attemptId: intent.attemptId, status: intent.status, model: intent.model, reasoningLevel: intent.reasoningLevel ?? null, baseBranch: intent.baseBranch } : null,
           delivery: b.threadId ? store.delivery(b.threadId) : null, candidates, automaticallyRebound: false }) };
       } }),
   } }));
