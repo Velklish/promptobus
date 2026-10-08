@@ -1,4 +1,4 @@
-import type { PromptobusHost } from '../dist/index.js';
+import type { PromptobusHost, TaskV1 } from '../dist/index.js';
 
 export interface BbHostContext {
   rules: { path: string; text: string }[];
@@ -16,6 +16,7 @@ export interface BbCanonicalCall extends BbCanonicalInput {
   tool: string; args: Record<string, unknown>; role: string; actor: { task: string; participant: string };
 }
 export interface BbHostIntegration {
+  checkStep(input: { home: string; taskId: string; taskMeta: TaskV1; stepName: string; slug: string; repoDir: string; signal?: AbortSignal }): Promise<void>;
   prepare(input: BbHostInput): Promise<BbHostContext>;
   collect(input: BbHostInput): Promise<BbHostContext>;
   read(input: BbHostInput & { path: string; start_line?: number; line_count?: number }): Promise<unknown>;

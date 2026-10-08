@@ -13,7 +13,7 @@ import {
 } from './layout.js';
 import {
   commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf,
-  lastSentAt as lastSentAtOf, newMessage, newRecordId, peekInbox, readInbox, recoverTask,
+  inspectInbox, lastSentAt as lastSentAtOf, newMessage, newRecordId, peekInbox, readInbox, recoverTask,
 } from './messages.js';
 import type {
   ActivationEvent, BrokenNote, FaultHook, HistoryPage, HistoryQuery, RecoverFailure, Repair,
@@ -166,6 +166,8 @@ export interface Engine {
   peek(task: string, participant: string): { messages: MessageV1[]; broken: BrokenNote[] };
   /** Glance in silence: touches no refs and sets no broken aside. */
   glance(task: string, participant: string): MessageV1[];
+  /** Validate without consuming or isolating refs; diagnostics remain visible on retry. */
+  inspectInbox(task: string, participant: string): { messages: MessageV1[]; broken: BrokenNote[] };
   unread(task: string, participant: string): number;
   /** When the participant last sent; `null` — they have sent nothing yet. */
   lastSentAt(task: string, participant: string): number | null;
@@ -359,6 +361,7 @@ export function openEngine({
 
     peek: (task, participant) => peekInbox(home, task, participant, faults),
     glance: (task, participant) => glanceInbox(home, task, participant).messages,
+    inspectInbox: (task, participant) => inspectInbox(home, task, participant, faults),
 
     unread: (task, participant) => countInbox(home, task, participant),
 

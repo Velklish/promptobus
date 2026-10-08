@@ -188,10 +188,11 @@ export function countInbox(home: string, task: string, participant: string): num
   return inboxNames(inboxDir(home, task, participant)).length;
 }
 
-function inboxNames(dir: string): string[] {
+function inboxNames(dir: string, strict = false): string[] {
   try {
     return readdirSync(dir).filter((n) => n.endsWith('.json') && !n.startsWith('.')).sort();
-  } catch {
+  } catch (e) {
+    if (strict && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     return [];
   }
 }
@@ -358,6 +359,8 @@ export interface HistoryQuery {
    * hand — the order-key form belongs to history. */
   before?: string;
   all?: boolean;
+  /** Refuse unreadable directories when the caller requires complete history. */
+  strict?: boolean;
 }
 
 /** History record: one message for one participant. */
@@ -390,19 +393,20 @@ function byKey(a: string, b: string): number {
 
 /** Task history: what was read, old to new, last 50 records by default. Unread is not here — it sits
  * in the mailbox, and fan-out recovery stands on telling delivered from read. */
-export function history(home: string, tasks: string[], { participant, limit = 50, before, all = false }: HistoryQuery): HistoryPage {
+export function history(home: string, tasks: string[], { participant, limit = 50, before, all = false, strict = false }: HistoryQuery): HistoryPage {
   const refs: { key: string; task: string; participant: string; file: string }[] = [];
   for (const task of tasks) {
     const root = historyRoot(home, task);
     let boxes: string[];
     try {
       boxes = readdirSync(root);
-    } catch {
+    } catch (e) {
+      if (strict && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       continue;
     }
     for (const box of boxes) {
       if (participant && box !== participant) continue;
-      for (const name of inboxNames(path.join(root, box))) {
+      for (const name of inboxNames(path.join(root, box), strict)) {
         const id = name.slice(0, -'.json'.length);
         refs.push({ key: orderKey(id, box), task, participant: box, file: path.join(root, box, name) });
       }
@@ -555,15 +559,28 @@ export { messagesDir };
 export function peekInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
   messages: MessageV1[]; broken: BrokenNote[];
 } {
+  return inspectRefs(home, task, participant, fault, 'peek');
+}
+
+/** Validate unread records without consuming or isolating their refs. */
+export function inspectInbox(home: string, task: string, participant: string, fault: FaultHook = NO_FAULT): {
+  messages: MessageV1[]; broken: BrokenNote[];
+} {
+  return inspectRefs(home, task, participant, fault, 'inspect');
+}
+
+function inspectRefs(home: string, task: string, participant: string, fault: FaultHook, mode: 'peek' | 'inspect'): {
+  messages: MessageV1[]; broken: BrokenNote[];
+} {
   const dir = inboxDir(home, task, participant);
   const messages: MessageV1[] = [];
   const broken: BrokenNote[] = [];
-  for (const name of inboxNames(dir)) {
+  for (const name of inboxNames(dir, mode === 'inspect')) {
     const file = path.join(dir, name);
     let record: ReadRecord;
     try {
-      fault('inbox-read', { task, participant, name, mode: 'peek' });
-      record = readRecord(file, name, brokenInboxDir(home, task, participant));
+      fault('inbox-read', { task, participant, name, mode });
+      record = readRecord(file, name, mode === 'peek' ? brokenInboxDir(home, task, participant) : null);
     } catch (e) {
       // The owner took it between the listing and the read: they will deliver the message.
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;

@@ -4,7 +4,7 @@ import type { BbPluginApi, PluginAgentConfigurationContext, PluginAgentToolConte
 import { createBbInstructionDelivery, BB_ROLE_SKILLS } from 'promptobus/instructions';
 import { BB_REVIEWER_HOST_TOOLS, BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewer';
 import { renderBbHostContext } from 'promptobus/bb-host';
-import { ORCHESTRATOR, REVIEWER } from 'promptobus';
+import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { bindingStore } from './bindings.js';
 import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
@@ -38,6 +38,11 @@ export function registerRuntime(bb: BbPluginApi) {
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
   const recovery = registerDelivery(bb, store, onHost);
+  const checkStep = async (b: Binding, signal?: AbortSignal) => {
+    if (b.role !== APPROVER) return;
+    if (!b.predecessors) throw new Error('The approver requires explicit worker and reviewer predecessors');
+    await onHost(b, { operation: 'step', ...b.predecessors }, signal);
+  };
   const authorize = async (context: PluginAgentToolContext, tool: string) => {
     context.signal.throwIfAborted();
     const b = store.thread(context.threadId);
@@ -45,6 +50,7 @@ export function registerRuntime(bb: BbPluginApi) {
     if (b.projectId !== context.projectId) throw new Error('BB project binding mismatch');
     if (!participantTools(b).includes(tool)) throw new Error('Tool is not available to this role');
     await requireThread(b, context.signal);
+    await checkStep(b, context.signal);
     context.signal.throwIfAborted();
     return b;
   };
@@ -87,6 +93,7 @@ export function registerRuntime(bb: BbPluginApi) {
     try {
       await requireThread(b);
       await onHost(b, { operation: 'check' });
+      await checkStep(b);
       await recovery.replay(b, AbortSignal.timeout(5000));
       if (!admits()) return { action: 'reject', message: 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
       return { action: 'proceed' };
@@ -131,6 +138,11 @@ export function registerRuntime(bb: BbPluginApi) {
         await onHost(b, { operation: 'reserve', create: false, title: b.task });
       }
       await requireThread(b);
+      if (b.role === APPROVER) {
+        const owner = store.task(b.task)!;
+        await requireThread(owner);
+        await onHost(owner, { operation: 'step', ...b.predecessors });
+      }
       await onHost(b, { operation: 'finalize' });
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
@@ -191,6 +203,8 @@ export function registerRuntime(bb: BbPluginApi) {
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
       'new-environment': { type: 'boolean', description: 'Let BB create and own a managed worktree.' },
       'base-branch': { type: 'string', description: 'Required branch for a new managed worktree.' },
+      worker: { type: 'string', description: 'Required for approver: recorded worker participant for this subject.' },
+      reviewer: { type: 'string', description: 'Required for approver: recorded isolated reviewer of the same subject.' },
     }, async run({ options }, context) {
       const owner = store.task(options.task);
       if (!owner || owner.phase !== 'ready') throw new Error('Task has no ready plugin-owned orchestrator');
@@ -198,16 +212,23 @@ export function registerRuntime(bb: BbPluginApi) {
       if (options['new-environment'] ? options.environment || !options['base-branch'] : options['base-branch']) throw new Error('Select either an existing environment or --new-environment with --base-branch');
       await requireThread(owner, context.signal);
       await onHost(owner, { operation: 'check' }, context.signal);
+      if (options.role === APPROVER) {
+        if (!options.worker || !options.reviewer) throw new Error('The approver requires --worker and --reviewer');
+        await onHost(owner, { operation: 'step', worker: options.worker, reviewer: options.reviewer }, context.signal);
+      } else if (options.worker || options.reviewer) throw new Error('Predecessors are only selected for the approver');
       const b = bindingSchema.parse({ ...owner, participant: options.participant, role: options.role,
         providerId: options.role === REVIEWER ? REVIEWER_PROVIDER : 'codex', token: randomUUID(), threadId: null, phase: 'pending',
         parentThreadId: owner.threadId, lifecycleOwnerThreadId: owner.threadId,
         environmentId: options.environment ?? owner.environmentId, environmentOwner: options['new-environment'] ? 'bb' : 'existing',
         preservation: undefined });
+      delete b.predecessors;
+      if (options.role === APPROVER) b.predecessors = { worker: options.worker!, reviewer: options.reviewer! };
       delete b.preservation;
       delete b.hostContext;
       if (!options['new-environment']) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
       if (!options['new-environment']) await prepareContext(b, context.signal);
+      if (b.predecessors) await onHost(owner, { operation: 'step', ...b.predecessors }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');
       store.reserve(b, false);
       try {

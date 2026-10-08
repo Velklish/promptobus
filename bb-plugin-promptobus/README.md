@@ -121,7 +121,7 @@ are refused. New role threads use built-in Codex except reviewers, which use the
 constrained provider. Bus writes do not grant reviewer source or shell writes.
 
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
-The complete role workflow remains a separate integration boundary.
+The measured six-role workflow and its profile limits are recorded below.
 BB queued first prompts are admission state, not the canonical Promptobus mailbox.
 
 ## Provider and model selection
@@ -208,6 +208,8 @@ unknown and is retried by reconciliation; `error`, `stopping`, rejected turns,
 interrupted turns and denied/cancelled approval interactions pause continuation.
 Pending interactions are left for the user. Repair the failure or resolve the
 interaction before explicitly resuming; recovery never retries failed source work.
+
+Pause controls automatic Promptobus wake and continuation. Explicit operator messages, including BB queued inputs, remain BB actions and may run while paused; they neither resume automatic delivery nor ACK canonical mail.
 
 For a durable stop, use `bb promptobus participant stop --task <id> --participant
 <id>`. It records pause before waiting for SDK Stop and cancels its own queued
@@ -346,3 +348,64 @@ admission before callback dispatch. Tools appear only when the collected context
 requires them. A running Codex session keeps its native tool inventory: after a
 source/context change regenerate/build/reload and create fresh participants.
 Never hand-edit generated adapters or assume reload changes an existing session.
+
+## Approver admission and workflow support
+
+Add an approver with explicit predecessor ids:
+
+```sh
+bb promptobus participant add --task demo-t20261008-120000 \
+  --participant acceptance-api --role approver --worker worker-api \
+  --reviewer review-api --new-environment --base-branch main \
+  --model gpt-6.1-sol --assignment "Judge the recorded review and actual gates."
+```
+
+The reviewer must use the worker's actual environment (`--environment <worker-env>`).
+Approver can use its own managed environment. SDK/source ownership remains BB's.
+Both predecessors must be canonical BB participants of the selected task and
+subject. The existing pipeline gate requires their `type: result` after each
+current assignment; `type: review` alone is not that result. Selection checks
+before reservation/spawn, after preparation, at dispatch and before approver tools.
+A new canonical `task` assignment makes the old result stale. Legacy participants
+without an initial assignment timestamp require fresh participants. A pipeline
+without the shipped approver step refuses; custom BB step names are unsupported.
+
+Results and artifacts are facts. The gate does not inspect verdict truth, execute
+reported tests, verify a claimed commit or accept a task. Worker/reviewer/approver
+judgment and the operator's final source verification remain required. Approver
+archive is preservation, not acceptance; task journals remain unaccepted until an
+explicit operator acceptance action.
+
+The 2026-10-08 live workflow established the following source profile. It used
+actual canonical messages, committed source and retained artifacts; SDK fixtures
+alone are not this support claim.
+
+| Profile | Status | Boundary |
+| --- | --- | --- |
+| One primary local host; BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2; macOS 27.0, Node 25.2.1; `gpt-6.1-sol`, `low` | Full six-role runtime observed | Built-in Codex for orchestrator, worker, approver, teamlead and reporter; constrained Codex provider for reviewer; shipped worker/reviewer/approver pipeline |
+| Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
+| Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; provider substitution and remote environments refuse |
+| Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; older releases lack this adapter |
+
+The representative fixture retained current worker and reviewer results for the
+same actual managed environment. Approver admission refused before those results.
+Worker made one commit; worker and approver independently executed four assertions
+on that HEAD, and approver fast-forwarded only the disposable local main. Teamlead
+supplied a plan; reporter read the retained facts. Reviewer execution and reporter
+canonical writes were mechanically denied before callback dispatch. Their source
+and verdict evidence remains distinct from tests the operator ran.
+
+Replacement preserved the first worker before archive. Durable Stop retained an
+unread assignment across plugin reload; explicit resume executed the work once.
+A manually queued BB input ran as an explicit operator turn while automatic
+delivery stayed paused. Queue persistence is not promised by this adapter.
+All seven bound test participants and the bootstrap thread were archived; child
+snapshots preceded owner archive. The canonical test journal remains active and
+unaccepted: lifecycle preservation does not accept source or reported facts.
+
+These fixture artifacts demonstrate runtime behavior, not a consumer release
+certificate or standardized gate/handover schema validation. Consumers retain
+those records and judge their own source, review and real gates. SDK limits remain:
+already-idle BB Stop is unobservable, reviewer tool calls require native transcript
+inspection until timeline forwarding is available, and the constrained provider
+has no usage API. No remote push or release publication was part of the proof.

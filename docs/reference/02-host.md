@@ -638,3 +638,9 @@ A source generator produces the consumer plugin variant; see
 [ADR-034](../adr/adr-034-bb-host-context-delivery.md). Private source integration
 and server configuration belong to the consumer. Regenerate and create fresh
 participants when delivered context or the native tool catalog changes.
+
+`BbHostIntegration.checkStep` resolves the subject Host and runs the existing
+factual pipeline preconditions from canonical participant/result/assignment data.
+It is an operator/runtime host call, not a model tool. It neither grades result
+content nor grants participant identity. [Currency](04-protocol.md#bb-workflow-result-currency)
+records the BB projection and unchanged native semantics.

@@ -38,5 +38,9 @@ Active interruption and denied interactions also pause continuation.
 Selection records runtime, provider, SDK/native model and reasoning from a scoped
 SDK catalog. Explicit provider choices must match the role; no provider fallback
 or native strategy substitution occurs. Account windows belong to that provider
-on its host; absent reviewer usage remains unknown. The complete role workflow
-remains a separate boundary.
+on its host; absent reviewer usage remains unknown. The six-role runtime was observed together on the local source profile: macOS
+27.0, Node 25.2.1, `gpt-6.1-sol` with `low`, and the shipped worker/reviewer/approver
+pipeline. Worker and approver tested the actual committed candidate; reviewer and
+reporter write denials preceded callbacks. Explicit operator queued inputs may
+run while automatic delivery is paused. See README for setup, source-only delivery
+and measured limits; custom profiles carry no full support claim.

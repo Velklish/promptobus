@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Require explicit current worker/reviewer results for a BB approver's actual
+  subject before launch, dispatch and tool calls, through the existing factual
+  pipeline gate. Independent participant ids remain distinct from adapter addresses;
+  verdict and gate-record content stays opaque. A retained local six-role Codex
+  source workflow covered actual committed gates, mechanical denials, replacement,
+  Stop/reload/resume and preservation before archive; setup and measured profile
+  limits remain explicit. [Workflow decision](docs/adr/adr-035-bb-role-workflow-support.md).
+
 - Deliver complete Host rules and canonical skills before BB assignments, including
   newly provisioned worktrees. Authenticated Host tools route canonical calls through
   a consumer-owned adapter; incomplete reviewer write classification refuses delivery,

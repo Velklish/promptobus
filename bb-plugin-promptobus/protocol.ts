@@ -37,6 +37,7 @@ export const bindingSchema = z.object({
   preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
   execution: executionSchema.optional(),
   hostContext: hostContextSchema.optional(),
+  predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
 export const launchSchema = z.object({

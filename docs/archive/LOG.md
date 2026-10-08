@@ -506,3 +506,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-362"></a>`PB-362-bb-message-delivery-and-recovery` · 2026-10-08 · completed · — · Deliver BB wake hints with durable recovery, bounded continuation and explicit stop handling
 - <a id="pb-361"></a>`PB-361-bb-provider-aware-routing-and-environment-boundary` · 2026-10-08 · completed · — · Route BB execution by actual provider and filter inherited parent runtime identity
 - <a id="pb-360"></a>`PB-360-bb-host-context-delivery` · 2026-10-08 · completed · — · Deliver Host rules, skills and canonical tools into BB participant environments
+- <a id="pb-359"></a>`PB-359-bb-full-role-support-and-regression-evidence` · 2026-10-08 · completed · — · Verify the complete BB role workflow and publish an explicit runtime support contract

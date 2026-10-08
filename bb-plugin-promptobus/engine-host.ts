@@ -1,8 +1,8 @@
-import { realpathSync } from 'node:fs';
+import { realpathSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { openEngine, ORCHESTRATOR } from 'promptobus';
+import { openEngine, ORCHESTRATOR, WORKER, REVIEWER, APPROVER } from 'promptobus';
 import type { ParticipantV1 } from 'promptobus';
 import { engineInput } from './contract.js';
 
@@ -22,6 +22,7 @@ export async function engineOperation(input: unknown) {
         environmentId: b.environmentId, hostId: b.hostId, providerId: b.providerId, environmentPath: b.environmentPath,
         environmentOwner: b.environmentOwner, branch: b.branch, baseSha: b.baseSha,
         parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId,
+        assignedAt: new Date().toISOString(), ...(b.predecessors ? { predecessors: b.predecessors } : {}),
         ...(b.execution ? { execution: b.execution } : {}) } } };
     if (request.create) {
       if (b.role !== ORCHESTRATOR || b.participant !== ORCHESTRATOR) throw new Error('Task owner must be the orchestrator');
@@ -51,6 +52,32 @@ export async function engineOperation(input: unknown) {
   if ((b.phase !== 'ready' && !(b.phase === 'archiving' && request.operation === 'preserve'))
     || !b.threadId || participant.sessionRef !== b.threadId) throw new Error('Canonical binding mismatch');
   switch (request.operation) {
+    case 'step': {
+      if (b.role !== ORCHESTRATOR && b.role !== APPROVER) throw new Error('Only the coordinator or approver may check this step');
+      if (b.role === APPROVER && (b.predecessors?.worker !== request.worker || b.predecessors.reviewer !== request.reviewer)) throw new Error('Approver predecessor binding mismatch');
+      const worker = task.participants.find(p => p.id === request.worker && p.role === WORKER && p.harness === 'bb');
+      const reviewer = task.participants.find(p => p.id === request.reviewer && p.role === REVIEWER && p.harness === 'bb');
+      if (!worker || !reviewer) throw new Error('The approver requires recorded BB worker and reviewer participants');
+      const subject = (worker.metadata.bb as { environmentPath?: string }).environmentPath;
+      if (!subject || (reviewer.metadata.bb as { environmentPath?: string }).environmentPath !== subject) throw new Error('Reviewer and worker subjects differ');
+      const recovery = engine.recover(b.task);
+      const history = engine.history({ task: b.task, all: true, strict: true });
+      if (recovery.broken.length || recovery.failed.length || recovery.linkFailures.length || history.broken.length) throw new Error('Canonical assignment history is incomplete');
+      for (const p of task.participants) {
+        try {
+          if (readdirSync(engine.brokenPath(b.task, p.id)).some(name => name.endsWith('.json'))) throw new Error('Canonical assignment history is incomplete');
+        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      }
+      const inboxes = task.participants.map(p => engine.inspectInbox(b.task, p.id));
+      if (inboxes.some(box => box.broken.length)) throw new Error('Canonical assignment history is incomplete');
+      const messages = [...history.entries.map(e => e.message), ...inboxes.flatMap(box => box.messages)];
+      const facts = [worker, reviewer].map(p => {
+        const assignment = messages.filter(m => m.type === 'task' && m.recipients.includes(p.id)).sort((a, c) => a.id.localeCompare(c.id)).at(-1);
+        const at = assignment?.ts ?? (p.metadata.bb as { assignedAt?: string }).assignedAt;
+        return { ...p, metadata: { address: `${p.role}:${worker.id}`, worktree: subject, reviewSubject: subject, started: at } };
+      });
+      return { home: engine.home, taskId: b.task, taskMeta: { ...task, participants: facts }, stepName: APPROVER, slug: worker.id, repoDir: subject };
+    }
     case 'pending': {
       const recovery = engine.recover(b.task);
       const history = engine.history({ task: b.task, all: true });

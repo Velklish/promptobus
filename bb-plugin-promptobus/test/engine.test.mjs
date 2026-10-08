@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext, makeMessageDispatchHookContext } from '@get-bb/plugin-sdk/testing';
@@ -150,6 +150,10 @@ async function stand(t, options = {}) {
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
     if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck();
     if (input.operation === 'preserve') events.push('preserve');
+    if (input.operation === 'step') {
+      const entry = hostEntry ?? createHostEntry();
+      return entry.handlers.engine(input, { signal: new AbortController().signal });
+    }
     return engineOperation(input);
   } });
   t.after(() => host.harness.lifecycle.dispose());
@@ -619,6 +623,115 @@ test('forged identity fields, metadata, foreign project and missing threads gran
   s.threads.delete('thr-2');
   await assert.rejects(s.call('thr-2', 'promptobus_task'), /Thread not found/);
   assert.equal(count(), before);
+});
+
+test('approver requires current worker and isolated reviewer results for the same subject before launch and tools', async t => {
+  const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+  const extra = ['--worker', 'alpha', '--reviewer', 'beta'];
+  const refuses = async (extra, pattern) => {
+    const result = await s.add('acceptor', 'approver', extra); assert.equal(result.exitCode, 1); assert.match(result.stderr, pattern);
+    assert.equal(s.threads.size, 3, 'A refused acceptance must not reserve or spawn another executor');
+    assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
+  };
+  await refuses([], /requires --worker and --reviewer/);
+  await refuses(extra, /requires a type=result/);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  await engine.send(s.task, { from: 'alpha', to: ['orchestrator'], type: 'result', body: 'Actual worker result; content stays opaque.' });
+  await refuses(extra, /requires a type=result/);
+  await engine.send(s.task, { from: 'beta', to: ['orchestrator'], type: 'result', body: 'A negative verdict is still a recorded fact, not an automatic acceptance.' });
+  const added = await s.add('acceptor', 'approver', extra); assert.equal(added.exitCode, 0, added.stderr);
+  const thread = JSON.parse(added.stdout).threadId;
+  assert.equal(JSON.parse(await s.call(thread, 'promptobus_task')).participant, 'acceptor');
+  const worker = engine.readTask(s.task).participants.find(p => p.id === 'alpha');
+  engine.patchParticipant(s.task, 'alpha', { metadata: { ...worker.metadata, bb: { ...worker.metadata.bb,
+    assignedAt: new Date(Date.now() + 60_000).toISOString() } } });
+  await assert.rejects(s.call(thread, 'promptobus_task'), /requires a type=result/);
+});
+
+test('approver refuses a reviewer on another BB subject and an assignment that supersedes an old result', async t => {
+  const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
+  const reviewer = engine.readTask(s.task).participants.find(p => p.id === 'beta');
+  engine.patchParticipant(s.task, 'beta', { metadata: { ...reviewer.metadata, bb: { ...reviewer.metadata.bb, environmentPath: s.root + '/other' } } });
+  const extra = ['--worker', 'alpha', '--reviewer', 'beta'];
+  const mismatch = await s.add('acceptor', 'approver', extra); assert.equal(mismatch.exitCode, 1); assert.match(mismatch.stderr, /subjects differ/);
+  engine.patchParticipant(s.task, 'beta', { metadata: reviewer.metadata });
+  const future = openEngine({ root: s.root, policy: () => ({ allow: true }), now: () => new Date(Date.now() + 60_000) });
+  await future.send(s.task, { from: 'orchestrator', to: ['beta'], type: 'task', body: 'A fresh review assignment supersedes the old result.' });
+  const stale = await s.add('acceptor', 'approver', extra); assert.equal(stale.exitCode, 1); assert.match(stale.stderr, /requires a type=result/);
+});
+
+test('damaged unread assignments refuse approver admission repeatedly without moving their refs', async t => {
+  for (const mode of [null, 'peek', 'read']) {
+  for (const content of ['{', JSON.stringify({ type: 'task' })]) {
+    const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+    for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
+    const sent = await engine.send(s.task, { from: 'orchestrator', to: ['beta'], type: 'task', body: 'New assignment.' });
+    const ref = path.join(engine.inboxPath(s.task, 'beta'), sent.message.id + '.json');
+    writeFileSync(ref, content);
+    if (mode) engine[mode](s.task, 'beta');
+    const retained = mode ? path.join(engine.brokenPath(s.task, 'beta'), sent.message.id + '.json') : ref;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
+      assert.equal(refused.exitCode, 1, 'Incomplete assignment history must never admit old results');
+      assert.match(refused.stderr, /assignment history is incomplete/);
+      assert.equal(s.threads.size, 3);
+      assert.equal(existsSync(retained), true, 'Repeated checks must retain the damaged ref');
+    }
+  }
+  }
+});
+
+test('unlistable unread assignment directories refuse admission without reserving an approver', async t => {
+  const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
+  await engine.send(s.task, { from: 'orchestrator', to: ['beta'], type: 'task', body: 'New assignment.' });
+  const box = engine.inboxPath(s.task, 'beta'); renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
+    assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /ENOTDIR/);
+    assert.equal(s.threads.size, 3);
+    assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
+  }
+});
+
+test('unlistable read assignment history refuses admission at both root and participant directories', async t => {
+  for (const participant of [null, 'beta']) {
+    const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+    for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
+    await engine.send(s.task, { from: 'orchestrator', to: ['beta'], type: 'task', body: 'New assignment.' });
+    engine.read(s.task, 'beta');
+    const box = participant ? engine.historyPath(s.task, participant) : path.dirname(engine.historyPath(s.task, 'beta'));
+    renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
+      assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /ENOTDIR/);
+      assert.equal(s.threads.size, 3);
+      assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
+    }
+  }
+});
+
+test('an assignment arriving during Host preparation refuses before approver reservation and spawn', async t => {
+  let s;
+  s = await stand(t, { hostContext: async b => {
+    if (b.role === 'approver') {
+      const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), now: () => new Date(Date.now() + 60_000) });
+      await engine.send(s.task, { from: 'orchestrator', to: ['beta'], type: 'task', body: 'Review changed during Host preparation.' });
+    }
+    return { rules: [], skills: [], tools: [] };
+  } });
+  await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
+  const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
+  assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /requires a type=result/);
+  assert.equal(s.threads.size, 3, 'A stale preparation must not spawn an executor');
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
 });
 
 test('canonical participant edits and closed tasks are refused; reporter cannot send', async t => {

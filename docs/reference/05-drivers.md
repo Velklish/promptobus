@@ -20,7 +20,11 @@ It does not introduce a native `bb` harness or share a quota bucket across provi
 | `promptobus-codex-reviewer` | reviewer | Actual SDK catalog through the constrained Codex bridge | Unknown: this provider exposes no usage API |
 
 This matrix is limited to BB 0.45.0, SDK 0.6.15 and the constrained reviewer's
-verified Codex CLI 0.162.0-alpha.2. Provider/model inventory is re-read before
+verified Codex CLI 0.162.0-alpha.2. All six roles were observed together on the
+2026-10-08 local macOS 27.0 / Node 25.2.1 source profile with `gpt-6.1-sol`, `low`
+and the shipped pipeline. Other profiles are unverified; the adapter is source-only
+and unreleased. [Support and limits](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support).
+Provider/model inventory is re-read before
 launch; a model-load error, unsupported model/effort, unavailable host/environment
 or known invalid installation/authentication refuses before canonical reservation.
 Unknown health is retained when the selected model inventory is available.

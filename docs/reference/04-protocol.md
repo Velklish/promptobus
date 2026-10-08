@@ -168,7 +168,7 @@ When one session orchestrates several tasks, a user question in any of them hold
 
 Stored v1 messages carry `sender` and `recipients` as normalized participant IDs, the same values used for mailbox directories; they do not carry the caller's bus address spelling. For example, `worker:demo` is stored as `worker-demo`. Match a stored message by converting the address with the same normalization before comparing it.
 
-`glanceInbox` only lists unread records; it does not consume them. A wait for a participant's verdict must therefore match both the normalized `sender` and `type`, rather than treating any `result` in the mailbox as that participant's message.
+`glanceInbox` only lists unread records; it does not consume them. A wait for a participant's verdict must therefore match both the normalized `sender` and `type`, rather than treating any `result` in the mailbox as that participant's message. Admission checks that depend on complete assignment history use `engine.inspectInbox(task, participant)`: it validates unread records and returns both messages and `broken` diagnostics, without consuming or isolating refs. Inspection refuses directory listing errors other than an absent inbox. Pair it with `engine.history({ task, all: true, strict: true })` to refuse listing errors in read history too. A damaged unread assignment therefore remains visible to repeated checks; `glance` alone cannot establish completeness.
 
 A `result` body opens with a fixed four-line header — what was done, the gate command with its exit code, what is left open, what needs a decision — inside a bound of 2400 characters, and everything past it is attached as an artifact the header names; the shape, the numbers and the gate record that goes with it are in § Artifacts, and the rule itself is stated in the participant preambles rather than in a consumer's rules.
 
@@ -269,7 +269,7 @@ before exclusive publication; `task-link` fires after publication and before
 the root journal write. Their contexts name the child, and a throw leaves the
 creation intent for `recover()`.
 
-`EngineOptions.faults` accepts the test-only `FaultHook`; production does not supply it. Fan-out hooks run after durable `validate`, `blob`, `artifact`, `intent`, `canonical`, `ref` and `close` steps. The `read` hook marks the completed mailbox read. Read hooks run immediately before their named filesystem operation: `task-read`, `artifact-read`, `intent-read`, `inbox-read` (with `mode: "read"` for consuming reads, `mode: "peek"` for a foreign session's copy and `mode: "glance"` for warden glances) and `history-ref` — `artifact-read` fires before both the metadata read and the blob read of an artifact, and its `file` context says which; `intent-materialize` runs after intent validation and immediately before recovery materializes the message. The `mkdir` hook runs immediately before the directory create inside a fan-out link, for the canonical message and for each recipient reference; `target` is that directory and `to` is the link, and a throw there is classified as the directory refusal. A hook throw models a crash or filesystem refusal at that boundary so the suite can prove recovery without changing production behaviour. The warden's `supervisorRound` supplies its own `faults` option for the glance because `engine.glance` does not pass the engine hook. The artifact seam covers the direct reads only. The bulk listing — every caller of the exported `listArtifacts` — takes no fault hook.
+`EngineOptions.faults` accepts the test-only `FaultHook`; production does not supply it. Fan-out hooks run after durable `validate`, `blob`, `artifact`, `intent`, `canonical`, `ref` and `close` steps. The `read` hook marks the completed mailbox read. Read hooks run immediately before their named filesystem operation: `task-read`, `artifact-read`, `intent-read`, `inbox-read` (with `mode: "read"` for consuming reads, `mode: "peek"` for a foreign session's copy `mode: "glance"` for warden glances and `mode: "inspect"` for validated non-consuming inspection) and `history-ref` — `artifact-read` fires before both the metadata read and the blob read of an artifact, and its `file` context says which; `intent-materialize` runs after intent validation and immediately before recovery materializes the message. The `mkdir` hook runs immediately before the directory create inside a fan-out link, for the canonical message and for each recipient reference; `target` is that directory and `to` is the link, and a throw there is classified as the directory refusal. A hook throw models a crash or filesystem refusal at that boundary so the suite can prove recovery without changing production behaviour. The warden's `supervisorRound` supplies its own `faults` option for the glance because `engine.glance` does not pass the engine hook. The artifact seam covers the direct reads only. The bulk listing — every caller of the exported `listArtifacts` — takes no fault hook.
 
 ## Engine
 
@@ -802,3 +802,19 @@ persists pause before SDK Stop; interruption and denied interaction pause replay
 No native warden or Stop-hook veto is added to this path.
 [Local contract](../../bb-plugin-promptobus/README.md#wake-and-recovery),
 [decision](../adr/adr-032-bb-wake-recovery.md).
+
+## BB workflow result currency
+
+The local BB facade routes all six standing roles through authenticated bindings.
+An approver chooses explicit worker/reviewer participants. Their canonical actual
+subjects must match. Host `BbHostIntegration.checkStep` projects their current
+assignment and recorded identity into the same `requireStepResults` check as the
+native pipeline. Result tallies use canonical participant id, independent of the
+adapter address. A result before the latest canonical task assignment is stale;
+`review` does not substitute for `result`. Missing initial timestamps refuse.
+
+This is a fact check at launch, after preparation, dispatch and approver tool
+calls. It does not grade verdicts, artifact truth, commits or supplied gate records,
+close the task or merge source. Timestamp precision is unchanged. See
+[workflow setup](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support)
+and [ADR-035](../adr/adr-035-bb-role-workflow-support.md).

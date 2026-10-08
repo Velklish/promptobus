@@ -9,7 +9,12 @@ import { engineOperation } from './engine-host.js';
 export function createHostEntry(integration: BbHostIntegration = createBbHostIntegration({ resolveHost: root => createStandaloneHost({ cwd: root }) })) {
   return experimental_defineHostEntry({ contract: hostContract, handlers: {
     read: async ({ root, name, args }) => reviewerFiles([root])(name, args),
-    engine: async (input, context) => { context.signal.throwIfAborted(); return engineOperation(input); },
+    engine: async (input, context) => {
+      context.signal.throwIfAborted();
+      const result = await engineOperation(input);
+      if (input.operation === 'step') await integration.checkStep({ ...result as Parameters<BbHostIntegration['checkStep']>[0], signal: context.signal });
+      return result;
+    },
     prepareContext: async ({ binding: b }, context) => integration.prepare({ root: b.environmentPath, role: b.role, signal: context.signal }),
     hostContext: async ({ binding: b, args }, context) => {
       context.signal.throwIfAborted();

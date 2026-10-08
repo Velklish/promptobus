@@ -14,7 +14,7 @@ import { Readable } from 'node:stream';
 import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
-  symlinkSync, utimesSync, writeFileSync,
+  symlinkSync, utimesSync, writeFileSync, renameSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -541,6 +541,51 @@ test('type=artifact carries a file at the write, and a record already written wi
     assert.equal(messages.length, 1);
     assert.equal(messages[0].body, 'will become an artifact');
   });
+});
+
+test('validated inbox inspection retains damaged refs and reports read refusals on every retry', () => {
+  let refuse = false;
+  const engine = openEngine({ root: sandbox(), policy: allowAll, faults: (step, info) => {
+    if (refuse && step === 'inbox-read' && info.mode === 'inspect') throw Object.assign(new Error('Injected read refusal'), { code: 'EACCES' });
+  } });
+  const id = taskWith(engine);
+  const sent = engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'Actual assignment' });
+  const ref = path.join(engine.inboxPath(id, 'w-api'), sent.message.id + '.json');
+  assert.deepEqual(engine.inspectInbox(id, 'w-api').messages, [sent.message]);
+  for (const content of ['{', JSON.stringify({ type: 'task' })]) {
+    writeFileSync(ref, content);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const report = engine.inspectInbox(id, 'w-api');
+      assert.equal(report.messages.length, 0);
+      assert.equal(report.broken[0].code, 'schema-invalid');
+      assert.equal(report.broken[0].attic, null);
+      assert.equal(existsSync(ref), true);
+    }
+  }
+  writeFileSync(ref, JSON.stringify(sent.message));
+  refuse = true;
+  assert.equal(engine.inspectInbox(id, 'w-api').broken[0].code, 'EACCES');
+  refuse = false;
+  assert.deepEqual(engine.inspectInbox(id, 'w-api').messages, [sent.message]);
+  const box = engine.inboxPath(id, 'w-api');
+  renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
+  for (let attempt = 0; attempt < 2; attempt++) assert.throws(() => engine.inspectInbox(id, 'w-api'), /ENOTDIR/);
+  rmSync(box); renameSync(box + '.saved', box);
+  assert.deepEqual(engine.read(id, 'w-api').messages, [sent.message]);
+});
+
+test('strict history refuses inaccessible directory roots and participant boxes', () => {
+  for (const participant of [null, 'w-api']) {
+    const engine = openEngine({ root: sandbox(), policy: allowAll });
+    const id = taskWith(engine);
+    engine.sendSync(id, { from: 'owner', to: ['w-api'], type: 'task', body: 'Read assignment' });
+    engine.read(id, 'w-api');
+    assert.equal(engine.history({ task: id, all: true, strict: true }).entries.length, 1);
+    const box = participant ? engine.historyPath(id, participant) : path.dirname(engine.historyPath(id, 'w-api'));
+    renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
+    for (let attempt = 0; attempt < 2; attempt++) assert.throws(() => engine.history({ task: id, all: true, strict: true }), /ENOTDIR/);
+    assert.deepEqual(engine.history({ task: id, participant: 'w-api', all: true }).entries, []);
+  }
 });
 
 test('a closed task is not written to, and reading it is lawful', async () => {
