@@ -24,6 +24,7 @@
 import './home.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,10 +44,19 @@ const drivers = {
   opencode: (await lib('driver-opencode.js')).opencodeDriver,
 };
 
+const OPENCODE_PARENT = {
+  PROMPTOBUS_OPENCODE_SESSION: '/parent/opencode-session.json',
+  OPENCODE_SERVER_PASSWORD: 'PARENT-PASSWORD',
+  OPENCODE_CONFIG: '/parent/opencode.json',
+  OPENCODE_CONFIG_DIR: '/parent/.opencode',
+  OPENCODE_SESSION_ID: 'PARENT-SESSION',
+};
+
 // A parent that carries every name plus one the mechanism sets itself, so a drop that takes too
 // much is as visible as one that takes too little.
 const PARENT = Object.fromEntries([
   ...PARENT_SESSION_ENV.map((name) => [name, `PARENT-${name}`]),
+  ...Object.entries(OPENCODE_PARENT),
   ['PATH', '/usr/bin'], ['HOME', '/home/parent'], ['PROMPTOBUS_HOME', '/home/parent/.promptobus'],
 ]);
 
@@ -54,7 +64,8 @@ const PARENT = Object.fromEntries([
 // value would let a mutation that overwrites instead of deleting pass both checks here.
 const survivors = (driver) => {
   const out = driver.sessionEnv(PARENT, {});
-  return PARENT_SESSION_ENV.filter((name) => out[name] !== undefined);
+  return [...new Set([...PARENT_SESSION_ENV, ...Object.keys(OPENCODE_PARENT)])]
+    .filter((name) => Object.hasOwn(out, name));
 };
 
 function pinsDropAndOrder(name) {
@@ -64,9 +75,14 @@ function pinsDropAndOrder(name) {
   assert.equal(sessionIdentity(driver.sessionEnv(PARENT, {})), null,
     `${name}: sessionIdentity() still answers from the parent's environment`);
   // `extra` on top of the drop, not under it: a caller that names a dropped variable wins.
-  const extra = { CLAUDE_CODE_SESSION_ID: 'SET-BY-THE-CALLER' };
+  const extra = { CLAUDE_CODE_SESSION_ID: 'SET-BY-THE-CALLER',
+    ...Object.fromEntries(Object.keys(OPENCODE_PARENT).map((key) => [key, `CHILD-${key}`])) };
   assert.equal(driver.sessionEnv(PARENT, extra).CLAUDE_CODE_SESSION_ID, 'SET-BY-THE-CALLER',
     `${name}: the drop list deleted a value the caller set deliberately`);
+  for (const key of Object.keys(OPENCODE_PARENT)) {
+    assert.equal(driver.sessionEnv(PARENT, extra)[key], extra[key],
+      `${name}: the drop list deleted the child's ${key}`);
+  }
   // What the mechanism and the shell legitimately need is untouched.
   const kept = driver.sessionEnv(PARENT, {});
   assert.equal(kept.PROMPTOBUS_HOME, PARENT.PROMPTOBUS_HOME, `${name}: PROMPTOBUS_HOME was dropped`);
@@ -87,6 +103,31 @@ test('cursor: no parent identity or messaging variable reaches a lifted particip
 
 test('opencode: no parent identity or messaging variable reaches a lifted participant', () => {
   pinsDropAndOrder('opencode');
+});
+
+test('opencode: the child launch plan keeps its own contact, password and config', () => {
+  const config = '/child/opencode.json';
+  const plan = drivers.opencode.prepare({ ref: 'worker:child', home: '/child/home',
+    task: 'child-task', address: 'worker:child', mcp: { servers: {} }, prompt: 'work',
+    mcpConfigPath: config, env: drivers.opencode.sessionEnv(PARENT, {}) });
+  for (const [key, parent] of Object.entries(OPENCODE_PARENT)) {
+    assert.notEqual(plan.env[key], parent, `${key} retained parent state in the launch plan`);
+  }
+  assert.equal(Object.hasOwn(plan.env, 'OPENCODE_SESSION_ID'), false);
+  assert.equal(plan.env.OPENCODE_CONFIG, config);
+  assert.equal(plan.env.OPENCODE_CONFIG_DIR, '/child/.opencode');
+  assert.equal(plan.env.OPENCODE_SERVER_PASSWORD, plan.holder.password);
+  assert.match(plan.holder.password, /^[A-Za-z0-9]{43}$/);
+  assert.equal(plan.env.PROMPTOBUS_OPENCODE_SESSION, '/child/home/tasks/child-task/workers/child.session.json');
+});
+
+test('the isolation reference and shipped process instructions name every OpenCode parent key', () => {
+  for (const file of ['docs/reference/03-cli.md', 'docs/reference/05-drivers.md', 'skills/orchestrate/SKILL.md']) {
+    const text = readFileSync(path.join(here, '..', file), 'utf8');
+    for (const key of Object.keys(OPENCODE_PARENT)) {
+      assert.ok(text.includes(`\`${key}\``), `${file} omits ${key}`);
+    }
+  }
 });
 
 test('native children drop literal BB parent identity and retain connection configuration', () => {

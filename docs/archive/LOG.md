@@ -515,3 +515,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-363.1"></a>`PB-363.1-bb-concurrent-archive-state` · 2026-10-08 · batch PB-368 · — · Keep terminal BB binding state during overlapping archive requests
 - <a id="pb-364.1"></a>`PB-364.1-bb-reviewer-tool-history` · 2026-10-08 · batch PB-368 · — · Show constrained BB reviewer tool calls in the thread timeline
 - <a id="pb-364.2"></a>`PB-364.2-bb-dispatch-bounded-host-check` · 2026-10-08 · batch PB-368 · — · Bound host validation inside the BB message dispatch hook
+- <a id="pb-350"></a>`PB-350-opencode-parent-environment-leak` · 2026-10-09 · completed · — · Delegated lifts retain the OpenCode parent contact, password and config environment

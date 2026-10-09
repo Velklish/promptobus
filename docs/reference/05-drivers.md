@@ -866,6 +866,10 @@ Config travels by environment, not by worktree writes: the plan emits one openco
 the task record (`OPENCODE_CONFIG`) with the MCP set (`url` entries as remote servers, `command`
 entries as local ones), the `model` default and the permission map (bus deny names in opencode
 lowercase spelling), and the skills canon through `OPENCODE_CONFIG_DIR`. `launchDirs` is empty.
+Every driver's parent environment filter drops `PROMPTOBUS_OPENCODE_SESSION`,
+`OPENCODE_SESSION_ID`, `OPENCODE_SERVER_PASSWORD`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR`.
+The OpenCode launch plan then sets its own contact record, holder password and config paths;
+it does not inherit the parent's session id. Explicit child values merge after the filter.
 Permission modes hold one value, `auto`; effort has no mapping and refuses. Measured on opencode
 2.0.20, which is also the proven version; the floor is 2.0.0.
 

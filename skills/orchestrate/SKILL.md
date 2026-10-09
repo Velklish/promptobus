@@ -106,6 +106,12 @@ For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its 
 
 Read the worker's worktree path and branch from `promptobus status` or `promptobus_task`. Do not rebuild them from a name template. The worker may have switched branches: the line then says `WORKER CHANGED BRANCH` (`lib/worktree.js`). Publish the branch git reports.
 
+Every native lift filters its parent's session environment, including
+`PROMPTOBUS_OPENCODE_SESSION`, `OPENCODE_SESSION_ID`, `OPENCODE_SERVER_PASSWORD`,
+`OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR`, for all four drivers. The OpenCode child
+gets its own contact record, holder password and config paths from the launch plan.
+Explicit child values merge after the filter; do not pass parent values as child overrides.
+
 Lead a new Codex root with `promptobus lead --brief <file> --permission-mode full-access`. The managed root requires this explicit profile because orchestration launches workers and reviewers; other profiles refuse before launch. Participants retain their own permissions. The managed holder binds the complete native thread as the root owner before its first model turn, then receives warden postcards. Worker, reviewer, teamlead and approver commands use that root task id. The Desktop chat supplies the brief and reads results; do not replace native mailbox delivery with a shell MCP identity shim. The person can inspect `status` and ask through `ask`; `done` stops the managed root too. `lead` refuses an existing task rather than taking over its mailbox.
 
 The Codex holder logs requested and effective model, effort, sandbox and network access before its first turn. A mismatch refuses the launch. Restricted network can surface as a DNS error: do not repeat fetch or dependency installation in the same denied sandbox or change machine DNS. Use an already authorized supported preparation route, or report the blocked participant operation. An unrestricted profile does not prove remote connectivity.

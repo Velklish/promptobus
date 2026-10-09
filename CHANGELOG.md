@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Drop inherited OpenCode contact, session id, holder password and config paths
+  from every native driver lift; keep the child's own launch values.
+
 - Show constrained BB reviewer tool calls in the matching timeline turn, bound
   dispatch validation to one abort budget, preserve terminal archive state under
   overlapping requests, retain exact cancelled-wake ownership through late replies
