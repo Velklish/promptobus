@@ -47,3 +47,23 @@ for (const role of ['worker', 'reviewer', 'approver']) {
     }
   });
 }
+
+for (const role of ['orchestrator', 'approver', 'worker']) {
+  test(`installed BB ${role}: selected skill delivers the complete command-grant contract`, () => {
+    const context = { taskId:'command-grant', address:'w-command', environmentId:'env_command', workspace:'/owned',
+      assignment:'Actor w-command; token command-01; exact scope preparation; owner confirmation in this task.',
+      tools:{promptobus_send:'authenticated_send'} };
+    const delivery = createBbInstructionDelivery(role, context);
+    assert.deepEqual(JSON.parse(delivery.initialPrompt.split('\n\n')[1]), context);
+    assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
+    const body = renderBbInstructionSkill(role);
+    const skill = readFileSync(new URL(`../skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    for (const text of [body, skill]) {
+      assert.match(text, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
+      assert.match(text, /released[^.]*terminal|terminal[^.]*release/i);
+      assert.match(text, /(?:confirmation|resume)[^.]*must not revive/i);
+      assert.doesNotMatch(text, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i);
+    }
+    assert.ok(skill.endsWith(body.trimEnd() + '\n'));
+  });
+}

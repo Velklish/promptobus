@@ -82,3 +82,17 @@ console.log(JSON.stringify(roles.map(role => ({role, body:renderBbInstructionSki
     assert.doesNotMatch(body, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, role);
   }
 });
+
+test('packed BB command-grant contract survives installation without a separate confirmation barrier', () => {
+  const source = `import { renderBbInstructionSkill } from 'promptobus/instructions';
+console.log(JSON.stringify(['orchestrator','approver','worker'].map(role => ({role,body:renderBbInstructionSkill(role)}))));`;
+  const output = JSON.parse(run('node', ['--input-type=module', '-e', source], consumer));
+  assert.equal(output.length, 3);
+  for (const { role, body } of output) {
+    assert.match(body, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i, role);
+    assert.match(body, /released[^.]*terminal|terminal[^.]*release/i, role);
+    assert.match(body, /(?:confirmation|resume)[^.]*must not revive/i, role);
+    assert.doesNotMatch(body, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i, role);
+    if (role !== 'orchestrator') assert.match(body, /immediately before every mechanical call/i, role);
+  }
+});

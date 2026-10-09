@@ -520,3 +520,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-371"></a>`PB-371-pb370-public-audit-examples` · 2026-10-09 · batch PB-369 · — · PB-370 evidence examples fail the public audit
 - <a id="pb-350.2"></a>`PB-350.2-bb-evidence-address-schema` · 2026-10-09 · completed · — · BB worker evidence records cannot represent the authenticated participant address
 - <a id="pb-350.3"></a>`PB-350.3-process-list-probe-errors` · 2026-10-09 · completed · — · Driver tests hide process-list probe failures behind liveness assertions
+- <a id="pb-350.4"></a>`PB-350.4-bb-mechanical-grant-release` · 2026-10-09 · completed · — · BB orchestration must publish complete command grants and acknowledge their release

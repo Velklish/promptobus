@@ -126,3 +126,25 @@ test('native evidence schemas: colon addresses remain valid; w-pb3502 is not a n
     }
   }
 });
+
+for (const role of ['orchestrator', 'approver', 'worker']) {
+  test(`BB ${role}: complete command grants and terminal release belong to the rendered and shipped contract`, async () => {
+    const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
+    const rendered = renderBbInstructionSkill(role);
+    const shipped = readFileSync(new URL(`../bb-plugin-promptobus/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    for (const body of [rendered, shipped]) {
+      assert.match(body, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
+      assert.match(body, /released[^.]*terminal|terminal[^.]*release/i);
+      assert.match(body, /(?:confirmation|resume)[^.]*must not revive/i);
+      assert.doesNotMatch(body, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i);
+      if (role === 'orchestrator') {
+        assert.match(body, /before[^.]*dispatch|before[^.]*deliver/i);
+        assert.match(body, /acknowledg[^.]*release|release[^.]*acknowledg/i);
+      } else {
+        assert.match(body, /immediately before every mechanical call/i);
+        assert.match(body, /runner-only release[^.]*does not authorize[^.]*closure lint/i);
+      }
+    }
+    assert.ok(shipped.endsWith(rendered.trimEnd() + '\n'));
+  });
+}

@@ -614,6 +614,33 @@ The existing environment-id route remains immediate; existing paths retain
 workspace ownership, while managed worktrees remain BB-owned. These path checks
 are covered by SDK fixtures; live path registration has not been measured.
 
+### BB command grant delivery
+
+The BB orchestrator persists the authenticated actor, immutable authorization token,
+exact command scope and all preconditions in current control before dispatch can
+activate a participant. The same runnable canonical task contains that scope and
+owner confirmation. Its returned task id is an audit receipt, not a second
+confirmation barrier. Role skills define these coordination duties; the plugin
+does not add a command scheduler or derive shell authorization from SDK delivery.
+
+Before every mechanical call, the participant reads current control and STOP,
+checks the granted actor/token/scope against the active slot, and refuses ended,
+stopped or mismatched authorization. Each substantial suite invocation obtains
+fresh normal-account routing under the supplied quota policy. A cached reading is
+not a fresh routing receipt. A changed precondition in a running batch takes effect
+only after acknowledged application; otherwise the coordinator uses verified
+official stop/pause when the old conditions must no longer permit continuation.
+
+The coordinator retains the slot until it acknowledges the exact all-calls release
+or verifies an official task-owned stop/pause. SDK `sent` or `queued` and a sent
+Hold do not prove participant application. Stop requires fresh actual status and
+paused delivery, with zero pending and running calls before reassignment.
+Worktrees, raw receipts and unrelated participants remain in place.
+The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
+and terminal authorization boundary. Controlled-delivery tests model compliance
+with the shipped instructions; they do not establish a live BB queue defect or
+historical call overlap.
+
 ## BB Host context delivery
 
 `promptobus/bb-host` exports `createBbHostIntegration` and

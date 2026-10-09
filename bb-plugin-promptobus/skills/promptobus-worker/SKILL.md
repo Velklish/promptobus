@@ -73,3 +73,13 @@ The handover evidence carries the full branch and base shas and all five pre-han
 5. Every gate not run, with its reason.
 
 Declare an impossible check as `notRun` with a concrete reason. A missing check or one declared not run is not a pass. These are evidence for the reviewer to judge, not checks BB performs.
+
+## Command grants
+
+The same canonical task carries the authenticated actor, immutable authorization token, exact command scope, all required preconditions and owner confirmation. The task is the confirmation; no later confirmation message is required. Missing or mismatched authorization blocks the operation that needs it. A released grant is terminal. Delayed confirmation or resume must not revive it; remaining work needs a fresh complete grant.
+
+Immediately before every mechanical call, read current control and STOP and verify that the active slot's authenticated actor and authorization token match your current granted scope. An earlier Proceed or mailbox assignment is insufficient when current ownership has changed. Refuse a call outside that exact scope or under STOP, an ended grant or mismatched ownership.
+
+Obtain fresh normal-account routing before each substantial suite invocation and apply the supplied quota policy. Cached quota is not a fresh routing receipt. Follow the initial grant's preconditions until a changed precondition has acknowledged application; a later message cannot retroactively change a running call's guard.
+
+Release the exact completed scope with your authenticated actor and token, confirming zero pending and running calls and that no further calls from that grant remain. A runner-only release does not authorize later closure lint. Keep actual commands, exits, start/end receipts and their limitations; do not repeat unchanged mandatory suites solely because Hold arrived late without demonstrated interference or an incomplete required receipt.

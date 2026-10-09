@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Deliver complete BB command grants with authorization and owner confirmation in
+  one task, prebound before activation. Require current ownership and STOP checks
+  before each mechanical call, fresh routing before substantial suites, and an
+  acknowledged all-calls release or verified official stop/pause before slot reuse.
+  Released grants are terminal; late confirmation and resume do not revive them.
+
 - Report failed process-list measurements in native driver tests with the exact
   command, status, signal, spawn error and stderr; keep unmeasured cleanup checks red.
 

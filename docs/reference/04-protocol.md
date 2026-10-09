@@ -803,6 +803,28 @@ No native warden or Stop-hook veto is added to this path.
 [Local contract](../../bb-plugin-promptobus/README.md#wake-and-recovery),
 [decision](../adr/adr-032-bb-wake-recovery.md).
 
+### BB command grant release
+
+An all-calls release identifies the authenticated actor, authorization token and
+exact completed command scope. It confirms zero pending and running calls and no
+further calls from that grant. The orchestrator compares the release with current
+control and acknowledges it before reallocating the slot. A runner-only release
+does not authorize closure lint; remaining work requires a fresh complete grant
+prebound before delivery, with scope, preconditions and owner confirmation in the
+same canonical task.
+
+A released grant is terminal. Delayed confirmation or resume cannot revive its
+token. A mailbox ACK, a sent Hold and SDK `sent` or `queued` responses do not
+establish that a command grant ended. Revocation uses the official task-owned
+stop/pause route and fresh actual state verification before reassignment, preserving
+the participant's worktree and receipts. See [delivery](02-host.md#bb-command-grant-delivery).
+
+Evidence retains exact commands, exits, call start/end and release or stop
+acknowledgment. Commit timestamps do not prove call overlap, cached quota does not
+prove fresh routing, and a late precondition cannot retroactively certify a running
+batch. Unchanged mandatory suites are not repeated solely for delayed Hold when
+there is no demonstrated interference or incomplete required receipt.
+
 ### BB evidence attachments
 
 Gate and handover evidence in BB uses UTF-8 opaque `.txt` attachments, sent through
