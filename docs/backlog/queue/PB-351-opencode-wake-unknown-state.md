@@ -1,5 +1,6 @@
 # PB-351 · OpenCode wake posts another turn when the preceding turn state is unreadable
 
+- **Order:** 77
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
@@ -25,3 +26,7 @@ Evidence: 2026-10-06, HEAD a64dd37af65b395585d06324bd79bd73b122198e, `node <priv
 
 - [ ] Unknown/busy state produces no prompt POST; proven idle state produces exactly one.
 - [ ] Regression probe fails on current code and passes on fixed code.
+
+## Triage
+
+2026-10-09: queue after partial-launch cleanup. Current source `ea81f0d8643d923aecf140b813ae9ae521270d23`, `lib/driver-opencode.js:501-505`, still treats absent message data as zero length and can reach `sendPrompt` without validating the preceding GET response. The historical mocked reproduction is retained; it was not repeated during this source-only triage. Start with isolated GET-error/malformed-response fixtures that assert zero POSTs, then keep valid idle and busy cases. This changes native OpenCode wake admission, not BB recovery or root identity.

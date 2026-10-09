@@ -1,5 +1,6 @@
 # PB-352 · OpenCode holder tests abort on denied localhost binding instead of reporting named skips
 
+- **Order:** 79
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
@@ -13,7 +14,7 @@ Evidence: 2026-10-06, source re-read at HEAD a64dd37af65b395585d06324bd79bd73b12
 
 ## Work to do
 
-- [ ] Use the shared TCP listen helper at both new socket sites.
+- [ ] Use the shared refusal-aware listener helper with suitable TCP listen options at both socket sites; verify its supported call shape rather than assuming that a Unix socket path is a TCP endpoint.
 - [ ] Name only socket-dependent checks as skipped on EACCES/EPERM; preserve pure checks and fail other errors.
 - [ ] Add deterministic bind-denial regression coverage and update contributing notes if needed.
 
@@ -25,3 +26,7 @@ Evidence: 2026-10-06, source re-read at HEAD a64dd37af65b395585d06324bd79bd73b12
 
 - [ ] Injected EACCES/EPERM produces explicit named skipped checks and a completed file.
 - [ ] Pure checks still run, another listener error stays red, normal run remains green.
+
+## Triage
+
+2026-10-09: queue after the cleanup-completion fix as a bounded test-harness correction. Current source `ea81f0d8643d923aecf140b813ae9ae521270d23`, `test/promptobus-driver-opencode.test.mjs:287,458`, retains direct listeners without the refusal handling in `test/sandbox.mjs:260-274`; the public named-skip contract is in `README.md:274`. Source inspection confirms the missing branch, not an observed bind refusal during this triage. Begin with injected EACCES/EPERM and a different error; name skipped socket checks separately and keep pure checks executing. No blanket suite skip is acceptable.

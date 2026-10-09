@@ -1,6 +1,6 @@
 # PB-346 · An opencode shell cannot own a root task or lift a teamlead
 
-- **Scope:** [05-drivers § OPENCODE]
+- **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** major
@@ -29,3 +29,13 @@ Evidence:
 ## Verification
 
 - [ ] From an opencode shell with no Claude/Codex/Cursor identity: create a root task, `mailbox claim` succeeds, `spawn --teamlead --dry-run` and a real teamlead lift on opencode pass; Claude/Codex/Cursor ownership behavior unchanged.
+
+## Triage
+
+2026-10-09: defer the extension of CLI root ownership. At current source `ea81f0d8643d923aecf140b813ae9ae521270d23`, `lib/driver-opencode.js:535` still declares `identityVar: null`, and `docs/reference/05-drivers.md:823` explicitly documents the absence of an OpenCode CLI owner identity. The observed refusal is consistent with that current boundary; this is a request to add authenticated root ownership, not evidence that ordinary worker lifts violate their contract. The historical live attempt above was not repeated. The queued OpenCode cleanup/wake fixes do not depend on this extension.
+
+## Deferred
+
+- **Deferred:** 2026-10-09
+- **Reason:** The trusted root-identity/claim contract must be chosen before an environment variable can grant ownership; this triage does not weaken the existing contested-identity checks.
+- **Return condition:** The owner requests OpenCode-owned CLI roots and agrees the authenticated ownership boundary, with a disposable OpenCode environment available for the stated root/teamlead verification. Then refine the claim design and move this entry to the queue.

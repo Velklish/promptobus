@@ -1,5 +1,6 @@
 # PB-349 · An HTTP exception during OpenCode lift bypasses holder cleanup before registry registration
 
+- **Order:** 75
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
@@ -26,3 +27,7 @@ Evidence: 2026-10-06, Promptobus HEAD 450f0d265553fac9973d5db74917195b03291cd9, 
 - [ ] Stub-server transport failures reject the lift and leave no live holder, partial record/log or stale registry entry.
 - [ ] New regression probe fails on old code and passes on fixed code.
 - [ ] Successful lift and ordinary non-200 failure behavior remain covered.
+
+## Triage
+
+2026-10-09: queue after the existing OpenCode status fix. Source `ea81f0d8643d923aecf140b813ae9ae521270d23`, `lib/driver-opencode.js:289-319`, retains the cleanup helper and the unguarded `createSession` / `sendPrompt` awaits before registry registration. This is current source evidence; no holder or model turn was launched during triage. Start implementation with the two deterministic rejected-request regressions described above, then make cleanup preserve the original exception exactly once. This covers partial launch cleanup, distinct from completed-participant sweep and root ownership.
