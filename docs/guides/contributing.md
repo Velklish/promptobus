@@ -133,6 +133,16 @@ Two further run-level gates at the tail of [test/run.mjs](../../test/run.mjs) wa
 
 The seal is watched, not assumed. Every command the package launches through `run` is appended to the run's resolve trace ([lib/exec.js](../../lib/exec.js), variable `PROMPTOBUS_EXEC_TRACE`), and the runner refuses a run in which any of those paths lies outside its own run directory. A name that resolved to nothing is not counted — that is the seal working. The boundary is `run` itself: a test file that calls `spawnSync` on its own does not pass through it and is not traced; those calls are `process.execPath` and stub binaries inside the file's own sandbox, and the route the gate exists for is the one through the bus boundary.
 
+**Native driver tests require readable process lists.** Their test-only process
+probe accepts status 0, including an empty successful result, and `pgrep` status 1
+only when no spawn error or signal occurred. A failed `ps` command is never a
+no-match result. Probe failures retain the exact command and arguments, status,
+signal, original spawn error and untrimmed stderr, and produce a named failed
+verdict. The native tests retain `null` for an unmeasured process list, keep their
+positive liveness and cleanup assertions red, and continue teardown. Run these
+tests in an environment that permits their process measurements; changing global
+permissions or skipping a failed measurement does not verify cleanup.
+
 ## What the stands prove, and what they cannot
 
 **A live measurement without its executing copy recorded is not attributable.** The lift line

@@ -23,6 +23,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { processProbe } from './process-probe.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
@@ -1384,30 +1385,43 @@ check('step 4: the reviewed clone stayed clean — the reviewer put nothing into
 // `worker-server` that lives for minutes even after a NORMAL end of turn. We take the
 // list BEFORE teardown — after it it is empty by construction, and the verdict would be
 // green even if they had never been there.
+let processProbeError = '';
 function processesOf(pattern, marker = null) {
-  const listedPs = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8' });
-  const out = [];
-  for (const line of String(listedPs.stdout ?? '').split('\n')) {
-    const m = /^\s*(\d+)\s+(.*\S)\s*$/.exec(line);
-    if (!m || !pattern.test(m[2])) continue;
-    if (marker) {
-      const dump = spawnSync('ps', ['eww', '-o', 'command=', '-p', m[1]], { encoding: 'utf8' });
-      if (!String(dump.stdout ?? '').includes(marker)) continue;
+  try {
+    const listedPs = processProbe('ps', ['-Ao', 'pid=,command=']);
+    const out = [];
+    for (const line of listedPs.split('\n')) {
+      const m = /^\s*(\d+)\s+(.*\S)\s*$/.exec(line);
+      if (!m || !pattern.test(m[2])) continue;
+      if (marker) {
+        const dump = processProbe('ps', ['eww', '-o', 'command=', '-p', m[1]]);
+        if (!dump.includes(marker)) continue;
+      }
+      out.push(Number(m[1]));
     }
-    out.push(Number(m[1]));
+    return out;
+  } catch (e) {
+    processProbeError = e.message;
+    check('step 5: process-list probe succeeds', false, e.message);
+    return null;
   }
-  return out;
 }
 const marker = `PROMPTOBUS_CURSOR_SESSION=${sessionFile(ref, env)}`;
 const orphansBefore = processesOf(/worker-server/, marker);
 const paneBefore = readSession(ref, env)?.panePid ?? null;
-const kidsBefore = processesOf(/tool child/).filter((pid) => {
-  const dump = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' });
-  return Number(String(dump.stdout ?? '').trim()) === Number(paneBefore);
-});
+let kidsBefore = null;
+try {
+  kidsBefore = processesOf(/tool child/)?.filter((pid) => {
+    const dump = processProbe('ps', ['-o', 'ppid=', '-p', String(pid)]);
+    return Number(dump.trim()) === Number(paneBefore);
+  }) ?? null;
+} catch (e) {
+  processProbeError = e.message;
+  check('step 5: process-list probe succeeds', false, e.message);
+}
 check('step 5: before teardown both kinds of process are alive — the orphan and the tool child',
-  orphansBefore.length > 0 && kidsBefore.length > 0,
-  `orphans ${JSON.stringify(orphansBefore)} · children ${JSON.stringify(kidsBefore)} of pane ${paneBefore}`);
+  orphansBefore?.length > 0 && kidsBefore?.length > 0,
+  `orphans ${JSON.stringify(orphansBefore)} · children ${JSON.stringify(kidsBefore)} of pane ${paneBefore}\n${processProbeError}`);
 
 const done = cli([ 'done', '--task', TASK], { cwd: ws, env });
 check('step 5: promptobus done closed the task and stopped the Cursor participants',
@@ -1420,9 +1434,10 @@ check('step 5: no session record left in the registry — the directory does not
   !existsSync(sessionFile(ref, env)) && cursorDriver.inspect(ref)?.state === 'gone',
   `${sessionFile(ref, env)} · ${JSON.stringify(cursorDriver.inspect(ref))}`);
 
+const orphansAfter = processesOf(/worker-server/, marker);
 check('step 5: teardown collected both the orphan and the tool child — nothing left on the machine',
-  processesOf(/worker-server/, marker).length === 0
-  && kidsBefore.every((pid) => {
+  orphansBefore !== null && orphansAfter?.length === 0
+  && kidsBefore !== null && kidsBefore.every((pid) => {
     try {
       process.kill(pid, 0);
       return false;
@@ -1430,8 +1445,8 @@ check('step 5: teardown collected both the orphan and the tool child — nothing
       return e.code !== 'EPERM';
     }
   }),
-  `orphans were ${JSON.stringify(orphansBefore)}, became ${JSON.stringify(processesOf(/worker-server/, marker))};`
-  + ` children ${JSON.stringify(kidsBefore)}`);
+  `orphans were ${JSON.stringify(orphansBefore)}, became ${JSON.stringify(orphansAfter)};`
+  + ` children ${JSON.stringify(kidsBefore)}\n${processProbeError}`);
 
 check('step 5: the participant MCP config with tokens was removed by task cleanup',
   !existsSync(store.participantMcpPath(home, TASK, WORKER)),

@@ -12,6 +12,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
+import { processProbe } from './process-probe.mjs';
 import Ajv from 'ajv';
 import { listenTestSocket, makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
@@ -2448,9 +2449,16 @@ dropSession(deafRef, process.env);
 // It answers a different question — processes of THIS file that were already up
 // before the refusal — and holders leaked by an earlier run of this same suite are
 // exactly what it filters out.
+let processProbeError = '';
 function pgrep(pattern) {
-  const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
-  return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
+  try {
+    const stdout = processProbe('pgrep', ['-f', pattern]);
+    return stdout.trim().split('\n').filter(Boolean);
+  } catch (e) {
+    processProbeError = e.message;
+    check(': process-list probe succeeds', false, e.message);
+    return null;
+  }
 }
 
 // Proof that the pattern SEES a live app-server, not merely that it finds none. Without
@@ -2464,13 +2472,15 @@ function pgrep(pattern) {
   const nap = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
   let found = [];
   for (let i = 0; i < 60 && !found.length; i += 1) {
-    found = pgrep(APP_PATTERN).filter((pid) => String(pid) === String(bait.pid));
+    const pids = pgrep(APP_PATTERN);
+    if (pids === null) { found = null; break; }
+    found = pids.filter((pid) => String(pid) === String(bait.pid));
     if (!found.length) nap();
   }
   check(': the app-server pattern finds a live stub — otherwise «nothing left» proves nothing',
-    found.length === 1, `pid ${bait.pid} · ${APP_PATTERN} · found ${JSON.stringify(pgrep(APP_PATTERN))}`);
+    found?.length === 1, `pid ${bait.pid} · ${APP_PATTERN} · found ${JSON.stringify(found)}\n${processProbeError}`);
   try { process.kill(bait.pid, 'SIGKILL'); } catch { /* already gone */ }
-  for (let i = 0; i < 60 && pgrep(APP_PATTERN).includes(String(bait.pid)); i += 1) nap();
+  for (let i = 0; i < 60 && pgrep(APP_PATTERN)?.includes(String(bait.pid)); i += 1) nap();
 }
 
 
@@ -2523,11 +2533,13 @@ const hung = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'hang', '--harness', 'codex'], { cwd: ws, env: hangEnv });
 check(': a stream that never emits turn/started still refuses lift',
   hung.status !== 0 && /did not lift/.test(hung.out), hung.out.slice(-400));
-const extraHold = pgrep(HOLD_PATTERN).filter((p) => !beforeHold.includes(p));
-const extraApp = pgrep(APP_PATTERN).filter((p) => !beforeApp.includes(p));
+const afterHold = pgrep(HOLD_PATTERN);
+const afterApp = pgrep(APP_PATTERN);
+const extraHold = beforeHold && afterHold ? afterHold.filter((p) => !beforeHold.includes(p)) : null;
+const extraApp = beforeApp && afterApp ? afterApp.filter((p) => !beforeApp.includes(p)) : null;
 check(': after a lift refusal there are no holder processes',
-  extraHold.length === 0 && extraApp.length === 0,
-  `hold ${extraHold.join(',')} · app ${extraApp.join(',')}`);
+  extraHold?.length === 0 && extraApp?.length === 0,
+  `hold ${JSON.stringify(extraHold)} · app ${JSON.stringify(extraApp)}\n${processProbeError}`);
 
 planParticipant(HARNESS, 'worker:die', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'DIE' } }] }],

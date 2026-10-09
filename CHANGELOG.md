@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Report failed process-list measurements in native driver tests with the exact
+  command, status, signal, spawn error and stderr; keep unmeasured cleanup checks red.
+
 - Register an existing absolute local Git worktree with BB participant
   `--environment-path`. The participant's bounded bootstrap resolves the actual
   environment and verifies project, host, path, HEAD and lifecycle before canonical
