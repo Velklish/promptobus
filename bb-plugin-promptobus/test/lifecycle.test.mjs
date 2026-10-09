@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { observeBbParticipant, stopBbParticipant } from '../.test-build/lifecycle.js';
+import { observeBbParticipant, stopBbParticipant, recordBbWorkspace } from '../.test-build/lifecycle.js';
 
 const binding = { phase: 'ready', threadId: 'thread', projectId: 'project', environmentId: 'env',
   environmentPath: '/actual/worktree', hostId: 'local', providerId: 'codex' };
@@ -56,4 +56,19 @@ test('Stop success is checked against fresh SDK status and background work; stop
   s.host.status = 'disconnected';
   assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, false);
   assert.equal(s.stopped, 4);
+});
+
+test('existing path workspace recording refuses a different SDK path before changing binding or reading Git', async () => {
+  const s = sdk(); s.environment.projectId = 'project';
+  let reads = 0;
+  s.bb.sdk.environments.status = async () => { reads++; return { outcome: 'available', workspace: {
+    checkout: { kind: 'branch', headSha: 'b'.repeat(40) }, branch: { currentBranch: 'actual-branch' },
+  } }; };
+  const b = { ...binding, environmentPath: '/requested/worktree', baseSha: 'a'.repeat(40), branch: 'before' };
+  const before = { ...b };
+  await assert.rejects(recordBbWorkspace(s.bb, b, undefined, '/requested/worktree'), /path binding mismatch/);
+  assert.deepEqual(b, before); assert.equal(reads, 0);
+  await recordBbWorkspace(s.bb, b, undefined, '/actual/worktree');
+  assert.equal(b.environmentPath, '/actual/worktree'); assert.equal(b.baseSha, 'b'.repeat(40));
+  assert.equal(b.branch, 'actual-branch'); assert.equal(reads, 1);
 });

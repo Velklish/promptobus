@@ -25,7 +25,9 @@ the default variant uses the standalone Host and refuses declared servers withou
 
 `bb promptobus task create`, `participant add` and `bindings` use an existing
 unmanaged Git coordinator on the primary local host. Participants can reuse a local
-environment or ask BB to create a managed worktree. New worktrees use a preparation
+environment, register an existing absolute local Git worktree with
+`--environment-path`, or ask BB to create a managed worktree. Path registration
+and new worktrees use the participant's own bounded preparation
 turn without assignment or plugin tools, then confirmed Stop, cleared preparation
 model context and authoritative
 binding before the first assignment. Stop retains the environment; archive preserves
@@ -35,6 +37,11 @@ ACK them. Reload replays history and reconciles a bounded outbox without spawnin
 again. Plugin participant Stop durably pauses automatic continuation until resume;
 ordinary BB Stop on an already-idle thread has no replayable SDK pause marker.
 Active interruption and denied interactions also pause continuation.
+Path registration verifies the actual project, host, normalized path, Git HEAD and
+thread lifecycle before canonical reservation or assignment. It retains existing
+workspace ownership; null environment ids and ambiguous replies remain failed
+launches with recoverable intent. Deferred spawn is not provisioning. Existing-path
+coverage is SDK fixture evidence; a live registration has not been measured.
 Selection records runtime, provider, SDK/native model and reasoning from a scoped
 SDK catalog. Explicit provider choices must match the role; no provider fallback
 or native strategy substitution occurs. Account windows belong to that provider

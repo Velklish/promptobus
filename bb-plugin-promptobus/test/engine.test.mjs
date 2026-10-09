@@ -113,8 +113,9 @@ async function stand(t, options = {}) {
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
         if (options.beforePreparationIdle) await options.beforePreparationIdle({ threadId, append, thread });
         thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
+        if (options.afterPreparationIdle) await options.afterPreparationIdle({ thread, environment: workerEnvironment });
         events.push('provision');
-        return { matched: true, target: { kind: 'status', status: 'idle' }, thread };
+        return { matched: options.preparationMatched ?? true, target: { kind: 'status', status: 'idle' }, thread };
       },
       clearContext: async () => { nativeCatalogCleared = true; events.push('clear-context'); return { ok: true }; },
       send: async ({ threadId, input, mode }) => {
@@ -810,6 +811,165 @@ test('BB owns new worktree selection; preparation has no bus rights and actual a
   assert.equal(worker.metadata.bb.environmentPath, s.workerEnvironment.path);
   assert.equal(worker.sessionRef, 'thr-2');
   assert.equal(JSON.parse((await s.control('get', 'worker-new')).stdout).baseSha, 'b'.repeat(40));
+});
+
+test('existing path provisions the owning participant (no helper), records actual identity and delivers after Stop', async t => {
+  const s = await stand(t, { hostSetup: fictionalHost([]) }); await s.create();
+  s.workerEnvironment.managed = false;
+  const added = await s.add('worker-path', 'worker', ['--environment-path', s.workerEnvironment.path, '--provider', 'codex', '--reasoning-level', 'high']);
+  assert.equal(added.exitCode, 0, JSON.stringify(added));
+  assert.equal(s.threads.size, 2);
+  assert.deepEqual(s.initialArgs.environment, { type: 'host', hostId: 'local',
+    workspace: { type: 'unmanaged', path: s.workerEnvironment.path } });
+  assert.equal(s.initialArgs.sendAt, undefined);
+  assert.equal(s.initialArgs.prompt.includes('Preparation token:'), true);
+  assert.deepEqual(s.events, ['provision', 'stop', 'clear-context', 'assignment']);
+  const b = bindingStore(s.host.bb).thread('thr-2');
+  assert.equal(b.environmentId, 'bb-actual-env');
+  assert.equal(b.environmentPath, s.workerEnvironment.path);
+  assert.equal(b.environmentOwner, 'existing');
+  assert.equal(b.baseSha, 'b'.repeat(40));
+  assert.equal(b.branch, 'actual-bb-branch');
+  assert.equal(b.parentThreadId, 'thr-1');
+  assert.equal(b.lifecycleOwnerThreadId, 'thr-1');
+  assert.equal(b.execution.scope.environmentId, b.environmentId);
+  assert.equal(b.execution.providerSource, 'explicit'); assert.equal(b.execution.reasoningSource, 'explicit');
+  assert.equal(b.execution.reasoningLevel, 'high');
+  assert.ok(b.hostContext.rules[0].text.includes(`ENVIRONMENT=${s.workerEnvironment.path}`));
+  const reserve = s.host.harness.inspection.experimental_hostRpcCalls.find(call => call.input.operation === 'reserve'
+    && call.input.binding.participant === 'worker-path');
+  assert.equal(reserve.input.binding.environmentId, 'bb-actual-env');
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  assert.equal(engine.readTask(s.task).participants.find(p => p.id === 'worker-path').sessionRef, 'thr-2');
+  await s.reload();
+  assert.equal(JSON.parse((await s.control('get', 'worker-path')).stdout).view.state, 'alive');
+});
+
+test('existing path revalidates the launched model ID after provisioning', async t => {
+  for (const [name, refreshedId] of [
+    ['rejects a refreshed model catalog ID before reservation or assignment', 'catalog-model-b'],
+    ['preserves the launched model ID when the refreshed catalog is stable', 'catalog-model-a'],
+  ]) await t.test(name, async t => {
+    const catalog = id => ({ modelLoadError: null, models: [{ id, model: 'test-model', defaultReasoningEffort: 'low',
+      supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] });
+    const s = await stand(t, { beforePreparationIdle: async () => {
+      s.host.harness.inspection.sdk.stub('providers.models', async () => catalog(refreshedId));
+    } });
+    assert.equal((await s.create()).exitCode, 0);
+    s.workerEnvironment.managed = false;
+    s.host.harness.inspection.sdk.stub('providers.models', async () => catalog('catalog-model-a'));
+    const result = await s.add('worker-model', 'worker', ['--environment-path', s.workerEnvironment.path]);
+    const b = bindingStore(s.host.bb).thread('thr-2');
+    assert.equal(s.initialArgs.model, 'catalog-model-a');
+    assert.equal(s.executionOptions.get('thr-2').model, 'catalog-model-a');
+    if (refreshedId !== 'catalog-model-a') {
+      assert.equal(result.exitCode, 1, JSON.stringify(result));
+      assert.match(result.stderr, /model.*(?:changed|mismatch)/i);
+      assert.equal(b.phase, 'orphan');
+      assert.deepEqual(s.events, ['provision', 'stop']);
+      assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.some(call => call.input.operation === 'reserve'
+        && call.input.binding.participant === 'worker-model'), false);
+    } else {
+      assert.equal(result.exitCode, 0, JSON.stringify(result));
+      assert.equal(b.phase, 'ready');
+      assert.equal(b.execution.scope.environmentId, s.workerEnvironment.id);
+      assert.deepEqual(s.events, ['provision', 'stop', 'clear-context', 'assignment']);
+    }
+    assert.equal(b.execution.model, 'catalog-model-a');
+    assert.equal(b.execution.requestedModel, 'test-model');
+    assert.equal(b.execution.nativeModel, 'test-model');
+    assert.equal(s.threads.get('thr-2').status, 'idle');
+    assert.equal(s.threads.get('thr-2').activeBackgroundAgentCount, 0);
+  });
+});
+
+test('existing environment id retains immediate assignment without path bootstrap', async t => {
+  const s = await stand(t, { hostSetup: fictionalHost([]) }); await s.create();
+  s.workerEnvironment.managed = false;
+  const result = await s.add('worker-id', 'worker', ['--environment', 'bb-actual-env']);
+  assert.equal(result.exitCode, 0, JSON.stringify(result));
+  assert.deepEqual(s.initialArgs.environment, { type: 'reuse', environmentId: 'bb-actual-env' });
+  assert.equal(s.initialArgs.prompt.includes('Preparation token:'), false);
+  assert.equal(s.initialArgs.prompt.includes(s.workerEnvironment.path), true);
+  assert.deepEqual(s.events, []);
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phase, 'ready');
+});
+
+test('existing path rejects incompatible modes and relative paths before spawn', async t => {
+  const s = await stand(t); await s.create();
+  for (const extra of [['--environment', 'env'], ['--environment', ''], ['--new-environment', '--base-branch', 'main'], ['--base-branch', 'main'], ['--base-branch', '']]) {
+    const result = await s.add('worker-conflict', 'worker', ['--environment-path', s.workerEnvironment.path, ...extra]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /Select either/);
+  }
+  const relative = await s.add('worker-relative', 'worker', ['--environment-path', 'relative/worktree']);
+  assert.equal(relative.exitCode, 1); assert.match(relative.stderr, /absolute/);
+  const empty = await s.add('worker-empty', 'worker', ['--environment-path', '']);
+  assert.equal(empty.exitCode, 1); assert.match(empty.stderr, /absolute/);
+  assert.equal(s.threads.size, 1);
+});
+
+test('existing path refuses invalid provisioning identity, Git HEAD and lifecycle without assignment', async t => {
+  const cases = [
+    ['null environment', ({ thread }) => { thread.environmentId = null; }],
+    ['wrong thread', ({ thread }) => { thread.id = 'foreign'; }],
+    ['wrong project', ({ environment }) => { environment.projectId = 'foreign'; }],
+    ['wrong host', ({ environment }) => { environment.hostId = 'foreign'; }],
+    ['wrong path', ({ environment }) => { environment.path += '-foreign'; }],
+    ['wrong environment', ({ environment }) => { environment.id = 'foreign'; }],
+    ['managed environment', ({ environment }) => { environment.managed = true; }],
+    ['unready environment', ({ environment }) => { environment.status = 'pending'; }],
+    ['inactive environment', ({ environment }) => { environment.lifecycle.phase = 'destroyed'; }],
+    ['wrong parent', ({ thread }) => { thread.parentThreadId = 'foreign'; }],
+    ['wrong lifecycle owner', ({ thread }) => { thread.lifecycleOwnerThreadId = 'foreign'; }],
+    ['archived thread', ({ thread }) => { thread.archivedAt = 1; }],
+    ['deleted thread', ({ thread }) => { thread.deletedAt = 1; }],
+    ['background work', ({ thread }) => { thread.activeBackgroundAgentCount = 1; }],
+  ];
+  for (const [name, afterPreparationIdle] of cases) await t.test(name, async t => {
+    const s = await stand(t, { afterPreparationIdle }); await s.create(); s.workerEnvironment.managed = false;
+    const requested = s.workerEnvironment.path;
+    const result = await s.add('worker-invalid', 'worker', ['--environment-path', requested]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /binding mismatch|not ready|not idle|managed|path|unavailable/);
+    assert.equal(s.events.includes('assignment'), false);
+    assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.some(call => call.input.operation === 'reserve'
+      && call.input.binding.participant === 'worker-invalid'), false);
+    const b = bindingStore(s.host.bb).participant(s.task, 'worker-invalid');
+    assert.equal(b.phase, 'orphan'); assert.equal(b.threadId, 'thr-2');
+    await s.reload();
+    const inspect = await s.host.harness.behavior.runCli(['recovery', 'inspect', '--task', s.task, '--participant', 'worker-invalid']);
+    assert.equal(JSON.parse(inspect.stdout).launch.environmentPath, requested);
+  });
+  for (const name of ['missing HEAD', 'not Git', 'offline host']) await t.test(name, async t => {
+    const s = await stand(t); await s.create(); s.workerEnvironment.managed = false;
+    if (name === 'offline host') s.host.harness.inspection.sdk.stub('hosts.get', async () => ({ id: 'local', status: 'disconnected', lifecycle: { phase: 'active' } }));
+    else s.host.harness.inspection.sdk.stub('environments.status', async () => name === 'not Git'
+      ? { outcome: 'unavailable' } : { outcome: 'available', workspace: { checkout: { kind: 'branch', headSha: null } } });
+    const result = await s.add('worker-invalid', 'worker', ['--environment-path', s.workerEnvironment.path]);
+    assert.equal(result.exitCode, 1); assert.match(result.stderr, /HEAD|unavailable/);
+    assert.equal(s.events.includes('assignment'), false);
+  });
+});
+
+test('existing path preserves ambiguous spawn, missing path and preparation timeout receipts without retry', async t => {
+  for (const failure of ['missing path', 'lost reply', 'timeout']) await t.test(failure, async t => {
+    const s = await stand(t, { preparationMatched: failure !== 'timeout', beforeReturn: ({ thread }) => {
+      if (thread.id === 'thr-2' && failure === 'lost reply') throw new Error('Spawn response was lost');
+    } }); await s.create(); s.workerEnvironment.managed = false;
+    if (failure === 'missing path') s.host.harness.inspection.sdk.stub('threads.spawn', async () => { throw new Error('Workspace path does not exist'); });
+    const result = await s.add('worker-failed', 'worker', ['--environment-path', s.workerEnvironment.path]);
+    assert.equal(result.exitCode, 1); assert.match(result.stderr, /path does not exist|response was lost|did not become idle/);
+    assert.equal(s.events.includes('assignment'), false);
+    assert.equal(s.host.harness.inspection.sdk.callsTo('threads.spawn').length, 2);
+    await s.reload();
+    const inspect = await s.host.harness.behavior.runCli(['recovery', 'inspect', '--task', s.task, '--participant', 'worker-failed']);
+    const receipt = JSON.parse(inspect.stdout);
+    assert.equal(receipt.phase, 'orphan');
+    assert.equal(receipt.launch.environmentPath, s.workerEnvironment.path);
+    assert.equal(receipt.automaticallyRebound, false);
+    assert.equal(receipt.candidates.length, failure === 'lost reply' ? 1 : 0);
+  });
 });
 
 test('archive preserves unaccepted patch in stable canon before BB archive and never accepts the task', async t => {

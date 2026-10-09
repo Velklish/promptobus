@@ -599,6 +599,21 @@ manual queue release cannot confer rights. Reload retains bindings; orphaned
 launches remain refused. [Decision](../adr/adr-030-bb-authoritative-participants.md)
 and [operator setup](../../bb-plugin-promptobus/README.md) define the local scope.
 
+`participant add --environment-path <absolute-path>` asks public SDK spawn to
+register an existing local Git worktree in the coordinator's project. The server
+does not provision environments through private stores or manufacture ids.
+Unmanaged-path and managed-worktree spawn use the participant's own bounded
+preparation turn, without assignment or plugin tools; deferred spawn also defers
+provisioning. The adapter records the requested normalized absolute path in durable
+launch intent. It verifies the actual environment id, project, host, exact path,
+mode and Git HEAD, plus the idle thread's provider, parent and lifecycle owner,
+before canonical reservation. Confirmed Stop and Clear context precede assignment.
+Missing paths, non-Git workspaces, null ids and mismatched or ambiguous replies
+refuse delivery and retain launch evidence for explicit operator recovery.
+The existing environment-id route remains immediate; existing paths retain
+workspace ownership, while managed worktrees remain BB-owned. These path checks
+are covered by SDK fixtures; live path registration has not been measured.
+
 ## BB Host context delivery
 
 `promptobus/bb-host` exports `createBbHostIntegration` and
@@ -615,7 +630,7 @@ Each file must be text at most 256 KiB; the collected context is at most 1 MiB.
 Symlink entries in `skillsDir()` refuse collection explicitly; they are not
 silently omitted from successful context.
 Collection uses the actual ready BB environment after preparation and before
-canonical finalization, including newly managed worktrees. It never reuses an
+canonical finalization, including existing-path registrations and newly managed worktrees. It never reuses an
 owner's context for a child environment.
 
 `listTools({server, configuration, root, signal})` returns explicit tool name,

@@ -6,6 +6,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+test('existing path setup documents provisioning timing, refusal and fixture-only evidence', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.ok(readme.includes('participant add --environment-path <absolute-path>'));
+  assert.ok(readme.includes('Deferred spawn also defers provisioning'));
+  assert.ok(readme.includes('a null environment id is not a successful launch'));
+  assert.ok(readme.includes('without an extra helper thread'));
+  assert.ok(readme.includes('Existing paths retain `environmentOwner: existing`'));
+  assert.ok(readme.includes('existing-path registration has not been measured'));
+});
+
 test('consumer generator builds a fresh packed Host integration without generated developer files', t => {
   const source = fileURLToPath(new URL('..', import.meta.url));
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-setup-'));

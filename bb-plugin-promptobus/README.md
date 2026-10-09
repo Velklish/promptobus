@@ -248,6 +248,11 @@ and actual local tool-turn evidence are reported separately.
 ## Lifecycle
 
 `participant add --environment <id>` reuses an existing local environment.
+`participant add --environment-path <absolute-path>` registers an existing local
+Git worktree in the coordinator's project through SDK unmanaged-path spawn.
+It cannot be combined with `--environment`, `--new-environment` or `--base-branch`.
+Use the exact normalized absolute path BB will report; a different returned path
+refuses binding rather than selecting another workspace.
 `participant add --new-environment --base-branch <branch>` asks BB to create a
 managed worktree. The SDK owns creation; no native Promptobus worktree name or
 `git worktree add/remove` is reconstructed. Children explicitly name the owner
@@ -255,8 +260,10 @@ thread as both `parentThreadId` and `lifecycleOwnerThreadId`. Returned actual
 environment id, path, branch, host and HEAD SHA are retained in plugin storage and
 canonical participant metadata.
 
-BB 0.45.0 provisions a new environment after the first prompt, not when it creates
-the thread row. A bound `provisioning` phase admits only the exact nonce-bearing
+BB 0.45.0 provisions an unmanaged path or new managed worktree after the first
+prompt, not when it creates the thread row. Deferred spawn also defers provisioning;
+a null environment id is not a successful launch. Both routes use the participant's
+own bounded bootstrap, without an extra helper thread. A bound `provisioning` phase admits only the exact nonce-bearing
 preparation prompt, with no assignment, plugin tools or role skill selection.
 Other prompts and every bus call wait or fail. After preparation ends, the adapter
 records the actual workspace and confirms Stop, clears the preparation model context,
@@ -265,6 +272,16 @@ then sends the first assignment with its complete role context. Clear context
 starts a fresh native Codex thread: resuming the preparation thread would retain
 its empty dynamic tool catalog even after Stop; BB event history remains retained. Failed preparation
 remains orphaned for operator recovery; it never grants bus rights.
+Before canonical reservation and assignment, the adapter verifies the returned
+thread's project, provider, parent and lifecycle owner, an idle unarchived thread
+without background work, and the ready environment's id, project, local host, path,
+mode and actual Git HEAD. Preparation waits at most 120 seconds. Missing paths,
+non-Git workspaces, unavailable HEADs and mismatched or ambiguous replies refuse
+assignment. `recovery inspect` retains the requested path and launch attempt;
+it never retries spawn or treats a candidate as an authenticated participant.
+Existing paths retain `environmentOwner: existing`; BB never acquires workspace
+deletion ownership through this option. SDK fixtures cover these cases; live
+existing-path registration has not been measured on this source change.
 
 `participant get --task <id> --participant <id>` awaits SDK observations before
 returning a plain `SessionView` and the original BB status. Active/starting is busy;

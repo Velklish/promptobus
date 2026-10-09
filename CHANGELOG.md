@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Register an existing absolute local Git worktree with BB participant
+  `--environment-path`. The participant's bounded bootstrap resolves the actual
+  environment and verifies project, host, path, HEAD and lifecycle before canonical
+  binding and assignment. Failed or ambiguous launches retain recoverable intent;
+  environment-id and managed-worktree routes remain available. Coverage is SDK
+  fixture evidence; live path registration remains unmeasured.
+  [Lifecycle](bb-plugin-promptobus/README.md#lifecycle).
+
 - Drop inherited OpenCode contact, session id, holder password and config paths
   from every native driver lift; keep the child's own launch values.
 

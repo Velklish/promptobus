@@ -68,10 +68,11 @@ export async function captureBbWorkspace(bb: BbPluginApi, b: Binding, signal?: A
   return { ...first, environmentId: b.environmentId, environmentPath: b.environmentPath, hostId: b.hostId, threadId: b.threadId };
 }
 
-export async function recordBbWorkspace(bb: BbPluginApi, b: Binding, signal?: AbortSignal) {
+export async function recordBbWorkspace(bb: BbPluginApi, b: Binding, signal?: AbortSignal, expectedPath?: string) {
   const environment = await bb.sdk.environments.get({ environmentId: b.environmentId, signal });
   if (environment.id !== b.environmentId || environment.projectId !== b.projectId || environment.hostId !== b.hostId || !environment.path
     || environment.status !== 'ready' || environment.lifecycle.phase !== 'active') throw new Error('BB environment is not ready');
+  if (expectedPath && environment.path !== expectedPath) throw new Error('BB environment path binding mismatch');
   const status = await bb.sdk.environments.status({ environmentId: b.environmentId, signal });
   if (status.outcome !== 'available' || (status.workspace.checkout.kind !== 'branch' && status.workspace.checkout.kind !== 'detached')
     || !status.workspace.checkout.headSha) throw new Error('A Git environment with an actual HEAD is required');
