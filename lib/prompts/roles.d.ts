@@ -24,6 +24,8 @@ export interface WorkerInstructionInput {
     reviewDelivery: string;
     branchDelivery: string;
     operationalRules: string;
+    artifactDelivery?: string;
+    evidenceInstructions?: string;
   };
 }
 export interface ReviewerInstructionInput {
@@ -49,6 +51,7 @@ export interface ReviewerInstructionInput {
     wait: string;
     close: string;
     operationalRules: string;
+    evidenceInstructions?: string;
   };
 }
 export interface ApproverInstructionInput {
@@ -71,6 +74,7 @@ export interface ApproverInstructionInput {
     lease: string;
     communication: string;
     wait: string;
+    evidenceInstructions?: string;
   };
 }
 export interface TeamleadInstructionInput {

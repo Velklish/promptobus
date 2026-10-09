@@ -803,6 +803,28 @@ No native warden or Stop-hook veto is added to this path.
 [Local contract](../../bb-plugin-promptobus/README.md#wake-and-recovery),
 [decision](../adr/adr-032-bb-wake-recovery.md).
 
+### BB evidence attachments
+
+Gate and handover evidence in BB uses UTF-8 opaque `.txt` attachments, sent through
+the authenticated `promptobus_send` binding as `artifact: { filename, content }`.
+The worker and approver record the exact authenticated participant id in `by`;
+an independent id is not rewritten to a colon-address alias or attributed to the
+orchestrator. Cite the landed filename from the sender's immediate tool reply.
+
+Attachment acceptance is not schema validation. BB does not apply the native
+gate/handover schemas to these payloads or certify their truth. The native record
+schemas, colon-address grammar and native send validation remain unchanged.
+
+The gate evidence names each executed command, its exit, printed counts, full
+HEAD sha, dirty state, timestamp and actual actor. The handover evidence carries
+the full branch/base shas and all five checks: verdict-name differences, committed
+mutation probe, tree state before and after restoration, environmental-red
+comparisons against base, and gates not run. An impossible check has a concrete
+`notRun` reason; a missing or unperformed check is not a pass. Reviewers read this
+evidence against their supplied snapshot without executing mechanical checks.
+Approvers judge it under the assigned acceptance procedure and record their own
+authorized gate executions under their own authenticated id.
+
 ## BB workflow result currency
 
 The local BB facade routes all six standing roles through authenticated bindings.

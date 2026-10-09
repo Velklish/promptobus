@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixture evidence; live path registration remains unmeasured.
   [Lifecycle](bb-plugin-promptobus/README.md#lifecycle).
 
+- Align BB worker, reviewer and approver evidence instructions with authenticated
+  independent participant ids and UTF-8 opaque text attachments. Keep native
+  gate/handover schemas and validation unchanged; attachment acceptance does not
+  imply schema validation or certify a reported run.
+
 - Drop inherited OpenCode contact, session id, holder password and config paths
   from every native driver lift; keep the child's own launch values.
 

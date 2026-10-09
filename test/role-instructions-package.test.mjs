@@ -48,6 +48,7 @@ const input: ReviewerInstructionInput = {
     mcpBoundary:'read-only', communication:'native BB', externalReads:'declared reads only', wait:'end turn', close:'BB Stop', operationalRules:'',
     reviewerCommands:{isolation:'bounded reads', procedureSkip:'tests', record:'not run', gate:'not run'} }
 };
+input.bindings.evidenceInstructions = 'BB evidence uses opaque text attachments.';
 renderReviewerInstructions(input);
 renderBbInstructionSkill('reviewer');
 createBbInstructionDelivery('worker', {taskId:'task', address:'worker:check', environmentId:'env', workspace:'/owned', assignment:'scope', tools:{promptobus_send:'send'}});
@@ -61,4 +62,23 @@ createBbInstructionDelivery('worker', {taskId:'task', address:'worker:check', en
   const invalid = runProcess('node', args, { cwd: consumer, encoding: 'utf8', timeout: 60000 });
   assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
   assert.match(invalid.stdout, /not assignable to parameter of type 'BbInstructionRole'/);
+});
+
+test('packed BB evidence instructions: independent w-pb3502 identity survives without native schema promises', () => {
+  const source = `import { renderBbInstructionSkill, createBbInstructionDelivery } from 'promptobus/instructions';
+const roles = ['worker', 'reviewer', 'approver'];
+const context = {taskId:'bb-evidence', address:'w-pb3502', environmentId:'env_evidence', workspace:'/owned', assignment:'Truthful evidence.', tools:{promptobus_send:'authenticated_send'}};
+console.log(JSON.stringify(roles.map(role => ({role, body:renderBbInstructionSkill(role), delivery:createBbInstructionDelivery(role, context)}))));`;
+  const output = JSON.parse(run('node', ['--input-type=module', '-e', source], consumer));
+  assert.equal(output.length, 3);
+  for (const { role, body, delivery } of output) {
+    assert.equal(JSON.parse(delivery.initialPrompt.split('\n\n')[1]).address, 'w-pb3502');
+    assert.match(body, /UTF-8 opaque|opaque UTF-8/, role);
+    assert.match(body, /authenticated[^.\n]*participant id/i, role);
+    assert.match(body, /not schema validation/i, role);
+    assert.match(body, /\.txt/, role);
+    assert.doesNotMatch(body, /artifactPath/, role);
+    assert.doesNotMatch(body, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/, role);
+    assert.doesNotMatch(body, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, role);
+  }
 });

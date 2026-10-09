@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { captureRolePrompts } from './role-prompts.mjs';
+import { schemaErrors } from '../lib/schema.js';
 
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/participant-prompts/roles.json', import.meta.url), 'utf8'));
 const actual = await captureRolePrompts();
@@ -70,5 +71,58 @@ test('unknown and inherited object names are refused as instruction roles', asyn
   for (const role of ['unknown', 'toString', '__proto__']) {
     assert.throws(() => renderBbInstructionSkill(role), /Unknown instruction role/);
     assert.throws(() => createBbInstructionDelivery(role, {}), /Unknown instruction role/);
+  }
+});
+
+for (const role of ['worker', 'reviewer', 'approver']) {
+  test(`BB ${role}: w-pb3502 uses truthful UTF-8 opaque evidence, not native schema validation`, async () => {
+    const { BB_ROLE_SKILLS, renderBbInstructionSkill, createBbInstructionDelivery } = await import('promptobus/instructions');
+    const context = { taskId: 'bb-evidence', address: 'w-pb3502', environmentId: 'env_evidence', workspace: '/owned',
+      assignment: 'Keep the authenticated participant id in evidence.', tools: { promptobus_send: 'authenticated_send' } };
+    const delivery = createBbInstructionDelivery(role, context);
+    assert.deepEqual(JSON.parse(delivery.initialPrompt.split('\n\n')[1]), context);
+    assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
+    const rendered = renderBbInstructionSkill(role);
+    const skill = readFileSync(new URL(`../bb-plugin-promptobus/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    for (const [surface, body] of [['canonical', rendered], ['delivered skill', skill]]) {
+      const label = `${role} ${surface}`;
+      assert.match(body, /UTF-8 opaque|opaque UTF-8/, label);
+      assert.match(body, /authenticated[^.\n]*participant id/i, label);
+      assert.match(body, /not schema validation/i, label);
+      assert.match(body, /\.txt/, label);
+      assert.doesNotMatch(body, /artifactPath/, label);
+      assert.match(body, /colon-address alias|substitute the orchestrator/, label);
+      assert.doesNotMatch(body, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/, label);
+      assert.doesNotMatch(body, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, label);
+      for (const field of ['tree', 'dirty', 'exit']) assert.ok(body.includes(`\`${field}\``), `${label}: ${field}`);
+      assert.match(body, /not run|notRun/, label);
+    }
+    assert.ok(skill.endsWith(rendered.trimEnd() + '\n'));
+    if (role === 'worker') {
+      assert.match(rendered, /artifact: \{ filename, content \}/);
+      const protocol = readFileSync(new URL('../docs/reference/04-protocol.md', import.meta.url), 'utf8');
+      assert.match(protocol, /Gate and handover evidence in BB uses UTF-8 opaque `\.txt` attachments/);
+      assert.match(protocol, /Attachment acceptance is not schema validation/);
+    }
+  });
+}
+
+test('native evidence schemas: colon addresses remain valid; w-pb3502 is not a native alias', () => {
+  const gateSchema = JSON.parse(readFileSync(new URL('../schemas/v1/gate-record.schema.json', import.meta.url), 'utf8'));
+  const handoverSchema = JSON.parse(readFileSync(new URL('../schemas/v1/handover-record.schema.json', import.meta.url), 'utf8'));
+  const tree = 'a'.repeat(40);
+  const at = '2026-10-09T12:50:00.000Z';
+  const checks = Object.fromEntries(['verdictNames', 'mutationProbe', 'treeState', 'environmentalRed', 'gatesNotRun']
+    .map(name => [name, { notRun: 'Fixture only; no checks were executed.' }]));
+  for (const by of ['worker:pb3502', 'approver:pb3502', 'orchestrator', 'w-pb3502']) {
+    const gate = { schemaVersion: 1, records: [{ command: 'npm test', exit: 0, tree, dirty: false, at, by }] };
+    const handover = { schemaVersion: 1, tree, base: 'b'.repeat(40), at, by, checks };
+    const native = by !== 'w-pb3502';
+    assert.equal(schemaErrors(gateSchema, gate).length === 0, native, `gate by=${by}`);
+    assert.equal(schemaErrors(handoverSchema, handover).length === 0, native, `handover by=${by}`);
+    if (native) {
+      assert.ok(schemaErrors(gateSchema, { ...gate, records: [{ ...gate.records[0], exit: -1 }] }).length > 0);
+      assert.ok(schemaErrors(handoverSchema, { ...handover, checks: {} }).length > 0);
+    }
   }
 });

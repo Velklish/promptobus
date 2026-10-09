@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { BB_ROLE_SKILLS, createBbInstructionDelivery, renderBbInstructionSkill } from 'promptobus/instructions';
 
 test('installed instruction delivery is a complete SDK configuration with explicit authenticated tool selection', () => {
   const stand = mkdtempSync(path.join(tmpdir(), 'promptobus-bb-instruction-types-'));
@@ -24,3 +25,25 @@ const selected: PluginAgentConfiguration = { ...delivery.configuration, tools: a
     assert.equal(result.status, 0, `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
   } finally { rmSync(stand, { recursive:true, force:true }); }
 });
+
+for (const role of ['worker', 'reviewer', 'approver']) {
+  test(`installed BB ${role}: w-pb3502 receives the UTF-8 opaque evidence profile in its selected skill`, () => {
+    const context = { taskId: 'bb-evidence', address: 'w-pb3502', environmentId: 'env_evidence', workspace: '/owned',
+      assignment: 'Record the real authenticated actor.', tools: { promptobus_send: 'authenticated_send' } };
+    const delivery = createBbInstructionDelivery(role, context);
+    assert.deepEqual(JSON.parse(delivery.initialPrompt.split('\n\n')[1]), context);
+    assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
+    const body = renderBbInstructionSkill(role);
+    const skill = readFileSync(new URL(`../skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    assert.ok(skill.endsWith(body.trimEnd() + '\n'));
+    for (const text of [body, skill]) {
+      assert.match(text, /UTF-8 opaque|opaque UTF-8/);
+      assert.match(text, /authenticated[^.\n]*participant id/i);
+      assert.match(text, /not schema validation/i);
+      assert.match(text, /\.txt/);
+      assert.doesNotMatch(text, /artifactPath/);
+      assert.doesNotMatch(text, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/);
+      assert.doesNotMatch(text, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i);
+    }
+  });
+}
