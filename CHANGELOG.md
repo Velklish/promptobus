@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Cursor test stand publishes session updates atomically, so a concurrent queue reader cannot mistake a partial record for a stopped session.
+
+- Mutation probes now record SIGINT and SIGTERM while their child runs, restore the subject and refuse interrupted proof on supported Node versions.
+
 ### Fixed
 
+- Participant live scenarios use fresh canonical task identities and distinct visible
+  participant titles. The E2E live run awaits cleanup on SIGINT, SIGTERM and SIGHUP,
+  stops only task-bound sessions, verifies its recorded processes before removing
+  the stand, and preserves uncertain or surviving runs for diagnosis.
 - **OpenCode participant cleanup preserves live peers.** Sweeping one participant removes
   only records matching its task and address, with their session, holder and log. Closed-task
   cleanup awaits each dead participant's hook before continuing and stays pending for live

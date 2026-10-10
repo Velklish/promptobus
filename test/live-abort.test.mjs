@@ -148,7 +148,7 @@ for (const [script, flag] of Object.entries(LIVE)) {
 // --- every live script wires the abort cleanup and owns its sandbox ------------------------------
 
 const sourceOf = (script) => readFileSync(path.join(scriptsDir, script), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-for (const script of Object.keys(LIVE)) {
+for (const script of Object.keys(LIVE).filter((script) => script !== 'live-e2e.mjs')) {
   const src = sourceOf(script);
   check(`wiring: ${script} registers an abort cleanup, marks its sandbox and sweeps only its own prefix`,
     /\bonAbort\(\(signal\) =>/.test(src) && /markRunOwner\(SB\)/.test(src)
@@ -156,6 +156,15 @@ for (const script of Object.keys(LIVE)) {
     && /const SB = makeSandbox\(RUN_PREFIX\)/.test(src),
     script);
 }
+
+const e2eSource = sourceOf('live-e2e.mjs');
+check('wiring: live-e2e awaits owned cleanup and preserves uncertain prior runs',
+  /onAbort\(async \(signal\) => \{\s*const result = await cleanup\(\)/.test(e2eSource)
+  && /cleanupResult = await run\.cleanup\(\)/.test(e2eSource)
+  && /liveRun\(\{ sandbox: SB, socketDir: sockDir/.test(e2eSource)
+  && /prefix: RUN_PREFIX, current: SB/.test(e2eSource)
+  && /isLive: priorRunIsLive, held: refusedRuns/.test(e2eSource)
+  && !/\b(?:makeSandbox|sweepLiveRuns|markRunOwner)\(/.test(e2eSource), 'live-e2e.mjs');
 
 // The ported fixes that no stand reaches are pinned by source, the way the suite already reads these scripts.
 const PORTED = {
@@ -180,7 +189,7 @@ const PORTED = {
     'the config hash without refresh timestamps': /codexConfigSha\(CONFIG\)/,
   },
   'live-e2e.mjs': {
-    'a fresh registry read before the cleanup stops': /cleanup: \(\) => \{\s*resetBgSessionsCache\(\);/,
+    'a fresh registry read before the cleanup stops': /readSessions: \(\) => \{\s*const \{ r, missing \} = runClaude\(\['agents', '--json'\]\);[\s\S]*return parseLiveSessions\(r\);/,
   },
 };
 for (const [script, wants] of Object.entries(PORTED)) {

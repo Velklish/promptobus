@@ -1859,6 +1859,16 @@ Liveness is asked a second time there for the same reason.
 It returns its refusals instead of calling `fail`: an exit from under the lock would leave
 the lock directory behind for the next command to wait on.
 
+### Participant live checks
+
+The source checkout owns the Cursor, Codex, mixed and Claude E2E live scripts.
+Their shared scenario uses a fresh canonical task identity and a visible work title
+that distinguishes simultaneous runs. Cursor continues to read the host's declared
+state home. E2E handled aborts await exact session stop and owned-process death;
+unknown or surviving processes retain the stand, and SIGKILL leftovers remain held
+without verified lifecycle evidence. Commands and the account/fixture boundary are
+in [contributing](../guides/contributing.md#participant-live-scenarios).
+
 ### `bgSessionsCache` — live background sessions by the names we set at spawn
 
 Source: `lib/liftoff.js`, `bgSessionsCache`.

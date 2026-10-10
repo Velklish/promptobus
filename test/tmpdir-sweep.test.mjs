@@ -333,7 +333,10 @@ check(': live-codex sweeps old sandbox directories with its own prefix',
   ownSweep(codexSrc, 'promptobus-live-codex-'),
   'live-codex has no sweep for its sandbox prefix');
 check(': live-e2e sweeps old sandbox directories with its own prefix',
-  ownSweep(e2eSrc, 'promptobus-live-e2e-'),
+  /const RUN_PREFIX = ['"]promptobus-live-e2e-['"]/.test(e2eSrc)
+  && /mkdtempSync\(path\.join\(os\.tmpdir\(\), RUN_PREFIX\)\)/.test(e2eSrc)
+  && /sweepPreviousRuns\(os\.tmpdir\(\), \{\s*prefix: RUN_PREFIX, current: SB/.test(e2eSrc)
+  && /isLive: priorRunIsLive, held: refusedRuns/.test(e2eSrc),
   'live-e2e has no sweep for its sandbox prefix');
 check(': live-cursor sweeps old sandbox directories with its own prefix',
   ownSweep(cursorSrc, 'promptobus-live-cursor-run-'),
