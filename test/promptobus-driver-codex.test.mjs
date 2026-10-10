@@ -1776,8 +1776,8 @@ check('PB-161: no config.mcp_servers override rides on thread/start any more',
 check('PB-161: the workspace .codex/skills canon is copied into the worktree and ignored by git',
   existsSync(path.join(wp?.metadata?.worktree ?? '', '.codex', 'skills', 'codex-canon-probe', 'SKILL.md'))
     && readFileSync(path.join(wp?.metadata?.worktree ?? '', '.codex', '.gitignore'), 'utf8') === '*\n'
-    && spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim() === '',
-  spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain'], { encoding: 'utf8' }).stdout);
+    && spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain', '--', '.codex'], { encoding: 'utf8' }).stdout.trim() === '',
+  spawnSync('git', ['-C', wp?.metadata?.worktree ?? '.', 'status', '--porcelain', '--', '.codex'], { encoding: 'utf8' }).stdout);
 
 check(': Codex thread name equals the chosen session name in the participant record',
   /^Worker: Codex named slice \(\d{4}-\d{4}\)$/.test(wp?.metadata?.name ?? '')
