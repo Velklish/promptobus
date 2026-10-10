@@ -54,7 +54,7 @@ const steps = [
 check('stand: the live Codex scenario closes its loop on the stub — spawn, status, stop, personal config',
   steps.every((name) => passed(whole.out, name)), whole.out.slice(-1500));
 check('stand: the run names its own task id, and its participant\'s bus server carries that same id',
-  /^livecodex-t\d{14}$/.test(task ?? '') && taskOfThread().includes(task), `${task} · threads ${JSON.stringify(taskOfThread())}`);
+  /^livecodex-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(task ?? '') && taskOfThread().includes(task), `${task} · threads ${JSON.stringify(taskOfThread())}`);
 const sandbox = line(whole.out, /^▸ sandbox: (\S+) ·/m);
 check('stand: the whole run leaves no sandbox', !!sandbox && !existsSync(sandbox), sandbox);
 

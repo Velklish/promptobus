@@ -466,6 +466,7 @@ export function e2eTaskId(now = new Date()) {
 
 /** The worker's slice title carries the id's seconds: the readable stamp in a session name stops at minutes. */
 export function loopTitle(taskId) {
+  if (/^e2ebus-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(String(taskId ?? ''))) return `Live ${taskId}`;
   const m = /t\d{8}-(\d{2})(\d{2})(\d{2})$/.exec(String(taskId ?? ''));
   return m ? `${LOOP_TITLE} ·${m[1]}:${m[2]}:${m[3]}` : LOOP_TITLE;
 }

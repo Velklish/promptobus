@@ -84,7 +84,7 @@ const names = report.sessionNames ?? [];
 const stamp = /t(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(report.task ?? '');
 const stampedAt = stamp ? Date.UTC(stamp[1], stamp[2] - 1, stamp[3], stamp[4], stamp[5], stamp[6]) : NaN;
 check('identity: the loop task is this run\'s own id, named in the trace and carried by both session names',
-  /^e2ebus-t\d{8}-\d{6}$/.test(report.task ?? '') && stampedAt >= startedAt - 1000 && stampedAt <= Date.now()
+  /^e2ebus-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(report.task ?? '') && stampedAt >= startedAt - 1000 && stampedAt <= Date.now()
   && traced.includes(`loop task ${report.task}, slice "${loopTitle(report.task)}"`)
   && names.length === 2 && names.every((n) => String(n).includes(loopTitle(report.task))),
   `task ${report.task} · names ${JSON.stringify(names)} · trace ${traced.find((l) => l.startsWith('loop task')) ?? 'none'}`);

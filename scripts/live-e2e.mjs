@@ -76,10 +76,11 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
-const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-live-e2e-'));
+const RUN_PREFIX = 'promptobus-live-e2e-';
+const SB = mkdtempSync(path.join(os.tmpdir(), RUN_PREFIX));
 const refusedRuns = [];
 const swept = sweepPreviousRuns(os.tmpdir(), {
-  prefix: 'promptobus-live-e2e-', current: SB, refused: refusedRuns, keep: 0,
+  prefix: RUN_PREFIX, current: SB, refused: refusedRuns, keep: 0,
   isLive: priorRunIsLive, held: refusedRuns,
 });
 process.stdout.write(`${sweptLine('previous-run sandboxes', swept, { keep: 0 })}\n`);
