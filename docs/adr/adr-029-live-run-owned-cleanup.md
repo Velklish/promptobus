@@ -1,6 +1,6 @@
 # ADR-029: Live runs remove their stand only after owned lifecycle death
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-03
 **Deciders:** repository approver; native account verification remains with the owner.
 
@@ -37,11 +37,15 @@ first observed native PID/start identity and recheck it before stop.
 Handled SIGINT, SIGTERM and SIGHUP await the same cleanup as normal completion.
 The caller blocks further commands once cleanup starts, waits for owned children,
 and escalates only its own child identities to SIGKILL. A failed registry read,
-stop, identity check or death check retains the stand. Shared native daemons are
+stop, identity check or death check retains the stand. Loss of any recorded process latches incomplete ancestry and retains the stand even
+after every recorded PID dies. A successful native stop or delivered child signal
+does not establish that its descendants all died. A detached descendant may have escaped into a new
+process group before its parent vanished; PID/group snapshots cannot establish the
+absence of arbitrary unobserved descendants. Shared native daemons are
 never signalled; a recorded native PID still alive conservatively retains it.
 
 The shared sweep takes this caller's liveness predicate. An old run without a
-confirmed lifecycle, including one whose parent was hard-killed, is held. Even a
+confirmed lifecycle, including one whose parent was hard-killed, is held. Elapsed time does not make an uncertain lifecycle eligible. Even a
 record marked dead requires a fresh process check before removal.
 
 Every participant live scenario uses the canonical task identity function with a

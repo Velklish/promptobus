@@ -274,15 +274,21 @@ The E2E script handles SIGINT, SIGTERM and SIGHUP by awaiting the same cleanup a
 completion. It records direct child PID, process group and start identity, plus exact
 full native session identities from its private task binding and matching worktree cwd.
 Stop failures, unreadable registries or process discovery, changed bindings and surviving
-processes preserve the sandbox and socket directory. Shared native daemons are never
+processes preserve the sandbox and socket directory. A recorded process disappearing
+including after this run delivers a stop or signal makes ancestry incomplete and
+also holds the stand: a detached descendant may already have escaped into a new
+process group. Stop success does not prove absence of unobserved descendants.
+Elapsed time never makes an uncertain lifecycle eligible for removal.
+PID/group snapshots prove only the recorded identities, not the absence of arbitrary
+unobserved descendants. Shared native daemons are never
 killed; a recorded native PID that stays alive conservatively holds the stand. The
 cleanup report includes `safe`, `livePids`, failures and whether the sandbox was removed.
 
 SIGKILL cannot run cleanup. The next run uses a fresh identity and its sweep holds an
 old stand without confirmed death, even after its parent dies. The private
-`.promptobus-live-run.json` records the observed lifecycle; deletion requires recorded
+lifecycle record describes the observed processes and sessions; deletion requires recorded
 confirmation and a fresh process check. It has no automatic fallback to killing processes
-whose command line merely mentions a run path. Unverified stands require diagnosis.
+whose command line merely mentions a run path. Unverified stands require diagnosis; a held stand leaves the run unsuccessful.
 [Node abort fixtures](../../test/live-run.test.mjs) cover signal cleanup, unrelated
 processes, interrupted runs and the next-run sweep without a native account.
 

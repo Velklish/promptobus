@@ -39,10 +39,10 @@ try {
     const exited = await waitFor(() => child.exitCode !== null || child.signalCode !== null, { timeoutMs: 30_000 });
     const lines = output.split('\n').filter((line) => line.startsWith('▸ aborted (SIGTERM): '));
     const result = lines.length ? JSON.parse(lines.at(-1).split(': ').slice(1).join(': ')) : null;
-    check('actual live-e2e abort awaits safe cleanup before exiting',
-      exited && child.exitCode === 143 && result?.safe === true && result.livePids.length === 0, output.slice(-1500));
-    check('actual live-e2e abort removes the stand only after session and process death',
-      !existsSync(launched.dir) && harnessSessions(harness.home).length === 0
+    check('actual live-e2e abort awaits cleanup and reports held ancestry',
+      exited && child.exitCode === 143 && result?.safe === false && result.livePids.length === 0 && result.failures.some((reason) => reason.includes('ancestry')), output.slice(-1500));
+    check('actual live-e2e preserves the stand after recorded session and process death',
+      existsSync(launched.dir) && harnessSessions(harness.home).length === 0
       && !processTable().some((p) => own.some((record) => record.pid === p.pid && record.birth === p.birth)), output.slice(-1500));
   }
 } finally {

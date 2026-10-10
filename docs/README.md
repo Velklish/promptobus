@@ -36,7 +36,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-027-host-integration-entry-point.md](adr/adr-027-host-integration-entry-point.md) | A host that embeds the bus reads its printed values, driver declarations, install plan, routing report and installed version from one entry point, `promptobus/integration`; the `exports` map is the whole supported surface, and a removed name or a reshaped return is a contract change | Accepted |
 | [adr/adr-028-participant-mailbox.md](adr/adr-028-participant-mailbox.md) | A participant owns one mailbox: the slots of its task addresses read, counted and knocked as one, keyed by the address its lift bound; root and sibling mail to a teamlead land in its root slot with their senders kept while one session holds both its records; a relift drops the dead session's contact point, and a Claude Code participant bound before launch binds its own id at its handshake through a session-record pointer; the routing policy, enumerated, is the contact list each participant is given and the send door enforces | Accepted |
 
-| [adr/adr-029-live-run-owned-cleanup.md](adr/adr-029-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Proposed |
+| [adr/adr-029-live-run-owned-cleanup.md](adr/adr-029-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Accepted |
 
 ## Cross-cutting principles
 

@@ -99,7 +99,7 @@ for (const [name, bad] of [
   run.captureSessions();
   const result = await run.cleanup();
   check('cleanup stops only the exact task-bound full session identity',
-    result.safe && stopped.join(',') === 'own' && registry[0] === foreign && signalled.length === 0, JSON.stringify(result));
+    !result.safe && existsSync(dir) && stopped.join(',') === 'own' && registry[0] === foreign && signalled.length === 0, JSON.stringify(result));
   let denied = false;
   try { run.assertRunning(); } catch { denied = true; }
   check('cleanup prevents subsequent scenario commands', denied);
@@ -114,7 +114,7 @@ for (const [name, bad] of [
   run.child({ pid: 32001, exitCode: null, signalCode: null });
   rows = [processRow(32001, 1, 33001, 'replacement')];
   const result = await run.cleanup();
-  check('a reused pid is never signalled as the old owned process', result.safe && signalled.length === 0);
+  check('a reused pid is never signalled as the old owned process', !result.safe && existsSync(dir) && signalled.length === 0);
 }
 
 for (const mode of ['absent-first-row', 'absent-after-observation', 'changed-birth', 'changed-session-pid']) {
@@ -195,7 +195,7 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
     run.parent.kill(signal);
     const dead = await waitFor(() => run.parent.exitCode !== null, { timeoutMs: 10_000 });
     check(`${signal} performs awaited cleanup of real owned Node children`,
-      dead && run.parent.exitCode === code && !samePid(run.pid) && !existsSync(run.dir), `${run.output()} ${run.errors()}`);
+      dead && run.parent.exitCode === code && !samePid(run.pid) && existsSync(run.dir) && priorRunIsLive(run.dir), `${run.output()} ${run.errors()}`);
     check(`${signal} leaves an unrelated Node process alive`, samePid(foreign.pid));
   } finally {
     if (samePid(run.pid)) process.kill(run.pid, 'SIGKILL');
@@ -222,6 +222,7 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
     check('an unverified old lifecycle remains held even after orphan death', priorRunIsLive(run.dir));
     const record = JSON.parse(readFileSync(path.join(run.dir, LIVE_RECORD), 'utf8'));
     record.deathVerified = true;
+    record.ancestryIncomplete = false;
     writeFileSync(path.join(run.dir, LIVE_RECORD), JSON.stringify(record));
     const removed = sweepPreviousRuns(SB, { prefix: 'killed-parent', keep: 0, now: Date.now() + MIN_AGE_MS + 1000,
       isLive: priorRunIsLive });
@@ -232,6 +233,114 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
     if (run.parent.exitCode === null && run.parent.signalCode === null) run.parent.kill('SIGKILL');
     await waitFor(() => !samePid(run.pid), { timeoutMs: 10_000 });
   }
+}
+
+{
+  const dir = stand('detached-grandchild');
+  const script = path.join(SB, 'grandchild-parent.mjs');
+  writeFileSync(script, `
+import { spawn } from 'node:child_process';
+process.stdin.once('data', () => {
+  const grandchild = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+  grandchild.unref();
+  process.stdout.write(JSON.stringify({pid:grandchild.pid})+'\\n', () => process.exit(0));
+});
+process.stdout.write('ready\\n');
+`);
+  const parent = fixtureSpawn(process.execPath, [script], { stdio: ['pipe', 'pipe', 'ignore'] });
+  let output = '';
+  parent.stdout.on('data', (chunk) => { output += chunk; });
+  let grandchild = null;
+  try {
+    const ready = await waitFor(() => output.startsWith('ready'), { timeoutMs: 10_000 });
+    if (!ready) throw new Error('grandchild parent did not start');
+    const run = liveRun({ sandbox: dir, readSessions: () => [], stopSession: async () => {}, timeoutMs: 0 });
+    run.child(parent);
+    parent.stdin.end('spawn');
+    const spawned = await waitFor(() => {
+      try { return JSON.parse(output.split('\n')[1]); } catch { return null; }
+    }, { timeoutMs: 10_000 });
+    if (!spawned?.pid) throw new Error('detached grandchild identity missing');
+    grandchild = processTable().find((p) => p.pid === spawned.pid);
+    await waitFor(() => parent.exitCode !== null, { timeoutMs: 10_000 });
+    const result = await run.cleanup();
+    check('lost parent ancestry preserves a real detached grandchild stand',
+      !!grandchild && samePid(grandchild.pid) && !result.safe && existsSync(dir)
+      && result.failures.some((reason) => reason.includes('ancestry')), JSON.stringify(result));
+    check('lost ancestry remains held by the previous-run sweep', priorRunIsLive(dir));
+  } finally {
+    parent.kill('SIGKILL');
+    if (grandchild && processTable().some((p) => p.pid === grandchild.pid && p.birth === grandchild.birth)) {
+      process.kill(grandchild.pid, 'SIGKILL');
+    }
+    await waitFor(() => !grandchild || !samePid(grandchild.pid), { timeoutMs: 10_000 });
+  }
+}
+
+for (const mode of ['native-stop', 'child-signal']) {
+  const dir = stand(`detached-${mode}`);
+  const script = path.join(SB, `${mode}-parent.mjs`);
+  const diary = path.join(SB, `${mode}-descendant.json`);
+  writeFileSync(script, `
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+let stopping = false;
+const detach = () => {
+  if (stopping) return;
+  stopping = true;
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+  child.unref();
+  writeFileSync(${JSON.stringify(diary)}, JSON.stringify({pid:child.pid}));
+  process.stdout.write(JSON.stringify({pid:child.pid})+'\\n', () => process.exit(0));
+};
+process.on('SIGTERM', detach);
+process.stdin.once('data', detach);
+process.stdout.write('ready\\n');
+`);
+  const parent = fixtureSpawn(process.execPath, [script], { detached: true, stdio: ['pipe', 'pipe', 'ignore'] });
+  let output = '';
+  parent.stdout.on('data', (chunk) => { output += chunk; });
+  let descendant = null;
+  try {
+    if (!await waitFor(() => output.startsWith('ready'), { timeoutMs: 10_000 })) throw new Error('stop fixture not ready');
+    let registry = mode === 'native-stop' ? [session('own', path.join(dir, 'wt'), parent.pid)] : [];
+    const run = liveRun({ sandbox: dir, readSessions: () => registry, timeoutMs: 200,
+      stopSession: async () => {
+        parent.stdin.end('stop');
+        await waitFor(() => parent.exitCode !== null, { timeoutMs: 10_000 });
+        registry = [];
+        return { ok: true, attempted: true };
+      } });
+    if (mode === 'native-stop') {
+      run.start({ workspace: dir, participants: () => [participant('own', registry[0].cwd)] });
+      run.captureSessions();
+    } else run.child(parent, { detached: true });
+    const result = await run.cleanup();
+    const spawned = await waitFor(() => {
+      try { return JSON.parse(output.split('\n')[1]); } catch { return null; }
+    }, { timeoutMs: 10_000 });
+    if (!spawned?.pid) throw new Error('stop descendant identity missing');
+    descendant = processTable().find((p) => p.pid === spawned.pid);
+    check(`${mode} cannot grant deletion after a real detached descendant escapes`,
+      !!descendant && samePid(descendant.pid) && !result.safe && existsSync(dir)
+      && result.failures.some((reason) => reason.includes('ancestry')), JSON.stringify(result));
+    check(`${mode} uncertainty remains held by the previous-run sweep`, priorRunIsLive(dir));
+  } finally {
+    if (!descendant) {
+      try { const value = JSON.parse(readFileSync(diary, 'utf8')); descendant = processTable().find((p) => p.pid === value.pid); } catch {}
+    }
+    parent.kill('SIGKILL');
+    if (descendant && processTable().some((p) => p.pid === descendant.pid && p.birth === descendant.birth)) process.kill(descendant.pid, 'SIGKILL');
+    const dead = await waitFor(() => (!descendant || !samePid(descendant.pid)) && (parent.exitCode !== null || parent.signalCode !== null), { timeoutMs: 10_000 });
+    if (!dead) throw new Error('stop fixture process death unconfirmed');
+  }
+}
+
+{
+  const dir = stand('empty-run');
+  const run = liveRun({ sandbox: dir, readSessions: () => [], stopSession: async () => {}, readProcesses: () => [] });
+  const result = await run.cleanup();
+  check('an empty run with complete observations can remove its stand', result.safe && !existsSync(dir));
 }
 
 const e2e = readFileSync(path.join(sourceRoot, 'scripts/live-e2e.mjs'), 'utf8');

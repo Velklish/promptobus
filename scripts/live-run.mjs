@@ -28,6 +28,7 @@ export function processTable() {
 }
 
 const same = (a, b) => a.pid === b.pid && a.birth === b.birth;
+const processKey = (p) => `${p.pid}:${p.birth}`;
 const validProcess = (p) => Number.isInteger(p?.pid) && p.pid > 0 && text(p.birth);
 
 export function parseLiveSessions(result) {
@@ -46,7 +47,7 @@ export function parseLiveSessions(result) {
 export function priorRunIsLive(dir, { readProcesses = processTable } = {}) {
   try {
     const record = JSON.parse(readFileSync(path.join(dir, LIVE_RECORD), 'utf8'));
-    if (record.version !== 1 || record.deathVerified !== true || !Array.isArray(record.processes)
+    if (record.version !== 1 || record.deathVerified !== true || record.ancestryIncomplete !== false || !Array.isArray(record.processes)
       || !record.processes.every(validProcess)
       || ![record.groups, record.watchedGroups].every((groups) => Array.isArray(groups)
         && groups.every((group) => Number.isInteger(group) && group > 0))) return true;
@@ -75,7 +76,7 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
   readProcesses = processTable, kill = process.kill.bind(process), timeoutMs = 10_000,
   remove = (dir) => rmSync(dir, { recursive: true, force: true }),
 }) {
-  const record = { version: 1, deathVerified: false, processes: [], groups: [], watchedGroups: [], sessions: [], captureErrors: [] };
+  const record = { version: 1, deathVerified: false, processes: [], groups: [], watchedGroups: [], sessions: [], captureErrors: [], ancestryIncomplete: false };
   const children = [];
   const resources = [];
   let context = null;
@@ -86,6 +87,11 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
   const assertRunning = () => { if (aborted) throw new Error('live run aborted'); };
   const observe = () => {
     const table = readProcesses();
+    for (const own of record.processes) {
+      if (!table.some((p) => same(own, p))) {
+        record.ancestryIncomplete = true;
+      }
+    }
     const trusted = record.processes.filter((own) => table.some((p) => same(own, p)));
     let changed = true;
     while (changed) {
@@ -95,7 +101,7 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
         const ancestor = trusted.find((own) => own.pid === p.parent
           || [...record.groups, ...record.watchedGroups].includes(own.group) && own.group === p.group);
         if (ancestor) {
-          const owned = { ...p, ownedChild: ancestor.ownedChild === true };
+          const owned = { ...p, ownedChild: ancestor.ownedChild === true, rootKey: ancestor.rootKey };
           record.processes.push(owned); trusted.push(owned); changed = true;
         }
       }
@@ -114,7 +120,7 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
       record.captureErrors.push('child identity unavailable'); save();
       throw new Error('child identity unavailable');
     }
-    record.processes.push({ ...p, ownedChild: true });
+    record.processes.push({ ...p, ownedChild: true, rootKey: processKey(p) });
     if (detached && p.group === p.pid) record.groups.push(p.group);
     save();
   };
@@ -158,7 +164,7 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
         if (own.process && !same(own.process, p)) throw new Error('owned session process identity changed');
         own.process = { pid: p.pid, birth: p.birth };
         if (p.group === p.pid && !record.watchedGroups.includes(p.group)) record.watchedGroups.push(p.group);
-        if (!record.processes.some((known) => same(known, p))) record.processes.push(p);
+        if (!record.processes.some((known) => same(known, p))) record.processes.push({ ...p, rootKey: processKey(p) });
       }
     }
     save();
@@ -167,7 +173,9 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
     const fresh = readProcesses().find((row) => same(row, own));
     if (!fresh) return;
     const target = group && fresh.group === own.group ? -own.group : own.pid;
-    try { kill(target, signal); } catch (error) { if (error?.code !== 'ESRCH') throw error; }
+    try {
+      kill(target, signal);
+    } catch (error) { if (error?.code !== 'ESRCH') throw error; }
   };
   const cleanup = () => {
     if (cleanupPromise) return cleanupPromise;
@@ -175,14 +183,6 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
     cleanupPromise = (async () => {
       const failures = [...record.captureErrors];
       try { observe(); } catch (error) { failures.push(String(error?.message ?? error)); }
-      for (const close of resources) {
-        let timer;
-        try {
-          await Promise.race([Promise.resolve().then(close), new Promise((_, reject) => {
-            timer = setTimeout(() => reject(new Error('resource close unconfirmed')), 1000);
-          })]);
-        } catch (error) { failures.push(String(error?.message ?? error)); } finally { clearTimeout(timer); }
-      }
       try { observe(); captureSessions(); observe(); } catch (error) { failures.push(String(error?.message ?? error)); }
       for (const own of record.sessions) {
         try {
@@ -227,6 +227,14 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
           }
         } catch (error) { failures.push(String(error?.message ?? error)); }
       }
+      for (const close of resources) {
+        let timer;
+        try {
+          await Promise.race([Promise.resolve().then(close), new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('resource close unconfirmed')), 1000);
+          })]);
+        } catch (error) { failures.push(String(error?.message ?? error)); } finally { clearTimeout(timer); }
+      }
       let livePids = null;
       try {
         const table = observe();
@@ -235,6 +243,7 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
         if (!Array.isArray(list)) throw new Error('post-stop registry unreadable');
         if (record.sessions.some((own) => list.some((s) => s?.sessionId === own.sessionId))) failures.push('owned sessions remain');
         if (livePids.length) failures.push('owned processes remain');
+        if (record.ancestryIncomplete) failures.push('process ancestry became unobservable');
       } catch (error) { failures.push(String(error?.message ?? error)); }
       const safe = failures.length === 0 && livePids?.length === 0;
       record.deathVerified = safe;

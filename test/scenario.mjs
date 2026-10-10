@@ -1298,9 +1298,9 @@ export async function runScenario({
       mcp.strays.length === 0, JSON.stringify(mcp.strays.slice(0, 3)));
     at(STEPS[13], Date.now() - t14);
   } finally {
-    mcp.stop();
-    await inbox.close();
     if (!harness.child) {
+      mcp.stop();
+      await inbox.close();
       try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already exited */ }
     }
     await harness.cleanup();
