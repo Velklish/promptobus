@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Mutation probes now record SIGINT and SIGTERM while their child runs, restore the subject and refuse interrupted proof on supported Node versions.
+
 ### Fixed
 
 - Participant live scenarios use fresh canonical task identities and distinct visible
