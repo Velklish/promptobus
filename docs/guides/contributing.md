@@ -248,6 +248,44 @@ live evidence keeps the binary version on which it was measured.
 
 **And the loss no gate catches at all: prose that was there and is not.** Length, links, anchors, the build and the whole suite were green through a commit that destroyed six sentences — none of them looks at whether the text that stood in a file still stands somewhere. The damage came from the smallest script of the pass, one written as cosmetic and applied to `lines[i - 1]` without checking what was on that line; care is distributed by how important a step feels, and destructiveness is not. A gate cannot hold this, because it would need each batch's own base commit to compare against. So the script that removes the lines is the one that reports them: after every move it lists any comment line that left the file and cannot be found in the destination, which is the difference between moved and deleted. Proving a batch lost nothing is a set difference — every removed comment line minus every line the pass itself added — never a reading of the diff, because nobody rereads two thousand relocated lines and notices the one that changed mid-sentence.
 
+## Participant live scenarios
+
+Run these from a source checkout with built dependencies:
+
+```sh
+node scripts/live-e2e.mjs
+node scripts/live-cursor.mjs --model <cursor-model>
+node scripts/live-codex.mjs --model <codex-model>
+node scripts/live-mixed.mjs --cursor-model <cursor-model> --codex-model <codex-model>
+```
+
+These scripts belong to the package and import only its own scenario and helpers.
+A consumer may wrap them to measure its layout; it keeps its wrapper until this source
+revision is accepted and delivered. They launch native sessions and spend account limits.
+The owner runs account probes; Node fixture results do not establish native acceptance.
+Cursor reads its registry through `cursorStateHome`, using the explicit
+`PROMPTOBUS_CURSOR_HOME` route.
+
+Every participant live run uses `newTaskIdentity` with a random run slug. The visible
+work title includes that identity, including in the worker launch and subsequent reviewer
+name. Runs within the same clock second cannot be confused by their title or task journal.
+
+The E2E script handles SIGINT, SIGTERM and SIGHUP by awaiting the same cleanup as normal
+completion. It records direct child PID, process group and start identity, plus exact
+full native session identities from its private task binding and matching worktree cwd.
+Stop failures, unreadable registries or process discovery, changed bindings and surviving
+processes preserve the sandbox and socket directory. Shared native daemons are never
+killed; a recorded native PID that stays alive conservatively holds the stand. The
+cleanup report includes `safe`, `livePids`, failures and whether the sandbox was removed.
+
+SIGKILL cannot run cleanup. The next run uses a fresh identity and its sweep holds an
+old stand without confirmed death, even after its parent dies. The private
+`.promptobus-live-run.json` records the observed lifecycle; deletion requires recorded
+confirmation and a fresh process check. It has no automatic fallback to killing processes
+whose command line merely mentions a run path. Unverified stands require diagnosis.
+[Node abort fixtures](../../test/live-run.test.mjs) cover signal cleanup, unrelated
+processes, interrupted runs and the next-run sweep without a native account.
+
 ## Public surface
 
 Do not add internal product names, private package scopes, or links into another repository's `docs/`. Examples in tests and docs use a fictional workspace. `npm run audit` runs `scripts/audit-public.mjs`, which scans tracked files and the packed tarball for forbidden strings and checks tracked links for repository leaks.

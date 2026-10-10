@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Participant live scenarios use fresh canonical task identities and distinct visible
+  participant titles. The E2E live run awaits cleanup on SIGINT, SIGTERM and SIGHUP,
+  stops only task-bound sessions, verifies its recorded processes before removing
+  the stand, and preserves uncertain or surviving runs for diagnosis.
 - **OpenCode participant cleanup preserves live peers.** Sweeping one participant removes
   only records matching its task and address, with their session, holder and log. Closed-task
   cleanup awaits each dead participant's hook before continuing and stays pending for live

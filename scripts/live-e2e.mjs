@@ -22,17 +22,17 @@
 //
 // The report is verdicts and step durations. It has no tokens: the orchestrator socket
 // listener puts only the "token matched" mark into the trace, not the token itself.
-import { rmSync, writeSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
-import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
-import { makeSandbox, makeSockDir, resolveToolBin } from '../test/sandbox.mjs';
+import { resolveToolBin } from '../test/sandbox.mjs';
 import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
-import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
-import { onAbort } from './live-abort.mjs';
+import { liveRun, onAbort, parseLiveSessions, priorRunIsLive } from './live-run.mjs';
+import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 
 finishLiveArgs(parseLiveArgs(process.argv.slice(2)), {
   usage: 'scripts/live-e2e.mjs',
@@ -44,8 +44,7 @@ finishLiveArgs(parseLiveArgs(process.argv.slice(2)), {
 // it (`PROMPTOBUS_E2E_ROOT`). Unset — the checkout, as before. Set — the installed
 // tree, and then THIS script must take ITS own modules from there too: a half resolve
 // would raise sessions with one mechanism and judge them with another.
-const { bgSessions, findSession, resetBgSessionsCache, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
-const { claudeDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'));
+const { bgSessions, findSession, resetBgSessionsCache, runClaude, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
 
 // `resolveToolBin` searches PATH only and returns the name it probed. `ok` means
 // `claude` already answers through PATH, so leave PATH unchanged for the session
@@ -77,19 +76,40 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
-const RUN_PREFIX = 'promptobus-live-e2e-';
-const SB = makeSandbox(RUN_PREFIX);
-markRunOwner(SB);
-for (const line of sweepLiveRuns(os.tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
-// The run socket directory is its own, and it is removed in `finally` with the
-// sandbox. The exit hook in [sandbox.mjs](../test/sandbox.mjs) removes it too, but
-// only on its own process: a loop cut off mid-file never reaches the end, and
-// cleanup must run on any outcome. The directory is taken from the helper itself,
-// not derived from the path builder: on win32 the builder returns a channel name
-// and there is no directory at all — `dir` comes `null`, and there is nothing to
-// sweep.
+const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-live-e2e-'));
+const refusedRuns = [];
+const swept = sweepPreviousRuns(os.tmpdir(), {
+  prefix: 'promptobus-live-e2e-', current: SB, refused: refusedRuns, keep: 0,
+  isLive: priorRunIsLive, held: refusedRuns,
+});
+process.stdout.write(`${sweptLine('previous-run sandboxes', swept, { keep: 0 })}\n`);
+if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
+function makeSockDir(prefix) {
+  const dir = process.platform === 'win32' ? null : mkdtempSync(path.join('/tmp', prefix));
+  return { dir, sock: (name) => dir ? path.join(dir, `${name}.sock`)
+    : `\\\\.\\pipe\\${prefix}${process.pid}-${name}` };
+}
 const { dir: sockDir, sock } = makeSockDir('a2l-');
-const raised = new Set();
+const run = liveRun({ sandbox: SB, socketDir: sockDir,
+  readSessions: () => {
+    const { r, missing } = runClaude(['agents', '--json']);
+    if (missing) throw new Error('Claude session registry unavailable');
+    return parseLiveSessions(r);
+  },
+  stopSession: (sessionId, id) => {
+    const { r, missing } = runClaude(['stop', id]);
+    return { ok: !missing && !r?.error && r?.status === 0, attempted: true };
+  },
+});
+let cleanupResult = null;
+const cleanup = async () => {
+  cleanupResult = await run.cleanup();
+  return cleanupResult;
+};
+const disposeAbort = onAbort(async (signal) => {
+  const result = await cleanup();
+  process.stdout.write(`▸ aborted (${signal}): ${JSON.stringify(result)}\n`);
+});
 
 const harness = {
   label: 'live',
@@ -117,7 +137,8 @@ const harness = {
     if (list === null) return [];
     return refs.map((ref) => {
       const hit = findSession(list, ref);
-      if (hit) raised.add(ref);
+      run.assertRunning();
+      run.captureSessions();
       return hit && sessionLiveness(hit, list) === 'alive' ? hit : null;
     }).filter(Boolean);
   },
@@ -134,33 +155,14 @@ const harness = {
     return `harness sessions: ${JSON.stringify(list.map((s) => ({ name: s.name, status: s.status, state: s.state })))}`
       + ` · participant ${address}`;
   },
-  // Canary cleanup: everything it raised is stopped by its own driver. `promptobus
-  // done` in the scenario does this itself, but the canary must also tidy up after
-  // a fallen run.
-  cleanup: () => {
-    // `stop` finds a session by name in the registry cache, which the loop's steps filled earlier.
-    resetBgSessionsCache();
-    for (const ref of raised) {
-      // The stop outcome is a promise: the command itself goes to the binary
-      // synchronously, and all that remains is waiting for the record to vanish
-      // from the registry. That is enough for the fallen-run safety net, and
-      // there is nothing to wait for here — the scenario calls cleanup from its
-      // `finally`, without `await`. The wait is therefore lifted to ZERO (review
-      // note): with the default ceiling a broken run would sit through up to ten
-      // seconds of timers per session after the report — the script exits through
-      // `process.exitCode`, not `exit`.
-      Promise.resolve(claudeDriver.stop(ref, { timeoutMs: 0 })).catch(() => { /* nothing to stop */ });
-    }
-  },
+  start: run.start,
+  child: run.child,
+  resource: run.resource,
+  assertRunning: run.assertRunning,
+  captureSessions: run.captureSessions,
+  cleanup,
 };
 
-// The same cleanup as `finally`: sessions first, then the sandbox and the socket directory.
-onAbort((signal) => {
-  writeSync(1, `\n▸ run cut off by ${signal}: stopping the loop sessions (${raised.size}) and removing the sandbox\n`);
-  harness.cleanup();
-  rmSync(SB, { recursive: true, force: true });
-  if (sockDir) rmSync(sockDir, { recursive: true, force: true });
-});
 
 const verdicts = [];
 const check = (name, cond, detail = '') => {
@@ -196,12 +198,8 @@ try {
 } catch (e) {
   failure = e;
 } finally {
-  harness.cleanup();
-  // Sandbox and socket directory — here, not after the report: the run arrives
-  // here on any outcome, including a broken one. The report below reads only
-  // what is already collected in memory.
-  rmSync(SB, { recursive: true, force: true });
-  if (sockDir) rmSync(sockDir, { recursive: true, force: true });
+  await cleanup();
+  disposeAbort();
 }
 
 const passed = verdicts.filter((v) => v.ok).length;
@@ -217,8 +215,5 @@ if (report) {
 if (failure) {
   process.stdout.write(`✖ run broken: ${failure.message}\n`);
 }
-// The run removes the sandbox and the socket directory itself, in `finally`
-// above: they live in system tmp, there is no runner above them. Here only the
-// report line.
-process.stdout.write(`▸ sandbox removed (${os.tmpdir()})${sockDir ? `, socket directory ${sockDir}` : ''}\n`);
-process.exitCode = passed === verdicts.length && !failure ? 0 : 1;
+process.stdout.write(`▸ cleanup: ${JSON.stringify(cleanupResult)}\n`);
+process.exitCode = passed === verdicts.length && !failure && cleanupResult?.safe ? 0 : 1;

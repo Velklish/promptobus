@@ -50,10 +50,6 @@ const INSTALLED_PLUGINS = path.join(CLAUDE_PLUGINS, 'installed_plugins.json');
 const PLUGIN_CACHE = path.join(CLAUDE_PLUGINS, 'cache');
 const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 
-// Id of the task the scenario creates: its sessions are recognised in the shared
-// harness registry by this. The substring «e2e» would catch foreign sessions of
-// a person running a release.
-const E2E_TASK = 'e2ebus';
 // What has no right to outlive the run: the live loop raises participants, the
 // warden, and bus stdio servers, and stops the last without waiting.
 //
@@ -294,11 +290,10 @@ try {
     resetBgSessionsCache?.();
     sessions = bgSessions ? bgSessions({ fresh: true }) : null;
   } catch { sessions = null; }
-  // Judged by the session working directory under the run directory and by the
-  // scenario task id: the substring «e2e» would catch foreign sessions of a
-  // person running a release.
+  // Session cwd belongs to the installed run tree; a shared title prefix
+  // also matches other runs and cannot establish ownership.
   const ours = Array.isArray(sessions)
-    ? sessions.filter((x) => (x?.cwd && under(x.cwd, RUN)) || (x?.name && String(x.name).includes(E2E_TASK)))
+    ? sessions.filter((x) => x?.cwd && under(x.cwd, RUN))
     : [];
   check('cleanup: no run sessions left in the harness registry',
     Array.isArray(sessions) && ours.length === 0,
