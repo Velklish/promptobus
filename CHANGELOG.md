@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Cursor test stand publishes session updates atomically, so a concurrent queue reader cannot mistake a partial record for a stopped session.
+
 - Mutation probes now record SIGINT and SIGTERM while their child runs, restore the subject and refuse interrupted proof on supported Node versions.
 
 ### Fixed

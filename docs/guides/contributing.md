@@ -315,3 +315,5 @@ Links from a consumer document into `docs/backlog/` or `docs/archive/`, and link
 `npm run docs-links:external` requests each `http` and `https` URL outside CI. A response of 401, 403 or 429, a 5xx response, and a transport failure are `unverified`. They are not dead links and they are not a pass. A 404 or 410 is dead. The command exits 0 only when every URL is confirmed.
 
 [docs-link-section]: #documentation-links
+
+The Cursor test stand publishes session JSON through a sibling temporary file and atomic rename. Queue readers see the complete previous or next record, and session listings include only published `.json` files. A partial write must not make a live queue reader treat its session as stopped; `test/harness-cursor-session-atomic.test.mjs` holds a write open to check that window.
