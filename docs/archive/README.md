@@ -1,6 +1,6 @@
 # Closed task archive
 
-Every closed task is a `PB-<number>-<slug>/` directory with two files: `task.md` contains the definition (what and why, and when it appeared), and `result.md` contains the dated outcome. Completed, rejected, and merged tasks live together; `result.md` names the outcome.
+Before folding, a closed task is a `PB-<number>-<slug>/` directory with two files: `task.md` contains the definition (what and why, and when it appeared), and `result.md` contains the dated outcome. Completed, rejected, and merged tasks live together; `result.md` names the outcome. After folding, it has a line in [LOG.md](LOG.md) and no directory in the tree.
 
 Live tasks are in [backlog/](../backlog/README.md). Numbers are sequential and never reused; a missing number in the archive means that the task is still live or was never created.
 
