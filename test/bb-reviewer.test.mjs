@@ -77,8 +77,10 @@ test('BB reviewer refuses an unverified Codex build before thread creation', asy
   copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable);
   chmodSync(executable, 0o755);
   try {
-    await assert.rejects(openBbReviewer({ directory, executable, model: 'model',
-      env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: '0.163.0' } }), /requires the verified Codex version/);
+    for (const version of ['0.162.0-alpha.2', '0.162.0-alpha.17.1', '0.162.0-alpha.17.2-extra', '0.163.0']) {
+      await assert.rejects(openBbReviewer({ directory, executable, model: 'model',
+        env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: version } }), /requires the verified Codex version/);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -186,4 +188,36 @@ test('BB reviewer reports unexpected native exit after an acknowledged turn', as
     const result = await Promise.race([exited, new Promise(resolve => { const timer = setTimeout(() => resolve(null), 1500); timer.unref(); })]);
     assert.equal(result?.code, 17);
   } finally { await session.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+
+test('BB reviewer admits exactly the newly measured Codex build in the deterministic fixture', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-bb-version-'));
+  const executable = path.join(directory, 'codex-fake');
+  copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable);
+  chmodSync(executable, 0o755);
+  try {
+    const session = await openBbReviewer({ directory, executable, model: 'model', effort: 'high',
+      env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: '0.162.0-alpha.17.2' } });
+    try { assert.equal(session.threadId, 'review-thread'); }
+    finally { await session.close(); }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('BB reviewer fixture rejects substituted startup restrictions, private home, effort and thread identity', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-bb-version-'));
+  const executable = path.join(directory, 'codex-fake');
+  copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable);
+  chmodSync(executable, 0o755);
+  try {
+    for (const [control, expected] of [
+      ['home', /private home/], ['feature', /startup restrictions unavailable/],
+      ['missing-sandbox', /profile mismatch/], ['widened-sandbox', /profile mismatch/],
+      ['approval', /profile mismatch/], ['model', /profile mismatch/],
+      ['effort', /effective effort mismatch/], ['identity', /different thread identity/],
+    ]) {
+      await assert.rejects(openBbReviewer({ directory, executable, model: 'model', effort: 'high', threadId: 'review-thread',
+        env: { ...process.env, CODEX_HOME: directory, PB_TEST_CONTROL: control } }), expected, control);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

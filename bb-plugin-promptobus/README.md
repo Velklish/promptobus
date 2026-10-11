@@ -6,7 +6,7 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.45.0 and Plugin SDK 0.6.15 on one local host. Use Codex CLI 0.162.0-alpha.2 and
+Use BB 0.45.0 and Plugin SDK 0.6.15 on one local host. Use Codex CLI 0.162.0-alpha.17.2 and
 sign in with `codex`. The provider copies only `auth.json` into its private Codex
 home; it does not modify the original authentication or copy personal config.
 
@@ -34,6 +34,12 @@ The host entry performs bounded reads and rejects paths outside that root. Clien
 metadata never grants another thread access. An effective sandbox, approval or
 model mismatch refuses startup before the first model turn. Unverified Codex
 versions are refused; a newer version requires repeating the permission proof.
+See the [compatibility proof](../docs/reference/02-host.md#bb-reviewer-compatibility-proof)
+for the measured versions, native denials and reproducible test. The test matches
+the entire reviewed exec source, call/output identity and turn, and independent
+router stderr from the isolated child. The nested patch has no separate native
+target event; its target is attributed through that exact exec source. Historical
+record replay and new runtime measurement are reported separately.
 Startup also verifies the effective disabled features, private home and absence
 of configured MCP servers, including managed configuration. Model and effort
 changes require a fresh reviewer session.
@@ -174,7 +180,7 @@ account caches and defaults are unchanged.
 | `promptobus-codex-reviewer` | reviewer | Unknown; no usage API |
 
 The supported versions are BB 0.45.0, SDK 0.6.15 and the reviewer's verified
-Codex CLI 0.162.0-alpha.2. Other BB providers are not admitted.
+Codex CLI 0.162.0-alpha.17.2. Other BB providers are not admitted.
 
 ## Wake and recovery
 
@@ -400,7 +406,8 @@ alone are not this support claim.
 
 | Profile | Status | Boundary |
 | --- | --- | --- |
-| One primary local host; BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2; macOS 27.0, Node 25.2.1; `gpt-6.1-sol`, `low` | Full six-role runtime observed | Built-in Codex for orchestrator, worker, approver, teamlead and reporter; constrained Codex provider for reviewer; shipped worker/reviewer/approver pipeline |
+| One primary local host; BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2; macOS 27.0, Node 25.2.1; `gpt-6.1-sol`, `low` | Historical full six-role runtime observed on 2026-10-08 | Built-in Codex for orchestrator, worker, approver, teamlead and reporter; constrained Codex provider for reviewer; shipped worker/reviewer/approver pipeline |
+| Codex CLI 0.162.0-alpha.17.2; `gpt-6.1-sol`, `high`; isolated native reviewer transport on 2026-10-11 | Permission proof measured | Effective `readOnly` / `never`, private home, disabled features and no MCP; bounded read, outside-root refusal and actual patch sandbox denial; matching canary hashes and child cleanup. Installed-plugin reload and full BB workflow on this version remain unmeasured. |
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
 | Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; provider substitution and remote environments refuse |
 | Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; older releases lack this adapter |

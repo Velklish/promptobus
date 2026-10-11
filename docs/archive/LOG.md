@@ -521,3 +521,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-350.2"></a>`PB-350.2-bb-evidence-address-schema` · 2026-10-09 · completed · — · BB worker evidence records cannot represent the authenticated participant address
 - <a id="pb-350.3"></a>`PB-350.3-process-list-probe-errors` · 2026-10-09 · completed · — · Driver tests hide process-list probe failures behind liveness assertions
 - <a id="pb-350.4"></a>`PB-350.4-bb-mechanical-grant-release` · 2026-10-09 · completed · — · BB orchestration must publish complete command grants and acknowledge their release
+- <a id="pb-370.1"></a>`PB-370.1-bb-reviewer-codex-version-startup` · 2026-10-11 · completed · — · BB reviewer cannot start with the current Codex CLI

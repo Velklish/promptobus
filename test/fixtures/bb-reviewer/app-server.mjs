@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 
 const denied = [];
 const result = () => ({ denied, argv: process.argv.slice(2), bbParent: process.env.BB_THREAD_ID ?? null, busParent: process.env.PROMPTOBUS_TASK ?? null });
+const control = process.env.PB_TEST_CONTROL;
 let probe;
 let hostProbe;
 const hostReplies = [];
@@ -20,16 +21,19 @@ for await (const line of createInterface({ input: process.stdin })) {
     continue;
   }
   if (message.method === 'initialize' && process.env.PB_TEST_HANG) continue;
-  if (message.method === 'initialize') reply(message.id, { codexHome: process.env.CODEX_HOME,
-    userAgent: `promptobus_bb_reviewer/${process.env.PB_TEST_CODEX_VERSION ?? '0.162.0-alpha.2'} fixture` });
+  if (message.method === 'initialize') reply(message.id, { codexHome: control === 'home' ? '/' : process.env.CODEX_HOME,
+    userAgent: `promptobus_bb_reviewer/${process.env.PB_TEST_CODEX_VERSION ?? '0.162.0-alpha.17.2'} fixture` });
   else if (message.method === 'config/read') reply(message.id, { config: {
-    features: Object.fromEntries(process.argv.filter((arg, i) => process.argv[i - 1] === '--disable').map(name => [name, false])),
+    features: Object.fromEntries(process.argv.filter((arg, i) => process.argv[i - 1] === '--disable').map(name => [name, control === 'feature' && name === 'apps'])),
     web_search: process.argv.includes('web_search="disabled"') ? 'disabled' : null,
     mcp_servers: process.env.PB_TEST_MCP ? { canonical: { command: 'untrusted' } } : {},
   } });
-  else if (message.method === 'thread/start') {
-    reply(message.id, { thread: { id: 'review-thread' }, model: message.params.model,
-      reasoningEffort: message.params.config.model_reasoning_effort ?? null, sandbox: { type: 'readOnly' }, approvalPolicy: 'never' });
+  else if (message.method === 'thread/start' || message.method === 'thread/resume') {
+    reply(message.id, { thread: { id: control === 'identity' ? 'other-thread' : 'review-thread' },
+      model: control === 'model' ? 'other-model' : message.params.model,
+      reasoningEffort: control === 'effort' ? 'low' : message.params.config.model_reasoning_effort ?? null,
+      sandbox: control === 'missing-sandbox' ? null : { type: control === 'widened-sandbox' ? 'workspaceWrite' : 'readOnly' },
+      approvalPolicy: control === 'approval' ? 'on-request' : 'never' });
     for (const tool of ['shell', 'apply_patch', 'mcp__canonical__write']) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: `deny-${tool}`, method: 'item/tool/call',
         params: { threadId: 'review-thread', tool, arguments: {} } })}\n`);

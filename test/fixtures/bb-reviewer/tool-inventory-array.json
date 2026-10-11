@@ -1,0 +1,1 @@
+[{"type":"response_item","payload":{"type":"custom_tool_call_output","output":[{"type":"input_text","text":"[\"apply_patch\",\"clock__curr_time\",\"list_mcp_resource_templates\",\"list_mcp_resources\",\"pb_review_list_files\",\"pb_review_read_file\",\"pb_review_read_files\",\"pb_review_search_text\",\"read_mcp_resource\"]"}]}}]

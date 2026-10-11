@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Require native permission-proof patch denial to match the entire reviewed exec
+  source with one awaited canary patch, its call/output identity and measured
+  turn, and the isolated child's independent router stderr rejection. Record the
+  resolved executable path, binary hash and version before and after the child.
+  Distinguish exact historical replay from new native measurement; the nested
+  patch has no separately observed native target event.
+
+- Admit exactly Codex CLI `0.162.0-alpha.17.2` for the constrained BB reviewer after
+  an isolated native permission proof. Preserve read-only execution, approval
+  policy `never`, private auth-only home, disabled features, tool admission and
+  effective identity checks. Retain the native proof and deterministic inventory
+  and failure-cleanup regressions. Installed-plugin promotion and the full BB
+  workflow on this build are separate verification steps.
+  [Compatibility proof](docs/reference/02-host.md#bb-reviewer-compatibility-proof).
+
 - Deliver complete BB command grants with authorization and owner confirmation in
   one task, prebound before activation. Require current ownership and STOP checks
   before each mechanical call, fresh routing before substantial suites, and an

@@ -690,3 +690,54 @@ in that order; unsupported configured shapes refuse. Native pipeline configurati
 keeps its existing semantics. It is an operator/runtime host call, not a model tool. It neither grades result
 content nor grants participant identity. [Currency](04-protocol.md#bb-workflow-result-currency)
 records the BB projection and unchanged native semantics.
+
+
+## BB reviewer compatibility proof
+
+`BB_REVIEWER_CODEX_VERSION` in [the reviewer transport](../../lib/bb-reviewer.js)
+admits exactly Codex CLI `0.162.0-alpha.17.2`. Other builds refuse initialization
+before thread creation. The provider verifies effective `readOnly` with network
+access disabled, approval policy `never`, the requested model and effort, and
+thread identity. It checks the private Codex home, every disabled feature and an
+empty MCP server configuration before starting a thread. Only `auth.json` is
+copied from the original home.
+
+The measured compatibility evidence distinguishes the two builds:
+
+| Codex build | Measurement | Limit |
+|---|---|---|
+| `0.162.0-alpha.2` | Native sandbox and bounded-read denials measured on 2026-10-08; historical full BB role workflow | Historical measurement; this build is no longer admitted by the exact version check |
+| `0.162.0-alpha.17.2` | Isolated native permission proof on 2026-10-11, `gpt-6.1-sol` / `high`; effective restrictions verified; actual `apply_patch` refused; outside-root read refused; before/after canary SHA256 equal; app-server exited and scratch removed | Does not establish installed-plugin promotion, BB lifecycle cancellation or a full BB role workflow on this build |
+
+From the repository root with authenticated Codex available, run the bounded proof:
+
+```sh
+node scripts/prove-bb-reviewer-permissions.mjs --native
+```
+
+The [retained proof](../../scripts/prove-bb-reviewer-permissions.mjs) uses disposable
+non-Git scratch and one model turn with a 120-second deadline. It records actual
+app-server arguments, private-home initial filenames, effective configuration,
+profile, evaluated tool inventory, raw streams, exit/signal/error, canary hashes
+and cleanup, including resolved executable path, binary SHA256 and version before
+and after the child. It requires exactly one native exec call whose entire source
+equals the reviewed template shared by the prompt and verifier: bounded reads
+and one awaited apply_patch with the exact canary patch. Its output must match
+the exec call id and measured turn id and corroborate the independent router
+stderr denial from the same isolated child. Printed text cannot replace that
+stderr. Changed source, targets, calls or turns fail the proof.
+The nested patch has no separately observed native target, call or turn event;
+target attribution uses exact exec source and the isolated child's router denial.
+The exact historical exec template is also recognized for replay of retained
+measurements. Replay verifies historical enforcement without measuring a new
+runtime. A failed direct-call-only proof remains failed.
+After-hashes are read before scratch deletion even when another assertion fails;
+unavailable hashes remain null with their read errors and fail the proof.
+
+The [offline regressions](../../test/bb-reviewer-permission-proof.test.mjs) exercise
+the captured evaluated inventory array and object form, unknown tools, malformed
+or ambiguous inventory, and failure cleanup. Profile substitution, forged calls
+and cancellation use deterministic app-server fixtures in the
+[transport tests](../../test/bb-reviewer.test.mjs). These fixture controls are
+separate from the actual native operations. A failed or incomplete native proof
+never admits a version. Review and installed-plugin promotion are separate steps.
