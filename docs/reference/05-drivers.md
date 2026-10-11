@@ -19,11 +19,13 @@ It does not introduce a native `bb` harness or share a quota bucket across provi
 | `codex` | orchestrator, worker, approver, teamlead, reporter | Actual scoped SDK catalog; explicit supported effort or its catalog default | Selected provider's SDK usage on its host; unknown if unavailable |
 | `promptobus-codex-reviewer` | reviewer | Actual SDK catalog through the constrained Codex bridge | Unknown: this provider exposes no usage API |
 
-This matrix is limited to BB 0.45.0, SDK 0.6.15 and the constrained reviewer's
-verified Codex CLI 0.162.0-alpha.2. All six roles were observed together on the
-2026-10-08 local macOS 27.0 / Node 25.2.1 source profile with `gpt-6.1-sol`, `low`
-and the shipped pipeline. Other profiles are unverified; the adapter is source-only
-and unreleased. [Support and limits](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support).
+The historical full six-role workflow used BB 0.45.0, SDK 0.6.15 and Codex CLI
+0.162.0-alpha.2 on the 2026-10-08 local macOS 27.0 / Node 25.2.1 source profile
+with `gpt-6.1-sol`, `low` and the shipped pipeline. The currently admitted
+0.162.0-alpha.17.2 build has an isolated native permission proof with
+`gpt-6.1-sol`, `high`; it does not establish `xhigh` or the full BB workflow on
+that build. [Compatibility proof](02-host.md#bb-reviewer-compatibility-proof).
+Other profiles are unverified; the adapter is source-only and unreleased. [Support and limits](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support).
 Provider/model inventory is re-read before
 launch; a model-load error, unsupported model/effort, unavailable host/environment
 or known invalid installation/authentication refuses before canonical reservation.
@@ -1255,9 +1257,13 @@ per session. The built-in BB `codex` provider has no public per-role read-only
 selection in BB 0.45.0 / Plugin SDK 0.6.15 and is refused for the reviewer role.
 
 The constrained provider requests and verifies the effective Codex read-only
-sandbox, approval policy never and explicit model before starting a turn. It
-refuses Codex versions other than the measured 0.162.0-alpha.2. Apps, plugins and
-remote plugins are disabled at process startup, together with shell, unified
+sandbox, approval policy never and explicit model before starting a turn.
+
+<!-- quote:../../README.md -->
+The optional plugin's constrained reviewer admits exactly Codex CLI `0.162.0-alpha.17.2`.
+<!-- /quote -->
+
+Apps, plugins and remote plugins are disabled at process startup, together with shell, unified
 execution, hooks, subagents and computer use. The built-in `apply_patch` remains
 exposed; the native read-only sandbox rejects its mutations. A private Codex
 home receives authentication only, and the empty project sandbox receives no
