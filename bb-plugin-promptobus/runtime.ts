@@ -43,10 +43,26 @@ export function registerRuntime(bb: BbPluginApi) {
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
   const recovery = registerDelivery(bb, store, onHost);
+  const requirePredecessors = async (owner: Binding, workerId: string, reviewerId: string, signal?: AbortSignal) => {
+    const worker = store.participant(owner.task, workerId);
+    const reviewer = store.participant(owner.task, reviewerId);
+    if (!worker?.threadId || worker.phase !== 'ready' || worker.role !== 'worker'
+      || !reviewer?.threadId || reviewer.phase !== 'ready' || reviewer.role !== REVIEWER
+      || worker.task !== owner.task || reviewer.task !== owner.task
+      || worker.projectId !== owner.projectId || reviewer.projectId !== owner.projectId
+      || worker.hostId !== owner.hostId || reviewer.hostId !== owner.hostId
+      || worker.lifecycleOwnerThreadId !== owner.threadId || reviewer.lifecycleOwnerThreadId !== owner.threadId) throw new Error('BB predecessor binding mismatch');
+    await requireThread(worker, signal); await requireThread(reviewer, signal);
+    return worker;
+  };
   const checkStep = async (b: Binding, signal?: AbortSignal) => {
     if (b.role !== APPROVER) return;
     if (!b.predecessors) throw new Error('The approver requires explicit worker and reviewer predecessors');
-    await onHost(b, { operation: 'step', ...b.predecessors }, signal);
+    const owner = store.task(b.task);
+    if (!owner?.threadId || owner.phase !== 'ready') throw new Error('Task has no ready plugin-owned orchestrator');
+    await requireThread(owner, signal);
+    await requirePredecessors(owner, b.predecessors.worker, b.predecessors.reviewer, signal);
+    await onHost(b.phase === 'ready' ? b : owner, { operation: 'step', ...b.predecessors }, signal);
   };
   const authorize = async (context: PluginAgentToolContext, tool: string) => {
     context.signal.throwIfAborted();
@@ -129,7 +145,37 @@ export function registerRuntime(bb: BbPluginApi) {
         : { action: 'wait', reason: `Promptobus validation unavailable: ${message}`, sendAt: Date.now() + 1000 };
     } finally { clearTimeout(timer!); }
   });
-  const spawn = async (b: Binding, assignment: string, baseBranch?: string, environmentPath?: string) => {
+  const displayOptions = {
+    'display-label': { type: 'string', description: 'Card/task label or explicit related pair; defaults to the canonical task id.' },
+    'display-subject': { type: 'string', description: 'Short display subject; defaults to the participant id.' },
+    'repository-label': { type: 'string', description: 'Repository display label; defaults to the verified coordinator workspace name.' },
+  } as const;
+  const titleFor = (b: Binding) => `${b.display?.label ?? b.task} · ${b.role === APPROVER ? 'Acceptance'
+    : b.role === REVIEWER ? 'Review' : b.role[0].toUpperCase() + b.role.slice(1)} · ${b.display?.subject ?? b.participant}`;
+  const nameEnvironment = async (b: Binding, provision: boolean) => {
+    if (!provision) return { status: 'preserved', reason: 'existing environment' };
+    const environment = await bb.sdk.environments.get({ environmentId: b.environmentId });
+    if (environment.name?.trim()) return { status: 'preserved', reason: 'existing name', name: environment.name };
+    if (environment.environmentProviderInstanceKey !== b.threadId) return { status: 'preserved', reason: 'ownership not confirmed' };
+    if (store.list().some(other => other.environmentId === b.environmentId && other.phase !== 'archived'
+      && (other.task !== b.task || other.participant !== b.participant))) return { status: 'preserved', reason: 'shared environment' };
+    for (let offset = 0; ; offset += 200) {
+      const threads = await bb.sdk.threads.list({ archived: false, includeHidden: true, limit: 200, offset });
+      if (threads.some(thread => thread.environmentId === b.environmentId && thread.id !== b.threadId)) return { status: 'preserved', reason: 'shared environment' };
+      if (threads.length < 200) break;
+    }
+    await requireThread(b);
+    const current = await bb.sdk.environments.get({ environmentId: b.environmentId });
+    if (current.name?.trim() || current.environmentProviderInstanceKey !== b.threadId) return { status: 'preserved', reason: 'metadata changed', name: current.name };
+    const name = `${b.display?.label ?? b.task} · ${b.display?.repository ?? path.basename(b.root)}`;
+    const updated = await bb.sdk.environments.update({ environmentId: b.environmentId, name });
+    const confirmed = await bb.sdk.environments.get({ environmentId: b.environmentId });
+    if (updated.id !== b.environmentId || updated.name !== name || confirmed.name !== name) throw new Error('BB environment naming was not confirmed');
+    await requireThread(b);
+    return { status: 'named', name };
+  };
+  const spawn = async (b: Binding, assignment: string, baseBranch?: string, environmentPath?: string,
+    displayOverrides: Partial<NonNullable<Binding['display']>> = {}) => {
     let recorded = false;
     const provision = Boolean(baseBranch || environmentPath);
     const { model, reasoningLevel } = b.execution!;
@@ -141,6 +187,7 @@ export function registerRuntime(bb: BbPluginApi) {
     const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
     if (provision) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
+      await checkStep(b);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
@@ -148,7 +195,7 @@ export function registerRuntime(bb: BbPluginApi) {
         providerId: b.providerId, model, reasoningLevel, permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
         ...(b.parentThreadId ? { parentThreadId: b.parentThreadId } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
-        prompt: b.bootstrap ?? initialPrompt(), title: `Promptobus ${b.role}: ${b.participant}` });
+        prompt: b.bootstrap ?? initialPrompt(), title: titleFor(b) });
       b.threadId = thread.id;
       store.save(b);
       recorded = true;
@@ -179,11 +226,20 @@ export function registerRuntime(bb: BbPluginApi) {
         await onHost(b, { operation: 'reserve', create: false, title: b.task });
       }
       await requireThread(b);
-      if (b.role === APPROVER) {
-        const owner = store.task(b.task)!;
-        await requireThread(owner);
-        await onHost(owner, { operation: 'step', ...b.predecessors });
+      if (provision && b.role === REVIEWER) {
+        const workers = store.list().filter(other => other.task === b.task && other.role === 'worker'
+          && other.phase === 'ready' && other.environmentId === b.environmentId);
+        if (workers.length === 1 && workers[0].display) {
+          await requireThread(workers[0]);
+          b.display = bindingSchema.parse({ ...b, display: { ...workers[0].display, ...displayOverrides } }).display; store.save(b);
+          const updated = await bb.sdk.threads.update({ threadId: b.threadId, title: titleFor(b) });
+          if (updated.id !== b.threadId || updated.title !== titleFor(b)) throw new Error('BB thread naming was not confirmed');
+          await requireThread(b);
+        }
       }
+      if ((await bb.sdk.threads.get({ threadId: b.threadId })).title !== titleFor(b)) throw new Error('BB thread naming was not confirmed');
+      const naming = await nameEnvironment(b, provision);
+      await checkStep(b);
       await onHost(b, { operation: 'finalize' });
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
@@ -191,7 +247,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (provision) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
       await bb.experimental_hooks.recheck('message.dispatch');
       store.launch(b, { ...intent, status: 'ready' });
-      return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase, execution: b.execution };
+      return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase, execution: b.execution, display: { title: titleFor(b), environment: naming } };
     } catch (error) {
       if (!recorded) b.threadId = null;
       b.phase = 'orphan'; store.save(b);
@@ -201,6 +257,7 @@ export function registerRuntime(bb: BbPluginApi) {
     }
   };
   const createOptions = {
+    ...displayOptions,
     task: { type: 'string', required: true, description: 'Canonical v1 task id.' },
     title: { type: 'string', required: true, description: 'Task title.' },
     project: { type: 'string', required: true, description: 'Existing BB project id.' },
@@ -226,7 +283,9 @@ export function registerRuntime(bb: BbPluginApi) {
         if (!environment.path || !local || environment.hostId !== local || environment.managed) throw new Error('A stable local unmanaged coordinator environment is required');
         const b = bindingSchema.parse({ task: options.task, participant: ORCHESTRATOR, role: ORCHESTRATOR, projectId: options.project,
           environmentId: options.environment, environmentPath: environment.path, hostId: local, providerId: 'codex', root: environment.path,
-          token: randomUUID(), threadId: null, phase: 'pending' });
+          token: randomUUID(), threadId: null, phase: 'pending',
+          display: { label: options['display-label'] ?? options.task, subject: options['display-subject'] ?? options.title,
+            repository: options['repository-label'] ?? path.basename(environment.path) } });
         await recordBbWorkspace(bb, b, context.signal);
         b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
         await prepareContext(b, context.signal);
@@ -238,7 +297,7 @@ export function registerRuntime(bb: BbPluginApi) {
         } catch (error) { b.phase = 'orphan'; store.save(b); throw error; }
       } }),
     'participant add': cliCommand({ summary: 'Bind a new role thread to an existing plugin-owned task.', options: {
-      ...participantOptions,
+      ...participantOptions, ...displayOptions,
       role: { type: 'enum', values: roleSchema.options, required: true, description: 'Instruction role.' },
       model: createOptions.model, provider: createOptions.provider, 'reasoning-level': createOptions['reasoning-level'], assignment: createOptions.assignment,
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
@@ -260,13 +319,21 @@ export function registerRuntime(bb: BbPluginApi) {
       const provision = Boolean(options['new-environment'] || environmentPath);
       await requireThread(owner, context.signal);
       await onHost(owner, { operation: 'check' }, context.signal);
+      let worker: Binding | undefined;
       if (options.role === APPROVER) {
         if (!options.worker || !options.reviewer) throw new Error('The approver requires --worker and --reviewer');
+        worker = await requirePredecessors(owner, options.worker, options.reviewer, context.signal);
         await onHost(owner, { operation: 'step', worker: options.worker, reviewer: options.reviewer }, context.signal);
       } else if (options.worker || options.reviewer) throw new Error('Predecessors are only selected for the approver');
+      const sharedWorkers = options.role === REVIEWER && !provision ? store.list().filter(other => other.task === owner.task
+        && other.role === 'worker' && other.phase === 'ready' && other.environmentId === (options.environment ?? owner.environmentId)) : [];
+      const inherited = worker?.display ?? (sharedWorkers.length === 1 ? sharedWorkers[0].display : undefined);
       const b = bindingSchema.parse({ ...owner, participant: options.participant, role: options.role,
+        display: { label: options['display-label'] ?? inherited?.label ?? owner.display?.label ?? options.task,
+          subject: options['display-subject'] ?? inherited?.subject ?? options.participant,
+          repository: options['repository-label'] ?? inherited?.repository ?? owner.display?.repository ?? path.basename(owner.root) },
         providerId: options.role === REVIEWER ? REVIEWER_PROVIDER : 'codex', token: randomUUID(), threadId: null, phase: 'pending',
-        parentThreadId: owner.threadId, lifecycleOwnerThreadId: owner.threadId,
+        parentThreadId: worker?.threadId ?? owner.threadId, lifecycleOwnerThreadId: owner.threadId,
         environmentId: options.environment ?? owner.environmentId, environmentOwner: options['new-environment'] ? 'bb' : 'existing',
         preservation: undefined });
       delete b.predecessors;
@@ -282,7 +349,11 @@ export function registerRuntime(bb: BbPluginApi) {
       store.reserve(b, false);
       try {
         if (!provision) await onHost(b, { operation: 'reserve', create: false, title: options.task }, context.signal);
-        return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment, options['base-branch'], environmentPath && path.normalize(environmentPath))) };
+        return { exitCode: 0, stdout: JSON.stringify(await spawn(b, options.assignment, options['base-branch'], environmentPath && path.normalize(environmentPath), {
+            ...(options['display-label'] !== undefined ? { label: options['display-label'] } : {}),
+            ...(options['display-subject'] !== undefined ? { subject: options['display-subject'] } : {}),
+            ...(options['repository-label'] !== undefined ? { repository: options['repository-label'] } : {}),
+          })) };
       } catch (error) { b.phase = 'orphan'; store.save(b); throw error; }
     } }),
     'participant get': cliCommand({ summary: 'Resolve SDK state before returning a plain SessionView.', options: participantOptions,

@@ -27,8 +27,10 @@ async function stand(t, options = {}) {
     const row = { id: `event-${id}-${seq}`, threadId: id, seq, createdAt: Date.now(), scope: { kind: 'thread' }, type, data };
     rows.push(row); history.set(id, rows); return row;
   };
-  const environment = { id: 'env', projectId: 'project', path: root, hostId: 'local', managed: false, status: 'ready', lifecycle: { phase: 'active' } };
+  const environment = { name: null, environmentProviderInstanceKey: null, id: 'env', projectId: 'project', path: root, hostId: 'local', managed: false, status: 'ready', lifecycle: { phase: 'active' } };
   const workerEnvironment = { ...environment, id: 'bb-actual-env', path: `${root}/actual-bb-worktree`, managed: true };
+  const environments = new Map([environment, workerEnvironment, ...(options.environments ?? [])].map(e => [e.id, e]));
+  const names = []; const spawns = [];
   const events = [];
   let initialArgs;
   let nativeCatalogCleared = false;
@@ -55,7 +57,14 @@ async function stand(t, options = {}) {
       capabilities: { modelCatalogScope: 'host' }, maintenance: { health: id === 'codex', usage: id === 'codex' } })),
       models: async () => ({ modelLoadError: options.modelLoadError ?? null, models: [{ id: 'test-model', model: 'test-model', defaultReasoningEffort: 'low',
         supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] }) },
-    environments: { get: async ({ environmentId }) => environmentId === 'env' ? environment : workerEnvironment,
+    environments: { get: async ({ environmentId }) => environments.get(environmentId),
+      update: async ({ environmentId, name }) => {
+        names.push({ environmentId, name });
+        if (options.nameError) throw new Error(options.nameError);
+        const env = environments.get(environmentId);
+        if (!options.nameUnconfirmed) env.name = name;
+        return env;
+      },
       status: async ({ environmentId }) => workspace(environmentId), diffPatch: async ({ paths }) => {
         assert.equal(paths.length > 0, true, 'SDK diffPatch requires at least one path');
         return { outcome: 'available', patches };
@@ -80,12 +89,16 @@ async function stand(t, options = {}) {
       },
       get: async ({ threadId, signal }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
         if (options.beforeGet) await options.beforeGet(threadId, signal); return threads.get(threadId); },
+      update: async ({ threadId, title }) => {
+        if (options.titleUpdateError) throw new Error(options.titleUpdateError);
+        const thread = threads.get(threadId); if (!options.titleUpdateUnconfirmed) thread.title = title; return thread;
+      },
       defaultExecutionOptions: async ({ threadId }) => executionOptions.get(threadId) ?? null,
       spawn: async args => {
-        initialArgs = args;
+        initialArgs = args; spawns.push(args);
         nativeCatalogCleared = false;
         const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
-          parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null });
+          parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null, title: options.titleUnconfirmed ? 'Unconfirmed title' : args.title });
         threads.set(thread.id, thread);
         executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
           serviceTier: 'default', source: 'client/thread/start' });
@@ -112,6 +125,7 @@ async function stand(t, options = {}) {
         assert.equal((await hook(context)).action, 'proceed');
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
         if (options.beforePreparationIdle) await options.beforePreparationIdle({ threadId, append, thread });
+        workerEnvironment.environmentProviderInstanceKey = options.existingEnvironment ? 'another-thread' : threadId;
         thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
         if (options.afterPreparationIdle) await options.afterPreparationIdle({ thread, environment: workerEnvironment });
         events.push('provision');
@@ -166,7 +180,7 @@ async function stand(t, options = {}) {
   const add = async (id, role = 'worker', extra = []) => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
-  return { root, threads, environment, workerEnvironment, events, get host() { return host; }, task, create, add, call, control,
+  return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
     wakes, queues, interactions, append, executionOptions, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
@@ -1318,4 +1332,167 @@ test('unattributed generated wakes are fenced while paused and preserve explicit
   assert.equal((await hook(context(copied.content))).action, 'proceed');
   await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry: copied });
   assert.equal(s.delivery('thr-2').reason.includes('User cancelled'), false);
+});
+
+
+for (const role of ['worker', 'reviewer']) test(`SDK display default: lone ${role} title carries task, role and subject without parsing assignment`, async t => {
+  const s = await stand(t); await s.create();
+  const result = await s.add('independent-name', role); assert.equal(result.exitCode, 0, result.stderr);
+  const b = bindingStore(s.host.bb).participant(s.task, 'independent-name');
+  assert.equal(s.threads.get(b.threadId).title, `${s.task} · ${role === 'worker' ? 'Worker' : 'Review'} · independent-name`);
+  assert.equal(b.participant, 'independent-name'); assert.equal(b.environmentId, 'env');
+  assert.equal(s.environment.name, null); assert.deepEqual(s.names, []);
+});
+
+test('SDK display override: related pair survives shared worker/reviewer environment and independent identities', async t => {
+  const s = await stand(t); await s.create();
+  const result = await s.add('alpha', 'worker', ['--new-environment', '--base-branch', 'main',
+    '--display-label', 'TASK-12 + TASK-13', '--display-subject', 'Markdown anchors', '--repository-label', 'sample-repo']);
+  assert.equal(result.exitCode, 0, result.stderr);
+  const review = await s.add('beta', 'reviewer', ['--environment', 'bb-actual-env']); assert.equal(review.exitCode, 0, review.stderr);
+  assert.equal(s.threads.get('thr-2').title, 'TASK-12 + TASK-13 · Worker · Markdown anchors');
+  assert.equal(s.threads.get('thr-3').title, 'TASK-12 + TASK-13 · Review · Markdown anchors');
+  assert.equal(s.workerEnvironment.name, 'TASK-12 + TASK-13 · sample-repo');
+  assert.deepEqual(s.names, [{ environmentId: 'bb-actual-env', name: 'TASK-12 + TASK-13 · sample-repo' }]);
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'beta').environmentId, 'bb-actual-env');
+});
+
+test('SDK display ownership: only a newly owned unnamed environment receives a default name', async t => {
+  const s = await stand(t); await s.create();
+  const added = await s.add('alpha', 'worker', ['--new-environment', '--base-branch', 'main']); assert.equal(added.exitCode, 0, added.stderr);
+  assert.equal(s.workerEnvironment.name, `${s.task} · ${path.basename(s.root)}`);
+  assert.deepEqual(s.names, [{ environmentId: 'bb-actual-env', name: `${s.task} · ${path.basename(s.root)}` }]);
+});
+
+for (const scenario of ['custom', 'existing-path', 'foreign-user', 'other-task']) test(`SDK display preservation: ${scenario} environment and unrelated threads stay unchanged`, async t => {
+  const s = await stand(t, { existingEnvironment: scenario === 'existing-path' }); await s.create();
+  if (scenario === 'existing-path') s.workerEnvironment.managed = false;
+  if (scenario === 'custom') s.workerEnvironment.name = 'My custom worktree';
+  if (scenario === 'foreign-user') s.threads.set('unrelated', makeThreadResponse({ id: 'unrelated', environmentId: 'bb-actual-env', title: 'Keep this title' }));
+  if (scenario === 'other-task') {
+    const foreign = { ...bindingStore(s.host.bb).task(s.task), task: newTaskIdentity('other-task').id, threadId: null, environmentId: 'bb-actual-env' };
+    bindingStore(s.host.bb).reserve(foreign, true);
+  }
+  const before = structuredClone(s.threads.get('unrelated'));
+  const extra = scenario === 'existing-path' ? ['--environment-path', s.workerEnvironment.path] : ['--new-environment', '--base-branch', 'main'];
+  const result = await s.add('alpha', 'worker', extra); assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(s.workerEnvironment.name, scenario === 'custom' ? 'My custom worktree' : null);
+  assert.deepEqual(s.names, []); assert.deepEqual(s.threads.get('unrelated'), before); assert.equal(s.environment.name, null);
+});
+
+for (const scenario of ['exception', 'unconfirmed']) test(`SDK display metadata failure: ${scenario} is visible and never reported as ready`, async t => {
+  const s = await stand(t, scenario === 'exception' ? { nameError: 'Environment metadata unavailable' } : { nameUnconfirmed: true }); await s.create();
+  const result = await s.add('alpha', 'worker', ['--new-environment', '--base-branch', 'main']);
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, scenario === 'exception' ? /Environment metadata unavailable/ : /BB environment naming was not confirmed/);
+  const b = bindingStore(s.host.bb).participant(s.task, 'alpha'); assert.equal(b.phase, 'orphan');
+  assert.equal(s.threads.get(b.threadId).status, 'idle'); assert.equal(s.events.includes('assignment'), false);
+  assert.equal(bindingStore(s.host.bb).launchIntent(b).status, 'recorded');
+});
+
+async function displayAcceptance(t, extra = []) {
+  const acceptance = { id: 'acceptance-env', projectId: 'project', path: '/dedicated/acceptance', hostId: 'local', managed: false,
+    name: 'Acceptance worktree', environmentProviderInstanceKey: null, status: 'ready', lifecycle: { phase: 'active' } };
+  const s = await stand(t, { environments: [acceptance] }); await s.create();
+  const worker = await s.add('alpha', 'worker', extra); assert.equal(worker.exitCode, 0, worker.stderr);
+  const reviewer = await s.add('beta', 'reviewer'); assert.equal(reviewer.exitCode, 0, reviewer.stderr);
+  for (const from of ['alpha', 'beta']) await s.call(bindingStore(s.host.bb).participant(s.task, from).threadId, 'promptobus_send',
+    { to: ['orchestrator'], type: 'result', body: 'Recorded result, content is opaque.' });
+  return s;
+}
+
+for (const pair of [false, true]) test(`SDK display acceptance: authenticated worker parent and orchestrator lifecycle survive tools stop/resume (pair ${pair})`, async t => {
+  const extra = pair ? ['--display-label', 'TASK-12 + TASK-13', '--display-subject', 'Markdown anchors'] : [];
+  const s = await displayAcceptance(t, extra); const store = bindingStore(s.host.bb);
+  const predecessors = ['alpha', 'beta'].map(id => store.participant(s.task, id));
+  const before = predecessors.map(b => structuredClone(b));
+  s.threads.set('unrelated', makeThreadResponse({ id: 'unrelated', environmentId: 'unrelated-env', title: 'Unrelated thread' }));
+  const unrelated = structuredClone(s.threads.get('unrelated'));
+  const added = await s.add('acceptor', 'approver', ['--environment', 'acceptance-env', '--worker', 'alpha', '--reviewer', 'beta']);
+  assert.equal(added.exitCode, 0, added.stderr);
+  const b = store.participant(s.task, 'acceptor'); const thread = s.threads.get(b.threadId);
+  assert.equal(thread.parentThreadId, 'thr-2'); assert.equal(b.parentThreadId, 'thr-2');
+  assert.equal(s.spawns.at(-1).parentThreadId, 'thr-2'); assert.equal(s.spawns.at(-1).lifecycleOwnerThreadId, 'thr-1');
+  assert.equal(thread.lifecycleOwnerThreadId, 'thr-1'); assert.equal(b.lifecycleOwnerThreadId, 'thr-1');
+  assert.equal(thread.title, `${pair ? 'TASK-12 + TASK-13' : s.task} · Acceptance · ${pair ? 'Markdown anchors' : 'alpha'}`);
+  assert.equal(b.environmentId, 'acceptance-env'); assert.equal(b.environmentPath, '/dedicated/acceptance');
+  assert.equal(b.branch, 'actual-bb-branch'); assert.equal(b.baseSha, 'b'.repeat(40)); assert.deepEqual(b.predecessors, { worker: 'alpha', reviewer: 'beta' });
+  assert.notEqual(b.environmentId, predecessors[0].environmentId); assert.equal(s.environments.get('acceptance-env').name, 'Acceptance worktree');
+  assert.equal(JSON.parse((await s.control('get', 'acceptor')).stdout).view.state, 'alive');
+  const task = JSON.parse(await s.call(b.threadId, 'promptobus_task')); assert.equal(task.id, s.task); assert.equal(task.participant, 'acceptor');
+  assert.deepEqual(task.contacts.filter(p => ['alpha', 'beta'].includes(p.id)).map(p => p.threadId).sort(), ['thr-2', 'thr-3']);
+  assert.ok(await s.call(b.threadId, 'promptobus_mailbox', { mode: 'read' }));
+  await s.call('thr-1', 'promptobus_send', { to: ['acceptor'], type: 'status', body: 'Orchestrator still owns the acceptance lifecycle.' }); await s.reconcile();
+  assert.equal(s.wakes.at(-1).threadId, b.threadId);
+  const stopped = await s.control('stop', 'acceptor'); assert.equal(stopped.exitCode, 0, stopped.stderr); assert.equal(JSON.parse(stopped.stdout).confirmed, true);
+  assert.equal(s.delivery(b.threadId).paused, true);
+  const resumed = await s.control('resume', 'acceptor'); assert.equal(resumed.exitCode, 0, resumed.stderr); assert.equal(s.delivery(b.threadId).paused, false);
+  assert.ok(await s.call(b.threadId, 'promptobus_mailbox', { mode: 'read' }));
+  assert.deepEqual(['alpha', 'beta'].map(id => store.participant(s.task, id)), before);
+  assert.deepEqual(s.threads.get('unrelated'), unrelated); assert.deepEqual(s.names, []);
+});
+
+test('SDK display raw parent regression: metadata-only reparent rejects task mailbox inspection and lifecycle', async t => {
+  const s = await displayAcceptance(t);
+  const added = await s.add('acceptor', 'approver', ['--environment', 'acceptance-env', '--worker', 'alpha', '--reviewer', 'beta']); assert.equal(added.exitCode, 0, added.stderr);
+  const b = bindingStore(s.host.bb).participant(s.task, 'acceptor'); const thread = s.threads.get(b.threadId);
+  const before = structuredClone(thread); thread.parentThreadId = thread.parentThreadId === 'thr-2' ? 'thr-1' : 'thr-2';
+  assert.equal(JSON.parse((await s.control('get', 'acceptor')).stdout).status, 'BB binding mismatch');
+  await assert.rejects(s.call(b.threadId, 'promptobus_task'), /BB thread binding mismatch/);
+  await assert.rejects(s.call(b.threadId, 'promptobus_mailbox', { mode: 'read' }), /BB thread binding mismatch/);
+  assert.equal((await s.control('stop', 'acceptor')).exitCode, 1); assert.equal((await s.control('resume', 'acceptor')).exitCode, 1);
+  Object.assign(thread, before); assert.equal(JSON.parse(await s.call(b.threadId, 'promptobus_task')).participant, 'acceptor');
+});
+
+for (const predecessor of ['alpha', 'beta']) for (const mismatch of ['parent', 'lifecycle', 'project', 'provider', 'environment', 'missing', 'foreign']) test(`SDK display predecessor refusal: ${predecessor} ${mismatch} never reserves or spawns acceptance`, async t => {
+  const s = await displayAcceptance(t); const store = bindingStore(s.host.bb); const worker = store.participant(s.task, predecessor);
+  if (mismatch === 'missing') s.threads.delete(worker.threadId);
+  else if (mismatch === 'foreign') { s.threads.set('foreign-thread', makeThreadResponse({ id: 'foreign-thread' })); }
+  else s.threads.get(worker.threadId)[`${mismatch === 'parent' ? 'parentThread' : mismatch === 'lifecycle' ? 'lifecycleOwnerThread' : mismatch}Id`] = 'foreign';
+  const count = s.spawns.length;
+  const result = await s.add('acceptor', 'approver', ['--environment', 'acceptance-env', '--worker', mismatch === 'foreign' && predecessor === 'alpha' ? 'foreign-worker' : 'alpha',
+    '--reviewer', mismatch === 'foreign' && predecessor === 'beta' ? 'foreign-reviewer' : 'beta']);
+  assert.equal(result.exitCode, 1, result.stdout); assert.equal(s.spawns.length, count); assert.equal(store.participant(s.task, 'acceptor'), undefined);
+});
+
+
+test('SDK display metadata failure: unconfirmed thread title fails before participant activation', async t => {
+  const s = await stand(t, { titleUnconfirmed: true }); const result = await s.create();
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /BB thread naming was not confirmed/);
+  const b = bindingStore(s.host.bb).task(s.task); assert.equal(b.phase, 'orphan'); assert.equal(s.threads.get(b.threadId).status, 'idle');
+});
+
+test('SDK display ownership: newly registered unmanaged path is named only with its actual launch instance', async t => {
+  const s = await stand(t); await s.create(); s.workerEnvironment.managed = false;
+  const result = await s.add('alpha', 'worker', ['--environment-path', s.workerEnvironment.path]); assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(s.workerEnvironment.environmentProviderInstanceKey, 'thr-2'); assert.equal(s.workerEnvironment.name, `${s.task} · ${path.basename(s.root)}`);
+  assert.equal(JSON.parse(result.stdout).display.environment.status, 'named');
+});
+
+test('SDK display legacy binding: absent optional metadata uses canonical task and participant fallback', async t => {
+  const s = await stand(t); await s.create(); const store = bindingStore(s.host.bb); const owner = store.task(s.task);
+  delete owner.display; store.save(owner); await s.reload();
+  const result = await s.add('legacy-worker'); assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(s.threads.get('thr-2').title, `${s.task} · Worker · legacy-worker`);
+});
+
+
+for (const override of [false, true]) test(`SDK display existing-path reviewer: actual shared identity inherits labels after preparation (override ${override})`, async t => {
+  const s = await stand(t); await s.create(); s.workerEnvironment.managed = false;
+  const worker = await s.add('alpha', 'worker', ['--environment-path', s.workerEnvironment.path,
+    '--display-label', 'TASK-12 + TASK-13', '--display-subject', 'Markdown anchors', '--repository-label', 'sample-repo']); assert.equal(worker.exitCode, 0, worker.stderr);
+  const extra = override ? ['--display-subject', 'Independent review'] : [];
+  const reviewer = await s.add('beta', 'reviewer', ['--environment-path', s.workerEnvironment.path, ...extra]); assert.equal(reviewer.exitCode, 0, reviewer.stderr);
+  assert.equal(s.threads.get('thr-3').title, `TASK-12 + TASK-13 · Review · ${override ? 'Independent review' : 'Markdown anchors'}`);
+  assert.equal(s.threads.get('thr-2').environmentId, s.threads.get('thr-3').environmentId);
+  assert.equal(s.workerEnvironment.name, 'TASK-12 + TASK-13 · sample-repo'); assert.equal(s.names.length, 1);
+});
+
+for (const mode of ['exception', 'unconfirmed']) test(`SDK display existing-path reviewer: ${mode} title update refuses ready outcome`, async t => {
+  const s = await stand(t, mode === 'exception' ? { titleUpdateError: 'Thread metadata unavailable' } : { titleUpdateUnconfirmed: true });
+  await s.create(); s.workerEnvironment.managed = false;
+  assert.equal((await s.add('alpha', 'worker', ['--environment-path', s.workerEnvironment.path, '--display-label', 'TASK-12'])).exitCode, 0);
+  const result = await s.add('beta', 'reviewer', ['--environment-path', s.workerEnvironment.path]); assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, mode === 'exception' ? /Thread metadata unavailable/ : /BB thread naming was not confirmed/);
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'beta').phase, 'orphan');
 });

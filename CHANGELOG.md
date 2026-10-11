@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflow on this build are separate verification steps.
   [Compatibility proof](docs/reference/02-host.md#bb-reviewer-compatibility-proof).
 
+- Give BB participant launches card/task, role and subject display titles, with
+  explicit caller overrides and shared worker/reviewer labels. Name only newly
+  owned, unnamed environments with no other users. Spawn acceptance under its
+  authenticated worker while retaining the orchestrator lifecycle owner and
+  selected acceptance workspace; metadata failures remain visible. Coverage is
+  SDK fixture evidence; live sidebar and new-source native behavior are unmeasured.
+  [Display names](bb-plugin-promptobus/README.md#display-names-and-acceptance-placement).
+
 - Deliver complete BB command grants with authorization and owner confirmation in
   one task, prebound before activation. Require current ownership and STOP checks
   before each mechanical call, fresh routing before substantial suites, and an

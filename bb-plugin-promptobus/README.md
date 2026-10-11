@@ -44,6 +44,25 @@ Startup also verifies the effective disabled features, private home and absence
 of configured MCP servers, including managed configuration. Model and effort
 changes require a fresh reviewer session.
 
+
+## Display names and acceptance placement
+
+Titles begin with the card/task label, role and short subject. `task create` and
+`participant add` accept `--display-label`, `--display-subject` and
+`--repository-label`, including explicit related pairs. Defaults use the canonical
+task id, participant id and verified coordinator workspace basename. A reviewer
+sharing exactly one worker's actual environment inherits its display metadata.
+Only newly launch-owned, unnamed environments without other users are named;
+custom and shared names remain intact. Launch output reports the naming outcome;
+metadata failures retain an orphan binding instead of claiming success.
+
+A new approver is spawned below its authenticated worker, retaining its selected
+acceptance workspace and the orchestrator lifecycle owner. Raw metadata reparenting
+of an already bound thread is refused by authentication. The
+[display contract](../docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
+describes defaults, inheritance, ownership checks and the SDK fixture evidence
+boundary. Live sidebar and new-source native behavior remain unmeasured.
+
 ## Role instructions
 
 The six standing role contracts live in `skills/` and are generated from

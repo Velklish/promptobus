@@ -614,6 +614,48 @@ The existing environment-id route remains immediate; existing paths retain
 workspace ownership, while managed worktrees remain BB-owned. These path checks
 are covered by SDK fixtures; live path registration has not been measured.
 
+
+### BB display names and acceptance placement
+
+New participant titles start with `<card/task label> · <role> · <short subject>`.
+Workers use `Worker`, reviewers use `Review`, and approvers use `Acceptance`.
+`task create` and `participant add` accept `--display-label`, `--display-subject`
+and `--repository-label`. A label may name an explicit related pair, such as
+`TASK-12 + TASK-13`; assignment Markdown is never parsed for display metadata.
+The default label is the canonical task id, the participant subject is its id,
+and the repository label is the basename of the verified coordinator workspace.
+The orchestrator subject defaults to its task title. Existing bindings without
+display metadata retain the canonical task/participant fallback.
+
+A reviewer reusing exactly one ready worker's actual environment inherits that
+worker's label, subject and repository label unless explicitly overridden. For an
+existing-path launch, this inheritance occurs after the actual environment is
+resolved; SDK title update and fresh readback precede participant activation.
+An approver inherits its selected worker's display metadata. Canonical task and
+participant ids remain unchanged.
+
+Only a provisioned environment with an empty name and an actual provider instance
+key matching this launch's thread can receive `<label> · <repository label>`.
+Fresh SDK thread scans and plugin bindings must show no other users of that
+environment. Existing names and shared environments are preserved; an explicit
+existing path or empty name alone does not establish ownership. Reusing an
+environment id never renames it. Launch output reports the confirmed title and
+the environment naming or preservation outcome. A failed or unconfirmed metadata
+operation fails launch and retains an orphan binding for operator recovery.
+
+Before an approver is spawned, the adapter resolves both explicit predecessors
+from the same authenticated task and verifies their current SDK identities and
+lifecycle owner. It retains the canonical result/assignment checks. The new
+approver's actual and registered parent is the selected worker; its lifecycle
+owner remains the orchestrator. The selected acceptance environment, path and
+branch stay separate from UI ancestry. Authentication checks both fields on
+subsequent tool calls. Do not reparent an already bound participant through raw
+BB metadata: a changed parent without a matching binding is refused.
+
+Coverage uses SDK launch, authenticated task/mailbox, participant inspection and
+Stop/resume fixtures, including the raw-parent binding mismatch. These fixtures
+do not prove live sidebar rendering or new-source native BB behavior.
+
 ### BB command grant delivery
 
 The BB orchestrator persists the authenticated actor, immutable authorization token,

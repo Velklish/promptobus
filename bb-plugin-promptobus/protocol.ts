@@ -35,6 +35,7 @@ export const bindingSchema = z.object({
   environmentOwner: z.enum(['existing', 'bb']).default('existing'), branch: z.string().nullable().default(null),
   baseSha: z.string().regex(/^[a-f0-9]{40,64}$/).nullable().default(null), bootstrap: z.string().optional(),
   preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
+  display: z.object({ label: z.string().trim().min(1), subject: z.string().trim().min(1), repository: z.string().trim().min(1) }).strict().optional(),
   execution: executionSchema.optional(),
   hostContext: hostContextSchema.optional(),
   predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
