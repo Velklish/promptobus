@@ -20,7 +20,7 @@ import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
+import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
@@ -90,7 +90,8 @@ const SB = makeSandbox(RUN_PREFIX);
 markRunOwner(SB);
 // A surviving sandbox holds a thread record, and its holder keeps a live app-server while it does.
 for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
-const TASK = `livecodex-t${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
+const identity = freshScenarioIdentity('livecodex');
+const TASK = identity.id;
 const WORKER = 'worker:live';
 const ORCH_SESSION = `orch-live-codex-${process.pid}`;
 const MARK = 'LIVE-CODEX-HELLO';
@@ -118,7 +119,7 @@ const env = {
   PROMPTOBUS_CODEX_HOME: stateHome,
 };
 
-store.createTask(home, { id: TASK, title: 'live check of the Codex driver', owner: ORCH_SESSION });
+store.createTask(home, { ...identity, owner: ORCH_SESSION });
 
 process.stdout.write(`▸ live Codex run: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
 process.stdout.write(`▸ model: ${MODEL} · sandbox: read-only · approvalPolicy: on-request\n`);
@@ -139,7 +140,7 @@ onAbort((signal) => {
 const t0 = Date.now();
 try {
   const t2 = Date.now();
-  const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
+  const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK, '--title', identity.title,
     '--worker', 'live', '--harness', 'codex', '--model', MODEL, '--permission-mode', 'read-only'],
   { cwd: ws, env });
   check('step 1: promptobus spawn --harness codex --permission-mode read-only raised a participant',

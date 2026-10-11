@@ -43,6 +43,8 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-034-bb-host-context-delivery.md](adr/adr-034-bb-host-context-delivery.md) | BB delivers full Host rules/skills and authenticated canonical calls through a consumer-owned Host adapter | Accepted |
 | [adr/adr-035-bb-role-workflow-support.md](adr/adr-035-bb-role-workflow-support.md) | BB approver admission reuses factual pipeline currency; full support requires measured six-role profile evidence | Accepted |
 
+| [adr/adr-036-live-run-owned-cleanup.md](adr/adr-036-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Accepted |
+
 ## Cross-cutting principles
 
 1. **An undocumented change is incomplete.** Update the reference, subsystem README, and CHANGELOG in the same pass as the code.

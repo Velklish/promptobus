@@ -524,3 +524,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-370.1"></a>`PB-370.1-bb-reviewer-codex-version-startup` · 2026-10-11 · completed · — · BB reviewer cannot start with the current Codex CLI
 - <a id="pb-370"></a>`PB-370-bb-participant-display-names` · 2026-10-11 · completed · — · BB participant threads and environments need clear default display names
 - <a id="pb-350.5"></a>`PB-350.5-bb-evidence-verdict-names` · 2026-10-12 · completed · — · Preserve exact test names in BB evidence inventories
+- <a id="pb-356.1"></a>`PB-356.1-codex-canon-status-races-lawful-note` · 2026-10-03 · completed · — · Codex canon ignore check races a lawful worker note
+- <a id="pb-356"></a>`PB-356-participant-live-probes-abort` · 2026-10-03 · completed · — · Own participant live scenarios and clean aborted e2e runs
+- <a id="pb-356.2"></a>`PB-356.2-mutation-probe-interrupted-run` · 2026-10-10 · completed · — · Mutation probe counts a signalled probe as successful proof

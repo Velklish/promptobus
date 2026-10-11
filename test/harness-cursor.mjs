@@ -36,7 +36,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync,
-  rmSync, writeFileSync,
+  renameSync, rmSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -126,7 +126,13 @@ function readSess(home, server, name) {
 function writeSess(home, server, sess) {
   const file = sessionPath(home, server, sess.name);
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(sess, null, 2)}\n`);
+  const pending = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(pending, `${JSON.stringify(sess, null, 2)}\n`);
+    renameSync(pending, file);
+  } finally {
+    rmSync(pending, { force: true });
+  }
   return sess;
 }
 
@@ -164,7 +170,7 @@ function listSess(home, server) {
   } catch {
     return [];
   }
-  return files.map((f) => {
+  return files.filter((f) => f.endsWith('.json')).map((f) => {
     try {
       return JSON.parse(readFileSync(path.join(dir, f), 'utf8'));
     } catch {

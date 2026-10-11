@@ -37,6 +37,7 @@
 // verdict count would diverge across runs — while the brief requires the opposite
 // (three runs in a row with the same number). Hence `waitFor`, which returns the last
 // probe instead of failing on timeout.
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -240,10 +241,11 @@ export function cli(args, { cwd, env }) {
 
 // The same transport Claude Code uses to talk to the bus server: line-delimited
 // JSON-RPC over stdio, one long-lived process per session.
-function startMcp(env, cwd) {
+function startMcp(env, cwd, onChild = null) {
   const child = spawn(process.execPath, [PROMPTOBUS_BIN, 'mcp'], {
-    cwd, env, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd, env, detached: !!onChild, stdio: ['pipe', 'pipe', 'pipe'],
   });
+  onChild?.(child, { detached: true });
   const pending = new Map();
   const strays = [];
   let seq = 0;
@@ -464,9 +466,17 @@ export function e2eTaskId(now = new Date()) {
 
 /** The worker's slice title carries the id's seconds: the readable stamp in a session name stops at minutes. */
 export function loopTitle(taskId) {
+  if (/^e2ebus-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(String(taskId ?? ''))) return `Live ${taskId}`;
   const m = /t\d{8}-(\d{2})(\d{2})(\d{2})$/.exec(String(taskId ?? ''));
   return m ? `${LOOP_TITLE} ·${m[1]}:${m[2]}:${m[3]}` : LOOP_TITLE;
 }
+export function freshScenarioIdentity(slug = 'e2ebus', now = new Date()) {
+  const identity = store.newTaskIdentity(`${slug}-${randomUUID().slice(0, 8)}`, now);
+  return { ...identity, title: `Live ${identity.id}`,
+    adapter: { slug: identity.slug, stamp: identity.stamp, titleExplicit: true },
+  };
+}
+
 
 /**
  * Run the scenario. `harness` gives two things the scenario cannot have: a binary
@@ -476,13 +486,21 @@ export function loopTitle(taskId) {
  * `check(name, cond, detail)` is the caller's verdict: under the suite that is the
  * [check.mjs](check.mjs) helper, in a live run — its own report collector.
  */
+
 export async function runScenario({
   check, harness, sandbox, workspace = null, timeouts = {}, trace = () => {}, reviewRounds = 1, listenSocket = null,
 }) {
+  harness.assertRunning?.();
   const step = timeouts.step ?? 30000;
   const stall = timeouts.stall ?? 75000;
   const ORCH_SESSION = `orch-${process.pid}`;
-  const TASK = e2eTaskId();
+  const identity = freshScenarioIdentity();
+  const TASK = identity.id;
+  const runCli = (args, options) => {
+    harness.assertRunning?.();
+    harness.captureSessions?.();
+    return cli(args, options);
+  };
   const wh = participantHarness(harness, WORKER, 'spawnFlags');
   const rh = participantHarness(harness, REVIEWER, 'reviewFlags');
 
@@ -512,7 +530,9 @@ export async function runScenario({
   const orchSock = harness.sock('orchestrator');
   const orchToken = 'e2e-orchestrator-token';
   const inbox = startInbox(orchSock, orchToken, listenSocket);
+  harness.resource?.(() => inbox.close());
   const listening = await inbox.listen();
+  harness.assertRunning?.();
   if (listening?.ok === false) {
     return {
       timings: [], totalMs: 0, postcards: [], mechanism: { declared: PROMPTOBUS_BIN, reported: null }, skipped: listening.reason,
@@ -536,8 +556,14 @@ export async function runScenario({
   // needs to be up early for the stall report — that comes on a heartbeat, once every
   // 30 s, and the time until the first beat the scenario spends on work, not on
   // waiting.
-  store.createTask(home, { id: TASK, title: LOOP_TITLE, owner: ORCH_SESSION });
-  // Named aloud: a person sorting out a cut-off run looks its sessions up by this pair.
+  store.createTask(home, { ...identity, owner: ORCH_SESSION });
+  harness.start?.({ home, task: TASK, workspace: ws,
+    participants: () => {
+      const meta = store.readTask(home, TASK);
+      if (!meta && store.taskExists(home, TASK)) throw new Error('task journal unreadable');
+      return (meta?.participants ?? []).filter((p) => [WORKER, REVIEWER].includes(store.addressOf(p)));
+    },
+  });
   trace(`loop task ${TASK}, slice "${loopTitle(TASK)}"`);
 
   const wardenLog = path.join(sandbox, 'warden.out');
@@ -551,25 +577,30 @@ export async function runScenario({
   // from it becomes unhandled — and by then the sandbox may lawfully already be gone
   // (the live run cleans it up itself, the warden is still appending its tail).
   const keep = (c) => { try { appendFileSync(wardenLog, c); } catch { /* the sandbox is already gone */ } };
+  harness.child?.(warden, { detached: true });
   warden.stdout.on('data', keep);
   warden.stderr.on('data', keep);
 
-  const mcp = startMcp(orchEnv, ws);
+  const mcp = startMcp(orchEnv, ws, harness.child);
   // The orchestrator contact point is handed over by this handshake (the server's
   // `onJoin`): a separate tool call for it is no longer needed. Previously
   // `promptobus_task` sat here right after `initialize` — a prop without which step 3
   // waited for the first postcard in vain.
+  harness.resource?.(() => mcp.stop());
   await mcp.call('initialize', {
     protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'promptobus-e2e-orchestrator', version: '1' },
   });
 
   // End of the orchestrator turn — the same guard the harness marks it with.
-  const orchGuard = () => spawnSync(process.execPath, [PROMPTOBUS_BIN, 'guard'], {
-    cwd: ws,
-    env: orchEnv,
-    input: JSON.stringify({ session_id: ORCH_SESSION, cwd: ws }),
-    encoding: 'utf8',
-  });
+  const orchGuard = () => {
+    harness.assertRunning?.();
+    return spawnSync(process.execPath, [PROMPTOBUS_BIN, 'guard'], {
+      cwd: ws,
+      env: orchEnv,
+      input: JSON.stringify({ session_id: ORCH_SESSION, cwd: ws }),
+      encoding: 'utf8',
+    });
+  };
 
   const inboxOf = (addr) => store.glanceInbox(home, TASK, addr);
   const msgOf = (addr, mark) => inboxOf(addr).find((m) => String(m.body ?? '').includes(mark)) ?? null;
@@ -598,7 +629,7 @@ export async function runScenario({
 
     // --- step 2: spawn the worker ---------------------------------------------------
     const t2 = Date.now();
-    const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
+    const spawned = runCli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK, '--title', identity.title,
       '--worker', 'e2e', ...wh.flags], { cwd: ws, env: orchEnv });
     check('step 2: promptobus spawn started the worker and said so',
       spawned.status === 0 && /worker worker:e2e lifted/.test(spawned.out), tail(spawned.out));
@@ -729,7 +760,7 @@ export async function runScenario({
     const t6 = Date.now();
     await mcp.tool('promptobus_mailbox');
     orchGuard();
-    const reviewed = cli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
+    const reviewed = runCli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
       { cwd: ws, env: orchEnv });
     check('step 6: promptobus review started the reviewer from the worker worktree',
       reviewed.status === 0 && /reviewer reviewer:e2e started/.test(reviewed.out), tail(reviewed.out));
@@ -884,7 +915,7 @@ export async function runScenario({
       const t7b = Date.now();
       await mcp.tool('promptobus_mailbox');
       orchGuard();
-      const again = cli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
+      const again = runCli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
         { cwd: ws, env: orchEnv });
       // Session identity is checked by its REFERENCE, not by a participant count: there
       // is one reviewer address per task, and a second start would rewrite the record
@@ -1156,7 +1187,7 @@ export async function runScenario({
     // grows. The only question here is whether the command carried away what was
     // already sitting there.
     const boxBefore = listDir(store.inboxDir(home, TASK, store.ORCHESTRATOR));
-    const hist = cli([ 'history', '--task', TASK, '--all'], { cwd: ws, env: orchEnv });
+    const hist = runCli([ 'history', '--task', TASK, '--all'], { cwd: ws, env: orchEnv });
     const boxAfter = listDir(store.inboxDir(home, TASK, store.ORCHESTRATOR));
     const lost = boxBefore.filter((n) => !boxAfter.includes(n));
     check('step 12: history showed the read correspondence of the task and marked nothing as read',
@@ -1164,7 +1195,7 @@ export async function runScenario({
       && lost.length === 0,
       `exit ${hist.status} · taken from the orchestrator mailbox ${JSON.stringify(lost)}`
       + ` · was ${boxBefore.length}, became ${boxAfter.length} · ${tail(hist.out)}`);
-    const stat = cli([ 'status', '--task', TASK], { cwd: ws, env: orchEnv });
+    const stat = runCli([ 'status', '--task', TASK], { cwd: ws, env: orchEnv });
     check('step 12: status named the task, the live warden and both participants',
       stat.status === 0 && stat.out.includes(TASK) && stat.out.includes(WORKER)
       && stat.out.includes(REVIEWER) && /warden: alive/.test(stat.out), tail(stat.out));
@@ -1230,7 +1261,7 @@ export async function runScenario({
       .flatMap(([a, h]) => [store.wakeFile(home, TASK, a), ...(h.files ? [store.participantMcpPath(home, TASK, a)] : [])])
       .filter((f) => existsSync(f));
     sessionNames = [WORKER, REVIEWER].map((addr) => participantOf(addr)?.metadata?.name ?? null);
-    const done = cli([ 'done', '--task', TASK], { cwd: ws, env: orchEnv });
+    const done = runCli([ 'done', '--task', TASK], { cwd: ws, env: orchEnv });
     check('step 13: promptobus done closed the task and named the sessions it is tearing down',
       done.status === 0 && /stopping participant sessions \(2\)/.test(done.out) && /worker:e2e/.test(done.out),
       tail(done.out));
@@ -1257,21 +1288,23 @@ export async function runScenario({
     check('step 14: the warden exited on its own — the task is closed, there is nothing to watch',
       gone === true && /warden exited/.test(store.tailWardenLog(home, TASK, 200).join('\n')),
       store.tailWardenLog(home, TASK, 20).join('\n'));
-    const probe = cli([ 'prune', '--older-than', '0'], { cwd: ws, env: orchEnv });
+    const probe = runCli([ 'prune', '--older-than', '0'], { cwd: ws, env: orchEnv });
     check('step 14: a prune probe names the closed task and deletes nothing',
       probe.status === 0 && probe.out.includes(TASK) && /Nothing deleted/.test(probe.out)
       && existsSync(store.taskDir(home, TASK)), tail(probe.out));
-    const pruned = cli([ 'prune', '--older-than', '0', '--yes'], { cwd: ws, env: orchEnv });
+    const pruned = runCli([ 'prune', '--older-than', '0', '--yes'], { cwd: ws, env: orchEnv });
     check('step 14: prune --yes removed the journal of the closed task',
       pruned.status === 0 && !existsSync(store.taskDir(home, TASK)), tail(pruned.out));
     check('step 14: the bus server wrote nothing stray onto the protocol channel',
       mcp.strays.length === 0, JSON.stringify(mcp.strays.slice(0, 3)));
     at(STEPS[13], Date.now() - t14);
   } finally {
-    mcp.stop();
-    await inbox.close();
-    try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already exited */ }
-    harness.cleanup();
+    if (!harness.child) {
+      mcp.stop();
+      await inbox.close();
+      try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already exited */ }
+    }
+    await harness.cleanup();
   }
   return { task: TASK, sessionNames, timings, totalMs: Date.now() - t0, postcards: inbox.seen, mechanism: { declared: PROMPTOBUS_BIN, reported: selfBin } };
 }

@@ -1,6 +1,6 @@
 // Mutation probe: prove a check fails when its subject is broken, and passes when it is not.
 // Why it is a script and not a rule: docs/guides/contributing.md.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,34 @@ function sh(shown, argv = null) {
   const r = argv ? spawnSync(argv[0], argv.slice(1), how) : spawnSync(shown, { ...how, shell: true });
   if (r.error) die(`${shown}: ${r.error.message}`);
   return { code: r.status ?? 1, signal: r.signal, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
+function run(shown, argv = null) {
+  return new Promise((resolve, reject) => {
+    const how = { cwd: ROOT, shell: argv === null };
+    const child = argv ? spawn(argv[0], argv.slice(1), how) : spawn(shown, how);
+    child.stdin.end();
+    const streams = { stdout: '', stderr: '' };
+    const sizes = { stdout: 0, stderr: 0 };
+    let failure = null;
+    for (const name of Object.keys(streams)) {
+      child[name].setEncoding('utf8');
+      child[name].on('data', (chunk) => {
+        if (failure) return;
+        streams[name] += chunk;
+        sizes[name] += Buffer.byteLength(chunk);
+        if (sizes[name] > 64 * 1024 * 1024) {
+          failure = new Refusal(`${shown}: ENOBUFS — ${name} exceeds maxBuffer`);
+          child.kill('SIGTERM');
+        }
+      });
+    }
+    child.on('error', (error) => { failure = new Refusal(`${shown}: ${error.message}`); });
+    child.on('close', (code, signal) => {
+      if (failure) reject(failure);
+      else resolve({ code: code ?? 1, signal, out: streams.stdout + streams.stderr });
+    });
+  });
 }
 
 // A shell reports a death by signal N as 128 + N, and this suite's files and runner exit 130 on one.
@@ -120,16 +148,14 @@ async function main() {
   try {
     mutate(opts, rel, abs, before);
     if (readFileSync(abs, 'utf8') === before) die(`the mutation changed nothing in ${rel} — the probe would have proven nothing`);
-    red = sh(command, argv);
-    // spawnSync blocks the event loop, so a signal that came during the run is delivered only here.
-    await new Promise(setImmediate);
+    red = await run(command, argv);
     const cut = held.length ? `the probe got ${held[0]}` : cutOff(red);
     if (cut) die(`probe: the run with the mutation was cut off (${cut}) — it is not counted as the red; ${rel} is restored`);
   } finally {
     writeFileSync(abs, before);
     for (const s of HELD) process.off(s, hold);
   }
-  const green = sh(command, argv);
+  const green = await run(command, argv);
 
   // Lines that name what fired. Enough to paste into a report; the full output is not reprinted.
   const fired = red.out.split('\n').filter((l) => /✖|✘|not ok|AssertionError|FAIL/.test(l)).slice(0, 5);

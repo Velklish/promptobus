@@ -44,7 +44,7 @@ import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
+import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
@@ -167,7 +167,8 @@ const CODEX_STATE = codexSession.sessionsDir();
 // and the Codex holder log are what a red is debugged by.
 const LOGS_PREFIX = 'promptobus-live-mixed-logs-';
 const KEPT_LOGS = path.join(tmpdir(), `${LOGS_PREFIX}${process.pid}`);
-const TASK = `livemixed-t${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
+const identity = freshScenarioIdentity('livemixed');
+const TASK = identity.id;
 const WORKER = 'worker:live';
 const REVIEWER = 'reviewer:live';
 const ORCH_SESSION = `orch-live-mixed-${process.pid}`;
@@ -202,7 +203,7 @@ const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORC
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
 
-store.createTask(home, { id: TASK, title: 'live check of a mixed roster', owner: ORCH_SESSION });
+store.createTask(home, { ...identity, owner: ORCH_SESSION });
 const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
   cwd: ws, detached: true, stdio: 'ignore', env: wardenEnv,
 });
@@ -329,7 +330,7 @@ try {
 
   // --- step 2: the worker is raised by the cursor harness -----------------------------------
   const t2 = Date.now();
-  const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK,
+  const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK, '--title', identity.title,
     '--worker', 'live', '--harness', 'cursor', '--model', CURSOR_MODEL], { cwd: ws, env });
   check('step 2: promptobus spawn --harness cursor raised a live worker',
     spawned.status === 0 && /worker worker:live lifted/.test(spawned.out), spawned.out.slice(-600));
