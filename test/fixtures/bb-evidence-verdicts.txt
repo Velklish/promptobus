@@ -1,0 +1,19 @@
+✔ new --minor (en): keeps the exact triage parent's empty target (inline) (1.843083ms)
+✔ prefix (one): preserves [brackets], commas; and punctuation! (1.996792ms)
+✔ prefix (two): preserves [brackets], commas; and punctuation! (1.75625ms)
+✔ repeated name (same) (0.858125ms)
+✔ repeated name (same) (82.757334ms)
+✔ duration-like name (12.5ms) (0.944958ms)
+✔ nested (outer (inner)): keeps both pairs (0.802416ms)
+✔ Unicode: résumé — Δ → 東京 (kept) (0.119125ms)
+✔ spacing:  two spaces (kept) (0.239959ms)
+✔ terminal punctuation: 'quotes' / slash : colon (done)! (0.126708ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 93.096959
+lint: no errors

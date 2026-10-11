@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve exact BB evidence test names, order and repeated occurrences in the
+  worker, reviewer and approver guidance. Keep raw output authoritative and gate
+  status separate. Add a checkout-only reference helper for one flat passing
+  Node spec scope; unsupported formats and approximate inventories remain
+  explicitly incomplete. No gate certification or native-schema change follows.
+
 - Require native permission-proof patch denial to match the entire reviewed exec
   source with one awaited canary patch, its call/output identity and measured
   turn, and the isolated child's independent router stderr rejection. Record the

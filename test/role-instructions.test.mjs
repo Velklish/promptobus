@@ -96,6 +96,13 @@ for (const role of ['worker', 'reviewer', 'approver']) {
       assert.doesNotMatch(body, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, label);
       for (const field of ['tree', 'dirty', 'exit']) assert.ok(body.includes(`\`${field}\``), `${label}: ${field}`);
       assert.match(body, /not run|notRun/, label);
+      assert.match(body, /exact test names, order and repeated occurrences/, label);
+      assert.match(body, /only the terminal numeric duration/, label);
+      assert.match(body, /gate status separate from test names/, label);
+      assert.match(body, /raw output authoritative/, label);
+      assert.match(body, /unsupported formats.*explicitly incomplete/, label);
+      assert.match(body, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/, label);
+      assert.match(body, /manual lossless opaque UTF-8 evidence/, label);
     }
     assert.ok(skill.endsWith(rendered.trimEnd() + '\n'));
     if (role === 'worker') {
@@ -103,6 +110,8 @@ for (const role of ['worker', 'reviewer', 'approver']) {
       const protocol = readFileSync(new URL('../docs/reference/04-protocol.md', import.meta.url), 'utf8');
       assert.match(protocol, /Gate and handover evidence in BB uses UTF-8 opaque `\.txt` attachments/);
       assert.match(protocol, /Attachment acceptance is not schema validation/);
+      assert.match(protocol, /\[reference helper\]\(\.\.\/\.\.\/scripts\/bb-evidence-verdict-names\.mjs\)/);
+      assert.match(protocol, /names, counts and multiplicities/);
     }
   });
 }

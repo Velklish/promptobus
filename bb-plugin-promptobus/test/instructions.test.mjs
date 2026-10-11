@@ -40,6 +40,11 @@ for (const role of ['worker', 'reviewer', 'approver']) {
       assert.match(text, /UTF-8 opaque|opaque UTF-8/);
       assert.match(text, /authenticated[^.\n]*participant id/i);
       assert.match(text, /not schema validation/i);
+      assert.match(text, /exact test names, order and repeated occurrences/);
+      assert.match(text, /only the terminal numeric duration/);
+      assert.match(text, /gate status separate from test names/);
+      assert.match(text, /unsupported formats.*explicitly incomplete/);
+      assert.match(text, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/);
       assert.match(text, /\.txt/);
       assert.doesNotMatch(text, /artifactPath/);
       assert.doesNotMatch(text, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/);

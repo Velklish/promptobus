@@ -76,6 +76,11 @@ console.log(JSON.stringify(roles.map(role => ({role, body:renderBbInstructionSki
     assert.match(body, /UTF-8 opaque|opaque UTF-8/, role);
     assert.match(body, /authenticated[^.\n]*participant id/i, role);
     assert.match(body, /not schema validation/i, role);
+    assert.match(body, /exact test names, order and repeated occurrences/, role);
+    assert.match(body, /only the terminal numeric duration/, role);
+    assert.match(body, /gate status separate from test names/, role);
+    assert.match(body, /unsupported formats.*explicitly incomplete/, role);
+    assert.match(body, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/, role);
     assert.match(body, /\.txt/, role);
     assert.doesNotMatch(body, /artifactPath/, role);
     assert.doesNotMatch(body, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/, role);

@@ -847,6 +847,27 @@ evidence against their supplied snapshot without executing mechanical checks.
 Approvers judge it under the assigned acceptance procedure and record their own
 authorized gate executions under their own authenticated id.
 
+Test-name inventories preserve exact names, order and repeated occurrences from
+complete raw output. Parentheses, punctuation, Unicode and internal spacing belong
+to the name; remove only the terminal numeric duration field of a supported
+verdict line. Keep lint and other gate status separate from test names. Match
+the names, counts and multiplicities against the complete raw test scope. Raw
+output remains authoritative; an approximate inventory, missing raw or an
+unsupported format is explicitly incomplete, with a concrete reason.
+
+The checkout-only [reference helper](../../scripts/bb-evidence-verdict-names.mjs)
+exports `extractNodeTestVerdictNames(raw)` and returns `{ complete, names, reason }`.
+It supports one flat passing Node spec scope: `✔ <exact name> (<number>ms)` lines
+followed by one complete `ℹ` footer whose test and pass counts match the verdict
+occurrences, with zero suites, failures, cancellations, skips and todos. Only the
+last duration is removed: `✔ name (12.5ms) (0.8ms)` yields `name (12.5ms)`.
+Unrelated plain gate status is excluded. Missing or inconsistent footers, nested
+or concatenated scopes, custom verdict printers, other reporters, ANSI-decorated
+output and failed or skipped formats are unsupported and must remain incomplete.
+The helper does not certify gates or arbitrary runner output and is not shipped
+in the package. Retaining raw output and recording a manual lossless opaque UTF-8
+inventory remains valid; no native-schema validation follows from extraction.
+
 ## BB workflow result currency
 
 The local BB facade routes all six standing roles through authenticated bindings.

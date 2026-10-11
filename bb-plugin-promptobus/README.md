@@ -419,6 +419,20 @@ judgment and the operator's final source verification remain required. Approver
 archive is preservation, not acceptance; task journals remain unaccepted until an
 explicit operator acceptance action.
 
+Evidence inventories preserve exact test names, order and repeated occurrences
+from complete raw output. Remove only a supported verdict's terminal numeric
+duration; retain parentheses, punctuation, Unicode and internal spacing. Keep
+lint and other gate status separate, and check names, counts and multiplicities
+against the raw test scope. Raw output is authoritative; approximate inventories,
+missing raw and unsupported formats are explicitly incomplete.
+
+The checkout-only [reference helper](../scripts/bb-evidence-verdict-names.mjs)
+supports one flat passing Node spec scope with one complete footer. Nested or
+concatenated scopes, custom printers, other reporters, ANSI output, failures and
+skips are unsupported. The helper cannot certify gates and is not shipped in the
+library package. Manual lossless opaque UTF-8 evidence with retained raw output
+remains valid. See [BB evidence attachments](../docs/reference/04-protocol.md#bb-evidence-attachments).
+
 The 2026-10-08 live workflow established the following source profile. It used
 actual canonical messages, committed source and retained artifacts; SDK fixtures
 alone are not this support claim.
