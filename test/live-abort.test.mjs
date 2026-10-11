@@ -3,9 +3,13 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath } from './sandbox.mjs';
+import { harnessSessions, installHarness, pidAlive, planParticipant, stopAll, waitFor } from './harness.mjs';
+import { runScenario, store } from './scenario.mjs';
+import { liveRun, onAbort as onAwaitedAbort } from '../scripts/live-run.mjs';
 import { ABORT_SIGNALS, exitCodeOf, onAbort } from '../scripts/live-abort.mjs';
 import { parseLiveArgs } from '../scripts/live-args.mjs';
 
@@ -205,3 +209,110 @@ check('guide: no real-binary run is in npm test or the gates, while the --help a
 check('guide: the live-cursor review verdict is the report naming the round diff file, not a marker echo',
   guide.includes("the reviewer's report has to name that diff file")
   && !guide.includes("and the reviewer's report has to name it."));
+
+// Hold an actual scenario postcard until awaited native-stop cleanup has begun.
+async function scenarioPostcardCase(abort) {
+  const dir = path.join(SB, abort ? 'scenario-abort' : 'scenario-normal');
+  mkdirSync(dir);
+  const sock = makeSockPath('a2e-');
+  const installed = await installHarness({ binDir: path.join(dir, 'bin'), sock });
+  const nativeCwd = path.join(dir, 'native');
+  mkdirSync(nativeCwd);
+  const native = { sessionId: 'fixture-native', id: 'fixture-native-id', cwd: nativeCwd, pid: 31001 };
+  let registry = [native];
+  let rows = [{ pid: 31001, parent: 1, group: 31001, birth: 'fixture-native-birth' }];
+  let releaseStop;
+  let cleanupHeld = false;
+  let aborted = false;
+  const run = liveRun({ sandbox: dir, readSessions: () => registry, readProcesses: () => rows,
+    stopSession: async () => {
+      cleanupHeld = true;
+      await new Promise((resolve) => { releaseStop = resolve; });
+      registry = []; rows = [];
+      return { ok: true, stopped: true };
+    }, kill: () => {}, remove: () => {}, timeoutMs: 0 });
+  run.start({ workspace: dir, participants: () => [{ metadata: { sessionId: native.sessionId, worktree: nativeCwd } }] });
+  const emitter = new EventEmitter();
+  const dispose = onAwaitedAbort(async () => { aborted = true; await run.cleanup(); }, { emitter, exit: () => {} });
+  const children = [];
+  const resources = [];
+  const held = [];
+  const calls = [];
+  let firstStatus = false;
+  let context;
+  let releaseCards = false;
+  const complete = new Error('scenario fixture complete');
+  const harness = {
+    scripted: true, sock, spawnFlags: [], reviewFlags: [],
+    plan: (address, script) => planParticipant(installed.home, address, script),
+    sessions: () => harnessSessions(installed.home),
+    liveSessions: (refs) => harnessSessions(installed.home).filter((s) => refs.includes(s.name) && pidAlive(s.pid)),
+    pidsOf: (refs) => harnessSessions(installed.home).filter((s) => refs.includes(s.name)).map((s) => s.pid),
+    pidAlive, diagnose: () => '', assertRunning: run.assertRunning,
+    start: (value) => { context = value; }, resource: (close) => resources.push(close),
+    child: (child) => {
+      children.push(child);
+      if (!child.spawnargs.includes('mcp')) return;
+      const write = child.stdin.write.bind(child.stdin);
+      child.stdin.write = (chunk, ...args) => {
+        const message = JSON.parse(String(chunk));
+        if (message.method === 'tools/call') calls.push({ name: message.params.name, aborted, cleanupHeld });
+        return write(chunk, ...args);
+      };
+    }, cleanup: () => {},
+  };
+  const scenario = runScenario({ harness, sandbox: dir, timeouts: { step: 30_000, stall: 30_000 },
+    listenSocket: (server, file) => {
+      server.on('connection', (connection) => {
+        if (!releaseCards) { connection.pause(); held.push(connection); }
+      });
+      return listenTestSocket(server, file);
+    },
+    check: (name, condition, detail) => {
+      if (!condition) throw new Error(`${name}: ${detail ?? ''}`);
+      if (name.startsWith('step 3: the first worker status')) firstStatus = true;
+      if (name.startsWith('step 5: the worker fetched the mailbox')) throw complete;
+    },
+  }).then((report) => ({ report }), (error) => ({ error }));
+  try {
+    const ready = await waitFor(() => firstStatus && held.length > 0, { timeoutMs: 30_000 });
+    if (!ready) throw new Error('scenario never held its step 3 postcard');
+    const worktree = context.participants().find((p) => store.addressOf(p) === 'worker:e2e')?.metadata.worktree;
+    const note = path.join(worktree, 'e2e/note.md');
+    const before = existsSync(note);
+    if (abort) {
+      emitter.emit('SIGTERM');
+      if (!cleanupHeld || !releaseStop) throw new Error('native-stop barrier was not entered');
+    }
+    releaseCards = true;
+    for (const connection of held) connection.resume();
+    const ended = await scenario;
+    const answered = calls.some((call) => call.name === 'promptobus_send');
+    if (answered) await waitFor(() => existsSync(note), { timeoutMs: 30_000 });
+    return { before, after: existsSync(note), calls, cleanupHeld,
+      ended: ended.error?.message ?? ended.report?.skipped ?? 'scenario completed' };
+  } finally {
+    releaseStop?.();
+    dispose();
+    for (const connection of held) connection.destroy();
+    await stopAll(installed.home);
+    for (const close of resources.reverse()) await close();
+    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    await waitFor(() => children.every((child) => child.exitCode !== null || child.signalCode !== null), { timeoutMs: 10_000 });
+    installed.restore();
+  }
+}
+
+const normalScenario = await scenarioPostcardCase(false);
+check('scenario abort: normal queued postcard dispatches the mailbox/body/answer flow and edits the worker note',
+  normalScenario.before === false && normalScenario.after === true && normalScenario.ended === 'scenario fixture complete'
+  && normalScenario.calls.map((call) => call.name).join(',') === 'promptobus_mailbox,promptobus_mailbox,promptobus_send'
+  && normalScenario.calls.every((call) => !call.aborted), JSON.stringify(normalScenario));
+
+const abortedScenario = await scenarioPostcardCase(true);
+check('scenario abort: queued postcard cannot dispatch MCP while native stop is held',
+  abortedScenario.cleanupHeld && abortedScenario.ended === 'live run aborted'
+  && abortedScenario.calls.length === 0, JSON.stringify(abortedScenario));
+check('scenario abort: queued postcard cannot mutate the worker note while native stop is held',
+  abortedScenario.before === false && abortedScenario.after === false
+  && abortedScenario.cleanupHeld, JSON.stringify(abortedScenario));
