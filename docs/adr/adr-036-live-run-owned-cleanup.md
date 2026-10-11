@@ -35,6 +35,8 @@ this task and a registry row with the expected private worktree cwd. Preserve th
 first observed native PID/start identity and recheck it before stop.
 
 Handled SIGINT, SIGTERM and SIGHUP await the same cleanup as normal completion.
+The scenario rechecks the run immediately before each MCP dispatch and owned
+mutation after waits, so a queued postcard cannot resume work during cleanup.
 The caller blocks further commands once cleanup starts, waits for owned children,
 and escalates only its own child identities to SIGKILL. A failed registry read,
 stop, identity check or death check retains the stand. Loss of any recorded process latches incomplete ancestry and retains the stand even

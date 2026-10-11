@@ -688,13 +688,16 @@ export async function runScenario({
 
     // --- step 4: orchestrator answer ------------------------------------------------
     const t4 = Date.now();
+    harness.assertRunning?.();
     const box = await mcp.tool('promptobus_mailbox');
     check('step 4: the orchestrator mailbox via a real tool listed the worker message by its header',
       box.isError === false && box.text.includes(`message ${status?.id} · ${status?.body.length} characters`)
       && store.countInbox(home, TASK, store.ORCHESTRATOR) === 0, tail(box.text));
+    harness.assertRunning?.();
     const opened = await mcp.tool('promptobus_mailbox', { message: status?.id });
     check('step 4: after the header read the body came by its id',
       opened.isError === false && opened.text.includes(status?.body), tail(opened.text));
+    harness.assertRunning?.();
     const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: edit only ${NOTE_FILE}` });
     check('step 4: the orchestrator answer went to the worker',
       sent.isError === false && !!msgOf(WORKER, MARK.answer), `${tail(sent.text)} · ${JSON.stringify(inboxOf(WORKER))}`);
@@ -758,6 +761,7 @@ export async function runScenario({
 
     // --- step 6: review -------------------------------------------------------------
     const t6 = Date.now();
+    harness.assertRunning?.();
     await mcp.tool('promptobus_mailbox');
     orchGuard();
     const reviewed = runCli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
@@ -783,7 +787,9 @@ export async function runScenario({
 
     // --- step 7: notes to the worker and second result ------------------------------
     const t7 = Date.now();
+    harness.assertRunning?.();
     await mcp.tool('promptobus_mailbox');
+    harness.assertRunning?.();
     const order = await mcp.tool('promptobus_send', { to: WORKER, type: 'review', body: `${MARK.order}: a reviewer's note — close it` });
     check('step 7: the notes went to the worker as a review message',
       order.isError === false && msgOf(WORKER, MARK.order)?.type === 'review', tail(order.text));
@@ -913,6 +919,7 @@ export async function runScenario({
     // itself creates the second diff file (`review-<slug>-2.diff`).
     if (reviewRounds >= 2) {
       const t7b = Date.now();
+      harness.assertRunning?.();
       await mcp.tool('promptobus_mailbox');
       orchGuard();
       const again = runCli([ 'review', wf.worktree, '--task', TASK, ...rh.flags],
@@ -940,6 +947,7 @@ export async function runScenario({
     // (see the `stalls` capability on `participantHarness`).
     if (wh.stalls) {
       const t8 = Date.now();
+      harness.assertRunning?.();
       await mcp.tool('promptobus_mailbox');
       // We wait for a NEW delivery mark, not merely a non-empty one: `deliveredAt` has
       // been sitting there since the previous turn, and the condition «mailbox empty
@@ -957,6 +965,7 @@ export async function runScenario({
       // 2026-09-02: at load average 87 every run failed this way, under ordinary
       // load — none.
       const quietAt = Date.now();
+      harness.assertRunning?.();
       await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.quiet}: send nothing, just end the turn` });
       orchGuard();
       const quiet = await waitFor(() => {
@@ -977,6 +986,7 @@ export async function runScenario({
       // Second stall-parse channel — the orchestrator `mailbox` reply: it is scored in
       // place, not on a heartbeat, and so is checked before the report.
       const seenByMailbox = await waitFor(async () => {
+        harness.assertRunning?.();
         const answer = await mcp.tool('promptobus_mailbox');
         return answer.text.includes(WORKER) && /stalled:|LISTED|GONE/.test(answer.text) ? answer.text : null;
       }, { timeoutMs: step, stepMs: 500 });
@@ -1027,7 +1037,9 @@ export async function runScenario({
       // the steps is only in what the participant stalled on and what the mechanism
       // must say about it.
       const stallStep = async (mark, order, want) => {
+        harness.assertRunning?.();
         await mcp.tool('promptobus_mailbox');
+        harness.assertRunning?.();
         await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${mark}: ${order}` });
         orchGuard();
         // The snapshot is taken from the harness and given to the driver explicitly —
@@ -1042,6 +1054,7 @@ export async function runScenario({
         // participant stalls at the end of its turn, and the first reply lawfully
         // arrives before it has stalled.
         const said = await waitFor(async () => {
+          harness.assertRunning?.();
           const answer = await mcp.tool('promptobus_mailbox');
           return want.route.test(answer.text) ? answer.text : null;
         }, { timeoutMs: step, stepMs: 500 });
@@ -1091,8 +1104,10 @@ export async function runScenario({
     // arrived, both were woken, a third did not get one — and the layout invariant
     // shared by any number of recipients: canon and the mailbox link are one inode.
     const t11 = Date.now();
+    harness.assertRunning?.();
     await mcp.tool('promptobus_mailbox');
     const artifact = path.join(sandbox, 'artifact.md');
+    harness.assertRunning?.();
     writeFileSync(artifact, `# ${MARK.fan}\n\nOne and the same file goes out twice.\n`);
     // The «knocked as far as» mark is taken BEFORE the send on BOTH. A mailbox fetch
     // does not reset it: the warden delivery branch rewrites the mark field by field
@@ -1106,6 +1121,7 @@ export async function runScenario({
     const knockedWas = Object.fromEntries([WORKER, REVIEWER].map((a) => [a, healthOf(a).knockedTo ?? null]));
     const fanned = [];
     for (const addr of [WORKER, REVIEWER]) {
+      harness.assertRunning?.();
       // eslint-disable-next-line no-await-in-loop
       const r = await mcp.tool('promptobus_send', {
         to: addr, type: 'artifact', body: `${MARK.fan}: the same file to both`, artifactPath: artifact,
@@ -1206,13 +1222,16 @@ export async function runScenario({
     const heir = startMcp({ ...orchEnv, CLAUDE_CODE_SESSION_ID: heirSession }, ws);
     let takeover = null;
     try {
+      harness.assertRunning?.();
       await heir.call('initialize', {
         protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'promptobus-e2e-heir', version: '1' },
       });
+      harness.assertRunning?.();
       const peek = await heir.tool('promptobus_mailbox', { task: TASK });
       check('step 12: a foreign session is given the orchestrator mailbox with a header, and the owner did not change',
         peek.text.includes(store.FOREIGN_MARK) && store.taskOwner(home, TASK) === ORCH_SESSION,
         `${tail(peek.text, 200)} · owner ${store.taskOwner(home, TASK)}`);
+      harness.assertRunning?.();
       takeover = await heir.tool('promptobus_mailbox', { task: TASK, claim: true });
       check('step 12: the claim named the previous owner and rewrote the task owner',
         takeover.text.includes(store.MAILBOX_CLAIMED_MARK) && takeover.text.includes(ORCH_SESSION)
@@ -1224,6 +1243,7 @@ export async function runScenario({
     // Returning ownership is not cleanup after ourselves, but the second half of the
     // check: the claim is reversible by the same move, and `promptobus done` below
     // goes from the owner, as it should.
+    harness.assertRunning?.();
     const back = await mcp.tool('promptobus_mailbox', { claim: true });
     check('step 12: the owner took the mailbox back — the claim is reversible',
       back.isError === false && store.taskOwner(home, TASK) === ORCH_SESSION,
@@ -1235,6 +1255,7 @@ export async function runScenario({
     // The orchestrator accepted the work: it merges the worker branch into the clone
     // default branch — until then cleanup lawfully will not touch the directory, and
     // «merged worktrees are swept» would have nothing to check.
+    harness.assertRunning?.();
     git(repoAbs, 'merge', '--no-ff', '-q', '-m', ': the worker\'s work is accepted', wf.branch);
     const refs = [wp?.sessionRef, rp?.sessionRef].filter(Boolean);
     // Process numbers are taken BEFORE close: after a successful `stop` session records

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Recheck live scenario state before MCP dispatch and owned mutations after waits.
+  A queued postcard cannot resume calls or worker edits while abort cleanup awaits
+  native stop; a deterministic fixture also proves the normal flow still runs.
+
 - Preserve exact BB evidence test names, order and repeated occurrences in the
   worker, reviewer and approver guidance. Keep raw output authoritative and gate
   status separate. Add a checkout-only reference helper for one flat passing
