@@ -1930,9 +1930,13 @@ coordinator is an existing unmanaged Git environment. `add --environment <id>`
 reuses a local environment; `add --new-environment --base-branch <branch>` delegates
 worktree creation to BB. Returned SDK paths and ids are authoritative.
 
-New worktree provisioning uses a preparation turn without assignment or plugin
-rights, followed by confirmed Stop, cleared preparation model context and canonical
-binding before the first assignment.
+New worktree provisioning and reused Cursor/OpenCode environments use a preparation
+turn without assignment or plugin rights, followed by confirmed Stop, cleared
+preparation model context and canonical binding before the first assignment.
+Reuse must retain the recorded environment id. A dispatch wait cannot update the
+tool catalog of a provider session started before binding; the preparation session
+is discarded before assignment. SDK ordering fixtures prove this local boundary,
+not live bridge recovery for a provider session that still has no bridge.
 `get` awaits async SDK state and returns a plain SessionView plus original BB status.
 `stop` requires fresh available idle state with no background agents. Stopping and
 offline observations block cleanup. `archive` preserves a complete patch snapshot

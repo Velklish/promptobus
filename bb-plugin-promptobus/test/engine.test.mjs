@@ -32,6 +32,15 @@ async function stand(t, options = {}) {
   const environments = new Map([environment, workerEnvironment, ...(options.environments ?? [])].map(e => [e.id, e]));
   const names = []; const spawns = [];
   const events = [];
+  const catalogs = new Map();
+  const freezeCatalog = async thread => {
+    const env = environments.get(thread.environmentId) ?? environment;
+    const config = await host.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+      thread, project: { id: thread.projectId }, environment: { id: env.id, path: env.path },
+      host: { id: env.hostId }, provider: { id: thread.providerId },
+    }));
+    catalogs.set(thread.id, config.tools.map(tool => tool.name));
+  };
   let initialArgs;
   let nativeCatalogCleared = false;
   let stopStatus = 'idle';
@@ -104,6 +113,7 @@ async function stand(t, options = {}) {
         executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
           serviceTier: 'default', source: 'client/thread/start' });
         metadata.set(thread.id, args.pluginMetadata ?? {});
+        if (options.freezeEarlyCatalog) await freezeCatalog(thread);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread, origin: 'plugin', originPluginId: 'promptobus' }))).action, 'wait');
         const before = host.harness.inspection.experimental_hostRpcCalls.length;
@@ -127,12 +137,16 @@ async function stand(t, options = {}) {
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
         if (options.beforePreparationIdle) await options.beforePreparationIdle({ threadId, append, thread });
         workerEnvironment.environmentProviderInstanceKey = options.existingEnvironment ? 'another-thread' : threadId;
-        thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
+        thread.environmentId = initialArgs.environment.type === 'reuse' ? initialArgs.environment.environmentId : workerEnvironment.id;
+        thread.status = thread.runtime.displayStatus = 'idle';
         if (options.afterPreparationIdle) await options.afterPreparationIdle({ thread, environment: workerEnvironment });
         events.push('provision');
         return { matched: options.preparationMatched ?? true, target: { kind: 'status', status: 'idle' }, thread };
       },
-      clearContext: async () => { nativeCatalogCleared = true; events.push('clear-context'); return { ok: true }; },
+      clearContext: async ({ threadId }) => {
+        nativeCatalogCleared = true; catalogs.delete(threadId); events.push('clear-context');
+        return { ok: true };
+      },
       send: async ({ threadId, input, mode }) => {
         if (input[0].text.startsWith('Promptobus mailbox wake: ')) {
           wakes.push({ threadId, input, mode });
@@ -146,9 +160,10 @@ async function stand(t, options = {}) {
         }
         if (options.assignmentSend) return options.assignmentSend({ threadId, input, mode, threads, host });
         events.push('assignment');
+        if (options.freezeEarlyCatalog && !catalogs.has(threadId)) await freezeCatalog(threads.get(threadId));
         assert.equal(nativeCatalogCleared, true, 'The preparation native thread retains its empty dynamic tool catalog until Clear context');
         assert.equal(input[0].text.includes('Read mailbox, then stop.'), true);
-        assert.equal(input[0].text.includes(workerEnvironment.path), true);
+        assert.equal(input[0].text.includes(environments.get(threads.get(threadId).environmentId).path), true);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId) }))).action, 'proceed');
         return { ok: true }; },
@@ -182,7 +197,7 @@ async function stand(t, options = {}) {
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
-    wakes, queues, interactions, append, executionOptions, get initialArgs() { return initialArgs; },
+    wakes, queues, interactions, append, executionOptions, catalogs, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
     updateDelivery: (id, update) => bindingStore(host.bb).updateDelivery(id, update),
@@ -1549,3 +1564,39 @@ for (const mode of ['exception', 'unconfirmed']) test(`SDK display existing-path
   assert.match(result.stderr, mode === 'exception' ? /Thread metadata unavailable/ : /BB thread naming was not confirmed/);
   assert.equal(bindingStore(s.host.bb).participant(s.task, 'beta').phase, 'orphan');
 });
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const workspace of ['reuse', 'worktree', 'path']) {
+  test(`ACP assignment starts with bound tools after early session configuration (${provider}, ${workspace})`, async t => {
+    const s = await stand(t, { freezeEarlyCatalog: true });
+    assert.equal((await s.create()).exitCode, 0);
+    if (workspace === 'path') s.workerEnvironment.managed = false;
+    const extra = workspace === 'worktree' ? ['--new-environment', '--base-branch', 'main']
+      : workspace === 'path' ? ['--environment-path', s.workerEnvironment.path] : [];
+    const added = await s.add('early-catalog', 'worker', ['--provider', provider, ...extra]);
+    assert.equal(added.exitCode, 0, JSON.stringify(added));
+    assert.deepEqual(s.catalogs.get('thr-2'), ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact'],
+      'The assignment must use a fresh provider session configured after the binding is ready');
+    assert.deepEqual(s.events, ['provision', 'stop', 'clear-context', 'assignment']);
+    assert.equal(s.initialArgs.prompt.includes('Preparation token:'), true);
+    const b = bindingStore(s.host.bb).thread('thr-2');
+    assert.equal(b.environmentId, workspace === 'reuse' ? 'env' : 'bb-actual-env');
+    assert.equal(b.providerId, provider);
+    assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_task')).participant, 'early-catalog');
+  });
+}
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const failure of ['environment changed', 'Stop unconfirmed']) {
+  test(`ACP reuse preparation refuses ${failure} without delivering assignment (${provider})`, async t => {
+    const s = await stand(t, { afterPreparationIdle({ thread }) {
+      if (failure === 'environment changed') thread.environmentId = 'bb-actual-env';
+    } });
+    assert.equal((await s.create()).exitCode, 0);
+    if (failure === 'Stop unconfirmed') s.stopStatus = 'stopping';
+    const result = await s.add('refused-preparation', 'worker', ['--provider', provider]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, failure === 'environment changed' ? /BB preparation environment changed/ : /BB preparation Stop was not confirmed/);
+    assert.equal(s.events.includes('assignment'), false);
+    assert.equal(bindingStore(s.host.bb).thread('thr-2').phase, 'orphan');
+    await assert.rejects(s.call('thr-2', 'promptobus_task'), /not bound/);
+  });
+}

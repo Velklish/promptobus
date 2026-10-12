@@ -86,6 +86,22 @@ characters. Its selected plugin skill is the same text, checked against the
 exported renderer. The other role skills describe the portable contracts;
 engine-backed participant binding is supplied by this package.
 
+## Provider session preparation
+
+Reused Cursor and OpenCode environments use the same preparation sequence as
+new worktrees and existing-path registration: a bounded turn without assignment
+or plugin tools, confirmed Stop, cleared preparation context, canonical binding,
+then the assignment. The reused environment id must remain unchanged. This uses
+the owning participant, without an extra helper thread, and retains `accept-edits`.
+
+BB tool-set changes apply on the next provider session start. An early session
+configuration during spawn can precede the recorded thread id and ready binding;
+holding message dispatch alone does not refresh that session's tool catalog.
+Stop releases the loaded runtime and Clear context discards the preparation
+session before assignment. Configuration remains ready-only and each tool call
+rechecks authenticated identity. These ordering fixtures do not prove live bridge recovery;
+a provisioned session that still lacks the bridge needs separate runtime evidence.
+
 ## Local task entry point
 
 Build the root library before `npm ci` in this package so the local `file:..`

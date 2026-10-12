@@ -65,3 +65,10 @@ await assert.rejects(host.invoke(input),/not admitted/);
 assert.equal((await host.invoke({...input,role:'worker'})).tool,'write');\n`);
   run(process.execPath, [probe], directory);
 });
+
+test('ACP reuse setup documents the session catalog reset and evidence boundary', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.ok(readme.includes('Reused Cursor and OpenCode environments use the same preparation sequence'));
+  assert.ok(readme.includes('tool-set changes apply on the next provider session start'));
+  assert.ok(readme.includes('These ordering fixtures do not prove live bridge recovery'));
+});

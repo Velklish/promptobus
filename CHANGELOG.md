@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Reused Cursor/OpenCode BB environments now complete a bounded preparation
+  turn, confirmed Stop and context reset before receiving the assignment, so an
+  early session cannot retain the unbound tool catalog.
+
 - BB workers can select Cursor and OpenCode ACP providers, and BB approvers can
   select Cursor. Provider identity survives provisioning, authenticated tools and
   recovery. Reviewers retain their constrained Codex provider. Unsupported

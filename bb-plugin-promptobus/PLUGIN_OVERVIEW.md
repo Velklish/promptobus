@@ -27,7 +27,7 @@ the default variant uses the standalone Host and refuses declared servers withou
 unmanaged Git coordinator on the primary local host. Participants can reuse a local
 environment, register an existing absolute local Git worktree with
 `--environment-path`, or ask BB to create a managed worktree. Path registration
-and new worktrees use the participant's own bounded preparation
+and new worktrees, plus reused Cursor/OpenCode environments, use the participant's own bounded preparation
 turn without assignment or plugin tools, then confirmed Stop, cleared preparation
 model context and authoritative
 binding before the first assignment. Stop retains the environment; archive preserves
