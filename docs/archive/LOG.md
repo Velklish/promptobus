@@ -529,3 +529,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-356.1"></a>`PB-356.1-codex-canon-status-races-lawful-note` · 2026-10-03 · completed · — · Codex canon ignore check races a lawful worker note
 - <a id="pb-356"></a>`PB-356-participant-live-probes-abort` · 2026-10-03 · completed · — · Own participant live scenarios and clean aborted e2e runs
 - <a id="pb-356.2"></a>`PB-356.2-mutation-probe-interrupted-run` · 2026-10-10 · completed · — · Mutation probe counts a signalled probe as successful proof
+- <a id="pb-317.3"></a>`PB-317.3-distinct-archived-task-identifier-collision` · 2026-10-12 · completed · — · Distinct archived tasks share the same PB-356 identifier
