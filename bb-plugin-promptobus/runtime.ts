@@ -262,7 +262,7 @@ export function registerRuntime(bb: BbPluginApi) {
     title: { type: 'string', required: true, description: 'Task title.' },
     project: { type: 'string', required: true, description: 'Existing BB project id.' },
     environment: { type: 'string', required: true, description: 'Existing local coordinator environment id.' },
-    model: { type: 'string', required: true, description: 'Explicit Codex model.' },
+    model: { type: 'string', required: true, description: 'Explicit model from the selected BB provider.' },
     provider: { type: 'enum', values: SUPPORTED_PROVIDERS, description: 'Explicit BB provider; must match the role policy.' },
     'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
@@ -288,6 +288,7 @@ export function registerRuntime(bb: BbPluginApi) {
             repository: options['repository-label'] ?? path.basename(environment.path) } });
         await recordBbWorkspace(bb, b, context.signal);
         b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+        b.providerId = b.execution.providerId;
         await prepareContext(b, context.signal);
         store.reserve(b, true);
         try {
@@ -343,6 +344,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (!provision) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, provision ? { ...b, environmentOwner: 'bb' } : b,
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+      b.providerId = b.execution.providerId;
       if (!provision) await prepareContext(b, context.signal);
       if (b.predecessors) await onHost(owner, { operation: 'step', ...b.predecessors }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');

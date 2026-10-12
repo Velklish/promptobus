@@ -53,8 +53,9 @@ async function stand(t, options = {}) {
     system: { config: async () => ({ primaryHostId: 'local' }),
       providerStates: async () => ({ providers: [{ providerId: 'codex', status: 'ready' }] }),
       usageLimits: async () => ({ codex: { status: 'ok', windows: [{ label: '5h', usedPercent: 21, resetsAt: null }] } }) },
-    providers: { list: async () => ['codex', 'promptobus-codex-reviewer'].map(id => ({ id, available: true, family: 'codex',
-      capabilities: { modelCatalogScope: 'host' }, maintenance: { health: id === 'codex', usage: id === 'codex' } })),
+    providers: { list: async () => ['codex', 'promptobus-codex-reviewer', 'acp-cursor', 'acp-opencode'].map(id => ({ id, available: true,
+      family: id.startsWith('acp-') ? 'acp' : 'codex', capabilities: { modelCatalogScope: 'host', permissionModes: ['accept-edits'] },
+      maintenance: { health: id === 'codex', usage: id === 'codex' } })),
       models: async () => ({ modelLoadError: options.modelLoadError ?? null, models: [{ id: 'test-model', model: 'test-model', defaultReasoningEffort: 'low',
         supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] }) },
     environments: { get: async ({ environmentId }) => environments.get(environmentId),
@@ -640,6 +641,58 @@ test('forged identity fields, metadata, foreign project and missing threads gran
   s.threads.delete('thr-2');
   await assert.rejects(s.call('thr-2', 'promptobus_task'), /Thread not found/);
   assert.equal(count(), before);
+});
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const provision of [false, true]) {
+  test(`ACP worker keeps provider across spawn, tools and recovery (${provider}, provision ${provision})`, async t => {
+    const s = await stand(t); await s.create();
+    const extra = ['--provider', provider, '--reasoning-level', 'high',
+      ...(provision ? ['--new-environment', '--base-branch', 'main'] : [])];
+    const added = await s.add('worker-acp', 'worker', extra);
+    assert.equal(added.exitCode, 0, added.stderr);
+    const { threadId } = JSON.parse(added.stdout);
+    assert.equal(s.spawns.at(-1).providerId, provider);
+    assert.equal(s.spawns.at(-1).permissionMode, 'accept-edits');
+    assert.equal(s.spawns.at(-1).reasoningLevel, 'high');
+    const b = bindingStore(s.host.bb).thread(threadId);
+    assert.equal(b.providerId, provider); assert.equal(b.execution.providerId, provider);
+    assert.equal(b.execution.harness, provider === 'acp-cursor' ? 'cursor' : 'opencode');
+    assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'worker-acp');
+    const context = makePluginAgentConfigurationContext({ thread: { id: threadId }, project: { id: 'project' },
+      environment: { id: b.environmentId, path: b.environmentPath }, host: { id: 'local' }, provider: { id: provider } });
+    const configuration = await s.host.harness.behavior.resolveAgentConfiguration(context);
+    assert.equal(configuration.tools.some(tool => tool.name === 'promptobus_send'), true);
+    assert.deepEqual(configuration.skills, ['promptobus-worker']);
+    assert.equal((await s.control('stop', 'worker-acp')).exitCode, 0);
+    await s.reload();
+    assert.equal((await s.control('resume', 'worker-acp')).exitCode, 0);
+    assert.equal(bindingStore(s.host.bb).thread(threadId).providerId, provider);
+    assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'worker-acp');
+  });
+}
+
+test('Cursor approver retains provider and authenticated current predecessors across tools and recovery', async t => {
+  const s = await stand(t); await s.create();
+  await s.add('alpha', 'worker', ['--provider', 'acp-opencode']); await s.add('beta', 'reviewer');
+  const extra = ['--provider', 'acp-cursor', '--reasoning-level', 'high', '--worker', 'alpha', '--reviewer', 'beta'];
+  const refused = await s.add('acceptor', 'approver', extra);
+  assert.equal(refused.exitCode, 1); assert.equal(s.threads.size, 3);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  await engine.send(s.task, { from: 'alpha', to: ['orchestrator'], type: 'result', body: 'Worker evidence' });
+  await engine.send(s.task, { from: 'beta', to: ['orchestrator'], type: 'result', body: 'Reviewer evidence' });
+  const added = await s.add('acceptor', 'approver', extra); assert.equal(added.exitCode, 0, added.stderr);
+  const { threadId } = JSON.parse(added.stdout); const b = bindingStore(s.host.bb).thread(threadId);
+  assert.equal(s.spawns.at(-1).providerId, 'acp-cursor'); assert.equal(b.providerId, 'acp-cursor');
+  assert.equal(b.execution.harness, 'cursor'); assert.equal(b.parentThreadId, 'thr-2');
+  assert.deepEqual(b.predecessors, { worker: 'alpha', reviewer: 'beta' });
+  assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'acceptor');
+  assert.equal((await s.control('stop', 'acceptor')).exitCode, 0); await s.reload();
+  assert.equal((await s.control('resume', 'acceptor')).exitCode, 0);
+  assert.equal(bindingStore(s.host.bb).thread(threadId).providerId, 'acp-cursor');
+  const worker = engine.readTask(s.task).participants.find(p => p.id === 'alpha');
+  engine.patchParticipant(s.task, 'alpha', { metadata: { ...worker.metadata, bb: { ...worker.metadata.bb,
+    assignedAt: new Date(Date.now() + 60_000).toISOString() } } });
+  await assert.rejects(s.call(threadId, 'promptobus_task'), /requires a type=result/);
 });
 
 test('approver requires current worker and isolated reviewer results for the same subject before launch and tools', async t => {

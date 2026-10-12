@@ -5,7 +5,8 @@ import { BB_ROLE_SKILLS } from 'promptobus/instructions';
 export const roleSchema = z.enum(Object.keys(BB_ROLE_SKILLS) as [keyof typeof BB_ROLE_SKILLS, ...(keyof typeof BB_ROLE_SKILLS)[]]);
 export const reasoningSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'none', 'ultracode']);
 export const executionSchema = z.object({
-  runtime: z.literal('bb'), harness: z.literal('codex'), providerId: z.enum(['codex', 'promptobus-codex-reviewer']),
+  runtime: z.literal('bb'), harness: z.enum(['codex', 'cursor', 'opencode']),
+  providerId: z.enum(['codex', 'promptobus-codex-reviewer', 'acp-cursor', 'acp-opencode']),
   providerSource: z.enum(['role', 'explicit']), model: z.string().min(1), nativeModel: z.string().min(1),
   requestedModel: z.string().min(1), reasoningLevel: reasoningSchema, reasoningSource: z.enum(['catalog', 'explicit']),
   observedAt: z.string(), scope: z.object({ hostId: z.string(), environmentId: z.string().nullable() }).strict(),

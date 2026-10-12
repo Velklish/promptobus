@@ -151,12 +151,18 @@ BB queued first prompts are admission state, not the canonical Promptobus mailbo
 
 ## Provider and model selection
 
-`task create` and `participant add` require `--model`. Optional `--provider`
-must match the role: `codex` for the owner, worker, approver, teamlead and reporter;
-`promptobus-codex-reviewer` for reviewer. There is no fallback between providers.
+`task create` and `participant add` require `--model`. The default provider is
+`codex` for the owner, worker, approver, teamlead and reporter, and
+`promptobus-codex-reviewer` for reviewer. Workers also admit explicit
+`--provider acp-cursor` or `--provider acp-opencode`; approvers also admit
+`--provider acp-cursor`. Other role/provider pairs refuse. There is no fallback
+between providers. Every selected provider must support `accept-edits`.
 Optional `--reasoning-level` must be supported by that model; omission selects the
 SDK catalog's default, which can differ from the native Promptobus defaults.
 The SDK model id sent to spawn and the native model name are recorded separately.
+Use the selected provider's SDK catalog spelling: Cursor's BB model and
+reasoning level are separate fields, unlike the native Cursor CLI suffix.
+An unlisted or selected-only model remains refused.
 
 For example, inspect a reviewer selection without creating a task or thread:
 
@@ -197,9 +203,14 @@ account caches and defaults are unchanged.
 | --- | --- | --- |
 | `codex` | orchestrator, worker, approver, teamlead, reporter | SDK host/provider account windows, or unknown |
 | `promptobus-codex-reviewer` | reviewer | Unknown; no usage API |
+| `acp-cursor` | worker, approver | SDK host/provider account windows, or unknown |
+| `acp-opencode` | worker | SDK host/provider account windows, or unknown |
 
 The supported versions are BB 0.45.0, SDK 0.6.15 and the reviewer's verified
-Codex CLI 0.162.0-alpha.17.2. Other BB providers are not admitted.
+Codex CLI 0.162.0-alpha.17.2. Cursor/OpenCode selection, worker provisioning,
+authenticated tools and recovery, and Cursor acceptance predecessors have SDK
+fixture coverage. This is separate from a measured live model workflow. Other
+BB providers are not admitted.
 
 ## Wake and recovery
 
