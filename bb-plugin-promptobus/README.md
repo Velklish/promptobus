@@ -266,7 +266,9 @@ Archive/deletion and participant binding phases also prevent automatic revival.
 
 `npm test` uses the SDK fake host with real temporary SQLite and the exported
 engine for identity/race/reload/mailbox/artifact checks. The SDK harness requires
-the pinned optional testing peers in devDependencies. Build with `bb plugin build`
+the pinned optional testing peers in devDependencies, including Hono `4.13.13`.
+The SDK optional Hono peer also appears in this checkout's production dependency
+graph; `npm audit --json` checks its resolved version. Build with `bb plugin build`
 to verify the self-contained host bundle as well as the server. Mock SDK evidence
 and actual local tool-turn evidence are reported separately.
 

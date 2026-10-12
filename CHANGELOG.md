@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.26.0] — 2026-10-12
 
+- Pin the optional BB source plugin's Hono dependency to `4.13.13` to address
+  the reported advisories in its SDK optional-peer dependency graph.
+
 - Recheck live scenario state before MCP dispatch and owned mutations after waits.
   A queued postcard cannot resume calls or worker edits while abort cleanup awaits
   native stop; a deterministic fixture also proves the normal flow still runs.
