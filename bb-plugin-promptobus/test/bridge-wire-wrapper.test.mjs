@@ -168,7 +168,9 @@ function ownedProcess(t, s) {
 const readySource = `
 import fs from 'node:fs';
 import path from 'node:path';
-fs.writeFileSync(path.join(path.dirname(process.argv[1]), 'ready.json'), JSON.stringify({pid:process.pid}));
+const receipt = path.join(path.dirname(process.argv[1]), 'ready.json');
+fs.writeFileSync(receipt + '.tmp', JSON.stringify({pid:process.pid}));
+fs.renameSync(receipt + '.tmp', receipt);
 `;
 
 test('wrapper drains at least 2 MiB byte-for-byte after a delayed parent stdout consumer', async t => {
@@ -206,4 +208,18 @@ for (const signal of ['SIGTERM', 'SIGINT']) test(`wrapper forwards ${signal} to 
   assert.equal(await waitFor(child.closed), true, 'wrapper did not close after signal');
   assert.equal(await waitFor(() => !alive(nativePid), 1000), true, `native ACP child remains alive after ${signal} sent to wrapper PID`);
   assert.equal(child.wrapper.signalCode, signal);
+});
+
+test('fake ACP readiness publishes a complete PID receipt before the parent observes it', async t => {
+  const s = fixture(t, `
+import slowFs from 'node:fs';
+const write = slowFs.writeFileSync;
+slowFs.writeFileSync = (...args) => {
+  slowFs.closeSync(slowFs.openSync(args[0], 'w'));
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  write(...args);
+};
+` + readySource + `process.stdin.resume(); setInterval(()=>{},1000);`);
+  const child = ownedProcess(t, s);
+  assert.equal(alive(await child.ready()), true);
 });
