@@ -102,6 +102,21 @@ session before assignment. Configuration remains ready-only and each tool call
 rechecks authenticated identity. These ordering fixtures do not prove live bridge recovery;
 a provisioned session that still lacks the bridge needs separate runtime evidence.
 
+## MCP schema and permission boundary
+
+Every selected tool exports an MCP input schema with root `type: "object"`.
+`promptobus_host_context` retains its strict inspect/read union and validation;
+its root object metadata supplies the type required by MCP clients.
+
+A measured OpenCode session completed authenticated task, mailbox and send calls.
+A measured Cursor session exposed the MCP server, but an agent-initiated turn
+received `User rejected` without a user interaction. BB sets
+`permissionEscalation: "deny"` for non-user turns and rejects approval requests
+before publishing an interaction. A genuine user turn uses `"ask"`; selecting
+**Allow once** for each exact bound-tool request is a prospective remedy whose
+live result remains unverified. Keep the provider permission mode and tool
+selection unchanged. These measurements do not certify other sessions or models.
+
 ## Local task entry point
 
 Build the root library before `npm ci` in this package so the local `file:..`

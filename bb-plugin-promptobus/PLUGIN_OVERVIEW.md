@@ -45,7 +45,12 @@ coverage is SDK fixture evidence; a live registration has not been measured.
 Selection records runtime, provider, SDK/native model and reasoning from a scoped
 SDK catalog. Workers admit explicit Cursor/OpenCode ACP providers, and approvers
 admit explicit Cursor ACP; default and governance roles remain Codex, with a
-separate constrained reviewer. These new paths have SDK fixture coverage.
+separate constrained reviewer. These paths have SDK fixture coverage. Selected
+MCP tools export object input schemas, including the strict Host context union.
+Live OpenCode verification covers authenticated task, mailbox and send calls.
+Cursor server availability is verified; authenticated calls under a genuine user
+turn with **Allow once** remain unverified. BB denies approval escalation on
+agent-initiated turns before publishing an interaction.
 Explicit provider choices must match the role; no provider fallback
 or native strategy substitution occurs. Account windows belong to that provider
 on its host; absent reviewer usage remains unknown. The six-role runtime was observed together on the local source profile: macOS

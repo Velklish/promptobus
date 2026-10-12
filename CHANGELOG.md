@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-- Reused Cursor/OpenCode BB environments now complete a bounded preparation
-  turn, confirmed Stop and context reset before receiving the assignment, so an
-  early session cannot retain the unbound tool catalog.
+- BB Host context tools export an object input schema for MCP clients while
+  preserving strict inspect/read validation. A union without the root object
+  type can make a client reject the entire bridge tool list.
+- Reused Cursor/OpenCode BB environments complete a bounded preparation turn,
+  confirmed Stop and context reset before receiving the assignment.
 
 - BB workers can select Cursor and OpenCode ACP providers, and BB approvers can
   select Cursor. Provider identity survives provisioning, authenticated tools and

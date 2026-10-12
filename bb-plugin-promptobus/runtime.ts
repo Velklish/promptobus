@@ -8,7 +8,6 @@ import { renderBbHostContext } from 'promptobus/bb-host';
 import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { bindingStore } from './bindings.js';
-import { registerBridgeDiagnostics } from './bridge-diagnostics.js';
 import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
@@ -18,7 +17,6 @@ export { REVIEWER_PROVIDER } from './routing.js';
 
 export function registerRuntime(bb: BbPluginApi) {
   const store = bindingStore(bb);
-  const traceConfiguration = registerBridgeDiagnostics(bb, store);
   const host = bb.hosts.experimental_client({ contract: hostContract });
   const participantTools = (b: Binding) => [...toolsFor(b.role),
     ...(b.hostContext && (b.hostContext.rules.length || b.hostContext.skills.length || b.hostContext.tools.length) ? [BB_REVIEWER_HOST_TOOLS[0]] : []),
@@ -473,13 +471,8 @@ export function registerRuntime(bb: BbPluginApi) {
       const b = store.thread(context.thread.id);
       if (!b) return undefined;
       if (b.phase !== 'ready' || b.projectId !== context.project.id || b.environmentId !== context.environment.id
-        || b.environmentPath !== context.environment.path || b.hostId !== context.host.id || b.providerId !== context.provider.id) {
-        traceConfiguration(context, []);
-        return { tools: [], skills: [] };
-      }
-      const selectedNames = [...participantTools(b), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])];
-      traceConfiguration(context, selectedNames);
-      return { tools: selectedNames, skills: [BB_ROLE_SKILLS[b.role]],
+        || b.environmentPath !== context.environment.path || b.hostId !== context.host.id || b.providerId !== context.provider.id) return { tools: [], skills: [] };
+      return { tools: [...participantTools(b), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])], skills: [BB_ROLE_SKILLS[b.role]],
         instructions: `Authenticated Promptobus task ${b.task}, participant ${b.participant}, role ${b.role}. Use promptobus_task for current contacts. Identity fields are not tool arguments. Use the complete initial context and the selected role skill. BB owns Stop and continuation; end the turn when waiting.` };
     },
   };
