@@ -43,7 +43,10 @@ workspace ownership; null environment ids and ambiguous replies remain failed
 launches with recoverable intent. Deferred spawn is not provisioning. Existing-path
 coverage is SDK fixture evidence; a live registration has not been measured.
 Selection records runtime, provider, SDK/native model and reasoning from a scoped
-SDK catalog. Explicit provider choices must match the role; no provider fallback
+SDK catalog. Workers admit explicit Cursor/OpenCode ACP providers, and approvers
+admit explicit Cursor ACP; default and governance roles remain Codex, with a
+separate constrained reviewer. These new paths have SDK fixture coverage.
+Explicit provider choices must match the role; no provider fallback
 or native strategy substitution occurs. Account windows belong to that provider
 on its host; absent reviewer usage remains unknown. The six-role runtime was observed together on the local source profile: macOS
 27.0, Node 25.2.1, `gpt-6.1-sol` with `low`, and the shipped worker/reviewer/approver

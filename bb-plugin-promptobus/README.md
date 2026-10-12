@@ -142,8 +142,9 @@ All argument objects are strict. Sender, task and address are derived from the
 binding, and cannot be supplied. Body size is capped at 2400 characters; attachment
 text at 1 million characters and artifact reads at 1 MB. Reporter bindings omit
 send. Routing currently goes through the task orchestrator; worker lateral sends
-are refused. New role threads use built-in Codex except reviewers, which use the
-constrained provider. Bus writes do not grant reviewer source or shell writes.
+are refused. New role threads use their selected provider under the role policy
+below; reviewers use the constrained Codex provider. Bus writes do not grant
+reviewer source or shell writes.
 
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
 The measured six-role workflow and its profile limits are recorded below.
@@ -455,7 +456,8 @@ alone are not this support claim.
 | One primary local host; BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2; macOS 27.0, Node 25.2.1; `gpt-6.1-sol`, `low` | Historical full six-role runtime observed on 2026-10-08 | Built-in Codex for orchestrator, worker, approver, teamlead and reporter; constrained Codex provider for reviewer; shipped worker/reviewer/approver pipeline |
 | Codex CLI 0.162.0-alpha.17.2; `gpt-6.1-sol`, `high`; isolated native reviewer transport on 2026-10-11 | Permission proof measured | Effective `readOnly` / `never`, private home, disabled features and no MCP; bounded read, outside-root refusal and actual patch sandbox denial; matching canary hashes and child cleanup. Installed-plugin reload and full BB workflow on this version remain unmeasured. |
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
-| Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; provider substitution and remote environments refuse |
+| Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
+| Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
 | Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; older releases lack this adapter |
 
 The representative fixture retained current worker and reviewer results for the
