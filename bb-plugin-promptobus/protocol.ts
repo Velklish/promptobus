@@ -25,7 +25,7 @@ export const hostReadSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('inspect') }).strict(),
   z.object({ mode: z.literal('read'), path: z.string().min(1), start_line: z.number().int().positive().optional(),
     line_count: z.number().int().positive().max(2000).optional() }).strict(),
-]);
+]).meta({ type: 'object' });
 export const hostCallSchema = z.object({ server: z.string().min(1), tool: z.string().min(1), args: z.record(z.string(), z.unknown()) }).strict();
 export const bindingSchema = z.object({
   task: z.string().regex(TASK_ID_RE), participant: z.string().regex(PARTICIPANT_ID_RE), role: roleSchema,

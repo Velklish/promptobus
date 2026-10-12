@@ -250,6 +250,39 @@ test('BB Host delivery uses complete rule/skill content and authentic canonical 
   assert.ok(context.rules[0].text.endsWith('RULE_TAIL'));
 });
 
+test('selected BB tools export MCP object input schemas and preserve strict Host context requests', async t => {
+  const calls = [];
+  const s = await stand(t, { hostOperation: async (method, input) => {
+    calls.push({ method, args: input.args });
+    return input.args;
+  } });
+  const selected = ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact', 'promptobus_host_context'];
+  const tools = s.host.harness.inspection.registrations.agentTools.filter(tool => selected.includes(tool.name));
+  assert.deepEqual(tools.map(tool => tool.name), selected);
+  for (const tool of tools) assert.equal(tool.inputSchema.type, 'object', `${tool.name} must publish an MCP object inputSchema`);
+  const schema = tools.at(-1).inputSchema;
+  assert.equal(schema.oneOf.length, 2);
+  assert.ok(schema.oneOf.every(branch => branch.type === 'object' && branch.additionalProperties === false));
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('schema-worker')).exitCode, 0);
+  const valid = [{ mode: 'inspect' }, { mode: 'read', path: '/declared' },
+    { mode: 'read', path: '/declared', start_line: 1, line_count: 2000 }];
+  for (const args of valid) {
+    assert.deepEqual(tools.at(-1).parse(args), { ok: true, value: args });
+    assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_host_context', args)), args);
+  }
+  const invalid = [{ mode: 'inspect', path: '/extra' }, { mode: 'inspect', line_count: 1 }, { mode: 'read' },
+    { mode: 'read', path: '' }, { mode: 'unknown' }, { mode: 'inspect', extra: true },
+    ...['actor', 'participant', 'task', 'token', 'role'].map(field => ({ mode: 'inspect', [field]: 'spoof' })),
+    ...[0, -1, 1.5].map(start_line => ({ mode: 'read', path: '/declared', start_line })),
+    ...[0, -1, 1.5, 2001].map(line_count => ({ mode: 'read', path: '/declared', line_count }))];
+  for (const args of invalid) {
+    assert.equal(tools.at(-1).parse(args).ok, false, JSON.stringify(args));
+    await assert.rejects(s.call('thr-2', 'promptobus_host_context', args));
+  }
+  assert.deepEqual(calls, valid.map(args => ({ method: 'hostContext', args })));
+});
+
 test('new BB worktrees collect generated Host context after actual environment provisioning', async t => {
   const s = await stand(t, { hostSetup: fictionalHost([]) }); await s.create();
   assert.equal((await s.add('worker-host', 'worker', ['--new-environment', '--base-branch', 'main'])).exitCode, 0);
