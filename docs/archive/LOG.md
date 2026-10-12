@@ -4,6 +4,8 @@ One line per task: number with slug, closing date, outcome, body revision, and t
 
 An `—` outcome means that `result.md` did not name one. An `—` commit means that the body is in no revision the line could name. After `npx --no-install backslop fold N` it is only in the message of the fold commit, so commit the draft, and `show` finds it by the task section in a commit message, then by the `PB-N:` subject. After a bulk fold the body was not in history: it is in the draft if `--embed-missing` was given, and otherwise it is lost.
 
+The release reconciliation gives the [Codex-only journal lookup](#pb-372) the native-allocated number `PB-372`. Its original accepted identity is `PB-356-codex-only-orchestration-efficiency` at [9a2a758209802e0b9632aad958f862d15e2e4c30](https://github.com/Velklish/promptobus/commit/9a2a758209802e0b9632aad958f862d15e2e4c30). The [live-run record](#pb-356) keeps `PB-356-participant-live-probes-abort` at [0264fc5941aab274a5a34f06f51a8e94f0df32d9](https://github.com/Velklish/promptobus/commit/0264fc5941aab274a5a34f06f51a8e94f0df32d9), with its existing child entries. Both original acceptance messages and task bodies remain in Git unchanged. `npx --no-install backslop show 372` prints the original revision through the supported commit field and warns that the preserved body heading names `PB-356`.
+
 - <a id="pb-1"></a>`PB-1-tools-add-hint-has-no-command` · 2026-09-05 · completed · `6717eeb622` · Spawn error points at a tools subcommand that does not exist
 - <a id="pb-1.1"></a>`PB-1.1-spawn-group-hint-names-a-clone-subcommand` · 2026-09-05 · completed · `f5eb0c6105` · The group-address refusal names a `clone` subcommand the package does not have
 - <a id="pb-2"></a>`PB-2-suite-can-reach-real-binaries` · 2026-09-05 · completed · `5c07b1ccde` · The suite can execute a real user binary when a stub name is missed
@@ -497,7 +499,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-321"></a>`PB-321-named-model-overrides-role` · 2026-10-07 · completed · — · An explicitly named model and effort lift in any role
 - <a id="pb-355"></a>`PB-355-successor-owner-contact` · 2026-10-07 · completed · — · Avoid successor takeover hints for stale or unrelated owner contacts
 - <a id="pb-348"></a>`PB-348-opencode-sweep-kills-live-peers` · 2026-10-07 · completed · — · Sweeping one OpenCode participant terminates live peers in the same task
-- <a id="pb-356"></a>`PB-356-codex-only-orchestration-efficiency` · 2026-10-07 · completed · — · Codex-only launch checks and bounded reviewer reads
+- <a id="pb-372"></a>`PB-372-codex-only-orchestration-efficiency` · 2026-10-07 · completed · `9a2a758209802e0b9632aad958f862d15e2e4c30` · Codex-only launch checks and bounded reviewer reads
 - <a id="pb-366"></a>`PB-366-bb-reviewer-enforcement-contract` · 2026-10-08 · completed · — · Prove and define BB reviewer sandbox and tool restrictions before full runtime support
 - <a id="pb-358"></a>`PB-358-harness-specific-prompt-sources` · 2026-10-08 · completed · — · Separate harness-specific prompt sources from shared contracts
 - <a id="pb-365"></a>`PB-365-portable-role-instruction-renderers` · 2026-10-08 · completed · — · Export portable role instruction renderers while preserving native harness behavior
