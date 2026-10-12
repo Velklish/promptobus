@@ -252,7 +252,8 @@ test('BB Host delivery uses complete rule/skill content and authentic canonical 
 
 test('selected BB tools export MCP object input schemas and preserve strict Host context requests', async t => {
   const calls = [];
-  const s = await stand(t, { hostOperation: async (method, input) => {
+  const s = await stand(t, { hostContext: () => ({ rules: [{ path: '/declared', text: 'Declared fixture rule' }], skills: [], tools: [] }),
+    hostOperation: async (method, input) => {
     calls.push({ method, args: input.args });
     return input.args;
   } });
