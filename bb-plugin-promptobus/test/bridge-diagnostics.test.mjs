@@ -6,7 +6,8 @@ import { bindingStore } from '../.test-build/bindings.js';
 import { registerBridgeDiagnostics } from '../.test-build/bridge-diagnostics.js';
 
 function fixture(t, provider = 'acp-cursor') {
-  const thread = makeThreadResponse({ id: 'thr-probe', projectId: 'proj_gdmr94qxzs', environmentId: 'env-probe', providerId: provider });
+  const thread = makeThreadResponse({ id: provider === 'acp-cursor' ? 'thr_z65cxgddx9' : 'thr_qv38kd3qbw',
+    projectId: 'proj_gdmr94qxzs', environmentId: provider === 'acp-cursor' ? 'env_ceqdnicad9' : 'env_fx6a8fifuz', providerId: provider });
   let primaryHostId = 'host_xj49wfq3ap';
   const host = createFakePluginHost({ pluginId: 'promptobus', sdk: {
     system: { config: async () => ({ primaryHostId }) }, threads: { get: async () => thread },
@@ -20,8 +21,12 @@ function fixture(t, provider = 'acp-cursor') {
   store.reserve(binding, true);
   const directories = [];
   t.mock.method(fs, 'mkdirSync', (...args) => { directories.push(args); });
-  t.mock.method(fs, 'lstatSync', () => ({ isDirectory: () => true, isSymbolicLink: () => false }));
+  t.mock.method(fs, 'lstatSync', () => ({ isDirectory: () => true, isFile: () => true, isSymbolicLink: () => false, mode: 0o600 }));
   t.mock.method(fs, 'chmodSync', (...args) => { directories.push(args); });
+  t.mock.method(fs, 'readFileSync', () => '/synthetic/original/bin');
+  t.mock.method(fs, 'existsSync', () => false);
+  t.mock.method(fs, 'accessSync', () => {});
+  t.mock.method(fs, 'writeFileSync', (...args) => { directories.push(args); });
   const trace = registerBridgeDiagnostics(host.bb, store);
   const context = { threadId: thread.id, projectId: thread.projectId, hostId: binding.hostId };
   return { host, store, binding, thread, directories, trace, context,
@@ -29,19 +34,19 @@ function fixture(t, provider = 'acp-cursor') {
     set primaryHostId(value) { primaryHostId = value; } };
 }
 
-for (const provider of ['acp-cursor', 'acp-opencode']) test(`temporary bridge recording selects only the exact owned ${provider} probe`, async t => {
+for (const provider of ['acp-cursor', 'acp-opencode']) test(`temporary wire PATH selects only the exact owned ${provider} probe`, async t => {
   const s = fixture(t, provider);
-  assert.deepEqual(await s.env(), [{ name: 'BB_PROVIDER_BRIDGE_RECORD_DIR',
-    value: '/Users/kim.p/.bb/thread-storage/thr_sp4g9f2jit/main-run/bridge-records/thr-probe',
-    reason: 'Temporary scoped bridge diagnostic recording' }]);
-  assert.deepEqual(s.directories, [
-    ['/Users/kim.p/.bb/thread-storage/thr_sp4g9f2jit/main-run/bridge-records/thr-probe', { recursive: true, mode: 0o700 }],
-    ['/Users/kim.p/.bb/thread-storage/thr_sp4g9f2jit/main-run/bridge-records/thr-probe', 0o700],
-  ]);
+  const directory = `/Users/kim.p/.bb/thread-storage/thr_sp4g9f2jit/main-run/bridge-records/${s.thread.id}`;
+  assert.deepEqual(await s.env(), [{ name: 'PATH', value: `${directory}/bin:/synthetic/original/bin`,
+    reason: 'Temporary scoped ACP wire capture' }]);
+  assert.deepEqual(s.directories.slice(0, 3), [[directory, 0o700],
+    [`${directory}/bin`, { recursive: true, mode: 0o700 }], [`${directory}/bin`, 0o700]]);
+  assert.equal(s.directories[3][0], `${directory}/bin/${provider === 'acp-cursor' ? 'cursor-agent' : 'opencode'}`);
+  assert.deepEqual(s.directories[3][2], { flag: 'wx', mode: 0o700 });
   assert.equal(s.host.harness.inspection.logEntries.length, 0);
 });
 
-for (const mismatch of ['unknown thread', 'task', 'project', 'host', 'old actor', 'actor prefix', 'provider', 'phase', 'primary host', 'actual provider', 'actual project', 'archived']) {
+for (const mismatch of ['unknown thread', 'task', 'project', 'host', 'old actor', 'actor prefix', 'provider', 'phase', 'primary host', 'actual provider', 'actual project', 'binding environment', 'actual environment', 'archived']) {
   test(`temporary bridge recording fails closed on ${mismatch}`, async t => {
     const s = fixture(t);
     let context = s.context;
@@ -56,6 +61,8 @@ for (const mismatch of ['unknown thread', 'task', 'project', 'host', 'old actor'
     if (mismatch === 'primary host') s.primaryHostId = 'other-host';
     if (mismatch === 'actual provider') s.thread.providerId = 'acp-opencode';
     if (mismatch === 'actual project') s.thread.projectId = 'other-project';
+    if (mismatch === 'binding environment') s.binding.environmentId = 'other-environment';
+    if (mismatch === 'actual environment') s.thread.environmentId = 'other-environment';
     if (mismatch === 'archived') s.thread.archivedAt = 1;
     if (mismatch === 'task' || mismatch === 'old actor' || mismatch === 'actor prefix') {
       s.store.thread = () => s.binding;
@@ -71,8 +78,25 @@ test('temporary bridge recording refuses a cross-provider callback and a symlink
   assert.deepEqual(s.directories, []);
   t.mock.method(fs, 'lstatSync', () => ({ isDirectory: () => false, isSymbolicLink: () => true }));
   assert.deepEqual(await s.env(), []);
-  assert.equal(s.directories.length, 1);
+  assert.equal(s.directories.length, 0);
 });
+
+for (const reason of ['missing', 'public mode', 'symlink', 'empty', 'newline', 'recursive']) {
+  test(`temporary wire PATH refuses an unverified original PATH: ${reason}`, async t => {
+    const s = fixture(t);
+    const directory = `/Users/kim.p/.bb/thread-storage/thr_sp4g9f2jit/main-run/bridge-records/${s.thread.id}`;
+    const defaultStat = fs.lstatSync;
+    t.mock.method(fs, 'lstatSync', file => {
+      if (!String(file).endsWith('/original-path.txt')) return defaultStat(file);
+      if (reason === 'missing') throw Error('SECRET_PATH_ERROR');
+      return { isFile: () => true, isSymbolicLink: () => reason === 'symlink', mode: reason === 'public mode' ? 0o644 : 0o600 };
+    });
+    t.mock.method(fs, 'readFileSync', () => ({ empty: '', newline: '/SECRET\nPATH', recursive: `${directory}/bin` })[reason] ?? '/synthetic/bin');
+    assert.deepEqual(await s.env(), []);
+    assert.equal(s.directories.some(args => typeof args[1] === 'object'), false);
+    assert.equal(JSON.stringify(s.host.harness.inspection.logEntries).includes('SECRET'), false);
+  });
+}
 
 test('temporary configuration trace logs only selected names, tuple identities and mismatch booleans', t => {
   const s = fixture(t);
