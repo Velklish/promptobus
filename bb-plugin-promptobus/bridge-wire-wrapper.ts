@@ -64,6 +64,10 @@ const env = { ...process.env };
 const prefix = path.join(config.directory, 'bin') + path.delimiter;
 if (env.PATH?.startsWith(prefix)) env.PATH = env.PATH.slice(prefix.length);
 const child = spawn(config.realCommand, process.argv.slice(2), { env, stdio: ['pipe', 'pipe', 'pipe'] });
+const forwardTerm = () => child.kill('SIGTERM');
+const forwardInt = () => child.kill('SIGINT');
+process.on('SIGTERM', forwardTerm);
+process.on('SIGINT', forwardInt);
 process.stdin.pipe(tap('input')).pipe(child.stdin);
 child.stdout.pipe(tap('output')).pipe(process.stdout);
 child.stderr.pipe(process.stderr);
@@ -73,6 +77,8 @@ child.on('close', (code, signal) => {
   process.stdin.destroy();
   process.stdout.write('', () => process.stderr.write('', () => {
     if (log !== undefined) fs.closeSync(log);
+    process.removeListener('SIGTERM', forwardTerm);
+    process.removeListener('SIGINT', forwardInt);
     if (signal) process.kill(process.pid, signal);
     else process.exit(code ?? 127);
   }));

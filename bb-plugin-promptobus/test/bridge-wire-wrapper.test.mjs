@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { prepareWireWrapper } from '../.test-build/bridge-wire-wrapper.js';
 
@@ -121,4 +122,88 @@ test('diagnostic launcher preparation is repeatable and refuses a changed or sym
   fs.rmdirSync(s.bin);
   fs.symlinkSync(s.directory, s.bin);
   assert.throws(() => prepareWireWrapper(s.directory, 'cursor-agent', real, process.execPath), /Unsafe diagnostic bin/);
+});
+
+async function waitFor(predicate, milliseconds = 2000) {
+  const deadline = Date.now() + milliseconds;
+  do {
+    if (predicate()) return true;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  } while (Date.now() < deadline);
+  return predicate();
+}
+
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+function ownedProcess(t, s) {
+  const wrapper = spawn(path.join(s.bin, 'cursor-agent'), ['acp'], { detached: true });
+  let closed = false;
+  wrapper.on('close', () => { closed = true; });
+  wrapper.stderr.resume();
+  let nativePid;
+  t.after(async () => {
+    wrapper.stdout.resume();
+    wrapper.stdin.destroy();
+    try { process.kill(-wrapper.pid, 'SIGKILL'); } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+    assert.equal(await waitFor(() => closed), true, 'owned wrapper did not close during cleanup');
+    if (nativePid) assert.equal(await waitFor(() => !alive(nativePid)), true, 'owned native child did not terminate during cleanup');
+    t.diagnostic('owned wrapper/native child cleanup confirmed');
+  });
+  return { wrapper, closed: () => closed, async ready() {
+    const ready = path.join(s.directory, 'ready.json');
+    assert.equal(await waitFor(() => fs.existsSync(ready)), true, 'fake ACP child did not become ready');
+    nativePid = JSON.parse(fs.readFileSync(ready, 'utf8')).pid;
+    assert.equal(Number.isSafeInteger(nativePid) && nativePid > 0, true);
+    return nativePid;
+  } };
+}
+
+const readySource = `
+import fs from 'node:fs';
+import path from 'node:path';
+fs.writeFileSync(path.join(path.dirname(process.argv[1]), 'ready.json'), JSON.stringify({pid:process.pid}));
+`;
+
+test('wrapper drains at least 2 MiB byte-for-byte after a delayed parent stdout consumer', async t => {
+  const length = 2 * 1024 * 1024 + 137;
+  const s = fixture(t, readySource + `
+const bytes=Buffer.alloc(${length});
+for(let i=0;i<bytes.length;i++) bytes[i]=(i*31)%251;
+process.stdin.resume();
+process.stdin.on('end',()=>{ process.stdout.end(bytes); process.exitCode=23; });
+`);
+  const child = ownedProcess(t, s);
+  await child.ready();
+  child.wrapper.stdin.end();
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const chunks = [];
+  child.wrapper.stdout.on('data', chunk => chunks.push(chunk));
+  child.wrapper.stdout.resume();
+  assert.equal(await waitFor(child.closed, 5000), true, 'wrapper did not finish after stdout consumer resumed');
+  const received = Buffer.concat(chunks);
+  const expected = Buffer.alloc(length);
+  for (let i = 0; i < length; i++) expected[i] = (i * 31) % 251;
+  const receivedHash = createHash('sha256').update(received).digest('hex');
+  const expectedHash = createHash('sha256').update(expected).digest('hex');
+  t.diagnostic(`stdout length=${received.length}/${length}, sha256=${receivedHash}/${expectedHash}`);
+  assert.equal(received.length, length, 'wrapper truncated output queued behind parent stdout backpressure');
+  assert.equal(receivedHash, expectedHash);
+  assert.equal(child.wrapper.exitCode, 23);
+});
+
+for (const signal of ['SIGTERM', 'SIGINT']) test(`wrapper forwards ${signal} to its native ACP child`, async t => {
+  const s = fixture(t, readySource + `process.stdin.resume(); setInterval(()=>{},1000);`);
+  const child = ownedProcess(t, s);
+  const nativePid = await child.ready();
+  child.wrapper.kill(signal);
+  assert.equal(await waitFor(child.closed), true, 'wrapper did not close after signal');
+  assert.equal(await waitFor(() => !alive(nativePid), 1000), true, `native ACP child remains alive after ${signal} sent to wrapper PID`);
+  assert.equal(child.wrapper.signalCode, signal);
 });
