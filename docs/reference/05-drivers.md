@@ -865,7 +865,10 @@ outcome ends the wait), `DELETE /api/session/:id`. The prompt names no model —
 on the config `model` default, which the plan writes. Auth failures fail the lift loudly; no
 login verdict is probed. The record lands before the first holder call (pid first, then url,
 then session id), so a crash past lift keeps a handle `stop` reaps by; a failed lift reaps the
-holder and removes record and log, and the next attempt opens a fresh log. The bound lift
+holder exactly once and removes record, log and registry entry, preserving the original
+failure even when session creation or the first prompt rejects its HTTP request. The next
+attempt opens a fresh log. The deterministic stub-holder check is
+`node test/promptobus-opencode-lift-failure.test.mjs`. The bound lift
 points the bus MCP entry and the holder env at the session record. Reviewer and approver
 lift on the same holder with the deny map in config. No loop-guard hook is
 installed (the holder takes no settings file) — scope enforcement is prompt rules plus the
