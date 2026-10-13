@@ -531,3 +531,6 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-356.2"></a>`PB-356.2-mutation-probe-interrupted-run` · 2026-10-10 · completed · — · Mutation probe counts a signalled probe as successful proof
 - <a id="pb-317.3"></a>`PB-317.3-distinct-archived-task-identifier-collision` · 2026-10-12 · completed · — · Distinct archived tasks share the same PB-356 identifier
 - <a id="pb-347"></a>`PB-347-opencode-stall-route` · 2026-10-13 · completed · — · A stalled opencode participant crashes status and the warden because stallRoute is missing
+- <a id="pb-349"></a>`PB-349-opencode-lift-http-exception-cleanup` · 2026-10-13 · completed · `b515cdbee4` · An HTTP exception during OpenCode lift bypasses holder cleanup before registry registration
+- <a id="pb-351"></a>`PB-351-opencode-wake-unknown-state` · 2026-10-13 · completed · `b515cdbee4` · OpenCode wake posts another turn when the preceding turn state is unreadable
+- <a id="pb-353"></a>`PB-353-opencode-async-sweep-completion` · 2026-10-13 · completed · `b515cdbee4` · Single-participant sweep returns before asynchronous harness cleanup completes
