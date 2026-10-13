@@ -328,6 +328,8 @@ test('Stop during fresh initial assignment wins and an unknown send cannot start
       return { ok: true, delivery: 'sent' };
     } });
     await s.create(); await s.add('phase-review', 'reviewer');
+    await s.control('stop', 'phase-review');
+    await s.call('thr-1', 'promptobus_send', { to: ['phase-review'], type: 'task', body: 'Read the complete original evidence in the fresh bounded phase.' });
     const before = bindingStore(s.host.bb).thread('thr-2'); const next = structuredClone(before.launchContext);
     next.grant.token = 'fresh-stop-phase'; next.grant.phase = 'repair';
     next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
