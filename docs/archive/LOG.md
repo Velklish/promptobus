@@ -530,3 +530,5 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-356"></a>`PB-356-participant-live-probes-abort` · 2026-10-03 · completed · — · Own participant live scenarios and clean aborted e2e runs
 - <a id="pb-356.2"></a>`PB-356.2-mutation-probe-interrupted-run` · 2026-10-10 · completed · — · Mutation probe counts a signalled probe as successful proof
 - <a id="pb-317.3"></a>`PB-317.3-distinct-archived-task-identifier-collision` · 2026-10-12 · completed · — · Distinct archived tasks share the same PB-356 identifier
+- <a id="pb-375"></a>`PB-375-bb-launch-context-preflight` · 2026-10-13 · completed · `fb2ae7bc57` · Validate executable role and control context before admitting a BB participant
+- <a id="pb-376"></a>`PB-376-bb-review-evidence-bundle` · 2026-10-13 · completed · `fb2ae7bc57` · Deliver a complete evidence manifest before starting a BB review
