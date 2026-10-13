@@ -1,0 +1,130 @@
+{
+  "observedDate": "2026-10-13",
+  "producerThread": "thr_sp4g9f2jit",
+  "method": "Official bb thread log JSON, paired turn/started and turn/completed events. Actor identifiers anonymized; no transcript, credentials, grants or provider account fields exported.",
+  "uniqueManagedThreads": 19,
+  "managedTurnsStarted": 185,
+  "coordinatorTurnsStarted": 83,
+  "peakManagedThreadsByTurnIntervals": 3,
+  "rootOperatorExcludedFromManagedCount": true,
+  "unpairedLifecycleEvents": [],
+  "lifecycleAuditSha256": "1194b2df18c7807586e7a57799a6f07dcf910275080176f36b40c0f73664cb5a",
+  "coordinatorTriggerRead": {
+    "command": [
+      "bb",
+      "thread",
+      "log",
+      "thr_ygz2mn78mx",
+      "--json",
+      "--all"
+    ],
+    "exit": 0,
+    "triggers": [
+      {
+        "classification": [
+          "spawn",
+          "user",
+          "unlabeled"
+        ],
+        "count": 1
+      },
+      {
+        "classification": [
+          "tell",
+          "system",
+          "child-outcome-batch"
+        ],
+        "count": 1
+      },
+      {
+        "classification": [
+          "tell",
+          "system",
+          "child-completed"
+        ],
+        "count": 80
+      },
+      {
+        "classification": [
+          "tell",
+          "agent",
+          "unlabeled"
+        ],
+        "count": 39
+      },
+      {
+        "classification": [
+          "tell",
+          "system",
+          "child-needs-attention"
+        ],
+        "count": 13
+      },
+      {
+        "classification": [
+          "tell",
+          "user",
+          "unlabeled"
+        ],
+        "count": 4
+      },
+      {
+        "classification": [
+          "tell",
+          "system",
+          "child-failed"
+        ],
+        "count": 2
+      },
+      {
+        "classification": [
+          "tell",
+          "system",
+          "child-interrupted"
+        ],
+        "count": 2
+      }
+    ]
+  },
+  "triggerCountsAreRequestsNotCompletedTurns": true,
+  "limit": "Counts do not measure per-thread tokens or cost and do not prove that every coordinator turn was unnecessary.",
+  "contextAdmissionObservation": {
+    "command": [
+      "bb",
+      "thread",
+      "log",
+      "thr_uf9gddq54a",
+      "--json",
+      "--all"
+    ],
+    "exit": 0,
+    "eventSeq": 97,
+    "observed": "Worker authenticated its BB task but ended the turn requesting the missing exact control location and declared role resource; host context reported skills=[]. A Root supplement then allowed the worker to continue.",
+    "launchRecordSha256": "01f621068784baf39b5071e0449c9f90ceeaef2dd121a46cc7ed5a48be5055ba",
+    "limit": "This establishes incomplete supplied context, not a current MCP-schema failure. Earlier bridge schema repair is already accepted."
+  },
+  "evidenceDeliveryObservation": {
+    "command": [
+      "bb",
+      "thread",
+      "log",
+      "thr_kwzrcyp9fz",
+      "--json",
+      "--all"
+    ],
+    "exit": 0,
+    "eventSeq": 98,
+    "sourceFindings": 0,
+    "evidenceMajor": 1,
+    "observed": "Reviewer completed source review but reported missing accessible canonical raw/receipt/handover/inventory IDs. Root had delivered steer messages; the precise reason the reviewer did not consume that context remains unestablished.",
+    "primaryResultSha256": "317657e2d5bb244a92356f74c14b7eff5b6bd6379df149ea39bc76a1a46c530f",
+    "rootRawSha256": "5cbadd1b6f5871dece53764c481c7275d3b474d33053db73210b620759d26833",
+    "rootRawBytes": 510799,
+    "rootDirectRunnerExit": 0,
+    "rootRequiredGates": 3,
+    "rootRequiredPassed": 3,
+    "rawCanonicalArtifactId": "20261013T005200379-0123-87e447",
+    "receiptCanonicalArtifactId": "20261013T005210226-0125-405e1f",
+    "historicalWorkerProblem": "The original worker captured only tail output and the pipe exit. Root reran the direct runner to obtain complete raw and its own return code."
+  }
+}
