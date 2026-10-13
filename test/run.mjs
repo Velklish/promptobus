@@ -55,7 +55,15 @@ import {
 } from './tmpdir-sweep.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const files = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
+const allFiles = readdirSync(here).filter((n) => n.endsWith('.test.mjs')).sort();
+const args = process.argv.slice(2);
+const requested = args.slice(1);
+if (args.length && (args[0] !== '--files' || !requested.length
+    || new Set(requested).size !== requested.length || requested.some((name) => !allFiles.includes(name)))) {
+  console.error('✖ invalid test file selection; use --files with distinct existing *.test.mjs basenames');
+  process.exit(1);
+}
+const files = args.length ? requested.sort() : allFiles;
 
 // Run sandboxes go into one directory, removed on exit — including
 // failure and Ctrl+C. Each file does its own `mkdtemp` in `os.tmpdir()`,

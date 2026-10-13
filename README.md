@@ -264,12 +264,19 @@ cd promptobus
 npm ci               # builds dist/ through prepare
 npm run build        # tsc -p tsconfig.json
 npm test             # test/run.mjs runs every test/*.test.mjs
+npm run test:local -- --base <commit>  # local iteration from an explicit Git base
 npm run audit        # publicity audit over tracked files and the packed tarball
 npm run docs-links:external  # http(s) documentation links; not a gate
 npm run schema-skew  # record schemas against the installed package; not a project gate
 ```
 
 `src/` is TypeScript compiled to `dist/`; `lib/` is the JavaScript runtime and the three drivers; `skills/`, `schemas/` and `models/` ship in the tarball.
+
+The local command reports selected and omitted groups and test files, builds `dist/`,
+then uses the same isolated runner and propagates its exit code. Add `--list` to
+inspect the selection without building or running. Unknown or shared inputs require
+the full suite; `npm test`, acceptance gates and CI always retain full acceptance
+coverage.
 
 The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. At the same boundary it removes every known harness identity before fixtures install their own, so running the suite from a participant of another harness does not create a second session identity. Live harness runs are never started in CI.
 The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its two stub replies, so its `ticks` check does not depend on process startup speed; this delay is test-only.

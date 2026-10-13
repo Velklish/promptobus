@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Add `npm run test:local -- --base <commit>` with explicit conservative test
+  groups, rename/deletion and dirty-input selection, selected/omitted file reports
+  and complete-suite fallback for unknown or shared inputs. The existing isolated
+  runner accepts selected files; `npm test`, acceptance gates and CI remain full.
+
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object
   type can make a client reject the entire bridge tool list.
