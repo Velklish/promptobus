@@ -897,7 +897,9 @@ has `id`, `kind`, actual canonical `sender`, `producer`, UTF-8 byte count and
 SHA-256. Required kinds are `gate`, `handover`, original `receipt` for every
 command, `inventory-base`, `inventory-source`, and every ordered `raw` part for
 stdout/stderr. Normal message IDs are not artifact IDs. The canonical history
-establishes attachment sender; relay does not rewrite the producer in receipts.
+establishes attachment sender for every attachment-bearing message type, including
+`task` and `result`, before and after mailbox acknowledgement or reload. Relay
+does not rewrite the producer in receipts.
 Each part and each reconstructed stream must agree in bytes/hash. A missing part,
 wrong source/base/producer, unsupported receipt, cropped tail or pipe-masked exit
 refuses before another reviewer is requested.
@@ -911,7 +913,11 @@ node scripts/bb-record-command.mjs --output /absolute/owned/evidence/run --by AC
 It writes complete `<output>.stdout.txt`, `<output>.stderr.txt` and
 `<output>.receipt.txt` with format `bb-direct-command-v1`, exact argv, direct exit/signal/error, HEAD, dirty state,
 actor, start/end and stream bytes/hashes. It does not grant command permission or
-authenticate a supplied actor. Existing files are not overwritten. Shell
+authenticate a supplied actor. All three outputs are reserved exclusively before
+the runner starts. A reservation failure reports `notRun: true` on stderr and
+leaves any already reserved files empty; existing files are not overwritten. A
+stream error stops and reaps the runner, retains available raw bytes and marks
+the receipt incomplete with the error and actual exit/signal. Shell
 pipeline executables are unsupported, including behind `env`. A single `env`
 with an optional leading `--` and literal `NAME=VALUE` assignments is supported;
 other `env` options and nested launchers are refused. The recorder and manifest

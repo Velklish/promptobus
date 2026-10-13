@@ -562,7 +562,10 @@ file is at most 64 MiB. Original producer identity stays in the receipt/handover
 when the coordinator relays another actor's output. A checkout can record a
 direct command with `node scripts/bb-record-command.mjs --output /absolute/owned/stem --by ACTOR -- npm test`.
 Its complete stdout/stderr and `bb-direct-command-v1` receipt retain the runner's
-own return code. This recorder is not an authorization or actor-authentication
+own return code. It reserves all three files before spawning; a refusal reports
+`notRun: true`, and a sink failure stops and reaps the runner with incomplete
+evidence. Attachment sender lookup includes `task` and `result` messages before
+and after acknowledgement or reload. This recorder is not an authorization or actor-authentication
 tool. Shell pipeline executables are unsupported.
 
 The mechanical validator supports complete flat passing Node spec inventories;

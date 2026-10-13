@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- BB attachment provenance retains the canonical sender of `task` and `result`
+  messages across acknowledgement and reload. The direct recorder reserves all
+  outputs before starting a runner and stops/reaps it on stream errors, retaining
+  incomplete evidence rather than losing its raw output and status.
+
 - Plain BB resume preserves Stop during binding/control reads. Initial queue
   cancellations without plugin attribution match the late queue reply, bound
   reviewer file reads recheck current grants, and POSIX shell receipt forms are

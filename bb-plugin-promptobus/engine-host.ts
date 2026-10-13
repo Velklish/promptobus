@@ -129,7 +129,7 @@ export async function engineOperation(input: unknown) {
       const inboxes = task.participants.map(p => engine.inspectInbox(b.task, p.id));
       if (history.broken.length || inboxes.some(box => box.broken.length)) throw new Error('Artifact provenance history is incomplete');
       const messages = [...history.entries.map(entry => entry.message), ...inboxes.flatMap(box => box.messages)];
-      const senders = new Set(messages.filter(m => m.type === 'artifact' && m.artifact === artifact.id).map(m => m.sender));
+      const senders = new Set(messages.filter(m => m.artifact === artifact.id).map(m => m.sender));
       if (senders.size !== 1) throw new Error('Artifact provenance sender is missing or ambiguous');
       return { ...artifact, sender: [...senders][0], content: engine.readArtifactContent(b.task, artifact.id).toString('utf8') };
     }

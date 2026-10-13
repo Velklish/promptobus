@@ -816,6 +816,26 @@ test('bound tools use host engine canon; peek preserves mail, read acknowledges 
   assert.ok(s.host.harness.inspection.experimental_hostRpcCalls.every(c => c.hostId === 'local'));
 });
 
+for (const type of ['task', 'result']) test(`attachment provenance: ${type} retains its authenticated sender before ACK and after ACK/reload`, async t => {
+  const s = await stand(t);
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('worker-one')).exitCode, 0);
+  const sender = type === 'task' ? 'orchestrator' : 'worker-one';
+  const caller = type === 'task' ? 'thr-1' : 'thr-2';
+  const recipient = type === 'task' ? 'worker-one' : 'orchestrator';
+  const reader = type === 'task' ? 'thr-2' : 'thr-1';
+  const sent = JSON.parse(await s.call(caller, 'promptobus_send', { to: [recipient], type,
+    body: 'Canonical assignment or result with original evidence.', artifact: { filename: `${type}.txt`, content: `original ${type}` } }));
+  const check = async () => {
+    const artifact = JSON.parse(await s.call(reader, 'promptobus_artifact', { id: sent.artifact.id }));
+    assert.equal(artifact.sender, sender); assert.equal(artifact.content, `original ${type}`);
+  };
+  await check();
+  const read = JSON.parse(await s.call(reader, 'promptobus_mailbox', { mode: 'read' }));
+  assert.ok(read.messages.some(message => message.id === sent.message.id));
+  await check(); await s.reload(); await check();
+});
+
 test('forged identity fields, metadata, foreign project and missing threads grant no bus rights', async t => {
   const s = await stand(t);
   assert.equal((await s.create()).exitCode, 0);
