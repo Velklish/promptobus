@@ -847,8 +847,12 @@ The deterministic driver/status/warden regression is
 one config, one password — plus a session in it. There is no messaging socket, so wake is a
 follow-up prompt on an idle session: the contact point is the record path, handed over by the
 participant's first bus call — the record names the session, so no caller names it explicitly.
-An idle session takes the text, a running turn refuses and the warden retries; `checkWake`
-smokes the channel without spending a turn. The record carries home, task and address, and the
+Wake posts only after HTTP 200 returns a nonempty message array, either directly or in
+`data`, whose newest message is `type: idle`. HTTP errors, rejected requests, malformed
+responses and empty lists return `ok: false` without posting; busy turns also refuse, and
+the warden retries. `node test/promptobus-opencode-wake-state.test.mjs` measures both array
+envelopes and the refusal paths with stub HTTP responses. `checkWake` smokes the channel
+without spending a turn. The record carries home, task and address, and the
 MCP identity check proves the caller against them; the teamlead lift binds the same pointer
 through its home. `inspect` and `stop` arrive ref-only and resolve the record through
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record

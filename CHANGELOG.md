@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- OpenCode wake requires a valid idle message before posting a follow-up turn; HTTP errors, malformed or empty state and busy turns refuse for retry.
+
 - OpenCode lift failures clean up the holder, record, log and registry entry even when a holder HTTP request rejects; the original failure is preserved.
 
 - Show OpenCode stall recovery instructions in status and warden reports instead
