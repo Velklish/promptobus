@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeSandbox } from './sandbox.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const copy = realpathSync(makeSandbox('OpenCode path café '));
+const copy = realpathSync(makeSandbox('promptobus-driver-opencode path café '));
 for (const entry of ['lib', 'dist', 'package.json', 'README.md', 'docs/reference']) {
   mkdirSync(path.dirname(path.join(copy, entry)), { recursive: true });
   cpSync(path.join(root, entry), path.join(copy, entry), { recursive: true });
