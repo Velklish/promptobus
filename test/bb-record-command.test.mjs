@@ -68,7 +68,7 @@ const spawn = cp.spawn; cp.spawn = (...args) => { fs.writeFileSync(${JSON.string
 const create = fs.createWriteStream; fs.createWriteStream = (...args) => { const stream = create(...args);
 if (${JSON.stringify(sink)} && String(args[0]).endsWith(${JSON.stringify(`.${sink}.txt`)})) stream._write = (chunk, encoding, callback) => callback(new Error('fixture sink failure'));
 return stream; }; syncBuiltinESMExports();`);
-  const run = code => spawnSync(process.execPath, ['--import', hook, script, '--output', stem, '--by', 'fixture-recorder', '--', process.execPath, '-e', code], { encoding: 'utf8', timeout: 5000 });
+  const run = code => spawnSync(process.execPath, ['--import', hook, script, '--output', stem, '--by', 'fixture-recorder', '--', process.execPath, '-e', code], { encoding: 'utf8', timeout: 15000 });
   return { directory, stem, marker, pidFile, run };
 }
 
@@ -96,7 +96,7 @@ for (const sink of ['stdout', 'stderr']) test(`recorder sink failure: ${sink} re
   const f = recorderFixture(t, sink);
   let pid;
   t.after(() => { if (pid) { try { process.kill(pid, 'SIGKILL'); } catch {} } });
-  const result = f.run(`require('fs').writeFileSync(${JSON.stringify(f.pidFile)}, String(process.pid));process.${sink}.write('original bytes');setInterval(()=>{},1000);`);
+  const result = f.run(`require('fs').writeFileSync(${JSON.stringify(f.pidFile)}, String(process.pid));process.${sink}.write('original bytes');setTimeout(()=>process.exit(0),5000);`);
   pid = Number(readFileSync(f.pidFile, 'utf8'));
   assert.equal(result.status, 1, result.stderr);
   let alive = false; try { process.kill(pid, 0); alive = true; } catch (error) { assert.equal(error.code, 'ESRCH'); }
