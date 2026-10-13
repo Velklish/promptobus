@@ -391,6 +391,7 @@ export function registerRuntime(bb: BbPluginApi) {
       delete b.preservation;
       delete b.hostContext;
       delete b.launchContext; delete b.evidenceManifest;
+      delete b.phaseAssignment; delete b.phaseAssignmentPending;
       if (!provision) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, provision ? { ...b, environmentOwner: 'bb' } : b,
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
@@ -456,10 +457,49 @@ export function registerRuntime(bb: BbPluginApi) {
         await recovery.cancelQueued(b).catch(error => bb.log.warn(`Promptobus queued wake retained: ${(error as Error).message}`));
         const result = await stopBbParticipant(bb, b);
         return { exitCode: result.confirmed ? 0 : 1, stdout: JSON.stringify({ ...result, deliveryPaused: true }) }; } }),
-    'participant resume': cliCommand({ summary: 'Explicitly re-enable bounded wake delivery to an available idle participant.', options: participantOptions,
+    'participant resume': cliCommand({ summary: 'Explicitly re-enable bounded delivery, or supply a fresh complete phase for the same actor.', options: {
+      ...participantOptions, 'launch-context': createOptions['launch-context'],
+      assignment: { ...createOptions.assignment, required: false },
+      'evidence-manifest': { type: 'string', description: 'Complete original manifest for a fresh reviewer phase.' },
+    },
       async run({ options }, context) {
         const b = boundParticipant(options.task, options.participant);
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
+        if (options['launch-context'] !== undefined) {
+          if (!options.assignment || !b.launchContext) throw new Error('A fresh phase requires its complete assignment and previous bounded grant');
+          if (b.role === REVIEWER && options['evidence-manifest'] === undefined) throw new Error('review evidence manifest is required before a fresh phase');
+          const next = bindingSchema.parse({ ...b, launchContext: boundedJson(options['launch-context'], 'launch context'),
+            ...(b.role === REVIEWER ? { evidenceManifest: boundedJson(options['evidence-manifest'], 'review evidence manifest') } : {}) });
+          next.launchContext = validateLaunchContext(next, next.launchContext, participantTools(next));
+          if (next.launchContext.grant.token === b.launchContext.grant.token || next.launchContext.grant.phase === b.launchContext.grant.phase) {
+            throw new Error('A terminal grant requires a fresh token and bounded phase; old token cannot resume');
+          }
+          const current = await host.call('launchControl', { binding: next }, { hostId: next.hostId, signal: context.signal }) as { endedTokens: string[] };
+          if (!current.endedTokens.includes(b.launchContext.grant.token)) throw new Error('The previous grant must be declared ended before phase transfer');
+          if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
+          recovery.pause(b, 'Fresh bounded phase transfer');
+          if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('Fresh phase Stop was not confirmed');
+          await bb.sdk.threads.clearContext({ threadId: b.threadId!, signal: context.signal });
+          await admit(next, context.signal);
+          if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
+          const intent = store.launchIntent(next)!;
+          const delivery = createBbInstructionDelivery(next.role, { taskId: next.task, address: next.participant, environmentId: next.environmentId,
+            workspace: next.environmentPath, assignment: options.assignment, launchContext: next.launchContext, evidenceManifest: next.evidenceManifest,
+            tools: Object.fromEntries(participantTools(next).map(name => [name, name])) });
+          const prompt = `${LAUNCH_HEADER}${intent.attemptId}\n${delivery.initialPrompt}\n\n${next.hostContext ? renderBbHostContext(next.hostContext) : ''}`;
+          next.phaseAssignment = prompt; next.phaseAssignmentPending = true; store.save(next);
+          const resumed = await recovery.resume(next, false);
+          if (store.delivery(b.threadId!).paused) throw new Error('Fresh phase remains paused; no assignment sent');
+          const epoch = store.delivery(b.threadId!).epoch;
+          context.signal?.throwIfAborted();
+          const sent = await bb.sdk.threads.send({ threadId: next.threadId!, mode: 'auto', input: [{ type: 'text', text: prompt, mentions: [] }] });
+          if (store.delivery(b.threadId!).paused || store.delivery(b.threadId!).epoch !== epoch) throw new Error('Stop superseded the fresh phase assignment');
+          next.phaseAssignmentPending = false; store.save(next);
+          store.launch(next, { ...intent, assignment: options.assignment });
+          return { exitCode: 0, stdout: JSON.stringify({ ...resumed, phase: next.launchContext.grant.phase, sent }) };
+        }
+        if (options.assignment !== undefined || options['evidence-manifest'] !== undefined) throw new Error('Fresh assignment/evidence requires --launch-context');
+        if (b.launchContext) await admit(b, context.signal);
         return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b)) };
       } }),
     'recovery run': cliCommand({ summary: 'Reconcile recorded threads, history and canonical unread mail without resuming paused participants.',

@@ -89,7 +89,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
   };
   const reconcile = async (id: string, outerSignal?: AbortSignal) => {
     const b = store.thread(id);
-    if (disposed || !b || b.phase !== 'ready') return;
+    if (disposed || !b || b.phase !== 'ready' || b.phaseAssignmentPending) return;
     const signal = outerSignal ? AbortSignal.any([outerSignal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000);
     await replay(b, signal);
     if (store.delivery(id).paused) store.updateDelivery(id, retire);
@@ -204,7 +204,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
         if (state.epoch === 0) { state.paused = false; state.reason = ''; }
       });
     },
-    async resume(b: Binding) {
+    async resume(b: Binding, wake = true) {
       if (b.phase !== 'ready') throw new Error('Participant is not ready for resume');
       await replay(b);
       const epoch = store.delivery(b.threadId!).epoch;
@@ -217,14 +217,15 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
         state.epoch += 1; state.paused = false; state.pending = null; state.key = null; state.attempts = 0;
         state.obligation = null; state.continuations = 0; state.reason = '';
       });
-      await run(b.threadId!);
+      if (wake) await run(b.threadId!);
       return store.delivery(b.threadId!);
     },
     admits(id: string, text: string, ownedWake = true) {
       const state = store.delivery(id);
       if (text.includes(LAUNCH_HEADER)) {
         const b = store.thread(id); const intent = b && store.launchIntent(b);
-        return !state.paused && !!intent && text.includes(`${LAUNCH_HEADER}${intent.attemptId}`);
+        return !state.paused && !!intent && text.includes(`${LAUNCH_HEADER}${intent.attemptId}`)
+          && (!b?.phaseAssignment || text === b.phaseAssignment);
       }
       if (!ownedWake || !text.includes(HEADER)) return true;
       return !state.paused && !!state.pending && text.includes(state.pending.marker);

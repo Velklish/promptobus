@@ -290,6 +290,56 @@ test('bounded file control is current at each BB call and an ended grant refuses
   await assert.rejects(s.call('thr-1', 'promptobus_task'), /active/); assert.equal(s.spawns.length, 1);
 });
 
+test('fresh evidence repair keeps the actor, ends the old token and supplies every original ID before resumed delivery', async t => {
+  let delivered;
+  const s = await stand(t, { assignmentSend: async ({ input }) => { delivered = input[0].text; return { ok: true, delivery: 'sent' }; } });
+  await s.create(); await s.add('phase-review', 'reviewer');
+  const oldPrompt = s.initialArgs.prompt;
+  const before = bindingStore(s.host.bb).thread('thr-2');
+  const next = structuredClone(before.launchContext);
+  next.grant.token = 'fresh-evidence-phase'; next.grant.phase = 'evidence-repair';
+  next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+  const f = await evidenceFixture(s.root, s.task);
+  const resume = extra => s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
+    '--launch-context', JSON.stringify(next), '--assignment', 'Read complete original evidence in this bounded phase.', ...extra]);
+  const missing = await resume([]); assert.equal(missing.exitCode, 1); assert.match(missing.stderr, /manifest/);
+  assert.equal(delivered, undefined); assert.equal(s.spawns.length, 2);
+  const accepted = await resume(['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(accepted.exitCode, 0, accepted.stderr);
+  assert.ok(delivered.includes('fresh-evidence-phase')); for (const ref of f.manifest.artifacts) assert.ok(delivered.includes(ref.id));
+  const after = bindingStore(s.host.bb).thread('thr-2');
+  assert.equal(after.participant, before.participant); assert.equal(after.token, before.token); assert.equal(after.threadId, before.threadId);
+  assert.equal(after.phaseAssignmentPending, false); assert.equal(s.spawns.length, 2);
+  assert.equal(s.delivery('thr-2').paused, false);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const old = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus',
+    input: { blocks: [{ type: 'text', text: oldPrompt }], text: oldPrompt } }));
+  assert.equal(old.action, 'reject', 'A queued initial assignment from the ended grant cannot activate the fresh phase');
+  const retry = await resume(['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(retry.exitCode, 1); assert.match(retry.stderr, /fresh token/);
+});
+
+test('Stop during fresh initial assignment wins and an unknown send cannot start a mailbox-only review', async t => {
+  for (const stop of [true, false]) {
+    const s = await stand(t, { assignmentSend: async ({ threadId }) => {
+      if (stop) await s.control('stop', 'phase-review');
+      await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === threadId).length, 0);
+      if (!stop) throw new Error('Fresh initial send reply lost');
+      return { ok: true, delivery: 'sent' };
+    } });
+    await s.create(); await s.add('phase-review', 'reviewer');
+    const before = bindingStore(s.host.bb).thread('thr-2'); const next = structuredClone(before.launchContext);
+    next.grant.token = 'fresh-stop-phase'; next.grant.phase = 'repair';
+    next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+    const f = await evidenceFixture(s.root, s.task);
+    const result = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
+      '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Read all original evidence.']);
+    assert.equal(result.exitCode, 1); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2').length, 0); assert.equal(s.spawns.length, 2);
+    if (stop) assert.equal(s.delivery('thr-2').paused, true);
+    else assert.ok(bindingStore(s.host.bb).thread('thr-2').phaseAssignment);
+  }
+});
+
 function fictionalHost(calls) {
   return root => {
     const base = path.join(root, 'base'), module = path.join(root, 'modules'), skills = path.join(root, 'canon-skills');

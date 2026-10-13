@@ -932,6 +932,14 @@ evidence needs a fresh phase. These are mechanical consistency checks, not
 certification that an author's commands ran or that opaque handover claims are
 true. A permitted rerun and the reviewer establish those separate facts.
 
+The existing `participant resume` route accepts a fresh complete launch context,
+assignment and reviewer manifest for the same actor. Its token and phase must
+differ, and current control must declare the previous token ended. Stop and
+context reset precede the complete initial phase assignment; pending initial
+delivery fences mailbox wakes. A newer Stop or unknown SDK send preserves that
+fence for explicit recovery. The native BB identity and lifecycle owner do not
+change, and an old grant token cannot be reactivated by this route.
+
 ## BB workflow result currency
 
 The local BB facade routes all six standing roles through authenticated bindings.

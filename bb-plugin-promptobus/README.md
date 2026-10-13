@@ -512,6 +512,17 @@ read roots receives inline control and Root signals. Ended tokens never resume;
 repairs require a fresh complete bounded phase. Persisted older bindings remain
 explicitly `notMeasured`, without a fabricated startup measurement.
 
+For the same existing actor, `participant resume --launch-context <JSON>
+--assignment <complete-phase-text> --evidence-manifest <JSON>` installs a fresh
+review phase. It requires a different grant token and phase, and current control
+must name the previous token as ended. The complete original manifest is checked
+before Stop/context reset and again before delivery. The same BB thread, binding,
+parent and lifecycle owner remain; the new initial assignment contains the full
+context and all original IDs. Mailbox wakes stay fenced while that assignment is
+pending. A newer Stop wins; an unknown initial send retains its pending text and
+does not automatically start another evidence-only turn. A canonical phase task
+still comes from the coordinator; this command does not invent a task sender.
+
 Every source-and-evidence reviewer also takes `--evidence-manifest <JSON>`.
 `producerBinding: participant` requires a ready canonical participant.
 `producerBinding: owner-declaration` explicitly supplies a producer outside that

@@ -43,6 +43,8 @@ export const bindingSchema = z.object({
   hostContext: hostContextSchema.optional(),
   launchContext: launchContextSchema.optional(),
   evidenceManifest: evidenceManifestSchema.optional(),
+  phaseAssignment: z.string().optional(),
+  phaseAssignmentPending: z.boolean().optional(),
   predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
