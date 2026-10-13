@@ -103,7 +103,7 @@ writeFileSync(path.join(ownerHome, 'auth.json'), '{"stub":"credentials"}\n');
 writeFileSync(brief, '# Failed first turn\nKeep recovery history.\n');
 const failedTask = 'lead-lifecycle-t20261001-000002';
 const failed = cli(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', failedTask], {
-  [HANG_FIRST_VAR]: '1', PROMPTOBUS_CODEX_READY_MS: '1000',
+  [HANG_FIRST_VAR]: '1', PROMPTOBUS_CODEX_READY_MS: '20000',
 });
 const failedOwner = participantOf(core().readTask(failedTask), 'orchestrator');
 const failedRecord = readSession(failedOwner.sessionRef, env);
