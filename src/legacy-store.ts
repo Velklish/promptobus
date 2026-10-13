@@ -223,6 +223,7 @@ export function createTask(home: string, {
 // Journal cache for one request: one bus-tool call reads task.json four to six times. It lives
 // exactly as long as the wrapped synchronous stretch. Do not mutate a `readTask` result under it.
 let taskCache: Map<string, TaskMeta> | null = null;
+let taskCacheSuspensions = 0;
 
 export function withTaskCache<T>(fn: () => T): T {
   const outer = taskCache;
@@ -240,24 +241,27 @@ onTaskLock((fn) => withoutTaskCache(fn));
 
 function withoutTaskCache<T>(fn: () => T): T {
   const outer = taskCache;
-  taskCache = null;
-  try {
-    return fn();
-  } finally {
-    taskCache = outer;
-    // Under the lock the journal may have changed — both by our write and
-    // by a foreign one the lock waited for.
+  taskCacheSuspensions += 1;
+  const restore = () => {
+    taskCacheSuspensions -= 1;
     outer?.clear();
-  }
+    taskCache?.clear();
+  };
+  let result: T;
+  try { result = fn(); } catch (error) { restore(); throw error; }
+  if (result instanceof Promise) return result.finally(restore) as T;
+  restore();
+  return result;
 }
 
 export function readTask(home: string, id: string): TaskMeta {
   const f = taskFile(home, id);
-  const hit = taskCache?.get(f);
+  const cache = taskCacheSuspensions ? null : taskCache;
+  const hit = cache?.get(f);
   if (hit) return hit;
   if (!existsSync(f)) throw new GateError(`task ${id} is not in ${tasksDir(home)}`);
   const meta = JSON.parse(readFileSync(f, 'utf8')) as TaskMeta;
-  taskCache?.set(f, meta);
+  cache?.set(f, meta);
   return meta;
 }
 

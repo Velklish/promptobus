@@ -858,6 +858,8 @@ through its home. `inspect` and `stop` arrive ref-only and resolve the record th
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
 path falls back to the lift ref; `sweepParticipant` reaps registry records matching both task and
 participant address, record, log and entry together. An unnamed participant removes nothing.
+Single-participant `sweep` awaits the cleanup hook under the journal lock before removing
+participant files or reporting completion; rejected hooks produce the cleanup warning.
 `done` awaits cleanup for each dead participant of a closed task. Live or unknown participants
 with a cleanup hook keep the sweep pending, even without a worktree; a later `done` reaps them
 after their sessions are gone. The lift starts `serve --port 0`, reads the listening

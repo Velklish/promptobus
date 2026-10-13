@@ -1872,7 +1872,18 @@ and files stay with the branch that may still be the only copy. The orphaned reg
 
 Source: `lib/sweep.js`, `takePiece`.
 
-Everything that removes anything, run inside `withTaskLock`.
+Everything that removes anything runs inside `withTaskLockAsync`, which uses the existing
+asynchronous directory lock. The journal lock and both registered journal-cache suspensions
+remain held until the participant cleanup hook settles. Same-process synchronous re-lift
+refuses while that asynchronous lock is held; another process waits for it and times out
+with the journal-busy refusal if cleanup has not finished. The destructive stretch returns
+a Promise, so callers await `sweep` before reporting completion.
+
+An asynchronous hook rejection uses the same warning as a synchronous cleanup exception:
+`could not clear the harness state of participant <address>: <error>`. Participant files
+are then removed and the lock is released. The exit code still follows the tree-removal
+outcome; a cleanup warning alone does not change it. The deterministic delayed/rejected
+hook and concurrent re-lift checks are `node test/promptobus-sweep-async.test.mjs`.
 
 The lock is there for one race: `spawn` writes a participant record through that same lock,
 so a re-lift of the swept address between the liveness check and the removals would put a
