@@ -328,7 +328,7 @@ export function registerRuntime(bb: BbPluginApi) {
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
       b.phase = 'ready'; store.save(b);
-      if (prepare) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
+      if (prepare) { b.phaseAssignment = initialPrompt(); await sendPhaseAssignment(b); }
       await bb.experimental_hooks.recheck('message.dispatch');
       store.launch(b, { ...intent, status: 'ready' });
       return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase, execution: b.execution, display: { title: titleFor(b), environment: naming } };

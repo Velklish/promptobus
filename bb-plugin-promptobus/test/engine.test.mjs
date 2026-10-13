@@ -169,7 +169,7 @@ async function stand(t, options = {}) {
         assert.equal(input[0].text.includes(environments.get(threads.get(threadId).environmentId).path), true);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId) }))).action, 'proceed');
-        return { ok: true }; },
+        return { ok: true, delivery: 'sent' }; },
       list: async ({ offset = 0, limit = 200 } = {}) => {
         const list = [...threads.values()].filter(t => t.archivedAt === null && t.deletedAt === null).slice(offset, offset + limit);
         if (options.beforeListReturn) await options.beforeListReturn();
@@ -1875,3 +1875,18 @@ for (const scenario of ['owner', 'worker', 'wrong-hash', 'wrong-token', 'wrong-r
     if (scenario !== 'owner') assert.match(result.stderr, /canonical owner declaration sender\/scope mismatch/);
   });
 }
+
+test('review boundary: prepared initial context also survives queue cancellation', async t => {
+  let delivered;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    delivered = input[0].text; const entry = { id: 'prepared-initial', threadId, originPluginId: 'promptobus', content: input };
+    s.queues.set(threadId, [entry]); return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); s.workerEnvironment.managed = false;
+  assert.equal((await s.add('prepared-review', 'reviewer', ['--environment-path', s.workerEnvironment.path])).exitCode, 0);
+  const initial = delivered, entry = s.queues.get('thr-2')[0]; s.queues.set('thr-2', []);
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, true, 'A prepared reviewer has not received the manifest until its complete initial context is delivered');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
+  assert.equal((await s.control('resume', 'prepared-review')).exitCode, 0); assert.equal(delivered, initial);
+});
