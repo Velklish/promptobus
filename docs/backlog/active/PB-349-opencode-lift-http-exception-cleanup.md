@@ -1,10 +1,11 @@
 # PB-349 · An HTTP exception during OpenCode lift bypasses holder cleanup before registry registration
 
-- **Order:** 75
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 75
+- **Taken:** 2026-10-13
 
 ## Context
 

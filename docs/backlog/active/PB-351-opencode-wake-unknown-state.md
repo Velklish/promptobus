@@ -1,10 +1,11 @@
 # PB-351 · OpenCode wake posts another turn when the preceding turn state is unreadable
 
-- **Order:** 77
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 77
+- **Taken:** 2026-10-13
 
 ## Context
 

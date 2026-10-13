@@ -1,10 +1,11 @@
 # PB-353 · Single-participant sweep returns before asynchronous harness cleanup completes
 
-- **Order:** 78
 - **Scope:** [CLI — takePiece](../../reference/03-cli.md#takepiece--the-destructive-stretch-under-the-journal-lock), [Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** PB-348 (completed)
 - **Cost:** major
+- **Previous order:** 78
+- **Taken:** 2026-10-13
 
 ## Context
 
