@@ -35,6 +35,35 @@ The previous GitHub-form setup had the same blind spot across files. Since v0.8.
 
 **Everything the repository tracks and ships is written in English.** Strings, comments, commit messages, checks, scripts, tests, fixtures, docs, skills, tracker records and the changelog are English, and there is no translated README. `npm run audit` reads every tracked text file and every packed entry for Cyrillic. Cyrillic stays only where it is data rather than prose, and each place says why. The snapshots are named in `AUTHORING_SNAPSHOTS` in [scripts/audit-public.mjs](../../scripts/audit-public.mjs): the transliteration table in `src/protocol.ts`, the journal of closed tasks, a run trace quoted in a card, and the frozen `v0.61` store snapshot. Outside the runtime paths `bin/`, `lib/`, `src/`, `schemas/`, `templates/` and `dist/` — in practice, in tests — a file marks its region with a comment line `english-authoring: input — <reason>` and closes it with `english-authoring: end`; a region in a runtime path is a finding of its own, and the Cyrillic inside it stays one. A region is for a deliberate input whose behaviour depends on its script — a multibyte body that proves a size counts characters, a non-ASCII file name, a pattern for a frozen log line. Ordinary scenario narration, titles, prompts and message bodies are translated, not marked. A region without a reason, a region never closed, and a region or snapshot that no longer excuses any Cyrillic are findings, so the exceptions shrink with what they excuse.
 
+## OpenCode test listeners
+
+Use `listenTestSocket(server, { port: 0, host: '127.0.0.1' })` for a TCP stub.
+The shared helper passes these options to `server.listen`; it also accepts a
+Unix socket path. Only `listen` errors with `EACCES` or `EPERM` return a skip
+reason. Other errors, including invalid TCP options, reject the call.
+
+The holder stub's refusal skips these checks, with their original names:
+
+- `: readiness is an answered session list`
+- `: session create returns the server id`
+- `: the first turn posts the prompt text`
+- `: the message tail carries the idle outcome`
+- `: session delete answers 204`
+- `: every holder call went to the measured paths with basic auth`
+
+The activation stub's refusal skips these checks:
+
+- `: an idle session takes the follow-up turn`
+- `: the warden-shaped target wakes through its socket`
+- `: a running turn refuses honestly instead of queueing blind`
+
+The missing-record activation check and the other pure checks still run.
+`node test/promptobus-driver-opencode-listen.test.mjs` injects each refusal at
+each listener and at both, checks the complete ordered verdict inventory, and
+requires `EADDRINUSE`, a non-`listen` `EACCES`, and an invalid TCP port to remain
+failures. It retains any named skips from the uninjected run when the host
+also denies listening at the other site.
+
 ## Roles
 
 | Role | Steps | Must not |
