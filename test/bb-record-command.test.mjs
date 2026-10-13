@@ -1,7 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -47,4 +47,13 @@ test('review command launcher: env assignments preserve a supported direct execu
   assert.equal(result.status, 7, result.stderr);
   const receipt = JSON.parse(readFileSync(`${stem}.receipt.txt`, 'utf8'));
   assert.equal(receipt.exit, 7); assert.equal(receipt.complete, true); assert.equal(readFileSync(`${stem}.stdout.txt`, 'utf8'), 'original');
+});
+
+for (const shell of ['dash', 'ash', 'ksh']) test(`review2 boundary: ${shell} cannot mask exit 7 through the direct recorder`, t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const executable = path.join(directory, shell); symlinkSync('/bin/sh', executable);
+  const stem = path.join(directory, 'original');
+  const result = spawnSync(process.execPath, [script, '--output', stem, '--by', 'fixture-recorder', '--', executable, '-c', 'exit 7 | /bin/cat'], { encoding: 'utf8' });
+  assert.equal(result.status, 1, 'The real POSIX shell pipeline must be rejected before its complete exit 0 masks original exit 7');
+  assert.match(result.stderr, /runner executable directly/); assert.throws(() => readFileSync(`${stem}.receipt.txt`), /ENOENT/);
 });

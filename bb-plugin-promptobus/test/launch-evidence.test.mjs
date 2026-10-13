@@ -172,3 +172,14 @@ test('review command launcher: direct env receipt admits and unsupported env spl
   await assert.rejects(validateCommand(['env', '-S', 'sh -c exit']), /Unsupported env launcher/);
   await assert.rejects(validateCommand(['env', 'env', 'sh', '-c', 'exit 7 | cat']), /Unsupported env launcher/);
 });
+
+test('review2 boundary: POSIX dash ash ksh shell receipts refuse manifest admission', async t => {
+  const f = await fixture(t), ref = f.manifest.artifacts.find(a => a.kind === 'receipt'), record = f.records.get(ref.id);
+  for (const shell of ['dash', 'ash', 'ksh']) {
+    const command = ['env', 'CACHE=fixture', '/bin/'+shell, '-c', 'exit 7 | /bin/cat'];
+    f.manifest.requiredGates = [command]; f.manifest.commands[0].command = command;
+    const receipt = JSON.parse(record.content); receipt.command = command;
+    record.content = JSON.stringify(receipt); record.size = ref.bytes = Buffer.byteLength(record.content); record.sha256 = ref.sha256 = sha256(record.content);
+    await assert.rejects(validateReviewEvidence(f.manifest, { source: f.manifest.source, base: f.manifest.base, producer: 'orchestrator', requiredGates: [command], requirePassingGates: true }, async id => f.records.get(id)), /runner executable directly/);
+  }
+});

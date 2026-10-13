@@ -924,6 +924,11 @@ and evidence reads. An intervening Stop refuses resume. The complete initial
 assignment and queued identity stay durable until its matching turn request;
 queue cancellation preserves the mailbox fence for explicit retry of the same
 context. Unknown sends do not create automatic mailbox-only review turns.
+Plain resume also retains its epoch from before binding and control reads. An
+anonymous cancellation before a send reply is matched to the returned queue ID;
+another queue ID cannot cancel that initial assignment. Bound reviewer file
+tools apply the same current grant admission as bus tools, before file access.
+The shared recorder/manifest guard also refuses `dash`, `ash`, `ksh` and `ksh93`.
 
 `bb promptobus evidence upload --task ID --file /absolute/owned/file --to RECIPIENT`
 uses the existing authenticated coordinator and bounded owned roots. It lands

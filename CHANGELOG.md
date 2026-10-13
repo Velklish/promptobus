@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Plain BB resume preserves Stop during binding/control reads. Initial queue
+  cancellations without plugin attribution match the late queue reply, bound
+  reviewer file reads recheck current grants, and POSIX shell receipt forms are
+  refused by the shared direct-command guard.
 - BB phase transfer preserves intervening Stop across context reset and evidence
   reads. Reviewer snapshots must match the source HEAD, external producers need
   an exact canonical owner declaration, cancelled initial queues retain their

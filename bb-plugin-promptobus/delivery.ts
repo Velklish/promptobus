@@ -201,6 +201,10 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       && (!entry.originPluginId || entry.originPluginId === 'promptobus') && matches(entry.content, b.phaseAssignment, null)) {
       b.phaseAssignmentPending = true; b.phaseAssignmentDelivery.state = 'cancelled'; store.save(b);
       pause(b, 'User cancelled the queued initial assignment');
+    } else if (b?.phaseAssignmentDelivery?.state === 'sending' && b.phaseAssignment
+      && (!entry.originPluginId || entry.originPluginId === 'promptobus') && matches(entry.content, b.phaseAssignment, null)
+      && !b.phaseAssignmentDelivery.cancelledQueueIds.includes(entry.id)) {
+      b.phaseAssignmentDelivery.cancelledQueueIds.push(entry.id); store.save(b);
     }
     if (b && pending && owns(entry.threadId, entry.content, entry.originPluginId) && matches(entry.content, pending.text, pending.visibility)) pause(b, 'User cancelled the queued wake');
   });

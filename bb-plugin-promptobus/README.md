@@ -539,6 +539,12 @@ declared source HEAD before spawn/resume; provisioned snapshots are rechecked.
 The recorder and manifest share a direct-command guard, including shell runners
 behind one supported `env` launcher with literal assignments. Other `env` options
 and nested launchers are unsupported.
+Plain resume preserves the epoch captured before binding/control awaits.
+Anonymous early cancellation is correlated with the actual late queue reply,
+keeping the complete context available for explicit retry. Bound reviewer file
+reads recheck the current owner grant; stopped or ended file-control grants deny
+reads before filesystem access. The shared command guard rejects the POSIX
+`dash`, `ash`, `ksh` and `ksh93` executable forms as well.
 The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
 The manifest holds source/base, original producer and relayer, clean state,
 original direct receipts, gate/handover/inventory IDs, ordered full raw parts with

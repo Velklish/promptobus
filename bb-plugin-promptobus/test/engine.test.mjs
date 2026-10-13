@@ -181,7 +181,14 @@ async function stand(t, options = {}) {
     assert.equal(hostId, 'local');
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
-    if (method === 'launchControl') return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
+    if (method === 'launchControl') {
+      if (options.beforeControl) await options.beforeControl(input);
+      return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
+    }
+    if (method === 'read') {
+      if (options.beforeRead) await options.beforeRead(input);
+      return createHostEntry().handlers.read(input, { signal: signal ?? new AbortController().signal });
+    }
     if (method === 'canonical' || method === 'hostContext') return options.hostOperation?.(method, input) ?? { read: true };
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
@@ -1889,4 +1896,73 @@ test('review boundary: prepared initial context also survives queue cancellation
   await s.reconcile(); assert.equal(s.delivery('thr-2').paused, true, 'A prepared reviewer has not received the manifest until its complete initial context is delivered');
   assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
   assert.equal((await s.control('resume', 'prepared-review')).exitCode, 0); assert.equal(delivered, initial);
+});
+
+for (const boundary of ['binding', 'engine', 'control']) test(`review2 boundary: plain resume Stop during ${boundary} await keeps its original epoch`, async t => {
+  const entered = deferred(), release = deferred(); let block = false;
+  const wait = async () => { if (block) { block = false; entered.resolve(); await release.promise; } };
+  const s = await stand(t, { beforeGet: async id => { if (boundary === 'binding' && id === 'thr-2') await wait(); },
+    beforeCheck: async () => { if (boundary === 'engine') await wait(); },
+    beforeControl: async input => { if (boundary === 'control' && input.binding.participant === 'plain-worker') await wait(); } });
+  await s.create(); await s.add('plain-worker'); await s.control('stop', 'plain-worker');
+  await s.call('thr-1', 'promptobus_send', { to: ['plain-worker'], type: 'task', body: 'Canonical bounded task.' });
+  block = true; const pending = s.control('resume', 'plain-worker'); await entered.promise;
+  await s.control('stop', 'plain-worker'); const epoch = s.delivery('thr-2').epoch; release.resolve();
+  const result = await pending;
+  assert.equal(result.exitCode, 1, 'Stop before recovery.resume must not be replaced by a newly captured epoch');
+  assert.match(result.stderr, /newer Stop/); assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.delivery('thr-2').epoch, epoch);
+  assert.equal(s.wakes.filter(w => w.threadId === 'thr-2').length, 0);
+});
+
+for (const phase of ['fresh', 'prepared', 'unrelated-copy']) test(`review2 boundary: anonymous early ${phase} initial cancellation correlates the late queue ID and retries exact context`, async t => {
+  const entered = deferred(), release = deferred(); let first = true, delivered;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    delivered = input[0].text;
+    if (!first) return { ok: true, delivery: 'sent' };
+    first = false; const entry = { id: 'late-initial-queue', threadId, originPluginId: null, content: input };
+    s.queues.set(threadId, [entry]); entered.resolve(entry); await release.promise;
+    return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); let pending;
+  if (phase === 'prepared') {
+    s.workerEnvironment.managed = false; pending = s.add('early-cancel', 'reviewer', ['--environment-path', s.workerEnvironment.path]);
+  } else {
+    await s.add('early-cancel', 'reviewer'); await s.control('stop', 'early-cancel');
+    const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
+    next.grant.token = 'early-cancel-phase'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
+    next.control.snapshot.endedTokens.push(b.launchContext.grant.token); const f = await evidenceFixture(s.root, s.task);
+    pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
+      '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Whole original context.']);
+  }
+  const entry = await entered.promise, original = delivered;
+  if (phase !== 'unrelated-copy') s.queues.set('thr-2', []);
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry: phase === 'unrelated-copy' ? { ...entry, id: 'unrelated-queue' } : entry }); await s.reconcile();
+  assert.equal(s.wakes.filter(w => w.threadId === 'thr-2').length, 0); release.resolve();
+  const result = await pending; assert.equal(result.exitCode, 0, result.stderr);
+  if (phase === 'unrelated-copy') {
+    assert.equal(s.delivery('thr-2').paused, false, 'A different queue ID cannot cancel the actual initial delivery');
+    assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentDelivery.state, 'queued');
+    s.queues.set('thr-2', []); await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+  }
+  assert.equal(s.delivery('thr-2').paused, true, 'The late reply must correlate cancellation instead of saving an eternally queued deleted ID');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentDelivery.state, 'cancelled');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
+  assert.equal((await s.control('resume', 'early-cancel')).exitCode, 0); assert.equal(delivered, original);
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, false);
+});
+
+for (const condition of ['STOP', 'ended']) test(`review2 boundary: bound reviewer file reads refuse ${condition} before filesystem access`, async t => {
+  let reads = 0; const s = await stand(t, { beforeRead: async () => { reads++; } }); await s.create();
+  const launch = launchFixture(s.task, 'file-reader', 'reviewer', s.root);
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'env', base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  const control = path.join(s.root, 'reader-control.json'), snapshot = structuredClone(launch.control.snapshot);
+  writeFileSync(control, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: control };
+  assert.equal((await s.add('file-reader', 'reviewer', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const file = path.join(s.root, 'owned-source.txt'); writeFileSync(file, 'bounded source');
+  await s.call('thr-2', 'pb_review_read_file', { path: file }); assert.equal(reads, 1);
+  if (condition === 'STOP') snapshot.STOP = true; else snapshot.grant.state = 'ended';
+  writeFileSync(control, JSON.stringify(snapshot));
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /STOP|active/);
+  await assert.rejects(s.call('thr-2', 'pb_review_read_file', { path: file }), /STOP|active/);
+  assert.equal(reads, 1, 'The admission refusal must precede the actual bounded filesystem handler');
 });

@@ -98,7 +98,7 @@ export function registerRuntime(bb: BbPluginApi) {
   const sendPhaseAssignment = async (b: Binding, signal?: AbortSignal) => {
     const epoch = store.delivery(b.threadId!).epoch;
     b.phaseAssignmentPending = true;
-    b.phaseAssignmentDelivery = { state: 'sending', epoch, queuedId: null, requestId: null }; store.save(b);
+    b.phaseAssignmentDelivery = { state: 'sending', epoch, queuedId: null, requestId: null, cancelledQueueIds: [] }; store.save(b);
     signal?.throwIfAborted();
     const sent = await bb.sdk.threads.send({ threadId: b.threadId!, mode: 'auto', input: [{ type: 'text', text: b.phaseAssignment!, mentions: [] }] });
     if (store.delivery(b.threadId!).paused || store.delivery(b.threadId!).epoch !== epoch) throw new Error('Stop superseded the fresh phase assignment');
@@ -106,8 +106,15 @@ export function registerRuntime(bb: BbPluginApi) {
     const receipt = current.phaseAssignmentDelivery!;
     if (sent.delivery === 'sent' || receipt.state === 'sent') {
       receipt.state = 'sent'; current.phaseAssignmentPending = false;
-    } else if (sent.delivery === 'queued') { receipt.state = 'queued'; receipt.queuedId = sent.queuedMessage.id; }
-    else throw new Error('Fresh initial assignment delivery is unknown; complete context remains fenced');
+    } else if (sent.delivery === 'queued') {
+      receipt.queuedId = sent.queuedMessage.id;
+      if (receipt.cancelledQueueIds.includes(sent.queuedMessage.id)) {
+        receipt.state = 'cancelled'; store.save(current);
+        recovery.pause(current, 'User cancelled the queued initial assignment');
+        return sent;
+      }
+      receipt.state = 'queued';
+    } else throw new Error('Fresh initial assignment delivery is unknown; complete context remains fenced');
     store.save(current);
     return sent;
   };
@@ -531,11 +538,11 @@ export function registerRuntime(bb: BbPluginApi) {
             tools: Object.fromEntries(participantTools(next).map(name => [name, name])) });
           const prompt = `${LAUNCH_HEADER}${intent.attemptId}\n${delivery.initialPrompt}\n\n${next.hostContext ? renderBbHostContext(next.hostContext) : ''}`;
           next.phaseAssignment = prompt; next.phaseAssignmentPending = true; store.save(next);
-          const resumed = await recovery.resume(next, false, transferEpoch);
+          await recovery.resume(next, false, transferEpoch);
           if (store.delivery(b.threadId!).paused) throw new Error('Fresh phase remains paused; no assignment sent');
           const sent = await sendPhaseAssignment(next, context.signal);
           store.launch(next, { ...intent, assignment: options.assignment });
-          return { exitCode: 0, stdout: JSON.stringify({ ...resumed, phase: next.launchContext.grant.phase, sent }) };
+          return { exitCode: 0, stdout: JSON.stringify({ ...store.delivery(next.threadId!), phase: next.launchContext.grant.phase, sent }) };
         }
         if (options.assignment !== undefined || options['evidence-manifest'] !== undefined) throw new Error('Fresh assignment/evidence requires --launch-context');
         if (b.launchContext) await admit(b, context.signal);
@@ -543,10 +550,11 @@ export function registerRuntime(bb: BbPluginApi) {
           if (!b.phaseAssignment) throw new Error('Pending initial assignment has no complete context');
           if (b.phaseAssignmentDelivery?.state === 'queued') throw new Error('Complete initial assignment is still queued; cancel or wait before retry');
           if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, context.signal);
-          const resumed = await recovery.resume(b, false, startEpoch);
-          return { exitCode: 0, stdout: JSON.stringify({ ...resumed, sent: await sendPhaseAssignment(b, context.signal) }) };
+          await recovery.resume(b, false, startEpoch);
+          const sent = await sendPhaseAssignment(b, context.signal);
+          return { exitCode: 0, stdout: JSON.stringify({ ...store.delivery(b.threadId!), sent }) };
         }
-        return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b)) };
+        return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b, true, startEpoch)) };
       } }),
     'recovery run': cliCommand({ summary: 'Reconcile recorded threads, history and canonical unread mail without resuming paused participants.',
       async run(_args, context) {
@@ -619,6 +627,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (b) {
         if (b.phase !== 'ready' || b.role !== REVIEWER || b.projectId !== context.projectId) throw new Error('Reviewer participant is not bound');
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
+        if (b.launchContext) await admit(b, context.signal);
       }
     },
     configuration(context: PluginAgentConfigurationContext) {
