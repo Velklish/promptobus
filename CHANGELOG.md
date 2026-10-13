@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- BB launches require explicit role, owned/read roots, owner grant, control route,
+  preparation and quota context before substantive work. Constrained readers can
+  use declared inline control without wider filesystem permissions.
+- BB source-and-evidence reviews require a complete original-artifact manifest
+  before launch. Direct receipts, source/base, producer, ordered raw bytes/hashes
+  and all five handover checks are checked mechanically. Bounded UTF-8 upload
+  returns actual artifact IDs without copying raw through a model. A checkout
+  recorder preserves complete stdout/stderr and direct runner exits; opaque
+  attachment acceptance remains separate from evidence certification.
+
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object
   type can make a client reject the entire bridge tool list.

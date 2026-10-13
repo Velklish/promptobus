@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext, makeMessageDispatchHookContext } from '@get-bb/plugin-sdk/testing';
@@ -10,6 +10,7 @@ import { engineOperation } from '../.test-build/engine-host.js';
 import { bindingStore } from '../.test-build/bindings.js';
 import { createHostEntry } from '../.test-build/host-integration.js';
 import { createBbHostIntegration } from 'promptobus/bb-host';
+import { launchFixture, evidenceFixture } from './evidence-fixture.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
@@ -178,6 +179,7 @@ async function stand(t, options = {}) {
     assert.equal(hostId, 'local');
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
+    if (method === 'launchControl') return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
     if (method === 'canonical' || method === 'hostContext') return options.hostOperation?.(method, input) ?? { read: true };
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
@@ -192,8 +194,20 @@ async function stand(t, options = {}) {
   t.after(() => host.harness.lifecycle.dispose());
   plugin(host.bb);
   const task = newTaskIdentity('engine-test').id;
-  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
-  const add = async (id, role = 'worker', extra = []) => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
+  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
+    ...(options.noLaunchContext ? [] : ['--launch-context', JSON.stringify(launchFixture(task, 'orchestrator', 'orchestrator', root))]), ...extra]);
+  const add = async (id, role = 'worker', extra = []) => {
+    const envId = extra.includes('--environment') ? extra[extra.indexOf('--environment') + 1] : 'env';
+    const env = extra.includes('--new-environment') || extra.includes('--environment-path') ? workerEnvironment : environments.get(envId);
+    const launch = launchFixture(task, id, role, env.path, env.id === 'env' ? 'main' : 'actual-bb-branch', env.id === 'env' ? 'a'.repeat(40) : 'b'.repeat(40));
+    launch.readRoots.push(root);
+    const evidence = [];
+    if (role === 'reviewer') {
+      launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: env.id, base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+      if (!options.noManifest) evidence.push('--evidence-manifest', JSON.stringify((await evidenceFixture(root, task, env.id === 'env' ? 'a'.repeat(40) : 'b'.repeat(40))).manifest));
+    }
+    return host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', '--launch-context', JSON.stringify(launch), ...evidence, ...extra]);
+  };
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
@@ -206,6 +220,75 @@ async function stand(t, options = {}) {
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+test('launch preflight refuses missing bounded context before any model spawn', async t => {
+  const s = await stand(t, { noLaunchContext: true });
+  const result = await s.create();
+  assert.equal(result.exitCode, 1, 'Missing executable context must refuse before threads.spawn');
+  assert.match(result.stderr, /launch context/);
+  assert.equal(s.spawns.length, 0);
+});
+
+test('source reviewer refuses missing original manifest before any reviewer spawn', async t => {
+  const s = await stand(t, { noManifest: true });
+  assert.equal((await s.create()).exitCode, 0);
+  const before = s.spawns.length;
+  const result = await s.add('source-review', 'reviewer');
+  assert.equal(result.exitCode, 1, 'Absent original artifact IDs must not spend a review turn');
+  assert.match(result.stderr, /manifest/);
+  assert.equal(s.spawns.length, before);
+});
+
+test('review initial immutable assignment holds every original ID readable through the bound BB artifact tool', async t => {
+  const s = await stand(t); await s.create();
+  assert.equal((await s.add('original-review', 'reviewer')).exitCode, 0);
+  const launch = s.initialArgs.prompt;
+  const b = bindingStore(s.host.bb).thread('thr-2');
+  assert.ok(launch.includes(b.launchContext.role.literal.slice(0, 30)));
+  for (const ref of b.evidenceManifest.artifacts) {
+    assert.ok(launch.includes(ref.id), `Initial assignment is missing ${ref.kind} ID`);
+    const actual = JSON.parse(await s.call('thr-2', 'promptobus_artifact', { id: ref.id }));
+    assert.equal(actual.id, ref.id); assert.equal(actual.size, ref.bytes); assert.equal(actual.sha256, ref.sha256);
+  }
+});
+
+test('retained missing-ID review failure blocks zero reviewer starts until the complete initial manifest exists', async t => {
+  const observed = JSON.parse(readFileSync(new URL('../../docs/evidence/bb-orchestration-2026-10-13.json', import.meta.url), 'utf8')).evidenceDeliveryObservation;
+  assert.equal(observed.evidenceMajor, 1); assert.equal(observed.sourceFindings, 0);
+  const s = await stand(t, { noManifest: true }); await s.create();
+  const f = await evidenceFixture(s.root, s.task);
+  const incomplete = structuredClone(f.manifest); incomplete.artifacts = [];
+  const before = s.spawns.length;
+  const delayed = await s.add('first-original-review', 'reviewer', ['--evidence-manifest', JSON.stringify(incomplete)]);
+  assert.equal(delayed.exitCode, 1); assert.equal(s.spawns.length, before);
+  const admitted = await s.add('first-original-review', 'reviewer', ['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(admitted.exitCode, 0, admitted.stderr); assert.equal(s.spawns.length, before + 1);
+  for (const ref of f.manifest.artifacts) assert.ok(s.initialArgs.prompt.includes(ref.id));
+});
+
+test('complete evidence upload lands UTF-8 raw parts and actual artifact IDs without another model turn', async t => {
+  const s = await stand(t); await s.create();
+  const content = '東京 Δ '.repeat(200_000) + '\nORIGINAL_TAIL\n';
+  const file = path.join(s.root, 'original-raw.txt'); writeFileSync(file, content);
+  const before = s.spawns.length;
+  const result = await s.host.harness.behavior.runCli(['evidence', 'upload', '--task', s.task, '--file', file, '--to', 'orchestrator']);
+  assert.equal(result.exitCode, 0, result.stderr);
+  const uploaded = JSON.parse(result.stdout); assert.ok(uploaded.parts.length > 1);
+  let raw = '';
+  for (const part of uploaded.parts) raw += JSON.parse(await s.call('thr-1', 'promptobus_artifact', { id: part.id })).content;
+  assert.equal(raw, content); assert.equal(uploaded.bytes, Buffer.byteLength(content)); assert.equal(s.spawns.length, before);
+});
+
+test('bounded file control is current at each BB call and an ended grant refuses without another identity', async t => {
+  const s = await stand(t, { noLaunchContext: true });
+  const launch = launchFixture(s.task, 'orchestrator', 'orchestrator', s.root);
+  const file = path.join(s.root, 'control.json'); const snapshot = launch.control.snapshot;
+  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  assert.equal((await s.create(['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const current = JSON.parse(await s.call('thr-1', 'promptobus_task')); assert.equal(current.participant, 'orchestrator');
+  snapshot.grant.state = 'ended'; writeFileSync(file, JSON.stringify(snapshot));
+  await assert.rejects(s.call('thr-1', 'promptobus_task'), /active/); assert.equal(s.spawns.length, 1);
+});
 
 function fictionalHost(calls) {
   return root => {

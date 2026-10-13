@@ -751,6 +751,46 @@ The root Git package does not include or install the optional BB plugin.
 The optional plugin's constrained reviewer admits exactly Codex CLI `0.162.0-alpha.17.2`.
 <!-- /quote -->
 
+### BB launch context admission
+
+New BB `task create` and `participant add` calls require `--launch-context`,
+bounded JSON of at most 256 KiB. The selected role's complete literal comes from
+`renderBbInstructionSkill(role)` in `promptobus/instructions`; its name must match
+`BB_ROLE_SKILLS[role]`. A separate Host catalog may be empty. The runtime supplies
+the actual BB tool names and refuses missing or ambiguous native MCP bindings.
+
+The input declares `ownedRoots`, provider-permitted `readRoots`, `role`, an active
+`grant` with exact actor/task/token/phase, repository/branch/base/operations and
+preconditions, `control`, `preparation` and `quota`. Owner confirmation, STOP and
+ended tokens belong to the current control snapshot. Roots and resource access
+are explicit owner inputs because the public SDK does not expose the provider's
+complete filesystem permission profile. They grant no wider session permissions.
+The actual environment path, branch and base are checked through the public SDK.
+For a provisioned environment the owner declares the expected target; admission
+checks its actual identity after preparation and before substantive delivery.
+
+`control.mode: file` declares one exact readable control path under `readRoots`.
+The Host reads at most 1 MiB, checks real paths and projects the active grant from
+`grant` or `grants[actor]`; phase defaults to `initial` for an existing owner file.
+`control.mode: inline` carries the complete bounded current snapshot and the
+literal signal route `["Hold", "Stop"]`. A constrained reader uses that authorized
+snapshot and Root signals instead of an external file it cannot read. Stop and
+delivery epochs retain their existing authority. `endedTokens` prevents an old
+token from being revived; evidence repair uses a fresh bounded phase.
+
+Preparation records exact argv commands, `complete` or a concrete `notRun`
+reason. Quota declares its authority, `missingUsage: informational`, soft/hard
+limits, maximum active participants including the owner and `PAYG: false`.
+Missing participant usage does not revoke a Root-controlled grant. No freeform
+assignment keywords are interpreted as authorization or quota policy.
+
+The entire validated context and selected role literal enter the initial
+immutable assignment. The first ordinary work turn authenticates actual BB task
+and mailbox tools; a refusal is reported once, without another diagnostic model
+or a native-tool fallback. Configuration admission and SDK fixtures do not prove
+that a provider completed this workflow. Persisted bindings from before this
+contract remain explicitly `notMeasured`; they are not certified by migration.
+
 The measured compatibility evidence distinguishes the two builds:
 
 | Codex build | Measurement | Limit |

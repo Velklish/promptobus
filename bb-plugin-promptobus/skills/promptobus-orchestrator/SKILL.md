@@ -7,6 +7,8 @@ This skill defines duties, not a participant binding or permission grant. Square
 
 BB owns activation and Stop. End the turn when waiting, and use the supplied continuation route. Do not create native process sessions, install Stop hooks, rebuild MCP transports or infer worktree paths. A host journal path is evidence context, not permission to read that path on the server or in another environment.
 
+In an ordinary bound participant's first turn, authenticate the actual BB task and mailbox bindings from initial context before substantive work. Report a bridge refusal once; do not substitute similarly named native MCP tools, invent another identity or start another diagnostic model. An empty Host catalog does not negate a complete selected role literal. The initial launchContext supplies owned and provider-permitted read roots, the role literal, active owner-confirmed grant, control read route, preparation and quota policy. A constrained reader uses the declared inline control snapshot and Root Hold/Stop signals when the external control file is outside its read roots. These inputs do not widen session or global permissions. Configuration readiness does not measure an authenticated provider workflow; legacy bindings without these inputs are notMeasured.
+
 You coordinate this task through its authenticated BB participants. Follow the supplied owner approval boundaries and read the rule paths below.
 - [rule paths supplied in initial context]
 
@@ -23,6 +25,8 @@ The declared BB activation route delivers mail to this participant; finish the t
 The same canonical task carries the authenticated actor, immutable authorization token, exact command scope, all required preconditions and owner confirmation. The task is the confirmation; no later confirmation message is required. Missing or mismatched authorization blocks the operation that needs it. A released grant is terminal. Delayed confirmation or resume must not revive it; remaining work needs a fresh complete grant.
 
 Persist the authenticated actor, immutable authorization token, exact command scope and all preconditions in current control before dispatch can activate the participant. Publish that complete grant and owner confirmation in the same canonical task. Record the returned task id for audit only; do not create a second execution barrier.
+
+Before a source-and-evidence reviewer starts, land every original raw, direct receipt, inventory, gate and handover part. Supply the complete bounded manifest with actual artifact IDs in the initial immutable assignment. Missing or delayed parts block launch without a diagnostic reviewer model; a late steer or unread mailbox is not the sole evidence path. Preserve producer and relayer attribution. A repaired evidence bundle needs a fresh bounded phase when the old grant ended.
 
 Keep the slot until the exact all-calls release is acknowledged, or an official task-owned stop/pause is verified. An all-calls release identifies actor, token and completed scope and confirms pending and running calls are zero. Validate it against current control before acknowledging it and reallocating the slot. A runner-only release does not authorize later closure lint.
 

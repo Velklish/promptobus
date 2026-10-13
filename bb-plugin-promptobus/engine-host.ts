@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { openEngine, ORCHESTRATOR, WORKER, REVIEWER, APPROVER } from 'promptobus';
 import type { ParticipantV1 } from 'promptobus';
 import { engineInput } from './contract.js';
+import { readDeclaredFile } from './launch-context.js';
 
 export async function engineOperation(input: unknown) {
   const request = engineInput.parse(input);
@@ -52,6 +53,26 @@ export async function engineOperation(input: unknown) {
   if ((b.phase !== 'ready' && !(b.phase === 'archiving' && request.operation === 'preserve'))
     || !b.threadId || participant.sessionRef !== b.threadId) throw new Error('Canonical binding mismatch');
   switch (request.operation) {
+    case 'uploadEvidence': {
+      const launch = b.launchContext;
+      if (!launch || b.role !== ORCHESTRATOR) throw new Error('Evidence upload requires the bounded task coordinator');
+      const bytes = readDeclaredFile(request.file, launch.ownedRoots, 64 * 1024 * 1024);
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      const parts = [];
+      for (let offset = 0; offset < bytes.length || (offset === 0 && bytes.length === 0);) {
+        let end = Math.min(offset + 900_000, bytes.length);
+        while (end < bytes.length && (bytes[end]! & 0xc0) === 0x80) end--;
+        const part = bytes.subarray(offset, end);
+        const sent = await engine.send(b.task, { from: b.participant, to: [request.to], type: 'artifact',
+          body: `Original opaque evidence part ${parts.length + 1}; attachment acceptance does not certify a schema.`,
+          artifact: { filename: `${path.basename(request.file)}.part-${parts.length + 1}.txt`, stream: Readable.from([part]) } });
+        if (!sent.artifact) throw new Error('Evidence attachment did not land');
+        parts.push({ ...sent.artifact, sender: b.participant });
+        offset = end;
+        if (bytes.length === 0) break;
+      }
+      return { parts, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    }
     case 'step': {
       if (b.role !== ORCHESTRATOR && b.role !== APPROVER) throw new Error('Only the coordinator or approver may check this step');
       if (b.role === APPROVER && (b.predecessors?.worker !== request.worker || b.predecessors.reviewer !== request.reviewer)) throw new Error('Approver predecessor binding mismatch');
@@ -104,7 +125,13 @@ export async function engineOperation(input: unknown) {
     case 'artifact': {
       const artifact = engine.readArtifact(b.task, request.args.id);
       if (artifact.size > 1_000_000) throw new Error('Artifact exceeds the BB tool read limit');
-      return { ...artifact, content: engine.readArtifactContent(b.task, artifact.id).toString('utf8') };
+      const history = engine.history({ task: b.task, all: true, strict: true });
+      const inboxes = task.participants.map(p => engine.inspectInbox(b.task, p.id));
+      if (history.broken.length || inboxes.some(box => box.broken.length)) throw new Error('Artifact provenance history is incomplete');
+      const messages = [...history.entries.map(entry => entry.message), ...inboxes.flatMap(box => box.messages)];
+      const senders = new Set(messages.filter(m => m.type === 'artifact' && m.artifact === artifact.id).map(m => m.sender));
+      if (senders.size !== 1) throw new Error('Artifact provenance sender is missing or ambiguous');
+      return { ...artifact, sender: [...senders][0], content: engine.readArtifactContent(b.task, artifact.id).toString('utf8') };
     }
     case 'send': return engine.send(b.task, { from: b.participant, to: request.args.to, type: request.args.type, body: request.args.body,
       ...(request.args.artifact ? { artifact: { filename: request.args.artifact.filename,

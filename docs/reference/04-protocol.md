@@ -864,9 +864,73 @@ last duration is removed: `✔ name (12.5ms) (0.8ms)` yields `name (12.5ms)`.
 Unrelated plain gate status is excluded. Missing or inconsistent footers, nested
 or concatenated scopes, custom verdict printers, other reporters, ANSI-decorated
 output and failed or skipped formats are unsupported and must remain incomplete.
-The helper does not certify gates or arbitrary runner output and is not shipped
-in the package. Retaining raw output and recording a manual lossless opaque UTF-8
+The helper delegates to the same extractor exported by `promptobus/bb-host`.
+It does not certify gates or arbitrary runner output. Retaining raw output and recording a manual lossless opaque UTF-8
 inventory remains valid; no native-schema validation follows from extraction.
+
+#### Manifest before reviewer launch
+
+The optional BB facade requires `--evidence-manifest` for a new reviewer. The
+owner's bounded launch context declares `review.producer`, `sourceEnvironmentId`,
+`base`, exact `requiredGates` argv and `requirePassingGates`. The SDK resolves the
+current source HEAD and tracked-file clean state. A provisioned reviewer also
+checks that its prepared snapshot HEAD matches the manifest. No reviewer starts
+while any required original part is missing. The manifest is rechecked before
+spawn and substantive delivery, then included whole in the initial assignment;
+late steer and unread mail are supplementary paths.
+
+`review.producerBinding: participant` requires a ready canonical actor.
+`owner-declaration` is an explicit bounded input for an original producer outside
+the participant binding, including an owner's direct runner. The public SDK
+cannot authenticate that external execution identity; this route does not claim
+it did. The attachment sender remains mechanically authenticated, and relaying
+does not substitute that sender for the declared original producer.
+
+Version 1 carries exact `source`/`base`, original `producer`, `relayer`, clean
+state, commands, all five checks and original artifact references. Each reference
+has `id`, `kind`, actual canonical `sender`, `producer`, UTF-8 byte count and
+SHA-256. Required kinds are `gate`, `handover`, original `receipt` for every
+command, `inventory-base`, `inventory-source`, and every ordered `raw` part for
+stdout/stderr. Normal message IDs are not artifact IDs. The canonical history
+establishes attachment sender; relay does not rewrite the producer in receipts.
+Each part and each reconstructed stream must agree in bytes/hash. A missing part,
+wrong source/base/producer, unsupported receipt, cropped tail or pipe-masked exit
+refuses before another reviewer is requested.
+
+The checkout recorder runs one executable directly:
+
+```sh
+node scripts/bb-record-command.mjs --output /absolute/owned/evidence/run --by ACTOR -- npm test
+```
+
+It writes complete `.stdout.txt`, `.stderr.txt` and `.receipt.txt` with format
+`bb-direct-command-v1`, exact argv, direct exit/signal/error, HEAD, dirty state,
+actor, start/end and stream bytes/hashes. It does not grant command permission or
+authenticate a supplied actor. Existing files are not overwritten. Shell
+pipeline executables are unsupported; record the runner itself. The manifest's
+command references this original receipt and the actual landed raw part IDs.
+Incomplete or signalled receipts cannot claim a completed runner.
+
+`bb promptobus evidence upload --task ID --file /absolute/owned/file --to RECIPIENT`
+uses the existing authenticated coordinator and bounded owned roots. It lands
+lossless UTF-8 `.txt` parts of at most 900000 bytes, including an empty stream,
+and returns their actual artifact IDs, landed filenames, bytes/hashes and the
+whole-file hash. It starts no participant and keeps raw out of model prompts.
+The file limit is 64 MiB; no native artifact schema or global filesystem grant is
+changed. No data is inferred from a message ID or a local filename.
+
+The manifest preserves `verdictNames`, `mutationProbe`, `treeState`,
+`environmentalRed` and `gatesNotRun` as complete details or a concrete `notRun`.
+Complete supported inventories name `format: node-spec-flat`, ordered raw scope
+parts and exact names; count and multiplicities are derived from that full scope.
+Unsupported nested/custom/concatenated output remains `notMeasured` with original
+raw retained. It cannot certify a complete verdict-name difference. Omitted
+gates need explicit command/reason entries and contribute neither executions nor
+passing gates. When the owner requires passing mandatory gates, any red or
+not-run required gate blocks review. A terminal grant remains ended; repaired
+evidence needs a fresh phase. These are mechanical consistency checks, not
+certification that an author's commands ran or that opaque handover claims are
+true. A permitted rerun and the reviewer establish those separate facts.
 
 ## BB workflow result currency
 

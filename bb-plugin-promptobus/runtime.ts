@@ -13,6 +13,9 @@ import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
 import { REVIEWER_PROVIDER, selectBbExecution, SUPPORTED_PROVIDERS } from './routing.js';
+import { launchContextSchema, underRoots, validateLaunchContext } from './launch-context.js';
+import { validateReviewEvidence } from './review-evidence.js';
+import type { EvidenceArtifact } from './review-evidence.js';
 export { REVIEWER_PROVIDER } from './routing.js';
 
 export function registerRuntime(bb: BbPluginApi) {
@@ -23,6 +26,31 @@ export function registerRuntime(bb: BbPluginApi) {
     ...(b.hostContext?.tools.length ? [BB_REVIEWER_HOST_TOOLS[1]] : [])];
   const prepareContext = async (b: Binding, signal?: AbortSignal) => {
     b.hostContext = hostContextSchema.parse(await host.call('prepareContext', { binding: b }, { hostId: b.hostId, signal }));
+  };
+  const boundedJson = (value: string | undefined, field: string) => {
+    if (value === undefined) return undefined;
+    if (Buffer.byteLength(value) > 256 * 1024) throw new Error(`${field} exceeds 256 KiB`);
+    try { return JSON.parse(value) as unknown; } catch { throw new Error(`${field} requires JSON`); }
+  };
+  const admit = async (b: Binding, signal?: AbortSignal) => {
+    b.launchContext = validateLaunchContext(b, b.launchContext, participantTools(b));
+    await host.call('launchControl', { binding: b }, { hostId: b.hostId, signal });
+    signal?.throwIfAborted();
+  };
+  const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal) => {
+    const review = b.launchContext?.review;
+    if (!review) throw new Error('review evidence manifest requires the bounded original producer/source environment/base/gate scope');
+    const producer = store.participant(b.task, review.producer);
+    if (review.producerBinding === 'participant' && (!producer || producer.phase !== 'ready')) throw new Error('review evidence manifest: original producer is not bound');
+    const source = await bb.sdk.environments.get({ environmentId: review.sourceEnvironmentId, signal });
+    if (source.hostId !== b.hostId || !source.path || !underRoots(source.path, b.launchContext!.readRoots)) throw new Error('review evidence manifest: source environment outside declared read roots');
+    const workspace = await bb.sdk.environments.status({ environmentId: source.id, signal });
+    if (workspace.outcome !== 'available' || !workspace.workspace || !('headSha' in workspace.workspace.checkout)
+      || !workspace.workspace.checkout.headSha) throw new Error('review evidence manifest: source SHA is unreadable');
+    if (workspace.workspace.workingTree.files.some(file => !['?', '??'].includes(file.status))) throw new Error('review evidence manifest: source tracked files are dirty');
+    b.evidenceManifest = await validateReviewEvidence(b.evidenceManifest, { source: workspace.workspace.checkout.headSha, base: review.base,
+      producer: review.producer, requiredGates: review.requiredGates, requirePassingGates: review.requirePassingGates },
+    async id => await onHost(reader, { operation: 'artifact', args: { id } }, signal) as EvidenceArtifact);
   };
   const onHost = async (binding: Binding, request: Record<string, unknown>, signal?: AbortSignal) => {
     const result = await host.call('engine', engineInput.parse({ binding, ...request }), { hostId: binding.hostId, signal });
@@ -72,6 +100,7 @@ export function registerRuntime(bb: BbPluginApi) {
     if (!participantTools(b).includes(tool)) throw new Error('Tool is not available to this role');
     await requireThread(b, context.signal);
     await checkStep(b, context.signal);
+    if (b.launchContext) await admit(b, context.signal);
     context.signal.throwIfAborted();
     return b;
   };
@@ -178,17 +207,22 @@ export function registerRuntime(bb: BbPluginApi) {
     displayOverrides: Partial<NonNullable<Binding['display']>> = {}) => {
     let recorded = false;
     const provision = Boolean(baseBranch || environmentPath);
+    if (!provision) await admit(b);
     const prepare = provision || b.providerId === 'acp-cursor' || b.providerId === 'acp-opencode';
     const { model, reasoningLevel } = b.execution!;
     const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ...(baseBranch ? { baseBranch } : {}),
       ...(environmentPath ? { environmentPath } : {}), status: 'requested' as const };
     store.launch(b, intent);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
-      workspace: b.environmentPath, assignment, tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
+      workspace: b.environmentPath, assignment, launchContext: b.launchContext, evidenceManifest: b.evidenceManifest,
+      bridgeCheck: 'First turn: call the actual BB promptobus_task and promptobus_mailbox bindings; report a refusal once. No native fallback, substitute identity or diagnostic model session.',
+      tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
     const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
     if (prepare) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
       await checkStep(b);
+      await host.call('launchControl', { binding: b }, { hostId: b.hostId });
+      if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
@@ -223,6 +257,12 @@ export function registerRuntime(bb: BbPluginApi) {
         }
         if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('BB preparation Stop was not confirmed');
         await prepareContext(b);
+        await admit(b);
+        if (b.evidenceManifest) {
+          const source = await bb.sdk.environments.status({ environmentId: b.environmentId });
+          if (source.outcome !== 'available' || !source.workspace || !('headSha' in source.workspace.checkout)
+            || source.workspace.checkout.headSha !== b.evidenceManifest.source) throw new Error('review evidence manifest: prepared snapshot source SHA mismatch');
+        }
         await bb.sdk.threads.clearContext({ threadId: b.threadId });
         delete b.bootstrap; b.phase = 'pending'; store.save(b);
         if (provision) await onHost(b, { operation: 'reserve', create: false, title: b.task });
@@ -242,6 +282,8 @@ export function registerRuntime(bb: BbPluginApi) {
       if ((await bb.sdk.threads.get({ threadId: b.threadId })).title !== titleFor(b)) throw new Error('BB thread naming was not confirmed');
       const naming = await nameEnvironment(b, provision);
       await checkStep(b);
+      await admit(b);
+      if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!);
       await onHost(b, { operation: 'finalize' });
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
@@ -268,6 +310,7 @@ export function registerRuntime(bb: BbPluginApi) {
     provider: { type: 'enum', values: SUPPORTED_PROVIDERS, description: 'Explicit BB provider; must match the role policy.' },
     'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
+    'launch-context': { type: 'string', description: 'Required bounded JSON: complete role literal, owned/read roots, grant, current control route, preparation and owner quota policy.' },
   } as const;
   const participantOptions = { task: createOptions.task,
     participant: { type: 'string', required: true, description: 'Independent participant id.' } } as const;
@@ -292,6 +335,8 @@ export function registerRuntime(bb: BbPluginApi) {
         b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
         b.providerId = b.execution.providerId;
         await prepareContext(b, context.signal);
+        b.launchContext = validateLaunchContext(b, boundedJson(options['launch-context'], 'launch context'), participantTools(b));
+        await admit(b, context.signal);
         store.reserve(b, true);
         try {
           const result = await onHost(b, { operation: 'reserve', create: true, title: options.title }, context.signal) as { root: string };
@@ -303,6 +348,8 @@ export function registerRuntime(bb: BbPluginApi) {
       ...participantOptions, ...displayOptions,
       role: { type: 'enum', values: roleSchema.options, required: true, description: 'Instruction role.' },
       model: createOptions.model, provider: createOptions.provider, 'reasoning-level': createOptions['reasoning-level'], assignment: createOptions.assignment,
+      'launch-context': createOptions['launch-context'],
+      'evidence-manifest': { type: 'string', description: 'Required reviewer original-artifact manifest JSON; every part must be readable before launch.' },
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
       'environment-path': { type: 'string', description: 'Provision an existing absolute local Git worktree path in this task project.' },
       'new-environment': { type: 'boolean', description: 'Let BB create and own a managed worktree.' },
@@ -343,11 +390,23 @@ export function registerRuntime(bb: BbPluginApi) {
       if (options.role === APPROVER) b.predecessors = { worker: options.worker!, reviewer: options.reviewer! };
       delete b.preservation;
       delete b.hostContext;
+      delete b.launchContext; delete b.evidenceManifest;
       if (!provision) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, provision ? { ...b, environmentOwner: 'bb' } : b,
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
       b.providerId = b.execution.providerId;
       if (!provision) await prepareContext(b, context.signal);
+      b.launchContext = boundedJson(options['launch-context'], 'launch context') as Binding['launchContext'];
+      if (!provision) await admit(b, context.signal);
+      else {
+        const declared = launchContextSchema.parse(b.launchContext);
+        b.launchContext = validateLaunchContext({ ...b, environmentPath: declared.grant.scope.repository,
+          branch: declared.grant.scope.branch, baseSha: declared.grant.scope.base }, declared, participantTools(b));
+      }
+      if (b.role === REVIEWER) {
+        b.evidenceManifest = boundedJson(options['evidence-manifest'], 'review evidence manifest') as Binding['evidenceManifest'];
+        await checkEvidence(b, owner, context.signal);
+      } else if (options['evidence-manifest'] !== undefined) throw new Error('review evidence manifest is only used for a reviewer');
       if (b.predecessors) await onHost(owner, { operation: 'step', ...b.predecessors }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');
       store.reserve(b, false);
@@ -380,6 +439,15 @@ export function registerRuntime(bb: BbPluginApi) {
       const execution = await selectBbExecution(bb, { role: options.role, hostId: local, environmentId: environment.id, environmentOwner: 'existing' },
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
       return { exitCode: 0, stdout: JSON.stringify(execution) };
+    } }),
+    'evidence upload': cliCommand({ summary: 'Land complete bounded UTF-8 evidence as original opaque parts and return actual artifact IDs.', options: {
+      task: createOptions.task, file: { type: 'string', required: true, description: 'Exact file inside declared owned roots.' },
+      to: { type: 'string', required: true, description: 'Existing canonical recipient; no participant is started.' },
+    }, async run({ options }, context) {
+      const b = store.task(options.task);
+      if (!b || b.phase !== 'ready') throw new Error('Task has no ready plugin-owned orchestrator');
+      await requireThread(b, context.signal); await admit(b, context.signal);
+      return { exitCode: 0, stdout: JSON.stringify(await onHost(b, { operation: 'uploadEvidence', file: options.file, to: options.to }, context.signal)) };
     } }),
     'participant stop': cliCommand({ summary: 'Request Stop and check fresh runtime state; preserve the environment.', options: participantOptions,
       async run({ options }) {
@@ -473,7 +541,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (b.phase !== 'ready' || b.projectId !== context.project.id || b.environmentId !== context.environment.id
         || b.environmentPath !== context.environment.path || b.hostId !== context.host.id || b.providerId !== context.provider.id) return { tools: [], skills: [] };
       return { tools: [...participantTools(b), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])], skills: [BB_ROLE_SKILLS[b.role]],
-        instructions: `Authenticated Promptobus task ${b.task}, participant ${b.participant}, role ${b.role}. Use promptobus_task for current contacts. Identity fields are not tool arguments. Use the complete initial context and the selected role skill. BB owns Stop and continuation; end the turn when waiting.` };
+        instructions: `Authenticated Promptobus task ${b.task}, participant ${b.participant}, role ${b.role}. Use promptobus_task for current contacts. Identity fields are not tool arguments. Use the complete initial context and the selected role skill. ${b.launchContext ? 'Bounded launch context admitted; actual provider bridge remains unmeasured until the first authenticated task/mailbox calls.' : 'Legacy binding: launch context notMeasured; no readiness certification.'} BB owns Stop and continuation; end the turn when waiting.` };
     },
   };
 }
