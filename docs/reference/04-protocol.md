@@ -903,8 +903,8 @@ The checkout recorder runs one executable directly:
 node scripts/bb-record-command.mjs --output /absolute/owned/evidence/run --by ACTOR -- npm test
 ```
 
-It writes complete `.stdout.txt`, `.stderr.txt` and `.receipt.txt` with format
-`bb-direct-command-v1`, exact argv, direct exit/signal/error, HEAD, dirty state,
+It writes complete `<output>.stdout.txt`, `<output>.stderr.txt` and
+`<output>.receipt.txt` with format `bb-direct-command-v1`, exact argv, direct exit/signal/error, HEAD, dirty state,
 actor, start/end and stream bytes/hashes. It does not grant command permission or
 authenticate a supplied actor. Existing files are not overwritten. Shell
 pipeline executables are unsupported; record the runner itself. The manifest's
