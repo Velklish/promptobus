@@ -72,6 +72,20 @@ return stream; }; syncBuiltinESMExports();`);
   return { directory, stem, marker, pidFile, run };
 }
 
+for (const shell of ['csh', 'tcsh']) test(`${shell} recorder refusal happens before runner spawn`, t => {
+  const f = recorderFixture(t);
+  writeFileSync(path.join(f.directory, 'hook.mjs'), `import fs from 'node:fs'; import cp from 'node:child_process'; import {syncBuiltinESMExports} from 'node:module';
+const spawn = cp.spawn; cp.spawn = (...args) => { fs.writeFileSync(${JSON.stringify(f.marker)}, 'spawn attempted'); return spawn(process.execPath, ['-e', ''], args[2]); }; syncBuiltinESMExports();`);
+  for (const command of [[`/bin/${shell}`, '-f', '-c', 'unset anyerror; /usr/bin/false | /bin/cat'],
+    ['env', 'CACHE=fixture', `/bin/${shell}`, '-f', '-c', 'unset anyerror; /usr/bin/false | /bin/cat']]) {
+    const result = spawnSync(process.execPath, ['--import', path.join(f.directory, 'hook.mjs'), script, '--output', f.stem, '--by', 'fixture-recorder', '--', ...command], { encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(existsSync(f.marker), false, 'Refused shell must never reach runner spawn');
+    assert.equal(existsSync(`${f.stem}.receipt.txt`), false);
+    assert.match(result.stderr, /runner executable directly/);
+  }
+});
+
 for (const stream of ['stdout', 'stderr', 'receipt']) test(`recorder reservation: existing ${stream} refuses before the runner starts`, t => {
   const f = recorderFixture(t), file = `${f.stem}.${stream}.txt`;
   writeFileSync(file, 'existing output must survive');

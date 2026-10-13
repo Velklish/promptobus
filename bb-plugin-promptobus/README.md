@@ -544,7 +544,7 @@ Anonymous early cancellation is correlated with the actual late queue reply,
 keeping the complete context available for explicit retry. Bound reviewer file
 reads recheck the current owner grant; stopped or ended file-control grants deny
 reads before filesystem access. The shared command guard rejects the POSIX
-`dash`, `ash`, `ksh` and `ksh93` executable forms as well.
+`dash`, `ash`, `ksh`, `ksh93`, `csh` and `tcsh` executable forms as well.
 The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
 The manifest holds source/base, original producer and relayer, clean state,
 original direct receipts, gate/handover/inventory IDs, ordered full raw parts with
@@ -571,6 +571,8 @@ tool. Shell pipeline executables are unsupported.
 The mechanical validator supports complete flat passing Node spec inventories;
 custom, nested and concatenated scopes retain authoritative raw with explicit
 `notMeasured`, and cannot claim certified counts or a complete name difference.
+Their inventory's optional `raw` scope retains distinct original base output;
+ordered parts and bytes/hashes are validated even without name certification.
 Opaque handover details and upload acceptance do not certify truth or native
 schemas. The admission, original-part transport and retained failure replay have
 SDK fixture coverage; the changed live provider workflow is `notMeasured`.

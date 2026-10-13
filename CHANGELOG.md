@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- BB review manifests retain and validate distinct original raw parts for
+  `notMeasured` inventories without certifying verdict names. The shared direct
+  command guard refuses `csh` and `tcsh` before recording or admitting receipts.
+
 - BB attachment provenance retains the canonical sender of `task` and `result`
   messages across acknowledgement and reload. The direct recorder reserves all
   outputs before starting a runner and stops/reaps it on stream errors, retaining

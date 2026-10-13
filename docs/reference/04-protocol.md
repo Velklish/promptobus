@@ -934,7 +934,8 @@ Plain resume also retains its epoch from before binding and control reads. An
 anonymous cancellation before a send reply is matched to the returned queue ID;
 another queue ID cannot cancel that initial assignment. Bound reviewer file
 tools apply the same current grant admission as bus tools, before file access.
-The shared recorder/manifest guard also refuses `dash`, `ash`, `ksh` and `ksh93`.
+The shared recorder/manifest guard also refuses `dash`, `ash`, `ksh`, `ksh93`,
+`csh` and `tcsh`.
 
 `bb promptobus evidence upload --task ID --file /absolute/owned/file --to RECIPIENT`
 uses the existing authenticated coordinator and bounded owned roots. It lands
@@ -949,7 +950,9 @@ The manifest preserves `verdictNames`, `mutationProbe`, `treeState`,
 Complete supported inventories name `format: node-spec-flat`, ordered raw scope
 parts and exact names; count and multiplicities are derived from that full scope.
 Unsupported nested/custom/concatenated output remains `notMeasured` with original
-raw retained. It cannot certify a complete verdict-name difference. Omitted
+raw retained in the inventory's optional `raw` scope, independently of source
+command streams. Its ordered parts and bytes/hashes are validated without
+certifying a complete verdict-name difference. Omitted
 gates need explicit command/reason entries and contribute neither executions nor
 passing gates. When the owner requires passing mandatory gates, any red or
 not-run required gate blocks review. A terminal grant remains ended; repaired

@@ -118,7 +118,13 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
     const inventory = one(kind);
     const tree = kind === 'inventory-base' ? manifest.base : manifest.source;
     if (inventory.tree !== tree || inventory.by !== manifest.producer) throw new Error(`review evidence manifest: ${kind} tree/producer mismatch`);
-    if (inventory.status === 'notMeasured' && typeof inventory.reason === 'string' && inventory.reason.trim()) continue;
+    if (inventory.status === 'notMeasured' && typeof inventory.reason === 'string' && inventory.reason.trim()) {
+      if (inventory.raw !== undefined) {
+        rawContent(inventory.raw, kind);
+        for (const id of rawSchema.parse(inventory.raw).parts) inventoryRaw.add(id);
+      }
+      continue;
+    }
     if (inventory.status !== 'complete' || inventory.format !== 'node-spec-flat') throw new Error(`review evidence manifest: ${kind} unsupported inventory certification; retain authoritative complete scope and declare notMeasured`);
     const raw = rawContent(inventory.raw, kind);
     const extracted = extractNodeTestVerdictNames(raw);

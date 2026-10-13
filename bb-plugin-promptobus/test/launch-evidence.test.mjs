@@ -50,14 +50,14 @@ test('an ended token remains terminal while the same actor can receive a fresh b
   assert.throws(() => validateControl(c, changed), /current grant mismatch/);
 });
 
-async function fixture(t) {
+async function fixture(t, base = 'a'.repeat(40)) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-evidence-original-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const task = newTaskIdentity('original').id;
   openEngine({ root, recover: false, policy: () => ({ allow: true }) }).createTask({ id: task, title: 'Original opaque evidence fixture', owner: {
     id: 'orchestrator', role: 'orchestrator', harness: 'bb', mode: 'managed', sessionRef: null, capabilities: null, metadata: {},
   } });
-  const f = await evidenceFixture(root, task);
+  const f = await evidenceFixture(root, task, 'a'.repeat(40), base);
   const expected = { source: f.manifest.source, base: f.manifest.base, producer: 'orchestrator', requiredGates: [['fiction', 'gate']], requirePassingGates: true };
   return { ...f, root, task, validate: m => validateReviewEvidence(m ?? f.manifest, expected, async id => {
     const record = f.records.get(id);
@@ -177,6 +177,41 @@ test('review2 boundary: POSIX dash ash ksh shell receipts refuse manifest admiss
   const f = await fixture(t), ref = f.manifest.artifacts.find(a => a.kind === 'receipt'), record = f.records.get(ref.id);
   for (const shell of ['dash', 'ash', 'ksh']) {
     const command = ['env', 'CACHE=fixture', '/bin/'+shell, '-c', 'exit 7 | /bin/cat'];
+    f.manifest.requiredGates = [command]; f.manifest.commands[0].command = command;
+    const receipt = JSON.parse(record.content); receipt.command = command;
+    record.content = JSON.stringify(receipt); record.size = ref.bytes = Buffer.byteLength(record.content); record.sha256 = ref.sha256 = sha256(record.content);
+    await assert.rejects(validateReviewEvidence(f.manifest, { source: f.manifest.source, base: f.manifest.base, producer: 'orchestrator', requiredGates: [command], requirePassingGates: true }, async id => f.records.get(id)), /runner executable directly/);
+  }
+});
+
+for (const format of ['nested', 'custom']) test(`unmeasured ${format} base inventory retains distinct raw without name certification`, async t => {
+  const f = await fixture(t, 'b'.repeat(40));
+  const raw = format === 'nested' ? '▶ parent\n  ✔ child (1ms)\n✔ parent (2ms)\n' : 'CUSTOM PASS: original base verdict\n';
+  const scope = await f.land('raw', raw);
+  const ref = f.manifest.artifacts.find(a => a.kind === 'inventory-base'), record = f.records.get(ref.id);
+  const update = payload => {
+    record.content = JSON.stringify(payload); record.size = ref.bytes = Buffer.byteLength(record.content);
+    record.sha256 = ref.sha256 = sha256(record.content);
+  };
+  const inventory = { tree: f.manifest.base, by: 'orchestrator', status: 'notMeasured', reason: `Unsupported ${format} output.`, raw: scope };
+  update(inventory);
+  const admitted = await f.validate();
+  assert.equal(admitted.checks.verdictNames.status, 'notRun');
+  assert.equal(f.records.get(scope.parts[0]).content, raw);
+  assert.equal(admitted.commands[0].stdout.parts.includes(scope.parts[0]), false);
+  update({ ...inventory, raw: { ...scope, sha256: 'f'.repeat(64) } });
+  await assert.rejects(f.validate(), /wrong ordered raw hash/);
+  update({ ...inventory, raw: { ...scope, parts: ['missing-original'] } });
+  await assert.rejects(f.validate(), /missing raw part/);
+  update(inventory);
+  await f.land('raw', 'orphan original');
+  await assert.rejects(f.validate(), /unscoped raw part/);
+});
+
+test('csh and tcsh pipeline receipts refuse manifest admission', async t => {
+  const f = await fixture(t), ref = f.manifest.artifacts.find(a => a.kind === 'receipt'), record = f.records.get(ref.id);
+  for (const shell of ['csh', 'tcsh']) {
+    const command = ['/bin/'+shell, '-f', '-c', 'unset anyerror; /usr/bin/false | /bin/cat'];
     f.manifest.requiredGates = [command]; f.manifest.commands[0].command = command;
     const receipt = JSON.parse(record.content); receipt.command = command;
     record.content = JSON.stringify(receipt); record.size = ref.bytes = Buffer.byteLength(record.content); record.sha256 = ref.sha256 = sha256(record.content);
