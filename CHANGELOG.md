@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenCode holder tests report each socket-dependent check as skipped when
   localhost listening is denied with `EACCES` or `EPERM`. Pure checks continue;
   other listener errors still fail the file.
+  The listener regression also runs from checkout paths with spaces and Unicode.
 
 - Show OpenCode stall recovery instructions in status and warden reports instead
   of throwing when the driver is asked for its recovery route.

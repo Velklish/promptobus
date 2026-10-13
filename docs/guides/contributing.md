@@ -64,6 +64,10 @@ requires `EADDRINUSE`, a non-`listen` `EACCES`, and an invalid TCP port to remai
 failures. It retains any named skips from the uninjected run when the host
 also denies listening at the other site.
 
+`node test/promptobus-driver-opencode-listen-path.test.mjs` copies the subject
+and regression into a directory with spaces and Unicode. Child entry arguments
+use decoded filesystem paths; `--import` retains the fixture's file URL.
+
 ## Roles
 
 | Role | Steps | Must not |

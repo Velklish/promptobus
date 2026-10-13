@@ -1,5 +1,6 @@
 import { check } from './check.mjs';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const subject = new URL('./promptobus-driver-opencode.test.mjs', import.meta.url);
 const fixture = new URL('./fixtures/opencode-listen-error.mjs', import.meta.url);
@@ -21,7 +22,7 @@ function run(code = null, site = 0, syscall = 'listen') {
   const injection = new URL(fixture);
   injection.search = new URLSearchParams({ code, site, syscall }).toString();
   const result = spawnSync(process.execPath,
-    [...(code ? ['--import', injection.href] : []), subject.pathname],
+    [...(code ? ['--import', injection.href] : []), fileURLToPath(subject)],
     { encoding: 'utf8', timeout: 20000 });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const passed = [...output.matchAll(/^✔ (.+)$/gm)].map((match) => match[1]);
