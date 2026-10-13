@@ -1,10 +1,11 @@
 # PB-319 · A progress status wakes the orchestrator like a result does
 
-- **Order:** 210
 - **Scope:** [01. Overview § Warden](../../reference/01-overview.md#warden)
 - **Created:** 2026-10-03
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 210
+- **Taken:** 2026-10-13
 
 ## Context
 

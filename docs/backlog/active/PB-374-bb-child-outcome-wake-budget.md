@@ -4,6 +4,7 @@
 - **Created:** 2026-10-13
 - **Dependencies:** none
 - **Cost:** —
+- **Taken:** 2026-10-13
 
 ## Context
 
@@ -11,7 +12,7 @@ The owner requested a smaller orchestration overhead after a BB backlog run on 2
 
 Evidence: [anonymized run measurements](../../evidence/bb-orchestration-2026-10-13.json), produced with `bb thread log thr_ygz2mn78mx --json --all`, exit 0. `bb-plugin-promptobus/runtime.ts` assigns participant `parentThreadId` and `lifecycleOwnerThreadId`; the exact avoidable fraction and a supported suppression route have not been measured. This is a performance hypothesis, not a claim that all 83 turns were unnecessary.
 
-[PB-319](../queue/PB-319-status-does-not-wake-orchestrator.md) covers bus `status` notifications. This entry covers BB system child-outcome activation, including turns that send no actionable bus result.
+[PB-319](PB-319-status-does-not-wake-orchestrator.md) covers bus `status` notifications. This entry covers BB system child-outcome activation, including turns that send no actionable bus result.
 
 ## Work to do
 
