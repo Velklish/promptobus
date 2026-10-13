@@ -29,3 +29,22 @@ test('BB direct recorder refuses a shell pipeline before executing a masked runn
   const result = spawnSync(process.execPath, [script, '--output', '/tmp/unused-pb-recorder', '--by', 'fixture-recorder', '--', 'sh', '-c', 'exit 7 | cat'], { encoding: 'utf8' });
   assert.equal(result.status, 1); assert.match(result.stderr, /runner executable directly/);
 });
+
+test('review boundary: env cannot mask a shell runner exit with a pipeline', t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const stem = path.join(directory, 'wrapped');
+  const result = spawnSync(process.execPath, [script, '--output', stem, '--by', 'fixture-recorder', '--', 'env', 'CACHE=fixture', '/bin/sh', '-c', 'exit 7 | /bin/cat'], { encoding: 'utf8' });
+  assert.equal(result.status, 1, 'The shell must be rejected before a pipeline can mask its original exit 7');
+  assert.match(result.stderr, /runner executable directly/);
+  assert.throws(() => readFileSync(`${stem}.receipt.txt`), /ENOENT/);
+});
+
+test('review command launcher: env assignments preserve a supported direct executable exit', t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const stem = path.join(directory, 'direct-env');
+  const result = spawnSync(process.execPath, [script, '--output', stem, '--by', 'fixture-recorder', '--', 'env', '--', 'FIXTURE_VALUE=original', process.execPath,
+    '-e', 'process.stdout.write(process.env.FIXTURE_VALUE);process.exitCode=7'], { encoding: 'utf8' });
+  assert.equal(result.status, 7, result.stderr);
+  const receipt = JSON.parse(readFileSync(`${stem}.receipt.txt`, 'utf8'));
+  assert.equal(receipt.exit, 7); assert.equal(receipt.complete, true); assert.equal(readFileSync(`${stem}.stdout.txt`, 'utf8'), 'original');
+});

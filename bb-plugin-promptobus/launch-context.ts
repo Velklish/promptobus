@@ -32,6 +32,7 @@ export const launchContextSchema = z.object({
     soft: z.number().nonnegative(), hard: z.number().nonnegative(), maxActiveIncludingOwner: z.number().int().positive(),
     PAYG: z.literal(false) }).strict(),
   review: z.object({ producer: text, producerBinding: z.enum(['participant', 'owner-declaration']), sourceEnvironmentId: text, base: sha,
+    ownerDeclaration: text.optional(),
     requiredGates: z.array(z.array(text).min(1)).min(1), requirePassingGates: z.boolean() }).strict().optional(),
 }).strict();
 export type LaunchContext = z.infer<typeof launchContextSchema>;

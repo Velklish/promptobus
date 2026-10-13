@@ -13,31 +13,31 @@ export function launchFixture(task, actor, role, root, branch = 'main', base = '
     quota: { authority: 'owner', missingUsage: 'informational', soft: 39, hard: 40, maxActiveIncludingOwner: 5, PAYG: false } };
 }
 
-export async function evidenceFixture(root, task, source = 'a'.repeat(40), base = 'a'.repeat(40)) {
+export async function evidenceFixture(root, task, source = 'a'.repeat(40), base = 'a'.repeat(40), producer = 'orchestrator', sender = 'orchestrator') {
   const engine = openEngine({ root, recover: false, policy: () => ({ allow: true }) });
   const artifacts = [];
   const records = new Map();
   const land = async (kind, value) => {
     const content = typeof value === 'string' ? value : JSON.stringify(value);
-    const sent = await engine.send(task, { from: 'orchestrator', to: ['orchestrator'], type: 'artifact', body: 'Fictional original evidence fixture.',
+    const sent = await engine.send(task, { from: sender, to: ['orchestrator'], type: 'artifact', body: 'Fictional original evidence fixture.',
       artifact: { filename: `fixture-${kind}-${artifacts.length}.txt`, stream: Readable.from([Buffer.from(content)]) } });
     const artifact = sent.artifact;
-    artifacts.push({ id: artifact.id, kind, sender: 'orchestrator', producer: 'orchestrator', bytes: Buffer.byteLength(content), sha256: sha256(content) });
-    records.set(artifact.id, { ...artifact, sender: 'orchestrator', content });
+    artifacts.push({ id: artifact.id, kind, sender, producer, bytes: Buffer.byteLength(content), sha256: sha256(content) });
+    records.set(artifact.id, { ...artifact, sender, content });
     return { parts: [artifact.id], bytes: Buffer.byteLength(content), sha256: sha256(content) };
   };
   const stdout = await land('raw', 'Complete original stdout fixture\n');
   const stderr = await land('raw', '');
   const commands = [{ command: ['fiction', 'gate'], exit: 0, direct: true, complete: true, tree: source, dirty: false,
-    by: 'orchestrator', timestamp: '2026-10-13T00:00:00.000Z', kind: 'gate', stdout, stderr }];
+    by: producer, timestamp: '2026-10-13T00:00:00.000Z', kind: 'gate', stdout, stderr }];
   const receipt = await land('receipt', { ...commands[0], format: 'bb-direct-command-v1', signal: null, error: null });
   commands[0].receipt = receipt.parts[0];
   const checks = Object.fromEntries(['verdictNames', 'mutationProbe', 'treeState', 'environmentalRed', 'gatesNotRun']
     .map(name => [name, { status: 'notRun', reason: 'Fictional transport fixture; no real gate or probe was run.' }]));
-  await land('gate', { tree: source, by: 'orchestrator', dirty: false, gates: 1, green: 1 });
-  await land('handover', { source, base, by: 'orchestrator', checks });
-  await land('inventory-base', { tree: base, by: 'orchestrator', status: 'notMeasured', reason: 'No supported test scope in this fixture.' });
-  await land('inventory-source', { tree: source, by: 'orchestrator', status: 'notMeasured', reason: 'No supported test scope in this fixture.' });
-  return { manifest: { version: 1, source, base, producer: 'orchestrator', relayer: 'orchestrator', dirty: false,
+  await land('gate', { tree: source, by: producer, dirty: false, gates: 1, green: 1 });
+  await land('handover', { source, base, by: producer, checks });
+  await land('inventory-base', { tree: base, by: producer, status: 'notMeasured', reason: 'No supported test scope in this fixture.' });
+  await land('inventory-source', { tree: source, by: producer, status: 'notMeasured', reason: 'No supported test scope in this fixture.' });
+  return { manifest: { version: 1, source, base, producer, relayer: sender, dirty: false,
     requiredGates: [['fiction', 'gate']], artifacts, commands, checks }, records, land };
 }

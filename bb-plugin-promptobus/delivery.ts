@@ -72,6 +72,14 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
             state.paused = true; state.epoch += 1; state.reason = `BB ${row.type}; explicit resume is required`;
           }
           if (row.type === 'turn/completed' && row.data.status === 'completed') state.lastCompleted = row.seq;
+          const initial = store.thread(b.threadId!);
+          if (row.type === 'client/turn/requested' && row.data.input && initial?.phaseAssignmentPending
+            && initial.phaseAssignmentDelivery?.epoch === state.epoch && !state.paused
+            && matches(row.data.input, initial.phaseAssignment!, null)) {
+            initial.phaseAssignmentPending = false; initial.phaseAssignmentDelivery.state = 'sent';
+            initial.phaseAssignmentDelivery.requestId = row.data.requestId; initial.phaseAssignmentDelivery.queuedId = null;
+            store.save(initial);
+          }
           if (row.type === 'client/turn/requested' && state.pending?.visibility === 'agent-only' && row.data.input
             && matches(row.data.input, state.pending.text, state.pending.visibility)) {
             state.pending.requestSeq = row.seq; state.pending.state = 'sent'; state.pending.queuedId = null;
@@ -86,12 +94,21 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
   const cancelQueued = async (b: Binding) => {
     store.updateDelivery(b.threadId!, retire);
     await sweepRetired(b);
+    const current = store.thread(b.threadId!)!;
+    if (current.phaseAssignmentDelivery?.queuedId && current.phaseAssignment) {
+      const entries = await bb.sdk.threads.queuedMessages.list({ threadId: b.threadId! });
+      const initial = entries.find(entry => entry.id === current.phaseAssignmentDelivery!.queuedId
+        && (!entry.originPluginId || entry.originPluginId === 'promptobus') && matches(entry.content, current.phaseAssignment!, null));
+      if (initial) await bb.sdk.threads.queuedMessages.delete({ threadId: b.threadId!, queuedMessageId: initial.id });
+    }
   };
   const reconcile = async (id: string, outerSignal?: AbortSignal) => {
-    const b = store.thread(id);
-    if (disposed || !b || b.phase !== 'ready' || b.phaseAssignmentPending) return;
+    let b = store.thread(id);
+    if (disposed || !b || b.phase !== 'ready') return;
     const signal = outerSignal ? AbortSignal.any([outerSignal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000);
     await replay(b, signal);
+    b = store.thread(id)!;
+    if (b.phaseAssignmentPending) return;
     if (store.delivery(id).paused) store.updateDelivery(id, retire);
     await sweepRetired(b, signal);
     let state = store.delivery(id);
@@ -179,6 +196,12 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
   }
   bb.events.on('message.cancelled', ({ entry }) => {
     const b = store.thread(entry.threadId); const pending = b && store.delivery(entry.threadId).pending;
+    if (b?.phaseAssignmentDelivery && (b.phaseAssignmentDelivery.queuedId === entry.id
+      || (b.phaseAssignmentDelivery.state === 'sending' && entry.originPluginId === 'promptobus')) && b.phaseAssignment
+      && (!entry.originPluginId || entry.originPluginId === 'promptobus') && matches(entry.content, b.phaseAssignment, null)) {
+      b.phaseAssignmentPending = true; b.phaseAssignmentDelivery.state = 'cancelled'; store.save(b);
+      pause(b, 'User cancelled the queued initial assignment');
+    }
     if (b && pending && owns(entry.threadId, entry.content, entry.originPluginId) && matches(entry.content, pending.text, pending.visibility)) pause(b, 'User cancelled the queued wake');
   });
   bb.background.service('delivery-recovery', { async start(signal) {
@@ -204,10 +227,10 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
         if (state.epoch === 0) { state.paused = false; state.reason = ''; }
       });
     },
-    async resume(b: Binding, wake = true) {
+    async resume(b: Binding, wake = true, expectedEpoch = store.delivery(b.threadId!).epoch) {
       if (b.phase !== 'ready') throw new Error('Participant is not ready for resume');
       await replay(b);
-      const epoch = store.delivery(b.threadId!).epoch;
+      const epoch = expectedEpoch;
       const observation = await observeBbParticipant(bb, b);
       if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.activeBackgroundAgentCount !== 0
         || (await bb.sdk.threads.interactions.list({ threadId: b.threadId! })).length) throw new Error('Resume requires an available idle thread without pending interactions');
@@ -228,7 +251,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
           && (!b?.phaseAssignment || text === b.phaseAssignment);
       }
       if (!ownedWake || !text.includes(HEADER)) return true;
-      return !state.paused && !!state.pending && text.includes(state.pending.marker);
+      return !store.thread(id)?.phaseAssignmentPending && !state.paused && !!state.pending && text.includes(state.pending.marker);
     },
   };
 }

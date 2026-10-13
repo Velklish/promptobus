@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import path from 'node:path';
 import { z } from 'zod';
-import { extractNodeTestVerdictNames } from 'promptobus/bb-host';
+import { assertBbDirectCommand, extractNodeTestVerdictNames } from 'promptobus/bb-host';
 
 const text = z.string().min(1);
 const sha = z.string().regex(/^[a-f0-9]{40,64}$/);
@@ -73,9 +72,7 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
     for (const stream of ['stdout', 'stderr'] as const) {
       if (receipt[stream]?.bytes !== command[stream].bytes || receipt[stream]?.sha256 !== command[stream].sha256) throw new Error(`review evidence manifest: original receipt ${stream} bytes/hash mismatch`);
     }
-    if (['sh', 'bash', 'zsh', 'fish', 'cmd', 'cmd.exe', 'powershell', 'pwsh'].includes(path.basename(command.command[0]!))) {
-      throw new Error('review evidence manifest: shell pipeline runner return codes are unsupported');
-    }
+    assertBbDirectCommand(command.command);
   }
   if (manifest.artifacts.some(ref => ref.kind === 'receipt' && !receiptIds.has(ref.id))) throw new Error('review evidence manifest: unscoped original receipt');
   const handover = one('handover');

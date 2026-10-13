@@ -873,18 +873,23 @@ inventory remains valid; no native-schema validation follows from extraction.
 The optional BB facade requires `--evidence-manifest` for a new reviewer. The
 owner's bounded launch context declares `review.producer`, `sourceEnvironmentId`,
 `base`, exact `requiredGates` argv and `requirePassingGates`. The SDK resolves the
-current source HEAD and tracked-file clean state. A provisioned reviewer also
-checks that its prepared snapshot HEAD matches the manifest. No reviewer starts
+current source HEAD and tracked-file clean state. Every selected reviewer read
+environment must be bounded, clean and at the same HEAD; a provisioned snapshot
+is checked again after preparation. No reviewer starts
 while any required original part is missing. The manifest is rechecked before
 spawn and substantive delivery, then included whole in the initial assignment;
 late steer and unread mail are supplementary paths.
 
 `review.producerBinding: participant` requires a ready canonical actor.
-`owner-declaration` is an explicit bounded input for an original producer outside
-the participant binding, including an owner's direct runner. The public SDK
-cannot authenticate that external execution identity; this route does not claim
-it did. The attachment sender remains mechanically authenticated, and relaying
-does not substitute that sender for the declared original producer.
+`owner-declaration` requires `review.ownerDeclaration`, an actual `.txt` artifact
+sent by the canonical task owner, for a producer outside the participant binding.
+Its JSON has exactly `version: 1`, `task`, `reviewer`, `grantToken`, `producer`,
+`sourceEnvironmentId` and `manifestSha256`. The hash covers UTF-8
+`JSON.stringify(evidenceManifestSchema.parse(manifest))` in the declared schema
+field order. The declaration authorizes that exact manifest for that actor and
+grant; a worker relay or an old declaration cannot authorize another scope.
+The public SDK does not authenticate the external execution identity. Original
+producer, canonical declaration sender and artifact relayer stay distinct.
 
 Version 1 carries exact `source`/`base`, original `producer`, `relayer`, clean
 state, commands, all five checks and original artifact references. Each reference
@@ -907,9 +912,18 @@ It writes complete `<output>.stdout.txt`, `<output>.stderr.txt` and
 `<output>.receipt.txt` with format `bb-direct-command-v1`, exact argv, direct exit/signal/error, HEAD, dirty state,
 actor, start/end and stream bytes/hashes. It does not grant command permission or
 authenticate a supplied actor. Existing files are not overwritten. Shell
-pipeline executables are unsupported; record the runner itself. The manifest's
+pipeline executables are unsupported, including behind `env`. A single `env`
+with an optional leading `--` and literal `NAME=VALUE` assignments is supported;
+other `env` options and nested launchers are refused. The recorder and manifest
+share this guard. Record the runner itself. The manifest's
 command references this original receipt and the actual landed raw part IDs.
 Incomplete or signalled receipts cannot claim a completed runner.
+
+Fresh phase transfer retains its starting delivery epoch across context reset
+and evidence reads. An intervening Stop refuses resume. The complete initial
+assignment and queued identity stay durable until its matching turn request;
+queue cancellation preserves the mailbox fence for explicit retry of the same
+context. Unknown sends do not create automatic mailbox-only review turns.
 
 `bb promptobus evidence upload --task ID --file /absolute/owned/file --to RECIPIENT`
 uses the existing authenticated coordinator and bounded owned roots. It lands

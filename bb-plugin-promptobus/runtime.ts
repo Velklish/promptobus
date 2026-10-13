@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { cliCommand, defineCli } from '@get-bb/plugin-sdk';
 import type { BbPluginApi, PluginAgentConfigurationContext, PluginAgentToolContext } from '@get-bb/plugin-sdk';
@@ -14,7 +15,7 @@ import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbPart
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
 import { REVIEWER_PROVIDER, selectBbExecution, SUPPORTED_PROVIDERS } from './routing.js';
 import { launchContextSchema, underRoots, validateLaunchContext } from './launch-context.js';
-import { validateReviewEvidence } from './review-evidence.js';
+import { digest, evidenceManifestSchema, validateReviewEvidence } from './review-evidence.js';
 import type { EvidenceArtifact } from './review-evidence.js';
 export { REVIEWER_PROVIDER } from './routing.js';
 
@@ -37,17 +38,40 @@ export function registerRuntime(bb: BbPluginApi) {
     await host.call('launchControl', { binding: b }, { hostId: b.hostId, signal });
     signal?.throwIfAborted();
   };
-  const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal) => {
+  const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal, snapshot = true) => {
     const review = b.launchContext?.review;
     if (!review) throw new Error('review evidence manifest requires the bounded original producer/source environment/base/gate scope');
     const producer = store.participant(b.task, review.producer);
     if (review.producerBinding === 'participant' && (!producer || producer.phase !== 'ready')) throw new Error('review evidence manifest: original producer is not bound');
+    if (review.producerBinding === 'owner-declaration') {
+      const owner = store.task(b.task);
+      if (!owner || !review.ownerDeclaration) throw new Error('review evidence manifest: canonical owner declaration is required');
+      const declaration = await onHost(reader, { operation: 'artifact', args: { id: review.ownerDeclaration } }, signal) as EvidenceArtifact;
+      const expected = { version: 1, task: b.task, reviewer: b.participant, grantToken: b.launchContext!.grant.token,
+        producer: review.producer, sourceEnvironmentId: review.sourceEnvironmentId,
+        manifestSha256: digest(JSON.stringify(evidenceManifestSchema.parse(b.evidenceManifest))) };
+      if (declaration.id !== review.ownerDeclaration || declaration.sender !== owner.participant
+        || !declaration.filename.endsWith('.txt') || digest(declaration.content) !== declaration.sha256
+        || Buffer.byteLength(declaration.content) !== declaration.size || !isDeepStrictEqual(JSON.parse(declaration.content), expected)) {
+        throw new Error('review evidence manifest: canonical owner declaration sender/scope mismatch');
+      }
+    }
     const source = await bb.sdk.environments.get({ environmentId: review.sourceEnvironmentId, signal });
     if (source.hostId !== b.hostId || !source.path || !underRoots(source.path, b.launchContext!.readRoots)) throw new Error('review evidence manifest: source environment outside declared read roots');
     const workspace = await bb.sdk.environments.status({ environmentId: source.id, signal });
     if (workspace.outcome !== 'available' || !workspace.workspace || !('headSha' in workspace.workspace.checkout)
       || !workspace.workspace.checkout.headSha) throw new Error('review evidence manifest: source SHA is unreadable');
     if (workspace.workspace.workingTree.files.some(file => !['?', '??'].includes(file.status))) throw new Error('review evidence manifest: source tracked files are dirty');
+    if (snapshot) {
+      const environment = await bb.sdk.environments.get({ environmentId: b.environmentId, signal });
+      const actual = await bb.sdk.environments.status({ environmentId: b.environmentId, signal });
+      if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || !environment.path
+        || !underRoots(environment.path, b.launchContext!.readRoots) || actual.outcome !== 'available' || !actual.workspace
+        || !('headSha' in actual.workspace.checkout) || actual.workspace.checkout.headSha !== workspace.workspace.checkout.headSha
+        || actual.workspace.workingTree.files.some(file => !['?', '??'].includes(file.status))) {
+        throw new Error('review evidence manifest: reviewer snapshot source SHA mismatch or unreadable/dirty read root');
+      }
+    }
     b.evidenceManifest = await validateReviewEvidence(b.evidenceManifest, { source: workspace.workspace.checkout.headSha, base: review.base,
       producer: review.producer, requiredGates: review.requiredGates, requirePassingGates: review.requirePassingGates },
     async id => await onHost(reader, { operation: 'artifact', args: { id } }, signal) as EvidenceArtifact);
@@ -71,6 +95,22 @@ export function registerRuntime(bb: BbPluginApi) {
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
   const recovery = registerDelivery(bb, store, onHost);
+  const sendPhaseAssignment = async (b: Binding, signal?: AbortSignal) => {
+    const epoch = store.delivery(b.threadId!).epoch;
+    b.phaseAssignmentPending = true;
+    b.phaseAssignmentDelivery = { state: 'sending', epoch, queuedId: null, requestId: null }; store.save(b);
+    signal?.throwIfAborted();
+    const sent = await bb.sdk.threads.send({ threadId: b.threadId!, mode: 'auto', input: [{ type: 'text', text: b.phaseAssignment!, mentions: [] }] });
+    if (store.delivery(b.threadId!).paused || store.delivery(b.threadId!).epoch !== epoch) throw new Error('Stop superseded the fresh phase assignment');
+    const current = store.thread(b.threadId!)!;
+    const receipt = current.phaseAssignmentDelivery!;
+    if (sent.delivery === 'sent' || receipt.state === 'sent') {
+      receipt.state = 'sent'; current.phaseAssignmentPending = false;
+    } else if (sent.delivery === 'queued') { receipt.state = 'queued'; receipt.queuedId = sent.queuedMessage.id; }
+    else throw new Error('Fresh initial assignment delivery is unknown; complete context remains fenced');
+    store.save(current);
+    return sent;
+  };
   const requirePredecessors = async (owner: Binding, workerId: string, reviewerId: string, signal?: AbortSignal) => {
     const worker = store.participant(owner.task, workerId);
     const reviewer = store.participant(owner.task, reviewerId);
@@ -222,7 +262,7 @@ export function registerRuntime(bb: BbPluginApi) {
     try {
       await checkStep(b);
       await host.call('launchControl', { binding: b }, { hostId: b.hostId });
-      if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!);
+      if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, undefined, !provision);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
@@ -392,6 +432,7 @@ export function registerRuntime(bb: BbPluginApi) {
       delete b.hostContext;
       delete b.launchContext; delete b.evidenceManifest;
       delete b.phaseAssignment; delete b.phaseAssignmentPending;
+      delete b.phaseAssignmentDelivery;
       if (!provision) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, provision ? { ...b, environmentOwner: 'bb' } : b,
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
@@ -406,7 +447,7 @@ export function registerRuntime(bb: BbPluginApi) {
       }
       if (b.role === REVIEWER) {
         b.evidenceManifest = boundedJson(options['evidence-manifest'], 'review evidence manifest') as Binding['evidenceManifest'];
-        await checkEvidence(b, owner, context.signal);
+        await checkEvidence(b, owner, context.signal, !provision);
       } else if (options['evidence-manifest'] !== undefined) throw new Error('review evidence manifest is only used for a reviewer');
       if (b.predecessors) await onHost(owner, { operation: 'step', ...b.predecessors }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');
@@ -464,6 +505,7 @@ export function registerRuntime(bb: BbPluginApi) {
     },
       async run({ options }, context) {
         const b = boundParticipant(options.task, options.participant);
+        const startEpoch = store.delivery(b.threadId!).epoch;
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
         if (options['launch-context'] !== undefined) {
           if (!options.assignment || !b.launchContext) throw new Error('A fresh phase requires its complete assignment and previous bounded grant');
@@ -477,7 +519,8 @@ export function registerRuntime(bb: BbPluginApi) {
           const current = await host.call('launchControl', { binding: next }, { hostId: next.hostId, signal: context.signal }) as { endedTokens: string[] };
           if (!current.endedTokens.includes(b.launchContext.grant.token)) throw new Error('The previous grant must be declared ended before phase transfer');
           if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
-          recovery.pause(b, 'Fresh bounded phase transfer');
+          if (store.delivery(b.threadId!).epoch !== startEpoch) throw new Error('A newer Stop wins over phase transfer');
+          const transferEpoch = recovery.pause(b, 'Fresh bounded phase transfer').epoch;
           if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('Fresh phase Stop was not confirmed');
           await bb.sdk.threads.clearContext({ threadId: b.threadId!, signal: context.signal });
           await admit(next, context.signal);
@@ -488,18 +531,21 @@ export function registerRuntime(bb: BbPluginApi) {
             tools: Object.fromEntries(participantTools(next).map(name => [name, name])) });
           const prompt = `${LAUNCH_HEADER}${intent.attemptId}\n${delivery.initialPrompt}\n\n${next.hostContext ? renderBbHostContext(next.hostContext) : ''}`;
           next.phaseAssignment = prompt; next.phaseAssignmentPending = true; store.save(next);
-          const resumed = await recovery.resume(next, false);
+          const resumed = await recovery.resume(next, false, transferEpoch);
           if (store.delivery(b.threadId!).paused) throw new Error('Fresh phase remains paused; no assignment sent');
-          const epoch = store.delivery(b.threadId!).epoch;
-          context.signal?.throwIfAborted();
-          const sent = await bb.sdk.threads.send({ threadId: next.threadId!, mode: 'auto', input: [{ type: 'text', text: prompt, mentions: [] }] });
-          if (store.delivery(b.threadId!).paused || store.delivery(b.threadId!).epoch !== epoch) throw new Error('Stop superseded the fresh phase assignment');
-          next.phaseAssignmentPending = false; store.save(next);
+          const sent = await sendPhaseAssignment(next, context.signal);
           store.launch(next, { ...intent, assignment: options.assignment });
           return { exitCode: 0, stdout: JSON.stringify({ ...resumed, phase: next.launchContext.grant.phase, sent }) };
         }
         if (options.assignment !== undefined || options['evidence-manifest'] !== undefined) throw new Error('Fresh assignment/evidence requires --launch-context');
         if (b.launchContext) await admit(b, context.signal);
+        if (b.phaseAssignmentPending) {
+          if (!b.phaseAssignment) throw new Error('Pending initial assignment has no complete context');
+          if (b.phaseAssignmentDelivery?.state === 'queued') throw new Error('Complete initial assignment is still queued; cancel or wait before retry');
+          if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, context.signal);
+          const resumed = await recovery.resume(b, false, startEpoch);
+          return { exitCode: 0, stdout: JSON.stringify({ ...resumed, sent: await sendPhaseAssignment(b, context.signal) }) };
+        }
         return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b)) };
       } }),
     'recovery run': cliCommand({ summary: 'Reconcile recorded threads, history and canonical unread mail without resuming paused participants.',

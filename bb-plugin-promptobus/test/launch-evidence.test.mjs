@@ -147,3 +147,28 @@ test('complete supported inventories preserve duplicate names and refuse a lost 
   payload.size = inv.bytes = Buffer.byteLength(payload.content); payload.sha256 = inv.sha256 = sha256(payload.content);
   await assert.rejects(f.validate(), /verdict occurrences mismatch/);
 });
+
+test('review boundary: env cannot hide a shell pipeline inside a direct collector receipt', async t => {
+  const f = await fixture(t), command = ['env', 'CACHE=fixture', 'sh', '-c', 'exit 7 | cat'];
+  f.manifest.requiredGates = [command]; f.manifest.commands[0].command = command;
+  const ref = f.manifest.artifacts.find(a => a.kind === 'receipt'), record = f.records.get(ref.id);
+  const receipt = JSON.parse(record.content); receipt.command = command;
+  record.content = JSON.stringify(receipt); record.size = ref.bytes = Buffer.byteLength(record.content); record.sha256 = ref.sha256 = sha256(record.content);
+  const expected = { source: f.manifest.source, base: f.manifest.base, producer: 'orchestrator', requiredGates: [command], requirePassingGates: true };
+  await assert.rejects(validateReviewEvidence(f.manifest, expected, async id => f.records.get(id)), /shell.*unsupported|runner executable directly/);
+});
+
+test('review command launcher: direct env receipt admits and unsupported env split syntax refuses', async t => {
+  const f = await fixture(t);
+  const ref = f.manifest.artifacts.find(a => a.kind === 'receipt'), record = f.records.get(ref.id);
+  const validateCommand = async command => {
+    f.manifest.requiredGates = [command]; f.manifest.commands[0].command = command;
+    const receipt = JSON.parse(record.content); receipt.command = command;
+    record.content = JSON.stringify(receipt); record.size = ref.bytes = Buffer.byteLength(record.content); record.sha256 = ref.sha256 = sha256(record.content);
+    return validateReviewEvidence(f.manifest, { source: f.manifest.source, base: f.manifest.base, producer: 'orchestrator',
+      requiredGates: [command], requirePassingGates: true }, async id => f.records.get(id));
+  };
+  assert.equal((await validateCommand(['env', '--', 'CACHE=fixture', 'node', 'gate.mjs'])).commands.length, 1);
+  await assert.rejects(validateCommand(['env', '-S', 'sh -c exit']), /Unsupported env launcher/);
+  await assert.rejects(validateCommand(['env', 'env', 'sh', '-c', 'exit 7 | cat']), /Unsupported env launcher/);
+});

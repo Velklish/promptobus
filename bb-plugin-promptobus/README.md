@@ -519,15 +519,26 @@ must name the previous token as ended. The complete original manifest is checked
 before Stop/context reset and again before delivery. The same BB thread, binding,
 parent and lifecycle owner remain; the new initial assignment contains the full
 context and all original IDs. Mailbox wakes stay fenced while that assignment is
-pending. A newer Stop wins; an unknown initial send retains its pending text and
-does not automatically start another evidence-only turn. A canonical phase task
+pending, including a queued or unknown send. Queue cancellation preserves the
+complete text and delivery identity; explicit resume retries that same context
+after fresh control/evidence checks. A matching `client/turn/requested` receipt
+releases a queued fence. A newer Stop during context reset, evidence transfer or
+delivery wins over the epoch captured at transfer start. No automatic
+evidence-only turn substitutes for the initial assignment. A canonical phase task
 still comes from the coordinator; this command does not invent a task sender.
 
 Every source-and-evidence reviewer also takes `--evidence-manifest <JSON>`.
 `producerBinding: participant` requires a ready canonical participant.
-`producerBinding: owner-declaration` explicitly supplies a producer outside that
-binding, such as the owner's direct runner. It does not authenticate that actor:
-canonical sender, original producer and actual command proof stay separate.
+`producerBinding: owner-declaration` requires `ownerDeclaration`, the actual ID
+of a canonical owner-sent `.txt` artifact authorizing the exact typed manifest
+hash, task, reviewer, grant token, producer and source environment. A worker relay
+cannot supply that authorization. It does not authenticate the external runner:
+canonical owner, attachment sender, original producer and command proof stay separate.
+Every selected reviewer read environment must be clean, bounded and at the
+declared source HEAD before spawn/resume; provisioned snapshots are rechecked.
+The recorder and manifest share a direct-command guard, including shell runners
+behind one supported `env` launcher with literal assignments. Other `env` options
+and nested launchers are unsupported.
 The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
 The manifest holds source/base, original producer and relayer, clean state,
 original direct receipts, gate/handover/inventory IDs, ordered full raw parts with

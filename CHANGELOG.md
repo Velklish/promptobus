@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- BB phase transfer preserves intervening Stop across context reset and evidence
+  reads. Reviewer snapshots must match the source HEAD, external producers need
+  an exact canonical owner declaration, cancelled initial queues retain their
+  complete-context fence, and direct receipts refuse shells hidden behind `env`.
 - BB launches require explicit role, owned/read roots, owner grant, control route,
   preparation and quota context before substantive work. Constrained readers can
   use declared inline control without wider filesystem permissions.

@@ -45,6 +45,8 @@ export const bindingSchema = z.object({
   evidenceManifest: evidenceManifestSchema.optional(),
   phaseAssignment: z.string().optional(),
   phaseAssignmentPending: z.boolean().optional(),
+  phaseAssignmentDelivery: z.object({ state: z.enum(['sending', 'sent', 'queued', 'unknown', 'cancelled']),
+    epoch: z.number().int().nonnegative(), queuedId: z.string().nullable(), requestId: z.string().nullable() }).strict().optional(),
   predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;

@@ -3,6 +3,7 @@ import { createWriteStream, readFileSync, writeFileSync } from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { assertBbDirectCommand } from '../lib/bb-direct-command.js';
 
 const argv = process.argv.slice(2);
 const separator = argv.indexOf('--');
@@ -11,9 +12,7 @@ if (separator !== 4 || argv[0] !== '--output' || argv[2] !== '--by' || !argv[1] 
 }
 const stem = argv[1], by = argv[3], command = argv.slice(separator + 1);
 if (!path.isAbsolute(stem)) throw new Error('--output requires an absolute path');
-if (['sh', 'bash', 'zsh', 'fish', 'cmd', 'cmd.exe', 'powershell', 'pwsh'].includes(path.basename(command[0]))) {
-  throw new Error('Record the runner executable directly; shell pipeline return codes are unsupported');
-}
+assertBbDirectCommand(command);
 const tree = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const status = execFileSync('git', ['status', '--porcelain=v1'], { encoding: 'utf8' });
 const stdout = createWriteStream(`${stem}.stdout.txt`, { flags: 'wx' });
