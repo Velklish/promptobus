@@ -585,6 +585,23 @@ why it survived longer.
 
 ## Local BB host boundary
 
+An orchestrator mailbox containing only `status` does not produce a BB bus wake.
+The next actionable message includes all retained unread IDs; mailbox reads
+remain the only acknowledgement. This policy does not suppress BB system child
+outcomes. Lifecycle ownership and predecessor validation remain intact.
+For the orchestrator, the recovery revision counts actionable unread IDs only;
+new progress cannot reset the pending message activation budget.
+
+Public Plugin SDK 0.6.15 and 0.6.37 expose `message.dispatch` with `proceed`,
+`wait` and `reject`. The inline context has no typed `systemMessageKind` or
+`systemMessageSubject`, and no outcome acknowledgement without provider input.
+`wait` queues work; `reject` refuses it and displays a rejection. Neither is a
+display-only completion policy. Suppressing routine child completion requires a
+public typed child-outcome policy that retains visible completion without a
+model turn, preserves failures, interruption and approval attention, and never
+resumes a stopped owner. Prompt text matching and ownership removal do not
+satisfy that boundary. Live completion suppression remains unmeasured.
+
 The optional `bb-plugin-promptobus` package owns the BB server and host entries.
 The server authenticates tool calls from SDK thread/project context and persistent
 plugin bindings. It resolves the actual environment and primary local host before

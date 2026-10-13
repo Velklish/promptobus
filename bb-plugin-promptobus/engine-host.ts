@@ -89,8 +89,9 @@ export async function engineOperation(input: unknown) {
         .sort((a, c) => a.id.localeCompare(c.id)).at(-1);
       const terminal = latestTask && messages.some(message => message.sender === b.participant
         && (message.type === 'result' || message.type === 'review') && message.id > latestTask.id);
-      const ids = unread.map(message => message.id).sort();
-      return { ids, revision: createHash('sha256').update(JSON.stringify(ids)).digest('hex'),
+      const actionable = b.role === ORCHESTRATOR ? unread.filter(message => message.type !== 'status') : unread;
+      const ids = actionable.length ? unread.map(message => message.id).sort() : [];
+      return { ids, revision: createHash('sha256').update(JSON.stringify(actionable.map(message => message.id).sort())).digest('hex'),
         obligation: latestTask && !terminal && b.role !== 'reporter' && b.role !== ORCHESTRATOR ? latestTask.id : null };
     }
     case 'preserve': return engine.send(b.task, { from: ORCHESTRATOR, to: [ORCHESTRATOR], type: 'artifact',

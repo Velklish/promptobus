@@ -133,7 +133,7 @@ test('mail already read draws no knock, past the re-knock threshold too', async 
 });
 
 test('a second message draws exactly one more knock', async () => {
-  const sent = cli('root-session', 'send', 'teamlead:group-one', '--task', ROOT, '--type', 'status', '--body', 'root status');
+  const sent = cli('root-session', 'send', 'teamlead:group-one', '--task', ROOT, '--type', 'answer', '--body', 'root answer');
   assert.equal(sent.code, 0, sent.out);
   clock += 1000;
   assert.deepEqual(await knocks(CHILD, clock), [{ address: 'orchestrator', unread: '1' }]);
@@ -255,7 +255,8 @@ test('the child warden knocks once for mail in both slots, and the Stop guard co
   const engine = store.bus(home, { cli: 'suite' });
   store.upsertParticipant(home, CHILD, store.participantRecord('worker:web', { sessionId: 'web-session' }));
   engine.sendSync(CHILD, { from: 'worker-web', to: ['orchestrator'], type: 'status', body: 'from the child' });
-  cli('root-session', 'send', 'teamlead:group-one', '--task', ROOT, '--type', 'status', '--body', 'from the root');
+  assert.deepEqual(await knocks(CHILD, clock), []);
+  cli('root-session', 'send', 'teamlead:group-one', '--task', ROOT, '--type', 'question', '--body', 'from the root');
   clock += (KNOCK_RETRY_SEC + 5) * 1000;
   assert.deepEqual(await knocks(ROOT, clock), []);
   assert.deepEqual(await knocks(CHILD, clock), [{ address: 'orchestrator', unread: '2' }]);

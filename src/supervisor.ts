@@ -81,6 +81,8 @@ export type SelfWakeState = 'starting' | 'taken' | 'refused';
 /** Health mark of one address. Fields are appended by the round, and read by it and by `promptobus status`. */
 interface HealthMark {
   unread?: number;
+  actionableUnread?: number;
+  actionableSince?: string | null;
   since?: string | null;
   knockedAt?: string | null;
   triedAt?: string | null;
@@ -523,6 +525,8 @@ export async function supervisorRound(home: string, task: string, {
         health[addr] = {
           ...was,
           unread: 0,
+          ...(was.actionableUnread !== undefined ? { actionableUnread: 0 } : {}),
+          ...(was.actionableSince !== undefined ? { actionableSince: null } : {}),
           deliveredAt: new Date(now).toISOString(),
           since: null,
           knockedAt: null,
@@ -554,6 +558,25 @@ export async function supervisorRound(home: string, task: string, {
     if (took) h.deliveredAt = new Date(now).toISOString();
     h.unread = unread;
 
+    if (addr === ORCHESTRATOR) {
+      const progress = mailbox.slots.map(slot => glanceInbox(home, slot.task, slot.participant, faults));
+      const complete = progress.every(box => !box.broken.length)
+        && progress.reduce((n, box) => n + box.messages.length, 0) === unread;
+      h.actionableUnread = complete
+        ? progress.reduce((n, box) => n + box.messages.filter(message => message.type !== 'status').length, 0) : unread;
+      if (complete && !h.actionableUnread) {
+        h.actionableSince = null;
+        h.escalatedAt = null;
+        if (JSON.stringify(h) !== JSON.stringify(was)) changed = true;
+        health[addr] = h;
+        continue;
+      }
+      if ((was.actionableUnread ?? was.unread ?? 0) === 0 || took) {
+        h.actionableSince = new Date(now).toISOString();
+        h.escalatedAt = null;
+      } else h.actionableSince ??= h.since;
+    }
+
     // The driver is taken from the registry by harness, and one participant's failure may not take
     // the watch over the others: an unknown harness stays a line in the journal, and the round goes on.
     let driver;
@@ -582,7 +605,7 @@ export async function supervisorRound(home: string, task: string, {
     // The knock-retry threshold counts from ATTEMPT time, not success, or a dead channel would get
     // an attempt every second. `knockedAt` stays the last SUCCESSFUL delivery.
     const triedAt = Date.parse(h.triedAt ?? '');
-    const grew = unread > (was.unread ?? 0);
+    const grew = (h.actionableUnread ?? unread) > (was.actionableUnread ?? was.unread ?? 0);
     // A knock is outstanding from its success until the take, bounded both ways as a clock may step back.
     const knockedAt = Date.parse(h.knockedAt ?? '');
     const outstanding = Number.isFinite(knockedAt) && Math.abs(now - knockedAt) < KNOCK_COALESCE_SEC * 1000;
@@ -591,7 +614,7 @@ export async function supervisorRound(home: string, task: string, {
     const stale = Number.isFinite(triedAt) && now - triedAt >= KNOCK_RETRY_SEC * 1000;
     // A retry on the SAME unread waits until the session gives the turn back — it will see the
     // notification at the end of it anyway. A fresh mailbox's first knock does not wait.
-    const since = Date.parse(h.since ?? '');
+    const since = Date.parse((addr === ORCHESTRATOR ? h.actionableSince : h.since) ?? '');
     const waited = Number.isFinite(since) ? now - since : 0;
     // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
     // dropped by a queue limit never starts a turn — so past the threshold we knock regardless.

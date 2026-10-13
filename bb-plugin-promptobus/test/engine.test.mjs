@@ -357,6 +357,60 @@ test('unknown BB model availability fails before a canonical task, binding or th
   assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.length, 0);
 });
 
+test('coordinator progress stays unread without model wakes; result carries it once across reload', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const status = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body: 'Gate is running' }));
+  await s.reconcile(); await s.reload(); await s.reconcile();
+  assert.equal(s.wakes.length, 0);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  assert.equal(engine.unread(s.task, 'orchestrator'), 1);
+  const result = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Done' }));
+  await s.reconcile(); await s.reconcile();
+  assert.equal(s.wakes.length, 1);
+  assert.ok(s.wakes[0].input[0].text.includes(status.message.id));
+  assert.ok(s.wakes[0].input[0].text.includes(result.message.id));
+  assert.deepEqual(JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.type), ['status', 'result']);
+  s.finish('thr-1'); await s.reconcile();
+  assert.equal(s.wakes.length, 1);
+});
+
+for (const type of ['task', 'question', 'answer', 'review', 'artifact']) {
+  test(`coordinator ${type} remains actionable with retained progress`, async t => {
+    const s = await stand(t); await s.create(); await s.add('worker-one');
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+    engine.sendSync(s.task, { from: 'worker-one', to: ['orchestrator'], type: 'status', body: 'Progress' });
+    await s.reconcile(); assert.equal(s.wakes.length, 0);
+    const artifact = path.join(s.root, 'progress.txt');
+    if (type === 'artifact') writeFileSync(artifact, 'Evidence');
+    engine.sendSync(s.task, { from: 'worker-one', to: ['orchestrator'], type, body: 'Action',
+      ...(type === 'artifact' ? { artifact: { path: artifact } } : {}) });
+    await s.reconcile(); assert.equal(s.wakes.length, 1);
+    assert.equal(engine.unread(s.task, 'orchestrator'), 2);
+  });
+}
+
+test('coordinator progress never resets the pending result activation budget', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Done' });
+  await s.reconcile();
+  const before = s.delivery('thr-1');
+  s.finish('thr-1');
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body: 'Waiting' });
+  await s.reconcile();
+  assert.equal(s.delivery('thr-1').key, before.key);
+  assert.equal(s.delivery('thr-1').attempts, before.attempts + 1);
+});
+
+test('a stopped coordinator retains progress and result without reactivation across reload', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body: 'Progress' });
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Done' });
+  await s.reload(); await s.reconcile();
+  assert.equal(s.wakes.length, 0); assert.equal(s.delivery('thr-1').paused, true);
+  assert.equal(JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages.length, 2);
+});
+
 test('wake hints and duplicate BB announcements do not ACK or repeat canonical consumption across reload', async t => {
   const s = await stand(t); await s.create(); await s.add('worker-one');
   const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Unread work hint' }));

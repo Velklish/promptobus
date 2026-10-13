@@ -94,6 +94,85 @@ function stubKnock(reply = { ok: true }) {
   return fn;
 }
 
+const PROGRESS_TASK = 'progress-t20261013-000000';
+store.createTask(HOME, { id: PROGRESS_TASK, title: 'progress without coordinator activation' });
+store.upsertParticipant(HOME, PROGRESS_TASK, store.participantRecord('worker:progress'));
+const progressPath = makeSockPath('a2s-');
+registerWake(HOME, PROGRESS_TASK, 'orchestrator', {
+  CLAUDE_CODE_MESSAGING_SOCKET: progressPath('root'), CLAUDE_CODE_MESSAGING_TOKEN: 't',
+});
+const progressKnock = stubKnock();
+const progressStart = Date.now();
+const progressSend = type => store.sendMessage(HOME, PROGRESS_TASK,
+  { from: 'worker:progress', to: 'orchestrator', type, body: type });
+progressSend('status');
+for (const elapsed of [0, 1000, 180_000, 960_000]) {
+  await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + elapsed });
+}
+check('progress status alone never knocks the orchestrator, including retries', progressKnock.calls.length === 0);
+progressSend('result');
+await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + 961_000 });
+check('result knocks once and carries retained progress status in order',
+  progressKnock.calls.length === 1 && /— status from[\s\S]*— result from/.test(progressKnock.calls[0].body),
+  JSON.stringify(progressKnock.calls));
+store.readInbox(HOME, PROGRESS_TASK, 'orchestrator');
+await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + 962_000 });
+check('progress replay mailbox ACK prevents duplicate activation', progressKnock.calls.length === 1);
+progressSend('question');
+await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + 963_000 });
+progressSend('status');
+await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + 964_000 });
+await wdn.wardenRound(HOME, PROGRESS_TASK, { knock: progressKnock, now: progressStart + 1054_000 });
+check('progress does not advance a pending question knock ahead of its retry threshold', progressKnock.calls.length === 2);
+
+const WAIT_TASK = 'progress-wait-t20261013-000000';
+store.createTask(HOME, { id: WAIT_TASK, title: 'actionable silence after progress' });
+store.upsertParticipant(HOME, WAIT_TASK, store.participantRecord('worker:progress'));
+registerWake(HOME, WAIT_TASK, 'orchestrator', {
+  CLAUDE_CODE_MESSAGING_SOCKET: progressPath('wait'), CLAUDE_CODE_MESSAGING_TOKEN: 't',
+});
+const waitKnock = stubKnock();
+const waitSend = type => store.sendMessage(HOME, WAIT_TASK,
+  { from: 'worker:progress', to: 'orchestrator', type, body: type });
+const waitRound = now => wdn.wardenRound(HOME, WAIT_TASK, { knock: waitKnock, sessions: [], now });
+waitSend('status');
+await waitRound(progressStart);
+const resultAt = progressStart + 961_000;
+waitSend('result');
+const freshResult = await waitRound(resultAt);
+check('a result after a long progress wait starts without SILENT and retains total unread history',
+  waitKnock.calls.length === 1 && !freshResult.events.some(e => e.startsWith('SILENT '))
+  && store.readHealth(HOME, WAIT_TASK).orchestrator.unread === 2
+  && store.readHealth(HOME, WAIT_TASK).orchestrator.since === new Date(progressStart).toISOString(),
+  JSON.stringify({ events: freshResult.events, health: store.readHealth(HOME, WAIT_TASK) }));
+store.markTurn(HOME, WAIT_TASK, 'orchestrator', new Date(resultAt - 1000).toISOString());
+await waitRound(resultAt + wdn.KNOCK_RETRY_SEC * 1000 + 1);
+check('a busy orchestrator holds a delayed result retry for its own silence budget',
+  waitKnock.calls.length === 1, String(waitKnock.calls.length));
+waitSend('status');
+waitSend('question');
+await waitRound(resultAt + wdn.KNOCK_RETRY_SEC * 1000 + 2);
+const beforeSilence = await waitRound(resultAt + wdn.SILENCE_SEC * 1000 - 1);
+check('additional progress and actionable mail preserve the original result silence deadline',
+  waitKnock.calls.length === 2 && !beforeSilence.events.some(e => e.startsWith('SILENT ')),
+  JSON.stringify({ calls: waitKnock.calls.length, events: beforeSilence.events }));
+const atSilence = await waitRound(resultAt + wdn.SILENCE_SEC * 1000);
+check('the actionable silence deadline escalates and retries despite a still-busy orchestrator',
+  waitKnock.calls.length === 3 && atSilence.events.some(e => e.startsWith('SILENT orchestrator:')),
+  JSON.stringify({ calls: waitKnock.calls.length, events: atSilence.events }));
+const waitStatus = capture(() => status(SB, { task: WAIT_TASK, sessions: snap(WAIT_TASK, []) }));
+check('SILENT status displays the actionable wait start after retained progress',
+  waitStatus.includes(`SILENT since ${new Date(resultAt).toISOString()}`), waitStatus);
+store.readInbox(HOME, WAIT_TASK, 'orchestrator');
+await waitRound(resultAt + wdn.SILENCE_SEC * 1000 + 1);
+waitSend('status');
+await waitRound(resultAt + wdn.SILENCE_SEC * 1000 + 2);
+waitSend('result');
+const nextResult = await waitRound(resultAt + 2 * wdn.SILENCE_SEC * 1000 + 3);
+check('a later result after mailbox ACK gets a fresh actionable silence budget',
+  waitKnock.calls.length === 4 && !nextResult.events.some(e => e.startsWith('SILENT ')),
+  JSON.stringify({ calls: waitKnock.calls.length, events: nextResult.events }));
+
 // --- warden mark: liveness, claim, heartbeat ------------------------
 
 check('no warden — no mark', store.liveWarden(HOME, TASK) === null);
@@ -1819,7 +1898,7 @@ store.createTask(HOME, { id: BURST_TASK, title: 'hand-off burst' });
 registerWake(HOME, BURST_TASK, BURST_ADDR, { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('burst'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
 store.upsertParticipant(HOME, BURST_TASK, store.participantRecord('worker:t10'));
 const burstSend = (body) => store.sendMessage(HOME, BURST_TASK,
-  { from: 'worker:t10', to: BURST_ADDR, type: 'status', body });
+  { from: 'worker:t10', to: BURST_ADDR, type: 'answer', body });
 const burstKnock = stubKnock();
 const burstLines = [];
 const B0 = Date.now();
@@ -1878,7 +1957,7 @@ store.createTask(HOME, { id: CARRY_TASK, title: 'refused window knock' });
 registerWake(HOME, CARRY_TASK, BURST_ADDR, { CLAUDE_CODE_MESSAGING_SOCKET: sockPath('carry'), CLAUDE_CODE_MESSAGING_TOKEN: 't' });
 store.upsertParticipant(HOME, CARRY_TASK, store.participantRecord('worker:t10'));
 const carrySend = (body) => store.sendMessage(HOME, CARRY_TASK,
-  { from: 'worker:t10', to: BURST_ADDR, type: 'status', body });
+  { from: 'worker:t10', to: BURST_ADDR, type: 'answer', body });
 const carryRound = (knock, at) => wdn.wardenRound(HOME, CARRY_TASK, { knock, now: C0 + at });
 const carryHealth = () => store.readHealth(HOME, CARRY_TASK)[BURST_ADDR];
 const C0 = Date.now();

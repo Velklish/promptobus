@@ -119,9 +119,12 @@ const TURN_PAUSE_MS = TICK_MS + 500;
 export const WORKER_SCRIPT = {
   turns: [
     {
-      say: `On the first turn send the orchestrator a status message whose body starts with the line «${MARK.status}». Do nothing else and end the turn.`,
+      say: `On the first turn send the orchestrator a status message whose body starts with the line «${MARK.status}», then a question «Which line should I write to the scenario note?». End the turn.`,
       detail: 'status sent; awaiting next cycle',
-      do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.status}: took the assignment, starting` } }],
+      do: [
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.status}: took the assignment, starting` } },
+        { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'question', body: 'Which line should I write to the scenario note?' } },
+      ],
     },
     {
       say: `After a notification, fetch the mailbox, create ${NOTE_FILE} in your worktree with the line «${MARK.result1}», commit it, and send the orchestrator a result whose body starts with «${MARK.result1}». End the turn.`,
@@ -367,7 +370,7 @@ export function buildWorkspace(sandbox, { ns = 'demo_team', repo = 'orders-api',
 export const STEPS = [
   'stand and warden',
   'spawn the worker',
-  'first status and postcard to the orchestrator',
+  'first status, question and postcard to the orchestrator',
   'orchestrator answer',
   'warden knock and first result',
   'review and notes',
@@ -675,11 +678,12 @@ export async function runScenario({
     const status = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.status), { timeoutMs: step });
     check('step 3: the first worker status landed in the orchestrator mailbox',
       sentBy(status, WORKER) && status?.type === 'status', JSON.stringify(status));
+    const question = await waitFor(() => inboxOf(store.ORCHESTRATOR).find(m => sentBy(m, WORKER) && m.type === 'question'), { timeoutMs: step });
     const stub = `— status from ${WORKER} · ${status?.ts}: text ${status?.body.length} characters — fetch the mailbox`;
     const card = await waitFor(() => postcard(stub), { timeoutMs: step });
     check('step 3: the warden woke the orchestrator with a postcard naming sender, type and size — the stub, not the text',
       card?.auth === true && card?.tokenOk === true && card?.msgV === 1 && card?.from === 'promptobus-warden'
-      && !String(card?.body).includes(MARK.status),
+      && !!question && String(card?.body).includes(`— question from ${WORKER}`) && !String(card?.body).includes(MARK.status),
       `${stub} · ${JSON.stringify(inbox.seen)}`);
     check('step 3: orchestrator health names the channel as a socket and counts knocks',
       healthOf(store.ORCHESTRATOR).channel === 'socket' && (healthOf(store.ORCHESTRATOR).knocks ?? 0) >= 1,

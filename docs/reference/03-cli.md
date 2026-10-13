@@ -1240,6 +1240,18 @@ The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session id
 
 ## Guard and warden
 
+Only `status` in an orchestrator mailbox does not knock or retry a knock.
+The messages remain unread and visible in `status` and mailbox reads. Any other
+message type wakes normally and carries retained progress in send order; a
+damaged ref still follows the existing diagnostic route.
+Progress does not advance an outstanding actionable knock to the coalescing
+window or reset its retry threshold.
+The native orchestrator's silence budget starts when actionable unread mail
+first arrives, independently of retained progress. `health.since` keeps the
+total unread start; `health.actionableSince` supplies the busy retry bound and
+the `SILENT since` time. Additional mail preserves that time until a mailbox
+take or no actionable mail remains.
+
 An explicitly stamped wake endpoint for a different owner is ignored before any endpoint check or probe.
 A missing or refused matching-owner contact does not prove the owner session is dead.
 An unbound session at the workspace root receives an informational contact hint at Stop or

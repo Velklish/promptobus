@@ -311,6 +311,12 @@ dictionary.
 
 ### Warden
 
+An orchestrator mailbox containing only `status` does not receive a knock.
+Progress remains unread and visible; the next actionable message carries it in
+send order. `task`, `question`, `answer`, `review`, `result` and `artifact` still
+knock. The native orchestrator's silence budget starts with actionable mail;
+retained progress consumes none of it. Participant stall reporting is unchanged.
+
 Source: `src/supervisor.ts`, `lib/warden.js`, `lib/guard.js`.
 
 The task warden is a detached process that watches every mailbox and knocks

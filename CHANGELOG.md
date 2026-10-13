@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Progress `status` stays in the orchestrator mailbox without its own native or
+  BB bus wake. The next actionable message carries all retained progress.
+  Workers send milestone status and raise decisions as questions.
+  The native orchestrator's silence and busy retry budget starts with actionable
+  mail, so a result after a long progress wait receives its full waiting budget.
+
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object
   type can make a client reject the entire bridge tool list.
