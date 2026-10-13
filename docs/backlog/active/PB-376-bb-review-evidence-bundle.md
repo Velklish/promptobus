@@ -4,6 +4,7 @@
 - **Created:** 2026-10-13
 - **Dependencies:** none
 - **Cost:** major
+- **Taken:** 2026-10-13
 
 ## Context
 
