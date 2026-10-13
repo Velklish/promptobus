@@ -139,6 +139,8 @@ const ALLOWED = [
     'legacy store temporary-name counter, separate from seq: that one ends up in the record name'],
   ['src/legacy-store.ts::taskCache',
     'single-request journal cache: one command reads task.json four to six times; writeTask and withTaskLock invalidate it'],
+  ['src/legacy-store.ts::taskCacheSuspensions',
+    'active journal-cache suspension count owned by this store; lock wrappers update it until synchronous return or Promise settlement'],
   ['src/sidecar.ts::suspenders',
     'registry of onTaskLock wrappers: there are two stores in the package, and the second registrar has no right to cancel the first'],
   ['src/v1/artifacts.ts::tmpSeq',
