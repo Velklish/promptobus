@@ -178,6 +178,7 @@ export function registerRuntime(bb: BbPluginApi) {
     displayOverrides: Partial<NonNullable<Binding['display']>> = {}) => {
     let recorded = false;
     const provision = Boolean(baseBranch || environmentPath);
+    const prepare = provision || b.providerId === 'acp-cursor' || b.providerId === 'acp-opencode';
     const { model, reasoningLevel } = b.execution!;
     const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ...(baseBranch ? { baseBranch } : {}),
       ...(environmentPath ? { environmentPath } : {}), status: 'requested' as const };
@@ -185,7 +186,7 @@ export function registerRuntime(bb: BbPluginApi) {
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
       workspace: b.environmentPath, assignment, tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
     const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
-    if (provision) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
+    if (prepare) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
       await checkStep(b);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
@@ -200,7 +201,7 @@ export function registerRuntime(bb: BbPluginApi) {
       store.save(b);
       recorded = true;
       store.launch(b, { ...intent, status: 'recorded' });
-      if (provision) {
+      if (prepare) {
         b.phase = 'provisioning'; store.save(b);
         await bb.experimental_hooks.recheck('message.dispatch');
         const prepared = await bb.sdk.threads.wait({ threadId: b.threadId, status: 'idle', timeoutMs: 120_000 });
@@ -210,9 +211,10 @@ export function registerRuntime(bb: BbPluginApi) {
           || actual.parentThreadId !== b.parentThreadId || actual.lifecycleOwnerThreadId !== b.lifecycleOwnerThreadId) throw new Error('BB provisioning binding mismatch');
         if (actual.status !== 'idle' || actual.runtime.displayStatus !== 'idle' || actual.activeBackgroundAgentCount !== 0
           || actual.archivedAt !== null || actual.deletedAt !== null) throw new Error('BB preparation is not idle');
+        if (!provision && actual.environmentId !== b.environmentId) throw new Error('BB preparation environment changed');
         b.environmentId = actual.environmentId;
         const environment = await recordBbWorkspace(bb, b, undefined, environmentPath);
-        if (baseBranch ? !environment.managed : environment.managed) throw new Error('BB returned an unexpected managed environment mode');
+        if (provision && (baseBranch ? !environment.managed : environment.managed)) throw new Error('BB returned an unexpected managed environment mode');
         if (environmentPath) {
           const selected = await selectBbExecution(bb, b, { model: b.execution!.requestedModel, reasoningLevel,
             provider: b.execution!.providerSource === 'explicit' ? b.providerId : undefined });
@@ -223,7 +225,7 @@ export function registerRuntime(bb: BbPluginApi) {
         await prepareContext(b);
         await bb.sdk.threads.clearContext({ threadId: b.threadId });
         delete b.bootstrap; b.phase = 'pending'; store.save(b);
-        await onHost(b, { operation: 'reserve', create: false, title: b.task });
+        if (provision) await onHost(b, { operation: 'reserve', create: false, title: b.task });
       }
       await requireThread(b);
       if (provision && b.role === REVIEWER) {
@@ -244,7 +246,7 @@ export function registerRuntime(bb: BbPluginApi) {
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
       b.phase = 'ready'; store.save(b);
-      if (provision) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
+      if (prepare) await bb.sdk.threads.send({ threadId: b.threadId, mode: 'auto', input: [{ type: 'text', text: initialPrompt(), mentions: [] }] });
       await bb.experimental_hooks.recheck('message.dispatch');
       store.launch(b, { ...intent, status: 'ready' });
       return { task: b.task, participant: b.participant, threadId: b.threadId, phase: b.phase, execution: b.execution, display: { title: titleFor(b), environment: naming } };
@@ -262,7 +264,7 @@ export function registerRuntime(bb: BbPluginApi) {
     title: { type: 'string', required: true, description: 'Task title.' },
     project: { type: 'string', required: true, description: 'Existing BB project id.' },
     environment: { type: 'string', required: true, description: 'Existing local coordinator environment id.' },
-    model: { type: 'string', required: true, description: 'Explicit Codex model.' },
+    model: { type: 'string', required: true, description: 'Explicit model from the selected BB provider.' },
     provider: { type: 'enum', values: SUPPORTED_PROVIDERS, description: 'Explicit BB provider; must match the role policy.' },
     'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
@@ -288,6 +290,7 @@ export function registerRuntime(bb: BbPluginApi) {
             repository: options['repository-label'] ?? path.basename(environment.path) } });
         await recordBbWorkspace(bb, b, context.signal);
         b.execution = await selectBbExecution(bb, b, { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+        b.providerId = b.execution.providerId;
         await prepareContext(b, context.signal);
         store.reserve(b, true);
         try {
@@ -343,6 +346,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (!provision) await recordBbWorkspace(bb, b, context.signal);
       b.execution = await selectBbExecution(bb, provision ? { ...b, environmentOwner: 'bb' } : b,
         { model: options.model, provider: options.provider, reasoningLevel: options['reasoning-level'] }, context.signal);
+      b.providerId = b.execution.providerId;
       if (!provision) await prepareContext(b, context.signal);
       if (b.predecessors) await onHost(owner, { operation: 'step', ...b.predecessors }, context.signal);
       if (store.task(options.task)?.phase !== 'ready') throw new Error('Task orchestrator is no longer ready for a child launch');

@@ -32,6 +32,15 @@ async function stand(t, options = {}) {
   const environments = new Map([environment, workerEnvironment, ...(options.environments ?? [])].map(e => [e.id, e]));
   const names = []; const spawns = [];
   const events = [];
+  const catalogs = new Map();
+  const freezeCatalog = async thread => {
+    const env = environments.get(thread.environmentId) ?? environment;
+    const config = await host.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+      thread, project: { id: thread.projectId }, environment: { id: env.id, path: env.path },
+      host: { id: env.hostId }, provider: { id: thread.providerId },
+    }));
+    catalogs.set(thread.id, config.tools.map(tool => tool.name));
+  };
   let initialArgs;
   let nativeCatalogCleared = false;
   let stopStatus = 'idle';
@@ -53,8 +62,9 @@ async function stand(t, options = {}) {
     system: { config: async () => ({ primaryHostId: 'local' }),
       providerStates: async () => ({ providers: [{ providerId: 'codex', status: 'ready' }] }),
       usageLimits: async () => ({ codex: { status: 'ok', windows: [{ label: '5h', usedPercent: 21, resetsAt: null }] } }) },
-    providers: { list: async () => ['codex', 'promptobus-codex-reviewer'].map(id => ({ id, available: true, family: 'codex',
-      capabilities: { modelCatalogScope: 'host' }, maintenance: { health: id === 'codex', usage: id === 'codex' } })),
+    providers: { list: async () => ['codex', 'promptobus-codex-reviewer', 'acp-cursor', 'acp-opencode'].map(id => ({ id, available: true,
+      family: id.startsWith('acp-') ? 'acp' : 'codex', capabilities: { modelCatalogScope: 'host', permissionModes: ['accept-edits'] },
+      maintenance: { health: id === 'codex', usage: id === 'codex' } })),
       models: async () => ({ modelLoadError: options.modelLoadError ?? null, models: [{ id: 'test-model', model: 'test-model', defaultReasoningEffort: 'low',
         supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] }) },
     environments: { get: async ({ environmentId }) => environments.get(environmentId),
@@ -103,6 +113,7 @@ async function stand(t, options = {}) {
         executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
           serviceTier: 'default', source: 'client/thread/start' });
         metadata.set(thread.id, args.pluginMetadata ?? {});
+        if (options.freezeEarlyCatalog) await freezeCatalog(thread);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread, origin: 'plugin', originPluginId: 'promptobus' }))).action, 'wait');
         const before = host.harness.inspection.experimental_hostRpcCalls.length;
@@ -126,12 +137,16 @@ async function stand(t, options = {}) {
         await assert.rejects(host.harness.behavior.callAgentTool('promptobus_task', {}, { threadId, projectId: 'project' }), /not bound/);
         if (options.beforePreparationIdle) await options.beforePreparationIdle({ threadId, append, thread });
         workerEnvironment.environmentProviderInstanceKey = options.existingEnvironment ? 'another-thread' : threadId;
-        thread.environmentId = workerEnvironment.id; thread.status = thread.runtime.displayStatus = 'idle';
+        thread.environmentId = initialArgs.environment.type === 'reuse' ? initialArgs.environment.environmentId : workerEnvironment.id;
+        thread.status = thread.runtime.displayStatus = 'idle';
         if (options.afterPreparationIdle) await options.afterPreparationIdle({ thread, environment: workerEnvironment });
         events.push('provision');
         return { matched: options.preparationMatched ?? true, target: { kind: 'status', status: 'idle' }, thread };
       },
-      clearContext: async () => { nativeCatalogCleared = true; events.push('clear-context'); return { ok: true }; },
+      clearContext: async ({ threadId }) => {
+        nativeCatalogCleared = true; catalogs.delete(threadId); events.push('clear-context');
+        return { ok: true };
+      },
       send: async ({ threadId, input, mode }) => {
         if (input[0].text.startsWith('Promptobus mailbox wake: ')) {
           wakes.push({ threadId, input, mode });
@@ -145,9 +160,10 @@ async function stand(t, options = {}) {
         }
         if (options.assignmentSend) return options.assignmentSend({ threadId, input, mode, threads, host });
         events.push('assignment');
+        if (options.freezeEarlyCatalog && !catalogs.has(threadId)) await freezeCatalog(threads.get(threadId));
         assert.equal(nativeCatalogCleared, true, 'The preparation native thread retains its empty dynamic tool catalog until Clear context');
         assert.equal(input[0].text.includes('Read mailbox, then stop.'), true);
-        assert.equal(input[0].text.includes(workerEnvironment.path), true);
+        assert.equal(input[0].text.includes(environments.get(threads.get(threadId).environmentId).path), true);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId) }))).action, 'proceed');
         return { ok: true }; },
@@ -181,7 +197,7 @@ async function stand(t, options = {}) {
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
-    wakes, queues, interactions, append, executionOptions, get initialArgs() { return initialArgs; },
+    wakes, queues, interactions, append, executionOptions, catalogs, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
     updateDelivery: (id, update) => bindingStore(host.bb).updateDelivery(id, update),
@@ -232,6 +248,40 @@ test('BB Host delivery uses complete rule/skill content and authentic canonical 
   await s.reload();
   const context = JSON.parse(await s.call('thr-3', 'promptobus_host_context', { mode: 'inspect' }));
   assert.ok(context.rules[0].text.endsWith('RULE_TAIL'));
+});
+
+test('selected BB tools export MCP object input schemas and preserve strict Host context requests', async t => {
+  const calls = [];
+  const s = await stand(t, { hostContext: () => ({ rules: [{ path: '/declared', text: 'Declared fixture rule' }], skills: [], tools: [] }),
+    hostOperation: async (method, input) => {
+    calls.push({ method, args: input.args });
+    return input.args;
+  } });
+  const selected = ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact', 'promptobus_host_context'];
+  const tools = s.host.harness.inspection.registrations.agentTools.filter(tool => selected.includes(tool.name));
+  assert.deepEqual(tools.map(tool => tool.name), selected);
+  for (const tool of tools) assert.equal(tool.inputSchema.type, 'object', `${tool.name} must publish an MCP object inputSchema`);
+  const schema = tools.at(-1).inputSchema;
+  assert.equal(schema.oneOf.length, 2);
+  assert.ok(schema.oneOf.every(branch => branch.type === 'object' && branch.additionalProperties === false));
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('schema-worker')).exitCode, 0);
+  const valid = [{ mode: 'inspect' }, { mode: 'read', path: '/declared' },
+    { mode: 'read', path: '/declared', start_line: 1, line_count: 2000 }];
+  for (const args of valid) {
+    assert.deepEqual(tools.at(-1).parse(args), { ok: true, value: args });
+    assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_host_context', args)), args);
+  }
+  const invalid = [{ mode: 'inspect', path: '/extra' }, { mode: 'inspect', line_count: 1 }, { mode: 'read' },
+    { mode: 'read', path: '' }, { mode: 'unknown' }, { mode: 'inspect', extra: true },
+    ...['actor', 'participant', 'task', 'token', 'role'].map(field => ({ mode: 'inspect', [field]: 'spoof' })),
+    ...[0, -1, 1.5].map(start_line => ({ mode: 'read', path: '/declared', start_line })),
+    ...[0, -1, 1.5, 2001].map(line_count => ({ mode: 'read', path: '/declared', line_count }))];
+  for (const args of invalid) {
+    assert.equal(tools.at(-1).parse(args).ok, false, JSON.stringify(args));
+    await assert.rejects(s.call('thr-2', 'promptobus_host_context', args));
+  }
+  assert.deepEqual(calls, valid.map(args => ({ method: 'hostContext', args })));
 });
 
 test('new BB worktrees collect generated Host context after actual environment provisioning', async t => {
@@ -640,6 +690,58 @@ test('forged identity fields, metadata, foreign project and missing threads gran
   s.threads.delete('thr-2');
   await assert.rejects(s.call('thr-2', 'promptobus_task'), /Thread not found/);
   assert.equal(count(), before);
+});
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const provision of [false, true]) {
+  test(`ACP worker keeps provider across spawn, tools and recovery (${provider}, provision ${provision})`, async t => {
+    const s = await stand(t); await s.create();
+    const extra = ['--provider', provider, '--reasoning-level', 'high',
+      ...(provision ? ['--new-environment', '--base-branch', 'main'] : [])];
+    const added = await s.add('worker-acp', 'worker', extra);
+    assert.equal(added.exitCode, 0, added.stderr);
+    const { threadId } = JSON.parse(added.stdout);
+    assert.equal(s.spawns.at(-1).providerId, provider);
+    assert.equal(s.spawns.at(-1).permissionMode, 'accept-edits');
+    assert.equal(s.spawns.at(-1).reasoningLevel, 'high');
+    const b = bindingStore(s.host.bb).thread(threadId);
+    assert.equal(b.providerId, provider); assert.equal(b.execution.providerId, provider);
+    assert.equal(b.execution.harness, provider === 'acp-cursor' ? 'cursor' : 'opencode');
+    assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'worker-acp');
+    const context = makePluginAgentConfigurationContext({ thread: { id: threadId }, project: { id: 'project' },
+      environment: { id: b.environmentId, path: b.environmentPath }, host: { id: 'local' }, provider: { id: provider } });
+    const configuration = await s.host.harness.behavior.resolveAgentConfiguration(context);
+    assert.equal(configuration.tools.some(tool => tool.name === 'promptobus_send'), true);
+    assert.deepEqual(configuration.skills, ['promptobus-worker']);
+    assert.equal((await s.control('stop', 'worker-acp')).exitCode, 0);
+    await s.reload();
+    assert.equal((await s.control('resume', 'worker-acp')).exitCode, 0);
+    assert.equal(bindingStore(s.host.bb).thread(threadId).providerId, provider);
+    assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'worker-acp');
+  });
+}
+
+test('Cursor approver retains provider and authenticated current predecessors across tools and recovery', async t => {
+  const s = await stand(t); await s.create();
+  await s.add('alpha', 'worker', ['--provider', 'acp-opencode']); await s.add('beta', 'reviewer');
+  const extra = ['--provider', 'acp-cursor', '--reasoning-level', 'high', '--worker', 'alpha', '--reviewer', 'beta'];
+  const refused = await s.add('acceptor', 'approver', extra);
+  assert.equal(refused.exitCode, 1); assert.equal(s.threads.size, 3);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  await engine.send(s.task, { from: 'alpha', to: ['orchestrator'], type: 'result', body: 'Worker evidence' });
+  await engine.send(s.task, { from: 'beta', to: ['orchestrator'], type: 'result', body: 'Reviewer evidence' });
+  const added = await s.add('acceptor', 'approver', extra); assert.equal(added.exitCode, 0, added.stderr);
+  const { threadId } = JSON.parse(added.stdout); const b = bindingStore(s.host.bb).thread(threadId);
+  assert.equal(s.spawns.at(-1).providerId, 'acp-cursor'); assert.equal(b.providerId, 'acp-cursor');
+  assert.equal(b.execution.harness, 'cursor'); assert.equal(b.parentThreadId, 'thr-2');
+  assert.deepEqual(b.predecessors, { worker: 'alpha', reviewer: 'beta' });
+  assert.equal(JSON.parse(await s.call(threadId, 'promptobus_task')).participant, 'acceptor');
+  assert.equal((await s.control('stop', 'acceptor')).exitCode, 0); await s.reload();
+  assert.equal((await s.control('resume', 'acceptor')).exitCode, 0);
+  assert.equal(bindingStore(s.host.bb).thread(threadId).providerId, 'acp-cursor');
+  const worker = engine.readTask(s.task).participants.find(p => p.id === 'alpha');
+  engine.patchParticipant(s.task, 'alpha', { metadata: { ...worker.metadata, bb: { ...worker.metadata.bb,
+    assignedAt: new Date(Date.now() + 60_000).toISOString() } } });
+  await assert.rejects(s.call(threadId, 'promptobus_task'), /requires a type=result/);
 });
 
 test('approver requires current worker and isolated reviewer results for the same subject before launch and tools', async t => {
@@ -1496,3 +1598,39 @@ for (const mode of ['exception', 'unconfirmed']) test(`SDK display existing-path
   assert.match(result.stderr, mode === 'exception' ? /Thread metadata unavailable/ : /BB thread naming was not confirmed/);
   assert.equal(bindingStore(s.host.bb).participant(s.task, 'beta').phase, 'orphan');
 });
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const workspace of ['reuse', 'worktree', 'path']) {
+  test(`ACP assignment starts with bound tools after early session configuration (${provider}, ${workspace})`, async t => {
+    const s = await stand(t, { freezeEarlyCatalog: true });
+    assert.equal((await s.create()).exitCode, 0);
+    if (workspace === 'path') s.workerEnvironment.managed = false;
+    const extra = workspace === 'worktree' ? ['--new-environment', '--base-branch', 'main']
+      : workspace === 'path' ? ['--environment-path', s.workerEnvironment.path] : [];
+    const added = await s.add('early-catalog', 'worker', ['--provider', provider, ...extra]);
+    assert.equal(added.exitCode, 0, JSON.stringify(added));
+    assert.deepEqual(s.catalogs.get('thr-2'), ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact'],
+      'The assignment must use a fresh provider session configured after the binding is ready');
+    assert.deepEqual(s.events, ['provision', 'stop', 'clear-context', 'assignment']);
+    assert.equal(s.initialArgs.prompt.includes('Preparation token:'), true);
+    const b = bindingStore(s.host.bb).thread('thr-2');
+    assert.equal(b.environmentId, workspace === 'reuse' ? 'env' : 'bb-actual-env');
+    assert.equal(b.providerId, provider);
+    assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_task')).participant, 'early-catalog');
+  });
+}
+
+for (const provider of ['acp-cursor', 'acp-opencode']) for (const failure of ['environment changed', 'Stop unconfirmed']) {
+  test(`ACP reuse preparation refuses ${failure} without delivering assignment (${provider})`, async t => {
+    const s = await stand(t, { afterPreparationIdle({ thread }) {
+      if (failure === 'environment changed') thread.environmentId = 'bb-actual-env';
+    } });
+    assert.equal((await s.create()).exitCode, 0);
+    if (failure === 'Stop unconfirmed') s.stopStatus = 'stopping';
+    const result = await s.add('refused-preparation', 'worker', ['--provider', provider]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, failure === 'environment changed' ? /BB preparation environment changed/ : /BB preparation Stop was not confirmed/);
+    assert.equal(s.events.includes('assignment'), false);
+    assert.equal(bindingStore(s.host.bb).thread('thr-2').phase, 'orphan');
+    await assert.rejects(s.call('thr-2', 'promptobus_task'), /not bound/);
+  });
+}

@@ -5,7 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- BB Host context tools export an object input schema for MCP clients while
+  preserving strict inspect/read validation. A union without the root object
+  type can make a client reject the entire bridge tool list.
+- Reused Cursor/OpenCode BB environments complete a bounded preparation turn,
+  confirmed Stop and context reset before receiving the assignment.
+
+- BB workers can select Cursor and OpenCode ACP providers, and BB approvers can
+  select Cursor. Provider identity survives provisioning, authenticated tools and
+  recovery. Reviewers retain their constrained Codex provider. Unsupported
+  role/provider pairs, permission modes and models refuse before launch.
+
 ## [0.26.0] — 2026-10-12
+
+- Admit BB 0.46.0 in the optional source plugin's host range
+  (`>=0.45.0 <0.47.0`). The measured full workflow remains the BB 0.45.0 profile.
 
 - Pin the optional BB source plugin's Hono dependency to `4.13.13` to address
   the reported advisories in its SDK optional-peer dependency graph.

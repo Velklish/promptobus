@@ -10,7 +10,8 @@ documentation for what the mechanism uses, that is said rather than implied.
 ## BB provider selection
 
 The optional BB facade selects an explicit SDK provider and model. It records
-`runtime: bb`, underlying `harness: codex`, SDK provider/model, native model,
+`runtime: bb`, underlying `harness: codex`, `harness: cursor` or
+`harness: opencode`, SDK provider/model, native model,
 reasoning, selection source and observation scope/time in participant metadata.
 It does not introduce a native `bb` harness or share a quota bucket across providers.
 
@@ -18,6 +19,14 @@ It does not introduce a native `bb` harness or share a quota bucket across provi
 | --- | --- | --- | --- |
 | `codex` | orchestrator, worker, approver, teamlead, reporter | Actual scoped SDK catalog; explicit supported effort or its catalog default | Selected provider's SDK usage on its host; unknown if unavailable |
 | `promptobus-codex-reviewer` | reviewer | Actual SDK catalog through the constrained Codex bridge | Unknown: this provider exposes no usage API |
+| `acp-cursor` | worker, approver | Actual scoped SDK catalog; supported reasoning level separate from the BB model id | Selected provider's SDK usage on its host; unknown if unavailable |
+| `acp-opencode` | worker | Actual scoped SDK catalog; explicit supported effort or its catalog default | Selected provider's SDK usage on its host; unknown if unavailable |
+
+Ordinary roles default to Codex. Workers can explicitly select Cursor or OpenCode;
+approvers can explicitly select Cursor. Every selected provider must support
+`accept-edits`. Other role/provider pairs refuse. The selected provider survives
+binding, environment preparation, spawn, authenticated tools and recovery.
+These paths have SDK fixture coverage, distinct from the historical live profile.
 
 The historical full six-role workflow used BB 0.45.0, SDK 0.6.15 and Codex CLI
 0.162.0-alpha.2 on the 2026-10-08 local macOS 27.0 / Node 25.2.1 source profile

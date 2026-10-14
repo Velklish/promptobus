@@ -6,7 +6,7 @@ tools and refuses shell execution, source edits and unclassified external tools.
 
 ## Requirements
 
-BB 0.45.0, Plugin SDK 0.6.15, Codex CLI 0.162.0-alpha.2 and a signed-in Codex account
+BB 0.45.0 or 0.46.0, Plugin SDK 0.6.15, Codex CLI 0.162.0-alpha.2 and a signed-in Codex account
 are required. Execution and file reads use one local host. Each reviewer receives a
 private Codex home and an empty project sandbox. Existing native providers keep
 their own behavior.
@@ -27,7 +27,7 @@ the default variant uses the standalone Host and refuses declared servers withou
 unmanaged Git coordinator on the primary local host. Participants can reuse a local
 environment, register an existing absolute local Git worktree with
 `--environment-path`, or ask BB to create a managed worktree. Path registration
-and new worktrees use the participant's own bounded preparation
+and new worktrees, plus reused Cursor/OpenCode environments, use the participant's own bounded preparation
 turn without assignment or plugin tools, then confirmed Stop, cleared preparation
 model context and authoritative
 binding before the first assignment. Stop retains the environment; archive preserves
@@ -43,7 +43,15 @@ workspace ownership; null environment ids and ambiguous replies remain failed
 launches with recoverable intent. Deferred spawn is not provisioning. Existing-path
 coverage is SDK fixture evidence; a live registration has not been measured.
 Selection records runtime, provider, SDK/native model and reasoning from a scoped
-SDK catalog. Explicit provider choices must match the role; no provider fallback
+SDK catalog. Workers admit explicit Cursor/OpenCode ACP providers, and approvers
+admit explicit Cursor ACP; default and governance roles remain Codex, with a
+separate constrained reviewer. These paths have SDK fixture coverage. Selected
+MCP tools export object input schemas, including the strict Host context union.
+Live OpenCode verification covers authenticated task, mailbox and send calls.
+Cursor server availability is verified; authenticated calls under a genuine user
+turn with **Allow once** remain unverified. BB denies approval escalation on
+agent-initiated turns before publishing an interaction.
+Explicit provider choices must match the role; no provider fallback
 or native strategy substitution occurs. Account windows belong to that provider
 on its host; absent reviewer usage remains unknown. The six-role runtime was observed together on the local source profile: macOS
 27.0, Node 25.2.1, `gpt-6.1-sol` with `low`, and the shipped worker/reviewer/approver

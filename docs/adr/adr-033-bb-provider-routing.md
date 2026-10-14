@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-10-08
-**Deciders:** Repository owner (Codex-only scope); implementation: Codex
+**Deciders:** Repository owner; implementation: Codex
 
 ## Context
 
@@ -21,15 +21,21 @@ host/provider usage, but the constrained reviewer declares no usage API.
 
 ## Decision
 
-Use explicit facade selection. Support regular Codex for executable/observer roles
-and the constrained Codex provider for reviewer. Explicit provider mismatch fails.
+Use explicit facade selection. Default to regular Codex for executable/observer
+roles and the constrained Codex provider for reviewer. Workers also admit explicit
+Cursor and OpenCode ACP providers; approvers also admit explicit Cursor ACP.
+Governance roles remain Codex, and reviewers retain their constrained provider.
+Other role/provider pairs fail, and every selected provider must support the
+`accept-edits` permission mode used by the SDK spawn.
 Require a reported model; validate explicit reasoning or select the model catalog
 default. Reject cross-provider model routes and selected-only stale models.
 Record SDK model id separately from the native model name and keep the launch
 snapshot distinct from SDK current execution options.
 Store that snapshot both in plugin bindings and canonical `metadata.bb.execution`.
 Canonical `harness: bb` continues to identify the adapter's lifecycle ownership;
-the underlying model harness is explicitly `execution.harness: codex`.
+the underlying model harness is recorded separately as `codex`, `cursor` or
+`opencode`. The selected provider is carried through binding, provisioning,
+spawn, authentication and recovery; it is never reset to the role's default.
 
 Probe existing environments with their catalog/health context. For new managed
 worktrees use their host and require a host-scoped catalog. Unavailable resources
@@ -51,6 +57,7 @@ reviewer app-server retains its independent private environment boundary.
 
 An SDK catalog default may differ from a native effort default. Availability and
 quota are time-stamped observations, not continuing guarantees or per-task budgets.
-Regular Codex settings may change after launch; the reviewer requires a fresh
+Regular provider settings may change after launch; the reviewer requires a fresh
 session for a model/effort change. A new provider needs a separate support and
-permission proof before being admitted.
+permission proof before being admitted. SDK fixtures and live model workflows
+are separate evidence; a reported catalog does not prove a model turn.

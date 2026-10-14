@@ -4,13 +4,21 @@ import { executionSchema } from './protocol.js';
 import type { Binding, ExecutionSelection } from './protocol.js';
 
 export const REVIEWER_PROVIDER = 'promptobus-codex-reviewer';
-export const SUPPORTED_PROVIDERS = ['codex', REVIEWER_PROVIDER] as const;
+export const SUPPORTED_PROVIDERS = executionSchema.shape.providerId.options;
 type Request = { model: string; provider?: string; reasoningLevel?: ExecutionSelection['reasoningLevel'] };
+
+function providerFor(role: Binding['role'], requested?: string): ExecutionSelection['providerId'] {
+  const required = role === REVIEWER ? REVIEWER_PROVIDER : 'codex';
+  const allowed: ExecutionSelection['providerId'][] = role === 'worker' ? ['codex', 'acp-cursor', 'acp-opencode']
+    : role === 'approver' ? ['codex', 'acp-cursor'] : [required];
+  const provider = requested ?? required;
+  if (!allowed.some(id => id === provider)) throw new Error(`Role ${role} requires provider ${allowed.join(' or ')}`);
+  return provider as ExecutionSelection['providerId'];
+}
 
 export async function selectBbExecution(bb: BbPluginApi, b: Pick<Binding, 'role' | 'hostId' | 'environmentId' | 'environmentOwner'>,
   request: Request, signal?: AbortSignal): Promise<ExecutionSelection> {
-  const required = b.role === REVIEWER ? REVIEWER_PROVIDER : 'codex';
-  if (request.provider && request.provider !== required) throw new Error(`Role ${b.role} requires provider ${required}`);
+  const required = providerFor(b.role, request.provider);
   const host = await bb.sdk.hosts.get({ hostId: b.hostId, signal });
   if (host.id !== b.hostId || host.status !== 'connected' || host.lifecycle.phase !== 'active') throw new Error('BB execution host is unavailable');
   if (b.environmentOwner !== 'bb') {
@@ -20,7 +28,9 @@ export async function selectBbExecution(bb: BbPluginApi, b: Pick<Binding, 'role'
   }
   const scope = b.environmentOwner === 'bb' ? { hostId: b.hostId } : { environmentId: b.environmentId };
   const provider = (await bb.sdk.providers.list({ ...scope, signal })).find(p => p.id === required);
-  if (!provider?.available || (provider.family && provider.family !== 'codex')) throw new Error(`BB provider ${required} is unavailable`);
+  const family = required.startsWith('acp-') ? 'acp' : 'codex';
+  if (!provider?.available || (provider.family && provider.family !== family)) throw new Error(`BB provider ${required} is unavailable`);
+  if (!provider.capabilities.permissionModes.includes('accept-edits')) throw new Error(`BB provider ${required} does not support accept-edits`);
   if (b.environmentOwner === 'bb' && provider.capabilities.modelCatalogScope !== 'host') {
     throw new Error('A new BB environment requires a host-scoped model catalog');
   }
@@ -55,7 +65,8 @@ export async function selectBbExecution(bb: BbPluginApi, b: Pick<Binding, 'role'
     }
   }
   signal?.throwIfAborted();
-  return executionSchema.parse({ runtime: 'bb', harness: 'codex', providerId: required,
+  const harness = required === 'acp-cursor' ? 'cursor' : required === 'acp-opencode' ? 'opencode' : 'codex';
+  return executionSchema.parse({ runtime: 'bb', harness, providerId: required,
     providerSource: request.provider ? 'explicit' : 'role', requestedModel: request.model, model: model.id, nativeModel: model.model,
     reasoningLevel, reasoningSource: request.reasoningLevel ? 'explicit' : 'catalog', health, quota,
     observedAt: new Date().toISOString(), scope: { hostId: b.hostId, environmentId: 'environmentId' in scope ? scope.environmentId : null } });

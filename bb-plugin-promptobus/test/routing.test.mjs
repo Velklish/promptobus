@@ -5,7 +5,8 @@ import { selectBbExecution } from '../.test-build/routing.js';
 const binding = { role: 'worker', hostId: 'host', environmentId: 'env', environmentOwner: 'existing' };
 function fixture() {
   const calls = [];
-  const provider = { id: 'codex', family: 'codex', available: true, capabilities: { modelCatalogScope: 'host' },
+  const provider = { id: 'codex', family: 'codex', available: true,
+    capabilities: { modelCatalogScope: 'host', permissionModes: ['accept-edits', 'full'] },
     maintenance: { health: true, usage: true } };
   const model = { id: 'model', model: 'model', defaultReasoningEffort: 'medium',
     supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] };
@@ -63,6 +64,40 @@ test('provider mismatch and cross-provider model routing refuse without fallback
   assert.equal(s.calls.length, 0);
   s.model.routeProviderId = 'claude';
   await assert.rejects(s.select(), /unavailable on provider codex/);
+});
+
+test('Cursor and OpenCode workers and Cursor approvers keep their provider through scoped selection', async () => {
+  for (const [providerId, harness, role] of [
+    ['acp-cursor', 'cursor', 'worker'], ['acp-opencode', 'opencode', 'worker'], ['acp-cursor', 'cursor', 'approver'],
+  ]) {
+    const s = fixture();
+    s.provider.id = providerId; s.provider.family = 'acp';
+    s.health.providers[0].providerId = providerId;
+    s.usage[providerId] = { ...s.usage.codex, windows: [{ label: 'Provider window', usedPercent: 12, resetsAt: null }] };
+    const selected = await s.select({ model: 'model', provider: providerId, reasoningLevel: 'high' }, { ...binding, role });
+    assert.equal(selected.providerId, providerId); assert.equal(selected.harness, harness);
+    assert.equal(selected.health, 'ready'); assert.equal(selected.reasoningLevel, 'high');
+    assert.equal(selected.quota.windows[0].usedPercent, 12);
+    assert.equal(s.calls.find(c => c.method === 'models').args.providerId, providerId);
+    assert.equal(s.calls.find(c => c.method === 'usage').args.providerId, providerId);
+  }
+});
+
+test('ACP providers cannot replace the constrained reviewer or Codex governance roles', async () => {
+  for (const role of ['reviewer', 'orchestrator', 'teamlead', 'reporter']) {
+    for (const provider of ['acp-cursor', 'acp-opencode']) {
+      const s = fixture();
+      await assert.rejects(s.select({ model: 'model', provider }, { ...binding, role }), /requires provider/);
+      assert.equal(s.calls.length, 0);
+    }
+  }
+  await assert.rejects(fixture().select({ model: 'model', provider: 'acp-opencode' }, { ...binding, role: 'approver' }), /requires provider/);
+});
+
+test('an executable provider without accept-edits permission support is refused before model selection', async () => {
+  const s = fixture(); s.provider.capabilities.permissionModes = ['full'];
+  await assert.rejects(s.select(), /does not support accept-edits/);
+  assert.equal(s.calls.some(c => c.method === 'models'), false);
 });
 
 test('offline host/environment and unavailable or unknown model inventory refuse explicitly', async () => {

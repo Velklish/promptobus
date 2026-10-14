@@ -6,7 +6,7 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.45.0 and Plugin SDK 0.6.15 on one local host. Use Codex CLI 0.162.0-alpha.17.2 and
+Use BB 0.45.0 or 0.46.0 and Plugin SDK 0.6.15 on one local host. Use Codex CLI 0.162.0-alpha.17.2 and
 sign in with `codex`. The provider copies only `auth.json` into its private Codex
 home; it does not modify the original authentication or copy personal config.
 
@@ -86,6 +86,37 @@ characters. Its selected plugin skill is the same text, checked against the
 exported renderer. The other role skills describe the portable contracts;
 engine-backed participant binding is supplied by this package.
 
+## Provider session preparation
+
+Reused Cursor and OpenCode environments use the same preparation sequence as
+new worktrees and existing-path registration: a bounded turn without assignment
+or plugin tools, confirmed Stop, cleared preparation context, canonical binding,
+then the assignment. The reused environment id must remain unchanged. This uses
+the owning participant, without an extra helper thread, and retains `accept-edits`.
+
+BB tool-set changes apply on the next provider session start. An early session
+configuration during spawn can precede the recorded thread id and ready binding;
+holding message dispatch alone does not refresh that session's tool catalog.
+Stop releases the loaded runtime and Clear context discards the preparation
+session before assignment. Configuration remains ready-only and each tool call
+rechecks authenticated identity. These ordering fixtures do not prove live bridge recovery;
+a provisioned session that still lacks the bridge needs separate runtime evidence.
+
+## MCP schema and permission boundary
+
+Every selected tool exports an MCP input schema with root `type: "object"`.
+`promptobus_host_context` retains its strict inspect/read union and validation;
+its root object metadata supplies the type required by MCP clients.
+
+A measured OpenCode session completed authenticated task, mailbox and send calls.
+A measured Cursor session exposed the MCP server, but an agent-initiated turn
+received `User rejected` without a user interaction. BB sets
+`permissionEscalation: "deny"` for non-user turns and rejects approval requests
+before publishing an interaction. A genuine user turn uses `"ask"`; selecting
+**Allow once** for each exact bound-tool request is a prospective remedy whose
+live result remains unverified. Keep the provider permission mode and tool
+selection unchanged. These measurements do not certify other sessions or models.
+
 ## Local task entry point
 
 Build the root library before `npm ci` in this package so the local `file:..`
@@ -142,8 +173,9 @@ All argument objects are strict. Sender, task and address are derived from the
 binding, and cannot be supplied. Body size is capped at 2400 characters; attachment
 text at 1 million characters and artifact reads at 1 MB. Reporter bindings omit
 send. Routing currently goes through the task orchestrator; worker lateral sends
-are refused. New role threads use built-in Codex except reviewers, which use the
-constrained provider. Bus writes do not grant reviewer source or shell writes.
+are refused. New role threads use their selected provider under the role policy
+below; reviewers use the constrained Codex provider. Bus writes do not grant
+reviewer source or shell writes.
 
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
 The measured six-role workflow and its profile limits are recorded below.
@@ -151,12 +183,18 @@ BB queued first prompts are admission state, not the canonical Promptobus mailbo
 
 ## Provider and model selection
 
-`task create` and `participant add` require `--model`. Optional `--provider`
-must match the role: `codex` for the owner, worker, approver, teamlead and reporter;
-`promptobus-codex-reviewer` for reviewer. There is no fallback between providers.
+`task create` and `participant add` require `--model`. The default provider is
+`codex` for the owner, worker, approver, teamlead and reporter, and
+`promptobus-codex-reviewer` for reviewer. Workers also admit explicit
+`--provider acp-cursor` or `--provider acp-opencode`; approvers also admit
+`--provider acp-cursor`. Other role/provider pairs refuse. There is no fallback
+between providers. Every selected provider must support `accept-edits`.
 Optional `--reasoning-level` must be supported by that model; omission selects the
 SDK catalog's default, which can differ from the native Promptobus defaults.
 The SDK model id sent to spawn and the native model name are recorded separately.
+Use the selected provider's SDK catalog spelling: Cursor's BB model and
+reasoning level are separate fields, unlike the native Cursor CLI suffix.
+An unlisted or selected-only model remains refused.
 
 For example, inspect a reviewer selection without creating a task or thread:
 
@@ -197,9 +235,15 @@ account caches and defaults are unchanged.
 | --- | --- | --- |
 | `codex` | orchestrator, worker, approver, teamlead, reporter | SDK host/provider account windows, or unknown |
 | `promptobus-codex-reviewer` | reviewer | Unknown; no usage API |
+| `acp-cursor` | worker, approver | SDK host/provider account windows, or unknown |
+| `acp-opencode` | worker | SDK host/provider account windows, or unknown |
 
-The supported versions are BB 0.45.0, SDK 0.6.15 and the reviewer's verified
-Codex CLI 0.162.0-alpha.17.2. Other BB providers are not admitted.
+The host range is BB `>=0.45.0 <0.47.0` with SDK 0.6.15. The measured profile
+is BB 0.45.0 and the reviewer's verified Codex CLI 0.162.0-alpha.17.2. BB 0.46.0
+loads; its full workflow is not a separate measurement. Cursor/OpenCode selection,
+worker provisioning, authenticated tools and recovery, and Cursor acceptance
+predecessors have SDK fixture coverage. This is separate from a measured live
+model workflow. Other BB providers are not admitted.
 
 ## Wake and recovery
 
@@ -444,7 +488,8 @@ alone are not this support claim.
 | One primary local host; BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2; macOS 27.0, Node 25.2.1; `gpt-6.1-sol`, `low` | Historical full six-role runtime observed on 2026-10-08 | Built-in Codex for orchestrator, worker, approver, teamlead and reporter; constrained Codex provider for reviewer; shipped worker/reviewer/approver pipeline |
 | Codex CLI 0.162.0-alpha.17.2; `gpt-6.1-sol`, `high`; isolated native reviewer transport on 2026-10-11 | Permission proof measured | Effective `readOnly` / `never`, private home, disabled features and no MCP; bounded read, outside-root refusal and actual patch sandbox denial; matching canary hashes and child cleanup. Installed-plugin reload and full BB workflow on this version remain unmeasured. |
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
-| Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; provider substitution and remote environments refuse |
+| Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
+| Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
 | Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; older releases lack this adapter |
 
 The representative fixture retained current worker and reviewer results for the
