@@ -32,7 +32,8 @@ for await (const line of createInterface({ input: process.stdin })) {
     reply(message.id, { thread: { id: control === 'identity' ? 'other-thread' : 'review-thread' },
       model: control === 'model' ? 'other-model' : message.params.model,
       reasoningEffort: control === 'effort' ? 'low' : message.params.config.model_reasoning_effort ?? null,
-      sandbox: control === 'missing-sandbox' ? null : { type: control === 'widened-sandbox' ? 'workspaceWrite' : 'readOnly' },
+      sandbox: control === 'missing-sandbox' ? null : { type: control === 'widened-sandbox' ? 'workspaceWrite' : 'readOnly',
+        ...(control === 'missing-network' ? {} : { networkAccess: control === 'network' }) },
       approvalPolicy: control === 'approval' ? 'on-request' : 'never' });
     for (const tool of ['shell', 'apply_patch', 'mcp__canonical__write']) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: `deny-${tool}`, method: 'item/tool/call',

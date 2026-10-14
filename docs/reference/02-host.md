@@ -753,9 +753,9 @@ records the BB projection and unchanged native semantics.
 
 ## BB reviewer compatibility proof
 
-`BB_REVIEWER_CODEX_VERSION` in [the reviewer transport](../../lib/bb-reviewer.js)
-admits exactly Codex CLI `0.162.0-alpha.17.2`. Other builds refuse initialization
-before thread creation. The provider verifies effective `readOnly` with network
+The [reviewer transport](../../lib/bb-reviewer.js) admits Codex through the
+required effective runtime restrictions, without an exact or maximum numeric
+version requirement. The provider verifies effective `readOnly` with network
 access disabled, approval policy `never`, the requested model and effort, and
 thread identity. It checks the private Codex home, every disabled feature and an
 empty MCP server configuration before starting a thread. Only `auth.json` is
@@ -765,7 +765,7 @@ The root overview states the delivery and admission boundary:
 
 <!-- quote:../../README.md -->
 The root Git package does not include or install the optional BB plugin.
-The optional plugin's constrained reviewer admits exactly Codex CLI `0.162.0-alpha.17.2`.
+The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 <!-- /quote -->
 
 ### BB launch context admission
@@ -808,11 +808,11 @@ or a native-tool fallback. Configuration admission and SDK fixtures do not prove
 that a provider completed this workflow. Persisted bindings from before this
 contract remain explicitly `notMeasured`; they are not certified by migration.
 
-The measured compatibility evidence distinguishes the two builds:
+Historical native measurements retain their exact builds and scope:
 
 | Codex build | Measurement | Limit |
 |---|---|---|
-| `0.162.0-alpha.2` | Native sandbox and bounded-read denials measured on 2026-10-08; historical full BB role workflow | Historical measurement; this build is no longer admitted by the exact version check |
+| `0.162.0-alpha.2` | Native sandbox and bounded-read denials measured on 2026-10-08; historical full BB role workflow | Does not establish enforcement on another build or on the current source |
 | `0.162.0-alpha.17.2` | Isolated native permission proof on 2026-10-11, `gpt-6.1-sol` / `high`; effective restrictions verified; actual `apply_patch` refused; outside-root read refused; before/after canary SHA256 equal; app-server exited and scratch removed | Does not establish installed-plugin promotion, BB lifecycle cancellation or a full BB role workflow on this build |
 
 From the repository root with authenticated Codex available, run the bounded proof:
@@ -821,7 +821,8 @@ From the repository root with authenticated Codex available, run the bounded pro
 node scripts/prove-bb-reviewer-permissions.mjs --native
 ```
 
-The [retained proof](../../scripts/prove-bb-reviewer-permissions.mjs) uses disposable
+The [retained proof](../../scripts/prove-bb-reviewer-permissions.mjs) tests the
+current transport source directly, without a provisional version rewrite. It uses disposable
 non-Git scratch and one model turn with a 120-second deadline. It records actual
 app-server arguments, private-home initial filenames, effective configuration,
 profile, evaluated tool inventory, raw streams, exit/signal/error, canary hashes
@@ -845,5 +846,7 @@ the captured evaluated inventory array and object form, unknown tools, malformed
 or ambiguous inventory, and failure cleanup. Profile substitution, forged calls
 and cancellation use deterministic app-server fixtures in the
 [transport tests](../../test/bb-reviewer.test.mjs). These fixture controls are
-separate from the actual native operations. A failed or incomplete native proof
-never admits a version. Review and installed-plugin promotion are separate steps.
+separate from the actual native operations. Missing or widened runtime restrictions
+refuse startup even on a previously measured version. A failed or incomplete native
+proof does not establish enforcement on the measured build. Review and installed-plugin
+promotion are separate steps.

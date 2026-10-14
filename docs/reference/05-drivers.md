@@ -30,8 +30,8 @@ These paths have SDK fixture coverage, distinct from the historical live profile
 
 The historical full six-role workflow used BB 0.45.0, SDK 0.6.15 and Codex CLI
 0.162.0-alpha.2 on the 2026-10-08 local macOS 27.0 / Node 25.2.1 source profile
-with `gpt-6.1-sol`, `low` and the shipped pipeline. The currently admitted
-0.162.0-alpha.17.2 build has an isolated native permission proof with
+with `gpt-6.1-sol`, `low` and the shipped pipeline. Codex CLI
+0.162.0-alpha.17.2 has a historical isolated native permission proof with
 `gpt-6.1-sol`, `high`; it does not establish `xhigh` or the full BB workflow on
 that build. [Compatibility proof](02-host.md#bb-reviewer-compatibility-proof).
 Other profiles are unverified; the adapter is source-only and unreleased. [Support and limits](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support).
@@ -1288,7 +1288,7 @@ The constrained provider requests and verifies the effective Codex read-only
 sandbox, approval policy never and explicit model before starting a turn.
 
 <!-- quote:../../README.md -->
-The optional plugin's constrained reviewer admits exactly Codex CLI `0.162.0-alpha.17.2`.
+The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 <!-- /quote -->
 
 Apps, plugins and remote plugins are disabled at process startup, together with shell, unified
@@ -1300,6 +1300,8 @@ workspace config or MCP servers. Its dynamic tool allowlist contains the four
 Host bridge names. Unclassified tools and forged calls are denied
 before dispatch. Effective startup configuration must confirm the private home,
 disabled features and no MCP servers; unexpected managed servers refuse launch.
+The checks require the effective restrictions on every build; missing or widened
+capabilities refuse startup regardless of the reported Codex version.
 Model and effort changes require a fresh session. Read roots come from the authenticated BB thread environment on
 the local coordinator host. Remote hosts are refused.
 

@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns actual artifact IDs without copying raw through a model. A checkout
   recorder preserves complete stdout/stderr and direct runner exits; opaque
   attachment acceptance remains separate from evidence certification.
+- Remove the constrained BB reviewer's exact Codex version requirement. Admission
+  checks the effective read-only sandbox without network access, approval policy
+  `never`, model and effort, private home, disabled features and empty MCP config.
+  Missing or widened restrictions refuse startup. The native permission proof
+  records the actual executable version and hash without rewriting the transport
+  or requiring a numeric version. Historical native measurements remain separate
+  from fixture coverage and installed-plugin verification.
 
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object
@@ -72,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   role/provider pairs, permission modes and models refuse before launch.
 
 ## [0.26.0] — 2026-10-12
+
+- Admit BB 0.46.0 in the optional source plugin's host range
+  (`>=0.45.0 <0.47.0`). The measured full workflow remains the BB 0.45.0 profile.
 
 - Pin the optional BB source plugin's Hono dependency to `4.13.13` to address
   the reported advisories in its SDK optional-peer dependency graph.
