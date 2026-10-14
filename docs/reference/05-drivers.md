@@ -847,13 +847,19 @@ The deterministic driver/status/warden regression is
 one config, one password — plus a session in it. There is no messaging socket, so wake is a
 follow-up prompt on an idle session: the contact point is the record path, handed over by the
 participant's first bus call — the record names the session, so no caller names it explicitly.
-An idle session takes the text, a running turn refuses and the warden retries; `checkWake`
-smokes the channel without spending a turn. The record carries home, task and address, and the
+Wake posts only after HTTP 200 returns a nonempty message array, either directly or in
+`data`, whose newest message is `type: idle`. HTTP errors, rejected requests, malformed
+responses and empty lists return `ok: false` without posting; busy turns also refuse, and
+the warden retries. `node test/promptobus-opencode-wake-state.test.mjs` measures both array
+envelopes and the refusal paths with stub HTTP responses. `checkWake` smokes the channel
+without spending a turn. The record carries home, task and address, and the
 MCP identity check proves the caller against them; the teamlead lift binds the same pointer
 through its home. `inspect` and `stop` arrive ref-only and resolve the record through
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
 path falls back to the lift ref; `sweepParticipant` reaps registry records matching both task and
 participant address, record, log and entry together. An unnamed participant removes nothing.
+Single-participant `sweep` awaits the cleanup hook under the journal lock before removing
+participant files or reporting completion; rejected hooks produce the cleanup warning.
 `done` awaits cleanup for each dead participant of a closed task. Live or unknown participants
 with a cleanup hook keep the sweep pending, even without a worktree; a later `done` reaps them
 after their sessions are gone. The lift starts `serve --port 0`, reads the listening
@@ -865,7 +871,10 @@ outcome ends the wait), `DELETE /api/session/:id`. The prompt names no model —
 on the config `model` default, which the plan writes. Auth failures fail the lift loudly; no
 login verdict is probed. The record lands before the first holder call (pid first, then url,
 then session id), so a crash past lift keeps a handle `stop` reaps by; a failed lift reaps the
-holder and removes record and log, and the next attempt opens a fresh log. The bound lift
+holder exactly once and removes record, log and registry entry, preserving the original
+failure even when session creation or the first prompt rejects its HTTP request. The next
+attempt opens a fresh log. The deterministic stub-holder check is
+`node test/promptobus-opencode-lift-failure.test.mjs`. The bound lift
 points the bus MCP entry and the holder env at the session record. Reviewer and approver
 lift on the same holder with the deny map in config. No loop-guard hook is
 installed (the holder takes no settings file) — scope enforcement is prompt rules plus the

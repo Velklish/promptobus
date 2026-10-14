@@ -527,7 +527,7 @@ function sweepWithHost(said) {
     const said = JSON.parse(process.env.STAND_TOOL_BIN);
     const base = createStandaloneHost({ cwd: ${JSON.stringify(SB)} });
     const host = said ? { ...base, resolveToolBin: () => said } : base;
-    process.exitCode = sweep(host, { task: ${JSON.stringify(OFFPATH)}, address: 'worker:offpath' });`;
+    process.exitCode = await sweep(host, { task: ${JSON.stringify(OFFPATH)}, address: 'worker:offpath' });`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     encoding: 'utf8', env: { ...process.env, STAND_TOOL_BIN: JSON.stringify(said) },
   });

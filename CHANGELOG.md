@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Single-participant `sweep` awaits asynchronous harness cleanup under the journal lock before reporting completion. Rejected hooks produce the cleanup warning, and a concurrent re-lift cannot borrow the lock.
+
+- OpenCode wake requires a valid idle message before posting a follow-up turn; HTTP errors, malformed or empty state and busy turns refuse for retry.
+
+- OpenCode lift failures clean up the holder, record, log and registry entry even when a holder HTTP request rejects; the original failure is preserved.
+
 - Show OpenCode stall recovery instructions in status and warden reports instead
   of throwing when the driver is asked for its recovery route.
 - Progress `status` stays in the orchestrator mailbox without its own native or

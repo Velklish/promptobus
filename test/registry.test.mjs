@@ -492,7 +492,7 @@ test('dismiss, stop and sweep accept a declared gate and sweep keeps its owner t
     assert.match(await capture(() => stop(host, { task: task.id, address: 'security:x' },
       { registry: drivers })), /session of participant security:x closed/);
     assert.deepEqual(calls, ['security-session']);
-    assert.match(capture(() => sweep(host, { task: task.id, address: 'security:x' },
+    assert.match(await capture(() => sweep(host, { task: task.id, address: 'security:x' },
       { registry: drivers })), /artifacts of security:x removed/);
   } finally {
     store.bindSessionIdentity(null);
@@ -555,9 +555,9 @@ function gateSweepFixture(label, ownerName) {
     writeFileSync(settings, 'gate settings');
     return { artifact, mcp, settings };
   };
-  const sweepGate = (address) => {
+  const sweepGate = async (address) => {
     store.bindSessionIdentity(() => ({ id: ownerSession }));
-    try { return capture(() => sweep(host, { task: task.id, address }, { registry: drivers })); }
+    try { return await capture(() => sweep(host, { task: task.id, address }, { registry: drivers })); }
     finally { store.bindSessionIdentity(null); }
   };
   const filesGone = ({ artifact, mcp, settings }) => {
@@ -569,7 +569,7 @@ function gateSweepFixture(label, ownerName) {
 }
 
 for (const ownerName of ['worker', 'builder']) {
-  test(`sweep of a main-tree gate keeps the ${ownerName} owner tree and clears gate files`, () => {
+  test(`sweep of a main-tree gate keeps the ${ownerName} owner tree and clears gate files`, async () => {
     const fixture = gateSweepFixture(`owner-${ownerName}`, ownerName);
     const gateTree = ownerName === 'builder' ? path.join(fixture.root, 'owner-alias') : fixture.ownerTree;
     if (ownerName === 'builder') {
@@ -578,7 +578,7 @@ for (const ownerName of ['worker', 'builder']) {
       assert.equal(realpathSync(gateTree), realpathSync(fixture.ownerTree));
     }
     const gate = fixture.addGate('merge:x', gateTree);
-    const output = fixture.sweepGate('merge:x');
+    const output = await fixture.sweepGate('merge:x');
     assert.match(output, /belongs to the owner step and stays in place/);
     assert.match(output, /artifacts of merge:x removed/);
     assert.ok(existsSync(path.join(fixture.ownerTree, 'base.txt')));
@@ -588,13 +588,13 @@ for (const ownerName of ['worker', 'builder']) {
   });
 }
 
-test('sweep of a main-tree gate removes its own separate accepted tree and branch', () => {
+test('sweep of a main-tree gate removes its own separate accepted tree and branch', async () => {
   const fixture = gateSweepFixture('separate', 'worker');
   const gateTree = path.join(fixture.root, 'gate-tree');
   const gateBranch = 'worktree-promptobus-gate-separate';
   assert.equal(fixture.git('worktree', 'add', '-q', '-b', gateBranch, gateTree).status, 0);
   const gate = fixture.addGate('merge:x', gateTree);
-  const output = fixture.sweepGate('merge:x');
+  const output = await fixture.sweepGate('merge:x');
   assert.match(output, /worktree .* removed .*branch worktree-promptobus-gate-separate deleted/);
   assert.ok(!existsSync(gateTree));
   assert.notEqual(fixture.git('show-ref', '--verify', `refs/heads/${gateBranch}`).status, 0);

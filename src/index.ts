@@ -50,7 +50,7 @@ export {
   beatWarden, claimWarden, clearWarden, clearWardenExit, healthFile, lastTurnAt, liveWarden,
   lockBusyError, logWarden, markTranscript, markTurn, onTaskLock, readBinding, readHealth, readStalls,
   readTranscript, readWake, readWardenExit, readWardenGeneration, sessionFile, sessionsDir, stallsFile, tailWardenLog,
-  WARDEN_BEAT_SEC, wakeFile, wardenLogFile, wardenMarkFile, withBlobLock, withTaskLock, workersDir,
+  WARDEN_BEAT_SEC, wakeFile, wardenLogFile, wardenMarkFile, withBlobLock, withTaskLock, withTaskLockAsync, workersDir,
   writeBinding, bindingNames, dropBinding, writeHealth, writeStalls, writeWake, writeWardenExit,
 } from './sidecar.js';
 export type {

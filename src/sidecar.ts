@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSyn
 import path from 'node:path';
 import process from 'node:process';
 import { writeFileAtomic, writeJsonAtomic } from './fs/atomic.js';
-import { LOCK_WAIT_MS, withDirLock } from './fs/lock.js';
+import { LOCK_WAIT_MS, withDirLock, withDirLockAsync } from './fs/lock.js';
 import type { LockHolder } from './fs/lock.js';
 import { pidAlive } from './fs/proc.js';
 import { blobLockDir, lockDir } from './v1/layout.js';
@@ -384,6 +384,21 @@ export function withTaskLock<T>(home: string, id: string, fn: () => T, {
     session,
     // No task directory at all is not a busy lock: we speak with the words and the CLASS of
     // `readTask` — the same text with a stack or without reads as two different outcomes.
+    onMissing: () => new GateError(`task ${id} is not in ${tasksDir(home)}`),
+    onBusy: (held, waitedMs) => lockBusyError(id, lock, held, waitedMs),
+  });
+}
+
+/** The journal lock and cache suspension held until asynchronous work settles. */
+export function withTaskLockAsync<T>(home: string, id: string, fn: () => Promise<T>, {
+  waitMs = LOCK_WAIT_MS, session = null,
+}: { waitMs?: number; session?: string | null } = {}): Promise<T> {
+  const task = requireTaskId(id);
+  const lock = lockDir(home, task);
+  const guarded = suspenders.reduce<() => Promise<T>>((inner, suspend) => () => suspend(inner), fn);
+  return withDirLockAsync(lock, guarded, {
+    waitMs,
+    session,
     onMissing: () => new GateError(`task ${id} is not in ${tasksDir(home)}`),
     onBusy: (held, waitedMs) => lockBusyError(id, lock, held, waitedMs),
   });

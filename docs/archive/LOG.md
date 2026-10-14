@@ -533,3 +533,6 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-347"></a>`PB-347-opencode-stall-route` · 2026-10-13 · completed · — · A stalled opencode participant crashes status and the warden because stallRoute is missing
 - <a id="pb-319"></a>`PB-319-status-does-not-wake-orchestrator` · 2026-10-13 · completed · — · A progress status wakes the orchestrator like a result does
 - <a id="pb-367"></a>`PB-367-scoped-test-groups` · 2026-10-13 · completed · — · Select local test groups from affected subsystems while retaining full acceptance coverage
+- <a id="pb-349"></a>`PB-349-opencode-lift-http-exception-cleanup` · 2026-10-13 · completed · `b515cdbee4` · An HTTP exception during OpenCode lift bypasses holder cleanup before registry registration
+- <a id="pb-351"></a>`PB-351-opencode-wake-unknown-state` · 2026-10-13 · completed · `b515cdbee4` · OpenCode wake posts another turn when the preceding turn state is unreadable
+- <a id="pb-353"></a>`PB-353-opencode-async-sweep-completion` · 2026-10-13 · completed · `b515cdbee4` · Single-participant sweep returns before asynchronous harness cleanup completes

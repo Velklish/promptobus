@@ -98,6 +98,8 @@ try {
     pidAlive(peer.child.pid) && pidAlive(other.child.pid), 'dummy holder liveness');
 
   await capture(async () => sweep(SB, { task: TASK, address: 'worker:accepted' }, { registry }));
+  check(': public opencode sweep completes its harness cleanup before returning',
+    removed(accepted), 'holder cleanup was pending on return');
   await Promise.all(pending.splice(0));
   check(': public opencode sweep removes only the selected dead participant',
     removed(accepted) && deleted.join(',') === '/api/session/accepted', JSON.stringify(deleted));
