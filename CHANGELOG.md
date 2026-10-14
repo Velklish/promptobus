@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenCode wake requires a valid idle message before posting a follow-up turn; HTTP errors, malformed or empty state and busy turns refuse for retry.
 
 - OpenCode lift failures clean up the holder, record, log and registry entry even when a holder HTTP request rejects; the original failure is preserved.
+- OpenCode holder tests report each socket-dependent check as skipped when
+  localhost listening is denied with `EACCES` or `EPERM`. Pure checks continue;
+  other listener errors still fail the file.
+  The listener regression also runs from checkout paths with spaces and Unicode.
 
 - Show OpenCode stall recovery instructions in status and warden reports instead
   of throwing when the driver is asked for its recovery route.

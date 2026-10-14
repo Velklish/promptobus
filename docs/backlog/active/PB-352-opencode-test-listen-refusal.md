@@ -1,10 +1,11 @@
 # PB-352 · OpenCode holder tests abort on denied localhost binding instead of reporting named skips
 
-- **Order:** 79
 - **Scope:** [05. Drivers — OPENCODE](../../reference/05-drivers.md)
 - **Created:** 2026-10-06
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 79
+- **Taken:** 2026-10-13
 
 ## Context
 

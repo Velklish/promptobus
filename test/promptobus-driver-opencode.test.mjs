@@ -3,12 +3,12 @@
 // Subject: what `prepare` hands the lift (holder argv, config file, env), the registry entry,
 // the holder protocol mapping against a stub server, and the availability probe. The live lift
 // is the task's verification, run once by hand against the real binary.
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeSandbox } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-driver-opencode-');
@@ -284,36 +284,47 @@ const stub = createServer((req, res) => {
     res.writeHead(404).end();
   });
 });
-await new Promise((resolve) => { stub.listen(0, '127.0.0.1', resolve); });
-const stubUrl = holderUrl(stub.address().port);
+const stubListening = await listenTestSocket(stub, { port: 0, host: '127.0.0.1' });
+const stubUrl = holderUrl(stubListening.ok ? stub.address().port : 1);
 
-check(': readiness is an answered session list',
-  await waitReady(stubUrl, 'secret', { timeoutMs: 2000, stepMs: 50 }) === true
-  && await waitReady(holderUrl(1), 'secret', { timeoutMs: 300, stepMs: 50 }) === false,
-  'stub readiness');
+if (stubListening.ok) {
+  check(': readiness is an answered session list',
+    await waitReady(stubUrl, 'secret', { timeoutMs: 2000, stepMs: 50 }) === true
+    && await waitReady(holderUrl(1), 'secret', { timeoutMs: 300, stepMs: 50 }) === false,
+    'stub readiness');
 
-const created = await createSession(stubUrl, 'secret', 'worker:x');
-check(': session create returns the server id',
-  created.status === 200 && created.data?.data?.id === 'ses_stub', JSON.stringify(created.data));
+  const created = await createSession(stubUrl, 'secret', 'worker:x');
+  check(': session create returns the server id',
+    created.status === 200 && created.data?.data?.id === 'ses_stub', JSON.stringify(created.data));
 
-const sent = await sendPrompt(stubUrl, 'secret', 'ses_stub', 'work');
-check(': the first turn posts the prompt text',
-  sent.status === 200, JSON.stringify(sent.data));
+  const sent = await sendPrompt(stubUrl, 'secret', 'ses_stub', 'work');
+  check(': the first turn posts the prompt text',
+    sent.status === 200, JSON.stringify(sent.data));
 
-const messages = await readMessages(stubUrl, 'secret', 'ses_stub');
-check(': the message tail carries the idle outcome',
-  idleOutcome(messages?.data) === 'succeeded', JSON.stringify(messages?.data));
+  const messages = await readMessages(stubUrl, 'secret', 'ses_stub');
+  check(': the message tail carries the idle outcome',
+    idleOutcome(messages?.data) === 'succeeded', JSON.stringify(messages?.data));
 
-const deleted = await deleteSession(stubUrl, 'secret', 'ses_stub');
-check(': session delete answers 204',
-  deleted.status === 204, String(deleted.status));
+  const deleted = await deleteSession(stubUrl, 'secret', 'ses_stub');
+  check(': session delete answers 204',
+    deleted.status === 204, String(deleted.status));
 
-check(': every holder call went to the measured paths with basic auth',
-  ['GET /api/session', 'POST /api/session', 'POST /api/session/ses_stub/prompt',
-    'GET /api/session/ses_stub/message?limit=5', 'DELETE /api/session/ses_stub']
-    .every((line) => seen.includes(line)),
-  seen.join(' · '));
-stub.close();
+  check(': every holder call went to the measured paths with basic auth',
+    ['GET /api/session', 'POST /api/session', 'POST /api/session/ses_stub/prompt',
+      'GET /api/session/ses_stub/message?limit=5', 'DELETE /api/session/ses_stub']
+      .every((line) => seen.includes(line)),
+    seen.join(' · '));
+  stub.close();
+} else {
+  for (const name of [
+    ': readiness is an answered session list',
+    ': session create returns the server id',
+    ': the first turn posts the prompt text',
+    ': the message tail carries the idle outcome',
+    ': session delete answers 204',
+    ': every holder call went to the measured paths with basic auth',
+  ]) skip(name, stubListening.reason);
+}
 
 // --- availability -----------------------------------------------------------
 
@@ -455,37 +466,45 @@ const idleStub = createServer((req, res) => {
 });
 let idleMessages = [{ type: 'idle', outcome: 'succeeded' }];
 const idlePrompts = [];
-await new Promise((resolve) => { idleStub.listen(0, '127.0.0.1', resolve); });
-const idleUrl = holderUrl(idleStub.address().port);
-writeFileSync(idleRecord, JSON.stringify({
-  url: idleUrl, password: 'secret', sessionId: 'ses_idle', holderPid: process.pid,
-}));
+const idleListening = await listenTestSocket(idleStub, { port: 0, host: '127.0.0.1' });
+if (idleListening.ok) {
+  const idleUrl = holderUrl(idleStub.address().port);
+  writeFileSync(idleRecord, JSON.stringify({
+    url: idleUrl, password: 'secret', sessionId: 'ses_idle', holderPid: process.pid,
+  }));
 
-const wokenIdle = await activate({ ref: 'worker:wake', endpoint: idleRecord },
-  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
-check(': an idle session takes the follow-up turn',
-  wokenIdle.ok === true && idlePrompts.length === 1 && idlePrompts[0].includes(WAKE_TASK),
-  `${JSON.stringify(wokenIdle)} · prompts ${idlePrompts.length}`);
+  const wokenIdle = await activate({ ref: 'worker:wake', endpoint: idleRecord },
+    { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+  check(': an idle session takes the follow-up turn',
+    wokenIdle.ok === true && idlePrompts.length === 1 && idlePrompts[0].includes(WAKE_TASK),
+    `${JSON.stringify(wokenIdle)} · prompts ${idlePrompts.length}`);
 
-const wokenShape = await activate({ ref: 'worker:wake', endpoint: { socket: idleRecord, token: null } },
-  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
-check(': the warden-shaped target wakes through its socket',
-  wokenShape.ok === true && idlePrompts.length === 2,
-  `${JSON.stringify(wokenShape)} · prompts ${idlePrompts.length}`);
+  const wokenShape = await activate({ ref: 'worker:wake', endpoint: { socket: idleRecord, token: null } },
+    { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+  check(': the warden-shaped target wakes through its socket',
+    wokenShape.ok === true && idlePrompts.length === 2,
+    `${JSON.stringify(wokenShape)} · prompts ${idlePrompts.length}`);
 
-idleMessages = [{ type: 'assistant' }];
-const wokenBusy = await activate({ ref: 'worker:wake', endpoint: idleRecord },
-  { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
-check(': a running turn refuses honestly instead of queueing blind',
-  wokenBusy.ok === false && /running/.test(wokenBusy.error ?? ''),
-  JSON.stringify(wokenBusy));
+  idleMessages = [{ type: 'assistant' }];
+  const wokenBusy = await activate({ ref: 'worker:wake', endpoint: idleRecord },
+    { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
+  check(': a running turn refuses honestly instead of queueing blind',
+    wokenBusy.ok === false && /running/.test(wokenBusy.error ?? ''),
+    JSON.stringify(wokenBusy));
+
+  idleStub.close();
+} else {
+  for (const name of [
+    ': an idle session takes the follow-up turn',
+    ': the warden-shaped target wakes through its socket',
+    ': a running turn refuses honestly instead of queueing blind',
+  ]) skip(name, idleListening.reason);
+}
 
 const wokenNowhere = await activate({ ref: 'worker:wake', endpoint: path.join(SB, 'missing.json') },
   { task: WAKE_TASK, address: 'worker:wake', unread: 1, messages: [] });
 check(': a contact point with no record refuses',
   wokenNowhere.ok === false, JSON.stringify(wokenNowhere));
-idleStub.close();
-stub.close();
 
 // --- live proof fixture -------------------------------------------------------
 
