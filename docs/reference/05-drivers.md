@@ -833,6 +833,16 @@ Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/a
 Registry: the harness session registry (`harnessStateHome('opencode')`), ref → record path.
 An opencode session carries no CLI owner identity (`identityVar: null`).
 
+**Stall recovery.** Status and the warden ask the OpenCode driver's `stallRoute` for
+recovery instructions. For `gone` or `stale`, nobody can be woken: delivered work needs no
+recovery; otherwise repeat the original lift with `--harness opencode`. For `wake-taken`,
+check the session record and the holder log beside it; the bound session restores its
+contact point on its next bus call. Other stalls direct you to the same record and log.
+A follow-up prompt runs when the session is idle; a running turn holds queued mail until
+it ends. The route does not offer an interactive attach or resume a session itself.
+The deterministic driver/status/warden regression is
+`node test/promptobus-opencode-stall-route.test.mjs`.
+
 **What opencode does differently.** A participant is a `serve` holder of its own — one port,
 one config, one password — plus a session in it. There is no messaging socket, so wake is a
 follow-up prompt on an idle session: the contact point is the record path, handed over by the
