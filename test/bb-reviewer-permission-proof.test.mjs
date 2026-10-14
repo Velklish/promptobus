@@ -61,26 +61,26 @@ test('permission proof failure cleanup records real hashes and preserves the ori
   const log = console.log;
   const argv = process.argv;
   const exitCode = process.exitCode;
-  const version = process.env.PB_TEST_CODEX_VERSION;
+  const control = process.env.PB_TEST_CONTROL;
   let evidence;
   childProcess.spawn = (_, args, options) => spawn(process.execPath,
     [new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url).pathname, ...args], options);
   syncBuiltinESMExports();
   console.log = text => { evidence = JSON.parse(text); };
   process.argv = [process.execPath, 'proof-test', '--before'];
-  process.env.PB_TEST_CODEX_VERSION = 'unverified';
+  process.env.PB_TEST_CONTROL = 'home';
   try {
     await main();
     assert.equal(evidence.verdict, 'FAIL');
-    assert.match(evidence.error.message, /requires the verified Codex version/);
+    assert.equal(evidence.error.message, 'Codex reviewer did not use its private home; no thread started');
     assert.deepEqual(evidence.afterHashes, evidence.beforeHashes);
     assert.equal(evidence.scratchRemoved, true);
     assert.equal(evidence.childReaped, true);
   } finally {
     childProcess.spawn = spawn; syncBuiltinESMExports(); console.log = log;
     process.argv = argv; process.exitCode = exitCode;
-    if (version === undefined) delete process.env.PB_TEST_CODEX_VERSION;
-    else process.env.PB_TEST_CODEX_VERSION = version;
+    if (control === undefined) delete process.env.PB_TEST_CONTROL;
+    else process.env.PB_TEST_CONTROL = control;
   }
 });
 

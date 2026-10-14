@@ -6,8 +6,10 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.45.0 or 0.46.0 and Plugin SDK 0.6.15 on one local host. Use Codex CLI 0.162.0-alpha.17.2 and
-sign in with `codex`. The provider copies only `auth.json` into its private Codex
+Use BB 0.45.0 or 0.46.0 and Plugin SDK 0.6.15 on one local host. Install Codex CLI
+and sign in with `codex`. The provider verifies the required runtime restrictions,
+without an exact or maximum numeric Codex version requirement.
+The provider copies only `auth.json` into its private Codex
 home; it does not modify the original authentication or copy personal config.
 
 From this directory, run `npm ci`, `bb plugin build`, and `bb plugin install .`.
@@ -32,8 +34,8 @@ Host classification; native MCP stays disabled. Prompt text is not the enforceme
 Each read uses the authenticated BB thread's actual local environment as its root.
 The host entry performs bounded reads and rejects paths outside that root. Client
 metadata never grants another thread access. An effective sandbox, approval or
-model mismatch refuses startup before the first model turn. Unverified Codex
-versions are refused; a newer version requires repeating the permission proof.
+model mismatch refuses startup before the first model turn. Missing or widened
+runtime restrictions refuse startup regardless of the reported Codex version.
 See the [compatibility proof](../docs/reference/02-host.md#bb-reviewer-compatibility-proof)
 for the measured versions, native denials and reproducible test. The test matches
 the entire reviewed exec source, call/output identity and turn, and independent
@@ -238,8 +240,8 @@ account caches and defaults are unchanged.
 | `acp-cursor` | worker, approver | SDK host/provider account windows, or unknown |
 | `acp-opencode` | worker | SDK host/provider account windows, or unknown |
 
-The host range is BB `>=0.45.0 <0.47.0` with SDK 0.6.15. The measured profile
-is BB 0.45.0 and the reviewer's verified Codex CLI 0.162.0-alpha.17.2. BB 0.46.0
+The host range is BB `>=0.45.0 <0.47.0` with SDK 0.6.15. The historical native
+permission proof measured Codex CLI 0.162.0-alpha.17.2. BB 0.46.0
 loads; its full workflow is not a separate measurement. Cursor/OpenCode selection,
 worker provisioning, authenticated tools and recovery, and Cursor acceptance
 predecessors have SDK fixture coverage. This is separate from a measured live

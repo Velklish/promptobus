@@ -42,9 +42,9 @@ test('BB reviewer refusal covers a missing or widened effective sandbox', () => 
 });
 
 test('BB reviewer refuses effective model substitution and approval escalation', () => {
-  assert.throws(() => verifyReviewerProfile({ model: 'other', sandbox: { type: 'readOnly' }, approvalPolicy: 'never' }, 'model'), /profile mismatch/);
-  assert.throws(() => verifyReviewerProfile({ model: 'model', sandbox: { type: 'readOnly' }, approvalPolicy: 'on-request' }, 'model'), /profile mismatch/);
-  assert.doesNotThrow(() => verifyReviewerProfile({ model: 'model', sandbox: { type: 'readOnly' }, approvalPolicy: 'never' }, 'model'));
+  assert.throws(() => verifyReviewerProfile({ model: 'other', sandbox: { type: 'readOnly', networkAccess: false }, approvalPolicy: 'never' }, 'model'), /profile mismatch/);
+  assert.throws(() => verifyReviewerProfile({ model: 'model', sandbox: { type: 'readOnly', networkAccess: false }, approvalPolicy: 'on-request' }, 'model'), /profile mismatch/);
+  assert.doesNotThrow(() => verifyReviewerProfile({ model: 'model', sandbox: { type: 'readOnly', networkAccess: false }, approvalPolicy: 'never' }, 'model'));
 });
 
 test('BB reviewer refuses actual shell, edit and canonical write requests before dispatch', async () => {
@@ -71,15 +71,17 @@ test('BB reviewer refuses actual shell, edit and canonical write requests before
   } finally { await session.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('BB reviewer refuses an unverified Codex build before thread creation', async () => {
+test('BB reviewer admits Codex versions by effective restrictions without a version bound', async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-bb-version-'));
   const executable = path.join(directory, 'codex-fake');
   copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable);
   chmodSync(executable, 0o755);
   try {
-    for (const version of ['0.162.0-alpha.2', '0.162.0-alpha.17.1', '0.162.0-alpha.17.2-extra', '0.163.0']) {
-      await assert.rejects(openBbReviewer({ directory, executable, model: 'model',
-        env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: version } }), /requires the verified Codex version/);
+    for (const version of ['0.162.0-alpha.2', '0.162.0-alpha.17.2', '0.162.1', '0.163.0', '1.0.0']) {
+      const session = await openBbReviewer({ directory, executable, model: 'model',
+        env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: version } });
+      try { assert.equal(session.threadId, 'review-thread'); }
+      finally { await session.close(); }
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -191,14 +193,14 @@ test('BB reviewer reports unexpected native exit after an acknowledged turn', as
 });
 
 
-test('BB reviewer admits exactly the newly measured Codex build in the deterministic fixture', async () => {
+test('BB reviewer admits the installed Codex version in the deterministic fixture', async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-bb-version-'));
   const executable = path.join(directory, 'codex-fake');
   copyFileSync(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url), executable);
   chmodSync(executable, 0o755);
   try {
     const session = await openBbReviewer({ directory, executable, model: 'model', effort: 'high',
-      env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: '0.162.0-alpha.17.2' } });
+      env: { ...process.env, CODEX_HOME: directory, PB_TEST_CODEX_VERSION: '0.162.1' } });
     try { assert.equal(session.threadId, 'review-thread'); }
     finally { await session.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -213,11 +215,17 @@ test('BB reviewer fixture rejects substituted startup restrictions, private home
     for (const [control, expected] of [
       ['home', /private home/], ['feature', /startup restrictions unavailable/],
       ['missing-sandbox', /profile mismatch/], ['widened-sandbox', /profile mismatch/],
+      ['missing-network', /profile mismatch/], ['network', /profile mismatch/],
       ['approval', /profile mismatch/], ['model', /profile mismatch/],
       ['effort', /effective effort mismatch/], ['identity', /different thread identity/],
     ]) {
-      await assert.rejects(openBbReviewer({ directory, executable, model: 'model', effort: 'high', threadId: 'review-thread',
-        env: { ...process.env, CODEX_HOME: directory, PB_TEST_CONTROL: control } }), expected, control);
+      let session;
+      try {
+        await assert.rejects(async () => {
+          session = await openBbReviewer({ directory, executable, model: 'model', effort: 'high', threadId: 'review-thread',
+            env: { ...process.env, CODEX_HOME: directory, PB_TEST_CONTROL: control, PB_TEST_CODEX_VERSION: '0.162.1' } });
+        }, expected, control);
+      } finally { await session?.close(); }
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Remove the constrained BB reviewer's exact Codex version requirement. Admission
+  checks the effective read-only sandbox without network access, approval policy
+  `never`, model and effort, private home, disabled features and empty MCP config.
+  Missing or widened restrictions refuse startup. The native permission proof
+  records the actual executable version and hash without rewriting the transport
+  or requiring a numeric version. Historical native measurements remain separate
+  from fixture coverage and installed-plugin verification.
+
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object
   type can make a client reject the entire bridge tool list.

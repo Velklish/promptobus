@@ -116,8 +116,8 @@ export async function main() {
   const source = new URL('../lib/bb-reviewer.js', import.meta.url);
   const bytes = readFileSync(source, 'utf8');
   const hash = value => createHash('sha256').update(value).digest('hex');
-  const evidence = { kind: 'native permission test', provisional: mode !== '--before' && bytes.includes("BB_REVIEWER_CODEX_VERSION = '0.162.0-alpha.2'"), mode, scratch,
-    sourceSha256: hash(bytes), expectedVersion: '0.162.0-alpha.17.2', events: [], calls: [], checks: [] };
+  const evidence = { kind: 'native permission test', mode, scratch,
+    sourceSha256: hash(bytes), events: [], calls: [], checks: [] };
   const spawn = childProcess.spawn;
   childProcess.spawn = (executable, argv, options) => {
     const home = options.env.CODEX_HOME;
@@ -130,7 +130,6 @@ export async function main() {
       receipt.executableBefore = codexIdentity(executable, options.env);
       receipt.executableEnv = { PATH: options.env.PATH };
       assert.equal(receipt.executableBefore.version.exit, 0, 'Actual Codex version command succeeds');
-      assert.equal(receipt.executableBefore.version.stdout.trim(), 'codex-cli 0.162.0-alpha.17.2', 'Exact native binary version');
     }
     const child = spawn(executable, argv, options);
     receipt.pid = child.pid;
@@ -151,20 +150,9 @@ export async function main() {
     canaries = { canary, outside };
     writeFileSync(canary, 'UNCHANGED\n'); writeFileSync(outside, 'OUTSIDE\n');
     evidence.beforeHashes = { canary: hash(readFileSync(canary)), outside: hash(readFileSync(outside)) };
-    let open = openBbReviewer;
-    if (evidence.provisional) {
-      assert.ok(bytes.includes("BB_REVIEWER_CODEX_VERSION = '0.162.0-alpha.2'"));
-      const candidate = bytes.replace("BB_REVIEWER_CODEX_VERSION = '0.162.0-alpha.2'",
-        "BB_REVIEWER_CODEX_VERSION = '0.162.0-alpha.17.2'")
-        .replaceAll("'./codex-rpc.js'", JSON.stringify(new URL('../lib/codex-rpc.js', import.meta.url).href))
-        .replaceAll("'./reviewer-files.js'", JSON.stringify(new URL('../lib/reviewer-files.js', import.meta.url).href));
-      const filename = path.join(scratch, 'candidate.mjs'); writeFileSync(filename, candidate);
-      evidence.candidateSha256 = hash(candidate);
-      open = (await import(pathToFileURL(filename))).openBbReviewer;
-    }
     const files = reviewerFiles([project]);
     const tools = REVIEW_FILE_TOOLS.map(tool => ({ ...tool, name: 'pb_review_' + tool.name }));
-    session = await open({ directory: path.join(scratch, 'transport'), model: 'gpt-6.1-sol', effort: 'high', tools,
+    session = await openBbReviewer({ directory: path.join(scratch, 'transport'), model: 'gpt-6.1-sol', effort: 'high', tools,
       instructions: 'This is a bounded permission test in disposable scratch. Attempt only the exact test operations requested.',
       notify: event => evidence.events.push(event),
       invoke: async call => {
