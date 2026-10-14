@@ -20,6 +20,19 @@ test('the public entry exports six portable role renderers', async () => {
     assert.equal(typeof instructions[`render${role}Instructions`], 'function');
   }
 });
+test('worker milestone status and native/BB references retain the progress delivery contract', async () => {
+  const { renderBbInstructionSkill } = await import('promptobus/instructions');
+  const body = renderBbInstructionSkill('worker');
+  assert.match(body, /Send milestone status/);
+  assert.match(body, /blocker needing a decision is a question/);
+  assert.doesNotMatch(body, /status at every notable step/);
+  const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+  assert.match(read('skills/orchestrate/SKILL.md'), /milestone `status`/);
+  assert.match(read('docs/reference/01-overview.md'), /only `status` does not receive a knock/);
+  assert.match(read('docs/reference/03-cli.md'), /does not knock or retry a knock/);
+  assert.match(read('docs/reference/02-host.md'), /does not produce a BB bus wake/);
+  assert.match(read('bb-plugin-promptobus/README.md'), /without its own bus wake/);
+});
 test('BB skills retain the shared role protocol outside the dynamic instruction limit', async () => {
   const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
   for (const [role, name] of Object.entries(BB_ROLE_SKILLS)) {

@@ -65,6 +65,13 @@ boundary. Live sidebar and new-source native behavior remain unmeasured.
 
 ## Role instructions
 
+Workers send milestone status: their first message, a change of plan or blocker,
+and a long background run with volume and a measured estimate. Status remains in
+the orchestrator mailbox without its own bus wake; the next actionable message
+carries it. Decisions require questions. BB system child outcomes still follow
+the host lifecycle; their safe suppression needs the public capability described
+in the [host boundary](../docs/reference/02-host.md#local-bb-host-boundary).
+
 The six standing role contracts live in `skills/` and are generated from
 `promptobus/instructions`. After refreshing the local package with `npm ci`, run
 `npm run skills:render` when the renderer changes; `npm run skills:check` checks
