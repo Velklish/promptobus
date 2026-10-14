@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   localhost listening is denied with `EACCES` or `EPERM`. Pure checks continue;
   other listener errors still fail the file.
   The listener regression also runs from checkout paths with spaces and Unicode.
+- README lists four production harness drivers, including OpenCode; supported
+  roles and measured live coverage differ by harness.
+- The CLI reference states the owner-result currency precondition of a
+  writes-main-tree gate: the owner result must be recorded at or after its
+  current assignment.
 
 - Show OpenCode stall recovery instructions in status and warden reports instead
   of throwing when the driver is asked for its recovery route.
