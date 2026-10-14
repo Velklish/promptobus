@@ -97,6 +97,52 @@ For a parenthetical break, use a spaced em dash. Preserve existing em dashes; do
 
 A release follows [releasing](releasing.md).
 
+## Local test groups
+
+`npm run test:local -- --base <commit>` is an iteration check. The base is required
+and resolves to one local commit; the command neither guesses a remote nor fetches.
+Its input is that commit against the current tracked working tree, plus untracked,
+non-ignored files. Staged and unstaged changes count. Renames retain both path names
+by treating them as deletion and addition; deleted paths still select dependencies.
+The printed plan includes the resolved base, HEAD, dirty state, changed paths,
+selected and omitted groups, file names and file counts. `--list` prints only that
+plan. A run builds `dist/`, then starts the existing isolated runner with exactly
+those files. It prints each subprocess exit code and elapsed milliseconds; file
+verdicts and check counts remain in the runner's complete output. File counts are
+not check counts. A build failure stops before tests, and a test failure stays red.
+
+The mapping in [test/groups.mjs](../../test/groups.mjs) is deliberately small:
+
+| Group | Test files |
+|---|---|
+| `model-routing` | `model-routing.test.mjs` and every `model-routing-*.test.mjs` |
+| `store` | `store.test.mjs`, `v1-engine.test.mjs`, `v1-validate.test.mjs` |
+| `reviewer-files` | `reviewer-files.test.mjs`, `reviewer-files-race.test.mjs` |
+| `integration` | Every other `test/*.test.mjs`, including CLI and source/documentation checks |
+
+A changed test selects its whole group. The only production paths eligible for a
+reduced run are `lib/fuzzy.js`, `lib/model-routing/render.js` and
+`lib/model-routing/calibrate.js`; each selects both `integration` and
+`model-routing`. CLI entry points and fixture helpers import these transitively,
+so selecting only the nearest unit test would omit consumers. The isolated store
+and reviewer-file tests do not load those modules. This is an explicit conservative
+map, not an automatically inferred dependency graph.
+
+Every other path requires the full suite: unmapped production, shared protocol or
+transport, fixtures, test helpers, runner or selection map, scripts, configuration,
+dependencies and documentation, including the archive journal. A rename to an
+unmapped path also requires full coverage. No changed paths means uncertain impact
+and selects the full suite. The plan names each fallback reason. An empty or invalid
+runner file selection is a refusal, never a successful zero-test run.
+
+Focused results support iteration only. `npm test`, the acceptance gates and CI
+still run the full suite. A comparison uses the same committed source/test/runner
+inventory for selected and complete runs and records commands, direct exit codes,
+file/check counts and timings separately. Neither an omitted group nor a passing
+result from another SHA certifies full acceptance. The fixtures in
+[test/test-groups.test.mjs](../../test/test-groups.test.mjs) exercise selection,
+Git input, the actual runner and a selected dependent assertion that fails.
+
 ## Suite isolation
 
 The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. The rules below keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.

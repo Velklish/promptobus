@@ -20,6 +20,7 @@
     "prepare": "npm run build",
     "pretest": "npm run build",
     "test": "node test/run.mjs",
+    "test:local": "node scripts/test-local.mjs",
     "audit": "node scripts/audit-public.mjs",
     "docs-links:external": "node scripts/docs-links.mjs --external",
     "pins": "node scripts/check-pins.mjs",
