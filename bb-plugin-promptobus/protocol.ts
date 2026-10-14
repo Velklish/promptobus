@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { MESSAGE_TYPES, PARTICIPANT_ID_RE, TASK_ID_RE } from 'promptobus';
 import { BB_ROLE_SKILLS } from 'promptobus/instructions';
+import { launchContextSchema } from './launch-context.js';
+import { evidenceManifestSchema } from './review-evidence.js';
 
 export const roleSchema = z.enum(Object.keys(BB_ROLE_SKILLS) as [keyof typeof BB_ROLE_SKILLS, ...(keyof typeof BB_ROLE_SKILLS)[]]);
 export const reasoningSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'none', 'ultracode']);
@@ -39,6 +41,13 @@ export const bindingSchema = z.object({
   display: z.object({ label: z.string().trim().min(1), subject: z.string().trim().min(1), repository: z.string().trim().min(1) }).strict().optional(),
   execution: executionSchema.optional(),
   hostContext: hostContextSchema.optional(),
+  launchContext: launchContextSchema.optional(),
+  evidenceManifest: evidenceManifestSchema.optional(),
+  phaseAssignment: z.string().optional(),
+  phaseAssignmentPending: z.boolean().optional(),
+  phaseAssignmentDelivery: z.object({ state: z.enum(['sending', 'sent', 'queued', 'unknown', 'cancelled']),
+    epoch: z.number().int().nonnegative(), queuedId: z.string().nullable(), requestId: z.string().nullable(),
+    cancelledQueueIds: z.array(z.string()).default([]) }).strict().optional(),
   predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;

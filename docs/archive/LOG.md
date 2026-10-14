@@ -538,3 +538,5 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-353"></a>`PB-353-opencode-async-sweep-completion` · 2026-10-13 · completed · `b515cdbee4` · Single-participant sweep returns before asynchronous harness cleanup completes
 - <a id="pb-350.1"></a>`PB-350.1-readme-harness-count` · 2026-10-13 · completed · `61268b950d` · README lists three harnesses after the fourth driver ships
 - <a id="pb-336.1"></a>`PB-336.1-owner-result-currency-clause` · 2026-10-13 · completed · `61268b950d` · The CLI reference states the owner-result precondition of a writes-main-tree gate without its currency clause
+- <a id="pb-375"></a>`PB-375-bb-launch-context-preflight` · 2026-10-13 · completed · `fb2ae7bc57` · Validate executable role and control context before admitting a BB participant
+- <a id="pb-376"></a>`PB-376-bb-review-evidence-bundle` · 2026-10-13 · completed · `fb2ae7bc57` · Deliver a complete evidence manifest before starting a BB review

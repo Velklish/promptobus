@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext, makeMessageDispatchHookContext } from '@get-bb/plugin-sdk/testing';
@@ -10,6 +10,8 @@ import { engineOperation } from '../.test-build/engine-host.js';
 import { bindingStore } from '../.test-build/bindings.js';
 import { createHostEntry } from '../.test-build/host-integration.js';
 import { createBbHostIntegration } from 'promptobus/bb-host';
+import { launchFixture, evidenceFixture } from './evidence-fixture.mjs';
+import { digest, evidenceManifestSchema } from '../.test-build/review-evidence.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
@@ -144,6 +146,7 @@ async function stand(t, options = {}) {
         return { matched: options.preparationMatched ?? true, target: { kind: 'status', status: 'idle' }, thread };
       },
       clearContext: async ({ threadId }) => {
+        if (options.beforeClearContext) await options.beforeClearContext(threadId);
         nativeCatalogCleared = true; catalogs.delete(threadId); events.push('clear-context');
         return { ok: true };
       },
@@ -166,7 +169,7 @@ async function stand(t, options = {}) {
         assert.equal(input[0].text.includes(environments.get(threads.get(threadId).environmentId).path), true);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
         assert.equal((await hook(makeMessageDispatchHookContext({ thread: threads.get(threadId) }))).action, 'proceed');
-        return { ok: true }; },
+        return { ok: true, delivery: 'sent' }; },
       list: async ({ offset = 0, limit = 200 } = {}) => {
         const list = [...threads.values()].filter(t => t.archivedAt === null && t.deletedAt === null).slice(offset, offset + limit);
         if (options.beforeListReturn) await options.beforeListReturn();
@@ -178,11 +181,20 @@ async function stand(t, options = {}) {
     assert.equal(hostId, 'local');
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
+    if (method === 'launchControl') {
+      if (options.beforeControl) await options.beforeControl(input);
+      return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
+    }
+    if (method === 'read') {
+      if (options.beforeRead) await options.beforeRead(input);
+      return createHostEntry().handlers.read(input, { signal: signal ?? new AbortController().signal });
+    }
     if (method === 'canonical' || method === 'hostContext') return options.hostOperation?.(method, input) ?? { read: true };
     if (options.failFinalize && method === 'engine' && input.operation === 'finalize') throw new Error('Host unavailable');
     if (input.operation === 'finalize' && options.beforeFinalize) await options.beforeFinalize(input);
     if (input.operation === 'check' && options.beforeCheck) await options.beforeCheck(signal);
     if (input.operation === 'preserve') events.push('preserve');
+    if (input.operation === 'artifact' && options.beforeArtifact) await options.beforeArtifact(input);
     if (input.operation === 'step') {
       const entry = hostEntry ?? createHostEntry();
       return entry.handlers.engine(input, { signal: new AbortController().signal });
@@ -192,8 +204,21 @@ async function stand(t, options = {}) {
   t.after(() => host.harness.lifecycle.dispose());
   plugin(host.bb);
   const task = newTaskIdentity('engine-test').id;
-  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
-  const add = async (id, role = 'worker', extra = []) => host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.', ...extra]);
+  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
+    ...(options.noLaunchContext ? [] : ['--launch-context', JSON.stringify(launchFixture(task, 'orchestrator', 'orchestrator', root))]), ...extra]);
+  const add = async (id, role = 'worker', extra = []) => {
+    const envId = extra.includes('--environment') ? extra[extra.indexOf('--environment') + 1] : 'env';
+    const env = extra.includes('--new-environment') || extra.includes('--environment-path') ? workerEnvironment : environments.get(envId);
+    const launch = launchFixture(task, id, role, env.path, env.id === 'env' ? 'main' : 'actual-bb-branch', env.id === 'env' ? 'a'.repeat(40) : 'b'.repeat(40));
+    launch.readRoots.push(root);
+    const evidence = [];
+    if (role === 'reviewer') {
+      launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: env.id, base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+      if (!options.noManifest && !extra.includes('--evidence-manifest')) evidence.push('--evidence-manifest', JSON.stringify((await evidenceFixture(root, task, env.id === 'env' ? 'a'.repeat(40) : 'b'.repeat(40))).manifest));
+    }
+    return host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
+      ...(extra.includes('--launch-context') ? [] : ['--launch-context', JSON.stringify(launch)]), ...evidence, ...extra]);
+  };
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
@@ -206,6 +231,127 @@ async function stand(t, options = {}) {
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+test('launch preflight refuses missing bounded context before any model spawn', async t => {
+  const s = await stand(t, { noLaunchContext: true });
+  const result = await s.create();
+  assert.equal(result.exitCode, 1, 'Missing executable context must refuse before threads.spawn');
+  assert.match(result.stderr, /launch context/);
+  assert.equal(s.spawns.length, 0);
+});
+
+test('source reviewer refuses missing original manifest before any reviewer spawn', async t => {
+  const s = await stand(t, { noManifest: true });
+  assert.equal((await s.create()).exitCode, 0);
+  const before = s.spawns.length;
+  const result = await s.add('source-review', 'reviewer');
+  assert.equal(result.exitCode, 1, 'Absent original artifact IDs must not spend a review turn');
+  assert.match(result.stderr, /manifest/);
+  assert.equal(s.spawns.length, before);
+});
+
+test('review initial immutable assignment holds every original ID readable through the bound BB artifact tool', async t => {
+  const s = await stand(t); await s.create();
+  assert.equal((await s.add('original-review', 'reviewer')).exitCode, 0);
+  const launch = s.initialArgs.prompt;
+  const b = bindingStore(s.host.bb).thread('thr-2');
+  assert.ok(launch.includes(b.launchContext.role.literal.slice(0, 30)));
+  for (const ref of b.evidenceManifest.artifacts) {
+    assert.ok(launch.includes(ref.id), `Initial assignment is missing ${ref.kind} ID`);
+    const actual = JSON.parse(await s.call('thr-2', 'promptobus_artifact', { id: ref.id }));
+    assert.equal(actual.id, ref.id); assert.equal(actual.size, ref.bytes); assert.equal(actual.sha256, ref.sha256);
+  }
+});
+
+test('retained missing-ID review failure blocks zero reviewer starts until the complete initial manifest exists', async t => {
+  const observed = JSON.parse(readFileSync(new URL('../../docs/evidence/bb-orchestration-2026-10-13.json', import.meta.url), 'utf8')).evidenceDeliveryObservation;
+  assert.equal(observed.evidenceMajor, 1); assert.equal(observed.sourceFindings, 0);
+  const s = await stand(t, { noManifest: true }); await s.create();
+  const f = await evidenceFixture(s.root, s.task);
+  const incomplete = structuredClone(f.manifest); incomplete.artifacts = [];
+  const before = s.spawns.length;
+  const delayed = await s.add('first-original-review', 'reviewer', ['--evidence-manifest', JSON.stringify(incomplete)]);
+  assert.equal(delayed.exitCode, 1); assert.equal(s.spawns.length, before);
+  const admitted = await s.add('first-original-review', 'reviewer', ['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(admitted.exitCode, 0, admitted.stderr); assert.equal(s.spawns.length, before + 1);
+  for (const ref of f.manifest.artifacts) assert.ok(s.initialArgs.prompt.includes(ref.id));
+});
+
+test('complete evidence upload lands UTF-8 raw parts and actual artifact IDs without another model turn', async t => {
+  const s = await stand(t); await s.create();
+  const content = '東京 Δ '.repeat(200_000) + '\nORIGINAL_TAIL\n';
+  const file = path.join(s.root, 'original-raw.txt'); writeFileSync(file, content);
+  const before = s.spawns.length;
+  const result = await s.host.harness.behavior.runCli(['evidence', 'upload', '--task', s.task, '--file', file, '--to', 'orchestrator']);
+  assert.equal(result.exitCode, 0, result.stderr);
+  const uploaded = JSON.parse(result.stdout); assert.ok(uploaded.parts.length > 1);
+  let raw = '';
+  for (const part of uploaded.parts) raw += JSON.parse(await s.call('thr-1', 'promptobus_artifact', { id: part.id })).content;
+  assert.equal(raw, content); assert.equal(uploaded.bytes, Buffer.byteLength(content)); assert.equal(s.spawns.length, before);
+});
+
+test('bounded file control is current at each BB call and an ended grant refuses without another identity', async t => {
+  const s = await stand(t, { noLaunchContext: true });
+  const launch = launchFixture(s.task, 'orchestrator', 'orchestrator', s.root);
+  const file = path.join(s.root, 'control.json'); const snapshot = launch.control.snapshot;
+  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  assert.equal((await s.create(['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const current = JSON.parse(await s.call('thr-1', 'promptobus_task')); assert.equal(current.participant, 'orchestrator');
+  snapshot.grant.state = 'ended'; writeFileSync(file, JSON.stringify(snapshot));
+  await assert.rejects(s.call('thr-1', 'promptobus_task'), /active/); assert.equal(s.spawns.length, 1);
+});
+
+test('fresh evidence repair keeps the actor, ends the old token and supplies every original ID before resumed delivery', async t => {
+  let delivered;
+  const s = await stand(t, { assignmentSend: async ({ input }) => { delivered = input[0].text; return { ok: true, delivery: 'sent' }; } });
+  await s.create(); await s.add('phase-review', 'reviewer');
+  const oldPrompt = s.initialArgs.prompt;
+  const before = bindingStore(s.host.bb).thread('thr-2');
+  const next = structuredClone(before.launchContext);
+  next.grant.token = 'fresh-evidence-phase'; next.grant.phase = 'evidence-repair';
+  next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+  const f = await evidenceFixture(s.root, s.task);
+  const resume = extra => s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
+    '--launch-context', JSON.stringify(next), '--assignment', 'Read complete original evidence in this bounded phase.', ...extra]);
+  const missing = await resume([]); assert.equal(missing.exitCode, 1); assert.match(missing.stderr, /manifest/);
+  assert.equal(delivered, undefined); assert.equal(s.spawns.length, 2);
+  const accepted = await resume(['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(accepted.exitCode, 0, accepted.stderr);
+  assert.ok(delivered.includes('fresh-evidence-phase')); for (const ref of f.manifest.artifacts) assert.ok(delivered.includes(ref.id));
+  const after = bindingStore(s.host.bb).thread('thr-2');
+  assert.equal(after.participant, before.participant); assert.equal(after.token, before.token); assert.equal(after.threadId, before.threadId);
+  assert.equal(after.phaseAssignmentPending, false); assert.equal(s.spawns.length, 2);
+  assert.equal(s.delivery('thr-2').paused, false);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const old = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus',
+    input: { blocks: [{ type: 'text', text: oldPrompt }], text: oldPrompt } }));
+  assert.equal(old.action, 'reject', 'A queued initial assignment from the ended grant cannot activate the fresh phase');
+  const retry = await resume(['--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(retry.exitCode, 1); assert.match(retry.stderr, /fresh token/);
+});
+
+test('Stop during fresh initial assignment wins and an unknown send cannot start a mailbox-only review', async t => {
+  for (const stop of [true, false]) {
+    const s = await stand(t, { assignmentSend: async ({ threadId }) => {
+      if (stop) await s.control('stop', 'phase-review');
+      await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === threadId).length, 0);
+      if (!stop) throw new Error('Fresh initial send reply lost');
+      return { ok: true, delivery: 'sent' };
+    } });
+    await s.create(); await s.add('phase-review', 'reviewer');
+    await s.control('stop', 'phase-review');
+    await s.call('thr-1', 'promptobus_send', { to: ['phase-review'], type: 'task', body: 'Read the complete original evidence in the fresh bounded phase.' });
+    const before = bindingStore(s.host.bb).thread('thr-2'); const next = structuredClone(before.launchContext);
+    next.grant.token = 'fresh-stop-phase'; next.grant.phase = 'repair';
+    next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+    const f = await evidenceFixture(s.root, s.task);
+    const result = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
+      '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Read all original evidence.']);
+    assert.equal(result.exitCode, 1); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2').length, 0); assert.equal(s.spawns.length, 2);
+    if (stop) assert.equal(s.delivery('thr-2').paused, true);
+    else assert.ok(bindingStore(s.host.bb).thread('thr-2').phaseAssignment);
+  }
+});
 
 function fictionalHost(calls) {
   return root => {
@@ -722,6 +868,26 @@ test('bound tools use host engine canon; peek preserves mail, read acknowledges 
   assert.equal(engine.unread(s.task, 'worker-one'), 0);
   assert.equal(engine.readTask(s.task).participants.find(p => p.id === 'worker-one').sessionRef, 'thr-2');
   assert.ok(s.host.harness.inspection.experimental_hostRpcCalls.every(c => c.hostId === 'local'));
+});
+
+for (const type of ['task', 'result']) test(`attachment provenance: ${type} retains its authenticated sender before ACK and after ACK/reload`, async t => {
+  const s = await stand(t);
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('worker-one')).exitCode, 0);
+  const sender = type === 'task' ? 'orchestrator' : 'worker-one';
+  const caller = type === 'task' ? 'thr-1' : 'thr-2';
+  const recipient = type === 'task' ? 'worker-one' : 'orchestrator';
+  const reader = type === 'task' ? 'thr-2' : 'thr-1';
+  const sent = JSON.parse(await s.call(caller, 'promptobus_send', { to: [recipient], type,
+    body: 'Canonical assignment or result with original evidence.', artifact: { filename: `${type}.txt`, content: `original ${type}` } }));
+  const check = async () => {
+    const artifact = JSON.parse(await s.call(reader, 'promptobus_artifact', { id: sent.artifact.id }));
+    assert.equal(artifact.sender, sender); assert.equal(artifact.content, `original ${type}`);
+  };
+  await check();
+  const read = JSON.parse(await s.call(reader, 'promptobus_mailbox', { mode: 'read' }));
+  assert.ok(read.messages.some(message => message.id === sent.message.id));
+  await check(); await s.reload(); await check();
 });
 
 test('forged identity fields, metadata, foreign project and missing threads grant no bus rights', async t => {
@@ -1688,3 +1854,189 @@ for (const provider of ['acp-cursor', 'acp-opencode']) for (const failure of ['e
     await assert.rejects(s.call('thr-2', 'promptobus_task'), /not bound/);
   });
 }
+
+for (const boundary of ['clearContext', 'evidence']) test(`review boundary: Stop during ${boundary} retains the transfer epoch`, async t => {
+  const entered = deferred(), release = deferred(); let block = false, reads = 0, delivered = 0;
+  const s = await stand(t, {
+    beforeClearContext: async () => { if (block && boundary === 'clearContext') { entered.resolve(); await release.promise; } },
+    beforeArtifact: async () => { if (block && boundary === 'evidence' && ++reads === 8) { entered.resolve(); await release.promise; } },
+    assignmentSend: async () => { delivered++; return { ok: true, delivery: 'sent' }; },
+  });
+  await s.create(); await s.add('review-boundary', 'reviewer'); await s.control('stop', 'review-boundary');
+  const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
+  next.grant.token = 'transfer-boundary'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
+  next.control.snapshot.endedTokens.push(b.launchContext.grant.token);
+  const f = await evidenceFixture(s.root, s.task); block = true;
+  const pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
+    '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Complete bounded repair context.']);
+  await entered.promise; await s.control('stop', b.participant); const stoppedEpoch = s.delivery('thr-2').epoch; release.resolve();
+  const result = await pending;
+  assert.equal(result.exitCode, 1, 'A Stop during the asynchronous transfer must refuse resume');
+  assert.match(result.stderr, /Stop/); assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(s.delivery('thr-2').epoch, stoppedEpoch); assert.equal(delivered, 0); assert.equal(s.spawns.length, 2);
+});
+
+test('review boundary: selected reviewer snapshot must match the declared evidence source before spawn', async t => {
+  const s = await stand(t); await s.create();
+  const launch = launchFixture(s.task, 'wrong-snapshot', 'reviewer', s.root);
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: s.workerEnvironment.id,
+    base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  const f = await evidenceFixture(s.root, s.task, 'b'.repeat(40)); const before = s.spawns.length;
+  const result = await s.add('wrong-snapshot', 'reviewer', ['--environment', 'env', '--launch-context', JSON.stringify(launch),
+    '--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(result.exitCode, 1, 'Evidence for environment B must not start a reader of environment A');
+  assert.match(result.stderr, /snapshot.*source SHA mismatch/); assert.equal(s.spawns.length, before);
+});
+
+test('review boundary: a worker relay cannot authorize a Root-labelled external producer', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-relay');
+  const launch = launchFixture(s.task, 'unapproved-root', 'reviewer', s.root);
+  launch.review = { producer: 'Root operator', producerBinding: 'owner-declaration', sourceEnvironmentId: 'env', base: 'a'.repeat(40),
+    requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  const f = await evidenceFixture(s.root, s.task, 'a'.repeat(40), 'a'.repeat(40), 'Root operator', 'worker-relay');
+  const before = s.spawns.length;
+  const result = await s.add('unapproved-root', 'reviewer', ['--launch-context', JSON.stringify(launch), '--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(result.exitCode, 1, 'A magic producerBinding label is not an authenticated owner authorization');
+  assert.match(result.stderr, /canonical owner declaration/); assert.equal(s.spawns.length, before);
+});
+
+test('review boundary: cancelling queued initial context retains its fence and retries the complete assignment', async t => {
+  let delivered = '', count = 0;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    delivered = input[0].text;
+    const entry = { id: `initial-queue-${++count}`, threadId, originPluginId: 'promptobus', content: input };
+    s.queues.set(threadId, [entry]); return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); await s.add('queued-review', 'reviewer'); await s.control('stop', 'queued-review');
+  await s.call('thr-1', 'promptobus_send', { to: ['queued-review'], type: 'task', body: 'Canonical repair task.' });
+  const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
+  next.grant.token = 'queued-complete-phase'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
+  next.control.snapshot.endedTokens.push(b.launchContext.grant.token);
+  const f = await evidenceFixture(s.root, s.task);
+  const first = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
+    '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Complete initial original context.']);
+  assert.equal(first.exitCode, 0, first.stderr); const original = delivered;
+  const entry = s.queues.get('thr-2')[0]; s.queues.set('thr-2', []);
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry }); await s.reconcile();
+  assert.equal(s.delivery('thr-2').paused, true, 'Cancellation must not allow a mailbox-only activation');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
+  assert.equal(s.wakes.filter(w => w.threadId === 'thr-2').length, 0);
+  assert.equal((await s.control('resume', b.participant)).exitCode, 0);
+  assert.equal(delivered, original); assert.ok(delivered.includes(JSON.stringify(next.role.literal)));
+  for (const ref of f.manifest.artifacts) assert.ok(delivered.includes(ref.id));
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+  assert.equal(s.delivery('thr-2').paused, false, 'An obsolete queue ID cannot cancel the retried initial delivery');
+  const current = s.queues.get('thr-2')[0]; s.queues.set('thr-2', []);
+  const requested = s.append('thr-2', 'client/turn/requested', { input: current.content });
+  s.threads.get('thr-2').status = s.threads.get('thr-2').runtime.displayStatus = 'active';
+  await s.reconcile(); const accepted = bindingStore(s.host.bb).thread('thr-2');
+  assert.equal(accepted.phaseAssignmentPending, false); assert.equal(accepted.phaseAssignmentDelivery.requestId, requested.data.requestId);
+});
+
+for (const scenario of ['owner', 'worker', 'wrong-hash', 'wrong-token', 'wrong-reviewer', 'wrong-environment']) {
+  test(`review owner declaration: ${scenario} canonical sender and exact scope`, async t => {
+    const s = await stand(t); await s.create(); await s.add('worker-relay');
+    const launch = launchFixture(s.task, 'authorized-root', 'reviewer', s.root);
+    const f = await evidenceFixture(s.root, s.task, 'a'.repeat(40), 'a'.repeat(40), 'Root operator', 'worker-relay');
+    const declaration = { version: 1, task: s.task, reviewer: 'authorized-root', grantToken: launch.grant.token,
+      producer: 'Root operator', sourceEnvironmentId: 'env', manifestSha256: digest(JSON.stringify(evidenceManifestSchema.parse(f.manifest))) };
+    if (scenario === 'wrong-hash') declaration.manifestSha256 = 'f'.repeat(64);
+    if (scenario === 'wrong-token') declaration.grantToken = 'old-ended-token';
+    if (scenario === 'wrong-reviewer') declaration.reviewer = 'someone-else';
+    if (scenario === 'wrong-environment') declaration.sourceEnvironmentId = 'bb-actual-env';
+    const landed = JSON.parse(await s.call(scenario === 'worker' ? 'thr-2' : 'thr-1', 'promptobus_send', {
+      to: ['orchestrator'], type: 'artifact', body: 'Explicit fictional owner declaration.', artifact: { filename: 'owner-declaration.txt', content: JSON.stringify(declaration) },
+    }));
+    launch.review = { producer: 'Root operator', producerBinding: 'owner-declaration', ownerDeclaration: landed.artifact.id,
+      sourceEnvironmentId: 'env', base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+    const before = s.spawns.length;
+    const result = await s.add('authorized-root', 'reviewer', ['--launch-context', JSON.stringify(launch), '--evidence-manifest', JSON.stringify(f.manifest)]);
+    assert.equal(result.exitCode, scenario === 'owner' ? 0 : 1, result.stderr);
+    assert.equal(s.spawns.length, before + (scenario === 'owner' ? 1 : 0));
+    if (scenario !== 'owner') assert.match(result.stderr, /canonical owner declaration sender\/scope mismatch/);
+  });
+}
+
+test('review boundary: prepared initial context also survives queue cancellation', async t => {
+  let delivered;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    delivered = input[0].text; const entry = { id: 'prepared-initial', threadId, originPluginId: 'promptobus', content: input };
+    s.queues.set(threadId, [entry]); return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); s.workerEnvironment.managed = false;
+  assert.equal((await s.add('prepared-review', 'reviewer', ['--environment-path', s.workerEnvironment.path])).exitCode, 0);
+  const initial = delivered, entry = s.queues.get('thr-2')[0]; s.queues.set('thr-2', []);
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+  await s.reconcile(); assert.equal(s.delivery('thr-2').paused, true, 'A prepared reviewer has not received the manifest until its complete initial context is delivered');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
+  assert.equal((await s.control('resume', 'prepared-review')).exitCode, 0); assert.equal(delivered, initial);
+});
+
+for (const boundary of ['binding', 'engine', 'control']) test(`review2 boundary: plain resume Stop during ${boundary} await keeps its original epoch`, async t => {
+  const entered = deferred(), release = deferred(); let block = false;
+  const wait = async () => { if (block) { block = false; entered.resolve(); await release.promise; } };
+  const s = await stand(t, { beforeGet: async id => { if (boundary === 'binding' && id === 'thr-2') await wait(); },
+    beforeCheck: async () => { if (boundary === 'engine') await wait(); },
+    beforeControl: async input => { if (boundary === 'control' && input.binding.participant === 'plain-worker') await wait(); } });
+  await s.create(); await s.add('plain-worker'); await s.control('stop', 'plain-worker');
+  await s.call('thr-1', 'promptobus_send', { to: ['plain-worker'], type: 'task', body: 'Canonical bounded task.' });
+  block = true; const pending = s.control('resume', 'plain-worker'); await entered.promise;
+  await s.control('stop', 'plain-worker'); const epoch = s.delivery('thr-2').epoch; release.resolve();
+  const result = await pending;
+  assert.equal(result.exitCode, 1, 'Stop before recovery.resume must not be replaced by a newly captured epoch');
+  assert.match(result.stderr, /newer Stop/); assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.delivery('thr-2').epoch, epoch);
+  assert.equal(s.wakes.filter(w => w.threadId === 'thr-2').length, 0);
+});
+
+for (const phase of ['fresh', 'prepared', 'unrelated-copy']) test(`review2 boundary: anonymous early ${phase} initial cancellation correlates the late queue ID and retries exact context`, async t => {
+  const entered = deferred(), release = deferred(); let first = true, delivered;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    delivered = input[0].text;
+    if (!first) return { ok: true, delivery: 'sent' };
+    first = false; const entry = { id: 'late-initial-queue', threadId, originPluginId: null, content: input };
+    s.queues.set(threadId, [entry]); entered.resolve(entry); await release.promise;
+    return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); let pending;
+  if (phase === 'prepared') {
+    s.workerEnvironment.managed = false; pending = s.add('early-cancel', 'reviewer', ['--environment-path', s.workerEnvironment.path]);
+  } else {
+    await s.add('early-cancel', 'reviewer'); await s.control('stop', 'early-cancel');
+    const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
+    next.grant.token = 'early-cancel-phase'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
+    next.control.snapshot.endedTokens.push(b.launchContext.grant.token); const f = await evidenceFixture(s.root, s.task);
+    pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
+      '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Whole original context.']);
+  }
+  const entry = await entered.promise, original = delivered;
+  if (phase !== 'unrelated-copy') s.queues.set('thr-2', []);
+  await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry: phase === 'unrelated-copy' ? { ...entry, id: 'unrelated-queue' } : entry }); await s.reconcile();
+  assert.equal(s.wakes.filter(w => w.threadId === 'thr-2').length, 0); release.resolve();
+  const result = await pending; assert.equal(result.exitCode, 0, result.stderr);
+  if (phase === 'unrelated-copy') {
+    assert.equal(s.delivery('thr-2').paused, false, 'A different queue ID cannot cancel the actual initial delivery');
+    assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentDelivery.state, 'queued');
+    s.queues.set('thr-2', []); await s.host.harness.behavior.emitThreadEvent('message.cancelled', { entry });
+  }
+  assert.equal(s.delivery('thr-2').paused, true, 'The late reply must correlate cancellation instead of saving an eternally queued deleted ID');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentDelivery.state, 'cancelled');
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, true);
+  assert.equal((await s.control('resume', 'early-cancel')).exitCode, 0); assert.equal(delivered, original);
+  assert.equal(bindingStore(s.host.bb).thread('thr-2').phaseAssignmentPending, false);
+});
+
+for (const condition of ['STOP', 'ended']) test(`review2 boundary: bound reviewer file reads refuse ${condition} before filesystem access`, async t => {
+  let reads = 0; const s = await stand(t, { beforeRead: async () => { reads++; } }); await s.create();
+  const launch = launchFixture(s.task, 'file-reader', 'reviewer', s.root);
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'env', base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  const control = path.join(s.root, 'reader-control.json'), snapshot = structuredClone(launch.control.snapshot);
+  writeFileSync(control, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: control };
+  assert.equal((await s.add('file-reader', 'reviewer', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const file = path.join(s.root, 'owned-source.txt'); writeFileSync(file, 'bounded source');
+  await s.call('thr-2', 'pb_review_read_file', { path: file }); assert.equal(reads, 1);
+  if (condition === 'STOP') snapshot.STOP = true; else snapshot.grant.state = 'ended';
+  writeFileSync(control, JSON.stringify(snapshot));
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /STOP|active/);
+  await assert.rejects(s.call('thr-2', 'pb_review_read_file', { path: file }), /STOP|active/);
+  assert.equal(reads, 1, 'The admission refusal must precede the actual bounded filesystem handler');
+});

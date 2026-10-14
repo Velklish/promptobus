@@ -33,6 +33,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   groups, rename/deletion and dirty-input selection, selected/omitted file reports
   and complete-suite fallback for unknown or shared inputs. The existing isolated
   runner accepts selected files; `npm test`, acceptance gates and CI remain full.
+- BB review manifests retain and validate distinct original raw parts for
+  `notMeasured` inventories without certifying verdict names. The shared direct
+  command guard refuses `csh` and `tcsh` before recording or admitting receipts.
+
+- BB attachment provenance retains the canonical sender of `task` and `result`
+  messages across acknowledgement and reload. The direct recorder reserves all
+  outputs before starting a runner and stops/reaps it on stream errors, retaining
+  incomplete evidence rather than losing its raw output and status.
+
+- Plain BB resume preserves Stop during binding/control reads. Initial queue
+  cancellations without plugin attribution match the late queue reply, bound
+  reviewer file reads recheck current grants, and POSIX shell receipt forms are
+  refused by the shared direct-command guard.
+- BB phase transfer preserves intervening Stop across context reset and evidence
+  reads. Reviewer snapshots must match the source HEAD, external producers need
+  an exact canonical owner declaration, cancelled initial queues retain their
+  complete-context fence, and direct receipts refuse shells hidden behind `env`.
+- BB launches require explicit role, owned/read roots, owner grant, control route,
+  preparation and quota context before substantive work. Constrained readers can
+  use declared inline control without wider filesystem permissions.
+- BB source-and-evidence reviews require a complete original-artifact manifest
+  before launch. Direct receipts, source/base, producer, ordered raw bytes/hashes
+  and all five handover checks are checked mechanically. Bounded UTF-8 upload
+  returns actual artifact IDs without copying raw through a model. A checkout
+  recorder preserves complete stdout/stderr and direct runner exits; opaque
+  attachment acceptance remains separate from evidence certification.
 
 - BB Host context tools export an object input schema for MCP clients while
   preserving strict inspect/read validation. A union without the root object

@@ -14,12 +14,14 @@ export const engineInput = z.discriminatedUnion('operation', [
   z.object({ ...bound, operation: z.literal('mailbox'), args: mailboxSchema }).strict(),
   z.object({ ...bound, operation: z.literal('task'), args: emptySchema }).strict(),
   z.object({ ...bound, operation: z.literal('artifact'), args: artifactSchema }).strict(),
+  z.object({ ...bound, operation: z.literal('uploadEvidence'), file: z.string().min(1), to: z.string().min(1) }).strict(),
 ]);
 
 export const hostContract = defineRpcContract({
   prepareContext: { input: z.object(bound).strict(), output: hostContextSchema },
   hostContext: { input: z.object({ ...bound, args: hostReadSchema }).strict(), output: z.unknown() },
   canonical: { input: z.object({ ...bound, args: hostCallSchema }).strict(), output: z.unknown() },
+  launchControl: { input: z.object(bound).strict(), output: z.unknown() },
   read: { input: z.object({ root: z.string(), name: z.string(), args: z.record(z.string(), z.unknown()) }).strict(), output: z.unknown() },
   engine: { input: engineInput, output: z.unknown() },
 });

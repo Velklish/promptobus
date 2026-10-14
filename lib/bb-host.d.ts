@@ -29,3 +29,5 @@ export function createBbHostIntegration(options: {
   prepareEnvironment?(input: BbHostInput): void | Promise<void>;
 }): BbHostIntegration;
 export function renderBbHostContext(context: BbHostContext): string;
+export function extractNodeTestVerdictNames(raw: string): { complete: boolean; names: string[]; reason: string | null };
+export function assertBbDirectCommand(command: readonly string[]): void;

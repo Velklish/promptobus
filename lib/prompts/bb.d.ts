@@ -13,4 +13,7 @@ export function createBbInstructionDelivery(role: BbInstructionRole, context: {
   allowDirectWorkerMessages?: boolean;
   snapshot?: { head: string; base: string; dirty: boolean; diffPath: string };
   gateRecords?: readonly string[];
+  launchContext?: unknown;
+  evidenceManifest?: unknown;
+  bridgeCheck?: string;
 }): { configuration: { tools: string[]; skills: string[]; instructions: string }; initialPrompt: string };

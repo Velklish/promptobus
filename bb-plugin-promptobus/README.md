@@ -134,15 +134,20 @@ plugin after source changes. `bb promptobus --help` describes the operator CLI.
 bb promptobus task create --task demo-t20261008-120000 --title "Demo" \
   --project proj_example --environment env_example --model gpt-6.1-sol \
   --provider codex --reasoning-level medium \
+  --launch-context "$OWNER_LAUNCH_CONTEXT" \
   --assignment "Read the task and wait for mail."
 bb promptobus participant add --task demo-t20261008-120000 \
   --participant worker-api --role worker --model gpt-6.1-sol \
+  --launch-context "$WORKER_LAUNCH_CONTEXT" \
   --assignment "Implement the supplied assignment."
 bb promptobus bindings
 ```
 
 Use real existing project/environment ids on the primary local host and a Git
 coordinator environment with an actual HEAD. The coordinator must be unmanaged:
+Prepare each role's complete bounded JSON input described under
+[required inputs](#required-launch-and-review-inputs); the example variables are
+placeholders for those exact authorized contexts.
 its canonical journal must outlive BB worker environment retirement. The first
 command creates the canonical task and a new owner thread; the second adds a
 new participant to that plugin-owned active task. Both hold the first prompt
@@ -452,6 +457,7 @@ Add an approver with explicit predecessor ids:
 bb promptobus participant add --task demo-t20261008-120000 \
   --participant acceptance-api --role approver --worker worker-api \
   --reviewer review-api --new-environment --base-branch main \
+  --launch-context "$APPROVER_LAUNCH_CONTEXT" \
   --model gpt-6.1-sol --assignment "Judge the recorded review and actual gates."
 ```
 
@@ -481,9 +487,102 @@ missing raw and unsupported formats are explicitly incomplete.
 The checkout-only [reference helper](../scripts/bb-evidence-verdict-names.mjs)
 supports one flat passing Node spec scope with one complete footer. Nested or
 concatenated scopes, custom printers, other reporters, ANSI output, failures and
-skips are unsupported. The helper cannot certify gates and is not shipped in the
+skips are unsupported. The helper cannot certify gates; the extractor is shipped in the
 library package. Manual lossless opaque UTF-8 evidence with retained raw output
 remains valid. See [BB evidence attachments](../docs/reference/04-protocol.md#bb-evidence-attachments).
+
+### Required launch and review inputs
+
+New `task create` and `participant add` calls take `--launch-context <JSON>`.
+Missing role/root/control/grant fields refuse before substantive assignment.
+The context is bounded to 256 KiB and uses the exact complete literal returned by
+`renderBbInstructionSkill(role)` from `promptobus/instructions`, even when the
+consumer Host catalog is empty. This startup checks configuration; the ordinary
+participant still authenticates the actual BB task/mailbox in its first turn.
+No additional diagnostic model or similarly named native MCP tool is substituted.
+
+| Field | Required content |
+| --- | --- |
+| `ownedRoots`, `readRoots` | Exact absolute owned paths and provider-permitted reads, declared by the owner; no permission widening |
+| `role` | `name: BB_ROLE_SKILLS[role]` and the complete `literal` |
+| `grant` | Exact `actor`, `task`, immutable `token`, active `state`, fresh `phase`, scope `repository`, `branch`, full `base`, `operations`, and `preconditions` |
+| `control` | `mode: file` with a bounded readable `path`, or `mode: inline` with the complete current snapshot and `signals: ["Hold", "Stop"]` |
+| Inline snapshot | `ownerConfirmed: true`, `STOP: false`, `noNewStages: false`, exact active `grant`, and all `endedTokens` |
+| `preparation` | Exact argv `commands`, `status: complete` or `notRun` with `reason` |
+| `quota` | Named `authority`, `missingUsage: informational`, `soft`, `hard`, `maxActiveIncludingOwner`, `PAYG: false` |
+| Reviewer `review` | Original `producer`, explicit `producerBinding`, `sourceEnvironmentId`, full `base`, exact argv `requiredGates`, explicit `requirePassingGates` |
+
+For provisioning, declare the expected target path/branch/base; the actual SDK
+identity must match after preparation. The preparatory READY turn executes no
+assignment. A constrained reader whose external control file is outside its
+read roots receives inline control and Root signals. Ended tokens never resume;
+repairs require a fresh complete bounded phase. Persisted older bindings remain
+explicitly `notMeasured`, without a fabricated startup measurement.
+
+For the same existing actor, `participant resume --launch-context <JSON>
+--assignment <complete-phase-text> --evidence-manifest <JSON>` installs a fresh
+review phase. It requires a different grant token and phase, and current control
+must name the previous token as ended. The complete original manifest is checked
+before Stop/context reset and again before delivery. The same BB thread, binding,
+parent and lifecycle owner remain; the new initial assignment contains the full
+context and all original IDs. Mailbox wakes stay fenced while that assignment is
+pending, including a queued or unknown send. Queue cancellation preserves the
+complete text and delivery identity; explicit resume retries that same context
+after fresh control/evidence checks. A matching `client/turn/requested` receipt
+releases a queued fence. A newer Stop during context reset, evidence transfer or
+delivery wins over the epoch captured at transfer start. No automatic
+evidence-only turn substitutes for the initial assignment. A canonical phase task
+still comes from the coordinator; this command does not invent a task sender.
+
+Every source-and-evidence reviewer also takes `--evidence-manifest <JSON>`.
+`producerBinding: participant` requires a ready canonical participant.
+`producerBinding: owner-declaration` requires `ownerDeclaration`, the actual ID
+of a canonical owner-sent `.txt` artifact authorizing the exact typed manifest
+hash, task, reviewer, grant token, producer and source environment. A worker relay
+cannot supply that authorization. It does not authenticate the external runner:
+canonical owner, attachment sender, original producer and command proof stay separate.
+Every selected reviewer read environment must be clean, bounded and at the
+declared source HEAD before spawn/resume; provisioned snapshots are rechecked.
+The recorder and manifest share a direct-command guard, including shell runners
+behind one supported `env` launcher with literal assignments. Other `env` options
+and nested launchers are unsupported.
+Plain resume preserves the epoch captured before binding/control awaits.
+Anonymous early cancellation is correlated with the actual late queue reply,
+keeping the complete context available for explicit retry. Bound reviewer file
+reads recheck the current owner grant; stopped or ended file-control grants deny
+reads before filesystem access. The shared command guard rejects the POSIX
+`dash`, `ash`, `ksh`, `ksh93`, `csh` and `tcsh` executable forms as well.
+The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
+The manifest holds source/base, original producer and relayer, clean state,
+original direct receipts, gate/handover/inventory IDs, ordered full raw parts with
+UTF-8 bytes/hashes and all five check details or concrete `notRun` reasons.
+Only actual artifacts are admitted; normal message IDs, wrong tree/producer,
+cropped raw, broken hashes and pipeline-masked receipts refuse before spawn.
+All original IDs enter the immutable first assignment and remain readable through
+the actual bound `promptobus_artifact`. Late steering is supplementary.
+
+The coordinator can land a complete owned file without copying megabytes through
+a model: `bb promptobus evidence upload --task ID --file /absolute/owned/file --to RECIPIENT`.
+It returns original opaque UTF-8 part IDs and landed filenames, with byte counts
+and hashes, using the current bound actor. Each part is at most 900000 bytes; the
+file is at most 64 MiB. Original producer identity stays in the receipt/handover
+when the coordinator relays another actor's output. A checkout can record a
+direct command with `node scripts/bb-record-command.mjs --output /absolute/owned/stem --by ACTOR -- npm test`.
+Its complete stdout/stderr and `bb-direct-command-v1` receipt retain the runner's
+own return code. It reserves all three files before spawning; a refusal reports
+`notRun: true`, and a sink failure stops and reaps the runner with incomplete
+evidence. Attachment sender lookup includes `task` and `result` messages before
+and after acknowledgement or reload. This recorder is not an authorization or actor-authentication
+tool. Shell pipeline executables are unsupported.
+
+The mechanical validator supports complete flat passing Node spec inventories;
+custom, nested and concatenated scopes retain authoritative raw with explicit
+`notMeasured`, and cannot claim certified counts or a complete name difference.
+Their inventory's optional `raw` scope retains distinct original base output;
+ordered parts and bytes/hashes are validated even without name certification.
+Opaque handover details and upload acceptance do not certify truth or native
+schemas. The admission, original-part transport and retained failure replay have
+SDK fixture coverage; the changed live provider workflow is `notMeasured`.
 
 The 2026-10-08 live workflow established the following source profile. It used
 actual canonical messages, committed source and retained artifacts; SDK fixtures
