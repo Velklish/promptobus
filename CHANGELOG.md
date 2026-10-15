@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.27.0] — 2026-10-15
 
 - Recheck current file-based launch control before any bound BB participant starts a model turn.
 - Captured the installed Codex 0.162.1 protocol and validated holder/mock contracts against its complete schema inventory. Native model turns and hook behavior remain unmeasured on this binary.
