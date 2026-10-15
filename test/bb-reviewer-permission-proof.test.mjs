@@ -76,6 +76,7 @@ test('permission proof failure cleanup records real hashes and preserves the ori
     assert.deepEqual(evidence.afterHashes, evidence.beforeHashes);
     assert.equal(evidence.scratchRemoved, true);
     assert.equal(evidence.childReaped, true);
+    assert.equal(path.dirname(evidence.scratch), os.tmpdir(), 'Permission proof uses the system temporary directory');
   } finally {
     childProcess.spawn = spawn; syncBuiltinESMExports(); console.log = log;
     process.argv = argv; process.exitCode = exitCode;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, existsSync, accessSync, constants, realpathSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { openBbReviewer, reviewerFiles, REVIEW_FILE_TOOLS, verifyReviewerConfig, verifyReviewerProfile } from '../lib/bb-reviewer.js';
 
@@ -112,7 +113,7 @@ export function finalizeCanaries(evidence, files) {
 export async function main() {
   const mode = process.argv[2];
   assert.ok(['--before', '--startup', '--native'].includes(mode), 'Choose --before, --startup or --native');
-  const scratch = mkdtempSync('/private/tmp/pb3701-native-proof-');
+  const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-bb-native-proof-'));
   const source = new URL('../lib/bb-reviewer.js', import.meta.url);
   const bytes = readFileSync(source, 'utf8');
   const hash = value => createHash('sha256').update(value).digest('hex');
